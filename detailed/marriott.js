@@ -264,6 +264,8 @@ function mqBuildInterior() {
   mqLobbyWall(cx + 2.5, cz + lw, cx + lw, cz + lw, lh, gy);          // south R
   mqLobbyWall(cx - lw, cz - lw, cx - lw, cz + lw, lh, gy);           // west
   mqLobbyWall(cx + lw, cz - lw, cx + lw, cz + lw, lh, gy);           // east
+  // door blocker: seal the south entrance gap so player must use EXIT command
+  addSegCollider(cx - 2.8, cz + lw, cx + 2.8, cz + lw);
 
   /* roof slab over floor 52 + skylight over atrium */
   var roofY = mqFloorY(52) + MQ.FLOOR_H;
