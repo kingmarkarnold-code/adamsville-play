@@ -416,7 +416,7 @@
   <div id="load-bottom">
     <div id="load-bar"><div id="load-fill"></div></div>
     <div id="load-status">Loading...</div>
-    <div id="load-start">CLICK TO START</div>
+    <div id="load-start">CLICK ANYWHERE TO START</div>
   </div>
 </div>
 <div id="toast"></div>
@@ -475,7 +475,7 @@ window.addEventListener('load',function(){
 "use strict";
 /* v1.4: single source of truth for the HUD version — bump ONCE per release.
    The tags below are stamped from here so they can never go stale again. */
-var APP_VERSION='1.12.2';
+var APP_VERSION='1.12.3';
 try{
   document.getElementById('hud-sub').textContent='1995 demo v'+APP_VERSION;
   document.getElementById('ver-tag').textContent='v'+APP_VERSION;
@@ -4846,7 +4846,7 @@ document.getElementById('se-saveexit').addEventListener('click', function(){
   document.getElementById('saveexit').classList.remove('show');
   document.getElementById('gameplay').classList.remove('show');
   if(ok){
-    // exit to the title screen (loader); tap CLICK TO START to resume the saved session
+    // exit to the title screen (loader); tap CLICK ANYWHERE TO START to resume the saved session
     var l=document.getElementById('loader');
     if(l){ l.style.display='flex'; }
   }
@@ -5948,6 +5948,22 @@ document.getElementById('loader').addEventListener('click', function(){
   try{ musicStartOnce(); }catch(e){}
   try{ animate(); }catch(e){}
 });
+/* v1.13: CLICK ANYWHERE TO START — entire page is clickable once assets are ready.
+   Handles clicks on body/document for maximum compatibility (mouse, touch, trackpad). */
+function __tryStartGame(){
+  try{
+    var l=document.getElementById('loader');
+    if(!l || l.style.display==='none') return false;  // already started
+    var need=window.__loadOrder.length, have=Object.keys(window.__loadDone||{}).length;
+    if(have<need) return false;  // still loading — ignore
+    l.style.display='none';
+    try{ musicStartOnce(); }catch(e){}
+    try{ animate(); }catch(e){}
+    return true;
+  }catch(e){ return false; }
+}
+document.addEventListener('click', function(e){ __tryStartGame(); });
+document.addEventListener('touchend', function(e){ __tryStartGame(); });
 </script>
 <script src="npc_system.js" onload="__loadStep('npc')" onerror="__loadStep('npc',true)"></script>
 <script src="face_platform.js"></script>
