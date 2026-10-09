@@ -512,8 +512,15 @@ function dispatchRepair(d){
   var grp=new THREE.Group(); scene.add(grp);
   // crew truck parked to the side
   var truck=makeWorkTruck();
-  truck.position.set(d.x+px*14, groundY(d.x+px*14,d.z+pz*14)+0.05, d.z+pz*14);
+  var tx=d.x+px*14, tz=d.z+pz*14;
+  truck.position.set(tx, groundY(tx,tz)+0.05, tz);
   truck.rotation.y=heading+0.3; grp.add(truck);
+  // v2.1: solid truck — player can't walk through it
+  var truckCol=null;
+  try{ if(typeof addCollider==='function'){
+    var tc={x:tx, z:tz, r:3.2, y0:-1e9, y1:1e9};
+    colliders.push(tc); truckCol=tc;
+  }}catch(e){}
   // four workers at the defect (crew doubled)
   var workers=[];
   [[-4,2],[4,-3],[-4,-3],[4,2]].forEach(function(o){
@@ -524,20 +531,38 @@ function dispatchRepair(d){
   });
   // signs: ROAD WORK AHEAD both approaches + DETOUR pair
   var signs=[];
+  var signCols=[];  // v2.1: track for cleanup
   [[-58,0],[58,0]].forEach(function(o){
     var s=makeSign('ROAD WORK AHEAD','');
     var sx=d.x+hx*o[0]+px*7, sz=d.z+hz*o[0]+pz*7;
     s.position.set(sx, groundY(sx,sz), sz);
     s.rotation.y=heading+(o[0]<0?0:Math.PI); grp.add(s); signs.push(s);
+    try{ if(typeof addCollider==='function'){
+      var sc={x:sx, z:sz, r:0.4, y0:-1e9, y1:1e9};
+      colliders.push(sc); signCols.push(sc);
+    }}catch(e){}
   });
   [[-30,1],[30,1]].forEach(function(o){
     var s=makeSign('DETOUR','FOLLOW ARROWS');
     var sx=d.x+hx*o[0]-px*9, sz=d.z+hz*o[0]-pz*9;
     s.position.set(sx, groundY(sx,sz), sz);
     s.rotation.y=heading+(o[0]<0?0:Math.PI); grp.add(s); signs.push(s);
+    try{ if(typeof addCollider==='function'){
+      var sc2={x:sx, z:sz, r:0.4, y0:-1e9, y1:1e9};
+      colliders.push(sc2); signCols.push(sc2);
+    }}catch(e){}
   });
   // cones taper + detour arrow trail curving around the zone
-  var cones=makeCones(d.x,d.z,y,heading); grp.add(cones);
+  var coneData=makeCones(d.x,d.z,y,heading); grp.add(coneData.mesh);
+  var cones=coneData.mesh, conePos=coneData.positions;
+  // v2.1: small colliders per cone (knockable — see updateJobs)
+  var coneCols=[];
+  conePos.forEach(function(cp){
+    try{ if(typeof addCollider==='function'){
+      var cc={x:cp.x, z:cp.z, r:0.5, y0:-1e9, y1:1e9, _cone:cp, _job:null};
+      colliders.push(cc); coneCols.push(cc); cp._collider=cc;
+    }}catch(e){}
+  });
   var arrows=[];
   for (var i=0;i<6;i++){
     var t=i/5, ax=d.x+hx*(t-0.5)*70-px*(10+Math.sin(t*Math.PI)*10);
@@ -548,8 +573,14 @@ function dispatchRepair(d){
     grp.add(ar); arrows.push(ar);
   }
   d.state='repairing';
-  RC.jobs.push({defect:d, group:grp, truck:truck, workers:workers,
-    signs:signs, cones:cones, arrows:arrows, t:0, heading:heading});
+  var job={defect:d, group:grp, truck:truck, workers:workers,
+    signs:signs, cones:cones, conePos:conePos, arrows:arrows, t:0, heading:heading,
+    truckCol:truckCol, signCols:signCols, coneCols:coneCols};
+  // link cone colliders back to this job for knock-over handling
+  coneCols.forEach(function(cc){ cc._job=job; });
+  // store worker home positions for fetch-and-return behavior
+  workers.forEach(function(w){ w.userData.homeX=w.position.x; w.userData.homeZ=w.position.z; w.userData.fetchState=null; });
+  RC.jobs.push(job);
   dlog('Repair crew on site at '+d.id+' ('+d.street+') — signs, cones and detour placed.');
   toast('🚧 Repair crew working on '+d.street+' — detour in place');
   try{ Report.setSys('roadcrew', sysReport()); }catch(e){}
@@ -559,6 +590,21 @@ function finishRepair(job){
   // lay the fresh asphalt patch
   var patch=makePatch(d, job.heading);
   scene.add(patch); RC.patchMeshes.push(patch);
+  // v2.1: remove all work-zone colliders
+  try{
+    if(typeof removeCollider==='function'){
+      if(job.truckCol) removeCollider(job.truckCol);
+      (job.signCols||[]).forEach(function(c){ removeCollider(c); });
+      (job.coneCols||[]).forEach(function(c){ removeCollider(c); });
+    }else if(typeof colliders!=='undefined'){
+      // fallback: filter by identity
+      var doomed={};
+      if(job.truckCol) doomed[colliders.indexOf(job.truckCol)]=1;
+      (job.signCols||[]).forEach(function(c){ doomed[colliders.indexOf(c)]=1; });
+      (job.coneCols||[]).forEach(function(c){ doomed[colliders.indexOf(c)]=1; });
+      for(var di=colliders.length-1;di>=0;di--){ if(doomed[di]) colliders.splice(di,1); }
+    }
+  }catch(e){}
   // pull the work zone
   scene.remove(job.group);
   d.state='fixed';
@@ -568,15 +614,99 @@ function finishRepair(job){
   try{ Report.setSys('roadcrew', sysReport()); }catch(e){}
   refreshBoard(); refreshPanel();
 }
+/* v2.1: cone knock-over detection + worker fetch-and-replace.
+   When the player barrels into a cone, it tips over. The nearest idle
+   worker walks over, picks it up (stands it back up), and returns to work. */
+function updateConePhysics(j, dt){
+  var px=0, pz=0, pSpeed=0;
+  try{
+    if(typeof player!=='undefined' && player.mesh){
+      px=player.mesh.position.x; pz=player.mesh.position.z;
+      pSpeed=Math.hypot(player.vx||0, player.vz||0);
+      // fallback: estimate from position delta
+      if(!pSpeed && player._lx!==undefined){
+        pSpeed=Math.hypot(px-player._lx, pz-player._lz)/Math.max(dt,0.001);
+      }
+      player._lx=px; player._lz=pz;
+    }
+  }catch(e){ return; }
+  if(!j.conePos) return;
+  for(var ci=0; ci<j.conePos.length; ci++){
+    var cp=j.conePos[ci];
+    if(!cp.standing) continue;  // already knocked
+    var dx=px-cp.x, dz=pz-cp.z;
+    var d=Math.hypot(dx,dz);
+    // player hit the cone hard (within 1.2u and moving fast)
+    if(d < 1.2 && pSpeed > 4){
+      cp.standing=false;
+      tipCone(j.cones, cp);
+      // remove its collider so player can walk past the fallen cone
+      try{ if(cp._collider && typeof removeCollider==='function') removeCollider(cp._collider); }catch(e){}
+      // assign nearest idle worker to fetch it
+      var best=null, bestD=1e18;
+      j.workers.forEach(function(w){
+        if(w.userData.fetchState) return;  // already on a fetch
+        var wd=Math.hypot(w.position.x-cp.x, w.position.z-cp.z);
+        if(wd<bestD){ bestD=wd; best=w; }
+      });
+      if(best){
+        best.userData.fetchState={cone:cp, phase:'goto', tx:cp.x, tz:cp.z};
+        try{ dlog('Worker '+ (j.workers.indexOf(best)+1) +' going to reset a knocked cone.'); }catch(e){}
+      }
+      break;  // one knock per frame max
+    }
+  }
+  // worker fetch-and-return state machine
+  j.workers.forEach(function(w){
+    var fs=w.userData.fetchState;
+    if(!fs) return;
+    var tx=fs.tx, tz=fs.tz;
+    if(fs.phase==='return'){
+      tx=w.userData.homeX; tz=w.userData.homeZ;
+    }
+    var dx=tx-w.position.x, dz=tz-w.position.z;
+    var d=Math.hypot(dx,dz);
+    var spd=6;  // worker walk speed
+    if(d < 0.8){
+      if(fs.phase==='goto'){
+        // pick up the cone: stand it back up, restore collider
+        var cp=fs.cone;
+        cp.standing=true;
+        standCone(j.cones, cp);
+        try{
+          if(typeof addCollider==='function' && cp._collider){
+            // re-add only if not already present
+            if(colliders.indexOf(cp._collider)<0) colliders.push(cp._collider);
+          }
+        }catch(e){}
+        fs.phase='return';
+      }else{
+        // back home — resume work
+        w.userData.fetchState=null;
+        w.position.x=w.userData.homeX; w.position.z=w.userData.homeZ;
+      }
+    }else{
+      // walk toward target
+      var step=Math.min(d, spd*dt);
+      w.position.x+=dx/d*step; w.position.z+=dz/d*step;
+      try{ w.position.y=groundY(w.position.x, w.position.z); }catch(e){}
+      w.rotation.y=Math.atan2(dx,dz);
+      // walking bob
+      w.position.y+=Math.abs(Math.sin(RC.time*10))*0.08;
+    }
+  });
+}
 function updateJobs(dt){
   for (var i=RC.jobs.length-1;i>=0;i--){
     var j=RC.jobs[i]; j.t+=dt;
-    // workers: simple repair animation (bob + arm swing)
+    // workers: repair animation OR fetch-and-return (not both)
     j.workers.forEach(function(w,k){
+      if(w.userData.fetchState) return;  // handled by updateConePhysics
       w.position.y+=Math.sin(RC.time*7+k*2.4)*0.012;
       w.rotation.y+=Math.sin(RC.time*1.3+k)*0.01;
       var a=w.userData.armR; if(a) a.rotation.x=Math.sin(RC.time*7+k)*0.7;
     });
+    try{ updateConePhysics(j, dt); }catch(e){}
     var bar=j.truck.userData.lightBar; if (bar) bar.visible=(RC.tick%14<7);
     if (j.t>=REPAIR_T){
       finishRepair(j);
