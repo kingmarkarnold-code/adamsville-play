@@ -5954,8 +5954,8 @@ function __tryStartGame(){
   try{
     var l=document.getElementById('loader');
     if(!l || l.style.display==='none') return false;  // already started
-    var need=window.__loadOrder.length, have=Object.keys(window.__loadDone||{}).length;
-    if(have<need) return false;  // still loading — ignore
+    // v1.13.1: Don't block on asset loading — start even if some failed.
+    // The game handles missing assets gracefully.
     l.style.display='none';
     try{ musicStartOnce(); }catch(e){}
     try{ animate(); }catch(e){}
