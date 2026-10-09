@@ -1231,6 +1231,8 @@ scene.add(sun);
 var colliders = [];  // {x, z, r}
 function addCollider(x, z, r, y0, y1){ colliders.push({x:x, z:z, r:r,
   y0:(y0===undefined?-1e9:y0), y1:(y1===undefined?1e9:y1)}); }
+/* v2.1: remove a collider object (for temporary work-zone colliders). */
+function removeCollider(c){ var i=colliders.indexOf(c); if(i>=0) colliders.splice(i,1); }
 /* v1.3: spatial grid for OSM building colliders (thousands — flat array
    would make resolveCollision O(n) per entity per frame). Cell 40u. */
 var bldgGrid = {};
@@ -2036,6 +2038,7 @@ try{ ['highway','arterial','local'].forEach(function(c){ roadSegsTotal+=ROAD_DAT
     nameSigns.forEach(function(s, i){
       placeInst(posts, pi++, s.x, s.y, s.z, 0);
       placeInst(boards, i, s.x, s.y, s.z, s.yaw);
+      try{ addCollider(s.x, s.z, 0.4); }catch(e){}  // v2.1: solid sign posts
       // text sprite
       var nm=name1995(s.name);
       if (nm){
@@ -2059,6 +2062,7 @@ try{ ['highway','arterial','local'].forEach(function(c){ roadSegsTotal+=ROAD_DAT
     stops.forEach(function(s, i){
       placeInst(posts, pi++, s.x, s.y, s.z, 0);
       placeInst(stopMesh, i, s.x, s.y, s.z, s.yaw);
+      try{ addCollider(s.x, s.z, 0.4); }catch(e){}  // v2.1: solid sign posts
     });
     // traffic lights: housing + 3 bulbs (red lit)
     var housGeo=new THREE.BoxGeometry(0.55,1.7,0.55); housGeo.translate(0,3.6,0);
@@ -2070,6 +2074,7 @@ try{ ['highway','arterial','local'].forEach(function(c){ roadSegsTotal+=ROAD_DAT
     lights.forEach(function(s, i){
       placeInst(posts, pi++, s.x, s.y, s.z, 0);
       placeInst(housMesh, i, s.x, s.y, s.z, s.yaw);
+      try{ addCollider(s.x, s.z, 0.4); }catch(e){}  // v2.1: solid light poles
       // bulbs hang below housing center: red top (y+4.1), yellow mid, green bottom
       eul.set(0, s.yaw, 0); qt.setFromEuler(eul); sv.set(1,1,1);
       pv.set(s.x, s.y+4.15, s.z); m4.compose(pv,qt,sv); bulbR.setMatrixAt(i,m4);
@@ -2121,6 +2126,7 @@ try{ ['highway','arterial','local'].forEach(function(c){ roadSegsTotal+=ROAD_DAT
       });
       pv.set(s.x, gy, s.z); sv.set(1,1,1); m4.compose(pv,qt,sv);
       boards.setMatrixAt(i, m4);
+      try{ addCollider(s.x, s.z, 1.2); }catch(e){}  // v2.1: solid exit sign
       // text sprite: "next exit <name>"
       var cv=document.createElement('canvas'); cv.width=512; cv.height=128;
       var g2=cv.getContext('2d');
