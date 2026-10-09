@@ -45,6 +45,19 @@
   #settings #set-newgame { border-color:#ffd75e; color:#ffd75e; text-align:center; font-size:17px; }
   #settings #set-close { margin-top:12px; padding:10px 18px; font-size:15px; border-radius:10px; border:none;
     background:#ffd75e; color:#111; font-weight:bold; width:100%; }
+  /* v1.13: Administrator re-download confirmation dialog */
+  #adm-confirm { position:fixed; inset:0; z-index:60; display:none; align-items:center; justify-content:center;
+    background:rgba(0,0,0,.78); color:#fff; }
+  #adm-confirm.show { display:flex; }
+  #adm-confirm .card { background:#161b26; border-radius:14px; padding:20px 22px; max-width:400px; width:84%;
+    border:2px solid #ffd75e; text-align:center; }
+  #adm-confirm .msg { font-size:15px; line-height:1.5; margin:6px 0 18px 0; }
+  #adm-confirm .msg b { color:#ffd75e; }
+  #adm-confirm .btnrow { display:flex; gap:12px; }
+  #adm-confirm .btnrow button { flex:1; padding:13px 0; font-size:16px; font-weight:bold; border-radius:10px;
+    border:2px solid #444; background:#222836; color:#fff; }
+  #adm-confirm #adm-confirm-yes { background:#39ff6a; border-color:#39ff6a; color:#111; }
+  #adm-confirm #adm-confirm-no { background:#3a3f4d; }
   /* v0.9: VIEW REPORT overlay — scrollable live diagnostics, works even if
      the Documents file never materializes */
   #report-view { position:fixed; inset:0; z-index:50; display:none; flex-direction:column;
@@ -253,6 +266,13 @@
   <div id="adm-status"></div>
   <button id="set-close">Close</button>
 </div></div>
+<div id="adm-confirm"><div class="card">
+  <div class="msg" id="adm-confirm-msg"></div>
+  <div class="btnrow">
+    <button id="adm-confirm-yes">Yes</button>
+    <button id="adm-confirm-no">No</button>
+  </div>
+</div></div>
 <div id="gameplay"><div class="card">
   <h3>Gameplay</h3>
   <button class="row" id="gp-newgame">New game</button>
@@ -408,7 +428,7 @@ window.addEventListener('load',function(){
 "use strict";
 /* v1.4: single source of truth for the HUD version — bump ONCE per release.
    The tags below are stamped from here so they can never go stale again. */
-var APP_VERSION='1.12.0';
+var APP_VERSION='1.12.2';
 try{
   document.getElementById('hud-sub').textContent='1995 demo v'+APP_VERSION;
   document.getElementById('ver-tag').textContent='v'+APP_VERSION;
@@ -704,6 +724,37 @@ var ASSETVER=(function(){
     return true;
   }
 
+  /* v1.13: Joshua's rule — re-downloads ask first. Shows a confirmation
+     dialog naming the asset and its current version. Yes = wipe the old
+     files, then download fresh. No = cancel, do nothing. */
+  var confirmType=null;
+  function confirmRedownload(type){
+    confirmType=type;
+    var label=LABELS[type]||type;
+    var ver='unknown';
+    try{
+      if (type==='map'){ ver=(typeof MAPVER!=='undefined'&&MAPVER.getActive())||'unknown'; }
+      else { ver=active[type]||'unknown'; }
+    }catch(e){}
+    var msg='You\u2019re about to re-download <b>'+label+'</b>'+
+      (ver&&ver!=='unknown' ? ' (v'+ver+')' : '')+
+      ' that you currently already have. Would you like to continue?';
+    try{ document.getElementById('adm-confirm-msg').innerHTML=msg; }catch(e){}
+    try{ document.getElementById('adm-confirm').classList.add('show'); }catch(e){}
+  }
+  function confirmWire(){
+    try{
+      document.getElementById('adm-confirm-yes').addEventListener('click',function(){
+        try{ document.getElementById('adm-confirm').classList.remove('show'); }catch(e){}
+        var t=confirmType; confirmType=null;
+        if (t) forceRedownload(t);
+      });
+      document.getElementById('adm-confirm-no').addEventListener('click',function(){
+        try{ document.getElementById('adm-confirm').classList.remove('show'); }catch(e){}
+        confirmType=null;
+      });
+    }catch(e){}
+  }
   /* Administrator panel: force a fresh download of one artifact type,
      straight into the active dir, then reload. The user asked for it
      explicitly, so the reload is expected. */
@@ -715,6 +766,9 @@ var ASSETVER=(function(){
     if (type==='map'){
       var mb=mapBridge();
       if (!mb){ say('Map: web version updates on page reload.'); return; }
+      /* Joshua's rule: clean slate first — wipe old map files, then download fresh.
+         Native method activates after next recompile; guarded so old APKs still work. */
+      try{ if (mb.clearDownloadedMapFiles) mb.clearDownloadedMapFiles(); }catch(e){}
       say('Downloading map\u2026');
       setTimeout(function(){
         try{
@@ -757,6 +811,9 @@ var ASSETVER=(function(){
       }catch(e){ say(LABELS[type]+': check failed.'); }
       return;
     }
+    /* Joshua's rule: clean slate first — wipe old files of this type, then download fresh.
+       Native method activates after next recompile; guarded so old APKs still work. */
+    try{ if (b.clearDownloadedAssetFiles) b.clearDownloadedAssetFiles(type); }catch(e){}
     say('Downloading '+LABELS[type]+'\u2026');
     setTimeout(function(){
       try{
@@ -818,13 +875,14 @@ var ASSETVER=(function(){
     setInterval(checkPending, 5*60*1000);
     // Wire the Administrator buttons.
     try{
-      document.getElementById('adm-map').addEventListener('click',function(){ forceRedownload('map'); });
-      document.getElementById('adm-ui').addEventListener('click',function(){ forceRedownload('ui'); });
-      document.getElementById('adm-vehicles').addEventListener('click',function(){ forceRedownload('vehicles'); });
-      document.getElementById('adm-music').addEventListener('click',function(){ forceRedownload('music'); });
+      document.getElementById('adm-map').addEventListener('click',function(){ confirmRedownload('map'); });
+      document.getElementById('adm-ui').addEventListener('click',function(){ confirmRedownload('ui'); });
+      document.getElementById('adm-vehicles').addEventListener('click',function(){ confirmRedownload('vehicles'); });
+      document.getElementById('adm-music').addEventListener('click',function(){ confirmRedownload('music'); });
       document.getElementById('adm-dispatch').addEventListener('click',function(){
         try{ if(typeof window.toggleDispatchLog==='function') window.toggleDispatchLog(true); }catch(e){}
       });
+      confirmWire();
       // Refresh the per-type tags whenever settings opens.
       document.getElementById('help-btn').addEventListener('click',function(){
         setTimeout(function(){ checkPending(); refreshAdmTags(); },200);
