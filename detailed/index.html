@@ -263,7 +263,9 @@
   <button class="row" id="adm-vehicles">Re-download Vehicles <span class="adm-tag" id="adm-vehicles-tag"></span></button>
   <button class="row" id="adm-music">Re-download Music <span class="adm-tag" id="adm-music-tag"></span></button>
   <button class="row" id="adm-dispatch">&#128679; Road Dispatch Log</button>
+  <button class="row" id="adm-testconn">&#128268; Test Connection</button>
   <div id="adm-status"></div>
+  <div id="adm-diag" style="font-size:11px;color:#9fb3c8;white-space:pre-wrap;word-break:break-all;max-height:200px;overflow-y:auto;margin:4px 0;"></div>
   <button id="set-close">Close</button>
 </div></div>
 <div id="adm-confirm"><div class="card">
@@ -775,6 +777,60 @@ var ASSETVER=(function(){
   /* Administrator panel: force a fresh download of one artifact type,
      straight into the active dir, then reload. The user asked for it
      explicitly, so the reload is expected. */
+  /* v1.13: diagnostic logging for download debugging. Shows in the
+     Admin panel diag box so Joshua can read the actual error. */
+  function diagLog(t){
+    try{
+      var el=document.getElementById('adm-diag');
+      if(el){ el.textContent=t; }
+    }catch(e){}
+    try{ console.log('[DIAG] '+t); }catch(e2){}
+  }
+  /* v1.13: Test Connection — tries each manifest via WebView fetch() AND
+     native fetchText(), reports exactly what works and what doesn't. */
+  function testConnection(){
+    var types=['map','ui','vehicles','music'];
+    var urls={map:BASE+'map-manifest.json',ui:manifestUrl('ui'),vehicles:manifestUrl('vehicles'),music:manifestUrl('music')};
+    var out='Testing connections...\n';
+    diagLog(out);
+    try{ document.getElementById('adm-status').textContent='Testing...'; }catch(e){}
+    var i=0;
+    function next(){
+      if(i>=types.length){ out+='\nDone.'; diagLog(out); try{ document.getElementById('adm-status').textContent='Test complete — see details below.'; }catch(e){} return; }
+      var t=types[i]; var url=urls[t]; i++;
+      out+='\n['+t+'] '+url+'\n';
+      // Test 1: WebView fetch
+      try{
+        fetch(url,{cache:'no-store'}).then(function(r){
+          out+='  WebView fetch: HTTP '+r.status+(r.ok?' OK':' FAIL')+'\n';
+          return r.ok?r.text():null;
+        }).then(function(txt){
+          if(txt) out+='  WebView got '+txt.length+' chars: '+txt.substring(0,60)+'...\n';
+          // Test 2: native fetchText
+          try{
+            var b=(t==='map')?mapBridge():bridge();
+            if(!b){ out+='  Native bridge: MISSING\n'; }
+            else{
+              var raw=b.fetchText(url);
+              out+='  Native fetchText: '+(raw?raw.length+' chars':'EMPTY')+'\n';
+              if(raw) out+='    first 60: '+raw.substring(0,60)+'...\n';
+            }
+          }catch(e){ out+='  Native fetchText threw: '+(e&&e.message?e.message:e)+'\n'; }
+          diagLog(out);
+          next();
+        }).catch(function(e){
+          out+='  WebView fetch FAILED: '+(e&&e.message?e.message:e)+'\n';
+          diagLog(out);
+          next();
+        });
+      }catch(e){
+        out+='  WebView fetch threw: '+(e&&e.message?e.message:e)+'\n';
+        diagLog(out);
+        next();
+      }
+    }
+    next();
+  }
   function forceRedownload(type){
     var statusEl=null;
     try{ statusEl=document.getElementById('adm-status'); }catch(e){}
@@ -808,7 +864,15 @@ var ASSETVER=(function(){
               next();
             },30);
           })();
-        }catch(e){ say('Map download failed \u2014 check connection.'); }
+        }catch(e){
+          var dbg='Map download FAILED.\n';
+          dbg+='URL: '+(BASE+'map-manifest.json')+'\n';
+          try{ var raw=mb.fetchText(BASE+'map-manifest.json'); dbg+='fetchText returned '+(raw?raw.length+' chars':'EMPTY')+': '+(raw?raw.substring(0,100):'(nothing)')+'\n'; }catch(e2){ dbg+='fetchText threw: '+(e2&&e2.message?e2.message:e2)+'\n'; }
+          dbg+='Exception: '+(e&&e.message?e.message:e)+'\n';
+          dbg+='Bridge present: '+(mb?'yes':'no');
+          diagLog(dbg);
+          say('Map download failed \u2014 see details below.');
+        }
       },300);
       return;
     }
@@ -858,7 +922,15 @@ var ASSETVER=(function(){
             next();
           },30);
         })();
-      }catch(e){ say(LABELS[type]+' download failed \u2014 check connection.'); }
+      }catch(e){
+        var dbg=LABELS[type]+' download FAILED.\n';
+        dbg+='URL: '+manifestUrl(type)+'\n';
+        try{ var raw=b.fetchText(manifestUrl(type)); dbg+='fetchText returned '+(raw?raw.length+' chars':'EMPTY')+': '+(raw?raw.substring(0,100):'(nothing)')+'\n'; }catch(e2){ dbg+='fetchText threw: '+(e2&&e2.message?e2.message:e2)+'\n'; }
+        dbg+='Exception: '+(e&&e.message?e.message:e)+'\n';
+        dbg+='Bridge present: '+(b?'yes':'no');
+        diagLog(dbg);
+        say(LABELS[type]+' download failed \u2014 see details below.');
+      }
     },300);
   }
 
@@ -908,6 +980,7 @@ var ASSETVER=(function(){
       document.getElementById('adm-dispatch').addEventListener('click',function(){
         try{ if(typeof window.toggleDispatchLog==='function') window.toggleDispatchLog(true); }catch(e){}
       });
+      document.getElementById('adm-testconn').addEventListener('click',function(){ testConnection(); });
       confirmWire();
       // Refresh the per-type tags whenever settings opens.
       document.getElementById('help-btn').addEventListener('click',function(){
