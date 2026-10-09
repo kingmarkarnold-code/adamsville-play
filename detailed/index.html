@@ -147,7 +147,7 @@
     border-radius:74px; border:3px solid rgba(255,255,255,.75); background:rgba(10,14,20,.85); }
   #fullmap { position:fixed; inset:0; z-index:35; display:none; background:rgba(5,8,14,.94); }
   #fullmap.show { display:block; }
-  #fullmap-canvas { position:absolute; inset:0; width:100%; height:100%; }
+  #fullmap-canvas { position:absolute; inset:0; width:100%; height:100%; cursor:grab; }
   #fullmap-close { position:absolute; top:14px; right:14px; z-index:36; width:48px; height:48px;
     border-radius:24px; border:2px solid #fff; background:rgba(0,0,0,.6); color:#fff; font-size:24px; }
   #fullmap-title { position:absolute; top:16px; left:16px; color:#ffd75e; font-size:16px; font-weight:bold;
@@ -307,7 +307,7 @@
   <b>Driving:</b> left &#9664; &#9654; buttons steer, right pedals = gas / brake / handbrake.<br>
   <b>Action button</b> (teal): ENTER/EXIT the Safari van, ENTER/EXIT house at the doors, PICK UP items.<br>
   <b>Inventory:</b> backpack button (right of the minimap) or press I — tap DROP to put an item back down.<br>
-  <b>Minimap</b> (top-left): tap to open the full map (opens on you, zoomed in) — pinch to zoom, drag to pan, tap to close.<br>
+  <b>Minimap</b> (top-left): tap to open the full map (opens on you, zoomed in) — pinch to zoom, drag to pan, tap to close. On desktop: drag with the mouse to pan, scroll wheel to zoom, click to close.<br>
   <b>Goal:</b> check the world, streets, controls and the van.<br>
   <button id="help-close">Got it</button>
 </div></div>
@@ -4798,7 +4798,7 @@ document.getElementById('fullmap-close').addEventListener('click', closeFullMap)
 // v0.5: tap (not drag) on the map closes it; mouse click still works (guarded
 // against the synthetic click that follows a touch)
 fmCanvas.addEventListener('click', function(){
-  if (Date.now()-fmT.lastTouch>600) closeFullMap();
+  if (Date.now()-fmT.lastTouch>600 && Date.now()>(fmT.suppressClickUntil||0)) closeFullMap();
 });
 fmCanvas.addEventListener('touchstart', function(e){
   var ts=e.touches;  // all current touches (2nd finger's touchstart only lists the new one in changedTouches)
@@ -4863,6 +4863,53 @@ function fmTouchEnd(){
 }
 fmCanvas.addEventListener('touchend', fmTouchEnd);
 fmCanvas.addEventListener('touchcancel', function(){ fmT.pinch=null; fmT.pan=null; fmT.tapOk=false; fmT.lastTouch=Date.now(); });
+/* v1.13: MOUSE controls for desktop/laptop - click-drag to pan, wheel to zoom.
+   Touch handlers above cover mobile; these cover mouse users. */
+fmT.mDown=false; fmT.mPan=null; fmT.mDragged=false; fmT.suppressClickUntil=0;
+fmCanvas.addEventListener('mousedown', function(e){
+  if (e.button!==0) return;  // left button only
+  fmT.mDown=true; fmT.mDragged=false;
+  fmT.mPan={lx:e.clientX, ly:e.clientY};
+  fmT.tapOk=true; fmT.tapX=e.clientX; fmT.tapY=e.clientY; fmT.tapT=Date.now();
+  fmCanvas.style.cursor='grabbing';
+  e.preventDefault();
+});
+fmCanvas.addEventListener('mousemove', function(e){
+  if (!fmT.mDown || !fmT.mPan) return;
+  var dx=e.clientX-fmT.mPan.lx, dy=e.clientY-fmT.mPan.ly;
+  if (Math.hypot(e.clientX-fmT.tapX, e.clientY-fmT.tapY)>12){ fmT.tapOk=false; fmT.mDragged=true; }
+  var _r=fmView.rot||0, _c=Math.cos(_r), _s=Math.sin(_r);
+  var _pdx=dx/fmView.sc, _pdz=dy/fmView.sc;
+  fmView.cx-=(_pdx*_c+_pdz*_s); fmView.cz-=(-_pdx*_s+_pdz*_c);
+  fmT.mPan.lx=e.clientX; fmT.mPan.ly=e.clientY;
+  drawFullMap();
+});
+function fmMouseUp(){
+  var wasTap=fmT.mDown && fmT.tapOk && (Date.now()-fmT.tapT)<500;
+  fmT.mDown=false; fmT.mPan=null;
+  fmCanvas.style.cursor='grab';
+  if (wasTap){ fmT.suppressClickUntil=Date.now()+400; fmT.tapOk=false; closeFullMap(); }
+  else if (fmT.mDragged){ fmT.suppressClickUntil=Date.now()+400; fmT.tapOk=false; }  // drag, not a click
+  fmT.mDragged=false;
+}
+fmCanvas.addEventListener('mouseup', fmMouseUp);
+fmCanvas.addEventListener('mouseleave', function(){ fmT.mDown=false; fmT.mPan=null; fmT.tapOk=false; fmT.mDragged=false; fmCanvas.style.cursor='grab'; });
+fmCanvas.addEventListener('wheel', function(e){
+  e.preventDefault();
+  var W=fmCanvas.width, H=fmCanvas.height;
+  var mx=e.clientX, my=e.clientY;
+  var rot=fmView.rot||0, cr=Math.cos(rot), sr=Math.sin(rot);
+  // world point under the cursor stays fixed through the zoom (anchor zoom)
+  var ox=(mx-W/2)/fmView.sc, oy=(my-H/2)/fmView.sc;
+  var wx=fmView.cx+ox*cr+oy*sr, wz=fmView.cz-ox*sr+oy*cr;
+  var sc=fmView.sc*(e.deltaY<0?1.18:1/1.18);  // scroll up = zoom in
+  sc=Math.max(fmView.scFit, Math.min(Math.min(W,H)/250, sc));  // whole world .. 250u
+  fmView.sc=sc;
+  ox=(mx-W/2)/sc; oy=(my-H/2)/sc;
+  fmView.cx=wx-(ox*cr+oy*sr);
+  fmView.cz=wz-(-ox*sr+oy*cr);
+  drawFullMap();
+}, {passive:false});
 var fullMapOpen=false;
 /* v0.5 full map: opens CENTERED ON THE PLAYER zoomed to the local area
    (bigger screen shows more detail than the minimap); pinch-to-zoom,
