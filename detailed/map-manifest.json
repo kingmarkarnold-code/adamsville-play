@@ -1,0 +1,48 @@
+{
+  "version": "1.11.0",
+  "map_version": "2026.10.09.2",
+  "files": [
+    {
+      "name": "roads.js",
+      "sha256": "fe11fd3b3e96be2b",
+      "size": 2858051,
+      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/roads.js"
+    },
+    {
+      "name": "junction_pins.js",
+      "sha256": "5f8fe4f42c3e784b",
+      "size": 1682469,
+      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/junction_pins.js"
+    },
+    {
+      "name": "osm_buildings.js",
+      "sha256": "e5fa16bdfba7975f",
+      "size": 453738,
+      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/osm_buildings.js"
+    },
+    {
+      "name": "gas_stations_real.js",
+      "sha256": "1c8f8464c00624a8",
+      "size": 9670,
+      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/gas_stations_real.js"
+    },
+    {
+      "name": "exit_signs.js",
+      "sha256": "7fd11adee8fd6894",
+      "size": 56473,
+      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/exit_signs.js"
+    },
+    {
+      "name": "elev.js",
+      "sha256": "bb66e57a0788be0a",
+      "size": 3640,
+      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/elev.js"
+    },
+    {
+      "name": "terrain_lifts.js",
+      "sha256": "4924d529b50c7776",
+      "size": 359080,
+      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/terrain_lifts.js"
+    }
+  ]
+}

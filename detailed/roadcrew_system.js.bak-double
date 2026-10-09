@@ -1,0 +1,712 @@
+/* ============================================================================
+   SURVIVING ADAMSVILLE — ROAD CREW / DISPATCH SYSTEM (v1.0)
+   ----------------------------------------------------------------------------
+   Joshua's vision: road crew NPCs patrol the map. When one finds a road that
+   doesn't function (gap, disconnect, broken junction) it calls DISPATCH, gets
+   the true specs, and a repair crew is sent: warning signs, cones, detour
+   roads while they work. The dispatch office holds the reference data (what
+   the map is SUPPOSED to look like) so the lead supervisor can direct repairs.
+
+   STANDALONE MODULE. Include AFTER the main game script — zero edits to
+   index.html required:
+
+       <script src="roadcrew_system.js"></script>
+
+   What it does:
+     1. DISPATCH OFFICE — small building near the Fulton Industrial corridor
+        with a spec board (canvas texture listing every flagged defect, its
+        true specs from the audit, and live status) + lead supervisor NPC.
+     2. PATROL UNITS — 2 road-crew trucks driving real road polylines. When a
+        unit comes within discovery range of a structural defect it stops,
+        radios dispatch (log + toast), and resumes patrol.
+     3. REPAIR RESPONSE — dispatch sends a crew truck + 2 workers to the site.
+        They place ROAD WORK AHEAD signs, cones, and DETOUR markers, work for
+        a while (repair animation), then lay a fresh asphalt patch, pull the
+        signs, and leave. Defect marked FIXED in the dispatch log.
+     4. DISPATCH LOG — HUD button (🚧) opens a panel: defects, true specs,
+        status, and a timestamped event log. Persists in localStorage.
+
+   Defect truth data is embedded from the Street View audit
+   (streetview-audit/discrepancies.json) — the dispatch "reference database".
+
+   Design: simple sim logic (Joshua's rule). No pathfinding (road data is
+   fragmented) — patrols follow real road polylines; crews arrive at sites
+   directly. Everything guarded: if any dependency is missing the module
+   stays off and the game is unaffected.
+   ============================================================================ */
+(function(){
+'use strict';
+if (window.__roadcrewV1) return;
+window.__roadcrewV1 = true;
+
+/* ---------------- config ---------------- */
+var DISCOVER_R   = 70;     // patrol spots a defect inside this radius (u)
+var INSPECT_T    = 3;      // seconds the patrol unit stops to "radio in"
+var DISPATCH_T   = 6;      // seconds from found -> crew dispatched
+var REPAIR_T     = 75;     // seconds the crew works a site
+var PATROL_SPEED = 14;
+var N_PATROLS    = 2;
+var FALLBACK_T   = 240;    // undiscovered after this long -> "driver report"
+var LS_KEY       = 'sa_roadcrew_v1';
+
+/* ---------------- defect database (from discrepancies.json) ----------------
+   state: undiscovered | inspecting | found | dispatched | repairing | fixed   */
+var DEFECTS=[
+ {id:'OPEN-1', kind:'road', structural:true, street:'I-20',
+  x:4318.5, z:2871.1, patchW:64, patchD:12,
+  desc:'I-20 has a 124-unit gap in the data — the highway ribbon ends abruptly and resumes 124 units later with no deck or connector covering it.',
+  truth:'Street View: I-20 runs continuously here. Census TIGER 2024 shows 8 real road points through the gap.',
+  fix:'Add the 8 missing I-20 points (TIGER 2024) to close the gap.',
+  state:'undiscovered'},
+ {id:'OPEN-5', kind:'road', structural:true, street:'Utoy Cir SW x Dollar Mill Rd SW',
+  x:3160.1, z:3613.7, patchW:22, patchD:14,
+  desc:'Possible road stub sticking into the grass where Utoy Cir meets Dollar Mill Rd at the north junction.',
+  truth:'Street View (Feb 2025): normal connected intersection, no stub visible. Joshua reported the stub — his ground truth rules.',
+  fix:'Square off / trim the stub if confirmed on the ground; otherwise verify and close.',
+  state:'undiscovered'},
+ /* non-structural: logged at dispatch, monitored, no crew sent */
+ {id:'OPEN-2', kind:'sign', structural:false, street:'I-85 / I-75 / I-285 / I-20 signs',
+  x:5638.5, z:7345.9,
+  desc:'Highway signs read "I- 85" (stray space) on 21 road segments.',
+  truth:'Real signs read "I-85" — no space.', fix:'Strip the space in the label data.',
+  state:'monitoring'},
+ {id:'OPEN-3', kind:'data', structural:false, street:'8 segments named just "SW"',
+  x:-128.4, z:5537.2,
+  desc:'8 road segments named just "SW" — a data-parsing artifact.',
+  truth:'Real names unknown — needs research.', fix:'Research true names, then rename.',
+  state:'monitoring'},
+ {id:'OPEN-4', kind:'data', structural:false, street:'"Unnamed St" near home base',
+  x:2959.6, z:3894.5,
+  desc:'1,934 road segments have no name at all ("Unnamed St").',
+  truth:'Real names need Street View research, one street at a time.', fix:'Research and name.',
+  state:'monitoring'}
+];
+
+/* ---------------- state ---------------- */
+var RC={ ready:false, tick:0, time:0,
+  patrols:[], jobs:[], log:[],
+  dispatch:null, boardTex:null, boardCanvas:null,
+  patchMeshes:[], uiBuilt:false, panelOpen:false, repT:0 };
+
+/* ---------------- tiny helpers ---------------- */
+function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
+function dist2(ax,az,bx,bz){ var dx=ax-bx,dz=az-bz; return dx*dx+dz*dz; }
+function groundY(x,z){ try{ var y=heightAt(x,z); return isFinite(y)?y:0; }catch(e){ return 0; } }
+function toast(msg,ms){ try{ if(typeof showToast==='function') showToast(msg,ms||2600); }catch(e){} }
+function nowT(){ var d=new Date(); function p(n){return (n<10?'0':'')+n;} return p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds()); }
+
+function dlog(msg){
+  RC.log.push({t:nowT(), msg:msg});
+  if (RC.log.length>60) RC.log.splice(0, RC.log.length-60);
+  saveLS(); refreshPanel(); refreshBoard();
+  try{ Report.setSys('roadcrew', sysReport()); }catch(e){}
+}
+function sysReport(){
+  var st={}; DEFECTS.forEach(function(d){ st[d.id]=d.state; });
+  return {status:'ok', version:'1.0', defects:st,
+    activeRepairs:RC.jobs.length, patrols:RC.patrols.length,
+    logEntries:RC.log.length,
+    note:'road crew patrols 24/7 + dispatch office + repair crews (audit-driven)'};
+}
+
+/* ---------------- persistence ---------------- */
+function saveLS(){
+  try{
+    var st={}; DEFECTS.forEach(function(d){ st[d.id]=d.state; });
+    localStorage.setItem(LS_KEY, JSON.stringify({defects:st, log:RC.log.slice(-60)}));
+  }catch(e){}
+}
+function loadLS(){
+  try{
+    var raw=localStorage.getItem(LS_KEY); if(!raw) return;
+    var d=JSON.parse(raw);
+    if (d.defects) DEFECTS.forEach(function(x){
+      var s=d.defects[x.id];
+      if (s==='fixed' && x.structural) x.state='fixed';
+      /* in-progress states reset to undiscovered on reload — crew re-runs */
+    });
+    if (d.log && d.log.length) RC.log=d.log;
+  }catch(e){}
+}
+
+/* ---------------- canvas texture helpers ---------------- */
+function makeCanvas(w,h){
+  var c=document.createElement('canvas'); c.width=w; c.height=h;
+  return {c:c, ctx:c.getContext('2d')};
+}
+function signTexture(main, sub){
+  var k=makeCanvas(512,320), x=k.ctx;
+  x.fillStyle='#e8641b'; x.fillRect(0,0,512,320);
+  x.strokeStyle='#111'; x.lineWidth=14; x.strokeRect(10,10,492,300);
+  x.fillStyle='#111'; x.textAlign='center'; x.textBaseline='middle';
+  x.font='bold 64px sans-serif';
+  var words=main.split(' '), lines=[], line='';
+  words.forEach(function(w){ if((line+' '+w).trim().length>12){ lines.push(line.trim()); line=w; } else line+=' '+w; });
+  lines.push(line.trim());
+  var y0=160-(lines.length-1)*38-(sub?28:0);
+  lines.forEach(function(L,i){ x.fillText(L,256,y0+i*76); });
+  if (sub){ x.font='bold 40px sans-serif'; x.fillText(sub,256,y0+lines.length*76-8); }
+  var t=new THREE.CanvasTexture(k.c); t.anisotropy=2; return t;
+}
+function boardTexture(){
+  var k=makeCanvas(640,480), x=k.ctx;
+  function draw(){
+    x.fillStyle='#20242e'; x.fillRect(0,0,640,480);
+    x.fillStyle='#ffd75e'; x.textAlign='left'; x.textBaseline='top';
+    x.font='bold 30px sans-serif';
+    x.fillText('ROAD DISPATCH — SPEC BOARD', 18, 14);
+    x.font='20px sans-serif'; x.fillStyle='#9fb2cc';
+    x.fillText('true specs from Street View audit', 18, 50);
+    var y=92;
+    DEFECTS.forEach(function(d){
+      var col = d.state==='fixed' ? '#51d651' :
+                d.state==='repairing'||d.state==='dispatched' ? '#ffb02e' :
+                d.state==='found'||d.state==='inspecting' ? '#6ec6ff' : '#c9c9c9';
+      x.fillStyle=col; x.font='bold 22px sans-serif';
+      x.fillText(d.id+'  '+d.street, 18, y);
+      x.fillStyle='#8a93a6'; x.font='19px sans-serif';
+      var st=d.state.toUpperCase();
+      x.fillText('status: '+st, 18, y+26);
+      y+=62;
+      if (y>430) return;
+    });
+    x.fillStyle='#5a6376'; x.font='18px sans-serif';
+    x.fillText('supervisor on duty — repairs auto-dispatched', 18, 446);
+  }
+  draw();
+  var t=new THREE.CanvasTexture(k.c); t.anisotropy=2;
+  return {tex:t, redraw:function(){ draw(); t.needsUpdate=true; }};
+}
+function labelSprite(text){
+  var k=makeCanvas(512,128), x=k.ctx;
+  x.fillStyle='rgba(20,24,34,0.85)';
+  var w=x.measureText(text).width;
+  x.font='bold 52px sans-serif';
+  var tw=x.measureText(text).width;
+  x.fillRect(256-tw/2-24, 14, tw+48, 100);
+  x.strokeStyle='#ffb02e'; x.lineWidth=6;
+  x.strokeRect(256-tw/2-24, 14, tw+48, 100);
+  x.fillStyle='#ffb02e'; x.textAlign='center'; x.textBaseline='middle';
+  x.fillText(text, 256, 66);
+  var t=new THREE.CanvasTexture(k.c);
+  var m=new THREE.SpriteMaterial({map:t, depthTest:false, transparent:true});
+  var s=new THREE.Sprite(m); s.scale.set(26,6.5,1); return s;
+}
+
+/* ---------------- mesh factories (stylized, low-poly) ---------------- */
+function mat(color, emissive){
+  return new THREE.MeshLambertMaterial({color:color, emissive:emissive||0x000000});
+}
+function box(w,h,d,color,emissive){
+  return new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat(color,emissive));
+}
+/* work truck: cab + utility bed + light bar. faces +Z. */
+function makeWorkTruck(){
+  var g=new THREE.Group();
+  var white=0xf2f2f2, orange=0xe8641b, dark=0x222226;
+  var chassis=box(2.2,0.5,5.4,dark); chassis.position.y=0.55; g.add(chassis);
+  var cab=box(2.2,1.5,1.9,white); cab.position.set(0,1.55,1.6); g.add(cab);
+  var shield=box(1.9,0.8,0.12,0x1c2733); shield.position.set(0,1.7,2.56); g.add(shield);
+  var bed=box(2.2,1.0,2.9,white); bed.position.set(0,1.3,-1.0); g.add(bed);
+  var stripe=box(2.24,0.3,2.94,orange); stripe.position.set(0,1.35,-1.0); g.add(stripe);
+  var bar=box(1.3,0.28,0.45,orange,0xcc5500); bar.position.set(0,2.45,1.6); g.add(bar);
+  g.userData.lightBar=bar;
+  /* rear arrow board — the unmistakable road-crew signature: chevron panel */
+  var ak=makeCanvas(256,128), ax2=ak.ctx;
+  ax2.fillStyle='#1a1a1a'; ax2.fillRect(0,0,256,128);
+  ax2.fillStyle='#ffb02e';
+  for (var ci=0;ci<3;ci++){
+    var cx0=40+ci*64;
+    ax2.beginPath();
+    ax2.moveTo(cx0,14); ax2.lineTo(cx0+44,64); ax2.lineTo(cx0,114);
+    ax2.lineTo(cx0+26,114); ax2.lineTo(cx0+70,64); ax2.lineTo(cx0+26,14);
+    ax2.closePath(); ax2.fill();
+  }
+  var atx=new THREE.CanvasTexture(ak.c);
+  var aboard=new THREE.Mesh(new THREE.PlaneGeometry(2.6,1.3),
+    new THREE.MeshLambertMaterial({map:atx, emissive:0x664400, side:THREE.DoubleSide}));
+  aboard.position.set(0,2.6,-2.55); aboard.rotation.y=Math.PI; g.add(aboard);
+  g.userData.arrowBoard=aboard;
+  var wg=new THREE.CylinderGeometry(0.45,0.45,0.35,10);
+  var wm=mat(0x141414);
+  [[-1.05,1.7],[1.05,1.7],[-1.05,-1.5],[1.05,-1.5]].forEach(function(p){
+    var w=new THREE.Mesh(wg,wm); w.rotation.z=Math.PI/2;
+    w.position.set(p[0],0.45,p[1]); g.add(w);
+  });
+  g.userData.wheels=[];
+  return g;
+}
+/* road worker figure: hi-vis uniform — instantly recognizable as the repair
+   crew. Bright safety-orange vest with reflective stripes (emissive so it
+   pops at any distance), yellow hard hat. Nobody else in the game dresses
+   like this. */
+function makeWorker(hatColor){
+  var g=new THREE.Group();
+  var legs=box(0.5,0.7,0.34,0x2e3a55); legs.position.y=0.35; g.add(legs);
+  // hi-vis vest: brighter orange + emissive
+  var torso=new THREE.Mesh(new THREE.BoxGeometry(0.62,0.72,0.4),
+    new THREE.MeshLambertMaterial({color:0xff6a00, emissive:0x5e2400}));
+  torso.position.y=1.06; g.add(torso);
+  // two reflective stripes
+  var s1=new THREE.Mesh(new THREE.BoxGeometry(0.64,0.1,0.42),
+    new THREE.MeshLambertMaterial({color:0xf2f2f2, emissive:0x555555}));
+  s1.position.y=1.18; g.add(s1);
+  var s2=s1.clone(); s2.position.y=0.98; g.add(s2);
+  var head=box(0.36,0.36,0.36,0x6b4429); head.position.y=1.6; g.add(head);
+  var hat=new THREE.Mesh(new THREE.BoxGeometry(0.44,0.16,0.44),
+    new THREE.MeshLambertMaterial({color:hatColor||0xf5d020, emissive:0x333300}));
+  hat.position.y=1.84; g.add(hat);
+  var armL=new THREE.Mesh(new THREE.BoxGeometry(0.16,0.6,0.16),
+    new THREE.MeshLambertMaterial({color:0xff6a00, emissive:0x5e2400}));
+  armL.position.set(-0.4,1.05,0); g.add(armL);
+  var armR=armL.clone(); armR.position.set(0.4,1.05,0); g.add(armR);
+  g.userData.armL=armL; g.userData.armR=armR;
+  return g;
+}
+/* warning sign: posts + textured panel. */
+function makeSign(main, sub){
+  var g=new THREE.Group();
+  var p1=box(0.18,3.2,0.18,0x555c66); p1.position.set(-1.2,1.6,0); g.add(p1);
+  var p2=box(0.18,3.2,0.18,0x555c66); p2.position.set(1.2,1.6,0); g.add(p2);
+  var panel=new THREE.Mesh(new THREE.PlaneGeometry(4.4,2.75),
+    new THREE.MeshLambertMaterial({map:signTexture(main,sub), side:THREE.DoubleSide}));
+  panel.position.y=3.4; g.add(panel);
+  return g;
+}
+/* detour arrow marker laid flat on the ground. */
+function makeDetourArrow(){
+  var k=makeCanvas(128,128), x=k.ctx;
+  x.fillStyle='#e8641b';
+  x.beginPath();
+  x.moveTo(64,8); x.lineTo(112,70); x.lineTo(80,70);
+  x.lineTo(80,120); x.lineTo(48,120); x.lineTo(48,70); x.lineTo(16,70);
+  x.closePath(); x.fill();
+  var t=new THREE.CanvasTexture(k.c);
+  var m=new THREE.Mesh(new THREE.PlaneGeometry(3,3),
+    new THREE.MeshLambertMaterial({map:t, transparent:true, side:THREE.DoubleSide}));
+  m.rotation.x=-Math.PI/2; m.position.y=0.12;
+  return m;
+}
+/* cone field (instanced) for one work zone. */
+function makeCones(cx,cz,y,heading){
+  var n=16;
+  var geo=new THREE.ConeGeometry(0.55,1.15,8);
+  var im=new THREE.InstancedMesh(geo, mat(0xe8641b), n);
+  var m4=new THREE.Matrix4(), q=new THREE.Quaternion(), s=new THREE.Vector3(1,1,1), p=new THREE.Vector3();
+  var hx=Math.sin(heading), hz=Math.cos(heading);
+  var px=hz, pz=-hx;   // perpendicular
+  for (var i=0;i<n;i++){
+    var t=i/(n-1), lx=(t-0.5)*26;         // 26u taper line across the road
+    var off=4+Math.sin(t*Math.PI)*6;      // bow outward around the work area
+    var x=cx+hx*lx+px*off, z=cz+hz*lx+pz*off;
+    p.set(x, groundY(x,z)+0.58, z); q.identity(); s.set(1,1,1);
+    m4.compose(p,q,s); im.setMatrixAt(i,m4);
+  }
+  im.instanceMatrix.needsUpdate=true;
+  im.frustumCulled=false;
+  return im;
+}
+/* fresh asphalt patch laid after a repair. */
+function makePatch(d, heading){
+  var g=new THREE.PlaneGeometry(d.patchW||24, d.patchD||12);
+  var m=new THREE.Mesh(g, mat(0x232326));
+  m.rotation.x=-Math.PI/2; m.rotation.z=-heading;
+  m.position.set(d.x, groundY(d.x,d.z)+0.08, d.z);
+  return m;
+}
+
+/* ---------------- road helpers ---------------- */
+function nearestRoad(x,z,highwayOnly){
+  var best=null, bestD=1e18, bestI=0;
+  try{
+    for (var i=0;i<roadDrawData.length;i++){
+      var r=roadDrawData[i];
+      if (!r||!r.pts||r.pts.length<2) continue;
+      if (highwayOnly && r.cat!=='highway') continue;
+      if (highwayOnly===false && r.cat==='highway') continue;
+      for (var j=0;j<r.pts.length;j++){
+        var p=r.pts[j], d=dist2(x,z,p[0],p[1]);
+        if (d<bestD){ bestD=d; best=r; bestI=j; }
+      }
+    }
+  }catch(e){}
+  return best?{seg:best, idx:bestI, dist:Math.sqrt(bestD)}:null;
+}
+function roadHeadingAt(nr){
+  try{
+    var pts=nr.seg.pts, i=clamp(nr.idx,0,pts.length-2);
+    var a=pts[i], b=pts[i+1];
+    return Math.atan2(b[0]-a[0], b[1]-a[1]);
+  }catch(e){ return 0; }
+}
+
+/* ---------------- patrol units ---------------- */
+function spawnPatrol(unitNo, dx, dz, highway){
+  var nr=nearestRoad(dx,dz,highway);
+  if (!nr) return null;
+  var truck=makeWorkTruck();
+  var p0=nr.seg.pts[nr.idx];
+  truck.position.set(p0[0], groundY(p0[0],p0[1]), p0[1]);
+  scene.add(truck);
+  // start a quarter-segment away so the unit is seen driving before it finds anything
+  var startI=clamp(Math.round(nr.idx+nr.seg.pts.length/4), 0, nr.seg.pts.length-1);
+  var u={no:unitNo, mesh:truck, seg:nr.seg, i:startI, dir:1,
+         speed:PATROL_SPEED, pauseT:0, target:null, blink:Math.random()*2};
+  RC.patrols.push(u);
+  return u;
+}
+function patrolTarget(u){
+  // the structural defect nearest this unit's patrol area
+  var best=null, bd=1e18;
+  DEFECTS.forEach(function(d){
+    if (!d.structural || d.state!=='undiscovered') return;
+    var dd=dist2(u.mesh.position.x,u.mesh.position.z,d.x,d.z);
+    if (dd<bd){ bd=dd; best=d; }
+  });
+  return best;
+}
+/* 24/7 operation: crews never stand down. Patrol units rotate through
+   Day / Evening / Night shifts so the map is always being watched. */
+var SHIFTS=['Day','Evening','Night'], SHIFT_LEN=240;
+function patrolShift(u){
+  return SHIFTS[Math.floor(RC.time/SHIFT_LEN+u.no)%3];
+}
+function updatePatrol(u, dt){
+  var m=u.mesh;
+  var sh=patrolShift(u);
+  if (u.shift!==sh){
+    u.shift=sh;
+    dlog('Unit '+u.no+' — '+sh+' shift on duty. Road crew runs 24/7.');
+  }
+  if (u.pauseT>0){
+    u.pauseT-=dt;
+    // radio flash while calling dispatch
+    var b=u.mesh.userData.lightBar;
+    if (b) b.visible=(RC.tick%10<5);
+    if (u.pauseT<=0 && u.target){
+      var d=u.target; u.target=null;
+      d.state='found';
+      dlog('Unit '+u.no+' found defect '+d.id+' ('+d.street+') — radioed dispatch.');
+      toast('🚧 Road crew found a road defect ('+d.street+') — dispatch notified');
+      setTimeout(function(){
+        if (d.state!=='found') return;
+        d.state='dispatched';
+        dlog('Dispatch pulled true specs for '+d.id+': "'+d.truth+'" — sending repair crew.');
+        dispatchRepair(d);
+      }, DISPATCH_T*1000);
+    }
+    return;
+  }
+  // drive along the polyline
+  var pts=u.seg.pts, n=pts.length;
+  var a=pts[clamp(Math.round(u.i),0,n-1)], b=pts[clamp(Math.round(u.i)+u.dir,0,n-1)];
+  var dx=b[0]-a[0], dz=b[1]-a[1], L=Math.hypot(dx,dz)||1;
+  u.i+=u.dir*(u.speed*dt)/L;
+  if (u.i>=n-1){ u.i=n-1; u.dir=-1; }
+  if (u.i<=0){ u.i=0; u.dir=1; }
+  var t=u.i-Math.floor(u.i), i0=clamp(Math.floor(u.i),0,n-2);
+  var p=pts[i0], q=pts[i0+1];
+  var x=p[0]+(q[0]-p[0])*t, z=p[1]+(q[1]-p[1])*t;
+  m.position.set(x, groundY(x,z)+0.05, z);
+  var hd=Math.atan2((q[0]-p[0])*u.dir,(q[1]-p[1])*u.dir);
+  m.rotation.y=hd;
+  var bar=m.userData.lightBar; if (bar) bar.visible=(RC.tick%20<10);
+  // discovery check
+  if (!u.target) u.target=patrolTarget(u);
+  if (u.target){
+    var d=u.target;
+    if (d.state!=='undiscovered'){ u.target=null; }
+    else if (dist2(x,z,d.x,d.z) < DISCOVER_R*DISCOVER_R){
+      u.pauseT=INSPECT_T;
+      d.state='inspecting';
+      dlog('Unit '+u.no+' stopped at suspected defect near '+d.street+' — inspecting.');
+    }
+  }
+}
+
+/* ---------------- dispatch office ---------------- */
+function clearGround(x,z){
+  try{ if (typeof onRoad==='function' && onRoad(x,z)) return false; }catch(e){}
+  return true;
+}
+function buildDispatch(){
+  // near the Fulton Industrial corridor, by the warehouses
+  var bx=2100, bz=3700, ok=false;
+  outer:
+  for (var r=0;r<60;r+=8){
+    for (var a=0;a<8;a++){
+      var x=bx+Math.cos(a/8*Math.PI*2)*r, z=bz+Math.sin(a/8*Math.PI*2)*r;
+      if (clearGround(x,z)){ bx=x; bz=z; ok=true; break outer; }
+    }
+  }
+  var y=groundY(bx,bz);
+  var g=new THREE.Group();
+  var hall=box(14,5,10,0xd8cfc0); hall.position.y=2.5; g.add(hall);
+  var roof=box(15,0.7,11,0x3a3f4a); roof.position.y=5.3; g.add(roof);
+  var door=box(2.2,3.4,0.3,0x2a2d33); door.position.set(0,1.7,5.05); g.add(door);
+  for (var i=-1;i<=1;i++){
+    var win=box(2.4,1.6,0.25,0x9fc6e8); win.position.set(i*4.4,3.1,5.05); g.add(win);
+  }
+  var sign=new THREE.Mesh(new THREE.PlaneGeometry(9,2.2),
+    new THREE.MeshLambertMaterial({map:signTexture('ROAD DISPATCH','OPEN 24/7 — CITY OF ADAMSVILLE'), side:THREE.DoubleSide}));
+  sign.position.set(0,6.6,5.1); g.add(sign);
+  // spec board on posts out front
+  var post1=box(0.3,4.4,0.3,0x555c66); post1.position.set(-3.2,2.2,8.5); g.add(post1);
+  var post2=box(0.3,4.4,0.3,0x555c66); post2.position.set(3.2,2.2,8.5); g.add(post2);
+  var bt=boardTexture(); RC.boardTex=bt;
+  var board=new THREE.Mesh(new THREE.PlaneGeometry(7.2,5.4),
+    new THREE.MeshLambertMaterial({map:bt.tex, side:THREE.DoubleSide}));
+  board.position.set(0,3.4,8.5); board.rotation.y=0; g.add(board);
+  // lead supervisor by the door
+  var sup=makeWorker(0xf5f5f5); sup.position.set(3.4,0,5.9); g.add(sup);
+  // floating label
+  var label=labelSprite('🚧 DISPATCH OFFICE');
+  label.position.set(0,10.5,0); g.add(label);
+  g.position.set(bx,y,bz);
+  g.rotation.y=Math.PI; // face the road side
+  scene.add(g);
+  RC.dispatch={x:bx, z:bz, group:g, label:label};
+  dlog('Dispatch office open near Fulton Industrial corridor — spec board holds the audit truth data.');
+}
+function refreshBoard(){
+  try{ if (RC.boardTex) RC.boardTex.redraw(); }catch(e){}
+}
+
+/* ---------------- repair jobs ---------------- */
+function dispatchRepair(d){
+  var nr=nearestRoad(d.x,d.z, d.id==='OPEN-1');
+  var heading=nr?roadHeadingAt(nr):0;
+  var y=groundY(d.x,d.z);
+  var hx=Math.sin(heading), hz=Math.cos(heading);
+  var px=hz, pz=-hx;
+  var grp=new THREE.Group(); scene.add(grp);
+  // crew truck parked to the side
+  var truck=makeWorkTruck();
+  truck.position.set(d.x+px*14, groundY(d.x+px*14,d.z+pz*14)+0.05, d.z+pz*14);
+  truck.rotation.y=heading+0.3; grp.add(truck);
+  // two workers at the defect
+  var workers=[];
+  [[-4,2],[4,-3]].forEach(function(o){
+    var w=makeWorker();
+    var wx=d.x+o[0], wz=d.z+o[1];
+    w.position.set(wx, groundY(wx,wz), wz);
+    w.rotation.y=Math.random()*6.28; grp.add(w); workers.push(w);
+  });
+  // signs: ROAD WORK AHEAD both approaches + DETOUR pair
+  var signs=[];
+  [[-58,0],[58,0]].forEach(function(o){
+    var s=makeSign('ROAD WORK AHEAD','');
+    var sx=d.x+hx*o[0]+px*7, sz=d.z+hz*o[0]+pz*7;
+    s.position.set(sx, groundY(sx,sz), sz);
+    s.rotation.y=heading+(o[0]<0?0:Math.PI); grp.add(s); signs.push(s);
+  });
+  [[-30,1],[30,1]].forEach(function(o){
+    var s=makeSign('DETOUR','FOLLOW ARROWS');
+    var sx=d.x+hx*o[0]-px*9, sz=d.z+hz*o[0]-pz*9;
+    s.position.set(sx, groundY(sx,sz), sz);
+    s.rotation.y=heading+(o[0]<0?0:Math.PI); grp.add(s); signs.push(s);
+  });
+  // cones taper + detour arrow trail curving around the zone
+  var cones=makeCones(d.x,d.z,y,heading); grp.add(cones);
+  var arrows=[];
+  for (var i=0;i<6;i++){
+    var t=i/5, ax=d.x+hx*(t-0.5)*70-px*(10+Math.sin(t*Math.PI)*10);
+    var az=d.z+hz*(t-0.5)*70-pz*(10+Math.sin(t*Math.PI)*10);
+    var ar=makeDetourArrow();
+    ar.position.set(ax, groundY(ax,az)+0.12, az);
+    ar.rotation.z=-heading;
+    grp.add(ar); arrows.push(ar);
+  }
+  d.state='repairing';
+  RC.jobs.push({defect:d, group:grp, truck:truck, workers:workers,
+    signs:signs, cones:cones, arrows:arrows, t:0, heading:heading});
+  dlog('Repair crew on site at '+d.id+' ('+d.street+') — signs, cones and detour placed.');
+  toast('🚧 Repair crew working on '+d.street+' — detour in place');
+  try{ Report.setSys('roadcrew', sysReport()); }catch(e){}
+}
+function finishRepair(job){
+  var d=job.defect;
+  // lay the fresh asphalt patch
+  var patch=makePatch(d, job.heading);
+  scene.add(patch); RC.patchMeshes.push(patch);
+  // pull the work zone
+  scene.remove(job.group);
+  d.state='fixed';
+  dlog(d.id+' ('+d.street+') REPAIRED — fresh asphalt laid per true specs. Crew clear.');
+  toast('✅ '+d.street+' repaired — road is fixed');
+  saveLS();
+  try{ Report.setSys('roadcrew', sysReport()); }catch(e){}
+  refreshBoard(); refreshPanel();
+}
+function updateJobs(dt){
+  for (var i=RC.jobs.length-1;i>=0;i--){
+    var j=RC.jobs[i]; j.t+=dt;
+    // workers: simple repair animation (bob + arm swing)
+    j.workers.forEach(function(w,k){
+      w.position.y+=Math.sin(RC.time*7+k*2.4)*0.012;
+      w.rotation.y+=Math.sin(RC.time*1.3+k)*0.01;
+      var a=w.userData.armR; if(a) a.rotation.x=Math.sin(RC.time*7+k)*0.7;
+    });
+    var bar=j.truck.userData.lightBar; if (bar) bar.visible=(RC.tick%14<7);
+    if (j.t>=REPAIR_T){
+      finishRepair(j);
+      RC.jobs.splice(i,1);
+    }
+  }
+}
+
+/* ---------------- HUD: dispatch button + log panel ---------------- */
+function buildUI(){
+  if (RC.uiBuilt) return; RC.uiBuilt=true;
+  try{
+    var css=document.createElement('style');
+    css.textContent=
+      '#rc-btn{position:fixed;left:16px;bottom:316px;z-index:20;width:52px;height:52px;border-radius:12px;'+
+      'border:2px solid #ffb02e;background:rgba(20,24,34,.88);color:#ffb02e;font-size:24px;}'+
+      '#rc-panel{position:fixed;inset:0;z-index:50;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.72);}'+
+      '#rc-panel.show{display:flex;}'+
+      '#rc-panel .card{background:#161b26;border-radius:14px;padding:20px 22px;max-width:470px;width:88%;max-height:74vh;display:flex;flex-direction:column;}'+
+      '#rc-panel h3{margin:0 0 4px 0;color:#ffb02e;}'+
+      '#rc-panel .sub{color:#8a93a6;font-size:13px;margin-bottom:10px;}'+
+      '#rc-list{overflow-y:auto;flex:1;min-height:80px;}'+
+      '.rc-def{margin:10px 0;padding:10px 12px;border-radius:10px;border:2px solid #444;background:#222836;color:#fff;font-size:14px;}'+
+      '.rc-def .rid{font-weight:bold;color:#ffb02e;}'+
+      '.rc-def .st{float:right;font-weight:bold;}'+
+      '.rc-def .truth{color:#9fb2cc;font-size:13px;margin-top:6px;}'+
+      '.rc-log{margin:6px 0;padding:6px 10px;font-size:13px;color:#c9c9c9;border-left:3px solid #ffb02e;}'+
+      '.rc-log .lt{color:#8a93a6;margin-right:8px;}'+
+      '#rc-close{margin-top:12px;padding:10px 18px;font-size:15px;border-radius:10px;border:none;background:#ffb02e;color:#111;font-weight:bold;width:100%;}';
+    document.head.appendChild(css);
+    var btn=document.createElement('button');
+    btn.id='rc-btn'; btn.title='Road dispatch log'; btn.innerHTML='🚧';
+    btn.addEventListener('click', function(){ togglePanel(); });
+    document.body.appendChild(btn);
+    var panel=document.createElement('div');
+    panel.id='rc-panel';
+    panel.innerHTML='<div class="card"><h3>🚧 Road Dispatch</h3>'+
+      '<div class="sub">True specs from the Street View audit — crew on duty 24/7</div>'+
+      '<div id="rc-list"></div><button id="rc-close">Close</button></div>';
+    document.body.appendChild(panel);
+    document.getElementById('rc-close').addEventListener('click', function(){ togglePanel(false); });
+  }catch(e){}
+}
+function stateColor(s){
+  return s==='fixed' ? '#51d651' :
+         (s==='repairing'||s==='dispatched') ? '#ffb02e' :
+         (s==='found'||s==='inspecting') ? '#6ec6ff' : '#c9c9c9';
+}
+function refreshPanel(){
+  if (!RC.uiBuilt) return;
+  try{
+    var el=document.getElementById('rc-list'); if(!el) return;
+    var h='';
+    DEFECTS.forEach(function(d){
+      h+='<div class="rc-def"><span class="rid">'+d.id+'</span> '+d.street+
+         '<span class="st" style="color:'+stateColor(d.state)+'">'+d.state.toUpperCase()+'</span><br>'+
+         '<div class="truth">TRUE SPECS: '+d.truth+'<br>FIX: '+d.fix+'</div></div>';
+    });
+    h+='<div class="sub" style="margin-top:8px">EVENT LOG</div>';
+    var logs=RC.log.slice(-20).reverse();
+    if (!logs.length) h+='<div class="rc-log">No events yet — patrols are out.</div>';
+    logs.forEach(function(e){
+      h+='<div class="rc-log"><span class="lt">'+e.t+'</span>'+e.msg+'</div>';
+    });
+    el.innerHTML=h;
+  }catch(e){}
+}
+function togglePanel(force){
+  try{
+    RC.panelOpen = (typeof force==='boolean') ? force : !RC.panelOpen;
+    var p=document.getElementById('rc-panel');
+    if (p){ if(RC.panelOpen){ refreshPanel(); p.classList.add('show'); } else p.classList.remove('show'); }
+  }catch(e){}
+}
+window.toggleDispatchLog=togglePanel;
+
+/* ---------------- fallback: driver reports ---------------- */
+function fallbackCheck(dt){
+  RC.time+=dt;
+  DEFECTS.forEach(function(d){
+    if (!d.structural || d.state!=='undiscovered') return;
+    d._age=(d._age||0)+dt;
+    if (d._age>FALLBACK_T){
+      d.state='found';
+      dlog('Driver report: defect '+d.id+' ('+d.street+') called in by a motorist — dispatching.');
+      toast('🚧 Driver reported a road defect ('+d.street+') — dispatch notified');
+      setTimeout(function(){
+        if (d.state!=='found') return;
+        d.state='dispatched';
+        dlog('Dispatch pulled true specs for '+d.id+' — sending repair crew.');
+        dispatchRepair(d);
+      }, DISPATCH_T*1000);
+    }
+  });
+}
+
+/* ---------------- main loop ---------------- */
+function updateRoadCrew(dt){
+  if (!RC.ready) return;
+  try{
+    dt=Math.min(0.05, dt||0.016);
+    RC.tick++;
+    var i;
+    for (i=0;i<RC.patrols.length;i++) updatePatrol(RC.patrols[i], dt);
+    updateJobs(dt);
+    fallbackCheck(dt);
+    RC.repT-=dt;
+    if (RC.repT<=0){ RC.repT=10; try{ Report.setSys('roadcrew', sysReport()); }catch(e){} }
+  }catch(e){}
+}
+
+/* ---------------- init ---------------- */
+function initRoadCrew(){
+  loadLS();
+  buildDispatch();
+  buildUI();
+  // patrol 1: I-20 corridor (covers OPEN-1)
+  spawnPatrol(1, 4318.5, 2871.1, true);
+  // patrol 2: home-base / Dollar Mill area (covers OPEN-5)
+  spawnPatrol(2, 3160.1, 3613.7, false);
+  // re-lay patches for defects already fixed in a past session
+  DEFECTS.forEach(function(d){
+    if (d.structural && d.state==='fixed'){
+      var nr=nearestRoad(d.x,d.z, d.id==='OPEN-1');
+      var patch=makePatch(d, nr?roadHeadingAt(nr):0);
+      scene.add(patch); RC.patchMeshes.push(patch);
+    }
+  });
+  if (!RC.log.length) dlog('Road crew system online — 2 patrol units out, 24/7 operation. Continuously repairing the map, keeping it accurate.');
+  RC.ready=true;
+  try{ Report.setSys('roadcrew', sysReport()); }catch(e){}
+  window.ROADCREW={defects:DEFECTS, log:RC.log, toggle:togglePanel};
+  // hook into the frame loop (chains with other module wraps)
+  try{
+    if (typeof animate==='function' && !animate.__roadcrewWrap){
+      var orig=animate;
+      var wrapped=function(){ orig(); updateRoadCrew(0.016); };
+      wrapped.__roadcrewWrap=true;
+      animate=wrapped;
+    }
+  }catch(e){}
+}
+var bootTries=0;
+var bootTimer=setInterval(function(){
+  bootTries++;
+  var ready=false;
+  try{
+    ready=(typeof THREE!=='undefined' && typeof scene!=='undefined' &&
+      typeof roadDrawData!=='undefined' && roadDrawData.length>100 &&
+      typeof animate==='function' &&
+      typeof heightAt==='function' && typeof onRoad==='function');
+  }catch(e){ ready=false; }
+  if (ready){
+    clearInterval(bootTimer);
+    try{ initRoadCrew(); }catch(e){
+      try{ if(typeof Report!=='undefined') Report.noteError('roadcrew','init failed',String(e&&e.message||e)); }catch(x){}
+    }
+  } else if (bootTries>240){
+    clearInterval(bootTimer);
+    try{ if(typeof Report!=='undefined') Report.noteError('roadcrew','boot-timeout','deps never ready'); }catch(e){}
+  }
+},500);
+})();

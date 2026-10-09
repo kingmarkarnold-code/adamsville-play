@@ -1,0 +1,227 @@
+/* ============================================================================
+   STRIP CLUBS + WAFFLE SPOT DINERS v1.0 (2026-10-09)
+   Joshua's specs:
+   - Real adult-entertainment venues on/near Fulton Industrial Blvd placed at
+     TRUE locations. Generic names (trademark rule). Walkable interiors:
+     lobby/bar area, stage area, seating — NO dancers, NO staff, NO explicit
+     content. Joshua decides interior content later.
+   - "Waffle Spot" restaurants at every real Waffle House location in the map.
+     Classic diner look: small rectangular building, big windows, yellow/black
+     sign reading "Waffle Spot". Enterable: counter with stools, booths,
+     visible grill area.
+
+   Self-contained module. Depends on globals: THREE, scene, heightAt,
+   spWall, spSlab, spRoof, spSignBoard, spParkingLot, spRegisterEnterable,
+   ENTERABLES, addCollider, addSegCollider, distToRoadEdge, placeStruct,
+   player, car, setDrivingUI, Report, LANDMARKS.
+   Loaded via <script src="clubs_diners.js"> after marriott.js.
+   ============================================================================ */
+
+/* ---------- strip club builder ----------
+   cx,cz = center. w,d = footprint. name = generic sign text.           */
+function cdBuildClub(cx, cz, w, d, name) {
+  var gy = heightAt(cx, cz);
+  var wallC = 0x3a3a42, trimC = 0xcc2233, inC = 0x2a2a30, floorC = 0x444448;
+  var x0 = cx - w / 2, x1 = cx + w / 2, z0 = cz - d / 2, z1 = cz + d / 2;
+
+  // exterior walls (front = +z faces road), door gap in front center
+  spWall(x0, z1, x1, z1, 5, wallC, gy, [{ at: w / 2, w: 3.2 }]);
+  spWall(x0, z0, x1, z0, 5, wallC, gy, []);
+  spWall(x0, z0, x0, z1, 5, wallC, gy, []);
+  spWall(x1, z0, x1, z1, 5, wallC, gy, []);
+  spSlab(cx, cz, w, d, floorC, gy, 0.15);
+  var roof = spRoof(cx, cz, w, d, 0x222226, gy, 5);
+  // neon-style sign band
+  spSignBoard(name, cx, gy + 4.2, z1 + 0.35, Math.min(w - 4, 30), '#7a1020', false);
+  // door canopy
+  var can = new THREE.Mesh(new THREE.BoxGeometry(6, 0.3, 3),
+    new THREE.MeshLambertMaterial({ color: 0x551122 }));
+  can.position.set(cx, gy + 3.4, z1 + 1.5); scene.add(can);
+  addCollider(cx, z1 + 1.5, 1.2);
+
+  /* ---- interior: lobby/bar + stage + seating (empty, no staff) ---- */
+  // bar counter along north wall
+  var bar = new THREE.Mesh(new THREE.BoxGeometry(w * 0.5, 1.1, 1.2),
+    new THREE.MeshLambertMaterial({ color: 0x5a3a22 }));
+  bar.position.set(cx - w * 0.18, gy + 0.7, z0 + 2.5); scene.add(bar);
+  addCollider(cx - w * 0.18, z0 + 2.5, w * 0.28);
+  // back bar shelf
+  var shelf = new THREE.Mesh(new THREE.BoxGeometry(w * 0.5, 2.2, 0.6),
+    new THREE.MeshLambertMaterial({ color: 0x3a2a1a }));
+  shelf.position.set(cx - w * 0.18, gy + 1.3, z0 + 1.2); scene.add(shelf);
+  addCollider(cx - w * 0.18, z0 + 1.2, w * 0.28);
+  // stage platform (empty) center-south
+  var stage = new THREE.Mesh(new THREE.BoxGeometry(8, 0.8, 6),
+    new THREE.MeshLambertMaterial({ color: 0x333338 }));
+  stage.position.set(cx + w * 0.15, gy + 0.55, cz); scene.add(stage);
+  addCollider(cx + w * 0.15, cz, 5);
+  // stage backdrop poles (no dancers — just poles)
+  [[-3.5, -2.5], [3.5, -2.5], [-3.5, 2.5], [3.5, 2.5]].forEach(function(o) {
+    var p = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 4.5, 8),
+      new THREE.MeshLambertMaterial({ color: 0xaaaaaa }));
+    p.position.set(cx + w * 0.15 + o[0], gy + 2.8, cz + o[1]); scene.add(p);
+  });
+  // seating tables around stage
+  [[-8, 0], [8, 0], [0, -7], [-8, -6], [8, -6]].forEach(function(o) {
+    var tx = cx + w * 0.15 + o[0], tz = cz + o[1];
+    if (tx < x0 + 2 || tx > x1 - 2 || tz < z0 + 2 || tz > z1 - 2) return;
+    var t = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.9, 0.15, 12),
+      new THREE.MeshLambertMaterial({ color: 0x222222 }));
+    t.position.set(tx, gy + 0.9, tz); scene.add(t);
+    var leg = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.9, 8),
+      new THREE.MeshLambertMaterial({ color: 0x555555 }));
+    leg.position.set(tx, gy + 0.45, tz); scene.add(leg);
+    addCollider(tx, tz, 1.1);
+  });
+  // small parking lot on the side
+  spParkingLot(cx + w / 2 + 16, cz, 24, d + 8, gy, 2);
+
+  var idx = spRegisterEnterable(name, cx, z1 + 1.5, cx, z1 - 3.5, gy + 0.25);
+  ENTERABLES[idx].roofs.push(roof);
+  try { LANDMARKS.push({ name: name, x: cx, z: cz }); } catch (e) {}
+  return { x: cx, z: cz };
+}
+
+/* ---------- Waffle Spot diner builder ----------
+   Classic small diner: big windows, yellow/black sign.                 */
+function cdBuildWaffleSpot(cx, cz) {
+  var w = 22, d = 14;
+  var gy = heightAt(cx, cz);
+  var wallC = 0xd8b93a, winC = 0x9fc4d8, inC = 0xf0e8d0, floorC = 0x8a7a5a;
+  var x0 = cx - w / 2, x1 = cx + w / 2, z0 = cz - d / 2, z1 = cz + d / 2;
+
+  // walls with big window bands (front + sides), door gap front center
+  spWall(x0, z1, x1, z1, 4, wallC, gy, [{ at: w / 2, w: 3 }]);
+  spWall(x0, z0, x1, z0, 4, wallC, gy, []);
+  spWall(x0, z0, x0, z1, 4, wallC, gy, []);
+  spWall(x1, z0, x1, z1, 4, wallC, gy, []);
+  // window band: glass strip along front and sides
+  [[x0, z1, x1, z1], [x0, z0 + 0.2, x0, z1 - 0.2], [x1, z0 + 0.2, x1, z1 - 0.2]].forEach(function(s) {
+    var len = Math.hypot(s[2] - s[0], s[3] - s[1]);
+    var m = new THREE.Mesh(new THREE.BoxGeometry(Math.abs(s[2] - s[0]) || 0.2, 1.6, Math.abs(s[3] - s[1]) || 0.2),
+      new THREE.MeshLambertMaterial({ color: winC, transparent: true, opacity: 0.55 }));
+    m.position.set((s[0] + s[2]) / 2, gy + 2.2, (s[1] + s[3]) / 2);
+    scene.add(m);
+  });
+  spSlab(cx, cz, w, d, floorC, gy, 0.15);
+  var roof = spRoof(cx, cz, w, d, 0x2a2a2a, gy, 4);
+  // yellow/black sign
+  spSignBoard('Waffle Spot', cx, gy + 5.2, z1 + 0.35, 16, '#c8a020', false);
+  var pole = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 5, 8),
+    new THREE.MeshLambertMaterial({ color: 0x333333 }));
+  pole.position.set(cx + w / 2 + 2, gy + 2.5, z1 + 3); scene.add(pole);
+  addCollider(cx + w / 2 + 2, z1 + 3, 0.5);
+  var psign = spSignBoard('Waffle Spot', cx + w / 2 + 2, gy + 5.6, z1 + 3, 10, '#c8a020', false);
+
+  /* ---- interior: counter + stools, booths, grill area ---- */
+  // counter along north half
+  var ctr = new THREE.Mesh(new THREE.BoxGeometry(12, 1.05, 1.4),
+    new THREE.MeshLambertMaterial({ color: 0xb8b8b8 }));
+  ctr.position.set(cx - 2, gy + 0.68, z0 + 3); scene.add(ctr);
+  addCollider(cx - 2, z0 + 3, 6.5);
+  // stools
+  for (var i = 0; i < 6; i++) {
+    var sx = cx - 7 + i * 2;
+    var st = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 0.12, 10),
+      new THREE.MeshLambertMaterial({ color: 0xcc2222 }));
+    st.position.set(sx, gy + 0.75, z0 + 4.6); scene.add(st);
+    var sl = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.7, 8),
+      new THREE.MeshLambertMaterial({ color: 0x666666 }));
+    sl.position.set(sx, gy + 0.35, z0 + 4.6); scene.add(sl);
+    addCollider(sx, z0 + 4.6, 0.45);
+  }
+  // grill area behind counter (visible flat grill + hood)
+  var grill = new THREE.Mesh(new THREE.BoxGeometry(8, 0.9, 2),
+    new THREE.MeshLambertMaterial({ color: 0x444444 }));
+  grill.position.set(cx - 2, gy + 0.6, z0 + 1.2); scene.add(grill);
+  addCollider(cx - 2, z0 + 1.2, 4.2);
+  var hood = new THREE.Mesh(new THREE.BoxGeometry(9, 1.2, 2.6),
+    new THREE.MeshLambertMaterial({ color: 0x777777 }));
+  hood.position.set(cx - 2, gy + 3.2, z0 + 1.2); scene.add(hood);
+  // booths along south wall
+  for (var b = 0; b < 3; b++) {
+    var bx = cx - 6 + b * 6;
+    var tbl = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.12, 1.2),
+      new THREE.MeshLambertMaterial({ color: 0x8a5a3a }));
+    tbl.position.set(bx, gy + 0.85, z1 - 3); scene.add(tbl);
+    [[-0.85], [0.85]].forEach(function(o) {
+      var bench = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.5, 0.5),
+        new THREE.MeshLambertMaterial({ color: 0xaa2222 }));
+      bench.position.set(bx, gy + 0.4, z1 - 3 + o[0]); scene.add(bench);
+    });
+    addCollider(bx, z1 - 3, 1.6);
+  }
+  // small parking lot
+  spParkingLot(cx, cz + d / 2 + 12, 30, 16, gy, 1);
+
+  var idx = spRegisterEnterable('Waffle Spot', cx, z1 + 1.5, cx, z1 - 3, gy + 0.25);
+  ENTERABLES[idx].roofs.push(roof);
+  try { LANDMARKS.push({ name: 'Waffle Spot', x: cx, z: cz }); } catch (e) {}
+  return { x: cx, z: cz };
+}
+
+var CD_LOG = [];
+
+/* ---------- placement with road clearance ---------- */
+function cdPlace(buildFn) {
+  // buildFn receives (x, z) and returns {x, z}; placeStruct nudges clear of roads
+  return buildFn;
+}
+
+(function buildClubs() {
+  var clubs = [
+    // [gameX, gameZ, w, d, generic name, real address (audit only)]
+    [2926, 2806, 30, 20, 'CABARET NIGHTS', '4401 Fulton Industrial Blvd SW'],
+    [2905, 2776, 26, 18, 'CLUB VELVET', '304 Fulton Industrial Cir SW'],
+    [2915, 2785, 24, 16, 'ACE LOUNGE', '304 Fulton Industrial Cir SW'],
+    [2535, 3163, 28, 18, 'THE SPOT', '4830 Fulton Industrial Blvd SW'],
+    [2905, 2824, 26, 18, 'SHOWTIME', '4425 Fulton Industrial Blvd SW'],
+    [2933, 2857, 24, 16, 'WAX LOUNGE', '4375 Commerce Dr SW']
+  ];
+  clubs.forEach(function(c) {
+    var p = null;
+    try { p = placeStruct(c[0], c[1], Math.hypot(c[2], c[3]) / 2 + 6, 4, c[4]); } catch (e) {}
+    var bx = p ? p.x : c[0], bz = p ? p.z : c[1];
+    // v1.1 (2026-10-09): log FIRST so a builder throw can't abort the
+    // remaining clubs or lose this entry from CD_LOG (POI markers).
+    try {
+      CD_LOG.push({ type: 'club', name: c[4], real: c[5], x: Math.round(bx), z: Math.round(bz) });
+    } catch (e) {}
+    try { cdBuildClub(bx, bz, c[2], c[3], c[4]); } catch (e) {}
+  });
+})();
+
+// Waffle Spots are appended by buildWaffleSpots() below once OSM data lands.
+function buildWaffleSpots(spots) {
+  spots.forEach(function(s) {
+    var p = null;
+    try { p = placeStruct(s.x, s.z, 20, 4, 'Waffle Spot'); } catch (e) {}
+    var bx = p ? p.x : s.x, bz = p ? p.z : s.z;
+    // v1.1 (2026-10-09): log FIRST so a builder throw can't lose the POI entry.
+    try { CD_LOG.push({ type: 'waffle_spot', name: 'Waffle Spot', real: s.addr || '', x: Math.round(bx), z: Math.round(bz) }); } catch (e) {}
+    try { cdBuildWaffleSpot(bx, bz); } catch (e) {}
+  });
+  // persist the placement log for the audit file
+  try {
+    var prev = JSON.parse(localStorage.getItem('sa_clubdiner_log') || '[]');
+    localStorage.setItem('sa_clubdiner_log', JSON.stringify(prev.concat(CD_LOG)));
+  } catch (e) {}
+}
+
+/* ---------- Waffle Spot locations ----------
+   7 web-verified real Waffle House addresses + 2 OSM amenity=fast_food
+   nodes, all inside the map bounds. Converted via the game's xz().   */
+(function placeWaffleSpots() {
+  var spots = [
+    { x: 2975, z: 2824, addr: '4346 Fulton Industrial Blvd SW' },
+    { x: 6156, z: 8796, addr: '5480 Riverdale Rd' },
+    { x: 1589, z: 4140, addr: '6035 Bakers Ferry Rd SW' },
+    { x: 7606, z: 3256, addr: '96 Upper Alabama St SW' },
+    { x: 7672, z: 3881, addr: '755 Hank Aaron Dr SE' },
+    { x: 7580, z: 2985, addr: '135 Andrew Young Intl Blvd NW' },
+    { x: 5867, z: 6175, addr: '1674 Washington Rd' },
+    { x: 7658, z: 2356, addr: 'OSM node 33.7767,-84.3894 (downtown)' },
+    { x: 3493, z: 9568, addr: 'OSM node 33.5853,-84.5153 (south Fulton)' }
+  ];
+  buildWaffleSpots(spots);
+})();
