@@ -1,6 +1,6 @@
 {
   "version": "1.11.0",
-  "map_version": "2026.10.09.2",
+  "map_version": "2026.10.09.3",
   "files": [
     {
       "name": "roads.js",
@@ -11,7 +11,7 @@
     {
       "name": "junction_pins.js",
       "sha256": "5f8fe4f42c3e784b",
-      "size": 1682469,
+      "size": 1166847,
       "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/junction_pins.js"
     },
     {
@@ -41,7 +41,7 @@
     {
       "name": "terrain_lifts.js",
       "sha256": "4924d529b50c7776",
-      "size": 359080,
+      "size": 622243,
       "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/terrain_lifts.js"
     }
   ]
