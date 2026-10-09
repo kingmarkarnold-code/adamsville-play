@@ -3,119 +3,142 @@
     {
       "name": "clubs_diners.js",
       "size": 11384,
-      "sha256": "abba741aca9780dcefd64e8191dc1ebe047902f479267450324d2462ab29b93e"
+      "sha256": "abba741aca9780dcefd64e8191dc1ebe047902f479267450324d2462ab29b93e",
+      "hash": "69b0e6ada5eccebd"
     },
     {
       "name": "codeenforce_system.js",
       "size": 43932,
-      "sha256": "614543bca155dd11d1f61697fba83a6539cf809c40e24948af5909a4a2490dc2"
+      "sha256": "614543bca155dd11d1f61697fba83a6539cf809c40e24948af5909a4a2490dc2",
+      "hash": "53d9404755b322a9"
     },
     {
       "name": "icon.png",
       "size": 69132,
-      "sha256": "be119f2f4e02c4c20be2dc2db973b64e1d8c68ed202c9e6077deb7fbd7620574"
+      "sha256": "be119f2f4e02c4c20be2dc2db973b64e1d8c68ed202c9e6077deb7fbd7620574",
+      "hash": "65739422acb0f942"
     },
     {
       "name": "index.html",
-      "size": 583481,
-      "sha256": "89a66c8914f97e31301dafeb69d5779b4960bddb64f91dd64d3b0b21f563d061"
+      "size": 583957,
+      "sha256": "89a66c8914f97e31301dafeb69d5779b4960bddb64f91dd64d3b0b21f563d061",
+      "hash": "856be7881f85a122"
     },
     {
       "name": "marriott.js",
       "size": 33555,
-      "sha256": "c9cdc7c6f85fd404f0a1e97a4b6a698a02d74d5d1a5bf255f881282e4a8727fe"
+      "sha256": "c9cdc7c6f85fd404f0a1e97a4b6a698a02d74d5d1a5bf255f881282e4a8727fe",
+      "hash": "87efed01d83af11b"
     },
     {
       "name": "marta_bus_data.js",
       "size": 171372,
-      "sha256": "8d55d01fca0bfe29cd6f757f51fee7cc9dc43350e122af1c2658729879b163d4"
+      "sha256": "8d55d01fca0bfe29cd6f757f51fee7cc9dc43350e122af1c2658729879b163d4",
+      "hash": "bc3cc44b88ad3123"
     },
     {
       "name": "marta_bus_system.js",
-      "size": 12456,
-      "sha256": "10fbaa6570a91630199f3d352a977ac5e86b87eb95cae501db3fdbd6f50f5555"
+      "size": 12573,
+      "sha256": "10fbaa6570a91630199f3d352a977ac5e86b87eb95cae501db3fdbd6f50f5555",
+      "hash": "37161e50b166a350"
     },
     {
       "name": "marta_data.js",
       "size": 17726,
-      "sha256": "0418d592a0811df487384f94977557391301bb5c68877c6ba5bc92e8e6664d3d"
+      "sha256": "0418d592a0811df487384f94977557391301bb5c68877c6ba5bc92e8e6664d3d",
+      "hash": "177cb4566b6a21ae"
     },
     {
       "name": "marta_system.js",
       "size": 23301,
-      "sha256": "b817beace81b770b039a61167319a5d7c6111f723b93df90d545935b50ce56a6"
+      "sha256": "b817beace81b770b039a61167319a5d7c6111f723b93df90d545935b50ce56a6",
+      "hash": "af907d5984b609d5"
     },
     {
       "name": "mlk_fairburn.js",
       "size": 5265,
-      "sha256": "0c61eaef199212d0f5d028ff099d5be321e02e4d20788276cbc1e48ff51426e8"
+      "sha256": "0c61eaef199212d0f5d028ff099d5be321e02e4d20788276cbc1e48ff51426e8",
+      "hash": "922b07c8ca84c620"
     },
     {
       "name": "npc_system.js",
       "size": 18077,
-      "sha256": "8710c7608501024c3c0809a9fcc01174f0f03c60ef383a42dd1c31f091ccaeb8"
+      "sha256": "8710c7608501024c3c0809a9fcc01174f0f03c60ef383a42dd1c31f091ccaeb8",
+      "hash": "4efdef60886b3520"
     },
     {
       "name": "poi_map.js",
       "size": 9075,
-      "sha256": "38df503c54d0b8167afe85646883ce3ca11dfb459e0222dd51dee370056cdd56"
+      "sha256": "38df503c54d0b8167afe85646883ce3ca11dfb459e0222dd51dee370056cdd56",
+      "hash": "8a3de148fa6fdafe"
     },
     {
       "name": "refnpc_system.js",
       "size": 29142,
-      "sha256": "253accad5402c08dfa54050e57dd199fa22679c42b3a17eb90c0e7afc96f2b96"
+      "sha256": "253accad5402c08dfa54050e57dd199fa22679c42b3a17eb90c0e7afc96f2b96",
+      "hash": "8052e3a128c926df"
     },
     {
       "name": "residential_detail.js",
       "size": 15790,
-      "sha256": "3676cff1484064e4a85e992fe16fbd615bfec1e47347300b47ee80770b77f3e0"
+      "sha256": "3676cff1484064e4a85e992fe16fbd615bfec1e47347300b47ee80770b77f3e0",
+      "hash": "69178e0fa5d7fc8f"
     },
     {
       "name": "roadcrew_system.js",
-      "size": 32743,
-      "sha256": "ced0b931246e6026e305ec39f0b4336b78e1f058f50daa634fbe922b2646892f"
+      "size": 38069,
+      "sha256": "ced0b931246e6026e305ec39f0b4336b78e1f058f50daa634fbe922b2646892f",
+      "hash": "30f00ef6c5fc38e1"
     },
     {
       "name": "school_plaza.js",
       "size": 19422,
-      "sha256": "9897a6b4d405ae113fb839de0f7ba895a6bb7ba11d0d062f7b6175dba248534d"
+      "sha256": "9897a6b4d405ae113fb839de0f7ba895a6bb7ba11d0d062f7b6175dba248534d",
+      "hash": "6f9bdc76add5192d"
     },
     {
       "name": "schools3.js",
       "size": 14602,
-      "sha256": "420f6d2a428070761bd2dbaf63af42a1a86efb12ec3afb767ecfa867670e9154"
+      "sha256": "420f6d2a428070761bd2dbaf63af42a1a86efb12ec3afb767ecfa867670e9154",
+      "hash": "bc66bbd2ec6786f5"
     },
     {
       "name": "semi_system.js",
       "size": 11885,
-      "sha256": "a522c1cab17bda7de3a34a156b258b65c79e1a4cb72b9236bd892365c8cf5dbb"
+      "sha256": "a522c1cab17bda7de3a34a156b258b65c79e1a4cb72b9236bd892365c8cf5dbb",
+      "hash": "c373511bd0df9134"
     },
     {
       "name": "shirt_designs.js",
       "size": 6967,
-      "sha256": "ab88444351442063032a1de7cf03811c10a5ed59d60f66a3c246e41fa56d51af"
+      "sha256": "ab88444351442063032a1de7cf03811c10a5ed59d60f66a3c246e41fa56d51af",
+      "hash": "8876d4c4f3cba0e8"
     },
     {
       "name": "sign_rules.js",
       "size": 3956,
-      "sha256": "24f2950cab69bd2b13f631ec6818ef22829e12d01ed5e58bebe560bc62dbef61"
+      "sha256": "24f2950cab69bd2b13f631ec6818ef22829e12d01ed5e58bebe560bc62dbef61",
+      "hash": "9498af2ff81fe9f8"
     },
     {
       "name": "stuck.js",
       "size": 6798,
-      "sha256": "bd1cb5a1007b7cd17dcfd332acb7ea7be0468de7c2cae3762cf07ce09e1b7d59"
+      "sha256": "bd1cb5a1007b7cd17dcfd332acb7ea7be0468de7c2cae3762cf07ce09e1b7d59",
+      "hash": "6850b1b1e23bbd46"
     },
     {
       "name": "three.min.js",
       "size": 603445,
-      "sha256": "9274bbcec8d96168626c732b5d31c775aa8cfb7eaa0599bec0c175908a2c1ce2"
+      "sha256": "9274bbcec8d96168626c732b5d31c775aa8cfb7eaa0599bec0c175908a2c1ce2",
+      "hash": "eb8549863a973554"
     },
     {
       "name": "traffic_system.js",
       "size": 31069,
-      "sha256": "478cba0a5da7773f541c8c9e3678fc7426f022eefaa3fab5f1e43eaa25f43a2e"
+      "sha256": "478cba0a5da7773f541c8c9e3678fc7426f022eefaa3fab5f1e43eaa25f43a2e",
+      "hash": "ffb0e0d77b4e81b0"
     }
   ],
-  "ui_version": "2026.10.09.25",
+  "ui_version": "2026.10.09.26",
   "version": "1.13.0"
 }
