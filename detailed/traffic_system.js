@@ -576,6 +576,18 @@ function placeGasStations(){
       if (buildGasStation(spot.x,spot.z,brand2,GAS_CANOPY[made%GAS_CANOPY.length])) made++;
     }
   }
+  /* v1.14 (2026-10-09): Joshua's ground truth — gas station on Fairburn Rd,
+     just north of MLK Jr Dr, WEST side (left heading north). Real-world
+     check: CITGO/BP stations at this intersection (3657 MLK Jr Dr SW,
+     490 Fairburn Rd SW). Fictitious display name per trademark rule. */
+  try{
+    var mlkSpot=placeStruct(3810,2930,26,4,'gasStation-mlk-fairburn');
+    if (mlkSpot){
+      var mlkBrand=uniqueGasName('FairburnFuel');
+      if (buildGasStation(mlkSpot.x,mlkSpot.z,mlkBrand,GAS_CANOPY[1])) made++;
+      else skipped++;
+    } else { skipped++; }
+  }catch(e){ try{ Report.noteError('gasStations','mlk-fairburn failed',String(e&&e.message||e)); }catch(x){} }
   try{ Report.setSys('gasStations',{placed:made,skipped:skipped,
     real:!!list,status:'ok',
     note:'real OSM positions; drivable lots; per-object colliders'}); }catch(e){}
