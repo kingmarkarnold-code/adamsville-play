@@ -25,6 +25,8 @@
     border-radius:7px; background:#ff3b30; border:2px solid #fff; display:none;
     box-shadow:0 0 6px rgba(255,59,48,.9); }
   #gear-dot.show { display:block; }
+  /* Joshua's rule: yellow dot = downloaded, restart needed. */
+  #gear-dot.show.restart { background:#ffcc00; box-shadow:0 0 6px rgba(255,204,0,.9); }
   /* v0.8: settings menu (gear replaces the ? button) */
   #settings { position:fixed; inset:0; z-index:40; display:none; align-items:center; justify-content:center;
     background:rgba(0,0,0,.72); color:#fff; }
@@ -40,6 +42,8 @@
   #settings .adm-tag { float:right; font-size:12px; font-weight:normal; color:#8a93a8; }
   #settings .adm-tag.ready { color:#ff3b30; font-weight:bold; }
   #settings .adm-tag.ok { color:#39ff6a; }
+  /* Joshua's rule: yellow = downloaded, restart needed. */
+  #settings .adm-tag.restart { color:#ffcc00; font-weight:bold; }
   #adm-status { font-size:13px; color:#ffd75e; min-height:18px; margin:6px 0; }
   #settings h3 { margin:14px 0 4px 0; }
   #settings #set-newgame { border-color:#ffd75e; color:#ffd75e; text-align:center; font-size:17px; }
@@ -241,6 +245,45 @@
     #dmg-msg{font-size:10px;}
     #rec-ind{display:none!important;}
     #set-record{display:none!important;}
+  }
+  /* v1.13 PORTRAIT layout — stack vertically, thumb reach at bottom */
+  @media (max-width:820px) and (orientation:portrait),(pointer:coarse) and (orientation:portrait){
+    #minimap{width:110px!important;height:130px!important;left:8px!important;bottom:8px!important;}
+    #inv-btn{left:126px!important;top:auto!important;bottom:8px!important;}
+    #music-btn{left:126px!important;top:auto!important;bottom:68px!important;}
+    #cam-btn{left:8px!important;top:52px!important;}
+    #street-name{top:8px!important;left:8px!important;max-width:55vw;}
+    #ce-btn{left:8px!important;top:96px!important;}
+    #rc-btn{left:68px!important;top:96px!important;}
+    #action-btn{top:60px!important;right:8px!important;}
+    #help-btn{top:10px!important;right:12px!important;}
+    #steer-left{left:8px!important;bottom:148px!important;}
+    #steer-right{left:100px!important;bottom:148px!important;}
+    #gas-btn{right:8px!important;bottom:72px!important;}
+    #brake-btn{right:8px!important;bottom:8px!important;}
+    #handbrake-btn{right:126px!important;bottom:8px!important;}
+    #ver-tag{left:50%!important;bottom:4px!important;transform:translateX(-50%);}
+    #mode-tag{right:8px!important;bottom:152px!important;}
+  }
+  /* v1.13 LANDSCAPE layout — spread horizontally, keep center clear */
+  @media (max-width:920px) and (orientation:landscape),(pointer:coarse) and (orientation:landscape){
+    #minimap{width:80px!important;height:95px!important;left:8px!important;bottom:8px!important;}
+    #inv-btn{left:96px!important;top:8px!important;bottom:auto!important;}
+    #music-btn{left:156px!important;top:8px!important;bottom:auto!important;}
+    #cam-btn{left:216px!important;top:8px!important;bottom:auto!important;}
+    #street-name{top:8px!important;left:276px!important;max-width:30vw;}
+    #ce-btn{left:8px!important;top:110px!important;bottom:auto!important;}
+    #rc-btn{left:68px!important;top:110px!important;bottom:auto!important;}
+    #action-btn{top:8px!important;right:64px!important;bottom:auto!important;}
+    #help-btn{top:8px!important;right:12px!important;}
+    #steer-left{left:8px!important;bottom:110px!important;}
+    #steer-right{left:80px!important;bottom:110px!important;}
+    #gas-btn{right:8px!important;bottom:64px!important;}
+    #brake-btn{right:8px!important;bottom:8px!important;}
+    #handbrake-btn{right:88px!important;bottom:8px!important;}
+    #ver-tag{left:50%!important;bottom:4px!important;transform:translateX(-50%);}
+    #mode-tag{right:8px!important;bottom:130px!important;}
+    #dmg-wrap{bottom:140px!important;}
   }
 </style>
 </head>
@@ -554,6 +597,13 @@ var MAPVER=(function(){
   function boot(){
     if (bootTried) return; bootTried=true;
     detectActive();
+    /* Joshua's rule: a restart applies downloaded updates, so any yellow
+       "restart needed" flags from the last session are now cleared. */
+    loadRestartNeeded();
+    var _hadRn=anyRestartNeeded();
+    for (var _ri=0;_ri<TYPES.length;_ri++) clearRestartNeeded(TYPES[_ri]);
+    clearRestartNeeded('map');
+    if (_hadRn){ try{ updateGearBadge(); refreshAdmTags(); }catch(e){} }
     // First check shortly after load, then every 2 minutes (Joshua's spec).
     // Cheap: 4 small manifest fetches (~1-2KB each). Never disrupts play.
     setTimeout(checkPending, 30000);
@@ -583,6 +633,30 @@ var ASSETVER=(function(){
   var LABELS={ui:'UI',vehicles:'Vehicles',music:'Music',map:'Map'};
   var BASE='https://kingmarkarnold-code.github.io/adamsville-play/detailed/';
   var active={}, pending={}, noticeShown=false, bootTried=false, bootAutoApplied=false;
+  /* Joshua's rule: yellow = downloaded, restart needed. Tracked per-type,
+     persisted in localStorage, cleared on boot (restart applies the update). */
+  var restartNeeded={};
+  function rnKey(t){ return 'sa_restart_needed_'+t; }
+  function loadRestartNeeded(){
+    for (var i=0;i<TYPES.length;i++){
+      var t=TYPES[i];
+      try{ restartNeeded[t]=(localStorage.getItem(rnKey(t))==='1'); }catch(e){ restartNeeded[t]=false; }
+    }
+    // Map is tracked by MAPVER but shares the yellow UI.
+    try{ restartNeeded['map']=(localStorage.getItem(rnKey('map'))==='1'); }catch(e){ restartNeeded['map']=false; }
+  }
+  function setRestartNeeded(t){
+    restartNeeded[t]=true;
+    try{ localStorage.setItem(rnKey(t),'1'); }catch(e){}
+  }
+  function clearRestartNeeded(t){
+    restartNeeded[t]=false;
+    try{ localStorage.removeItem(rnKey(t)); }catch(e){}
+  }
+  function anyRestartNeeded(){
+    for (var k in restartNeeded) if (restartNeeded[k]) return true;
+    return false;
+  }
   function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
   function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
   function bridge(){ try{ return window.AssetDownload||null; }catch(e){ return null; } }
@@ -667,13 +741,17 @@ var ASSETVER=(function(){
   }
 
   /* Red dot on the gear icon. Shows when anything is pending; clears when
-     everything is up to date. */
+     everything is up to date. Joshua's rule: yellow dot = downloaded,
+     restart needed (takes priority over red). */
   function updateGearBadge(){
     var dot=null;
     try{ dot=document.getElementById('gear-dot'); }catch(e){}
     if (!dot) return;
     var n=pendingList().length;
-    if (n>0) dot.classList.add('show'); else dot.classList.remove('show');
+    var rn=anyRestartNeeded();
+    dot.classList.remove('show','restart');
+    if (rn){ dot.classList.add('show','restart'); }
+    else if (n>0){ dot.classList.add('show'); }
   }
 
   function refreshAdmTags(){
@@ -697,7 +775,14 @@ var ASSETVER=(function(){
         cur=active[k]; pend=pending[k];
       }
       var isPend = list.indexOf(k)>=0;
-      if (isPend){
+      /* Joshua's rule: yellow = downloaded, restart needed. Shows
+         "(restart needed)" to the left of the yellow indicator. */
+      var isRn = !!restartNeeded[k];
+      if (isRn){
+        var cv=(cur&&cur!=='unknown')?cur:'?';
+        el.textContent='(restart needed) \u25cf '+cv;
+        el.className='adm-tag restart';
+      } else if (isPend){
         var pv=(pend&&pend!=='new')?pend:'new version';
         var cv=(cur&&cur!=='unknown')?cur:'?';
         el.textContent='\u25cf '+cv+' \u2192 '+pv;
@@ -854,8 +939,12 @@ var ASSETVER=(function(){
             if (i>=files.length){
               try{ mb.markSetupComplete(man.map_version||man.version||''); }catch(e){}
               try{ if (typeof MAPVER!=='undefined'){ localStorage.setItem('sa_map_version_active',man.map_version||man.version||''); } }catch(e){}
-              done(failed?('Map: '+failed+' file(s) failed \u2014 others updated. Reloading\u2026'):'Map updated. Reloading\u2026');
-              setTimeout(function(){ location.reload(); }, 900);
+              /* Joshua's rule: red -> yellow on successful download.
+                 Yellow = downloaded, restart needed. No auto-reload. */
+              setRestartNeeded('map');
+              if (failed){ say('Map: '+failed+' file(s) failed \u2014 others updated. Restart to apply.'); }
+              else { say('Map downloaded \u2014 restart the game to apply.'); }
+              updateGearBadge(); refreshAdmTags();
               return;
             }
             var f=files[i++];
@@ -912,8 +1001,17 @@ var ASSETVER=(function(){
               b.clearPendingAssetUpdate(type);
             }catch(e){}
             lsSet(lsKey(type),ver); active[type]=ver; pending[type]=null;
-            done(failed?(LABELS[type]+': '+failed+' file(s) failed \u2014 others updated. Reloading\u2026'):(LABELS[type]+' updated. Reloading\u2026'));
-            setTimeout(function(){ location.reload(); }, 900);
+            /* Joshua's rule: red -> yellow on successful download.
+               Yellow = downloaded, restart needed. No auto-reload;
+               the user restarts when ready. */
+            if (!failed){
+              setRestartNeeded(type);
+              say(LABELS[type]+' downloaded \u2014 restart the game to apply.');
+            } else {
+              setRestartNeeded(type);
+              say(LABELS[type]+': '+failed+' file(s) failed \u2014 others updated. Restart to apply.');
+            }
+            updateGearBadge(); refreshAdmTags();
             return;
           }
           var f=files[i++];
@@ -996,7 +1094,9 @@ var ASSETVER=(function(){
   return { applyOnNewGame:applyOnNewGame, checkPending:checkPending,
            forceRedownload:forceRedownload, updateGearBadge:updateGearBadge,
            refreshAdmTags:refreshAdmTags, pendingList:pendingList,
-           getActive:function(t){ return active[t]; }, getPending:function(t){ return pending[t]; } };
+           getActive:function(t){ return active[t]; }, getPending:function(t){ return pending[t]; },
+           setRestartNeeded:setRestartNeeded, clearRestartNeeded:clearRestartNeeded,
+           isRestartNeeded:function(t){ return !!restartNeeded[t]; } };
 })();
 /* v1.11: combined mode readout — on mobile MPH merges into the mode tag ("DRIVING 35") */
 function modeText(driving){
