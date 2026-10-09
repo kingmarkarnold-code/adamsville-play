@@ -848,7 +848,7 @@ function buildUI(){
   try{
     var css=document.createElement('style');
     css.textContent=
-      '#ce-btn{position:fixed;left:16px;bottom:376px;z-index:20;width:52px;height:52px;border-radius:12px;'+
+      '#ce-btn{position:fixed;left:12px;top:10px;z-index:20;width:52px;height:52px;border-radius:12px;'+
       'border:2px solid #7ec8ff;background:rgba(20,24,34,.88);color:#7ec8ff;font-size:24px;}'+
       '#ce-panel{position:fixed;inset:0;z-index:50;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.72);}'+
       '#ce-panel.show{display:flex;}'+
