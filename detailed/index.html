@@ -545,7 +545,7 @@ var MAPVER=(function(){
 var ASSETVER=(function(){
   var TYPES=['ui','vehicles','music'];
   var LABELS={ui:'UI',vehicles:'Vehicles',music:'Music',map:'Map'};
-  var BASE='https://kingmarkarnold-code.github.io/adamsville-play/';
+  var BASE='https://kingmarkarnold-code.github.io/adamsville-play/detailed/';
   var active={}, pending={}, noticeShown=false, bootTried=false, bootAutoApplied=false;
   function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
   function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
@@ -5645,6 +5645,7 @@ document.getElementById('loader').addEventListener('click', function(){
 <script src="residential_detail.js"></script>
 <script src="semi_system.js" onload="__loadStep('semis')" onerror="__loadStep('semis',true)">
 <script src="school_plaza.js"></script>
+<script src="mlk_fairburn.js"></script>
 <script src="schools3.js"></script>
 <script src="marriott.js"></script>
 <script src="clubs_diners.js"></script>
