@@ -496,15 +496,21 @@ var MAPVER=(function(){
         }
       }catch(e){}
     }
-    // Web: compare the live manifest against the version this session pinned.
-    if (!b){
+    /* v1.13: LIVE check — fetch the manifest directly and compare, on web AND
+       APK. The native side only checks once at startup; this catches updates
+       pushed mid-session so the red dot appears without a restart. Cheap
+       (~2KB), never touches the running game. */
+    if (!pending){
       try{
-        fetch('map-manifest.json',{cache:'no-store'}).then(function(r){ return r.ok?r.json():null; })
+        var url='https://kingmarkarnold-code.github.io/adamsville-play/detailed/map-manifest.json';
+        fetch(url,{cache:'no-store'}).then(function(r){ return r.ok?r.json():null; })
         .then(function(m){
           if(!m) return;
           var rv=m.map_version||m.version||'';
-          if (rv && active && rv!==active && rv!=='unknown'){
+          if (rv && active && rv!==active && rv!=='unknown' && !pending){
             pending=rv; maybeNotice();
+            try{ if(typeof ASSETVER!=='undefined') ASSETVER.updateGearBadge(); }catch(e){}
+            try{ if(typeof ASSETVER!=='undefined') ASSETVER.refreshAdmTags(); }catch(e){}
           }
         }).catch(function(){});
       }catch(e){}
@@ -544,10 +550,16 @@ var MAPVER=(function(){
   function boot(){
     if (bootTried) return; bootTried=true;
     detectActive();
-    // First check shortly after load, then every 5 minutes. Cheap: the
-    // manifest is ~1KB. Never disrupts play.
+    // First check shortly after load, then every 2 minutes (Joshua's spec).
+    // Cheap: 4 small manifest fetches (~1-2KB each). Never disrupts play.
     setTimeout(checkPending, 30000);
-    setInterval(checkPending, 5*60*1000);
+    setInterval(checkPending, 2*60*1000);
+    /* v1.13: LIVE red dot — check immediately when the user returns. */
+    try{
+      document.addEventListener('visibilitychange',function(){
+        if (!document.hidden){ try{ checkPending(); }catch(e){} }
+      });
+    }catch(e){}
   }
   if (document.readyState==='complete'||document.readyState==='interactive'){ setTimeout(boot,1000); }
   else { document.addEventListener('DOMContentLoaded',function(){ setTimeout(boot,1000); }); }
@@ -614,7 +626,12 @@ var ASSETVER=(function(){
             anyNew=true;
           }
         }catch(e){}
-      } else if (!b){
+      }
+      /* v1.13: LIVE check — fetch the manifest directly and compare versions,
+         on web AND APK. The native side only stages updates at startup; this
+         catches updates pushed mid-session so the red dot appears without a
+         restart. Cheap (~1KB each), never touches the running game. */
+      if (!pending[t]){
         (function(t){
           try{
             fetch(manifestUrl(t),{cache:'no-store'}).then(function(r){ return r.ok?r.json():null; })
@@ -872,7 +889,16 @@ var ASSETVER=(function(){
     // Joshua's rule: UI/vehicle/music updates apply automatically on launch.
     try{ if (autoApplyBootUpdates()) return; }catch(e){}
     setTimeout(function(){ checkPending(); }, 35000);
-    setInterval(checkPending, 5*60*1000);
+    setInterval(checkPending, 2*60*1000); // Joshua's spec: check every 2 minutes.
+    /* v1.13: LIVE red dot — check immediately when the user returns to the
+       game (tab refocus / app foreground). Catches updates pushed while they
+       were away. */
+    try{
+      document.addEventListener('visibilitychange',function(){
+        if (!document.hidden){ try{ checkPending(); }catch(e){} }
+      });
+      window.addEventListener('focus',function(){ try{ checkPending(); }catch(e){} });
+    }catch(e){}
     // Wire the Administrator buttons.
     try{
       document.getElementById('adm-map').addEventListener('click',function(){ confirmRedownload('map'); });
