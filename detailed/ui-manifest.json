@@ -2,7 +2,7 @@
  "files": [
   {
    "name": "clubs_diners.js",
-   "size": 11120,
+   "size": 11384,
    "sha256": "abba741aca9780dcefd64e8191dc1ebe047902f479267450324d2462ab29b93e"
   },
   {
@@ -22,7 +22,7 @@
   },
   {
    "name": "marriott.js",
-   "size": 33420,
+   "size": 33555,
    "sha256": "c9cdc7c6f85fd404f0a1e97a4b6a698a02d74d5d1a5bf255f881282e4a8727fe"
   },
   {
@@ -77,7 +77,7 @@
   },
   {
    "name": "school_plaza.js",
-   "size": 18991,
+   "size": 19422,
    "sha256": "9897a6b4d405ae113fb839de0f7ba895a6bb7ba11d0d062f7b6175dba248534d"
   },
   {
@@ -116,6 +116,6 @@
    "sha256": "478cba0a5da7773f541c8c9e3678fc7426f022eefaa3fab5f1e43eaa25f43a2e"
   }
  ],
- "ui_version": "2026.10.09.22",
+ "ui_version": "2026.10.09.23",
  "version": "1.13.0"
 }
