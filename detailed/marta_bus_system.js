@@ -107,6 +107,7 @@ function buildStops(){
     signMesh.setMatrixAt(i, m4);
     s.gy=gy;
     MB.stops.push(s);
+    try{ if(typeof addCollider==='function') addCollider(s.x, s.z, 0.35); }catch(e){}  // v2.1: solid bus-stop poles
   });
   poleMesh.instanceMatrix.needsUpdate=true;
   signMesh.instanceMatrix.needsUpdate=true;
