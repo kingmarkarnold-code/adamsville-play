@@ -220,6 +220,8 @@ function spShelf(x, z, len, gy, alongX) {
 
   var idx = spRegisterEnterable('HARPER ARCHER HIGH SCHOOL', cx, z1 + 1.5, cx, z1 - 4, gy + 0.25);
   ENTERABLES[idx].roofs.push(roof);
+  // door blocker: seal the door gap so player must use EXIT command
+  addSegCollider(cx - 2.8, z1, cx + 2.8, z1);
 
   /* ---- gym: (4045, 2530), 36 x 28, enterable ---- */
   var gx = 4045, gz = 2530, ggy = heightAt(gx, gz);
@@ -248,6 +250,8 @@ function spShelf(x, z, len, gy, alongX) {
   spSignBoard('GYMNASIUM', gx, ggy + 6.5, ggz1 + 0.3, 16, '#2a6b2a', false);
   var gidx = spRegisterEnterable('SCHOOL GYM', ggx1 + 1.5, gz, ggx1 - 4, gz, ggy + 0.25);
   ENTERABLES[gidx].roofs.push(groof);
+  // door blocker: seal the east door gap
+  addSegCollider(ggx1, gz - 2.3, ggx1, gz + 2.3);
 
   /* ---- cafeteria: (4092, 2528), 28 x 24, enterable ---- */
   var fx = 4092, fz = 2528, fgy = heightAt(fx, fz);
@@ -271,6 +275,8 @@ function spShelf(x, z, len, gy, alongX) {
   addCollider(fx, ffz0 + 2, 7.5);
   var fidx = spRegisterEnterable('SCHOOL CAFETERIA', ffx0 - 1.5, fz, ffx0 + 4, fz, fgy + 0.25);
   ENTERABLES[fidx].roofs.push(froof);
+  // door blocker: seal the west door gap
+  addSegCollider(ffx0, fz - 2.3, ffx0, fz + 2.3);
 
   /* ---- parking lot (south of main, north of Collier Dr) ---- */
   spParkingLot(4060, 2625, 60, 24, heightAt(4060, 2625), 2);
@@ -396,6 +402,8 @@ function spShelf(x, z, len, gy, alongX) {
       }
       var ix = spRegisterEnterable(st.name, px0 - 1.5, zM, inX, inZ, gy + 0.25);
       ENTERABLES[ix].roofs.push(plazaRoof);
+      // door blocker: seal the storefront door gap (gap w=3 at zM on px0 wall)
+      addSegCollider(px0, zM - 1.8, px0, zM + 1.8);
     }
   });
 
