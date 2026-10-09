@@ -78,6 +78,8 @@ function cdBuildClub(cx, cz, w, d, name) {
 
   var idx = spRegisterEnterable(name, cx, z1 + 1.5, cx, z1 - 3.5, gy + 0.25);
   ENTERABLES[idx].roofs.push(roof);
+  // door blocker: seal the door gap so player must use EXIT command (can't walk out)
+  addSegCollider(cx - 1.9, z1, cx + 1.9, z1);
   try { LANDMARKS.push({ name: name, x: cx, z: cz }); } catch (e) {}
   return { x: cx, z: cz };
 }
@@ -156,6 +158,8 @@ function cdBuildWaffleSpot(cx, cz) {
 
   var idx = spRegisterEnterable('Waffle Spot', cx, z1 + 1.5, cx, z1 - 3, gy + 0.25);
   ENTERABLES[idx].roofs.push(roof);
+  // door blocker: seal the door gap so player must use EXIT command (can't walk out)
+  addSegCollider(cx - 1.8, z1, cx + 1.8, z1);
   try { LANDMARKS.push({ name: 'Waffle Spot', x: cx, z: cz }); } catch (e) {}
   return { x: cx, z: cz };
 }
