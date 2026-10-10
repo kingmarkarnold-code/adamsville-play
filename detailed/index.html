@@ -293,6 +293,34 @@
   .fm-leg-diamond { transform:rotate(45deg); }
   .fm-leg-circle { border-radius:50%; }
   .fm-leg-tri { clip-path:polygon(50% 0,100% 100%,0 100%); }
+  /* v1.16 SATELLITE VIEW (Joshua 2026-10-10): top-down 3D map mode.
+     Standard responsive breakpoints: base is mobile-first (320px+). */
+  #satview-btn { position:absolute; top:70px; left:16px; z-index:36;
+    background:rgba(20,40,80,.85); color:#fff; border:2px solid #4ea8ff;
+    border-radius:10px; padding:10px 16px; font-size:15px; font-weight:bold; }
+  #satview-btn:active { background:rgba(40,80,160,.9); }
+  #satview-ui { position:fixed; inset:0; z-index:40; display:none; pointer-events:none; }
+  #satview-ui.show { display:block; }
+  #satview-touch { position:absolute; inset:0; pointer-events:auto; touch-action:none; cursor:grab; }
+  #satview-labels { position:absolute; inset:0; overflow:hidden; pointer-events:none; }
+  .sat-label { position:absolute; transform:translate(-50%,-50%); white-space:nowrap;
+    color:#fff; font:bold 15px Arial; text-shadow:0 0 6px #000,0 0 3px #000;
+    background:rgba(0,0,0,.45); padding:4px 10px; border-radius:8px; pointer-events:none; }
+  .sat-label.sat-home { color:#ffd75e; border:1px solid #ffd75e; }
+  .sat-label.sat-locked { color:#ff8899; }
+  #satview-title { position:absolute; top:14px; left:16px; z-index:42; pointer-events:none;
+    color:#ffd75e; font-size:16px; font-weight:bold;
+    background:rgba(0,0,0,.55); padding:8px 14px; border-radius:10px; }
+  #satview-controls { position:absolute; top:14px; right:14px; z-index:42; pointer-events:auto;
+    display:flex; gap:8px; }
+  #satview-controls button { width:48px; height:48px; border-radius:12px; font-size:18px; font-weight:bold;
+    background:rgba(0,0,0,.65); color:#fff; border:2px solid rgba(255,255,255,.7); }
+  #satview-controls button:active { background:rgba(60,60,60,.8); }
+  #satview-hint { position:absolute; bottom:16px; left:50%; transform:translateX(-50%); z-index:42;
+    pointer-events:none; color:#fff; font-size:13px; background:rgba(0,0,0,.55);
+    padding:8px 16px; border-radius:10px; white-space:nowrap; }
+  @media (min-width:600px){ .sat-label{ font-size:17px; } #satview-title{ font-size:18px; } }
+  @media (min-width:1024px){ .sat-label{ font-size:19px; } #satview-hint{ font-size:14px; } }
   /* v1.10: recording indicator — small red REC badge, top-left */
   #rec-ind { position:fixed; z-index:32; top:12px; left:14px; color:#fff;
     background:rgba(0,0,0,.6); padding:6px 12px; border-radius:8px; font-size:13px; font-weight:bold;
@@ -631,6 +659,7 @@
   <canvas id="fullmap-canvas"></canvas>
   <div id="fullmap-title">SURVIVING ADAMSVILLE</div>
   <button id="fullmap-close">&times;</button>
+  <button id="satview-btn">🛰️ Satellite View</button>
   <div id="fullmap-legend">
     <div class="fm-leg-title">MAP KEY</div>
     <div class="fm-leg-row"><span class="fm-leg-ic" style="background:#ff9a3c"></span>Gas Station</div>
@@ -639,6 +668,21 @@
     <div class="fm-leg-row"><span class="fm-leg-ic fm-leg-circle" style="background:#4ea8ff"></span>Hotel</div>
     <div class="fm-leg-row"><span class="fm-leg-ic" style="color:#ff4e8a;font-size:16px;line-height:13px">&#9733;</span>Club</div>
   </div>
+</div>
+<!-- v1.16 SATELLITE VIEW overlay (Joshua 2026-10-10): transparent overlay for
+     the 3D top-down map. The 3D world shows through; controls float on top. -->
+<div id="satview-ui">
+  <div id="satview-touch"></div>
+  <div id="satview-labels"></div>
+  <div id="satview-title">🛰️ SATELLITE VIEW</div>
+  <div id="satview-controls">
+    <button id="satview-mode" title="Toggle 2D/3D view">3D</button>
+    <button id="satview-zin" title="Zoom in">+</button>
+    <button id="satview-zout" title="Zoom out">−</button>
+    <button id="satview-recenter" title="Center on player">📍</button>
+    <button id="satview-close" title="Close Satellite View">&times;</button>
+  </div>
+  <div id="satview-hint">Drag to pan • Pinch or scroll to zoom</div>
 </div>
 
 <!-- ===== LOADER OVERLAY (covers the screen while assets load) =====
@@ -6144,6 +6188,11 @@ var mmZoom=1, mmZoomHintUntil=0, mmSuppressClickUntil=0;
   mmCanvas.addEventListener('touchcancel', function(){ pinching=false; }, {passive:true});
 })();
 document.getElementById('fullmap-close').addEventListener('click', closeFullMap);
+// v1.16 SATELLITE VIEW (Joshua 2026-10-10): button in the full map opens the 3D top-down view.
+document.getElementById('satview-btn').addEventListener('click', function(){
+  try{ closeFullMap(); }catch(e){}
+  try{ if(window.SATVIEW) SATVIEW.open(); }catch(e){}
+});
 // v0.5: tap (not drag) on the map closes it; mouse click still works (guarded
 // against the synthetic click that follows a touch)
 fmCanvas.addEventListener('click', function(){
@@ -6883,6 +6932,7 @@ function updateCar(dt){
 // v1.13 first-person interior camera state
 var fpLookYaw=0, fpPitch=0, fpBlend=0, wasFP=false;
 function updateCamera(dt){
+  if (window.__satViewActive) return;  // v1.16 SATELLITE VIEW owns the camera
   // ---------- v1.13 FIRST-PERSON interior camera ----------
   // When the player is inside a building: camera at head level (~1.6m),
   // looking where the player faces. Drag to look around (yaw + pitch).
@@ -7334,6 +7384,7 @@ function animate(){
   // v1.15 ZONE UNLOCK + CULLING (Joshua 2026-10-10): track player for zone
   // exploration, enforce locked-zone boundaries, update culling state.
   try{ if(window.ZONEUNLOCK) window.ZONEUNLOCK.trackPlayer(dt); }catch(e){}
+  try{ if(window.SATVIEW) window.SATVIEW.update(dt); }catch(e){}  // v1.16 SATELLITE VIEW per-frame camera/labels
   try{ if(typeof updateNPCs!=='undefined') updateNPCs(dt, player.mesh.position); }catch(e){}
   try{ resolveNPCVehicleCollisions(); }catch(e){}   // v1.18: no vehicle passes through another — Period (Joshua)
   renderer.render(scene, camera);
@@ -7631,6 +7682,7 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <script src="stayawake.js"></script>
 <script src="agentdock.js"></script>
 <script src="zoneunlock.js"></script>
+<script src="satellite_view.js"></script>
 <script src="hotreload.js"></script>
 <!-- ===== INLINE SCRIPT BLOCK 3: final placement audit (v2.0 - Joshua's
      automatic check) ===== Runs ONCE, after EVERY building system has loaded
