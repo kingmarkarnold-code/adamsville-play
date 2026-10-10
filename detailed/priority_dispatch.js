@@ -225,11 +225,13 @@ function seedCorridorInspections(){
   }catch(e){}
 }
 
-/* ---------------- bird drone redirection ----------------
-   The 500 bird-disguised inspection drones each patrol a fixed sector.
+/* ---------------- airplane drone redirection ----------------
+   The 50 miniature airplane inspection drones each patrol a fixed sector.
+   (v2.0 2026-10-10: replaced the 500 bird drones per Joshua's directive —
+   birds were the heaviest perf load. Same redirection logic, smaller fleet.)
    When priority dispatch is active, reassign their patrol centers into the
    Adamsville priority corridors — spread across all 6 corridors by priority
-   (more birds on higher-priority corridors). Runs once at boot; re-runs if
+   (more planes on higher-priority corridors). Runs once at boot; re-runs if
    the fleet re-initializes. */
 var _birdsRedirected=false;
 function redirectBirds(){
@@ -239,10 +241,10 @@ function redirectBirds(){
   if (!BD || !BD.birds || !BD.birds.length) return;  // fleet not ready yet
   if (!PD.active) return;
   try{
-    // Assign birds to corridors by priority: I-285 gets the most, then MLK, etc.
-    // v1.1 CREW 5X (Joshua 2026-10-09): weights scaled 5x for 500 birds.
-    // Weights: 150, 125, 100, 60, 40, 25 = 500 birds
-    var weights=[150,125,100,60,40,25];
+    // Assign planes to corridors by priority: I-285 gets the most, then MLK, etc.
+    // v2.0 (Joshua 2026-10-10): weights scaled for 50 airplane drones.
+    // Weights: 15, 13, 10, 6, 4, 2 = 50 planes
+    var weights=[15,13,10,6,4,2];
     var assignments=[];
     for(var c=0;c<CORRIDORS.length;c++){
       for(var k=0;k<weights[c];k++) assignments.push(c);
@@ -273,7 +275,7 @@ function redirectBirds(){
       }catch(e){}
     }
     _birdsRedirected=true;
-    dlog('100 bird-drones reassigned to Adamsville priority corridors (I-285×30, MLK×25, Fulton Industrial×20, Boulder Park×12, Dollar Mill×8, Bakers Ferry×5).');
+    dlog('50 airplane drones reassigned to Adamsville priority corridors (I-285×15, MLK×13, Fulton Industrial×10, Boulder Park×6, Dollar Mill×4, Bakers Ferry×2).');
   }catch(e){}
 }
 
