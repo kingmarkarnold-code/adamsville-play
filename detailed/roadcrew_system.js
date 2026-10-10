@@ -1,4 +1,43 @@
 /* ============================================================================
+   FILE: roadcrew_system.js — "Surviving Adamsville" road crew / dispatch sim
+   ----------------------------------------------------------------------------
+   PURPOSE: Joshua's in-world repair crews. Patrol trucks drive real road
+   polylines looking for broken road data; when a unit finds a known defect
+   it radios dispatch, and a repair crew arrives with work-zone signage,
+   cones, and detour arrows — works the site, lays fresh asphalt, and leaves.
+   KEY SYSTEMS:
+     - Defect database (embedded from the Street View audit discrepancies.json):
+       structural defects get crews; non-structural ones are logged/monitored.
+     - Defect state machine: undiscovered → inspecting → found → dispatched →
+       repairing → fixed (persists in localStorage; in-progress states reset
+       to undiscovered on reload so the crew re-runs).
+     - Patrol units (4): drive road polylines at 14 u/s, rotating Day/Evening/
+       Night shifts (24/7 operation), shared stuck.js recovery, drive over
+       DEFECTS; discover defects within 70u.
+     - Repair jobs: crew truck parked to the side, 4 workers with repair
+       animation, ROAD WORK AHEAD signs on both approaches, DETOUR markers,
+       16-cone taper, 6 detour ground arrows; job lasts 75s, then a fresh
+       asphalt patch is laid permanently.
+     - v2.1 cone physics: player can knock cones over (speed >4 u/s, within
+       1.2u); nearest idle worker fetches it, stands it back up, returns home.
+     - Fallback: an undiscovered structural defect older than 240s is called
+       in by a "driver report" (motorist) instead of a patrol unit.
+     - Dispatch office building near Fulton Industrial with a live spec board
+       (canvas texture listing defects/true specs/status) + lead supervisor.
+     - HUD 🚧 button opens the dispatch panel (defects + event log).
+   JOSHUA SPECS ENCODED:
+     - World accuracy first: the dispatch "reference database" holds what the
+       map is SUPPOSED to look like (Street View truth data) so repairs follow
+       truth specs, not guesses.
+     - 24/7 operation — crews never stand down.
+     - Simple sim logic: no pathfinding; crews arrive at sites directly.
+     - v2.1: colliders on truck/signs/cones so the player can't walk through
+       the work zone; cleanup removes all colliders when the crew leaves.
+     - Stuck-loop recovery (Joshua's protocol): a looping road worker files a
+       report and requests police assistance — police escort it through the
+       grass (the authorized no-grass-rule exception) to the nearest road.
+   ============================================================================ */
+/* ============================================================================
    SURVIVING ADAMSVILLE — ROAD CREW / DISPATCH SYSTEM (v1.0)
    ----------------------------------------------------------------------------
    Joshua's vision: road crew NPCs patrol the map. When one finds a road that
@@ -91,11 +130,14 @@ var RC={ ready:false, tick:0, time:0,
 
 /* ---------------- tiny helpers ---------------- */
 function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
-function dist2(ax,az,bx,bz){ var dx=ax-bx,dz=az-bz; return dx*dx+dz*dz; }
+function dist2(ax,az,bx,bz){ var dx=ax-bx,dz=az-bz; return dx*dx+dz*dz; }  // squared dist — avoids sqrt in hot scans
 function groundY(x,z){ try{ var y=heightAt(x,z); return isFinite(y)?y:0; }catch(e){ return 0; } }
 function toast(msg,ms){ try{ if(typeof showToast==='function') showToast(msg,ms||2600); }catch(e){} }
 function nowT(){ var d=new Date(); function p(n){return (n<10?'0':'')+n;} return p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds()); }
 
+/* dlog(msg) — timestamped dispatch event log. Capped at 60 entries,
+   persisted to localStorage, refreshes the HUD panel + spec board, and
+   reports to the Report panel. Every notable road-crew event goes here. */
 function dlog(msg){
   RC.log.push({t:nowT(), msg:msg});
   if (RC.log.length>60) RC.log.splice(0, RC.log.length-60);
@@ -317,6 +359,10 @@ function makePatch(d, heading){
 }
 
 /* ---------------- road helpers ---------------- */
+/* nearestRoad(x,z,highwayOnly) — brute-force nearest road lookup over every
+   roadDrawData point. highwayOnly=true → highways only; false → non-highways
+   only; undefined → any road. Returns {seg, idx (nearest point index),
+   dist} or null. O(road points) — fine at spawn/recovery time, NOT per frame. */
 function nearestRoad(x,z,highwayOnly){
   var best=null, bestD=1e18, bestI=0;
   try{
@@ -333,6 +379,9 @@ function nearestRoad(x,z,highwayOnly){
   }catch(e){}
   return best?{seg:best, idx:bestI, dist:Math.sqrt(bestD)}:null;
 }
+/* roadHeadingAt(nr) — heading (atan2 yaw) of the road at the nearestRoad
+   result's point index, clamped to a valid segment. Used to align work
+   zones, cones, and signs with the road's direction. */
 function roadHeadingAt(nr){
   try{
     var pts=nr.seg.pts, i=clamp(nr.idx,0,pts.length-2);
@@ -342,6 +391,10 @@ function roadHeadingAt(nr){
 }
 
 /* ---------------- patrol units ---------------- */
+/* spawnPatrol(unitNo, dx, dz, highway) — places one patrol truck on the
+   nearest road to (dx,dz) and starts it a quarter-segment down the polyline
+   so Joshua sees it driving before it discovers anything. Patrol 1 rides
+   highways (covers the I-20 gap OPEN-1); the others ride non-highways. */
 function spawnPatrol(unitNo, dx, dz, highway){
   var nr=nearestRoad(dx,dz,highway);
   if (!nr) return null;
@@ -358,8 +411,10 @@ function spawnPatrol(unitNo, dx, dz, highway){
   RC.patrols.push(u);
   return u;
 }
+/* patrolTarget(u) — the nearest STRUCTURAL, still-undiscovered defect to the
+   unit. Used for the discovery check only (units discover by proximity, they
+   don't pathfind to the defect — simple sim logic per Joshua's rule). */
 function patrolTarget(u){
-  // the structural defect nearest this unit's patrol area
   var best=null, bd=1e18;
   DEFECTS.forEach(function(d){
     if (!d.structural || d.state!=='undiscovered') return;
@@ -375,6 +430,13 @@ function patrolShift(u){
   return SHIFTS[Math.floor(RC.time/SHIFT_LEN+u.no)%3];
 }
 /* ---------------- stuck-loop recovery (shared stuck.js module) ---------------- */
+/* stuckRecoverRoadCrew(u) — wraps the shared recoverStuckUnit() with road-crew
+   context: logs to the dispatch log, blacklists the bad segment in
+   RC.badSegs (skipped on future reassignment), and repositions the truck
+   onto the nearest road with a cleared target. This is Joshua's stuck-loop
+   recovery protocol: the unit recognizes it can't finish its travel, files a
+   report, and requests police assistance — police escort it through the grass
+   (the one authorized exception to the no-grass rule) back to a road. */
 function stuckRecoverRoadCrew(u){
   if (typeof recoverStuckUnit!=='function') return;
   recoverStuckUnit(u, {
@@ -393,6 +455,17 @@ function stuckRecoverRoadCrew(u){
     }
   });
 }
+/* updatePatrol(u, dt) — per-frame patrol logic:
+   1. Rotate shifts (Day/Evening/Night, 240s each — logged for flavor).
+   2. If paused to inspect a defect: flash the light bar, count down
+      INSPECT_T; when done, mark the defect 'found' and schedule a repair
+      crew via DISPATCH_T (6s delay) — skipped if the defect's state moved
+      on meanwhile.
+   3. Run stuck-loop sampling (shared StuckDetector; NOT while legitimately
+      paused — a stopped truck inspecting a defect isn't stuck).
+   4. Drive along the road polyline at PATROL_SPEED, bouncing off the ends.
+   5. Discovery: when within DISCOVER_R (70u) of an undiscovered structural
+      defect, stop and inspect (INSPECT_T seconds). */
 function updatePatrol(u, dt){
   var m=u.mesh;
   var sh=patrolShift(u);
@@ -503,6 +576,12 @@ function refreshBoard(){
 }
 
 /* ---------------- repair jobs ---------------- */
+/* dispatchRepair(d) — sends the repair crew: crew truck parked 14u to the
+   side, 4 workers at the defect, ROAD WORK AHEAD signs on both approaches
+   (58u out, 7u off the shoulder, facing oncoming traffic), DETOUR markers,
+   a 16-cone taper, and 6 ground detour arrows curving around the zone. All
+   colliders are tracked on the job so the whole work zone can be cleaned up
+   when the crew leaves. defect state → 'repairing'. */
 function dispatchRepair(d){
   var nr=nearestRoad(d.x,d.z, d.id==='OPEN-1');
   var heading=nr?roadHeadingAt(nr):0;
@@ -585,6 +664,11 @@ function dispatchRepair(d){
   toast('🚧 Repair crew working on '+d.street+' — detour in place');
   try{ Report.setSys('roadcrew', sysReport()); }catch(e){}
 }
+/* finishRepair(job) — end of the 75s work window: lays the fresh asphalt
+   patch (permanent, re-laid on later loads for already-fixed defects),
+   removes EVERY work-zone collider (truck, signs, cones — so no invisible
+   walls linger after the crew leaves), deletes the work-zone group, marks
+   the defect 'fixed', and persists to localStorage. */
 function finishRepair(job){
   var d=job.defect;
   // lay the fresh asphalt patch
@@ -614,9 +698,13 @@ function finishRepair(job){
   try{ Report.setSys('roadcrew', sysReport()); }catch(e){}
   refreshBoard(); refreshPanel();
 }
-/* v2.1: cone knock-over detection + worker fetch-and-replace.
-   When the player barrels into a cone, it tips over. The nearest idle
-   worker walks over, picks it up (stands it back up), and returns to work. */
+/* updateConePhysics(j, dt) — cone knock-over + worker fetch-and-replace:
+   a cone counts as knocked when the player is within 1.2u AND moving faster
+   than 4 u/s (brush-bys don't count). The knocked cone's collider is removed
+   (so the player can walk past), then the nearest idle worker is assigned a
+   fetchState ('goto' → walk to cone, stand it back up, restore collider →
+   'return' → walk home). Workers on a fetch are skipped by the repair
+   animation. Only one knock per frame max (break). */
 function updateConePhysics(j, dt){
   var px=0, pz=0, pSpeed=0;
   try{
@@ -696,6 +784,9 @@ function updateConePhysics(j, dt){
     }
   });
 }
+/* updateJobs(dt) — per-frame job ticks: repair animation (workers bob and
+   swing arms; workers on a cone-fetch are skipped), cone physics, light-bar
+   flash; at REPAIR_T (75s) the job finishes and is removed. */
 function updateJobs(dt){
   for (var i=RC.jobs.length-1;i>=0;i--){
     var j=RC.jobs[i]; j.t+=dt;
@@ -785,6 +876,10 @@ function togglePanel(force){
 window.toggleDispatchLog=togglePanel;
 
 /* ---------------- fallback: driver reports ---------------- */
+/* fallbackCheck(dt) — safety net: any structural defect undiscovered for
+   longer than FALLBACK_T (240s) gets called in by a "driver report" (an
+   imaginary motorist) instead of a patrol unit, so no defect sits forever
+   just because patrols never drove past it. */
 function fallbackCheck(dt){
   RC.time+=dt;
   DEFECTS.forEach(function(d){
@@ -805,6 +900,10 @@ function fallbackCheck(dt){
 }
 
 /* ---------------- main loop ---------------- */
+/* updateRoadCrew(dt) — frame tick: ticks all patrols, ticks all repair
+   jobs, runs the driver-report fallback, and reports to the Report panel
+   every 10s. dt clamped to 50ms (tab-switch safety). Guarded — a road-crew
+   bug must never break the frame. */
 function updateRoadCrew(dt){
   if (!RC.ready) return;
   try{
@@ -820,6 +919,12 @@ function updateRoadCrew(dt){
 }
 
 /* ---------------- init ---------------- */
+/* initRoadCrew() — builds the dispatch office, the HUD, and spawns 4 patrol
+   units (I-20 corridor, home-base/Dollar Mill area, Fulton Industrial,
+   Fairburn/south), then re-lays asphalt patches for defects fixed in past
+   sessions. Wraps the global animate() (chains with other module wraps) so
+   updateRoadCrew runs every frame. Boot waits until the world (roadDrawData,
+   scene, heightAt, onRoad) exists; gives up after 120s without breaking. */
 function initRoadCrew(){
   loadLS();
   buildDispatch();
