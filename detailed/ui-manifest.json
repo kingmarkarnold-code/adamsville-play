@@ -14,9 +14,9 @@
     },
     {
       "name": "codeenforce_system.js",
-      "size": 64170,
-      "sha256": "92c537e3f179627cdad69521d1590ef73a1c4425122aed541cbb35c61a532f77",
-      "hash": "245fd990d69580d9"
+      "size": 64383,
+      "sha256": "34ff8765be377f640cdc67a11afd203d75caeb4f590c477e5553b120da96ba81",
+      "hash": "2050b437a39c7ccd"
     },
     {
       "name": "face_platform.js",
@@ -32,9 +32,9 @@
     },
     {
       "name": "index.html",
-      "size": 654090,
-      "sha256": "03685c581bf67f7c275ba5b35874a3f48dfb45192d4bc27bee8b4927ac225641",
-      "hash": "4099191f8c826fb5"
+      "size": 654220,
+      "sha256": "63c483c2e44dca61c1e1ebb7d479bb0885e67a5c947edf120d78d845a5fc6ece",
+      "hash": "63c483c2e44dca61"
     },
     {
       "name": "marriott.js",
@@ -164,9 +164,9 @@
     },
     {
       "name": "infracrew_system.js",
-      "size": 33350,
-      "sha256": "aab6ff9f4f50612bcdec668f4657b8fa6bb22c32c23230adaa50da8c0a7eb55a",
-      "hash": "718c79e063568f05"
+      "size": 33574,
+      "sha256": "442a97b6d008d58f9ad16a0ef82a4b2c07e24c7ea8d140074bc7c7033bed38bf",
+      "hash": "384f639518428c80"
     },
     {
       "name": "roadfix.js",
@@ -179,8 +179,26 @@
       "size": 28387,
       "sha256": "12e2a66d00b254d5868b79f9d19147094b84917cce8b35031d9d9f5326f11824",
       "hash": "4c365ba09f20509b"
+    },
+    {
+      "name": "cityworkforce.js",
+      "size": 28885,
+      "sha256": "fb84d2af364b582f123ddda33d0d447565119b3037f0f56d64cbb58a8ab25df0",
+      "hash": "b9d40b9415c4a059"
+    },
+    {
+      "name": "surveyfleet_system.js",
+      "size": 51615,
+      "sha256": "9bd94803e8b0e21f485f8f959738908dab1c28f8c2c4f6fc7ad2369072cb974c",
+      "hash": "9bd94803e8b0e21f"
+    },
+    {
+      "name": "terrainfix.js",
+      "size": 12693,
+      "sha256": "ebdf20dfceb44ec523def8633a048c1226cdce0e699062e8f9d76cdfa84faa0f",
+      "hash": "ebdf20dfceb44ec5"
     }
   ],
-  "ui_version": "2026.10.09.62",
+  "ui_version": "2026.10.09.65",
   "version": "1.13.0"
 }
