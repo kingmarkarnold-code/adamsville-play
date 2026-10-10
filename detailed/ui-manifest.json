@@ -164,9 +164,9 @@
     },
     {
       "name": "infracrew_system.js",
-      "size": 33574,
-      "sha256": "442a97b6d008d58f9ad16a0ef82a4b2c07e24c7ea8d140074bc7c7033bed38bf",
-      "hash": "384f639518428c80"
+      "size": 34339,
+      "sha256": "15843b1f8e4e9ac5292553c9f4c8f6f24447f9f56ccb0acee9bc6f028e432227",
+      "hash": "f6ccc25e24977e34"
     },
     {
       "name": "roadfix.js",
@@ -188,9 +188,9 @@
     },
     {
       "name": "surveyfleet_system.js",
-      "size": 51615,
-      "sha256": "9bd94803e8b0e21f485f8f959738908dab1c28f8c2c4f6fc7ad2369072cb974c",
-      "hash": "9bd94803e8b0e21f"
+      "size": 59120,
+      "sha256": "262177dd8d76197ac9af976cfe8d70aa4a2db8350a7165718080a56514ae965b",
+      "hash": "35e44d4325b783fc"
     },
     {
       "name": "terrainfix.js",
@@ -211,6 +211,6 @@
       "hash": "f51af332ecae98e4"
     }
   ],
-  "ui_version": "2026.10.09.70",
+  "ui_version": "2026.10.09.71",
   "version": "1.13.0"
 }
