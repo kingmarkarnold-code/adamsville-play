@@ -1,0 +1,27 @@
+{
+  "id": "southfulton",
+  "name": "South Fulton",
+  "bounds": {
+    "xMin": 2147,
+    "xMax": 5398,
+    "zMin": 4218,
+    "zMax": 12200
+  },
+  "original_bounds": {
+    "xMin": 2147,
+    "xMax": 5398,
+    "zMin": 4218,
+    "zMax": 12200
+  },
+  "scale": 1.0,
+  "is_start": false,
+  "counts": {
+    "roads": 2655,
+    "buildings": 1232,
+    "pins": 3900,
+    "lifts": 4535,
+    "signs": 92
+  },
+  "generated": "2026-10-10",
+  "generator": "split-zones.py"
+}
