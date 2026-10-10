@@ -256,11 +256,11 @@
     },
     {
       "name": "zoneunlock.js",
-      "size": 14200,
-      "sha256": "f050e73d7a8f135247e8054526236acc022118844f76d12aa69692ba3e1b3d75",
-      "hash": "f050e73d7a8f1352"
+      "size": 13932,
+      "sha256": "b42b548e826d4010ef8bad88b39a10ee2e289960024916d2c3c3591a050f56a4",
+      "hash": "b42b548e826d4010"
     }
   ],
-  "ui_version": "2026.10.09.91",
+  "ui_version": "2026.10.09.92",
   "version": "1.13.0"
 }
