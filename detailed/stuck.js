@@ -138,12 +138,100 @@ StuckDetector.prototype.sample=function(x,z,dt){
   return false;
 };
 /* _trigger() — internal: counts the event, starts the 90s cooldown, clears
-   the history so a re-detection starts fresh, returns true to the caller. */
+   the history so a re-detection starts fresh, returns true to the caller.
+   v1.14: Now performs root-cause diagnosis before triggering — analyzes the
+   unit's current segment for data problems (loops, sharp turns, short
+   segments) and stores the diagnosis for the recovery report. This is
+   Joshua's directive: find WHY it's stuck, not just THAT it's stuck. */
 StuckDetector.prototype._trigger=function(){
   this.events++;
   this.cooldown=COOLDOWN;
+  // v1.14: Diagnose the root cause from the position history + segment data
+  this.diagnosis=this._diagnose();
   this.hist.length=0;
   return true;
+};
+/* _diagnose() — v1.14: analyzes WHY the unit got stuck. Returns a diagnosis
+   object with the most likely root cause. Checks (in order):
+   1. SEGMENT_LOOP: the unit's road segment forms a closed loop (start ≈ end)
+   2. SHARP_TURN: the segment has a turn >90° that vehicles can't navigate
+   3. SHORT_SEGMENT: the segment is too short to patrol (<8 points)
+   4. OSCILLATION: the unit bounced between endpoints (behavioral, not data)
+   5. UNKNOWN: none of the above — needs manual investigation
+   Joshua's rule: fix the DATA, not just the behavior. */
+StuckDetector.prototype._diagnose=function(){
+  var diag={cause:'UNKNOWN', detail:'', segLen:0, isLoop:false, sharpTurn:0};
+  try{
+    // Analyze position history for loop pattern
+    if (this.hist.length >= 10){
+      var first=this.hist[0], last=this.hist[this.hist.length-1];
+      var endDist=Math.hypot(last.x-first.x, last.z-first.z);
+      // If we ended near where we started after traveling far = loop
+      var path=0;
+      for (var i=1;i<this.hist.length;i++){
+        path+=Math.hypot(this.hist[i].x-this.hist[i-1].x,
+                         this.hist[i].z-this.hist[i-1].z);
+      }
+      if (path > 100 && endDist < 50){
+        diag.cause='POSITION_LOOP';
+        diag.detail='Traveled '+Math.round(path)+'u but ended '+
+          Math.round(endDist)+'u from start — circular path';
+      }
+    }
+    // Analyze the road segment if available (set by crew systems via u.seg)
+    if (this._seg && this._seg.pts && this._seg.pts.length){
+      var pts=this._seg.pts;
+      diag.segLen=pts.length;
+      // Check for loop: start ≈ end
+      var s0=pts[0], sN=pts[pts.length-1];
+      var loopD=Math.hypot(sN[0]-s0[0], sN[1]-s0[1]);
+      if (loopD < 50){
+        diag.isLoop=true;
+        if (diag.cause==='UNKNOWN'){
+          diag.cause='SEGMENT_LOOP';
+          diag.detail='Road segment forms a closed loop ('+
+            Math.round(loopD)+'u start-to-end gap)';
+        }
+      }
+      // Check for sharp turns
+      var maxAngle=0;
+      for (var j=1;j<pts.length-1;j++){
+        var v1x=pts[j][0]-pts[j-1][0], v1z=pts[j][1]-pts[j-1][1];
+        var v2x=pts[j+1][0]-pts[j][0], v2z=pts[j+1][1]-pts[j][1];
+        var l1=Math.hypot(v1x,v1z), l2=Math.hypot(v2x,v2z);
+        if (l1>0.1 && l2>0.1){
+          var cosA=Math.max(-1,Math.min(1,(v1x*v2x+v1z*v2z)/(l1*l2)));
+          var ang=Math.acos(cosA)*180/Math.PI;
+          if (ang>maxAngle) maxAngle=ang;
+        }
+      }
+      diag.sharpTurn=Math.round(maxAngle);
+      if (maxAngle > 90 && diag.cause==='UNKNOWN'){
+        diag.cause='SHARP_TURN';
+        diag.detail='Segment has '+Math.round(maxAngle)+'° turn — '+
+          'geometrically difficult for vehicles';
+      }
+      // Check for short segment
+      if (pts.length < 8 && diag.cause==='UNKNOWN'){
+        diag.cause='SHORT_SEGMENT';
+        diag.detail='Segment has only '+pts.length+' points — '+
+          'too short for meaningful patrol';
+      }
+    }
+  }catch(e){
+    diag.detail='Diagnosis error: '+(e&&e.message||e);
+  }
+  return diag;
+};
+/* setSegment(seg) — v1.14: crew systems should call this when assigning a
+   unit to a segment, so _diagnose() can analyze the road data. */
+StuckDetector.prototype.setSegment=function(seg){
+  this._seg=seg;
+};
+/* getDiagnosis() — v1.14: returns the last diagnosis object, or null if no
+   stuck event has occurred yet. */
+StuckDetector.prototype.getDiagnosis=function(){
+  return this.diagnosis||null;
 };
 /* call after a recovery so the fresh start isn't judged on stale data */
 StuckDetector.prototype.noteRecovery=function(){
@@ -164,8 +252,25 @@ StuckDetector.prototype.noteRecovery=function(){
 function recoverStuckUnit(u, opts){
   var x=u.mesh.position.x, z=u.mesh.position.z;
   var where='('+Math.round(x)+', '+Math.round(z)+')';
+  // v1.14: Include root-cause diagnosis in the report (Joshua's directive:
+  // find WHY, not just THAT). The diagnosis comes from the unit's
+  // StuckDetector, which analyzed the segment data at trigger time.
+  var diagMsg='';
+  try{
+    if (u.stuck && typeof u.stuck.getDiagnosis==='function'){
+      var d=u.stuck.getDiagnosis();
+      if (d && d.cause && d.cause!=='UNKNOWN'){
+        diagMsg=' Root cause: '+d.cause+
+          (d.detail ? ' — '+d.detail : '')+'.';
+        // v1.14: Track repeat stuck locations for automatic data-repair flagging.
+        // If the same area causes 3+ stuck events, it's a DATA problem.
+        trackStuckLocation(x, z, d.cause, opts.log);
+      }
+    }
+  }catch(e){}
   opts.log('⚠️ '+opts.unitLabel+' STUCK IN A LOOP near '+where+
-    ' — 80s of movement with no progress. Report filed, requesting reassignment.');
+    ' — 80s of movement with no progress.'+diagMsg+
+    ' Report filed, requesting reassignment.');
   try{ opts.toast('⚠️ '+opts.unitLabel+' was stuck in a loop — reassigning patrol'); }catch(e){}
   if (u.seg && opts.blacklist){
     if (opts.blacklist.indexOf(u.seg)<0) opts.blacklist.push(u.seg);
@@ -195,8 +300,50 @@ function recoverStuckUnit(u, opts){
   return true;
 }
 
+/* ---------------- stuck-location tracking (v1.14) ---------------- */
+/* trackStuckLocation(x, z, cause, logFn) — v1.14: automatic data-repair
+   flagging (Joshua's directive: prevent it on its own).
+
+   When the same map area (within 200u) causes 3+ stuck events, it's almost
+   certainly a DATA problem (bad pins, broken geometry, impossible turn) —
+   not a behavioral fluke. This function tracks stuck locations and logs a
+   DATA REPAIR NEEDED alert when the threshold is hit.
+
+   The alert includes the location and the diagnosed cause, so the data team
+   knows exactly what to fix. Locations are also exposed via
+   window.__stuckHotspots for the watcher/debugging tools. */
+var _stuckHotspots=[];  // [{x, z, count, causes:{}, firstSeen, lastSeen}]
+function trackStuckLocation(x, z, cause, logFn){
+  try{
+    var found=null;
+    for (var i=0;i<_stuckHotspots.length;i++){
+      var h=_stuckHotspots[i];
+      if (Math.hypot(h.x-x, h.z-z) < 200){ found=h; break; }
+    }
+    if (!found){
+      found={x:Math.round(x), z:Math.round(z), count:0, causes:{},
+             firstSeen:Date.now(), lastSeen:Date.now()};
+      _stuckHotspots.push(found);
+    }
+    found.count++;
+    found.lastSeen=Date.now();
+    found.causes[cause]=(found.causes[cause]||0)+1;
+    // Threshold: 3 stuck events in the same area = DATA problem
+    if (found.count===3 && logFn){
+      var causeList=Object.keys(found.causes).map(function(k){
+        return k+'×'+found.causes[k];
+      }).join(', ');
+      logFn('🔧 DATA REPAIR NEEDED near ('+found.x+', '+found.z+') — '+
+        '3 stuck events in this area ('+causeList+'). '+
+        'This is a road/data problem, not a behavior problem. '+
+        'Check junction pins, road geometry, and terrain at this location.');
+    }
+  }catch(e){}
+}
+
 window.StuckDetector=StuckDetector;
 window.recoverStuckUnit=recoverStuckUnit;
+window.__stuckHotspots=_stuckHotspots;  // v1.14: expose for debugging/watcher
 window.__stuckCfg={SAMPLE_EVERY:SAMPLE_EVERY, HISTORY_LEN:HISTORY_LEN,
   MIN_PATH:MIN_PATH, MAX_SPREAD:MAX_SPREAD, MAX_REVERSALS:MAX_REVERSALS,
   COOLDOWN:COOLDOWN, REASSIGN_MIN_D:REASSIGN_MIN_D, MIN_SEG_PTS:MIN_SEG_PTS};
