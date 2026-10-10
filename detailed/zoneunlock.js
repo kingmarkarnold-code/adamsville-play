@@ -10,10 +10,10 @@
       map + 5x crews).
 
    PART 1 — ZONE UNLOCKING:
-   - Map divided into 9 zones (3 cols x 3 rows), tiled around Joshua's
-     real Adamsville boundaries (approved 2026-10-10).
+   - Map divided into zones tiled around Joshua's real Adamsville
+     boundaries (approved 2026-10-10; extended north to map edge 2026-10-10).
    - Adamsville home base zone (START, unlocked):
-       North: Bankhead Highway (z=2202)
+       North: map edge (z=-200) — extended north 2026-10-10 per Joshua
        South: Cascade Road (z=4218)
        West:  Fulton Industrial Blvd, inclusive (x=2147)
        East:  Hamilton E. Holmes Dr + 1/4 game-mile (x=5398)
@@ -21,6 +21,9 @@
      NOTE (2026-10-10): an earlier draft listed the south edge as z=395,
      but Cascade Rd SW sits at z[4087,4350] in roads.js — z=395 would have
      placed 535 OUTSIDE its own home zone. Corrected to z=4218.
+   - Mableton zone (added 2026-10-10 per Joshua, named by him): x[-200,2147],
+     z[-200,4218] — west of Fulton Industrial, southern border even with
+     Cascade, extended north to the map edge.
    - Exploration unlocks adjacent zones: when 40% of an unlocked zone's
      coarse grid cells have been visited, all touching zones unlock.
    - Locked zones: grayed out on minimap, invisible walls block entry,
@@ -56,24 +59,21 @@ if (window.ZONEUNLOCK) return;  // single instance guard
 
 /* ---------------- zone definitions ----------------
    Map bounds: x:[-200,8200], z:[-200,12200]
-   3 columns x 3 rows = 9 zones, tiled around Joshua's real Adamsville
-   boundaries (approved 2026-10-10). Grid lines run through Adamsville's
-   edges (x=2147, x=5398, z=2202, z=4218) so zones tile with no gaps
+   Zones tiled around Joshua's real Adamsville boundaries (approved
+   2026-10-10, extended north to map edge 2026-10-10). Grid lines run
+   through x=2147, x=5398, z=2202, z=4218 so zones tile with no gaps
    and no overlaps, and edge-adjacency detection works exactly.
    Adamsville (start) contains home base 535 Dollar Mill Rd (3130, 3705). */
 var ZONES=[
-  // Row 0 (north of Adamsville)
-  {id:'mableton',   name:'Mableton',      xMin:-200, xMax:2147, zMin:-200, zMax:2202},
-  {id:'bankhead',   name:'Bankhead',      xMin:2147, xMax:5398, zMin:-200, zMax:2202},
-  {id:'downtown',   name:'Downtown',      xMin:5398, xMax:8200, zMin:-200, zMax:2202},
-  // Row 1 (Adamsville band) — Adamsville is the starting zone
-  {id:'westside',   name:'Westside',      xMin:-200, xMax:2147, zMin:2202, zMax:4218},
-  {id:'adamsville', name:'Adamsville',    xMin:2147, xMax:5398, zMin:2202, zMax:4218, start:true},
-  {id:'eastatlanta',name:'East Atlanta',  xMin:5398, xMax:8200, zMin:2202, zMax:4218},
+  // Adamsville band — extends north to the map edge (Joshua 2026-10-10)
+  {id:'mableton',    name:'Mableton',      xMin:-200, xMax:2147, zMin:-200, zMax:4218},
+  {id:'adamsville',name:'Adamsville',   xMin:2147, xMax:5398, zMin:-200, zMax:4218, start:true},
+  {id:'downtown',  name:'Downtown',     xMin:5398, xMax:8200, zMin:-200, zMax:2202},
+  {id:'eastatlanta',name:'East Atlanta',xMin:5398, xMax:8200, zMin:2202, zMax:4218},
   // Row 2 (south of Adamsville)
-  {id:'westend',    name:'West End',      xMin:-200, xMax:2147, zMin:4218, zMax:12200},
-  {id:'cascade',    name:'Cascade',       xMin:2147, xMax:5398, zMin:4218, zMax:12200},
-  {id:'southatl',   name:'South Atlanta', xMin:5398, xMax:8200, zMin:4218, zMax:12200},
+  {id:'westend',   name:'West End',      xMin:-200, xMax:2147, zMin:4218, zMax:12200},
+  {id:'cascade',   name:'Cascade',       xMin:2147, xMax:5398, zMin:4218, zMax:12200},
+  {id:'southatl',  name:'South Atlanta', xMin:5398, xMax:8200, zMin:4218, zMax:12200},
 ];
 
 /* ---------------- persistence ---------------- */
