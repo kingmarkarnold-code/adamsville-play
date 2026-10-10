@@ -2356,15 +2356,24 @@ window.__setNpcPaused = function(paused){
    Pre-game options screen: lets Joshua pick which heavy systems run
    (NPCs, crews, MARTA, drones, traffic) and graphics (shadows, AA,
    building detail). Persisted in localStorage['sa_launch_opts_v1'].
-   Each flag defaults to true (everything on). System update wrappers
-   check their flag: `window.__launchOpts.<key>!==false`.
+   v1.23: defaults are all-OFF for web browsers (fresh visits start with
+   nothing checked; user opts in). APK keeps the old all-on defaults.
+   Saved prefs (loaded below) always override these defaults.
+   System update wrappers check their flag: `window.__launchOpts.<key>!==false`.
    Graphics flags are read at init (renderer creation); changing AA
    needs a page reload, which the launcher handles automatically. */
-window.__launchOpts = {
-  npcs: true, roadCrew: true, surveyFleet: true, infraCrew: true, hqStaff: true,
-  martaBuses: true, martaTrains: true, drones: true, traffic: true,
-  shadows: true, antialias: true, hiDetail: true
-};
+(function __setLaunchDefaults(){
+  // Detect APK WebView vs plain web browser (same pattern as report badge v1.21)
+  var isAPK=false;
+  try{isAPK=/SurvivingAdamsville|wv/i.test(navigator.userAgent||'');}catch(e){}
+  var dflt=isAPK;  // web: false (everything off), APK: true (everything on)
+  window.__launchOpts={
+    npcs:dflt,roadCrew:dflt,surveyFleet:dflt,infraCrew:dflt,hqStaff:dflt,
+    martaBuses:dflt,martaTrains:dflt,drones:dflt,traffic:dflt,
+    shadows:dflt,antialias:dflt,hiDetail:dflt
+  };
+  window.__isAPKLaunch=isAPK;  // informational: which default set was applied
+})();
 window.__launcherConfirmed = false;  // set true when user hits START GAME
 (function __loadLaunchOpts(){
   try {
