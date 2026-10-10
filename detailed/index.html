@@ -3636,6 +3636,170 @@ function ranchHouse(x, z, style){
    can sit in driveways at dwellings instead of on the road surface. */
 var PLACED_HOUSES=[];
 /* ============================================================================
+   BUILDING FIX PERSISTENCE — v1.19 (2026-10-09), Joshua's directive:
+   "Buildings that are fixed must be SAVED AUTOMATICALLY."
+   ----------------------------------------------------------------------------
+   When runOsmBuildings() applies fixes to a building — position nudge via
+   placeStruct() (building was in a road corridor) or facing yaw via
+   bldgFaceYaw() (building rotated to face street/parking lot) — each fix is
+   saved to localStorage automatically.
+
+   On subsequent loads, saved fixes are checked FIRST and take PRECEDENCE
+   over recalculation. This makes building repairs permanent: if road data
+   changes in a future update, saved building placements stay stable instead
+   of shifting to new computed positions.
+
+   STORAGE FORMAT:
+     localStorage['sa_bldg_fixes_v1'] = JSON of:
+     {
+       v: "map_version at save time (for staleness detection)",
+       t: 1234567890,           // timestamp of last save
+       n: 13314,                // total fixes saved
+       fixes: {
+         "42": [x, z, yaw, flags],   // keyed by OSM_BUILDINGS index
+         ...
+       }
+     }
+     flags bitmask: 1=nudged (position differs from OSM source),
+                    2=yaw_applied (non-trivial facing rotation)
+
+   Values are rounded (x,z to 0.1u; yaw to 0.001 rad) for compact storage.
+   ~13k buildings × ~30 bytes ≈ 400KB — well within localStorage limits.
+
+   CROSS-DEVICE (downloadable asset system):
+   Fixes are exposed via window.__bldgFixes and included in the diagnostic
+   report (Report.setSys). The export format (bldgFixExport()) produces a
+   bldg-fixes.json ready for incorporation into the downloadable UI assets
+   — once published, all devices receive the fixes via the normal asset
+   download flow. See BLDG_FIX_EXPORT_DOC below.
+   ============================================================================ */
+var BLDG_FIX_KEY='sa_bldg_fixes_v1';
+/* In-memory fix cache — loaded once at startup, flushed once after build. */
+var __bldgFixCache=null;   // {v, t, n, fixes:{}}
+var __bldgFixDirty=false;  // true when new fixes were added this session
+
+/* Load saved building fixes from localStorage. Returns the parsed object
+   or null if none exist / parse fails. Cached after first call. */
+function bldgFixLoad(){
+  if (__bldgFixCache!==null) return __bldgFixCache;  // already loaded
+  var raw=null;
+  try{ raw=localStorage.getItem(BLDG_FIX_KEY); }catch(e){ return null; }
+  if (!raw) return null;
+  try{
+    var o=JSON.parse(raw);
+    if (!o || typeof o!=='object' || !o.fixes) return null;
+    __bldgFixCache=o;
+    return o;
+  }catch(e){ return null; }
+}
+
+/* Get the saved fix for a building index. Returns [x, z, yaw, flags] or null.
+   Saved fixes take PRECEDENCE over recalculation (Joshua's rule). */
+function bldgFixGet(idx){
+  var c=bldgFixLoad();
+  if (!c || !c.fixes) return null;
+  var f=c.fixes[String(idx)];
+  if (!f || !Array.isArray(f) || f.length<4) return null;
+  return f;
+}
+
+/* Record a building fix in the in-memory cache (batched — flushed once at
+   end of runOsmBuildings via bldgFixFlush, not on every building).
+   idx: OSM_BUILDINGS index. x, z: final placed position. yaw: facing rotation.
+   nudged: true if placeStruct moved the building from its OSM position. */
+function bldgFixSave(idx, x, z, yaw, nudged){
+  if (__bldgFixCache===null){
+    // Initialize fresh cache (preserve nothing — this is a new fix set)
+    var mv='';
+    try{ mv=localStorage.getItem('sa_map_version_active')||''; }catch(e){}
+    __bldgFixCache={v:mv, t:Date.now(), n:0, fixes:{}};
+  }
+  var flags=0;
+  if (nudged) flags|=1;
+  if (typeof yaw==='number' && Math.abs(yaw)>0.001) flags|=2;
+  // Compact: round x,z to 0.1u; yaw to 0.001 rad
+  var rx=Math.round(x*10)/10, rz=Math.round(z*10)/10;
+  var ry=Math.round(yaw*1000)/1000;
+  var key=String(idx);
+  var existing=__bldgFixCache.fixes[key];
+  // Only mark dirty if the fix is new or changed
+  if (!existing || existing[0]!==rx || existing[1]!==rz ||
+      existing[2]!==ry || existing[3]!==flags){
+    __bldgFixCache.fixes[key]=[rx,rz,ry,flags];
+    __bldgFixDirty=true;
+  }
+}
+
+/* Write batched fixes to localStorage. Called once after runOsmBuildings()
+   completes. No-op if nothing changed this session. */
+function bldgFixFlush(){
+  if (!__bldgFixDirty || !__bldgFixCache) return;
+  try{
+    __bldgFixCache.t=Date.now();
+    __bldgFixCache.n=Object.keys(__bldgFixCache.fixes).length;
+    // Update map version stamp
+    try{ __bldgFixCache.v=localStorage.getItem('sa_map_version_active')||__bldgFixCache.v||''; }catch(e){}
+    localStorage.setItem(BLDG_FIX_KEY, JSON.stringify(__bldgFixCache));
+    __bldgFixDirty=false;
+  }catch(e){
+    // Quota exceeded or storage unavailable — log but don't break the game
+    try{ console.warn('[bldgFix] flush failed:', String(e&&e.message||e)); }catch(x){}
+  }
+}
+
+/* Export fixes as a bldg-fixes.json payload for the downloadable asset
+   system. Returns a JSON string ready to be published as a downloadable
+   asset — once published, all devices receive the fixes via the normal
+   UI asset download flow (no localStorage needed on fresh installs).
+
+   BLDG_FIX_EXPORT_DOC:
+   1. Call bldgFixExport() in the browser console (or via the admin panel).
+   2. Save the output as detailed/bldg-fixes.json in the adamsville-play repo.
+   3. Add it to ui-manifest.json so the APK/asset system downloads it.
+   4. On game load, if bldg-fixes.json is present, its fixes are merged into
+      the localStorage cache (asset fixes take precedence over local ones
+      when the asset version is newer). */
+function bldgFixExport(){
+  var c=bldgFixLoad();
+  if (!c) return JSON.stringify({v:'',t:Date.now(),n:0,fixes:{}},null,1);
+  return JSON.stringify({v:c.v||'',t:c.t||Date.now(),n:c.n||0,fixes:c.fixes},null,1);
+}
+
+/* Merge downloaded asset fixes (bldg-fixes.json) into the local cache.
+   Asset fixes take precedence when the asset's timestamp is newer than the
+   local cache. Called at startup if the asset file is present. */
+function bldgFixMergeAsset(assetFixes){
+  if (!assetFixes || !assetFixes.fixes) return 0;
+  var c=bldgFixLoad();
+  if (!c){
+    __bldgFixCache={v:assetFixes.v||'',t:assetFixes.t||Date.now(),
+      n:0,fixes:{}};
+    c=__bldgFixCache;
+  }
+  // Asset wins if newer (or if local cache is empty)
+  var assetT=assetFixes.t||0, localT=c.t||0;
+  if (assetT < localT && c.n>0) return 0;  // local is newer, keep local
+  var merged=0;
+  for (var k in assetFixes.fixes){
+    if (!assetFixes.fixes.hasOwnProperty(k)) continue;
+    c.fixes[k]=assetFixes.fixes[k];
+    merged++;
+  }
+  if (merged>0){
+    c.t=Math.max(assetT,localT);
+    c.v=assetFixes.v||c.v||'';
+    __bldgFixDirty=true;
+  }
+  return merged;
+}
+
+/* Expose for the watcher, admin panel, and console export. */
+try{
+  window.__bldgFixExport=bldgFixExport;
+  window.__bldgFixMergeAsset=bldgFixMergeAsset;
+}catch(e){}
+
+/* ============================================================================
    bldgFaceYaw(x, z) — v1.14 (2026-10-09), Joshua's directive
    ----------------------------------------------------------------------------
    Returns the yaw (radians) that orients a building so its FRONT (+z local)
@@ -3694,10 +3858,35 @@ function runOsmBuildings(){
     /* v2.0: uses the GLOBAL bldgClear() (defined near placeStruct) — identical
        logic, now shared with churches/schools and guaranteed to run against
        the final road grid. */
+    /* v1.19 (Joshua's directive): Load saved building fixes FIRST.
+       Saved fixes take PRECEDENCE over recalculation — buildings that were
+       fixed in a prior session keep their saved position/yaw permanently. */
+    var savedFixes=null, savedApplied=0, savedStale=0;
+    try{
+      savedFixes=bldgFixLoad();
+      if (savedFixes && savedFixes.v){
+        var curMV='';
+        try{ curMV=localStorage.getItem('sa_map_version_active')||''; }catch(e){}
+        if (curMV && savedFixes.v!==curMV){
+          savedStale=1;  // map data changed — saved fixes still apply (precedence), but flag it
+        }
+      }
+    }catch(e){ savedFixes=null; }
     var kept=[], skippedRoad=0, nudgedBldg=0;
     for (var i=0;i<OSM_BUILDINGS.length;i++){
       var b=OSM_BUILDINGS[i];  // [x, z, w, d, h, type]
       if (!b || b.length<6) continue;
+      /* v1.19: Check for a SAVED fix before recalculating. Saved fixes are
+         permanent — they survive road data updates and take precedence. */
+      var saved=null;
+      try{ saved=bldgFixGet(i); }catch(e){ saved=null; }
+      if (saved){
+        // Use saved position and yaw directly — no recalculation needed
+        savedApplied++;
+        kept.push([saved[0],saved[1],b[2],b[3],b[4],b[5],saved[2]]);
+        if (saved[3]&1) nudgedBldg++;  // was nudged when originally fixed
+        continue;
+      }
       /* v2.0: unified automatic check — placeStruct auto-nudges clear of ALL
          roads and logs every violation (id, from, to, road name) to
          placementViolations. NEVER deletes: null = skip (not placed). */
@@ -3712,10 +3901,26 @@ function runOsmBuildings(){
         var fyaw=0;
         try{ var _fy=bldgFaceYaw(spot.x,spot.z); if(_fy!==null) fyaw=_fy; }catch(e){}
         kept.push([spot.x,spot.z,b[2],b[3],b[4],b[5],fyaw]);
+        /* v1.19: SAVE the fix automatically — position nudge and/or facing
+           yaw are persisted so this building never needs recalculation. */
+        try{ bldgFixSave(i, spot.x, spot.z, fyaw, !!spot.nudged); }catch(e){}
       } else {
         skippedRoad++;
       }
     }
+    /* v1.19: Flush all saved fixes to localStorage now that the build pass
+       is complete. Single write — not per-building. */
+    try{ bldgFixFlush(); }catch(e){}
+    /* v1.19: Publish fix stats for the watcher, admin panel, and report. */
+    try{
+      window.__bldgFixes={
+        savedApplied:savedApplied,
+        savedStale:savedStale,
+        totalSaved:(function(){ try{
+          var c=bldgFixLoad(); return c?Object.keys(c.fixes).length:0;
+        }catch(e){ return 0; } })()
+      };
+    }catch(e){}
     if (!kept.length){
       try{Report.setSys('osmBuildings',{status:'all-skipped',in:OSM_BUILDINGS.length});}catch(e){}
       return;
@@ -3774,11 +3979,35 @@ function runOsmBuildings(){
     if (roofs.instanceColor) roofs.instanceColor.needsUpdate=true;
     try{ window.__bldgMeshes={bodies:bodies, roofs:roofs, kept:kept}; }catch(e){}
     scene.add(bodies); scene.add(roofs);
+    /* v1.19: Report building-fix persistence status for QA/admin visibility. */
+    var _fixInfo={savedApplied:0,totalSaved:0,savedStale:0};
+    try{
+      if (typeof window.__bldgFixes!=='undefined' && window.__bldgFixes){
+        _fixInfo.savedApplied=window.__bldgFixes.savedApplied||0;
+        _fixInfo.totalSaved=window.__bldgFixes.totalSaved||0;
+        _fixInfo.savedStale=window.__bldgFixes.savedStale||0;
+      }
+    }catch(e){}
     try{Report.setSys('osmBuildings',{in:OSM_BUILDINGS.length,placed:placed,
       skippedRoad:skippedRoad,nudged:nudgedBldg,status:'ok',
       realOSM:(typeof OSM_REAL_COUNT!=='undefined'?OSM_REAL_COUNT:0),
       procedural:OSM_BUILDINGS.length-(typeof OSM_REAL_COUNT!=='undefined'?OSM_REAL_COUNT:0),
+      fixPersist:{savedApplied:_fixInfo.savedApplied,totalSaved:_fixInfo.totalSaved,
+        staleVersion:_fixInfo.savedStale,
+        note:'v1.19: saved fixes take precedence over recalculation'},
       note:'present-day OSM footprints (NOT 1995) + procedural infill where Overpass was unreachable'});}catch(e){}
+    /* v1.19: Log a placement-fix summary note so the fix history is visible
+       in diagnostic reports (exported via ReportBridge on APK). */
+    try{
+      if (_fixInfo.totalSaved>0 || nudgedBldg>0){
+        Report.note('bldgFixPersist',{
+          savedApplied:_fixInfo.savedApplied,
+          totalSaved:_fixInfo.totalSaved,
+          newlyNudged:nudgedBldg,
+          staleMapVersion:!!_fixInfo.savedStale
+        });
+      }
+    }catch(e){}
   }catch(e){ try{Report.noteError('osmBuildings','build failed',String(e&&e.stack||e));}catch(x){} }
 }
 /* NOTE: invoked as runOsmBuildings() after the final road-grid rebuild —
