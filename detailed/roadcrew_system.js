@@ -390,6 +390,96 @@ function roadHeadingAt(nr){
   }catch(e){ return 0; }
 }
 
+/* ---------------- patrol route continuation ---------------- */
+/* WHY THIS EXISTS (2026-10-09): patrol units used to bounce back and forth
+   on a single road segment forever. On a short segment (e.g. Utoy Cir SW,
+   ~200u) that looks exactly like "looping" — Joshua's 2026-10-09 screenshot.
+   Real patrols cover an AREA. Now, when a unit reaches a segment end, it
+   looks for a CONNECTED segment (endpoint within snap radius) and keeps
+   driving onto it instead of bouncing. Bounce is kept as the dead-end
+   fallback. Same pattern as traffic_system.js's endpoint grid. */
+var RC_EP=null;          // lazy endpoint grid over roadDrawData
+var RC_EP_CELL=120;      // grid cell size (u)
+var RC_SNAP_R=70;        // endpoint snap radius (u) — matches traffic
+var RC_MIN_SEG=8;        // never continue onto a stub shorter than this
+/* rcBuildEP() — builds the endpoint spatial grid once: every roadDrawData
+   segment contributes its two endpoints keyed by grid cell. Lazy — safe to
+   call any time; no-ops after the first build. */
+function rcBuildEP(){
+  if (RC_EP) return RC_EP;
+  var grid={};
+  try{
+    for (var i=0;i<roadDrawData.length;i++){
+      var r=roadDrawData[i];
+      if (!r||!r.pts||r.pts.length<2) continue;
+      for (var e=0;e<2;e++){
+        var p=r.pts[e===0?0:r.pts.length-1];
+        var k=Math.floor(p[0]/RC_EP_CELL)+','+Math.floor(p[1]/RC_EP_CELL);
+        (grid[k]=grid[k]||[]).push({ri:i, end:e, x:p[0], z:p[1],
+          name:r.name||'', npts:r.pts.length});
+      }
+    }
+  }catch(e){}
+  RC_EP={grid:grid};
+  return RC_EP;
+}
+/* rcFindConnection(x, z, selfSeg) — nearest DIFFERENT segment whose endpoint
+   is within RC_SNAP_R of (x,z). Prefers the same road name (keeps the patrol
+   on its corridor); skips blacklisted and stub segments. Returns
+   {seg, idx, end} (idx = point index of the matched endpoint) or null. */
+function rcFindConnection(x, z, selfSeg, blacklist){
+  rcBuildEP();
+  var gx=Math.floor(x/RC_EP_CELL), gz=Math.floor(z/RC_EP_CELL);
+  var best=null, bd=RC_SNAP_R*RC_SNAP_R, bestSame=null, bdSame=RC_SNAP_R*RC_SNAP_R;
+  var selfName='';
+  try{ selfName=selfSeg.name||''; }catch(e){}
+  for (var ix=gx-1;ix<=gx+1;ix++) for (var iz=gz-1;iz<=gz+1;iz++){
+    var a=RC_EP.grid[ix+','+iz]; if(!a) continue;
+    for (var i=0;i<a.length;i++){
+      var c=a[i];
+      var seg=null;
+      try{ seg=roadDrawData[c.ri]; }catch(e){ continue; }
+      if (!seg||seg===selfSeg) continue;
+      if (seg.pts.length<RC_MIN_SEG) continue;      // skip stubs
+      if (blacklist && blacklist.indexOf(seg)>=0) continue;
+      var dx=c.x-x, dz=c.z-z, d2=dx*dx+dz*dz;
+      if (d2<bd){ bd=d2; best=c; }
+      if (c.name && c.name===selfName && d2<bdSame){ bdSame=d2; bestSame=c; }
+    }
+  }
+  var pick=bestSame||best;
+  if (!pick) return null;
+  var pseg=null;
+  try{ pseg=roadDrawData[pick.ri]; }catch(e){ return null; }
+  return {seg:pseg, idx:pick.end===1?pseg.pts.length-1:0, end:pick.end};
+}
+/* patrolAdvance(u, dt) — moves the patrol along its polyline; at a segment
+   end, tries to continue onto a connected segment (rcFindConnection).
+   On a successful hop the unit starts at the matched endpoint heading
+   inward, and its stuck-detector history is cleared (fresh road, fresh
+   judgment). Returns nothing. Falls back to the old bounce when no
+   connection exists (dead end). */
+function patrolAdvance(u, dt){
+  var pts=u.seg.pts, n=pts.length;
+  var a=pts[clamp(Math.round(u.i),0,n-1)], b=pts[clamp(Math.round(u.i)+u.dir,0,n-1)];
+  var dx=b[0]-a[0], dz=b[1]-a[1], L=Math.hypot(dx,dz)||1;
+  u.i+=u.dir*(u.speed*dt)/L;
+  var hitEnd=false, whichEnd=0;
+  if (u.i>=n-1){ u.i=n-1; hitEnd=true; whichEnd=1; }
+  else if (u.i<=0){ u.i=0; hitEnd=true; whichEnd=0; }
+  if (hitEnd){
+    var ep=pts[whichEnd===1?n-1:0];
+    var conn=null;
+    try{ conn=rcFindConnection(ep[0], ep[1], u.seg, RC.badSegs); }catch(e){ conn=null; }
+    if (conn){
+      u.seg=conn.seg; u.i=conn.idx; u.dir=conn.end===1?-1:1;
+      if (u.stuck && u.stuck.noteRecovery) u.stuck.noteRecovery();
+      return;
+    }
+    u.dir=whichEnd===1?-1:1;   // dead end — bounce (old behavior)
+  }
+}
+
 /* ---------------- patrol units ---------------- */
 /* spawnPatrol(unitNo, dx, dz, highway) — places one patrol truck on the
    nearest road to (dx,dz) and starts it a quarter-segment down the polyline
@@ -496,15 +586,15 @@ function updatePatrol(u, dt){
   // legitimately paused inspecting a defect
   if (typeof StuckDetector!=='undefined'){
     if (!u.stuck) u.stuck=new StuckDetector();
+    // v1.14: provide segment data for root-cause diagnosis
+    // (Joshua's directive: find WHY it's stuck, not just THAT)
+    try{ if (u.stuck && typeof u.stuck.setSegment==='function' && u.seg) u.stuck.setSegment(u.seg); }catch(e){}
     if (u.stuck.sample(m.position.x, m.position.z, dt)) stuckRecoverRoadCrew(u);
   }
-  // drive along the polyline
+  // drive along the polyline (continues onto connected roads at ends;
+  // bounces only at true dead ends — see patrolAdvance)
+  patrolAdvance(u, dt);
   var pts=u.seg.pts, n=pts.length;
-  var a=pts[clamp(Math.round(u.i),0,n-1)], b=pts[clamp(Math.round(u.i)+u.dir,0,n-1)];
-  var dx=b[0]-a[0], dz=b[1]-a[1], L=Math.hypot(dx,dz)||1;
-  u.i+=u.dir*(u.speed*dt)/L;
-  if (u.i>=n-1){ u.i=n-1; u.dir=-1; }
-  if (u.i<=0){ u.i=0; u.dir=1; }
   var t=u.i-Math.floor(u.i), i0=clamp(Math.floor(u.i),0,n-2);
   var p=pts[i0], q=pts[i0+1];
   var x=p[0]+(q[0]-p[0])*t, z=p[1]+(q[1]-p[1])*t;
