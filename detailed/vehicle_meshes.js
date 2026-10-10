@@ -1,4 +1,40 @@
 /* ============================================================================
+   FILE: vehicle_meshes.js — "Surviving Adamsville" CANONICAL vehicle builders
+   ----------------------------------------------------------------------------
+   PURPOSE: SINGLE SOURCE OF TRUTH for every vehicle mesh in the game AND the
+   watcher. The watcher loads this SAME file live from the published game URL
+   (https://kingmarkarnold-code.github.io/adamsville-play/detailed/), so the
+   studio previews the exact geometry the game renders — never duplicate a
+   builder elsewhere. The game loads it via play/detailed/index.html.
+   CONVENTIONS (all builders):
+     - Return a THREE.Group; take no scene argument (callers add to scene).
+       Depend only on global THREE.
+     - Forward = local +Z (matches yaw movement); left = +X = DRIVER side
+       (US left-hand drive — see VAN_SPEC.md; the van was fixed from a
+       right-hand-drive build, so verify left/right on every new vehicle).
+     - BoxGeometry + MeshLambertMaterial styling (stylized 3D-animation look,
+       matching the game's art direction — never photorealistic).
+     - userData exposes: wheels[] (spin from distance driven), doors[]
+       (hinged, animated via setCarDoors), steerWheel, spinners[]
+       (independent spinner-rim parts), body/cab/hood (damage pop), len
+       (coupled length).
+   BUILDERS: sedanMesh, addCockpit (driver's-seat dash + wheel), safariMesh
+     (Joshua's 1985-1994 GMC Safari van — brown/bronze + cream two-tone, the
+     player's MAIN DRIVING VAN), boxChevyMesh / bubbleChevyMesh (donk
+     Caprices, 1977-1990 / 1991-1996 — candy paint, lifted stance, oversized
+     chrome rims; every Chevy is one-of-a-kind, paint+rim combo never
+     repeats), pickupMesh (90s single-cab, open bed), suvMesh, semiMesh
+     (stylized 18-wheeler), martaBusMesh (MARTA city bus, white + blue/green),
+     schoolBusMesh. Shared: pickPaint, pickRimStyle, makeDonkWheel, addCarDoor,
+     setCarDoors, addCarInterior, vehMat (cached materials), groundY.
+   NOTE: traffic_system.js has its own separate simple instanced sedan meshes
+   for ambient traffic — those are NOT these builders (instancing vs. these
+   detailed meshes). The player's drivable van is safariMesh.
+   Extracted 2026-10-09: sedan/safari/chevys/pickup/suv from index.html,
+   semiMesh from semi_system.js, martaBusMesh from marta_bus_system.js,
+   schoolBusMesh from refnpc_system.js.
+   ========================================================================== */
+/* ============================================================================
    SURVIVING ADAMSVILLE — SHARED VEHICLE MESH BUILDERS (canonical module)
    ----------------------------------------------------------------------------
    SINGLE SOURCE OF TRUTH for every vehicle mesh in the game AND the watcher.
@@ -11,7 +47,13 @@
    semiMesh from semi_system.js, martaBusMesh from marta_bus_system.js,
    schoolBusMesh from refnpc_system.js.
    ========================================================================== */
-// forward = local +Z (matches yaw movement); driver sits left (+X local)
+/* ----------------------------------------------------------------------------
+   CANONICAL BUILDERS — conventions: forward = local +Z; left = +X = driver
+   side (US left-hand drive); return a THREE.Group; callers add to scene.
+   userData carries wheels[]/doors[]/steerWheel/spinners[]/body/cab/hood/len. */
+// sedanMesh(color) — TRUE SCALE (~1.42m roofline: below the 1.85m character's
+// eyeline). Body + glasshouse + hood + 4 wheels; exposes userData.body/cab/hood
+// for the damage system. The game's stylized sedan archetype.
 function sedanMesh(color){
   // TRUE SCALE: overall height ~1.42m (roofline below the 1.85m character's eyeline)
   var g=new THREE.Group();
@@ -32,8 +74,9 @@ function sedanMesh(color){
   });
   return g;
 }
-// cockpit for drivable cars: dashboard + working steering wheel (driver's-seat view)
-// h = height offset for taller vehicles (Safari van)
+// addCockpit(carGroup, h) — dashboard + column + working steering wheel for
+// drivable cars (driver's-seat view). h = height offset for taller vehicles
+// (Safari van). Returns the steering wheel mesh.
 function addCockpit(carGroup, h){
   h=h||0;
   var dash=new THREE.Mesh(new THREE.BoxGeometry(1.7,0.28,0.45),
@@ -47,9 +90,12 @@ function addCockpit(carGroup, h){
   wheel.position.set(0.5,1.02+h,0.68); wheel.rotation.x=-0.5; carGroup.add(wheel);
   return wheel;
 }
-/* GMC SAFARI (first-gen 1985-1994) — Joshua's van. Brown/bronze + cream two-tone.
-   forward = local +Z (matches yaw movement); ~2.35m tall: the 1.85m character's
-   head comes up near the roof but not above it. */
+/* safariMesh() — GMC SAFARI (first-gen 1985-1994): JOSHUA'S VAN, the
+   player's MAIN DRIVING VAN from his group photo. Brown/bronze + cream
+   two-tone 70s/80s conversion-van look (~2.35m tall). LEFT-hand drive:
+   wheel at +X, double doors on the right/passenger side (fixed 2026-10-08 —
+   it was built right-hand drive). Near-van interaction (Joshua's spec):
+   per-door choice — ENTER vehicle OR OPEN door without entering. */
 function safariMesh(){
   var g=new THREE.Group();
   var bronze=0x8a5a1e, cream=0xe6d3a3, trimC=0x1c1c1e, glassC=0x1c2733;
@@ -124,6 +170,11 @@ var CANDY_PAINTS=[0xc01818,0x1848c0,0x7a1fa0,0xd4a017,0x18a058,0xe05818,0xb01848
 var METAL_PAINTS=[0x8a8a92,0x3a3a40,0x5a6a7a,0x6a2a1a,0x1a2a5a,0xc0c0c8,0x4a5a3a];
 var ROOF_PAINTS=[0xe8e0d0,0x181818,0xc0c0c8,0x8a1a1a,0x1848c0,0xd4a017];
 var _usedChevyPaint={};
+// pickPaint(kind, rimStyle) — returns {body, roof, stripe, style} from the
+// candy/metallic palettes with a style roll (28% two-tone / 14% stripes /
+// 8% fade / rest solid). For Chevys (boxchevy/bubblechevy) the
+// kind+body+roof+style+rimStyle key is tracked in _usedChevyPaint so every
+// Chevy is one-of-a-kind — no duplicate paint+rim combos in the fleet.
 function pickPaint(kind, rimStyle){
   var isChevy=(kind==='boxchevy'||kind==='bubblechevy');
   var body, roof, stripe, style, key, tries=0;
@@ -144,6 +195,9 @@ function pickPaint(kind, rimStyle){
 
 // ---------- rims: big donk rims. spinner + blade in the Chevy rotation. ----------
 var RIM_STYLES=['spokes','mesh','deepdish','spinner','blade','chrome5'];
+// pickRimStyle(kind) — one of spokes/mesh/deepdish/spinner/blade/chrome5.
+// All styles are in the rotation for Chevys (incl. spinner & blade — the donk
+// signature); regular cars can clone freely.
 function pickRimStyle(kind){
   // Chevys: full rotation incl spinner & blade. Regular cars: any style, clones fine.
   return RIM_STYLES[(Math.random()*RIM_STYLES.length)|0];
@@ -158,7 +212,11 @@ function _addSpokes(face, n, len, w, mat, xOff){
     piv.add(s); piv.rotation.x=i/n*Math.PI*2; face.add(piv);
   }
 }
-// style: spokes|mesh|deepdish|spinner|blade|chrome5. R = tire radius. Axle along X.
+// makeDonkWheel(style, R) — oversized chrome-rim wheel (axle along X):
+// tire + chrome barrel + styled face + center cap. 'spinner' style gets two
+// independently-spinning 3-blade caps (g.userData.spinnerParts — callers
+// register them in g.userData.spinners[] with a random velocity). R = tire
+// radius; rim width derives from it (W=R*0.62).
 function makeDonkWheel(style, R){
   var g=new THREE.Group();
   var W=R*0.62, chrome=_chromeMat(), darkT=_darkTireMat(),
@@ -219,7 +277,11 @@ function makeDonkWheel(style, R){
   return g;
 }
 
-// ---------- hinged doors (driver +X, passenger -X). Animate via setCarDoors. ----------
+// addCarDoor(g, xPos, frontZ, doorLen, doorH, doorY, bodyMat) — hinged door:
+// a pivot Group at the door's front edge (xPos = ±W/2; driver door at +X)
+// with body panel + semi-transparent glass + handle. Animate via
+// setCarDoors; the pivot rotation sign (openRot ±1.15 rad) swings each door
+// outward on its own side. Registered on g.userData.doors[].
 function addCarDoor(g, xPos, frontZ, doorLen, doorH, doorY, bodyMat){
   var piv=new THREE.Group();
   piv.position.set(xPos, doorY, frontZ);
@@ -236,11 +298,17 @@ function addCarDoor(g, xPos, frontZ, doorLen, doorH, doorY, bodyMat){
   (g.userData.doors=g.userData.doors||[]).push(d);
   return d;
 }
+// setCarDoors(car, open) — opens/closes every door registered on the car's
+// mesh (userData.doors). car = the entity record {mesh}; safe no-op when
+// the record or doors are missing.
 function setCarDoors(car, open){
   if(!car||!car.mesh||!car.mesh.userData.doors) return;
   car.mesh.userData.doors.forEach(function(d){ d.open=open; });
 }
-// ---------- interior: floor, seats, dash, LEFT-HAND-DRIVE wheel at +X ----------
+// addCarInterior(g, o) — floor, two front seats + bench, dash, and the
+// LEFT-HAND-DRIVE steering wheel at +X (VAN_SPEC.md — the van flip lesson:
+// always verify +X = driver). o = {width, floorY, seatZ, dashZ, seatColor}.
+// Exposes g.userData.steerWheel.
 function addCarInterior(g, o){
   var dark=new THREE.MeshLambertMaterial({color:0x232326});
   var seatM=new THREE.MeshLambertMaterial({color:o.seatColor||0x3a3a40});
@@ -277,6 +345,10 @@ function paintStripe(g, y, z0, z1, width, color){
 /* ---- BOX CHEVY (1977-1990 Caprice, donk) — boxy upright silhouette ----
    Reference: tall formal roofline, vertical chrome grille, quad headlights,
    long flat hood/trunk, sharp edges. Lifted donk stance, big chrome rims. */
+// boxChevyMesh(paint, rimStyle) — BOX CHEVY (1977-1990 Caprice, donk):
+// tall formal roofline, vertical chrome grille + quad headlights, long flat
+// hood/trunk, sharp edges; lifted donk stance (0.42u lift), big chrome rims
+// (R=0.48), full interior + hinged doors. paint = pickPaint output.
 function boxChevyMesh(paint, rimStyle){
   var g=new THREE.Group();
   var bodyM=new THREE.MeshLambertMaterial({color:paint.body});
@@ -340,6 +412,9 @@ function boxChevyMesh(paint, rimStyle){
 /* ---- BUBBLE CHEVY (1991-1996 Caprice, donk) — rounded flowing silhouette ----
    Reference: sleek aero body, curved rear glass flowing into trunk, sloped nose,
    flush rounded styling. Same donk treatment: candy paint, big chrome rims. */
+// bubbleChevyMesh(paint, rimStyle) — BUBBLE CHEVY (1991-1996 Caprice, donk):
+// sleek aero body, curved rear glass flowing into the trunk, sloped nose,
+// flush rounded styling; same donk treatment as the box Chevy.
 function bubbleChevyMesh(paint, rimStyle){
   var g=new THREE.Group();
   var bodyM=new THREE.MeshLambertMaterial({color:paint.body});
@@ -395,7 +470,9 @@ function bubbleChevyMesh(paint, rimStyle){
   return g;
 }
 
-/* ---- PICKUP (90s American single-cab) ---- */
+// pickupMesh(paint, rimStyle) — 90s American single-cab pickup: open bed
+// with walls + tailgate, grille with square headlights, interior + doors,
+// donk wheels (R=0.40).
 function pickupMesh(paint, rimStyle){
   var g=new THREE.Group();
   var bodyM=new THREE.MeshLambertMaterial({color:paint.body});
@@ -457,7 +534,8 @@ function pickupMesh(paint, rimStyle){
   return g;
 }
 
-/* ---- SUV (stylized family SUV) ---- */
+// suvMesh(paint, rimStyle) — stylized family SUV: tall wagon body, roof
+// rails, interior + doors, donk wheels (R=0.42).
 function suvMesh(paint, rimStyle){
   var g=new THREE.Group();
   var bodyM=new THREE.MeshLambertMaterial({color:paint.body});
@@ -517,6 +595,10 @@ function suvMesh(paint, rimStyle){
 }
 
 var TRAILER_COLORS=[0xb8bcc2,0x9aa2ab,0xc2c6cb,0x8a949e,0xd8d8d8,0x7a8a99];
+// semiMesh() — stylized 18-wheeler: cab (random fleet color) + sleeper +
+// 11.5u trailer (random light color), exhaust stacks, 10 wheels on
+// g.userData.wheels. No paint arg — the fleet color is randomized. Used by
+// semi_system.js for the delivery sim (verify LHD: driver wheel at +X).
 function semiMesh(){
   var g=new THREE.Group();
   var chrome=null, glass=null, dark=null, tireM=null;
@@ -569,6 +651,8 @@ function semiMesh(){
 }
 
 var _vehMats={};
+// vehMat(color) — cached Lambert materials (one per color), shared by the
+// builders and by marta_bus_system.js's instanced stop signs.
 function vehMat(color){
   if (!_vehMats[color]) _vehMats[color]=new THREE.MeshLambertMaterial({color:color});
   return _vehMats[color];
@@ -577,7 +661,11 @@ function groundY(x,z){
   try{ return heightAt(x,z); }catch(e){ return 0; }
 }
 
-/* ---------------- bus mesh (stylized MARTA city bus) ---------------- */
+/* martaBusMesh() — stylized MARTA city bus (12u long): white body, blue
+   stripe + green accent stripe (MARTA livery), window band, windshield,
+   canvas-texture "MARTA" destination sign, side mirrors.
+   g.userData.len = body length. Used by marta_bus_system.js for all 40
+   route buses. */
 function martaBusMesh(){
   var g=new THREE.Group();
   var white=vehMat(0xe8eaec), blue=vehMat(0x1a5fb4), green=vehMat(0x2a9d4b),
@@ -631,6 +719,9 @@ function martaBusMesh(){
 }
 
 function vehLam(c){ return new THREE.MeshLambertMaterial({color:c}); }
+// schoolBusMesh() — stylized school bus: yellow body, black rub stripe,
+// window band, hood, fold-out stop sign (left side), roof warning lights,
+// 6 wheels on g.userData.wheels.
 function schoolBusMesh(){
   var g=new THREE.Group();
   var yellow=vehLam(0xe8a913), black=vehLam(0x1a1a1a), glass=vehLam(0x1c2733),
