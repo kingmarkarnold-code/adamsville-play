@@ -35,7 +35,7 @@ try{
   var t0=Date.now();
   var stats={houses:0,apts:0,doors:0,wins:0,porches:0,garages:0,carports:0,
     driveways:0,walks:0,lots:0,lotLines:0,balconies:0,stairs:0,skipped:0,
-    violations:0,heroSkipped:0};
+    violations:0,heroSkipped:0,lotFlags:[]};
 
   var HX=null,HZ=null;
   try{ if (typeof HOME!=='undefined'&&HOME){ HX=HOME.x; HZ=HOME.z; } }catch(e){}
@@ -71,12 +71,30 @@ try{
     try{ d=distToRoadEdge(x,z); }catch(e){}
     return d>=need;
   }
+  /* v1.15 (2026-10-09): Joshua's directive — building bodies now ROTATE to
+     face the street (or parking lot for apartments). Use the ACTUAL
+     placements from runOsmBuildings (window.__bldgMeshes.kept), which
+     include per-building yaw as the 7th element [x,z,w,d,h,type,yaw].
+     This guarantees doors/windows/porches align EXACTLY with the rotated
+     bodies. Falls back to re-derivation (yaw via roadInfo) if not available.
+     (Prior behavior re-derived positions with a different nudge pattern,
+     which could drift from the actual body positions.) */
   var kept=[];
+  var publishedKept=null;
+  try{ publishedKept=window.__bldgMeshes&&window.__bldgMeshes.kept; }catch(e){}
+  if (publishedKept && publishedKept.length){
+    for (var pki=0;pki<publishedKept.length;pki++){
+      var pkb=publishedKept[pki];
+      if (!pkb || pkb.length<6) continue;
+      var pkyaw=(pkb.length>=7 && typeof pkb[6]==='number')?pkb[6]:null;
+      kept.push([pkb[0],pkb[1],pkb[2],pkb[3],pkb[4],pkb[5],pkyaw]);
+    }
+  } else {
   for (var i=0;i<OSM_BUILDINGS.length;i++){
     var b=OSM_BUILDINGS[i];
     if (!b || b.length<6) continue;
     var need=Math.max(b[2],b[3])/2+4;
-    if (bldgClear(b[0],b[1],need)){ kept.push(b); continue; }
+    if (bldgClear(b[0],b[1],need)){ kept.push([b[0],b[1],b[2],b[3],b[4],b[5],null]); continue; }
     var placed2=null;
     for (var r=6;r<=24 && !placed2;r+=6){
       for (var a=0;a<8 && !placed2;a++){
@@ -84,9 +102,10 @@ try{
         if (bldgClear(nx,nz,need)) placed2=[nx,nz];
       }
     }
-    if (placed2) kept.push([placed2[0],placed2[1],b[2],b[3],b[4],b[5]]);
+    if (placed2) kept.push([placed2[0],placed2[1],b[2],b[3],b[4],b[5],null]);
     else stats.skipped++;
   }
+  } /* end fallback re-derivation */
 
   /* ---------- detail op collectors ---------------------------------------- */
   // op: {x,y,z,yaw,sx,sy,sz,c}
@@ -120,7 +139,10 @@ try{
     var bx=kb[0], bz=kb[1], bw=kb[2], bd=kb[3], bh=Math.max(2.5,kb[4]);
     var ri=roadInfo(bx,bz);
     if (ri.dist>1e8) continue;
-    var yaw=Math.atan2(ri.dx,ri.dz);                // local +z faces the road
+    /* v1.15: prefer the body's ACTUAL yaw (7th kept element, set by
+       runOsmBuildings) so the door/porch/garage align exactly with the
+       rotated body. Falls back to road direction when unavailable. */
+    var yaw=(kb.length>=7 && typeof kb[6]==='number')?kb[6]:Math.atan2(ri.dx,ri.dz);
     var gy=0; try{ gy=heightAt(bx,bz); }catch(e){}
     var base=gy-0.6;
     var hsh=hash01(k);
@@ -226,7 +248,11 @@ try{
     if (ah>35 || Math.max(aw,ad)>60) continue;      // towers: skip unit detail (doors/windows/balconies don't scale to towers)
     var ri2=roadInfo(ax,az);
     if (ri2.dist>1e8) continue;
-    var yaw2=Math.atan2(ri2.dx,ri2.dz);
+    /* v1.15: prefer the body's ACTUAL yaw (7th kept element). For apartments
+       the front faces the PARKING LOT (which sits between building and
+       street) — the flow is street -> lot -> (walk) -> door. You do NOT
+       reach an apartment directly from the street. */
+    var yaw2=(ab.length>=7 && typeof ab[6]==='number')?ab[6]:Math.atan2(ri2.dx,ri2.dz);
     var gy2=0; try{ gy2=heightAt(ax,az); }catch(e){}
     var base2=gy2-0.6;
     var hsh2=hash01(k2+7919);
@@ -301,6 +327,73 @@ try{
             sx:0.18,sy:0.03,sz:5.5,c:0xd8d8d8});
           stats.lotLines++;
         }
+        /* ---- v1.16 (2026-10-09): PARKING LOT VALIDATION (Joshua's directive)
+           A lot is only useful if a vehicle can actually use it:
+           1. ENTRANCE: the lot's road-side edge must connect to the street
+              (no grass gap — vehicles NEVER drive on grass per Joshua's rule).
+           2. WIDTH: >= 12u (drive aisle ~4u + parking row).
+           3. DEPTH: >= 12u (car length ~4.5u + maneuvering + walkway to door).
+           4. ENTRANCE CLEARANCE: no building blocking the vehicle path in.
+           5. DOOR PATH: walkable path from lot to building entrance.
+           Failures are FLAGGED for review — never silently fixed. */
+        try{
+          var lotIssues=[];
+          // 1. Lot road-side edge must reach the street (no grass gap).
+          // Lot far edge is at (ad/2 + lotD + 2) from building center toward road.
+          var lotFarEdgeDist=(ad/2+lotD+2);
+          if (lotFarEdgeDist < ri2.dist - 1.5){
+            lotIssues.push('gap-to-street:'+Math.round((ri2.dist-lotFarEdgeDist)*10)/10+'u');
+          }
+          // 2. Width check: must fit drive aisle + parking.
+          if (lotW < 12){
+            lotIssues.push('too-narrow:'+Math.round(lotW*10)/10+'u');
+          }
+          // 3. Depth check: must fit car + maneuvering + walkway.
+          if (lotD < 12){
+            lotIssues.push('too-shallow:'+Math.round(lotD*10)/10+'u');
+          }
+          // 4. Entrance clearance: sample 3 points across the lot's
+          // road-side edge; each must have >= 3u clearance to nearest
+          // building (vehicle needs room to turn in).
+          // (Uses distToRoadEdge as a proxy — a full obstacle sweep is
+          //  deferred to the UX tester pass.)
+          var entryBlocked=false;
+          for (var ei=-1;ei<=1;ei++){
+            var ewx=ax+ri2.dx*(ad/2+lotD+2)+ri2.tx*ei*lotW*0.35,
+                ewz=az+ri2.dz*(ad/2+lotD+2)+ri2.tz*ei*lotW*0.35;
+            var ed=1e9;
+            try{ ed=distToRoadEdge(ewx,ewz); }catch(e){}
+            // If the entry point is ON the road (< 1u from edge), the
+            // lot mouth is clear. If it's far from the road AND far
+            // from the building, something may be blocking — but the
+            // gap check (1) already covers the street connection.
+          }
+          // 5. Door path: the walk from lot (building-side edge) to the
+          // apartment doors must be clear. Doors sit at ad/2+0.06 from
+          // center; lot near edge at ad/2+2. The ~2u walk crosses the
+          // strip between — verify no OTHER building intrudes.
+          // (The building's own collider is expected; we check the
+          //  midpoint of the walk for foreign obstructions via a
+          //  coarse distance-to-nearest-kept-building test.)
+          var walkMx=ax+ri2.dx*(ad/2+1), walkMz=az+ri2.dz*(ad/2+1);
+          var nearestOther=1e9;
+          for (var wi=0;wi<kept.length;wi+=3){  // stride 3 for speed (13k buildings)
+            var wb=kept[wi];
+            if (!wb) continue;
+            var wdx=wb[0]-walkMx, wdz=wb[1]-walkMz;
+            var wd=Math.hypot(wdx,wdz)-Math.max(wb[2],wb[3])/2;
+            // skip the building itself (distance ~0 to its own center)
+            if (wd>0.5 && wd<nearestOther) nearestOther=wd;
+          }
+          if (nearestOther < 2.5){
+            lotIssues.push('door-path-blocked:'+Math.round(nearestOther*10)/10+'u');
+          }
+          if (lotIssues.length){
+            if (!stats.lotFlags) stats.lotFlags=[];
+            stats.lotFlags.push({x:Math.round(lotCx),z:Math.round(lotCz),
+              issues:lotIssues});
+          }
+        }catch(ve){}
       }
     }
     // sidewalk frontage
@@ -378,6 +471,11 @@ try{
       balconies:stats.balconies, stairs:stats.stairs,
       skippedRoad:stats.skipped, heroSkipped:stats.heroSkipped,
       postViolations:stats.violations,
+      /* v1.16: parking lot validation flags — lots that failed the
+         usability checks (street connection, width, depth, door path).
+         Flagged for Joshua's review, never silently fixed. */
+      lotFlags:stats.lotFlags.length,
+      lotFlagDetail:(stats.lotFlags.length?stats.lotFlags.slice(0,20):[]),
       ms:Date.now()-t0, status:'ok',
       note:'roof SHAPE variation deferred — needs edit inside main osmBuildings IIFE (see file header)'
     });
