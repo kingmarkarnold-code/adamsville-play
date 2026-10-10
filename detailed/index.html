@@ -4092,6 +4092,20 @@ function bldgFixLoad(){
   try{
     var o=JSON.parse(raw);
     if (!o || typeof o!=='object' || !o.fixes) return null;
+    /* v2.1 (2026-10-10, Adamsville regen — Joshua's "one and done" directive):
+       Building data was rebuilt from real OSM footprints. Old per-building
+       fixes are keyed by array index — they would misapply to different
+       buildings now. Discard saved fixes when OSM_BLDG_VERSION changed. */
+    try{
+      var curBV = (typeof OSM_BLDG_VERSION!=='undefined') ? OSM_BLDG_VERSION : '';
+      if (curBV && o.bv && o.bv!==curBV){
+        // Stale building data version — discard old fixes, start fresh.
+        try{ localStorage.removeItem(BLDG_FIX_KEY); }catch(e){}
+        try{ if(typeof Report!=='undefined') Report.noteError('osmBuildings','discarded stale bldg fixes (bv '+o.bv+' -> '+curBV+')',''); }catch(e){}
+        __bldgFixCache={v:o.v||'',t:Date.now(),n:0,bv:curBV,fixes:{}};
+        return __bldgFixCache;
+      }
+    }catch(e){}
     __bldgFixCache=o;
     return o;
   }catch(e){ return null; }
@@ -4143,6 +4157,8 @@ function bldgFixFlush(){
     __bldgFixCache.n=Object.keys(__bldgFixCache.fixes).length;
     // Update map version stamp
     try{ __bldgFixCache.v=localStorage.getItem('sa_map_version_active')||__bldgFixCache.v||''; }catch(e){}
+    /* v2.1: stamp building data version so bldgFixLoad can detect rebuilds. */
+    try{ if(typeof OSM_BLDG_VERSION!=='undefined') __bldgFixCache.bv=OSM_BLDG_VERSION; }catch(e){}
     localStorage.setItem(BLDG_FIX_KEY, JSON.stringify(__bldgFixCache));
     __bldgFixDirty=false;
   }catch(e){
