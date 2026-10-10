@@ -685,15 +685,10 @@ function initRefNPC(){
           boarding:false, boardT:0};
   buildRoute();
   computeStopSchedule(); // per-stop arrivals + per-kid leave times (v1.1)
-  // HUD clock (tiny, top-center)
-  try{
-    var div=document.createElement('div');
-    div.id='refnpc-clock';
-    div.style.cssText='position:fixed;top:8px;left:50%;transform:translateX(-50%);'+
-      'color:#9fe8ff;font:12px monospace;background:rgba(0,0,0,0.45);'+
-      'padding:2px 10px;border-radius:8px;z-index:50;pointer-events:none;';
-    document.body.appendChild(div); RN.hud=div;
-  }catch(e){}
+  /* v1.2 (Joshua 2026-10-09): REMOVED the tiny blue HUD clock — daycycle.js
+     already shows DAY/DATE/TIME/WEATHER/SEASON in the large top-center HUD.
+     The duplicate small blue clock just cluttered the screen. RN.hud stays
+     undefined; the update loop guards on it. */
   // hook animate
   try{
     if (typeof animate==='function' && !animate.__refnpcWrap){
