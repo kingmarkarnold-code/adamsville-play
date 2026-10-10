@@ -1,6 +1,12 @@
 {
   "files": [
     {
+      "name": "bird_drones.js",
+      "size": 9844,
+      "sha256": "33ba808b172e829b19cbfa2ecedd42eef33562b503e61ded5d1a7c26884d2245",
+      "hash": "fb42d5638380c7b9"
+    },
+    {
       "name": "clubs_diners.js",
       "size": 13197,
       "sha256": "8951521787d7cceacaea39806c19c269176e98ad289c50f2a481073347e8489c",
@@ -13,6 +19,12 @@
       "hash": "1730b55d72c5d571"
     },
     {
+      "name": "face_platform.js",
+      "size": 3765,
+      "sha256": "b2a73f3d84e06bfd6342c491df9a6c382e5e703b202083450d56ba0323987e25",
+      "hash": "e7cdd523410bf7a4"
+    },
+    {
       "name": "icon.png",
       "size": 69132,
       "sha256": "be119f2f4e02c4c20be2dc2db973b64e1d8c68ed202c9e6077deb7fbd7620574",
@@ -20,9 +32,9 @@
     },
     {
       "name": "index.html",
-      "size": 641740,
-      "sha256": "d000ab50006bb9412e034ad4a5056784372a25114b306935cd8e6866700a2256",
-      "hash": "68d7e8d306d899e3"
+      "size": 651701,
+      "sha256": "d48628609e9863c1db9a1f0fc9f42fcfd94fcf00dcfa6211fcedfde189762195",
+      "hash": "a5e1f5669c316eb3"
     },
     {
       "name": "marriott.js",
@@ -97,6 +109,12 @@
       "hash": "e2bc5c12afb8b28f"
     },
     {
+      "name": "schoolbus_system.js",
+      "size": 13218,
+      "sha256": "77c793f9ddd01770577ea41a7c8353aee1b67b4f9c2695acf4150100d4745487",
+      "hash": "eb737b91c6c87c5b"
+    },
+    {
       "name": "schools3.js",
       "size": 14602,
       "sha256": "420f6d2a428070761bd2dbaf63af42a1a86efb12ec3afb767ecfa867670e9154",
@@ -145,6 +163,6 @@
       "hash": "ebbce3dcc8f81e64"
     }
   ],
-  "ui_version": "2026.10.09.56",
+  "ui_version": "2026.10.09.58",
   "version": "1.13.0"
 }
