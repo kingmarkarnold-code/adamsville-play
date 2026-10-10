@@ -86,9 +86,9 @@
     },
     {
       "name": "refnpc_system.js",
-      "size": 34941,
-      "sha256": "9743fbfb6e95a4c184c6415f2ac894fd4aa6934ec71b3a5be2438086382a9723",
-      "hash": "42735878d6e7f89a"
+      "size": 37398,
+      "sha256": "f70ef3fae1825f85c363b5f2c98f7a8ddb926c12b3e48d176e449ac03e053d35",
+      "hash": "b80e5b414ef560d4"
     },
     {
       "name": "residential_detail.js",
@@ -211,6 +211,6 @@
       "hash": "f51af332ecae98e4"
     }
   ],
-  "ui_version": "2026.10.09.69",
+  "ui_version": "2026.10.09.70",
   "version": "1.13.0"
 }
