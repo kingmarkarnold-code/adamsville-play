@@ -63,11 +63,11 @@ if (window.ZONEUNLOCK) return;  // single instance guard
    2026-10-10, extended north to map edge 2026-10-10). Grid lines run
    through x=2147, x=5398, z=2202, z=4218 so zones tile with no gaps
    and no overlaps, and edge-adjacency detection works exactly.
-   Adamsville (start) contains home base 535 Dollar Mill Rd (3130, 3705). */
+   Adamsville (start) contains home base 535 Dollar Mill Rd (1953, 6813). // RESCALED 2026-10-10 */
 var ZONES=[
   // Adamsville band — extends north to the map edge (Joshua 2026-10-10)
   {id:'mableton',    name:'Mableton',      xMin:-200, xMax:2147, zMin:-200, zMax:4218},
-  {id:'adamsville',name:'Adamsville',   xMin:2147, xMax:5398, zMin:-200, zMax:4218, start:true},
+  {id:'adamsville',name:'Adamsville',   xMin:-832, xMax:8377, zMin:-4249, zMax:8267, start:true},  // RESCALED 2026-10-10: true 1:1 (was x[2147,5398] z[-200,4218])
   {id:'downtown',  name:'Downtown',     xMin:5398, xMax:8200, zMin:-200, zMax:2202},
   {id:'eastatlanta',name:'East Atlanta',xMin:5398, xMax:8200, zMin:2202, zMax:4218},
   // Row 2 (south of Adamsville) — REVERTED 2026-10-10: Joshua asked to undo
@@ -215,7 +215,37 @@ function trackPlayer(dt){
       }catch(e){}
       dlog('Blocked entry to locked zone: '+zn.name);
     }
+    return;  // Don't check zone crossing while being pushed back
   }
+
+  // ZONE-SEPARATED MAPS (2026-10-10, Joshua's directive):
+  // Check if player has crossed into a different zone's map.
+  // If so, trigger a zone transition (page reload with new zone).
+  try {
+    if (typeof ZONELOADER !== 'undefined' && ZONELOADER.checkZoneCrossing){
+      var targetZone = ZONELOADER.checkZoneCrossing(px, pz);
+      if (targetZone){
+        dlog('Zone crossing detected: ' + ZONELOADER.currentZone + ' -> ' + targetZone);
+        // Only transition if target zone is unlocked
+        if (isUnlocked(targetZone)){
+          ZONELOADER.transitionTo(targetZone);
+        } else {
+          // Target is locked — push back instead
+          var pb = pushBackToUnlocked(px, pz);
+          if (pb && Date.now()-lastBlockMsg>5000){
+            lastBlockMsg=Date.now();
+            try{
+              if(typeof showToast==='function'){
+                var tzn=null;
+                for(var zi=0;zi<ZONES.length;zi++) if(ZONES[zi].id===targetZone) tzn=ZONES[zi];
+                showToast('🔒 '+(tzn?tzn.name:targetZone)+' is locked — explore to unlock it');
+              }
+            }catch(e){}
+          }
+        }
+      }
+    }
+  } catch(e){}
 }
 function getUnlockHint(lockedZone){
   // find an unlocked adjacent zone to suggest
