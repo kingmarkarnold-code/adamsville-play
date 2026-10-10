@@ -442,13 +442,9 @@ function rcFindConnection(x, z, selfSeg, blacklist){
       if (!seg||seg===selfSeg) continue;
       if (seg.pts.length<RC_MIN_SEG) continue;      // skip stubs
       if (blacklist && blacklist.indexOf(seg)>=0) continue;
-      /* v1.15 (StuckDiag) self-prevention: don't hop onto a segment whose
-         endpoint sits on a flagged bad spot — the registry learned the road
-         data there is bad. */
-      try{
-        if (typeof StuckDiag!=='undefined' && StuckDiag.isBadSpot &&
-            StuckDiag.isBadSpot(c.x,c.z)) continue;
-      }catch(e){}
+      /* v1.16 (Joshua's directive): the old StuckDiag.isBadSpot avoidance
+         was REMOVED — units do not reroute around flagged bad spots; they
+         pull over and wait for the data fix. Connection-finding stays. */
       var dx=c.x-x, dz=c.z-z, d2=dx*dx+dz*dz;
       if (d2<bd){ bd=d2; best=c; }
       if (c.name && c.name===selfName && d2<bdSame){ bdSame=d2; bestSame=c; }
@@ -528,12 +524,10 @@ function patrolShift(u){
 }
 /* ---------------- stuck-loop recovery (shared stuck.js module) ---------------- */
 /* stuckRecoverRoadCrew(u) — wraps the shared recoverStuckUnit() with road-crew
-   context: logs to the dispatch log, blacklists the bad segment in
-   RC.badSegs (skipped on future reassignment), and repositions the truck
-   onto the nearest road with a cleared target. This is Joshua's stuck-loop
-   recovery protocol: the unit recognizes it can't finish its travel, files a
-   report, and requests police assistance — police escort it through the grass
-   (the one authorized exception to the no-grass rule) back to a road. */
+   context: logs to the dispatch log. v1.16 (Joshua's rule): the unit pulls
+   over and waits for the data fix — no reassignment, no rerouting. The
+   reposition callback below is deprecated (kept for opts compatibility but
+   no longer called by recoverStuckUnit). */
 function stuckRecoverRoadCrew(u){
   if (typeof recoverStuckUnit!=='function') return;
   recoverStuckUnit(u, {
@@ -569,6 +563,18 @@ function updatePatrol(u, dt){
   if (u.shift!==sh){
     u.shift=sh;
     dlog('Unit '+u.no+' — '+sh+' shift on duty. Road crew runs 24/7.');
+  }
+  /* v1.16 wait-for-fix (Joshua's rule): a unit parked at a bad spot sits
+     PATIENTLY by the road until the data team fixes it — it does NOT
+     reroute around the problem. waitTick re-checks the data periodically;
+     the unit resumes only after the fix is confirmed. */
+  if (u.waitingForFix){
+    try{
+      if (typeof StuckDiag!=='undefined' && typeof StuckDiag.waitTick==='function')
+        StuckDiag.waitTick(u, dt, function(mm){ dlog(mm); });
+    }catch(e){}
+    var _wb=m.userData.lightBar; if (_wb) _wb.visible=(RC.tick%10<5);  // flash while waiting
+    return;
   }
   if (u.pauseT>0){
     u.pauseT-=dt;
