@@ -585,6 +585,8 @@ function updatePatrol(u, dt){
       var d=u.target; u.target=null;
       d.state='found';
       dlog('Unit '+u.no+' found defect '+d.id+' ('+d.street+') — radioed dispatch.');
+      /* v1.18 veteran field note — the patrolman reads it with 30-year eyes. */
+      try{ if(typeof VeteranCrew!=='undefined') dlog('Unit '+u.no+' field note: "'+VeteranCrew.fieldNote('road')+'"'); }catch(e){}
       toast('🚧 Road crew found a road defect ('+d.street+') — dispatch notified');
       setTimeout(function(){
         if (d.state!=='found') return;
@@ -763,6 +765,29 @@ function dispatchRepair(d){
   // store worker home positions for fetch-and-return behavior
   workers.forEach(function(w){ w.userData.homeX=w.position.x; w.userData.homeZ=w.position.z; w.userData.fetchState=null; });
   RC.jobs.push(job);
+  /* v1.18 VETERAN CREW (Joshua 2026-10-09): 30-year-veteran workflow —
+     assess → report → dispatch → setup → fix → verify → auto-save.
+     A foreman (white hard hat + clipboard) leads the job; the workers
+     stage by the truck and walk out to their stations in the setup phase.
+     Worker home positions (for cone fetch-and-return) were captured above
+     as the work stations — staging moves them only until setup runs. */
+  try{
+    if (typeof VeteranCrew!=='undefined'){
+      var _vt=[];
+      workers.forEach(function(w){ _vt.push({x:w.position.x, z:w.position.z}); });
+      var _fm=VeteranCrew.makeForeman('road');
+      if (_fm){ _fm.position.set(tx, groundY(tx,tz), tz); grp.add(_fm); job.foreman=_fm; }
+      job.vet=VeteranCrew.jobState({crew:'ROAD CREW', kind:'road', issue:d,
+        fixDur:REPAIR_T, siteR:10, truckPos:{x:tx, z:tz},
+        workerTargets:_vt, foremanStyle:'road'});
+      /* stage the crew by the truck — the setup phase walks them out. */
+      var _stg=[[2.5,0.5],[-2.5,0.5],[1.5,3],[-1.5,3]];
+      workers.forEach(function(w,k){
+        var _s=_stg[k%_stg.length];
+        w.position.set(tx+_s[0], groundY(tx+_s[0],tz+_s[1]), tz+_s[1]);
+      });
+    }
+  }catch(e){}
   dlog('Repair crew on site at '+d.id+' ('+d.street+') — signs, cones and detour placed.');
   toast('🚧 Repair crew working on '+d.street+' — detour in place');
   try{ Report.setSys('roadcrew', sysReport()); }catch(e){}
@@ -887,21 +912,40 @@ function updateConePhysics(j, dt){
     }
   });
 }
-/* updateJobs(dt) — per-frame job ticks: repair animation (workers bob and
-   swing arms; workers on a cone-fetch are skipped), cone physics, light-bar
-   flash; at REPAIR_T (75s) the job finishes and is removed. */
+/* rcFixTick(j, dt) — the legacy per-frame repair work: worker repair
+   animation (skipping workers out on a cone fetch), cone knock-over
+   physics, and truck light-bar flash. updateJobs calls this during the
+   'fixing' phase for veteran jobs, or every frame for legacy jobs. */
+function rcFixTick(j, dt){
+  // workers: repair animation OR fetch-and-return (not both)
+  j.workers.forEach(function(w,k){
+    if(w.userData.fetchState) return;  // handled by updateConePhysics
+    w.position.y+=Math.sin(RC.time*7+k*2.4)*0.012;
+    w.rotation.y+=Math.sin(RC.time*1.3+k)*0.01;
+    var a=w.userData.armR; if(a) a.rotation.x=Math.sin(RC.time*7+k)*0.7;
+  });
+  try{ updateConePhysics(j, dt); }catch(e){}
+  var bar=j.truck.userData.lightBar; if (bar) bar.visible=(RC.tick%14<7);
+}
+/* updateJobs(dt) — per-frame job ticks.
+   v1.18 VETERAN CREW (Joshua 2026-10-09): jobs carrying vet state run the
+   30-year-veteran phase machine (arrive → assess → report → setup → fix →
+   verify). The legacy repair animation runs only during 'fixing'; when the
+   machine returns 'done' the normal finishRepair path runs (fresh asphalt,
+   collider cleanup, localStorage persistence). Jobs without vet state keep
+   the legacy 75s timing. */
 function updateJobs(dt){
   for (var i=RC.jobs.length-1;i>=0;i--){
-    var j=RC.jobs[i]; j.t+=dt;
-    // workers: repair animation OR fetch-and-return (not both)
-    j.workers.forEach(function(w,k){
-      if(w.userData.fetchState) return;  // handled by updateConePhysics
-      w.position.y+=Math.sin(RC.time*7+k*2.4)*0.012;
-      w.rotation.y+=Math.sin(RC.time*1.3+k)*0.01;
-      var a=w.userData.armR; if(a) a.rotation.x=Math.sin(RC.time*7+k)*0.7;
-    });
-    try{ updateConePhysics(j, dt); }catch(e){}
-    var bar=j.truck.userData.lightBar; if (bar) bar.visible=(RC.tick%14<7);
+    var j=RC.jobs[i];
+    if (j.vet && typeof VeteranCrew!=='undefined'){
+      var ph=VeteranCrew.updateJob(j, dt, {time:RC.time,
+        log:function(m){ dlog(m); }, toast:function(m){ toast(m); }});
+      if (ph==='fixing'){ j.t+=dt; rcFixTick(j,dt); }
+      else if (ph==='done'){ finishRepair(j); RC.jobs.splice(i,1); }
+      continue;
+    }
+    j.t+=dt;
+    rcFixTick(j,dt);
     if (j.t>=REPAIR_T){
       finishRepair(j);
       RC.jobs.splice(i,1);
