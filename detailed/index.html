@@ -1894,6 +1894,19 @@ var Report=(function(){
   function save(force){
     try{
       if(typeof ReportBridge==="undefined"||!ReportBridge.saveReport){
+        /* v1.21: Don't show the "bridge MISSING" badge on desktop browsers.
+           ReportBridge only exists in the APK's WebView. On desktop/laptop
+           web browsers this badge is confusing and meaningless — hide it. */
+        try{
+          var isDesktop=/Windows|Macintosh|Linux/i.test(navigator.userAgent||'');
+          var isAPK=/SurvivingAdamsville|wv/i.test(navigator.userAgent||'');
+          if(isDesktop&&!isAPK){
+            if(badgeEl) badgeEl.style.display='none';
+            setSys('report',{lastWrite:null,ok:false,writes:writeCount,bridge:'n/a-desktop',
+              note:'ReportBridge only exists in APK WebView — badge hidden on desktop'});
+            return;
+          }
+        }catch(e){}
         setBadge('\uD83D\uDCDD bridge MISSING', false);
         setSys('report',{lastWrite:null,ok:false,writes:writeCount,bridge:'MISSING',
           note:'ReportBridge undefined in WebView — native stub is the only telemetry'});
@@ -2187,6 +2200,31 @@ var container = document.getElementById('game');
    Also cap pixel ratio at 1.0 for software rendering. */
 var _useAA = !window.__weakHardware;
 var _pixelRatio = window.__weakHardware ? 1.0 : Math.min(window.devicePixelRatio || 1, 1.5);
+/* v1.21 DIAGNOSTIC (Joshua 2026-10-10): On weak hardware, show a small
+   FPS + input indicator so we can tell if the game loop is running and
+   whether keyboard input is being received. Helps diagnose "player won't
+   move" reports on Joshua's laptop. */
+window.__diagEl = null;
+window.__diagFrames = 0;
+window.__diagLastT = 0;
+window.__diagFPS = 0;
+window.__diagLastKey = 'none';
+if (window.__weakHardware) {
+  try {
+    var _de = document.createElement('div');
+    _de.id = 'perf-diag';
+    _de.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:60;'
+      + 'font:11px monospace;color:#0f0;background:rgba(0,0,0,.6);'
+      + 'padding:3px 7px;border-radius:8px;pointer-events:none;';
+    _de.textContent = 'starting...';
+    document.body.appendChild(_de);
+    window.__diagEl = _de;
+  } catch(e){}
+}
+/* Track last keypress for the diagnostic */
+window.addEventListener('keydown', function(e){
+  try { window.__diagLastKey = e.key; } catch(x){}
+}, true);
 var renderer = new THREE.WebGLRenderer({ antialias: _useAA });
 renderer.setPixelRatio(_pixelRatio);
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -7763,6 +7801,21 @@ function resolveNPCVehicleCollisions(){
 function animate(){
   requestAnimationFrame(animate);
   var dt=Math.min(0.05, clock.getDelta());
+  /* v1.21 DIAGNOSTIC: Update FPS + input indicator on weak hardware */
+  try{
+    if(window.__diagEl){
+      window.__diagFrames++;
+      var _now=performance.now();
+      if(_now-window.__diagLastT>=1000){
+        window.__diagFPS=window.__diagFrames;
+        window.__diagFrames=0;
+        window.__diagLastT=_now;
+        window.__diagEl.textContent='FPS:'+window.__diagFPS
+          +' key:'+window.__diagLastKey
+          +' px:'+Math.round(player.x)+','+Math.round(player.z);
+      }
+    }
+  }catch(e){}
   if (car.driving) updateCar(dt); else updatePlayer(dt);
   try{ updateVehicleCosmetics(dt); }catch(e){}
   updateCamera(dt);
