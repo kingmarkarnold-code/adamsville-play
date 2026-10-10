@@ -143,7 +143,9 @@ function buildStops(){
   var poleGeo=new THREE.BoxGeometry(0.18,3.2,0.18);
   var signGeo=new THREE.BoxGeometry(1.1,0.7,0.08);
   var poleMesh=new THREE.InstancedMesh(poleGeo, vehMat(0x707880), allStops.length);
+    poleMesh.frustumCulled=false; // v1.17 FIX: InstancedMesh spans the map — r128 culls it as a tiny sphere at origin, making meshes invisible
   var signMesh=new THREE.InstancedMesh(signGeo, vehMat(0x1a5fb4), allStops.length);
+    signMesh.frustumCulled=false; // v1.17 FIX: InstancedMesh spans the map — r128 culls it as a tiny sphere at origin, making meshes invisible
   var m4=new THREE.Matrix4();
   allStops.forEach(function(s,i){
     var gy=groundY(s.x,s.z);
