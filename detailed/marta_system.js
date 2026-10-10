@@ -13,12 +13,16 @@
        edge (1500u cap, 100u steps, direction from a 400u baseline so the
        overrun follows the line's general direction — not a last-segment
        wiggle). Smoothed terrain heights → bed + rails as BufferGeometry.
-     - Trains: 2 per line (Blue/Gold/Green/Red), constant 30 u/s with eased
-       station stops (slow within 90u, snap + dwell 9s). Stop arc positions
-       are tracked in EXTENDED coordinates (sOffset applied at init).
+     - Trains: 12 u/s (~62 mph at true map scale ≈ 695 u/mile) with eased
+       station stops (slow within 90u, snap + dwell 4 game-min ≈ 20.7 real-sec).
+       v1.3: Joshua said dial the speed back — was 6/line at 40 u/s.
+       ALL time values derive from the game clock (24 game-hrs = 124 real-min):
+       headways 10-15 game-minutes, dwell 4 game-minutes. Per-line train counts
+       are computed from actual track length so every line hits the headway band.
+       Stop arc positions are tracked in EXTENDED coordinates (sOffset applied at init).
      - v1.1 despawn/respawn (Joshua's pattern, same as semis): trains run past
        the last in-map station to the map edge, VANISH, then a spawn timer
-       (every 8s) keeps 2 per line by respawning at alternating map-edge ends
+       (every 4s) keeps 10 per line by respawning at alternating map-edge ends
        "from out of town". NO turnaround at terminals — a rider still aboard
        past the last stop is auto-exited onto the platform.
      - Boarding/riding: on the universal action button via
@@ -45,8 +49,10 @@
         canopy, stairs, station-name sign, blue "M" pylon. Walkable.
      2. TRAIN MODEL — stylized 4-car MARTA train (silver + blue stripe),
         low-poly, matching the game's look.
-     3. TRAIN SERVICE — 2 trains per line (Blue/Gold/Green/Red) running back
-        and forth along the real GTFS track shapes, dwelling at each station.
+     3. TRAIN SERVICE — 12 u/s (~62 mph) with 20.7s station dwells, running
+        along the real GTFS track shapes. Train counts are computed per line
+        from the game clock for 10-15 game-minute headways.
+        (v1.3: Joshua — realistic speed, game-time headways/dwells.)
      4. BOARDING/RIDING — walk onto a platform; when a train is stopped,
         the action button offers BOARD TRAIN. Ride it; the HUD shows the
         line and next station. EXIT TRAIN at any station.
@@ -63,9 +69,23 @@
 if (window.__martaV1) return;
 window.__martaV1 = true;
 
-/* ---------------- config ---------------- */
-var TRAIN_SPEED   = 40;    // units/sec cruising (v1.2: was 30 — faster trains = more frequent station arrivals)
-var DWELL_TIME    = 9;     // seconds stopped at each station
+/* ---------------- config ----------------
+   v1.3 GAME-TIME REFERENCE (Joshua's standing rule): ALL time-based values in
+   this system derive from the game clock, not wall-clock time.
+   daycycle.js: 24 game-hours = 124 real-minutes = 7440 real-seconds, so
+   1 game-minute = 5.1667 real-seconds. Express headways/dwells in game units
+   and convert to real seconds for the sim timers below. */
+var GAME_MIN_TO_REAL_SEC = (124*60)/1440;  // 5.1667 — game-minutes to real-seconds
+/* Train speed: world units per real second (physics sim runs in real time).
+   Map scale ≈ 695 u/mile (measured from map bounds vs real geography), so
+   12 u/s ≈ 62 mph — realistic MARTA cruise (max ~70 mph).
+   (v1.3: was 40 u/s — Joshua said dial it back.) */
+var TRAIN_SPEED   = 12;
+/* Dwell: expressed in GAME-minutes per Joshua's rule. 4 game-min ≈ 20.7 real-sec.
+   Chosen for gameplay: the player needs real seconds to reach the platform and
+   hit the action button to board. (v1.3: was a flat 9 real-sec.) */
+var DWELL_GAME_MIN = 4;
+var DWELL_TIME    = DWELL_GAME_MIN * GAME_MIN_TO_REAL_SEC;  // real-sec for the sim
 var TRAINS_PER_LINE = 2;
 var BRAKE_DIST    = 90;    // start slowing this far from a stop
 var BOARD_RANGE   = 30;    // how close player must be to board
@@ -73,7 +93,16 @@ var PLATFORM_W    = 10, PLATFORM_L = 76, PLATFORM_H = 1.4;
 /* v1.1 despawn/respawn (Joshua): trains run past the last in-map station to
    the map edge, VANISH (like the 18-wheelers), then respawn later coming back
    "from out of town". No more turn-around at terminal stations. */
-var TRAIN_TARGET_PER_LINE = 6;   // spawn timer keeps this many per line (v1.2: was 2 — Joshua reported waiting 'forever' at stations)
+/* Headway: target time between trains, in GAME-minutes (Joshua: 10-15).
+   Per-line train count is computed from the actual track length at init:
+   trains = pathLength / (speed × headwayInRealSec), so every line lands in
+   the 10-15 game-minute band regardless of its length.
+   (v1.3: was a flat 6/line at 40 u/s ≈ 33 real-sec ≈ 6 game-min headways.) */
+var HEADWAY_GAME_MIN = 12.5;  // midpoint of Joshua's 10-15 game-minute band
+function trainsForLine(pathLen){
+  var headwayRealSec = HEADWAY_GAME_MIN * GAME_MIN_TO_REAL_SEC;
+  return Math.max(2, Math.round(pathLen / (TRAIN_SPEED * headwayRealSec)));
+}
 var SPAWN_CHECK_INTERVAL  = 4;   // seconds between spawn checks (v1.2: was 8 — faster top-up for more frequent service)
 var EXTEND_STEP           = 100; // track extension step (units)
 var EXTEND_MAX            = 1500;// max overrun past terminal (units)
@@ -448,7 +477,7 @@ function martaAutoExit(t){
    to 'run' (NO terminal reversal — the train continues to the map edge;
    a rider still aboard at the terminal is auto-exited). Run state: ease
    speed toward the next stop (slow linearly inside BRAKE_DIST=90u, snap +
-   dwell 9s within 6u), advance arc position; returns true when the train
+   dwell DWELL_TIME within 6u), advance arc position; returns true when the train
    reaches the extended path end (map edge) → the caller despawns it.
    Mesh is positioned at the smoothed track height, -0.55u (rail-to-body
    offset), yawed to the travel direction. */
@@ -635,14 +664,16 @@ function initMarta(){
       }
     }
   }
-  // spawn trains: 3 per line at each map-edge end heading inward (v1.2: was 1 per end = 2 total)
-  // ("from out of town"). The spawn timer keeps this topped up.
+  // spawn trains: per-line count from trainsForLine() (v1.3 game-time headways),
+  // distributed evenly along the line in alternating directions — "from out of town".
+  // The spawn timer keeps this topped up.
   for (li=0;li<MT.lines.length;li++){
     var ln=MT.lines[li];
-    /* v1.2: distribute TRAIN_TARGET_PER_LINE trains evenly along the line so
-       stations get service immediately at boot (was: 2 trains at the far ends,
-       meaning long waits at middle stations). Alternate directions. */
-    var n=TRAIN_TARGET_PER_LINE, plen=ln.path.length;
+    /* v1.3: train count derived from the actual track length and the target
+       game-minute headway (was: flat TRAIN_TARGET_PER_LINE for every line,
+       v1.2: 6/line, v1.1: 2/line at the far ends). */
+    ln.trainTarget = trainsForLine(ln.path.length);
+    var n=ln.trainTarget, plen=ln.path.length;
     for (var ti=0; ti<n; ti++){
       var s0=2+Math.floor((plen-4)*ti/n);
       var dir=(ti%2===0)?1:-1;
@@ -650,7 +681,7 @@ function initMarta(){
     }
   }
   MT.ready=true;
-  try{ Report.setSys('marta',{status:'ok',version:'1.0',
+  try{ Report.setSys('marta',{status:'ok',version:'1.3',
     stations:MT.stations.length, lines:MT.lines.length, trains:MT.trains.length,
     note:'MARTA rail: stations + rideable trains'}); }catch(e){}
   window.MARTA=MT;
@@ -673,15 +704,17 @@ function updateMarta(){
   for (i=MT.trains.length-1;i>=0;i--){
     if (updateTrain(MT.trains[i], dt)) despawnTrain(i);
   }
-  // spawn timer (semi pattern): keep TRAIN_TARGET_PER_LINE per line, new ones
-  // appear at alternating map-edge ends "from out of town"
+  // spawn timer (semi pattern): keep each line at its ln.trainTarget (v1.3:
+  // per-line count from game-minute headways), new ones appear at alternating
+  // map-edge ends "from out of town"
   MT.spawnT-=dt;
   if (MT.spawnT<=0){
     MT.spawnT=SPAWN_CHECK_INTERVAL;
     for (var li=0;li<MT.lines.length;li++){
       var ln=MT.lines[li], cnt=0, k;
+      var target=ln.trainTarget||2;
       for (k=0;k<MT.trains.length;k++) if (MT.trains[k].line===ln) cnt++;
-      if (cnt<TRAIN_TARGET_PER_LINE){
+      if (cnt<target){
         var ed=ln.spawnEnd; ln.spawnEnd*=-1;
         spawnTrain(ln, ed>0?2:ln.path.length-2, ed);
       }
