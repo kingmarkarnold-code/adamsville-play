@@ -10,7 +10,7 @@
       "name": "codeenforce_system.js",
       "size": 61902,
       "sha256": "092357f93ac225018144ee2954962c5000468c8935004b752df8f54eb2791f7c",
-      "hash": "1a35f920efc6910e"
+      "hash": "1730b55d72c5d571"
     },
     {
       "name": "icon.png",
@@ -20,15 +20,15 @@
     },
     {
       "name": "index.html",
-      "size": 641092,
-      "sha256": "1dd6ef388043921914ffbd91fba4cfd885f7f05720f557f640b6848c3ca9a69c",
-      "hash": "6a49a7b68022699a"
+      "size": 641740,
+      "sha256": "d000ab50006bb9412e034ad4a5056784372a25114b306935cd8e6866700a2256",
+      "hash": "68d7e8d306d899e3"
     },
     {
       "name": "marriott.js",
-      "size": 41265,
-      "sha256": "b5d9ce21852ba32d1abac24654a44b48ded6d14b46422110ede51bae9a6ec7e9",
-      "hash": "805da8aff5872b4b"
+      "size": 41698,
+      "sha256": "16426962e66e784eddef96ab6fcec0e634e7a8bc54987bae042af47cf89c832a",
+      "hash": "44524ba37af62d42"
     },
     {
       "name": "marta_bus_data.js",
@@ -62,9 +62,9 @@
     },
     {
       "name": "npc_system.js",
-      "size": 43997,
-      "sha256": "689c706bf0885a66044552c225bc88eb35f5d936014ec385faa2dc0a0d3c2fa5",
-      "hash": "2f8c7e36c26f6b55"
+      "size": 56601,
+      "sha256": "3f2afd1942d8dbe4eafb327b1efabd382cdbebdaaaca70eafc6bf7decf70944a",
+      "hash": "637fd9aa085b3437"
     },
     {
       "name": "poi_map.js",
@@ -88,7 +88,7 @@
       "name": "roadcrew_system.js",
       "size": 50474,
       "sha256": "f2634cac27efe16331d0fd418ceceb83c2a7d5c59dd0c2fd4a3a83c738595751",
-      "hash": "92c27ff890a49f09"
+      "hash": "aa8b1ec2164e8ba4"
     },
     {
       "name": "school_plaza.js",
@@ -124,13 +124,13 @@
       "name": "stuck.js",
       "size": 17469,
       "sha256": "c3aadaf3c823a8be5dd23ebee175d0b97d1aa665ebc1d28067cc6149f5e3dc8c",
-      "hash": "da2e10e90d327ce3"
+      "hash": "1b9ff1a153e18a46"
     },
     {
       "name": "stuck_diag.js",
       "size": 30066,
       "sha256": "082134f070b004a7c7b46d55692a1247d5150d57dc4392da1af283c3fb913c08",
-      "hash": "343a46b19419addf"
+      "hash": "96a72cf194f9f5a3"
     },
     {
       "name": "three.min.js",
@@ -140,11 +140,11 @@
     },
     {
       "name": "traffic_system.js",
-      "size": 42302,
-      "sha256": "889924aad4cd32c55441fa778252bf8825554e624ef8c561f522b6249f6fb89f",
-      "hash": "ae4987b12645235a"
+      "size": 43282,
+      "sha256": "e4a779744a5a9a94133aabe11e05e6bcfd9fce2fad6ec54385f7388183040116",
+      "hash": "ebbce3dcc8f81e64"
     }
   ],
-  "ui_version": "2026.10.09.55",
+  "ui_version": "2026.10.09.56",
   "version": "1.13.0"
 }
