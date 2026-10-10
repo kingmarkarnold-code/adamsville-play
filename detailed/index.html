@@ -2131,9 +2131,54 @@ function clampVehY(x, z, y){
 }
 
 // ---------- renderer / scene ----------
+/* v1.20 PERFORMANCE (Joshua 2026-10-10): Auto-detect weak hardware (no GPU,
+   software rendering like SwiftShader/llvmpipe, old laptops) and degrade
+   gracefully. Antialiasing is the #1 killer on CPU-only rendering. */
+window.__weakHardware = false;
+window.__perfMode = 'full';
+(function detectWeakHardware(){
+  try {
+    var canvas = document.createElement('canvas');
+    var gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+    if (!gl) { window.__weakHardware = true; window.__perfMode = 'minimal'; return; }
+    var dbgInfo = gl.getExtension('WEBGL_debug_renderer_info');
+    var rendererName = '';
+    if (dbgInfo) {
+      rendererName = String(gl.getParameter(dbgInfo.UNMASKED_RENDERER_WEBGL) || '').toLowerCase();
+    }
+    // Software renderers: SwiftShader, llvmpipe, Softpipe, Basic Render
+    if (rendererName.indexOf('swiftshader') >= 0 ||
+        rendererName.indexOf('llvmpipe') >= 0 ||
+        rendererName.indexOf('softpipe') >= 0 ||
+        rendererName.indexOf('basic render') >= 0 ||
+        rendererName.indexOf('software') >= 0) {
+      window.__weakHardware = true;
+      window.__perfMode = 'low';
+    }
+    // Low memory devices (3GB or less, like Joshua's phone/laptop)
+    try {
+      if (navigator.deviceMemory && navigator.deviceMemory <= 4) {
+        window.__weakHardware = true;
+        if (window.__perfMode === 'full') window.__perfMode = 'low';
+      }
+    } catch(e){}
+    // Few CPU cores = weak
+    try {
+      if (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2) {
+        window.__weakHardware = true;
+        if (window.__perfMode === 'full') window.__perfMode = 'low';
+      }
+    } catch(e){}
+  } catch(e) {}
+})();
+
 var container = document.getElementById('game');
-var renderer = new THREE.WebGLRenderer({ antialias:true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+/* v1.20: Disable antialiasing on weak hardware — it's the #1 CPU killer.
+   Also cap pixel ratio at 1.0 for software rendering. */
+var _useAA = !window.__weakHardware;
+var _pixelRatio = window.__weakHardware ? 1.0 : Math.min(window.devicePixelRatio || 1, 1.5);
+var renderer = new THREE.WebGLRenderer({ antialias: _useAA });
+renderer.setPixelRatio(_pixelRatio);
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputEncoding = THREE.sRGBEncoding;
 container.appendChild(renderer.domElement);
@@ -2146,9 +2191,14 @@ try{
     renderer:(_gl&&_gl.getParameter(_gl.RENDERER))?String(_gl.getParameter(_gl.RENDERER)).slice(0,48):'?'});
 }catch(e){}
 scene.background = new THREE.Color(0x9fc7e8);
-scene.fog = new THREE.Fog(0x9fc7e8, 400, 2500);
+/* v1.20: Closer fog on weak hardware hides the reduced draw distance. */
+scene.fog = window.__weakHardware
+  ? new THREE.Fog(0x9fc7e8, 200, 1200)
+  : new THREE.Fog(0x9fc7e8, 400, 2500);
 
-var camera = new THREE.PerspectiveCamera(62, window.innerWidth/window.innerHeight, 0.5, 5000);  // v0.6: tighter depth range = less z-fight on mobile GPUs
+/* v1.20 PERFORMANCE: Reduce view distance on weak hardware — less to render. */
+var _camFar = (window.__weakHardware) ? 1500 : 5000;
+var camera = new THREE.PerspectiveCamera(62, window.innerWidth/window.innerHeight, 0.5, _camFar);  // v0.6: tighter depth range = less z-fight on mobile GPUs
 
 var hemi = new THREE.HemisphereLight(0xcfe8ff, 0x4a7c3a, 0.95);
 scene.add(hemi);
@@ -6022,6 +6072,35 @@ var RADIO_TRACKS=[
   {src:'music/tunetank-inspiring-cinematic-music-409347_012013_11_i25z.mp3',name:'Inspiring Cinematic'}
 ];
 var musicAudio=new Audio();
+/* v1.20 PERFORMANCE (Joshua 2026-10-10): Browser autoplay policy blocks audio
+   until user interacts. Unlock on first click/keydown/touch so music starts. */
+(function unlockAudio(){
+  var unlocked=false;
+  function doUnlock(){
+    if(unlocked) return; unlocked=true;
+    try{
+      // Resume any suspended AudioContext
+      if(typeof window.__audioCtx!=='undefined' && window.__audioCtx && window.__audioCtx.state==='suspended'){
+        window.__audioCtx.resume();
+      }
+      // Prime the music element with a silent play to unlock it
+      var p=musicAudio.play();
+      if(p&&p.catch) p.catch(function(){});
+      // If music should be playing, restart it properly
+      if(!musicMuted && musicStarted){
+        setTimeout(function(){ try{ musicAudio.play(); }catch(e){} }, 100);
+      }
+    }catch(e){}
+    ['click','keydown','touchstart'].forEach(function(ev){
+      try{ document.removeEventListener(ev, doUnlock); }catch(e){}
+    });
+  }
+  ['click','keydown','touchstart'].forEach(function(ev){
+    try{ document.addEventListener(ev, doUnlock, {once:false, passive:true}); }catch(e){
+      try{ document.addEventListener(ev, doUnlock); }catch(e2){}
+    }
+  });
+})();
 musicAudio.volume=0.35;   // modest — sits under the game
 musicAudio.preload='auto';
 var musicMode='walk', radioIdx=0, musicStarted=false, musicMuted=false;
@@ -7634,8 +7713,29 @@ function animate(){
   // exploration, enforce locked-zone boundaries, update culling state.
   try{ if(window.ZONEUNLOCK) window.ZONEUNLOCK.trackPlayer(dt); }catch(e){}
   try{ if(window.SATVIEW) window.SATVIEW.update(dt); }catch(e){}  // v1.16 SATELLITE VIEW per-frame camera/labels
-  try{ if(typeof updateNPCs!=='undefined') updateNPCs(dt, player.mesh.position); }catch(e){}
-  try{ resolveNPCVehicleCollisions(); }catch(e){}   // v1.18: no vehicle passes through another — Period (Joshua)
+  /* v1.20 PERFORMANCE: Throttle NPC AI on weak hardware to 10Hz.
+     1000 NPCs at 60Hz crushes weak CPUs. Visual positions still update
+     smoothly via the render slots; only the AI decisions are throttled. */
+  try{
+    if(typeof updateNPCs!=='undefined'){
+      if(window.__weakHardware){
+        window.__npcTick=(window.__npcTick||0)+1;
+        if(window.__npcTick%6===0) updateNPCs(dt*6, player.mesh.position);
+      } else {
+        updateNPCs(dt, player.mesh.position);
+      }
+    }
+  }catch(e){}
+  /* v1.20 PERFORMANCE: The O(n²) vehicle collision resolver is expensive.
+     On weak hardware, run it at 15Hz instead of every frame. */
+  try{
+    if(window.__weakHardware){
+      window.__collTick=(window.__collTick||0)+1;
+      if(window.__collTick%4===0) resolveNPCVehicleCollisions();
+    } else {
+      resolveNPCVehicleCollisions();
+    }
+  }catch(e){}   // v1.18: no vehicle passes through another — Period (Joshua)
   renderer.render(scene, camera);
   // v1.10.1: first frame is on screen — dismiss the native loading screen.
   if (!window.__gameReadyFired) {
