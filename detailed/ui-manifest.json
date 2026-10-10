@@ -98,8 +98,8 @@
     },
     {
       "name": "marta_data.js",
-      "size": 18261,
-      "sha256": "8d744dd2a014e8af202a28f542619f14210697e83d31a0cdd559996f4804065a",
+      "size": 18608,
+      "sha256": "3fdbe011c1a5990b4d53a95e6a470a741610705c8fdd0403c140816468b791c8",
       "hash": "ab49e61b7fc6d530"
     },
     {
@@ -261,6 +261,6 @@
       "hash": "d9eabe05deb93a3e"
     }
   ],
-  "ui_version": "2026.10.10.96",
+  "ui_version": "2026.10.10.97",
   "version": "1.13.0"
 }
