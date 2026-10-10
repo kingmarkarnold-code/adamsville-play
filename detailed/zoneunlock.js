@@ -10,8 +10,17 @@
       map + 5x crews).
 
    PART 1 — ZONE UNLOCKING:
-   - Map divided into 12 zones (3 cols x 4 rows).
-   - Adamsville starts unlocked (contains home base 535 Dollar Mill Rd).
+   - Map divided into 9 zones (3 cols x 3 rows), tiled around Joshua's
+     real Adamsville boundaries (approved 2026-10-10).
+   - Adamsville home base zone (START, unlocked):
+       North: Bankhead Highway (z=2202)
+       South: Cascade Road (z=4218)
+       West:  Fulton Industrial Blvd, inclusive (x=2147)
+       East:  Hamilton E. Holmes Dr + 1/4 game-mile (x=5398)
+     Contains home base 535 Dollar Mill Rd (3130, 3705).
+     NOTE (2026-10-10): an earlier draft listed the south edge as z=395,
+     but Cascade Rd SW sits at z[4087,4350] in roads.js — z=395 would have
+     placed 535 OUTSIDE its own home zone. Corrected to z=4218.
    - Exploration unlocks adjacent zones: when 40% of an unlocked zone's
      coarse grid cells have been visited, all touching zones unlock.
    - Locked zones: grayed out on minimap, invisible walls block entry,
@@ -47,25 +56,24 @@ if (window.ZONEUNLOCK) return;  // single instance guard
 
 /* ---------------- zone definitions ----------------
    Map bounds: x:[-200,8200], z:[-200,12200]
-   3 columns x 4 rows = 12 zones.
-   Adamsville (start) contains home base 535 Dollar Mill Rd (~3130, 3705). */
+   3 columns x 3 rows = 9 zones, tiled around Joshua's real Adamsville
+   boundaries (approved 2026-10-10). Grid lines run through Adamsville's
+   edges (x=2147, x=5398, z=2202, z=4218) so zones tile with no gaps
+   and no overlaps, and edge-adjacency detection works exactly.
+   Adamsville (start) contains home base 535 Dollar Mill Rd (3130, 3705). */
 var ZONES=[
-  // Row 0 (north)
-  {id:'mableton',  name:'Mableton',     xMin:-200, xMax:3400, zMin:-200, zMax:2900},
-  {id:'northside', name:'Northside',    xMin:3400, xMax:5800, zMin:-200, zMax:2900},
-  {id:'downtown',  name:'Downtown',     xMin:5800, xMax:8200, zMin:-200, zMax:2900},
-  // Row 1 (center-north) — Adamsville is the starting zone
-  {id:'adamsville',name:'Adamsville',   xMin:-200, xMax:3400, zMin:2900, zMax:6000, start:true},
-  {id:'midtown',   name:'Midtown',      xMin:3400, xMax:5800, zMin:2900, zMax:6000},
-  {id:'eastatl',   name:'East Atlanta', xMin:5800, xMax:8200, zMin:2900, zMax:6000},
-  // Row 2 (center-south)
-  {id:'fairburn',  name:'Fairburn',     xMin:-200, xMax:3400, zMin:6000, zMax:9100},
-  {id:'cascade',   name:'Cascade',      xMin:3400, xMax:5800, zMin:6000, zMax:9100},
-  {id:'southatl',  name:'South Atlanta',xMin:5800, xMax:8200, zMin:6000, zMax:9100},
-  // Row 3 (south)
-  {id:'westend',   name:'West End',     xMin:-200, xMax:3400, zMin:9100, zMax:12200},
-  {id:'southwest', name:'Southwest',    xMin:3400, xMax:5800, zMin:9100, zMax:12200},
-  {id:'riverdale', name:'Riverdale',    xMin:5400, xMax:8200, zMin:9100, zMax:12200},
+  // Row 0 (north of Adamsville)
+  {id:'mableton',   name:'Mableton',      xMin:-200, xMax:2147, zMin:-200, zMax:2202},
+  {id:'bankhead',   name:'Bankhead',      xMin:2147, xMax:5398, zMin:-200, zMax:2202},
+  {id:'downtown',   name:'Downtown',      xMin:5398, xMax:8200, zMin:-200, zMax:2202},
+  // Row 1 (Adamsville band) — Adamsville is the starting zone
+  {id:'westside',   name:'Westside',      xMin:-200, xMax:2147, zMin:2202, zMax:4218},
+  {id:'adamsville', name:'Adamsville',    xMin:2147, xMax:5398, zMin:2202, zMax:4218, start:true},
+  {id:'eastatlanta',name:'East Atlanta',  xMin:5398, xMax:8200, zMin:2202, zMax:4218},
+  // Row 2 (south of Adamsville)
+  {id:'westend',    name:'West End',      xMin:-200, xMax:2147, zMin:4218, zMax:12200},
+  {id:'cascade',    name:'Cascade',       xMin:2147, xMax:5398, zMin:4218, zMax:12200},
+  {id:'southatl',   name:'South Atlanta', xMin:5398, xMax:8200, zMin:4218, zMax:12200},
 ];
 
 /* ---------------- persistence ---------------- */
@@ -321,5 +329,5 @@ window.ZONEUNLOCK={
 };
 
 /* ---------------- boot ---------------- */
-dlog('ZoneUnlock v1.0 online — '+Object.keys(state.unlocked).length+' zone(s) unlocked, cull dist '+state.cullDist);
+dlog('ZoneUnlock v1.1 online — '+Object.keys(state.unlocked).length+' zone(s) unlocked, cull dist '+state.cullDist);
 })();
