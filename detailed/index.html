@@ -4401,13 +4401,6 @@ try{
   plane(p.x+40, p.z-60, 0.4); plane(p.x+52, p.z-40, 0.9);
   labelAt('FULTON COUNTY AIRPORT', p.x, p.z, 26, 48, '#7fd4ff');
 })();
-// Car wash on Bakers Ferry Rd toward MLK (per Joshua's 1995 memory; exact spot approximate)
-(function(){
-  var p=xz(33.7485, -84.5450);
-  box(22,6,14, 0x6ab0d8, p.x, p.z);
-  labelAt('CAR WASH (1995)', p.x, p.z, 14, 36, '#7fd4ff');
-  addCollider(p.x, p.z, 15);
-})();
 /* ================= FULTON INDUSTRIAL BLVD + REAL I-20 OVERPASSES (v0.3) =================
    Fulton Industrial Blvd was missing from the TIGER extract — added from geocoded path.
    Two REAL overpasses (Joshua-verified + TIGER geometry corroborates):
