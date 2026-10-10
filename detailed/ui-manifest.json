@@ -20,10 +20,10 @@
     },
     {
       "name": "codeenforce_system.js",
-      "size": 65887,
-      "sha256": "40aac3843366cc9253ccdbfc3dec88fc2ae408fd984b5be86743c23a186cc378",
-      "hash": "40aac3843366cc92",
-      "md5": "d8d9b1e9e3a6f8891006cec86ee9910e"
+      "size": 67391,
+      "sha256": "fff1d9e0941b882f514e01b38d0624454a6ba805a0192860e8d7ff79086e1de9",
+      "hash": "fff1d9e0941b882f",
+      "md5": "4aa5386be2b850020c2206949d27b14d"
     },
     {
       "name": "daycycle.js",
@@ -76,10 +76,10 @@
     },
     {
       "name": "infracrew_system.js",
-      "size": 35608,
-      "sha256": "f10213a85d5a3807c0f1ed66f58cf7bace78ef9a66f2f025e541e91198abbaab",
-      "hash": "f10213a85d5a3807",
-      "md5": "77286e2b6680bb173f7d8708f006f908"
+      "size": 38280,
+      "sha256": "9db40da52f06ca41044ecd0d3d12c08a186e17f2331d0fb47feaef7442a5e15c",
+      "hash": "9db40da52f06ca41",
+      "md5": "c116524f9c996b030400aed486738efa"
     },
     {
       "name": "marriott.js",
@@ -138,10 +138,10 @@
     },
     {
       "name": "roadcrew_system.js",
-      "size": 56053,
-      "sha256": "7d2d007b2105121e00e4fd2ced847a784ff003cdce546ac053b635b0b59c0991",
-      "hash": "7d2d007b2105121e",
-      "md5": "fc885443c9ad8d7f654ad27bdb42dfb3"
+      "size": 57992,
+      "sha256": "dc10b7bd54aa36389214834aeae64884a433e5bc8c3d3c2661517f9b3cf4985e",
+      "hash": "dc10b7bd54aa3638",
+      "md5": "53cd8794990db2421f1e907f4e26f0b5"
     },
     {
       "name": "roadfix.js",
@@ -225,9 +225,9 @@
     },
     {
       "name": "veteran_crew.js",
-      "size": 28697,
-      "sha256": "e9a3b315ca854ee4bc1b7a865fe2f967e0c40db980bd4467c86825cc9357b6af",
-      "hash": "3f8ac628616bc462"
+      "size": 28951,
+      "sha256": "e2f2112f887085c94c7478bfba16e3473bbf797357308e5d60836f9714d492f9",
+      "hash": "e2f2112f887085c9"
     },
     {
       "name": "workerhousing.js",
@@ -273,6 +273,6 @@
       "hash": "1af37c06001c4b1c"
     }
   ],
-  "ui_version": "2026.10.10.104",
+  "ui_version": "2026.10.10.105",
   "version": "1.13.0"
 }
