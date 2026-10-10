@@ -18,7 +18,14 @@
    ============================================================================ */
 
 /* ---------- strip club builder ----------
-   cx,cz = center. w,d = footprint. name = generic sign text.           */
+   cx,cz = center. w,d = footprint. name = generic sign text. */
+/* Build one strip club: exterior walls (front faces +z/road) with a center
+   door gap, floor slab, roof, neon-style sign band, and door canopy; empty
+   interior — lobby/bar counter + back bar, empty stage with poles (no
+   dancers), seating tables (clipped inside walls) — per Joshua's spec, no
+   dancers/staff/content now, he decides later. Registers the enterable
+   (roof hidden on entry) and seals the door gap with a segment collider so
+   the player must use the EXIT command. Returns final {x,z}. */
 function cdBuildClub(cx, cz, w, d, name) {
   var gy = heightAt(cx, cz);
   var wallC = 0x3a3a42, trimC = 0xcc2233, inC = 0x2a2a30, floorC = 0x444448;
@@ -86,6 +93,11 @@ function cdBuildClub(cx, cz, w, d, name) {
 
 /* ---------- Waffle Spot diner builder ----------
    Classic small diner: big windows, yellow/black sign.                 */
+/* Build one "Waffle Spot" (trademark-safe name) at real Waffle House
+   locations: 22x14 diner with big window bands (front + sides), yellow/black
+   canvas signs (building + pole), enterable interior with counter + 6 stools,
+   visible grill + hood, and 3 booths; side parking lot. Same enterable +
+   door-blocker pattern as cdBuildClub. Returns final {x,z}. */
 function cdBuildWaffleSpot(cx, cz) {
   var w = 22, d = 14;
   var gy = heightAt(cx, cz);
@@ -164,14 +176,23 @@ function cdBuildWaffleSpot(cx, cz) {
   return { x: cx, z: cz };
 }
 
+/* Placement log consumed by poi_map.js for minimap/full-map markers:
+   {type:'club'|'waffle_spot', name, real (audit address), x, z}. Logged
+   FIRST (before the builder runs) so a builder throw can never lose a POI. */
 var CD_LOG = [];
 
 /* ---------- placement with road clearance ---------- */
+/* Identity wrapper kept for load-order clarity: buildFn receives (x, z) and
+   returns {x, z}; every placement is nudged clear of roads via placeStruct. */
 function cdPlace(buildFn) {
   // buildFn receives (x, z) and returns {x, z}; placeStruct nudges clear of roads
   return buildFn;
 }
 
+/* Place the 6 clubs: [gameX, gameZ, w, d, genericName, realAddress].
+   Each is nudged clear of roads by placeStruct, logged to CD_LOG first,
+   then built (builder throws are caught so one bad club can't abort the
+   rest). Real addresses are audit-only; generic names are on the signs. */
 (function buildClubs() {
   var clubs = [
     // [gameX, gameZ, w, d, generic name, real address (audit only)]
@@ -196,6 +217,9 @@ function cdPlace(buildFn) {
 })();
 
 // Waffle Spots are appended by buildWaffleSpots() below once OSM data lands.
+/* Build all Waffle Spots from a spot list [{x,z,addr}]: nudge clear of
+   roads, log to CD_LOG first, build, then persist the full log to
+   localStorage ('sa_clubdiner_log') for the audit trail. */
 function buildWaffleSpots(spots) {
   spots.forEach(function(s) {
     var p = null;
@@ -215,6 +239,7 @@ function buildWaffleSpots(spots) {
 /* ---------- Waffle Spot locations ----------
    7 web-verified real Waffle House addresses + 2 OSM amenity=fast_food
    nodes, all inside the map bounds. Converted via the game's xz().   */
+/* IIFE: feed the 9 verified spot locations into buildWaffleSpots(). */
 (function placeWaffleSpots() {
   var spots = [
     { x: 2975, z: 2824, addr: '4346 Fulton Industrial Blvd SW' },
