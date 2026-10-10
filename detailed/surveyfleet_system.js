@@ -1312,7 +1312,8 @@ function initSurveyFleet(){
   try{
     if (typeof animate==='function' && !animate.__surveyfleetWrap){
       var orig=animate;
-      var wrapped=function(){ orig(); if(!window.__npcPaused) updateSurveyFleet(0.016); };
+      /* v1.22 LAUNCHER (Joshua 2026-10-10): skip when survey fleet disabled in launch options. */
+      var wrapped=function(){ orig(); if(!window.__npcPaused && (!window.__launchOpts || window.__launchOpts.surveyFleet!==false)) updateSurveyFleet(0.016); };
       wrapped.__surveyfleetWrap=true;
       animate=wrapped;
     }
