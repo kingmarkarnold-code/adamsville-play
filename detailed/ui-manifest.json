@@ -238,9 +238,9 @@
     },
     {
       "name": "npc_system.js",
-      "size": 68957,
-      "sha256": "4f8f9a2fbddda1ae0537364c8a82addfcef8f5ebdafca8e29f376ff8acdb978d",
-      "hash": "ddc10f405e2f6c42"
+      "size": 72686,
+      "sha256": "ee4b330f8ac3ee21de899ed718c2c0716b17c0059769a6c4d846bf7ab164a9db",
+      "hash": "ee4b330f8ac3ee21de899ed718c2c0716b17c0059769a6c4d846bf7ab164a9db"
     },
     {
       "name": "priority_dispatch.js",
@@ -261,6 +261,6 @@
       "hash": "d9eabe05deb93a3e"
     }
   ],
-  "ui_version": "2026.10.09.94",
+  "ui_version": "2026.10.09.95",
   "version": "1.13.0"
 }
