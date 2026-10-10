@@ -1,9 +1,88 @@
 <!DOCTYPE html>
+<!-- ============================================================================
+     SURVIVING ADAMSVILLE - main game shell (play/detailed/index.html)
+     ============================================================================
+     This file is the ENTIRE web game client: HTML HUD layout + all CSS + the
+     core inline game logic. External .js data/system files are pulled in by
+     <script src=...> tags; everything else lives here.
+
+     MAP OF THIS FILE (search for the ===== labels to jump around):
+       1. HEAD .............. meta, <title>, MAIN CSS: HUD chrome, loader,
+                              settings panel + Administrator section, dialogs,
+                              mobile-only redesign and the portrait /
+                              landscape orientation layouts
+       2. BODY .............. HUD DOM: loader overlay, title/version tags,
+                              settings gear (+update dot), settings panel
+                              (Administrator re-downloads, dispatch log,
+                              test connection), re-download confirmation
+                              dialog, gameplay menu, save/exit dialog, live
+                              report view, HUD readouts (street name, mode,
+                              speedo, damage/gas), joystick + drive pedals,
+                              UNIVERSAL ACTION button, minimap + full map,
+                              inventory UI, toast
+       3. SCRIPT BLOCK 1 .... loading-screen bootstrap (progress-bar driver:
+                              __loadStep / __loadOrder / __loadNames)
+       4. <script src=...> .. engine + data scripts (three.min.js, elev,
+                              roads, signs, lifts, pins, buildings, vehicle
+                              meshes, shirts, sign rules)
+       5. SCRIPT BLOCK 2 .... core game logic (~5,500 lines): APP_VERSION
+                              stamping, MAPVER + ASSETVER (live update
+                              system), toast, health report, geo/elevation,
+                              renderer/scene, collision registry, terrain,
+                              roads, buildings, water, hero house, player,
+                              vehicles, input, recorder, music, gameplay
+                              menu, minimap, game loop, street names,
+                              inventory, __tryStartGame/__autoStart
+       6. <script src=...> .. late systems (NPCs, traffic, semis, road crew,
+                              MARTA rail/bus, gas, schools, plaza, Marriott,
+                              clubs/diners, POIs, stuck recovery,
+                              code enforcement)
+       7. SCRIPT BLOCK 3 .... final placement audit (Joshua's automatic
+                              on-load placement check)
+
+     JOSHUA'S STANDING RULES ENCODED IN THIS FILE:
+       - Map updates apply ONLY on New Game (MAPVER.applyOnNewGame). A newer
+         downloaded map NEVER hot-swaps a live session.
+       - UI / vehicle / music updates auto-apply at EVERY LAUNCH
+         (ASSETVER.autoApplyBootUpdates) - no manual download, no New Game.
+       - Update dot on the settings gear: RED = update available (pending);
+         YELLOW = downloaded, restart needed.
+         (ASSETVER.updateGearBadge / refreshAdmTags)
+       - "Clean slate": re-downloads wipe the old files of that type FIRST,
+         then download fresh. (forceRedownload - map + assets)
+       - No-skip loader: the game auto-starts ~3s after assets are ready
+         (__autoStart); click-anywhere-to-start remains as backup. No manual
+         gate blocks the game from launching.
+
+     DEVELOPER NOTE: bump APP_VERSION (one line, top of block 2) per release -
+     the HUD title/subtitle/version/help tags are stamped from it so they can
+     never go stale. Comments here are documentation only; nothing changes
+     behavior.
+     ============================================================================ -->
 <html>
+<!-- ===== HEAD: meta/viewport/title + the MAIN <style> block (all game-chrome CSS) ===== -->
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Surviving Adamsville — Demo v0.8</title>
+<!-- ===== MAIN CSS (every visual in the game chrome) =====
+     Base layout: page reset, #game canvas mount, HUD title + version tags
+     (#hud-title, #hud-sub, #ver-tag), settings gear button (#help-btn) and
+     the UPDATE DOT (#gear-dot: red = update available, yellow = downloaded /
+     restart needed), settings panel (#settings) with its Administrator rows
+     + per-type status tags (.adm-tag: .ready = red "update available",
+     .ok = green "up to date", .restart = yellow "restart needed"),
+     re-download confirmation dialog (#adm-confirm), loader overlay
+     (#loader: progress bar, status line, CLICK-ANYWHERE-TO-START), toast
+     (#toast), help card, live report view, minimap / full-map overlays.
+     Orientation blocks at the bottom of this <style> (also triggered on
+     touch devices via pointer:coarse):
+       @media (max-width:820px) ................. mobile-only HUD redesign
+                                                 (desktop keeps its layout)
+       ... and (orientation:portrait) ........... portrait: vertical stack,
+                                                 thumb reach at the bottom
+       ... and (orientation:landscape) .......... landscape: horizontal
+                                                 spread, center kept clear -->
 <style>
   html, body { margin:0; padding:0; width:100%; height:100%; overflow:hidden;
     background:#0b0e14; touch-action:none; -webkit-user-select:none; user-select:none;
@@ -289,14 +368,31 @@
   }
 </style>
 </head>
+<!-- ===== BODY: every HUD/DOM element the game drives. No logic here - just
+     layout; the inline scripts below wire it all up. ===== -->
 <body>
+<!-- Three.js canvas mount point (the WebGL renderer is appended here). -->
 <div id="game"></div>
+<!-- Screen-recorder indicator (REC dot, shown while the in-game recorder runs). -->
 <div id="rec-ind"><span class="dot"></span>REC</div>
+<!-- HUD title + demo version subtitle. Both are STAMPED from APP_VERSION at
+     boot (top of script block 2) - never hand-edit this text. -->
 <div id="hud-title">SURVIVING ADAMSVILLE</div>
 <div id="hud-sub">1995 demo v1.4</div>
+<!-- Settings GEAR button (opens the settings panel). The nested #gear-dot is
+     the UPDATE BADGE: red = an update is available, yellow = downloaded and
+     waiting on a restart. Driven by ASSETVER.updateGearBadge(). -->
 <button id="help-btn">&#9881;<span id="gear-dot"></span></button>
+<!-- Music toggle + radio station stepper (two-context music: on-foot vs driving tracks). -->
 <button id="music-btn">&#128266;</button>
 <div id="radio"><button id="radio-prev">&#9664;</button><span id="radio-name"></span><button id="radio-next">&#9654;</button></div>
+<!-- ===== SETTINGS PANEL (opens from the gear button) =====
+     Top: Settings rows (How to play, Music, View report, Record, Gameplay).
+     Bottom: ADMINISTRATOR section - per-type Re-download buttons (Map / UI /
+     Vehicles / Music, each with a live status tag: adm-map-tag, adm-ui-tag,
+     adm-vehicles-tag, adm-music-tag), Road Dispatch Log, Test Connection,
+     status line (#adm-status) and the diagnostics box (#adm-diag).
+     Re-downloads are wired by ASSETVER.boot() -> confirmRedownload(). -->
 <div id="settings"><div class="card">
   <h3>Settings</h3>
   <button class="row" id="set-help">How to play</button>
@@ -315,6 +411,10 @@
   <div id="adm-diag" style="font-size:11px;color:#9fb3c8;white-space:pre-wrap;word-break:break-all;max-height:200px;overflow-y:auto;margin:4px 0;"></div>
   <button id="set-close">Close</button>
 </div></div>
+<!-- ===== RE-DOWNLOAD CONFIRMATION DIALOG (Joshua's rule: ask first) =====
+     Shown by ASSETVER.confirmRedownload() before any manual re-download:
+     names the asset and its current version. YES = wipe old files of that
+     type, then download fresh ("clean slate"); NO = cancel, do nothing. -->
 <div id="adm-confirm"><div class="card">
   <div class="msg" id="adm-confirm-msg"></div>
   <div class="btnrow">
@@ -322,6 +422,10 @@
     <button id="adm-confirm-no">No</button>
   </div>
 </div></div>
+<!-- Gameplay submenu (New game / Restart / Save / Load).
+     NOTE: "New game" is also the UPDATE APPLY POINT - staged map updates
+     (MAPVER.applyOnNewGame) and staged UI/vehicle/music updates
+     (ASSETVER.applyOnNewGame) are applied here, then the page reloads. -->
 <div id="gameplay"><div class="card">
   <h3>Gameplay</h3>
   <button class="row" id="gp-newgame">New game</button>
@@ -331,12 +435,15 @@
   <div id="gp-slots"></div>
   <button id="gp-back">Back</button>
 </div></div>
+<!-- Save-and-exit confirmation dialog. -->
 <div id="saveexit"><div class="card">
   <h3>Do you want to save and exit?</h3>
   <button class="row" id="se-saveexit">Save &amp; Exit</button>
   <button class="row" id="se-save">Save</button>
   <button class="row" id="se-cancel">Cancel</button>
 </div></div>
+<!-- Live health report viewer (the Report system): session diagnostics JSON
+     plus "SHARE WITH MUSE" export. -->
 <div id="report-view">
   <h3>Live report (this session)</h3>
   <p id="rep-status"></p>
@@ -346,6 +453,7 @@
     <button id="rep-close">Close</button>
   </div>
 </div>
+<!-- HUD readouts: current street name (GTA-style), version tag, how-to-play card. -->
 <div id="street-name"></div>
 <div id="ver-tag">v1.4</div>
 <div id="help"><div class="card">
@@ -358,6 +466,8 @@
   <b>Goal:</b> check the world, streets, controls and the van.<br>
   <button id="help-close">Got it</button>
 </div></div>
+<!-- Mobile controls: left thumbstick (joy-base/joy-knob) + drive pedals
+     (steer / gas / brake / handbrake / camera). Hidden on desktop. -->
 <div id="joy-base"></div><div id="joy-knob"></div>
 <button id="steer-left" class="pedal">&#9664;</button>
 <button id="steer-right" class="pedal">&#9654;</button>
@@ -365,6 +475,8 @@
 <button id="brake-btn" class="pedal">BRAKE</button>
 <button id="handbrake-btn" class="pedal">H-BRK</button>
 <button id="cam-btn" class="pedal" style="left:16px;bottom:200px;background:rgba(60,60,90,.88);">&#128247; CAM</button>
+<!-- ===== INVENTORY CSS ===== (#inv-btn backpack button + #inv-panel.
+     The mobile repositioning of the backpack lives in the @media block here.) -->
 <style>
   #inv-btn{position:fixed;left:12px;top:96px;z-index:20;width:52px;height:52px;border-radius:12px;
     border:2px solid #ffd75e;background:rgba(20,24,34,.88);color:#ffd75e;font-size:24px;}
@@ -393,10 +505,17 @@
   <div id="inv-list"></div>
   <button id="inv-close">Close</button>
 </div></div>
+<!-- UNIVERSAL ACTION BUTTON (Joshua's rule: ONE context-sensitive button -
+     ENTER/EXIT car, ENTER/EXIT house, PICK UP item - on mobile AND desktop).
+     Its label is re-written every frame by the game loop. -->
 <button id="action-btn">ENTER CAR</button>
+<!-- Player-state readouts: mode tag (ON FOOT / DRIVING / SWIMMING / INSIDE),
+     speedometer, vehicle damage + gas bars. -->
 <div id="mode-tag">ON FOOT</div>
 <div id="speedo"><span id="speedo-num">0</span><small>MPH &middot; LIM <span id="speedo-lim">--</span></small></div>
 <div id="dmg-wrap"><span>DMG</span><div id="dmg-bar"><div id="dmg-fill"></div></div><span id="gas-tag">GAS</span><div id="gas-bar"><div id="gas-fill"></div></div><span id="dmg-msg"></span></div>
+<!-- Minimap canvas (tap it to open the full map) + the full-map overlay
+     (pan/zoom) with its legend. -->
 <canvas id="minimap" width="296" height="296"></canvas>
 <div id="fullmap">
   <canvas id="fullmap-canvas"></canvas>
@@ -412,6 +531,12 @@
   </div>
 </div>
 
+<!-- ===== LOADER OVERLAY (covers the screen while assets load) =====
+     Title, game icon, progress bar (#load-fill - driven by __loadStep()),
+     current-step line (#load-status), and the CLICK-ANYWHERE-TO-START button
+     (#load-start, revealed when all load steps complete). Dismissed by
+     __tryStartGame(). Joshua's no-skip rule: the game ALSO auto-starts ~3s
+     after Ready via __autoStart() - no manual gate blocks launch. -->
 <div id="loader">
   <div id="load-title">SURVIVING ADAMSVILLE</div>
   <img id="load-icon" src="icon.png" alt="Surviving Adamsville">
@@ -421,7 +546,18 @@
     <div id="load-start">CLICK ANYWHERE TO START</div>
   </div>
 </div>
+<!-- Toast line: transient on-screen messages (track names, update notices,
+     download errors). Written by showToast(). -->
 <div id="toast"></div>
+<!-- ===== INLINE SCRIPT BLOCK 1: loading-screen bootstrap =====
+     Runs FIRST, before any game code. Owns the loader overlay's progress:
+       window.__loadOrder - the 19 load steps in display order
+       window.__loadNames - human-readable label per step
+       __loadStep(key, failed) - marks one step done, advances #load-fill and
+         rewrites #load-status ("Loading roads..."); reveals #load-start when
+         every step is done. A 20s watchdog marks any unreported step failed.
+     It does NOT start the game - that is __tryStartGame/__autoStart at the
+     end of script block 2. -->
 <script>
 /* v1.11 loading-screen bootstrap — runs before the game scripts */
 window.__loadOrder=['engine','elev','roads','signs','lifts','pins','buildings','vehmeshes','world','music','npc','refnpc','gasdata','traffic','semis','roadcrew','marta','busdata','bus'];
@@ -463,6 +599,13 @@ window.addEventListener('load',function(){
   },20000);
 });
 </script>
+<!-- ===== ENGINE + DATA SCRIPTS ===== Each fires __loadStep() on load/error
+     so block 1's progress bar can track it. Data files (elev / roads /
+     exit signs / terrain lifts / junction pins / OSM buildings / shirt
+     designs / sign rules) are the versioned world payloads (see the
+     *-manifest.json files + MAPVER/ASSETVER); vehicle_meshes.js is the
+     CANONICAL vehicle model library. On web they are parsed fresh on every
+     page load. -->
 <script src="three.min.js" onload="__loadStep('engine')" onerror="__loadStep('engine',true)"></script>
 <script src="elev.js" onload="__loadStep('elev')" onerror="__loadStep('elev',true)"></script>
 <script src="roads.js" onload="__loadStep('roads')" onerror="__loadStep('roads',true)"></script>
@@ -473,6 +616,40 @@ window.addEventListener('load',function(){
 <script src="vehicle_meshes.js" onload="__loadStep('vehmeshes')" onerror="__loadStep('vehmeshes',true)"></script>
 <script src="shirt_designs.js" onload="__loadStep('shirtdesigns')" onerror="__loadStep('shirtdesigns',true)"></script>
 <script src="sign_rules.js" onload="__loadStep('signrules')" onerror="__loadStep('signrules',true)"></script>
+<!-- ===== INLINE SCRIPT BLOCK 2: CORE GAME LOGIC (~5,500 lines) =====
+     Contents, in order:
+       APP_VERSION + HUD version stamping (hud-sub / ver-tag / help-ver)
+       isMobileUI() / showToast()
+       MAPVER ......... map version pinning: active vs pending; map updates
+                        apply on New Game ONLY; live manifest check every
+                        2 minutes (Joshua's spec)
+       ASSETVER ....... UI/vehicles/music versions: active vs pending vs
+                        restart-needed (yellow); staged assets auto-apply at
+                        launch; Administrator re-downloads (clean-slate wipe
+                        + fresh download); gear red/yellow dot; admin tags
+       Report ......... live health/diagnostics (window.onerror + unhandled
+                        rejection capture, "Surviving Adamsville
+                        Report.json" export)
+       Geo / elevation / terrain (SRTM grid, terrain-lift spatial hash,
+                        heightAt), renderer/scene/camera/lights, COLLISION
+                        REGISTRY (addCollider/removeCollider/resolveCollision
+                        + building & wall-segment colliders)
+       Roads (TIGER geometry), street furniture, exit signs, border visual,
+                        placement protocol, water, game border, HERO HOUSE
+                        (535 Dollar Mill Rd), buildings, churches/schools,
+                        landmarks, Fulton Industrial + I-20 overpasses, trees
+       Player, vehicles (+damage), INPUT (keyboard/joystick/pedals),
+                        view-report overlay, game recorder, two-context
+                        music, gameplay menu (new/restart/save/load),
+                        MINIMAP + full map, GAME LOOP, street-name HUD,
+                        inventory, dispatch-log hooks
+       End of block: elevation self-test probe, __loadStep('world'/'music'),
+                        __tryStartGame() / __autoStart() (auto-start loader,
+                        no-skip), start-button + document-level click wiring
+     Function-level docs live on: MAPVER.checkPending/applyOnNewGame,
+     ASSETVER.checkPending/updateGearBadge/refreshAdmTags/confirmRedownload/
+     forceRedownload/autoApplyBootUpdates, removeCollider, resolveCollision,
+     __tryStartGame, __autoStart. -->
 <script>
 "use strict";
 /* v1.4: single source of truth for the HUD version — bump ONCE per release.
@@ -504,7 +681,18 @@ function showToast(msg,ms){
    NEVER hot-swaps mid-session: the game records its active map version at
    boot, shows a subtle "Map update available — applies on new game" notice
    when a newer one is staged, and only loads it when the player picks
-   New Game (which then reloads the page so fresh map files are parsed). */
+   New Game (which then reloads the page so fresh map files are parsed).
+   --- STATE MODEL ---
+   active:  the map_version THIS session loaded with. Resolved once at boot:
+            native bridge (APK, source of truth) -> localStorage
+            'sa_map_version_active' -> live fetch of map-manifest.json (web).
+            Never changes mid-session.
+   pending: a NEWER map_version found staged (native bridge) or published on
+            GitHub Pages (live manifest fetch in checkPending). Red dot +
+            one-shot toast ONLY - the running world is never touched.
+   (The map has no "restart needed" yellow of its own: applyOnNewGame()
+   reloads the page directly. The yellow restart UI belongs to ASSETVER
+   downloads below.) */
 var MAPVER=(function(){
   var LS_ACTIVE='sa_map_version_active';
   var active=null, pending=null, noticeShown=false, bootTried=false;
@@ -514,7 +702,7 @@ var MAPVER=(function(){
   // What map version did THIS session load with?
   function detectActive(){
     if (active) return active;
-    var b=bridge();
+    var b=mapBridge();
     if (b && b.getActiveMapVersion){
       try{ var v=b.getActiveMapVersion(); if(v){ active=v; lsSet(LS_ACTIVE,v); return v; } }catch(e){}
     }
@@ -533,9 +721,18 @@ var MAPVER=(function(){
     }
     return active;
   }
+  /* MAPVER.checkPending - LIVE update check for the MAP. Joshua's spec: first
+     run 30s after boot, then every 2 minutes, plus on tab/app refocus (v1.13
+     live red dot) so updates pushed mid-session surface without a restart.
+     Two paths: (1) APK native bridge (window.MapDownload.hasPendingMapUpdate);
+     (2) LIVE manifest fetch (web AND APK): pulls map-manifest.json with
+     cache:'no-store' from GitHub Pages and compares map_version against the
+     session's active version. On mismatch sets `pending` and fires
+     maybeNotice() (toast) + ASSETVER.updateGearBadge()/refreshAdmTags()
+     (red dot + admin tag). Cheap (~2KB), read-only, never disturbs play. */
   // Is a newer map staged/available? (never touches the running session)
   function checkPending(){
-    var b=bridge();
+    var b=mapBridge();
     if (b && b.hasPendingMapUpdate){
       try{
         if (b.hasPendingMapUpdate()){
@@ -565,16 +762,27 @@ var MAPVER=(function(){
       }catch(e){}
     }
   }
+  /* MAPVER.maybeNotice - one-shot toast: "Map update available — applies on
+     new game". Fires once per session (noticeShown) even though checkPending
+     runs every 2 minutes. */
   function maybeNotice(){
     if (noticeShown || !pending) return;
     noticeShown=true;
     try{ showToast('Map update available — applies on new game', 3500); }catch(e){}
   }
+  /* MAPVER.applyOnNewGame - THE map apply point (Joshua's rule: map updates
+     apply ONLY on New Game). Called from the Gameplay menu's "New game"
+     button. If no map update is pending, returns false and the normal
+     in-place reset proceeds. If pending: tells the native bridge to apply
+     (APK) or just records the new version (web - a reload picks up the newly
+     deployed files), then reloads the page so the FRESH map files are parsed
+     from scratch. Returns true when a reload was kicked off - the caller
+     must NOT continue the in-place reset. */
   // Called from the New Game button. Returns true when a reload was kicked
   // off (caller must NOT continue the in-place reset).
   function applyOnNewGame(){
     if (!pending) return false;
-    var b=bridge();
+    var b=mapBridge();
     if (b && b.applyPendingMapUpdate){
       try{
         var res=b.applyPendingMapUpdate()||'';
@@ -629,7 +837,26 @@ var MAPVER=(function(){
    Policy is identical: background checks stage newer versions, the running
    session is never disturbed, staged assets apply on New Game. The
    Administrator panel in settings offers manual re-downloads, and a red dot
-   on the gear icon signals pending updates. */
+   on the gear icon signals pending updates.
+   --- STATE MODEL (per type: ui / vehicles / music; map tracked via MAPVER) ---
+   active:        the version this session is RUNNING. Resolved once at boot:
+                  native bridge (APK, source of truth) -> localStorage
+                  'sa_asset_version_<type>' -> live manifest fetch (web).
+   pending:       a NEWER version staged on disk (APK) or published on GitHub
+                  Pages (web). Red dot on the gear + red "vCur -> vNew" admin
+                  tag. Applied on New Game (applyOnNewGame) or automatically
+                  at launch (autoApplyBootUpdates) - never mid-session.
+   restartNeeded: YELLOW. A fresh download completed and the game must restart
+                  before the new files take effect (red -> yellow on a
+                  successful download). Persisted in localStorage
+                  ('sa_restart_needed_<type>'); CLEARED at the next boot,
+                  because the restart itself applied the update.
+   --- WHERE VERSIONS COME FROM ---
+   BASE points at the GitHub Pages deployment; manifestUrl(type) fetches
+   '<type>-manifest.json' and verField(type) reads the '<type>_version' field
+   (falls back to 'version'). The native bridges (window.AssetDownload /
+   window.MapDownload) are the source of truth on the APK; on web the
+   manifests are fetched directly with cache:'no-store'. */
 var ASSETVER=(function(){
   var TYPES=['ui','vehicles','music'];
   var LABELS={ui:'UI',vehicles:'Vehicles',music:'Music',map:'Map'};
@@ -693,6 +920,16 @@ var ASSETVER=(function(){
     }
   }
 
+  /* ASSETVER.checkPending - LIVE update check for UI / VEHICLES / MUSIC.
+     Joshua's spec: first run 35s after boot, then every 2 minutes, plus on
+     tab/app refocus and whenever the settings panel opens (v1.13 live red
+     dot). Two paths per type: (1) APK native bridge
+     (window.AssetDownload.hasPendingAssetUpdate); (2) LIVE manifest fetch
+     (web AND APK): pulls '<type>-manifest.json' with cache:'no-store' and
+     compares '<type>_version' against the session's active version. On
+     mismatch sets pending[t] and refreshes the gear dot + admin tags.
+     Cheap (~1-2KB per manifest), read-only, never disrupts play. The MAPVER
+     pending state is also folded in so the gear dot covers the map too. */
   function checkPending(){
     var b=bridge();
     var anyNew=false;
@@ -733,6 +970,9 @@ var ASSETVER=(function(){
     if (anyNew){ updateGearBadge(); refreshAdmTags(); }
   }
 
+  /* pendingList - every artifact type with an update waiting: 'map' (via
+     MAPVER.getPending) plus any of ui/vehicles/music with pending[t] set.
+     Drives updateGearBadge() (red dot) and refreshAdmTags() (admin tags). */
   function pendingList(){
     var out=[];
     try{
@@ -742,9 +982,14 @@ var ASSETVER=(function(){
     return out;
   }
 
-  /* Red dot on the gear icon. Shows when anything is pending; clears when
-     everything is up to date. Joshua's rule: yellow dot = downloaded,
-     restart needed (takes priority over red). */
+  /* updateGearBadge - THE update dot on the settings gear (#gear-dot).
+     Joshua's rule: RED (class "show") = at least one update is pending
+     (map or any asset) - "update available". YELLOW (classes "show
+     restart") = a download completed and the game needs a RESTART to apply
+     it - "downloaded, restart needed"; yellow takes priority over red.
+     Clears entirely when everything is up to date. Called after every
+     checkPending(), every download completes, and at boot (4s in, so the
+     first check has had time to report). */
   function updateGearBadge(){
     var dot=null;
     try{ dot=document.getElementById('gear-dot'); }catch(e){}
@@ -756,6 +1001,17 @@ var ASSETVER=(function(){
     else if (n>0){ dot.classList.add('show'); }
   }
 
+  /* refreshAdmTags - the ADMINISTRATOR panel status tags (adm-map-tag /
+     adm-ui-tag / adm-vehicles-tag / adm-music-tag). Per type, Joshua's rule
+     is to show the actual version numbers at a glance - what he has, and
+     what update is waiting:
+       YELLOW "(restart needed) ● vX" ... downloaded, restart needed
+       RED    "● vCurrent → vPending" ... update staged/available
+       GREEN  "vCurrent" / "up to date"  ... nothing pending
+     Map versions are read through MAPVER (single source of truth); asset
+     versions come from ASSETVER's own active/pending tables. Called after
+     every checkPending(), every download, at boot, and whenever the settings
+     panel opens (wired in boot()). */
   function refreshAdmTags(){
     var list=pendingList();
     var tags={map:'adm-map-tag',ui:'adm-ui-tag',vehicles:'adm-vehicles-tag',music:'adm-music-tag'};
@@ -797,9 +1053,14 @@ var ASSETVER=(function(){
     }
   }
 
-  /* Called from the New Game button. Applies every staged asset update,
-     then reloads so the fresh files are parsed. Returns true when a reload
-     was kicked off (caller must NOT continue the in-place reset). */
+  /* ASSETVER.applyOnNewGame - THE asset apply point. Called from the Gameplay
+     menu's "New game" button (map itself is handled by MAPVER.applyOnNewGame
+     first). Applies every staged UI/vehicle/music update via the native
+     bridge (APK; web needs no apply - a reload fetches the new files), then
+     reloads the page so the fresh files are parsed. Returns true when a
+     reload was kicked off - the caller must NOT continue the in-place reset.
+     (Staged assets usually never reach this: autoApplyBootUpdates() applies
+     them at launch instead.) */
   function applyOnNewGame(){
     var list=pendingList().filter(function(t){ return t!=='map'; });
     if (!list.length) return false;
@@ -832,9 +1093,14 @@ var ASSETVER=(function(){
     return true;
   }
 
-  /* v1.13: Joshua's rule — re-downloads ask first. Shows a confirmation
-     dialog naming the asset and its current version. Yes = wipe the old
-     files, then download fresh. No = cancel, do nothing. */
+  /* confirmRedownload(type) - Joshua's rule: re-downloads ASK FIRST. Opens the
+     #adm-confirm dialog naming the asset (Map / UI / Vehicles / Music) and
+     its CURRENT active version, so Joshua can see what he's replacing.
+       YES -> forceRedownload(type): wipe the old files of that type FIRST,
+              then download every file in the manifest fresh ("clean slate").
+       NO  -> cancel; nothing is touched.
+     Guard against accidental wipes of good data. confirmWire() (called once
+     from boot()) binds the Yes/No buttons. */
   var confirmType=null;
   function confirmRedownload(type){
     confirmType=type;
@@ -863,11 +1129,26 @@ var ASSETVER=(function(){
       });
     }catch(e){}
   }
-  /* Administrator panel: force a fresh download of one artifact type,
-     straight into the active dir, then reload. The user asked for it
-     explicitly, so the reload is expected. */
-  /* v1.13: diagnostic logging for download debugging. Shows in the
-     Admin panel diag box so Joshua can read the actual error. */
+  /* forceRedownload(type) - ADMINISTRATOR manual re-download for one
+     artifact type ('map' | 'ui' | 'vehicles' | 'music').
+     Joshua's "CLEAN SLATE" rule: the native bridge WIPES the old files of
+     that type FIRST (map: mb.clearDownloadedMapFiles(); assets:
+     b.clearDownloadedAssetFiles(type) - both guarded so old APKs still work),
+     then downloads EVERY file listed in the type's manifest fresh from
+     GitHub Pages (progress shown in #adm-status, one file at a time).
+     On completion: records the new version, clears the pending flag, and
+     sets the YELLOW "restart needed" flag (red -> yellow on a successful
+     download). NO auto-reload - the user restarts when ready; the next boot
+     clears the yellow flag because the restart applied the update.
+     On the WEB (no native bridge): map just notes "updates on page reload";
+     assets fetch the manifest to compare and stage the new version as
+     pending. On failure, full diagnostics go to diagLog() (#adm-diag) so
+     Joshua can read the actual error. Only reachable via the confirmation
+     dialog (confirmRedownload) - never automatic. */
+  /* diagLog(t) - download diagnostics for Joshua. Writes to the Administrator
+     panel's #adm-diag box AND the console. forceRedownload() and
+     testConnection() report here so the ACTUAL error (URL, fetch result,
+     exception, bridge presence) is readable instead of a silent failure. */
   function diagLog(t){
     try{
       var el=document.getElementById('adm-diag');
@@ -1036,9 +1317,15 @@ var ASSETVER=(function(){
     },300);
   }
 
-  /* Joshua's rule: staged UI/vehicle/music updates auto-apply on EVERY LAUNCH.
-     Map still waits for New Game. Called from boot() before the game starts.
-     Returns true when a reload was kicked off (caller must stop). */
+  /* autoApplyBootUpdates - Joshua's rule: staged UI/VEHICLE/MUSIC updates
+     AUTO-APPLY on EVERY LAUNCH (no manual download, no New Game). The MAP is
+     deliberately EXCLUDED - it still waits for New Game (MAPVER).
+     Called from boot() BEFORE the game starts: asks the native bridge
+     whether any asset type has a pending update staged; if so, marks them
+     pending and delegates to applyOnNewGame() (which applies + reloads).
+     Returns true when a reload was kicked off - the caller must stop.
+     Returns false when there is nothing staged (the normal path). On web
+     there is no bridge, so this is always a no-op: the web is always fresh. */
   function autoApplyBootUpdates(){
     if (bootAutoApplied) return false;
     var b=bridge();
@@ -1430,11 +1717,27 @@ var sun = new THREE.DirectionalLight(0xfff2d8, 0.85);
 sun.position.set(400, 700, 250);
 scene.add(sun);
 
+/* ---------- COLLISION REGISTRY ----------
+   Three collider kinds, all resolved every frame by resolveCollision():
+     (1) colliders .... circle colliders (props, trees, cars) - floor-aware
+                        via y0/y1 so multi-floor interiors only collide with
+                        their own floor. Removable via removeCollider().
+     (2) bldgGrid ..... OSM building circles - SPATIAL-HASHED into 40u grid
+                        cells (thousands of buildings; a flat array would make
+                        resolveCollision O(n) per entity per frame).
+     (3) segColliders . wall SEGMENT colliders (zero thickness; door gaps are
+                        true gaps, not skipped circles) - also floor-aware.
+   See removeCollider() / resolveCollision() docs below. */
 // ---------- collision registry ----------
 var colliders = [];  // {x, z, r}
 function addCollider(x, z, r, y0, y1){ colliders.push({x:x, z:z, r:r,
   y0:(y0===undefined?-1e9:y0), y1:(y1===undefined?1e9:y1)}); }
-/* v2.1: remove a collider object (for temporary work-zone colliders). */
+/* removeCollider(c) - unregisters one circle collider from the global
+   `colliders` registry. Used for TEMPORARY work-zone colliders (road-crew
+   cones/barriers) that must stop blocking movement when the zone clears.
+   No-op when the object isn't registered. Permanent world colliders
+   (buildings, walls, props) are never removed - only temporary ones go
+   through this path. */
 function removeCollider(c){ var i=colliders.indexOf(c); if(i>=0) colliders.splice(i,1); }
 /* v1.3: spatial grid for OSM building colliders (thousands — flat array
    would make resolveCollision O(n) per entity per frame). Cell 40u. */
@@ -1462,6 +1765,17 @@ function resolveBldgColliders(p, radius){
 var segColliders = [];  // {x1,z1,x2,z2}
 function addSegCollider(x1,z1,x2,z2,y0,y1){ segColliders.push({x1:x1,z1:z1,x2:x2,z2:z2,
   y0:(y0===undefined?-1e9:y0), y1:(y1===undefined?1e9:y1)}); }
+/* resolveCollision(p, radius) - THE collision solver. Called every frame for
+   every moving entity (player, vehicles, NPCs). Pushes position `p` out of
+   every overlapping collider by the minimal push vector, then runs a second
+   iteration so stacked overlaps settle. Resolves, in order:
+     (1) circle colliders in `colliders` (floor-aware: skipped when the
+         entity's Y is outside the collider's y0/y1 band);
+     (2) OSM building circles via resolveBldgColliders() (spatial hash - only
+         the 3x3 grid cells around the entity are checked);
+     (3) wall segments in `segColliders` (closest-point-on-segment push;
+         floor-aware the same way).
+   Mutates `p` in place; has no return value. */
 function resolveCollision(p, radius){
   for (var iter=0; iter<2; iter++){
     for (var i=0;i<colliders.length;i++){
@@ -4969,7 +5283,7 @@ fmCanvas.addEventListener('touchend', fmTouchEnd);
 fmCanvas.addEventListener('touchcancel', function(){ fmT.pinch=null; fmT.pan=null; fmT.tapOk=false; fmT.lastTouch=Date.now(); });
 /* v1.13: MOUSE controls for desktop/laptop - click-drag to pan, wheel to zoom.
    Touch handlers above cover mobile; these cover mouse users. */
-fmT.mDown=false; fmT.mPan=null; fmT.mDragged=false; fmT.suppressClickUntil=0;
+
 fmCanvas.addEventListener('mousedown', function(e){
   if (e.button!==0) return;  // left button only
   fmT.mDown=true; fmT.mDragged=false;
@@ -5019,7 +5333,7 @@ var fullMapOpen=false;
    (bigger screen shows more detail than the minimap); pinch-to-zoom,
    drag-to-pan, tap or X to close. Player arrow stays visible (edge-clamped). */
 var fmView={cx:4000,cz:6000,sc:0.05,scFit:0.05,rot:0};  // v0.6: rot = two-finger map rotation (radians)
-var fmT={pinch:null,pan:null,tapOk:false,tapX:0,tapY:0,tapT:0,lastTouch:0};
+var fmT={pinch:null,pan:null,tapOk:false,tapX:0,tapY:0,tapT:0,lastTouch:0,mDown:false,mPan:null,mDragged:false,suppressClickUntil:0};
 function fmFitScale(W,H){
   var xs=BORDER.map(function(p){return p.x;}), zs=BORDER.map(function(p){return p.z;});
   var x0=Math.min.apply(0,xs)-200, x1=Math.max.apply(0,xs)+200;
@@ -5943,6 +6257,14 @@ __loadStep('music');
 /* v1.13.1: old loader click handler removed — document-level __tryStartGame handles all clicks/taps */
 /* v1.13: CLICK ANYWHERE TO START — entire page is clickable once assets are ready.
    Handles clicks on body/document for maximum compatibility (mouse, touch, trackpad). */
+/* __tryStartGame() - dismisses the loader and STARTS the game (first call to
+   animate()). Joshua's NO-SKIP rule: this is NOT gated on any manual
+   "press start" - it is invoked by __autoStart() ~3s after assets are ready,
+   by clicking/tapping ANYWHERE on the page, by the #load-start button, and
+   on touchend. It is idempotent (returns false once the loader is gone), so
+   all of those triggers can race safely. Also unlocks mobile audio on the
+   first user gesture (musicStartOnce()). On failure it renders the error
+   on-screen instead of dying to a silent black screen. */
 function __tryStartGame(){
   try{
     var l=document.getElementById('loader');
@@ -5962,8 +6284,11 @@ function __tryStartGame(){
     return false; 
   }
 }
-// v1.13.2: Auto-start the game when assets are ready — no click required.
-// The click handlers remain as backup.
+/* __autoStart() - Joshua's NO-SKIP rule: the game starts ITSELF ~3s after the
+   loader reports Ready - no manual "press start" step, no update-download
+   gate. The document-level click handler, the #load-start button, and the
+   touchend handler below remain as backup triggers (__tryStartGame is
+   idempotent). */
 function __autoStart(){
   try{ __tryStartGame(); }catch(e){}
 }
@@ -5979,6 +6304,13 @@ document.addEventListener('click', function(e){ __tryStartGame(); });
 })();
 document.addEventListener('touchend', function(e){ __tryStartGame(); });
 </script>
+<!-- ===== LATE SYSTEMS (loaded AFTER script block 2, so they see the full
+     world) ===== NPCs, face platform, reference NPCs, gas stations, traffic,
+     semis, road crew, MARTA rail + buses (+ their data files), residential
+     detail, schools, plaza, MLK/Fairburn fixes, Marriott, clubs/diners, POI
+     map, stuck-recovery, code enforcement. Each reports to __loadStep()
+     where wired (npc / refnpc / gasdata / traffic / semis / roadcrew /
+     marta / busdata / bus). -->
 <script src="npc_system.js" onload="__loadStep('npc')" onerror="__loadStep('npc',true)"></script>
 <script src="face_platform.js"></script>
 <script src="refnpc_system.js" onload="__loadStep('refnpc')" onerror="__loadStep('refnpc',true)"></script>
@@ -5999,6 +6331,16 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <script src="marta_system.js" onload="__loadStep('marta')" onerror="__loadStep('marta',true)"></script>
 <script src="marta_bus_data.js" onload="__loadStep('busdata')" onerror="__loadStep('busdata',true)"></script>
 <script src="marta_bus_system.js" onload="__loadStep('bus')" onerror="__loadStep('bus',true)"></script>
+<!-- ===== INLINE SCRIPT BLOCK 3: final placement audit (v2.0 - Joshua's
+     automatic check) ===== Runs ONCE, after EVERY building system has loaded
+     (OSM, churches, schools, plaza, gas, Marriott, clubs, MARTA). Summarizes
+     the placementViolations log accumulated during load (per the v0.9
+     placement protocol - nothing spawns in the road): building id, original
+     position, nudged position, road name. Counts how many were nudged to a
+     legal spot vs skipped. Persists the summary to localStorage
+     ('sa_placement_audit_final') for the watcher/QA review, exposes it as
+     window.__placementAudit, and reports it to Report.setSys.
+     Diagnostics only - it changes nothing in the world. -->
 <script>
 /* v2.0 FINAL PLACEMENT AUDIT (2026-10-09 — Joshua's automatic check):
    Runs AFTER every building system has loaded (OSM, churches, schools,
