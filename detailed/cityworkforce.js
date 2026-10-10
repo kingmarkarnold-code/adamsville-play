@@ -21,7 +21,7 @@
        Floor 22:     Survey & Inspection (drone ops)
 
    HOW IT WORKS:
-     1. A roster of 58 named workers is created at boot (names, departments,
+     1. A roster of 290 named workers is created at boot (names, departments,
         roles, shifts). Persisted in localStorage so the roster is stable
         across sessions.
      2. A poll loop (every 2s) inspects the crew systems' public APIs:
@@ -109,7 +109,7 @@ function deptById(id){
 }
 
 /* ================= ROSTER =================
-   58 named workers. Deterministic order (stable across sessions).
+   290 named workers. Deterministic order (stable across sessions).
    status: 'hq' | 'deployed' | 'returning'
    figure: the THREE.Group when deployed (null at HQ).
    Names are plain, working-class Atlanta — these are 30-year veterans. */
@@ -128,16 +128,18 @@ var LAST=['Johnson','Williams','Brown','Jones','Davis','Miller','Wilson',
   'Mitchell','Turner','Phillips','Campbell','Parker','Evans','Edwards'];
 var ROSTER_SPEC=[
   /* dept, count, roles (cycled) */
-  ['dispatch', 6, ['Dispatcher','Dispatcher','Shift Lead','Dispatcher','Radio Op','Dispatcher']],
-  ['road',    16, ['Foreman','Crew Chief','Paver','Paver','Roller Op','Crew Chief','Paver','Paver',
+  /* v1.1 CREW 5X (Joshua 2026-10-09): 5x workforce (58 -> 290).
+     Municipal workers stay at assigned tasks (not Adamsville). */
+  ['dispatch', 30, ['Dispatcher','Dispatcher','Shift Lead','Dispatcher','Radio Op','Dispatcher']],
+  ['road',     80, ['Foreman','Crew Chief','Paver','Paver','Roller Op','Crew Chief','Paver','Paver',
                    'Foreman','Crew Chief','Paver','Paver','Roller Op','Paver','Crew Chief','Paver']],
-  ['sign',    10, ['Signal Tech','Sign Tech','Signal Tech','Crew Chief','Sign Tech',
+  ['sign',     50, ['Signal Tech','Sign Tech','Signal Tech','Crew Chief','Sign Tech',
                    'Signal Tech','Sign Tech','Crew Chief','Signal Tech','Sign Tech']],
-  ['infra',   10, ['Foreman','Dozer Op','Crew Chief','Pipe Layer','Crew Chief',
+  ['infra',    50, ['Foreman','Dozer Op','Crew Chief','Pipe Layer','Crew Chief',
                    'Dozer Op','Pipe Layer','Crew Chief','Foreman','Pipe Layer']],
-  ['code',     8, ['Inspector','Inspector','Senior Inspector','Inspector',
+  ['code',     40, ['Inspector','Inspector','Senior Inspector','Inspector',
                    'Inspector','Senior Inspector','Inspector','Inspector']],
-  ['survey',   8, ['Drone Op','Drone Op','Survey Lead','Drone Op',
+  ['survey',   40, ['Drone Op','Drone Op','Survey Lead','Drone Op',
                    'Drone Op','Survey Lead','Drone Op','Drone Op']]
 ];
 var LS_ROSTER='sa_cityworkforce_v1';
@@ -183,7 +185,7 @@ function _loadPersisted(){
 }
 function buildRoster(){
   var persisted=_loadPersisted();
-  if (persisted && persisted.roster && persisted.roster.length===58){
+  if (persisted && persisted.roster && persisted.roster.length===290){
     /* Restore names/depts/roles; everyone starts AT HQ on a fresh load
        (deployed figures don't survive reload — crews re-dispatch). */
     roster=persisted.roster.map(function(s){
@@ -191,7 +193,7 @@ function buildRoster(){
               x:HQ.plazaX, z:HQ.plazaZ, figure:null, tagSprite:null};
     });
     deployLog=persisted.log||[];
-    _log('Workforce roster restored — 58 personnel reporting to HQ.');
+    _log('Workforce roster restored — 290 personnel reporting to HQ.');
     return;
   }
   /* Fresh roster: deterministic names. */
@@ -207,7 +209,7 @@ function buildRoster(){
                    figure:null, tagSprite:null});
     }
   });
-  _log('Workforce roster created — 58 personnel across 6 departments.');
+  _log('Workforce roster created — 290 personnel across 6 departments.');
   _saveRoster();
 }
 function workersInDept(deptId, status){
@@ -589,7 +591,7 @@ function renderPanel(){
   if (!panel) return;
   try{
     var h='<div style="font-weight:bold;font-size:16px;margin-bottom:6px">🏢 Municipal Workforce — '+HQ.name+'</div>';
-    h+='<div style="color:#9fb3c8;font-size:12px;margin-bottom:10px">HQ tower ('+HQ.x+', '+HQ.z+') — 58 personnel, 6 departments</div>';
+    h+='<div style="color:#9fb3c8;font-size:12px;margin-bottom:10px">HQ tower ('+HQ.x+', '+HQ.z+') — 290 personnel, 6 departments</div>';
     DEPTS.forEach(function(d){
       var ws=workersInDept(d.id);
       var dep=ws.filter(function(w){return w.status==='deployed';}).length;
@@ -661,7 +663,7 @@ function boot(){
         Report.setSys('cityworkforce',{
           active:true, hq:[HQ.x,HQ.z],
           roster:roster.length, deployed:roster.filter(function(w){return w.status==='deployed';}).length,
-          note:'58 named personnel across 6 departments, HQ downtown tower'});
+          note:'290 named personnel across 6 departments, HQ downtown tower'});
     }catch(e){}
     _log('Municipal Workforce online — HQ at downtown tower.');
   }catch(e){}
