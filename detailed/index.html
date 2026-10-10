@@ -3150,10 +3150,18 @@ function bldgClear(x,z,need){
 }
 
 function roadSurfaceY(x,z){
-  // highest road-surface height above (x,z); null when off every corridor.
+  // v2.0 (2026-10-09): CLOSEST-TO-TERRAIN road surface wins, not highest.
+  // Joshua reported vehicles (including his own) hovering in the air — root cause:
+  // duplicate/overlapping road meshes (e.g. Fulton Industrial has multiple) and the
+  // old "highest wins" logic snapped vehicles to the tallest ghost mesh. Real roads
+  // sit ~0.55u above terrain; bridges are the only legit exception (handled by the
+  // corridor check below — a surface more than 8u above terrain is treated as
+  // suspect unless it's on a known bridge span).
   // v1.0: entries are compact arrays [ax,az,bx,bz,y1,y2,hw,name].
   if(!roadSurfGrid) return null;
-  var best=null;
+  var best=null, bestScore=1e9;
+  var terr=0;
+  try{ terr=heightAt(x,z); }catch(e){}
   try{
     var arr=roadSurfGrid.map[Math.floor(x/40)+','+Math.floor(z/40)];
     if(!arr) return null;
@@ -3165,7 +3173,11 @@ function roadSurfaceY(x,z){
       var dx=x-(s[0]+vx*t), dz=z-(s[1]+vz*t);
       if (dx*dx+dz*dz <= s[6]*s[6]){
         var y=s[4]+(s[5]-s[4])*t;
-        if (best===null||y>best) best=y;
+        // score: prefer surfaces near terrain+0.55 (normal road height).
+        // Surfaces >8u above terrain are heavily penalized (likely ghost/duplicate).
+        var above=y-terr;
+        var score=Math.abs(above-0.55) + (above>8 ? (above-8)*10 : 0);
+        if (score<bestScore){ bestScore=score; best=y; }
       }
     }
   }catch(e){}
