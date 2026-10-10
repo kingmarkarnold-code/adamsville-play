@@ -459,6 +459,12 @@ function isExplored(ri){ return !!SF.explored[ri]; }
    Samples up to 500 candidates for speed; claims the winner. */
 function pickTarget(car){
   var best=-1, bd=1e18, px=car.mesh.position.x, pz=car.mesh.position.z;
+  /* v1.19 PRIORITY DISPATCH (Joshua 2026-10-09): when active, segments inside
+     the priority corridors (I-285 → MLK → Fulton Industrial → Boulder Park →
+     Dollar Mill → Bakers Ferry) are strongly preferred — effective distance
+     is divided by (10 - priority) so corridor segments outrank all others. */
+  var PD=null;
+  try{ PD=(window.PRIORITY_DISPATCH && window.PRIORITY_DISPATCH.active)?window.PRIORITY_DISPATCH:null; }catch(e){}
   try{
     var tries=0, n=SF.segCount, guard=0;
     var start=Math.floor(Math.random()*n);
@@ -468,6 +474,10 @@ function pickTarget(car){
       tries++;
       var m=segMid(ri); if(!m) continue;
       var d=dist2(px,pz,m.x,m.z);
+      if (PD){
+        var pr=PD.priorityAt(m.x,m.z);  // 0-5 in corridors, 99 outside
+        if (pr<99) d=d/Math.max(1,(10-pr));
+      }
       if (d<bd){ bd=d; best=ri; }
     }
   }catch(e){}
