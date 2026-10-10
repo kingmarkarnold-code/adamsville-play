@@ -808,7 +808,8 @@ function initInfraCrew(){
   try{
     if (typeof animate==='function' && !animate.__infracrewWrap){
       var orig=animate;
-      var wrapped=function(){ orig(); if(!window.__npcPaused) updateInfraCrew(0.016); };
+      /* v1.22 LAUNCHER (Joshua 2026-10-10): skip when infra crew disabled in launch options. */
+      var wrapped=function(){ orig(); if(!window.__npcPaused && (!window.__launchOpts || window.__launchOpts.infraCrew!==false)) updateInfraCrew(0.016); };
       wrapped.__infracrewWrap=true;
       animate=wrapped;
     }
