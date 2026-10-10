@@ -1087,7 +1087,9 @@ function buildUI(){
   try{
     var css=document.createElement('style');
     css.textContent=
-      '#sf-btn{position:fixed;left:248px;top:8px;z-index:20;min-width:52px;height:52px;border-radius:12px;'+
+      /* v1.21: icon sits in the HUD icon row at top:96px, adjacent to the
+         backpack (#inv-btn at left:12px). Title corner is left clear. */
+      '#sf-btn{position:fixed;left:252px;top:96px;z-index:20;min-width:52px;height:52px;border-radius:12px;'+
       'border:2px solid #4da3ff;background:rgba(20,24,34,.88);color:#4da3ff;font-size:13px;font-weight:bold;padding:0 8px;}'+
       '@media (max-width:820px),(pointer:coarse){#sf-btn{left:188px!important;top:96px!important;bottom:auto!important;}}'+
       '#sf-panel{position:fixed;inset:0;z-index:50;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.72);}'+
