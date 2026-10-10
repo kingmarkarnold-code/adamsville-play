@@ -1,4 +1,37 @@
 /* ============================================================================
+   FILE: semi_system.js — "Surviving Adamsville" semi / delivery trucks
+   ----------------------------------------------------------------------------
+   PURPOSE: 18-wheeler delivery sim on a VERIFIED fixed route — no
+   pathfinding needed. Semis run I-20 ↔ Fulton Industrial Blvd ↔ 7 real-world
+   warehouses, then despawn "out of town" at the border portal; a spawn timer
+   keeps ~5 active (new ones enter at the border as if "coming back from out
+   of town" — the same vanish/respawn pattern the MARTA trains use).
+   KEY SYSTEMS:
+     - Route: I-20 east border portal (segT=49) → west to the Fulton
+       Industrial interchange (segT=5397) → FIB (interchange segT=5027) →
+       the warehouse's road point (per-warehouse verified fibT) → direct
+       off-road hop to the loading dock, load 15-35s → back to FIB → I-20
+       east to the portal → despawn. State machine: i20_in / fib_out /
+       to_dock / loading / to_fib / fib_back / i20_out.
+     - Right-lane discipline: LANE_OFF=3.5u; on +t travel the heading is the
+       path tangent, on -t travel it's flipped 180° so the cab always faces
+       its direction of motion.
+     - The semi mesh comes from semiMesh() in vehicle_meshes.js — the
+       CANONICAL builder (US left-hand drive, shared with the watcher).
+       Never duplicate it here.
+     - VEHICLE_TYPES registration ('semi'): keeps the vehicle registry
+       consistent — semis are NEVER offered as drivable; the delivery sim
+       owns them.
+     - Anti-stuck watchdog: a semi in a road state whose speed stays ≤3 u/s
+       for 30s is despawned (stuckT resets whenever speed >3 u/s; dock/loading
+       states aren't watched).
+   JOSHUA SPECS ENCODED:
+     - Simple sim logic: fixed verified route, no pathfinding.
+     - Warehouses at verified real-world positions along the Fulton
+       Industrial corridor (buildings themselves live in osm_buildings.js).
+     - Left-hand drive (US) for all vehicles.
+   ============================================================================ */
+/* ============================================================================
    SURVIVING ADAMSVILLE — SEMI / DELIVERY SYSTEM (v1.1)
    ----------------------------------------------------------------------------
    STANDALONE MODULE. Include AFTER the main game script — zero edits to
@@ -36,14 +69,14 @@ if (window.__semiV11) return;
 window.__semiV11 = true;
 
 /* ---------------- config ---------------- */
-var N_SEMIS      = 5;
-var SPAWN_MIN    = 8;
+var N_SEMIS      = 5;     // target active semis (spawn timer tops up)
+var SPAWN_MIN    = 8;     // spawn check interval range (seconds)
 var SPAWN_MAX    = 16;
-var LOAD_MIN     = 15;
+var LOAD_MIN     = 15;    // dock loading pause range (seconds)
 var LOAD_MAX     = 35;
-var ARRIVE_DOCK  = 22;
-var STUCK_AFTER  = 30;
-var SEMI_SPEED   = 20;
+var ARRIVE_DOCK  = 22;    // within this many units = "arrived" at dock/road
+var STUCK_AFTER  = 30;    // despawn a semi stalled this long in a road state
+var SEMI_SPEED   = 20;    // cruise speed u/s
 var LANE_OFF     = 3.5;   // right-lane offset
 
 /* Warehouses — verified real-world positions. [name, x, z, w, d, fibSegT]
@@ -80,13 +113,18 @@ try{
   }
 }catch(e){}
 
-/* ---------------- route data ---------------- */
+/* arcTable(pts) — cumulative arc-length table for a road polyline; the twin
+   of buildRoadIndex's table in traffic_system.js (kept local so this module
+   stays standalone). s.t moves in world units along the table. */
 function arcTable(pts){
   var cum=[0];
   for (var i=1;i<pts.length;i++)
     cum.push(cum[i-1]+Math.hypot(pts[i][0]-pts[i-1][0],pts[i][1]-pts[i-1][1]));
   return cum;
 }
+/* findRoad(name, longest) — finds a road by its exact name (e.g. 'I- 20' —
+   note the data's label spelling); with longest=true, takes the longest
+   matching polyline (I-20 and FIB both have multiple records). */
 function findRoad(name, longest){
   var best=null;
   for (var i=0;i<roadDrawData.length;i++){
@@ -96,7 +134,11 @@ function findRoad(name, longest){
   }
   return best;
 }
-/* position + heading at arc position t on a road (lane offset right) */
+/* roadPoint(R, cum, t, off) — position + heading at arc position t on road R
+   with a right-of-travel lane offset. The "right of +t direction" is
+   (cos(hd), -sin(hd)) of the tangent heading; callers traveling -t flip the
+   returned heading by PI. Binary-searches the arc table; t is clamped to
+   [0, R.len]. */
 function roadPoint(R, cum, t, off){
   t=Math.max(0,Math.min(R.len,t));
   var pts=R.pts, ys=R.ys, lo=0, hi=cum.length-2;
@@ -117,6 +159,10 @@ function roadPoint(R, cum, t, off){
 }
 
 /* ---------------- semi entities ---------------- */
+/* dockSpot(wh) — the loading dock point for a warehouse: from the road
+   point at wh.fibT, pushed (warehouse half-extent + 18u) toward the
+   warehouse on the FIB-facing side — far enough out that the semi doesn't
+   clip the building. */
 function dockSpot(wh){
   // dock on the FIB-facing side of the warehouse
   var fp=roadPoint(SE.fib, SE.fibCum, wh.fibT, 0);
@@ -124,6 +170,9 @@ function dockSpot(wh){
   var stand=Math.max(wh.w,wh.d)/2+18;
   return {x:wh.x+dx/d*stand, z:wh.z+dz/d*stand};
 }
+/* spawnSemi() — one delivery run: picks a random warehouse, builds the
+   canonical semi mesh, starts at the I-20 portal (state 'i20_in') heading
+   west at speed 0 (accelerates up to SEMI_SPEED). */
 function spawnSemi(){
   var wh=WAREHOUSES[(SE.rng()*WAREHOUSES.length)|0];
   var mesh=semiMesh();
@@ -135,12 +184,19 @@ function spawnSemi(){
   SE.semis.push(s);
   return s;
 }
+/* despawnSemi(si) — removes the mesh from the scene and the record from
+   SE.semis (the run is over — it "left town" at the portal, or the
+   anti-stuck watchdog fired). */
 function despawnSemi(si){
   var s=SE.semis[si];
   try{ scene.remove(s.mesh); }catch(e){}
   SE.semis.splice(si,1);
 }
-/* drive toward a target point (direct, off-road hops) */
+/* driveDirect(s, tx, tz, dt, maxSpeed) — steers the semi straight at a point
+   (used for the off-road dock/FIB hops — no road geometry there). Turn rate
+   is capped at 1.4 rad/s, and target speed scales with remaining distance
+   (max 4 u/s minimum) so the semi decelerates into the dock instead of
+   overshooting. Returns the remaining distance. */
 function driveDirect(s, tx, tz, dt, maxSpeed){
   var dx=tx-s.x, dz=tz-s.z, d=Math.hypot(dx,dz);
   var wantHd=Math.atan2(dx,dz), dh=wantHd-s.heading;
@@ -154,6 +210,18 @@ function driveDirect(s, tx, tz, dt, maxSpeed){
   try{ s.y=(typeof clampVehY==='function')?clampVehY(s.x,s.z,heightAt(s.x,s.z)+0.06):heightAt(s.x,s.z)+0.06; }catch(e){}  // v1.12 ground clamp
   return d;
 }
+/* stepSemi(s,dt) — one delivery tick. State machine:
+     i20_in: west on I-20 (portal → interchange), accelerating to SEMI_SPEED.
+     fib_out: FIB interchange → the warehouse's fibT (either direction).
+     to_dock: off-road steer to the dock; arrived (<22u) → 'loading'.
+     loading: parked 15-35s, then 'to_fib'.
+     to_fib: off-road steer back to the FIB road point; arrived → 'fib_back'.
+     fib_back: FIB → the interchange.
+     i20_out: east on I-20 (interchange → portal); reaching the portal
+       returns done=true → despawned ("out of town").
+   Anti-stuck watchdog (road states only): speed ≤3 u/s for 30s returns
+   done=true → despawned. Dock/loading states aren't watched (a parked semi
+   isn't stuck). Returns done (true = remove this semi). */
 function stepSemi(s,dt){
   var done=false;
   if (s.state==='i20_in'){
@@ -207,6 +275,8 @@ function stepSemi(s,dt){
   } else if (!done){ s.stuckT=0; }
   return done;
 }
+/* renderSemi(s,dt) — writes the semi mesh transform; spins the wheels from
+   distance driven (wheelA += speed*dt / wheelRadius 0.55). */
 function renderSemi(s,dt){
   var m=s.mesh;
   m.position.set(s.x,s.y,s.z);
@@ -217,6 +287,9 @@ function renderSemi(s,dt){
 }
 
 /* ---------------- public update ---------------- */
+/* updateSemis(dt) — frame tick: the spawn timer (every 8-16s) tops the fleet
+   back up to 5; each semi steps (done → despawned); Report publishes every
+   5s. dt falls back to performance.now() clamped to 50ms. Never throws. */
 var _lastT=0;
 function updateSemis(dt){
   if (!SE) return;
@@ -247,6 +320,12 @@ window.updateSemis=updateSemis;
 window.SEMI_WAREHOUSES=WAREHOUSES;
 
 /* ---------------- init + self-install ---------------- */
+/* initSemis() — resolves the two route roads by name ('I- 20' longest record,
+   'Fulton Industrial Blvd SW' longest record), builds their arc tables, and
+   seeds 3 semis already en route (one inbound on I-20, one on FIB, one
+   halfway down I-20) so the map isn't empty at load. Wraps the global
+   animate() so updateSemis() runs every frame; boot waits for world deps
+   and gives up after 60s without breaking the game. */
 function initSemis(){
   SE={semis:[], rng:mulberry32(0x5EED01), spawnT:2, repT:0};
   makeTemps();
