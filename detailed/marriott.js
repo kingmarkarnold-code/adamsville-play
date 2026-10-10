@@ -156,6 +156,12 @@ function mqHideExterior(hide) {
     } else {
       var b = bm.kept[MQ.extIdx];
       var qt = new THREE.Quaternion();
+      /* v1.14 compat: restore with the building's actual yaw (7th kept
+         element) so the tower doesn't snap to unrotated on exit. */
+      try{
+        if (b.length>=7 && typeof b[6]==='number')
+          qt.setFromAxisAngle(new THREE.Vector3(0,1,0), b[6]);
+      }catch(e){}
       m4.compose(
         new THREE.Vector3(b[0], MQ.gy - 0.6, b[1]), qt,
         new THREE.Vector3(b[2], Math.max(2.5, b[4]), b[3]));
