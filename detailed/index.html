@@ -5946,23 +5946,28 @@ __loadStep('music');
 function __tryStartGame(){
   try{
     var l=document.getElementById('loader');
-    if(!l || l.style.display==='none') return false;  // already started
+    if(!l || l.style.display==='none') return false;
     l.style.display='none';
-    try{ musicStartOnce(); }catch(e){}
-    try{ animate(); }catch(e){}
+    try{ musicStartOnce(); }catch(e){ console.error('musicStartOnce failed:', e); }
+    try{ 
+      if(typeof animate==='undefined') throw new Error('animate is not defined');
+      animate(); 
+    }catch(e){ 
+      console.error('animate failed:', e);
+      document.body.innerHTML='<div style="color:white;padding:20px;font-family:monospace;">Game start failed:<br>'+String(e&&e.message||e)+'<br><br>Check console for details.</div>';
+    }
     return true;
-  }catch(e){ return false; }
+  }catch(e){ 
+    console.error('__tryStartGame failed:', e);
+    return false; 
+  }
 }
 // v1.13.2: Auto-start the game when assets are ready — no click required.
 // The click handlers remain as backup.
 function __autoStart(){
-  try{
-    var need=window.__loadOrder.length, have=Object.keys(window.__loadDone||{}).length;
-    if(have>=need) __tryStartGame();
-    else setTimeout(__autoStart, 500);
-  }catch(e){ setTimeout(__autoStart, 1000); }
+  try{ __tryStartGame(); }catch(e){}
 }
-setTimeout(__autoStart, 1000);
+setTimeout(__autoStart, 3000);
 document.addEventListener('click', function(e){ __tryStartGame(); });
 /* v1.13.3: wire the START button itself directly (not just document-level). */
 (function(){
