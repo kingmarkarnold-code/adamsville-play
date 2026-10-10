@@ -82,7 +82,8 @@ window.__roadcrewV1 = true;
 var DISCOVER_R   = 70;     // patrol spots a defect inside this radius (u)
 var INSPECT_T    = 3;      // seconds the patrol unit stops to "radio in"
 var DISPATCH_T   = 6;      // seconds from found -> crew dispatched
-var REPAIR_T     = 75;     // seconds the crew works a site
+var REPAIR_T     = 30;     // seconds the crew works a site (Joshua 2026-10-10:
+                               // sped up from 75s — faster fixes, less waiting)
 var PATROL_SPEED = 14;
 var N_PATROLS    = 2;
 var FALLBACK_T   = 240;    // undiscovered after this long -> "driver report"
@@ -731,7 +732,28 @@ function dispatchRepair(d){
     var wx=d.x+o[0], wz=d.z+o[1];
     w.position.set(wx, groundY(wx,wz), wz);
     w.rotation.y=Math.random()*6.28; grp.add(w); workers.push(w);
+    /* Joshua 2026-10-10: STATIC work pose (set once, no per-frame anim).
+       Arms slightly raised as if working — cheap, reads clearly. */
+    try{
+      if(w.userData.armR) w.userData.armR.rotation.x=-0.55;
+      if(w.userData.armL) w.userData.armL.rotation.x=-0.35;
+    }catch(e){}
   });
+  /* Joshua 2026-10-10: floating "WORK ZONE" banner over the site so the
+     closed area is obvious at a glance. */
+  try{
+    var wzLabel=labelSprite('🚧 WORK ZONE');
+    wzLabel.position.set(d.x, groundY(d.x,d.z)+14, d.z);
+    grp.add(wzLabel);
+  }catch(e){}
+  /* Joshua 2026-10-10: WORK-ZONE PERIMETER — one circle collider around the
+     defect so the player can't walk/drive into the active site. Removed in
+     finishRepair. (Truck/sign/cone colliders below remain as before.) */
+  var zoneCol=null, zoneR=12;
+  try{ if(typeof addCollider==='function'){
+    zoneCol={x:d.x, z:d.z, r:zoneR, y0:-1e9, y1:1e9, _workzone:true};
+    colliders.push(zoneCol);
+  }}catch(e){}
   // signs: ROAD WORK AHEAD both approaches + DETOUR pair
   var signs=[];
   var signCols=[];  // v2.1: track for cleanup
@@ -778,7 +800,8 @@ function dispatchRepair(d){
   d.state='repairing';
   var job={defect:d, group:grp, truck:truck, workers:workers,
     signs:signs, cones:cones, conePos:conePos, arrows:arrows, t:0, heading:heading,
-    truckCol:truckCol, signCols:signCols, coneCols:coneCols};
+    truckCol:truckCol, signCols:signCols, coneCols:coneCols,
+    zoneCol:zoneCol, zoneR:zoneR};
   // link cone colliders back to this job for knock-over handling
   coneCols.forEach(function(cc){ cc._job=job; });
   // store worker home positions for fetch-and-return behavior
@@ -827,12 +850,15 @@ function finishRepair(job){
       if(job.truckCol) removeCollider(job.truckCol);
       (job.signCols||[]).forEach(function(c){ removeCollider(c); });
       (job.coneCols||[]).forEach(function(c){ removeCollider(c); });
+      /* Joshua 2026-10-10: pull the work-zone perimeter too. */
+      if(job.zoneCol) removeCollider(job.zoneCol);
     }else if(typeof colliders!=='undefined'){
       // fallback: filter by identity
       var doomed={};
       if(job.truckCol) doomed[colliders.indexOf(job.truckCol)]=1;
       (job.signCols||[]).forEach(function(c){ doomed[colliders.indexOf(c)]=1; });
       (job.coneCols||[]).forEach(function(c){ doomed[colliders.indexOf(c)]=1; });
+      if(job.zoneCol) doomed[colliders.indexOf(job.zoneCol)]=1;
       for(var di=colliders.length-1;di>=0;di--){ if(doomed[di]) colliders.splice(di,1); }
     }
   }catch(e){}
@@ -936,13 +962,10 @@ function updateConePhysics(j, dt){
    physics, and truck light-bar flash. updateJobs calls this during the
    'fixing' phase for veteran jobs, or every frame for legacy jobs. */
 function rcFixTick(j, dt){
-  // workers: repair animation OR fetch-and-return (not both)
-  j.workers.forEach(function(w,k){
-    if(w.userData.fetchState) return;  // handled by updateConePhysics
-    w.position.y+=Math.sin(RC.time*7+k*2.4)*0.012;
-    w.rotation.y+=Math.sin(RC.time*1.3+k)*0.01;
-    var a=w.userData.armR; if(a) a.rotation.x=Math.sin(RC.time*7+k)*0.7;
-  });
+  /* Joshua 2026-10-10: worker on-foot animation SIMPLIFIED for phone
+     performance. Workers hold a static work pose (set once at dispatch) —
+     no per-frame bobbing/arm-swing math. The truck light-bar flash stays
+     (one visibility toggle, negligible cost). */
   try{ updateConePhysics(j, dt); }catch(e){}
   var bar=j.truck.userData.lightBar; if (bar) bar.visible=(RC.tick%14<7);
 }
@@ -961,15 +984,33 @@ function updateJobs(dt){
         log:function(m){ dlog(m); }, toast:function(m){ toast(m); }});
       if (ph==='fixing'){ j.t+=dt; rcFixTick(j,dt); }
       else if (ph==='done'){ finishRepair(j); RC.jobs.splice(i,1); }
+      rcWorkZoneNudge(j);
       continue;
     }
     j.t+=dt;
     rcFixTick(j,dt);
+    rcWorkZoneNudge(j);
     if (j.t>=REPAIR_T){
       finishRepair(j);
       RC.jobs.splice(i,1);
     }
   }
+}
+/* rcWorkZoneNudge(j) — Joshua 2026-10-10: when the player presses against an
+   active work-zone perimeter, show a throttled "please wait" toast so they
+   know WHY they're blocked. Cheap distance check, one toast per 6s max. */
+var _rcNudgeT=0;
+function rcWorkZoneNudge(j){
+  try{
+    if(!j.zoneCol || typeof player==='undefined' || !player.mesh) return;
+    var px=player.mesh.position.x, pz=player.mesh.position.z;
+    var dx=px-j.zoneCol.x, dz=pz-j.zoneCol.z;
+    var d=Math.sqrt(dx*dx+dz*dz);
+    if(d < j.zoneR+2 && Date.now()-_rcNudgeT>6000){
+      _rcNudgeT=Date.now();
+      toast('🚧 Work zone — please wait, crew is fixing this road');
+    }
+  }catch(e){}
 }
 
 /* ---------------- HUD: dispatch button + log panel ---------------- */
