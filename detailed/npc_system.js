@@ -45,6 +45,15 @@
    4x/sec. Boarding/transit NPCs are exempt from vehicle blocking so they
    can REACH their bus/train.
    ----------------------------------------------------------------------------
+   v1.21 PLAYER-SOLID (Joshua's bug report 2026-10-09 ~11pm: an NPC "walked
+   right through me"). Collision was one-way: the player was blocked by NPC
+   bodies, but NPC movement never treated the player as an obstacle. Now the
+   on-foot player is solid to NPCs — npcBlocked() refuses steps into the
+   player's body space (NPC_PLAYER_R=1.1u) and separateFromPlayer() pushes
+   NPCs out after every move. TALK is preserved (1.1u << TALK_R 4.5u).
+   The player only counts when on foot (not driving/inside/on transit);
+   when driving, the car is already a vehicle blocker.
+   ----------------------------------------------------------------------------
    v1.9
    ~1,000 free-think pedestrians. Each NPC is DATA ONLY when distant
    (no geometry, no Three.js objects). Bodies stream in as instanced boxes
@@ -298,8 +307,64 @@ function npcNearOther(x,z,r){
   }catch(e){}
   return false;
 }
-function npcHitsVehicle(x,z,n){
-  // boarding / walking-to-transit NPCs must REACH their vehicle
+/* ---------------- player collision (v1.21) ----------------
+   JOSHUA'S BUG REPORT (2026-10-09 ~11pm): an NPC "walked right through
+   me". Player->NPC collision already existed (the player is blocked by
+   NPC bodies), but NPC movement never treated the player as an obstacle —
+   every path (WALK step, goto sidestep, boarding step, settle, spawn
+   placement) went through npcBlocked(), which knew nothing about the
+   player. Now it does:
+     - npcHitsPlayer(x,z): true when the on-foot player is within
+       NPC_PLAYER_R of (x,z). Wired into npcBlocked() so the lookahead
+       probe TURNs away and steps refuse — the same gate walls, trees,
+       and vehicles use.
+     - separateFromPlayer(n): soft push-out after every move (mirrors
+       separateNPC), so an NPC can never end a frame overlapping the
+       player even if a probe missed.
+   TALK is preserved: NPC_PLAYER_R (1.1u) sits far inside TALK_R (4.5u),
+   so NPCs stop at a respectful distance but stay talkable. The player
+   only counts when on foot (npcTalkEligible: not driving, not inside, not
+   on transit) — when driving, the car itself is already a vehicle blocker
+   via npcHitsVehicle. The per-frame cache (_ppx/_ppz/_ppOnFoot) is written
+   once in updateNPCs so the hot probe path stays two subtractions plus a
+   compare — TCL-safe. */
+var NPC_PLAYER_R=1.1;   // player body ~0.5u + NPC body ~0.5u + margin
+var _ppx=0, _ppz=0, _ppOnFoot=false;   // per-frame player cache (see updateNPCs)
+/* cachePlayerPos() — snapshot the on-foot player once per frame. Called
+   from updateNPCs before any NPC ticks run. A missing player reads as
+   "not on foot" so NPCs never freeze for a phantom. */
+function cachePlayerPos(){
+  _ppOnFoot=false;
+  try{
+    if (typeof player!=='undefined' && player && isFinite(player.x) && isFinite(player.z)){
+      _ppx=player.x; _ppz=player.z;
+      _ppOnFoot=npcTalkEligible();
+    }
+  }catch(e){}
+}
+/* npcHitsPlayer(x,z) — true if the on-foot player is within NPC_PLAYER_R
+   of (x,z). Reads the per-frame cache; never throws. */
+function npcHitsPlayer(x,z){
+  if (!_ppOnFoot) return false;
+  try{
+    var dx=x-_ppx, dz=z-_ppz, rr=NPC_PLAYER_R;
+    return (dx*dx+dz*dz) < rr*rr;
+  }catch(e){ return false; }
+}
+/* separateFromPlayer(n) — push n out of the player's body space after a
+   move. Mirrors separateNPC: moves only the NPC, never the player, so
+   crowded pairs resolve without oscillation. */
+function separateFromPlayer(n){
+  if (!_ppOnFoot) return;
+  try{
+    var dx=n.x-_ppx, dz=n.z-_ppz, d2=dx*dx+dz*dz, rr=NPC_PLAYER_R;
+    if (d2 < rr*rr && d2 > 0.0001){
+      var d=Math.sqrt(d2), push=(rr-d)/d;
+      n.x+=dx*push; n.z+=dz*push;
+    }
+  }catch(e){}
+}
+function npcHitsVehicle(x,z,n){  // boarding / walking-to-transit NPCs must REACH their vehicle
   if (n && (n.boarding || n.goto)) return false;
   try{ refreshVehList(Date.now()); }catch(e){}
   for (var i=0;i<_vehList.length;i++){
@@ -340,6 +405,7 @@ function npcBlocked(x,z,n){
     if (npcHitsStatic(x,z)) return true;      // v1.20: trees/signs/poles
     if (npcHitsVehicle(x,z,n)) return true;   // v1.20: vehicles
     if (npcHitsHeroHouse(x,z)) return true;   // v3.1: 535 Dollar Mill Rd
+    if (npcHitsPlayer(x,z)) return true;      // v1.21: the player is solid to NPCs (Joshua 2026-10-09 bug: NPC walked through him)
   }catch(e){}
   return false;
 }
@@ -527,7 +593,7 @@ function aiNPC(n, dt){
     if (n.boardT<=0){ n.boarding=null; n.waiting=true; n.waitT=TR_WAIT_T; setState(n,ST_IDLE,1e9); return; }
     n.heading=Math.atan2(bdx,bdz); n.state=ST_WALK;
     var bstep=n.speed*dt, bnx=n.x+Math.sin(n.heading)*bstep, bnz=n.z+Math.cos(n.heading)*bstep;
-    if (!npcBlocked(bnx,bnz,n)){ n.x=bnx; n.z=bnz; separateNPC(n); if(!n.lockY){ try{n.y=heightAt(n.x,n.z);}catch(e){} } }
+    if (!npcBlocked(bnx,bnz,n)){ n.x=bnx; n.z=bnz; separateNPC(n); separateFromPlayer(n); if(!n.lockY){ try{n.y=heightAt(n.x,n.z);}catch(e){} } }
     return;
   }
   /* v1.17 walking to a transit stop/station (n.goto = {x,z}). Steers straight
@@ -549,13 +615,13 @@ function aiNPC(n, dt){
     }
     n.heading=Math.atan2(gdx,gdz); n.state=ST_WALK;
     var gstep=n.speed*dt, gnx=n.x+Math.sin(n.heading)*gstep, gnz=n.z+Math.cos(n.heading)*gstep;
-    if (!npcBlocked(gnx,gnz,n)){ n.x=gnx; n.z=gnz; separateNPC(n); try{n.y=heightAt(n.x,n.z);}catch(e){} }
+    if (!npcBlocked(gnx,gnz,n)){ n.x=gnx; n.z=gnz; separateNPC(n); separateFromPlayer(n); try{n.y=heightAt(n.x,n.z);}catch(e){} }
     else {
       var gok=false;
       for (var ga=0;ga<4&&!gok;ga++){
         var ha=n.heading+((ga%2)?1:-1)*(0.6+0.5*((ga/2)|0));
         var tx2=n.x+Math.sin(ha)*gstep, tz2=n.z+Math.cos(ha)*gstep;
-        if (!npcBlocked(tx2,tz2,n)){ n.x=tx2; n.z=tz2; separateNPC(n); gok=true; }
+        if (!npcBlocked(tx2,tz2,n)){ n.x=tx2; n.z=tz2; separateNPC(n); separateFromPlayer(n); gok=true; }
       }
       if (!gok){
         n.stuckT=(n.stuckT||0)+dt;
@@ -578,7 +644,7 @@ function aiNPC(n, dt){
     var step=n.speed*dt;
     n.x+=Math.sin(n.heading)*step;
     n.z+=Math.cos(n.heading)*step;
-    separateNPC(n);   // v1.20: never overlap another NPC
+    separateNPC(n); separateFromPlayer(n);   // v1.20/1.21: never overlap another NPC or the player
     // staggered lookahead probe (~every 0.3s per NPC at 60fps)
     if ( ((npcTick+n.id)%18)===0 ){
       var px=n.x+Math.sin(n.heading)*3.2, pz=n.z+Math.cos(n.heading)*3.2;
@@ -1269,7 +1335,7 @@ function settleAtStop(n){
     var offs=[[1.2,0.8],[-1.2,0.8],[1.2,-0.8],[-1.2,-0.8]], i, wx, wz;
     for (i=0;i<offs.length;i++){
       wx=s.x+offs[i][0]; wz=s.z+offs[i][1];
-      if (!npcBlocked(wx,wz,n)){ n.x=wx; n.z=wz; separateNPC(n); return; }
+      if (!npcBlocked(wx,wz,n)){ n.x=wx; n.z=wz; separateNPC(n); separateFromPlayer(n); return; }
     }
   }catch(e){}
 }
@@ -1394,6 +1460,7 @@ function updateNPCs(dt, playerPos){
     if (playerPos && isFinite(playerPos.x)){ px=playerPos.x; pz=playerPos.z; }
     else if (typeof player!=='undefined' && player){ px=player.x; pz=player.z; }
     else return;
+    try{ cachePlayerPos(); }catch(e){}   // v1.21: NPC-vs-player collision cache (on-foot player is solid)
     try{ if (typeof car!=='undefined' && car && car.driving){ px=car.x; pz=car.z; } }catch(e){}
     var i;
     try{ npcFaceTick(dt,px,pz); }catch(e){}   // v1.14: NPCs turn to face a nearby player
