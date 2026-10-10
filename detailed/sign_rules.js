@@ -1,3 +1,27 @@
+/* ============================================================================
+   FILE: sign_rules.js — "Surviving Adamsville" permanent sign-placement rules
+   ----------------------------------------------------------------------------
+   PURPOSE: Joshua's directive (2026-10-09): ALGORITHMIC PREVENTION. Every
+   sign in the game must pass through SignRules.place() before positioning,
+   so NO sign can ever spawn in a driving lane again — not just today's
+   signs, but every future one.
+   KEY SYSTEMS:
+     - SignRules.place(x, z, opts) → {x, z, moved, road}: finds the nearest
+       road segment via the road spatial hash (gridSegsNear, shared with the
+       building checker); if the point is inside the driving lane (perp
+       distance < half-width + margin), it is moved perpendicular to
+       half-width + 3.0u shoulder clearance — on the RIGHT side of travel
+       when opts.dir (travel direction) is given, otherwise on the side it's
+       already closest to. Every correction is audited.
+     - SignRules.report() → the audit array (every moved sign: from/to,
+       road name); SignRules.publish() → Report panel + window.__signAudit
+       + console, once per load (guarded for contexts without Report).
+   CALLERS: MARTA bus-stop signs (marta_bus_system.js), highway exit signs,
+   street-name signs, stop signs, traffic lights, crew warning signs. All
+   lookups are lazy — safe to load before the road grid exists; place() must
+   only be CALLED after the grid is built. Defaults: 2.5u margin past the
+   half-width for the lane test, 3.0u past half-width for the resting spot.
+   ============================================================================ */
 /* ================= SIGN PLACEMENT RULES (2026-10-09) =================
    Joshua's directive: ALGORITHMIC PREVENTION — not just fixing today's
    signs, but a placement rule that runs at load time so NO sign can ever
@@ -27,8 +51,13 @@ var SignRules=(function(){
   var DEFAULT_MARGIN=2.5;   // extra clearance past the road half-width
   var SHOULDER=3.0;         // final resting distance past half-width
 
-  // nearest road segment to (x,z): {d (perp dist to centerline), hw, name,
-  // side (+1/-1 of normal), nx, nz (unit normal), cx, cz (closest point)}
+  // nearestSeg(x,z) — nearest road segment to (x,z): {d (perp distance from
+  // the point to the centerline, clamped to the segment), hw (half-width,
+  // defaults 3.5u when the segment lacks one), name, side (+1/-1 relative
+  // to the segment normal), nx/nz (unit normal), cx/cz (closest point on
+  // the segment), dx/dz (unit tangent)}. Returns null when the road grid
+  // isn't available yet. The segment fraction t is clamped to [0,1] so the
+  // distance is measured to the segment, not its infinite extension.
   function nearestSeg(x,z){
     var best=null;
     try{
@@ -53,7 +82,13 @@ var SignRules=(function(){
     return best;
   }
 
-  // opts: {type, margin, dir:{dx,dz} (travel direction -> right shoulder)}
+  // place(x,z,opts) — the single choke point for all sign placement.
+  // opts: {type (label for the audit, e.g. 'busstop'), margin (override the
+  // 2.5u default clearance past half-width), dir:{dx,dz} (travel direction —
+  // the sign is moved to the RIGHT shoulder of travel, US roadside rule)}.
+  // Returns {x, z, moved, road}. When the point is already clear of the
+  // driving lane it returns the coordinates untouched (moved:false) — the
+  // rule only corrects violations, it never repositions good signs.
   function place(x,z,opts){
     opts=opts||{};
     var seg=nearestSeg(x,z);
@@ -76,9 +111,15 @@ var SignRules=(function(){
     return {x:px, z:pz, moved:true, road:seg.name};
   }
 
+  // report() — the full move audit: every sign that was corrected, with
+  // from/to coordinates and the road it was moved off of. Joshua reads this
+  // to verify what the rule changed and why.
   function report(){ return audit; }
 
-  // publish audit once per load (guarded — Report may not exist in all contexts)
+  // publish() — pushes the audit once per load to the Report panel
+  // (Report.setSys 'signrules') + window.__signAudit + console (first 10).
+  // Guarded: Report may not exist in all contexts. Logs only when at least
+  // one sign was moved — silent when nothing violated the rule.
   function publish(){
     try{
       if(typeof Report!=='undefined'&&Report.setSys)
