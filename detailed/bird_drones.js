@@ -144,8 +144,13 @@ function updateBirdDrones(){
   var dt=Math.min(0.05, now-_lastT); _lastT=now;
   BD.t+=dt;
   var T=BD.t, D=_dummy;
+  // v1.15 DISTANCE CULLING (Joshua 2026-10-10): skip matrix updates for
+  // birds beyond cull distance — they freeze in place until player nears.
+  // With 500 birds, this is the single biggest perf win on low-end phones.
+  var _zu = window.ZONEUNLOCK;
   for(var i=0;i<BD.birds.length;i++){
     var b=BD.birds[i], sp=b.sp;
+    if(_zu && _zu.shouldCull(b.cx, b.cz)) continue;
     var a=b.ph + T*b.dir*b.spd/Math.max(1,(b.rx+b.rz)/2);
     var px=b.cx+Math.cos(a)*b.rx, pz=b.cz+Math.sin(a)*b.rz;
     var py=b.alt+Math.sin(T*b.bobR+b.fp)*b.bobA;
