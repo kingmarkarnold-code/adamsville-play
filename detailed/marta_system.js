@@ -743,7 +743,8 @@ var _bootTimer=setInterval(function(){
     try{
       if (typeof animate==='function'&&!animate.__martaWrap){
         var orig=animate;
-        var wrapped=function(){ orig(); updateMarta(); };
+        /* v1.22 LAUNCHER (Joshua 2026-10-10): skip when MARTA trains disabled in launch options. */
+        var wrapped=function(){ orig(); if(!window.__launchOpts || window.__launchOpts.martaTrains!==false) updateMarta(); };
         wrapped.__martaWrap=true;
         animate=wrapped;
       }
