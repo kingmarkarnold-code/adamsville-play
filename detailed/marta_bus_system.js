@@ -11,6 +11,10 @@
        → run; REVERSE direction at termini (dir *= -1) — buses shuttle back
        and forth along the route shape (unlike trains, which run to the map
        edge and vanish).
+     - v1.18 SMART STOPS (Joshua 2026-10-09): buses dwell ONLY at stops with
+       waiting passengers (simulated demand) or at termini. Empty stops get a
+       slight "check" slowdown then a drive-through. Waiting riders render as
+       small figures at the stop sign (near-player only, perf guard).
      - Stop arc positions: each GTFS stop is snapped to its nearest path
        point (coarse-then-fine search); outlier stops (>40u from the path)
        are MOVED onto the path so the bus stops where the sign is. Stops are
@@ -32,6 +36,15 @@
      - MARTA bus content queued by Joshua (2026-10-09): real routes, real
        stops, rideable buses, bus-stop signs.
      - Simple sim logic: constant-speed buses, eased stops; no physics.
+     - v1.16 MARTA BUS TRAFFIC RULE (Joshua 2026-10-09): when a bus DWELLS at
+       a stop (state 'dwell', speed 0, passengers boarding), all traffic
+       vehicles behind it must STOP and WAIT — no going around, no driving
+       through. The traffic module (traffic_system.js) enforces this by
+       reading window.MARTA_BUS: MB.ready + MB.buses[] where each bus
+       exposes {state, x, z, stopIdx}. Do NOT rename these fields or change
+       the 'dwell' state name without updating traffic_system.js — it is the
+       contract the rule depends on. When the dwell timer expires the bus
+       resumes and waiting cars are released automatically.
    ============================================================================ */
 /* ============================================================================
    SURVIVING ADAMSVILLE — MARTA BUS SYSTEM (v1.0)
@@ -70,6 +83,18 @@ var DWELL_TIME    = 6;     // seconds stopped at each bus stop
 var BUSES_PER_ROUTE = 2;
 var BRAKE_DIST    = 60;    // start slowing this far from a stop
 var BOARD_RANGE   = 25;    // how close player must be to board
+/* v1.18 SMART STOPS (Joshua 2026-10-09): buses only stop where passengers
+   wait — everywhere else they drive through (with a slight "check" slowdown).
+   CHECK_DIST = how far out a bus eases off to glance at a stop it will skip.
+   DEMAND_P   = per-stop per-second chance of passengers arriving (~0.15% ->
+   roughly 10-15% of stops have waiting riders at any time, calibrated for
+   ~1236 stops and ~2-3 min mean bus revisit). COOL_S = quiet period after a
+   stop is served before new riders can arrive. FIG_DIST = only render waiting
+   rider figures within this range of the player (perf guard for the TCL). */
+var CHECK_DIST    = 25;    // "check" slowdown radius for skipped stops
+var DEMAND_P      = 0.0015;// per stop per second rider-arrival chance
+var COOL_S        = 30;    // seconds after service before riders reappear
+var FIG_DIST      = 600;   // waiting-rider figures render within this range
 
 var MB = { routes: [], buses: [], stops: [], ready: false };
 
@@ -209,14 +234,26 @@ function updateBus(b, dt){
     b.nextStop=ni;
     var target=BUS_SPEED;
     if (ni>=0){
-      var ds=Math.abs(route.stops[ni].s-b.s);
-      if (ds<BRAKE_DIST) target=BUS_SPEED*Math.max(0,(ds-3)/BRAKE_DIST);
-      if (ds<5){
-        b.s=route.stops[ni].s; b.state='dwell'; b.dwellT=DWELL_TIME;
-        b.stopIdx=ni; b.speed=0;
-        if (player.ridingBus===b){
-          showToast('Bus '+route.num+' — '+route.stops[ni].name, 2500);
+      var st=route.stops[ni];
+      var ds=Math.abs(st.s-b.s);
+      /* v1.18 SMART STOPS (Joshua 2026-10-09): dwell ONLY where passengers
+         wait — or at a terminus (the bus must still reverse there). Everywhere
+         else the bus eases to a "check" crawl inside CHECK_DIST, then drives
+         straight through. Boarding stays dwell-only, so riders can only board
+         at serviced stops — real-bus behavior. */
+      var serve=st.waiting||isTerminusStop(b,ni);
+      if (serve){
+        if (ds<BRAKE_DIST) target=BUS_SPEED*Math.max(0,(ds-3)/BRAKE_DIST);
+        if (ds<5){
+          b.s=st.s; b.state='dwell'; b.dwellT=DWELL_TIME;
+          b.stopIdx=ni; b.speed=0;
+          serveStop(st);  // riders boarded: clear the stop's demand + figures
+          if (player.ridingBus===b){
+            showToast('Bus '+route.num+' — '+st.name, 2500);
+          }
         }
+      } else if (ds<CHECK_DIST){
+        target=BUS_SPEED*0.65;  // slow to glance, then keep rolling
       }
     }
     if (b.s>=route.path.length-1||b.s<=1){
@@ -235,6 +272,106 @@ function updateBus(b, dt){
   if (typeof clampVehY==='function') y=clampVehY(b.x,b.z,y);  // v1.12: ground clamp — no sky-floaters
   b.mesh.position.set(b.x, y, b.z);
   b.mesh.rotation.y=b.yaw;
+}
+
+/* ---------------- smart stops (v1.18) ---------------- */
+/* v1.18 SMART STOPS (Joshua 2026-10-09): MARTA buses stop ONLY where
+   passengers wait — no more dwelling at empty stops. Demand is simulated:
+   each stop independently gains riders at DEMAND_P/sec after a COOL_S quiet
+   period; a dwelling bus clears the stop (serveStop). Waiting riders are
+   shown as small stylized figures at the stop sign — but only within
+   FIG_DIST of the player (perf guard; bus logic is unaffected by figure
+   visibility). Figures share two module-level geometries so repeated
+   spawn/despawn never leaks GPU memory. */
+/* isTerminusStop(b, ni) — true when stop ni is the end of the line in the
+   bus's travel direction. Termini always dwell (the bus must reverse), even
+   with no waiting riders. */
+function isTerminusStop(b, ni){
+  var n=b.route.stops.length;
+  return (b.dir>0&&ni===n-1)||(b.dir<0&&ni===0);
+}
+/* Shared figure geometry (built lazily once): one body box + one head
+   sphere per waiting rider, materials from vehMat (already cached). */
+var waitBodyGeo=null, waitHeadGeo=null;
+var WAIT_SHIRTS=[0xc23b2e,0x2a6b2a,0x1a5fb4,0xd8a03c,0x7a3a8a,0x3a8a8a,0xdddddd,0x333338];
+var WAIT_SKIN=[0x8a5a3a,0x6b4226,0xa06a42,0xd8a878];
+/* spawnWaitFigs(st) — 1-2 stylized riders standing by the stop sign, facing
+   the road (toward the bus's dwell point st.px/st.pz). No colliders: they
+   stand off the walking line by the sign. */
+function spawnWaitFigs(st){
+  if (st.figs) return;
+  try{
+    if (typeof THREE==='undefined'||typeof scene==='undefined') return;
+    if (!waitBodyGeo){
+      waitBodyGeo=new THREE.BoxGeometry(0.5,1.0,0.3);
+      waitHeadGeo=new THREE.SphereGeometry(0.22,8,8);
+    }
+    var n=1+Math.floor(Math.random()*2);
+    var yaw=Math.atan2(st.px-st.x, st.pz-st.z);
+    st.figs=[];
+    for (var i=0;i<n;i++){
+      var g=new THREE.Group();
+      var fx=st.x+1.2+i*0.7+(Math.random()-0.5)*0.3;
+      var fz=st.z+0.4+(Math.random()-0.5)*0.8;
+      var gy=groundY(fx,fz);
+      var shirt=WAIT_SHIRTS[Math.floor(Math.random()*WAIT_SHIRTS.length)];
+      var skin=WAIT_SKIN[Math.floor(Math.random()*WAIT_SKIN.length)];
+      var body=new THREE.Mesh(waitBodyGeo, vehMat(shirt));
+      body.position.y=0.8; g.add(body);
+      var head=new THREE.Mesh(waitHeadGeo, vehMat(skin));
+      head.position.y=1.55; g.add(head);
+      g.position.set(fx,gy,fz);
+      g.rotation.y=yaw;
+      scene.add(g);
+      st.figs.push(g);
+    }
+  }catch(e){}
+}
+/* clearWaitFigs(st) — remove rider figures from the scene. */
+function clearWaitFigs(st){
+  try{
+    if (st.figs){
+      for (var i=0;i<st.figs.length;i++) scene.remove(st.figs[i]);
+      st.figs=null;
+    }
+  }catch(e){ st.figs=null; }
+}
+/* serveStop(st) — a bus just dwelled here: riders boarded, so clear demand,
+   start the cooldown, and remove the figures. */
+function serveStop(st){
+  st.waiting=false;
+  st.cool=simT+COOL_S;
+  clearWaitFigs(st);
+}
+/* Passenger-demand simulation clock (seconds). Advanced once per second by
+   updateDemand; used for stop cooldowns. */
+var simT=0, demandAcc=0;
+/* updateDemand() — runs once per second from updateBusSys: rolls rider
+   arrivals at every stop, and keeps rider figures rendered only near the
+   player. Cheap: ~1236 stops x 1 random each per second. */
+function updateDemand(){
+  simT+=1;
+  var px=0, pz=0, hasP=false;
+  try{
+    if (typeof player!=='undefined'){ px=player.x; pz=player.z; hasP=true; }
+  }catch(e){}
+  for (var ri=0;ri<MB.routes.length;ri++){
+    var stops=MB.routes[ri].stops;
+    for (var i=0;i<stops.length;i++){
+      var st=stops[i];
+      if (!st.waiting&&simT>=st.cool&&Math.random()<DEMAND_P){
+        st.waiting=true;   // riders arrived — next bus will service this stop
+      }
+      /* Figure visibility LOD: spawn near the player, despawn far away.
+         Bus dwell logic reads st.waiting only — figures are pure visuals. */
+      if (st.waiting){
+        var near=hasP&&(Math.abs(st.x-px)<FIG_DIST&&Math.abs(st.z-pz)<FIG_DIST&&
+          Math.hypot(st.x-px,st.z-pz)<FIG_DIST);
+        if (near&&!st.figs) spawnWaitFigs(st);
+        else if (!near&&st.figs) clearWaitFigs(st);
+      }
+    }
+  }
 }
 
 /* ---------------- boarding / riding ---------------- */
@@ -395,7 +532,11 @@ function initBus(){
       }
       var sx=s.x, sz=s.z;
       if (bd>40&&bp){ sx=bp[0]; sz=bp[1]; } // snap to path
-      route.stops.push({name:s.name, x:sx, z:sz, s:bestS, gy:groundY(sx,sz)});
+      /* v1.18 SMART STOPS: px/pz = where the bus actually dwells (path point);
+         waiting/cool/figs = passenger-demand state (see updateDemand). */
+      var dpt=route.path.posAt(bestS);
+      route.stops.push({name:s.name, x:sx, z:sz, s:bestS, gy:groundY(sx,sz),
+        px:dpt[0], pz:dpt[1], waiting:false, cool:0, figs:null});
     });
     // sort stops by arc position so buses visit them in path order
     route.stops.sort(function(a,b2){ return a.s-b2.s; });
@@ -444,6 +585,9 @@ function updateBusSys(){
   _lastT=now;
   var i;
   for (i=0;i<MB.buses.length;i++) updateBus(MB.buses[i], dt);
+  /* v1.18 SMART STOPS: passenger-demand simulation ticks once per second */
+  demandAcc+=dt;
+  if (demandAcc>=1){ demandAcc=0; try{ updateDemand(); }catch(e){} }
   if (typeof player!=='undefined'&&player.ridingBus) updateRiding(dt);
   if (window.__busPendingBus){
     var b=window.__busPendingBus; window.__busPendingBus=null;
