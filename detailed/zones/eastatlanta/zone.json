@@ -1,0 +1,27 @@
+{
+  "id": "eastatlanta",
+  "name": "East Atlanta",
+  "bounds": {
+    "xMin": 5398,
+    "xMax": 8200,
+    "zMin": 2202,
+    "zMax": 4218
+  },
+  "original_bounds": {
+    "xMin": 5398,
+    "xMax": 8200,
+    "zMin": 2202,
+    "zMax": 4218
+  },
+  "scale": 1.0,
+  "is_start": false,
+  "counts": {
+    "roads": 1537,
+    "buildings": 705,
+    "pins": 3196,
+    "lifts": 2253,
+    "signs": 102
+  },
+  "generated": "2026-10-10",
+  "generator": "split-zones.py"
+}
