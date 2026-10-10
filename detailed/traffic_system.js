@@ -240,6 +240,15 @@ function roadPose(c){
   var y=ys[lo]+(ys[lo+1]-ys[lo])*f;
   var rx=-Math.cos(hd), rz=Math.sin(hd);   // anatomical right of heading
   c.x=x+rx*c.off; c.z=z+rz*c.off;
+  /* v1.13 (2026-10-09): FLOAT FIX — Joshua reported traffic hovering in the air.
+     Road path heights (ys) can come from floating/duplicate road meshes. If the
+     road height is more than 8u above terrain, the road data is suspect — snap
+     the car to terrain instead. Real bridges on this map are handled by the
+     road corridor system; anything above 8u without a bridge is a data error. */
+  try{
+    var _terr=heightAt(c.x,c.z);
+    if (isFinite(_terr) && (y-_terr)>8) y=_terr;
+  }catch(e){}
   c.y=(typeof clampVehY==='function')?clampVehY(c.x,c.z,y+0.06):y+0.06;  // v1.12: ground clamp — no sky-floaters
   c.heading=hd;
 }
