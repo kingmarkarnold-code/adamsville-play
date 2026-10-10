@@ -610,7 +610,8 @@ var _bootTimer=setInterval(function(){
     try{
       if (typeof animate==='function'&&!animate.__busWrap){
         var orig=animate;
-        var wrapped=function(){ orig(); updateBusSys(); };
+        /* v1.22 LAUNCHER (Joshua 2026-10-10): skip when MARTA buses disabled in launch options. */
+        var wrapped=function(){ orig(); if(!window.__launchOpts || window.__launchOpts.martaBuses!==false) updateBusSys(); };
         wrapped.__busWrap=true;
         animate=wrapped;
       }
