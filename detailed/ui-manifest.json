@@ -44,9 +44,9 @@
   },
   {
    "name": "helicopter_system.js",
-   "size": 32557,
-   "sha256": "f611fab8fdc01a67815db7b8666d62afa3cc8cc504f19c96a0d52e4a38c19d96",
-   "hash": "37ade7a5ef6d6c99"
+   "size": 33463,
+   "sha256": "ef3e48c8323e8c90116c5770e041b7e8713e8a231f5af6d62f47839a55bb4d92",
+   "hash": "96bea2c3e50f3274"
   },
   {
    "name": "hotreload.js",
@@ -68,10 +68,9 @@
   },
   {
    "name": "index.html",
-   "size": 675422,
-   "sha256": "0ddbd8137d380ce18a673e813261b0eb8555e3c547fb2b25d9d19f67ce51815b",
-   "hash": "da0b52f7e83a8782",
-   "md5": "67fa01cea5905c39"
+   "size": 675467,
+   "sha256": "f5d320c41a80ac85a754a53d1f349662c4cadac1f9a9c0571ed6434390f2f12d",
+   "hash": "f240b50e04b804a6"
   },
   {
    "name": "infracrew_system.js",
@@ -136,9 +135,9 @@
   },
   {
    "name": "roadcrew_system.js",
-   "size": 53386,
-   "sha256": "faef1a47eb85fa2ed49e39e24c1b7499471aad8f28084d957462edecd5731c98",
-   "hash": "d665e73acb63478d"
+   "size": 54373,
+   "sha256": "c299003ec754b06b8174feff5ff2669a92107d3f190c4e0d189865ed22d409dc",
+   "hash": "714af2dc18341553"
   },
   {
    "name": "roadfix.js",
@@ -196,9 +195,9 @@
   },
   {
    "name": "surveyfleet_system.js",
-   "size": 59270,
-   "sha256": "48a5148208d6e5b50c6e61aec9656ec1c34472f8e00ea30e865c9edcabec49b0",
-   "hash": "6a766fed5efa9036"
+   "size": 59864,
+   "sha256": "533e94adf8dd7d420f0772987bc15ed95fdd74c32b37475205eee047727260b0",
+   "hash": "b5d238c7d3355164"
   },
   {
    "name": "terrainfix.js",
@@ -242,8 +241,14 @@
    "size": 68645,
    "sha256": "7e3dd6d149623fa6420c7a44cc526ff8f46c6a2c3b475dda69a77f60771f8a71",
    "hash": "a3a6d2dea2abafb6"
+  },
+  {
+   "name": "priority_dispatch.js",
+   "size": 12963,
+   "sha256": "945592eebccb15758ec88236b7ecdd9104f8c8f50e5e474ab62dc91fa266e1aa",
+   "hash": "905bb285e31ad1e5"
   }
  ],
- "ui_version": "2026.10.09.83",
+ "ui_version": "2026.10.09.84",
  "version": "1.13.0"
 }
