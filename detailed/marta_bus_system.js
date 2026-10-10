@@ -1,4 +1,39 @@
 /* ============================================================================
+   FILE: marta_bus_system.js — "Surviving Adamsville" MARTA buses
+   ----------------------------------------------------------------------------
+   PURPOSE: MARTA bus service: real GTFS routes, instanced bus-stop signs,
+   rideable city buses.
+   KEY SYSTEMS:
+     - Routes: 20 route-direction records from real GTFS data (9 route
+       numbers × 2 directions), each with a real-shape arc-length path.
+       40 buses total (2 per route, spaced half the path apart).
+     - Bus state machine: run → (ease into stop within 60u, snap + dwell 6s)
+       → run; REVERSE direction at termini (dir *= -1) — buses shuttle back
+       and forth along the route shape (unlike trains, which run to the map
+       edge and vanish).
+     - Stop arc positions: each GTFS stop is snapped to its nearest path
+       point (coarse-then-fine search); outlier stops (>40u from the path)
+       are MOVED onto the path so the bus stops where the sign is. Stops are
+       then sorted by arc position so buses visit them in path order.
+     - Bus stops: instanced pole+sign boards at every in-map stop, ONE draw
+       call per part; poles are solid (colliders, v2.1).
+     - v2.0 SIGN PLACEMENT RULES (Joshua 2026-10-09): every bus-stop sign is
+       validated through SignRules.place() before positioning — signs that
+       would spawn in a driving lane are moved to the right shoulder. Buses
+       dwell by ARC POSITION (st.s), so moving the sign never changes where
+       the bus stops. The audit publishes via SignRules.publish() at load.
+     - Boarding/riding: same universal-action-button pattern as trains —
+       busCheckBoard returns {act:'board-bus'|'exit-bus'}; board within 25u
+       of a dwelling bus; exit drops the player at the nearest stop
+       (+4u offset) with terrain height. HUD shows route number + next stop.
+     - Bus geometry comes from vehicle_meshes.js — the CANONICAL martaBusMesh
+       builder (shared with the watcher studio). NEVER duplicate it here.
+   JOSHUA SPECS ENCODED:
+     - MARTA bus content queued by Joshua (2026-10-09): real routes, real
+       stops, rideable buses, bus-stop signs.
+     - Simple sim logic: constant-speed buses, eased stops; no physics.
+   ============================================================================ */
+/* ============================================================================
    SURVIVING ADAMSVILLE — MARTA BUS SYSTEM (v1.0)
    ----------------------------------------------------------------------------
    STANDALONE MODULE. Include AFTER marta_bus_data.js and the main game script:
@@ -39,6 +74,9 @@ var BOARD_RANGE   = 25;    // how close player must be to board
 var MB = { routes: [], buses: [], stops: [], ready: false };
 
 /* ---------------- arc-length path ---------------- */
+/* makePath(pts) — arc-length path lookup (same pattern as marta_system.js):
+   binary-searched cumulative table → posAt(s)/dirAt(s). Buses advance in
+   world units, so speed is constant regardless of GTFS point spacing. */
 function makePath(pts){
   var cum=[0], i, dx, dz;
   for (i=1;i<pts.length;i++){
@@ -72,6 +110,14 @@ function makePath(pts){
 /* ---------------- material helpers ---------------- */
 
 /* ---------------- bus stops (instanced signs) ---------------- */
+/* buildStops() — instanced bus-stop signs for every in-map stop (one pole
+   InstancedMesh + one sign-board InstancedMesh = 2 draw calls total). Each
+   sign position is validated through SignRules.place() FIRST: any sign that
+   would land in a driving lane is moved to the right shoulder of travel
+   (the stop record is updated in place). Buses dwell by ARC POSITION
+   (st.s), so repositioning a sign never moves where the bus stops. Poles
+   get solid colliders (v2.1). Note: vehMat() and groundY() are global
+   helpers from vehicle_meshes.js. */
 function buildStops(){
   var allStops=[];
   MB.routes.forEach(function(r){
@@ -115,6 +161,10 @@ function buildStops(){
 }
 
 /* ---------------- buses ---------------- */
+/* spawnBus(route, s0, dir) — one bus record {route, mesh, s (arc pos), dir,
+   speed, state, dwellT, stopIdx, world x/z/yaw, nextStop}. The mesh comes
+   from martaBusMesh() in vehicle_meshes.js — the CANONICAL builder shared
+   with the watcher studio (never duplicate it here). */
 function spawnBus(route, s0, dir){
   var mesh=martaBusMesh();
   scene.add(mesh);
@@ -123,6 +173,9 @@ function spawnBus(route, s0, dir){
   MB.buses.push(b);
   return b;
 }
+/* busStopIdx(b) — index of the next stop AHEAD of the bus in its travel
+   direction (ds>1 skips the stop just left). -1 = none ahead (shouldn't
+   happen mid-route; the terminus check below reverses before it does). */
 function busStopIdx(b){
   var stops=b.route.stops, best=-1, bd=1e18, i, ds;
   for (i=0;i<stops.length;i++){
@@ -131,6 +184,13 @@ function busStopIdx(b){
   }
   return best;
 }
+/* updateBus(b, dt) — one bus tick. Dwell: countdown, then 'run'; at a
+   TERMINUS (first/last stop in the direction of travel) the bus REVERSES
+   (dir *= -1) and shuttles back — unlike trains, buses never leave the
+   map. Run: ease speed toward the next stop (linear slowdown inside
+   BRAKE_DIST=60u), snap + dwell 6s within 5u of a stop (toasts the stop
+   name for a riding player). The path-end clamp ALSO reverses direction as
+   a failsafe so a bus can never run off its shape. */
 function updateBus(b, dt){
   var route=b.route;
   if (b.state==='dwell'){
@@ -176,6 +236,8 @@ function updateBus(b, dt){
 }
 
 /* ---------------- boarding / riding ---------------- */
+/* nearestDwellingBus() — closest DWELLING bus (doors open, stopIdx>=0)
+   within BOARD_RANGE=25u of the player. Boarding only at a stopped bus. */
 function nearestDwellingBus(){
   if (typeof player==='undefined') return null;
   var best=null, bd=1e18;
@@ -188,7 +250,11 @@ function nearestDwellingBus(){
   }
   return best;
 }
-/* called from updateActionButton() in index.html */
+/* busCheckBoard() — universal action-button hook (called from
+   updateActionButton() in index.html). Returns {act:'board-bus', label,
+   bus} when a dwelling bus is in range, {act:'exit-bus'} when riding, else
+   null. Guarded: no boarding while driving, inside a building, or on a
+   train (one ride at a time). */
 window.busCheckBoard=function(){
   if (typeof player==='undefined'||car.driving) return null;
   if (player.ridingBus){
@@ -199,17 +265,25 @@ window.busCheckBoard=function(){
   if (b) return { act:'board-bus', label:'BOARD BUS '+b.route.num, bus:b };
   return null;
 };
+/* busDoBoard() — action-button handler: stages the nearest dwelling bus in
+   window.__busPendingBus; the frame loop boards it next tick (only while
+   it's still dwelling — a bus that left during the click is ignored). */
 window.busDoBoard=function(){
   var b=nearestDwellingBus();
   if (!b) return;
   window.__busPendingBus=b;
 };
+/* doBoardBus(b) — boards: sets player.ridingBus, hides the player mesh,
+   toasts the route. */
 function doBoardBus(b){
   player.ridingBus=b;
   try{ player.mesh.visible=false; }catch(e){}
   showToast('Riding Bus '+b.route.num+' — '+b.route.name, 2200);
   try{ Report.note('bus-board',{route:b.route.num}); }catch(e){}
 }
+/* busDoExit() — action-button handler: drops the player at the nearest stop
+   on the current route (+4u offset, terrain height), restores the player
+   mesh. Falls back to beside the bus if no stop record exists. */
 window.busDoExit=function(){
   var b=player.ridingBus;
   if (!b) return;
@@ -230,6 +304,9 @@ window.busDoExit=function(){
   showToast(best?best.name:'', 2000);
   try{ Report.note('bus-exit',{stop:best?best.name:'?'}); }catch(e){}
 };
+/* updateRiding(dt) — while the player rides: position follows the bus
+   (+1.0u up on the bus mesh); HUD mode tag shows "BUS <num> — Next: <stop>"
+   (or "END OF LINE", or "doors open" while dwelling). */
 function updateRiding(dt){
   var b=player.ridingBus;
   if (!b) return;
@@ -246,6 +323,14 @@ function updateRiding(dt){
 }
 
 /* ---------------- init ---------------- */
+/* initBus() — builds every route from MARTA_BUS_DATA: arc-length path, per-
+   stop arc positions (coarse-then-fine nearest-path search; outlier stops
+   >40u off the path are SNAPPED onto the path so bus and sign agree),
+   stops sorted by arc position (buses visit in path order), and a smoothed
+   roadY(s) terrain-height function (3 smoothing passes — the bus never
+   bounces on terrain noise). Then builds all stop signs (SignRules
+   validated), spawns 2 buses per route spaced half a path apart, publishes
+   the sign audit, and exposes window.MARTA_BUS. */
 function initBus(){
   if (!window.MARTA_BUS_DATA) throw new Error('MARTA_BUS_DATA missing');
   var D=window.MARTA_BUS_DATA, ri;
@@ -302,6 +387,11 @@ function initBus(){
     note:'MARTA buses: real routes + rideable'}); }catch(e){}
   window.MARTA_BUS=MB;
 }
+/* updateBusSys() — frame tick: steps all 40 buses, updates a riding player,
+   processes the pending board action. dt clamped to 60ms. Self-installed:
+   wraps the global animate() once world deps (THREE/scene/animate/
+   MARTA_BUS_DATA/heightAt) exist; boot gives up after 60s without breaking
+   the game. */
 var _lastT=0;
 function updateBusSys(){
   if (!MB.ready) return;
