@@ -628,6 +628,7 @@ window.addEventListener('load',function(){
 <script src="roads.js" onload="__loadStep('roads')" onerror="__loadStep('roads',true)"></script>
 <script src="exit_signs.js" onload="__loadStep('signs')" onerror="__loadStep('signs',true)"></script>
 <script src="terrain_lifts.js" onload="__loadStep('lifts')" onerror="__loadStep('lifts',true)"></script>
+<script src="terrainfix.js"></script>
 <script src="junction_pins.js" onload="__loadStep('pins')" onerror="__loadStep('pins',true)"></script>
 <script src="osm_buildings.js" onload="__loadStep('buildings')" onerror="__loadStep('buildings',true)"></script>
 <script src="vehicle_meshes.js" onload="__loadStep('vehmeshes')" onerror="__loadStep('vehmeshes',true)"></script>
@@ -4604,13 +4605,53 @@ function updateVehicleCosmetics(dt){
   }
 }
 
-/* ================= TREES (v0.3 accuracy pass) ================= */
-// Georgia pine forest at near-true scale (10-20u vs the 1.85u character;
-   // trunk 4u + 12u canopy cone, random 0.75-1.45 scale).
-// Dense where the real world is woods; kept off roads, water, buildings, runway, home lot.
-// Two draw calls total (instanced trunk + instanced canopy).
+/* ================= TREES (v2.0 multi-species, Atlanta natives) ================= */
+// Joshua's directive (2026-10-09): add tree types beyond pines — ALL native
+// to Atlanta, Georgia — with seasonal color change (fall colors, winter bare).
+//
+// Species roster (9 total):
+//   conifer: loblolly pine (Pinus taeda) — stays green year-round, cone canopy
+//   deciduous (icosahedron canopy + per-instance color, distinct silhouettes):
+//     red maple, sweetgum, flowering dogwood, white oak, tulip poplar,
+//     eastern redbud, blackgum (tupelo), southern red oak
+// Placement logic unchanged from v0.3 (off roads/water/buildings/runway/home).
+// Three draw calls total: shared trunks + pine cones + deciduous canopies.
+// Seasonal updates via window.__trees.setSeason(season) — called by daycycle.js.
+// v2.0 (2026-10-09): multi-species + seasonal colors per Joshua's directive.
+/* Atlanta-native species table.
+   kind: 'conifer' (cone canopy, evergreen) or 'decid' (blob canopy, seasonal).
+   sum/spr/fall: canopy colors for summer / spring / fall.
+   flower: spring flower tint for dogwood (white) and redbud (pink).
+   sc: canopy silhouette scale [x,y,z] — gives each species a distinct shape.
+   h: height multiplier. wt: placement weight. */
+var TREE_SPECIES=[
+ {n:'loblolly pine',   kind:'conifer', wt:0.40, h:1.00, sc:[1.0,1.0,1.0]},
+ {n:'red maple',       kind:'decid', wt:0.10, h:1.00, sc:[1.05,0.95,1.05],
+  spr:0x86c860, sum:0x3f7d2e, fall:0xc23a24},
+ {n:'sweetgum',        kind:'decid', wt:0.09, h:1.05, sc:[0.95,1.10,0.95],
+  spr:0x7fbf5f, sum:0x3a7530, fall:0x8a2a44},
+ {n:'flowering dogwood',kind:'decid',wt:0.06, h:0.55, sc:[0.70,0.60,0.70],
+  spr:0xe8f0e8, sum:0x4a8a3a, fall:0xb03434, flower:true},
+ {n:'white oak',       kind:'decid', wt:0.09, h:1.10, sc:[1.35,0.90,1.35],
+  spr:0x82c25e, sum:0x3d7a30, fall:0xa85a2a},
+ {n:'tulip poplar',    kind:'decid', wt:0.08, h:1.25, sc:[0.80,1.45,0.80],
+  spr:0x8ac860, sum:0x3f8030, fall:0xd8a820},
+ {n:'eastern redbud',  kind:'decid', wt:0.05, h:0.50, sc:[0.65,0.60,0.65],
+  spr:0xf0a0c0, sum:0x4a8a3a, fall:0xc8a030, flower:true},
+ {n:'blackgum',        kind:'decid', wt:0.06, h:1.00, sc:[0.90,1.00,0.90],
+  spr:0x84c45e, sum:0x3c7a2e, fall:0xd02020},
+ {n:'southern red oak',kind:'decid', wt:0.07, h:1.05, sc:[1.15,1.00,1.15],
+  spr:0x80be5c, sum:0x3a7530, fall:0x9a3a20}
+];
 (function plantTrees(){
   var COUNT=2600;
+  // species picker: cumulative weights, deterministic seed so the forest is
+  // stable across loads (same seed every boot).
+  function pickSpecies(r){
+    var acc=0;
+    for(var i=0;i<TREE_SPECIES.length;i++){ acc+=TREE_SPECIES[i].wt; if(r<acc) return i; }
+    return 0;
+  }
   // spatial hash of road corridors for fast rejection
   var CELL=120, grid={};
   roadDrawData.forEach(function(r){
@@ -4650,32 +4691,81 @@ function updateVehicleCosmetics(dt){
     }
     return true;
   }
-  var trunkI=new THREE.InstancedMesh(new THREE.CylinderGeometry(0.3,0.5,4,6),  // v1.5: SHORTER trunk (was 7u)
+  var trunkI=new THREE.InstancedMesh(new THREE.CylinderGeometry(0.3,0.5,4,6),
     new THREE.MeshLambertMaterial({ color:0x5a4030 }), COUNT);
-  var canI=new THREE.InstancedMesh(new THREE.ConeGeometry(3.8,12,7),  // v1.5: FULLER canopy, starts LOWER (was 3.1r x 13h at top)
+  var pineI=new THREE.InstancedMesh(new THREE.ConeGeometry(3.8,12,7),
     new THREE.MeshLambertMaterial({ color:0x2d5a27 }), COUNT);
+  var decidI=new THREE.InstancedMesh(new THREE.IcosahedronGeometry(3.5,1),
+    new THREE.MeshLambertMaterial({ color:0xffffff }), COUNT);
   var m4=new THREE.Matrix4(), q=new THREE.Quaternion(), sc=new THREE.Vector3(),
-      pv=new THREE.Vector3(), up=new THREE.Vector3(0,1,0);
-  var placed=0, guard=0;
+      pv=new THREE.Vector3(), up=new THREE.Vector3(0,1,0), col=new THREE.Color();
+  // per-deciduous-tree records for seasonal updates: [instanceIdx, speciesIdx, x, gy, z, s]
+  var decidRecs=[];
+  var placed=0, pineN=0, decidN=0, guard=0;
+  var srng=mulberry32(0x7EE5);
   while (placed<COUNT && guard<COUNT*30){
     guard++;
     var x=120+Math.random()*(WX-240), z=120+Math.random()*(WZ-240);
     if (nearRoad(x,z)) continue;
     if (!clearOfStructures(x,z)) continue;
-    var s=0.75+Math.random()*0.7, gy=heightAt(x,z);
+    var sp=TREE_SPECIES[pickSpecies(srng())];
+    var s=(0.75+Math.random()*0.7)*sp.h, gy=heightAt(x,z);
     q.setFromAxisAngle(up, Math.random()*Math.PI*2);
+    // trunk (shared mesh, all species)
     m4.compose(pv.set(x,gy+2*s,z), q, sc.set(s,s,s));
     trunkI.setMatrixAt(placed,m4);
-    var cw=0.9+Math.random()*0.35;
-    m4.compose(pv.set(x,gy+8*s,z), q, sc.set(s*cw,s,s*cw));
-    canI.setMatrixAt(placed,m4);
+    if (sp.kind==='conifer'){
+      var cw=0.9+Math.random()*0.35;
+      m4.compose(pv.set(x,gy+8*s,z), q, sc.set(s*cw*sp.sc[0],s*sp.sc[1],s*cw*sp.sc[2]));
+      pineI.setMatrixAt(pineN,m4);
+      pineN++;
+    } else {
+      var cwx=0.9+Math.random()*0.3;
+      m4.compose(pv.set(x,gy+(4+5.5)*s*0.72,z), q,
+        sc.set(s*cwx*sp.sc[0], s*sp.sc[1], s*cwx*sp.sc[2]));
+      decidI.setMatrixAt(decidN,m4);
+      col.setHex(sp.sum);
+      decidI.setColorAt(decidN,col);
+      decidRecs.push([decidN, TREE_SPECIES.indexOf(sp), x, gy, z, s]);
+      decidN++;
+    }
     addCollider(x,z,0.8);  // solid trunks: cars take damage, player walks around
     placed++;
   }
-  trunkI.count=placed; canI.count=placed;
-  trunkI.instanceMatrix.needsUpdate=true; canI.instanceMatrix.needsUpdate=true;
-  trunkI.frustumCulled=false; canI.frustumCulled=false;  // instances span the map; skip culling
-  scene.add(trunkI); scene.add(canI);
+  trunkI.count=placed; pineI.count=pineN; decidI.count=decidN;
+  trunkI.instanceMatrix.needsUpdate=true; pineI.instanceMatrix.needsUpdate=true;
+  decidI.instanceMatrix.needsUpdate=true;
+  if (decidI.instanceColor) decidI.instanceColor.needsUpdate=true;
+  trunkI.frustumCulled=false; pineI.frustumCulled=false; decidI.frustumCulled=false;
+  scene.add(trunkI); scene.add(pineI); scene.add(decidI);
+  /* setSeason(season): recolors + reshapes deciduous canopies.
+     'spring' — fresh green; dogwood white / redbud pink blossoms.
+     'summer' — full green. 'fall' — species-specific color. 'winter' — bare
+     (canopy shrunk to branch stubs, brown-gray). Conifers untouched. */
+  var _curSeason='summer';
+  function setSeason(season){
+    _curSeason=season;
+    var winter=(season==='winter');
+    for (var i=0;i<decidRecs.length;i++){
+      var r=decidRecs[i], idx=r[0], sp=TREE_SPECIES[r[1]];
+      var x=r[2], gy=r[3], z=r[4], s=r[5];
+      if (winter){
+        col.setHex(0x6b5a48);
+        m4.compose(pv.set(x,gy+6.5*s*0.72,z), q.identity(), sc.set(s*0.14,s*0.14,s*0.14));
+      } else {
+        col.setHex(season==='spring'?sp.spr:(season==='fall'?sp.fall:sp.sum));
+        var cwx=1.0;
+        m4.compose(pv.set(x,gy+(4+5.5)*s*0.72,z), q.identity(),
+          sc.set(s*cwx*sp.sc[0], s*sp.sc[1], s*cwx*sp.sc[2]));
+      }
+      decidI.setMatrixAt(idx,m4);
+      decidI.setColorAt(idx,col);
+    }
+    decidI.instanceMatrix.needsUpdate=true;
+    if (decidI.instanceColor) decidI.instanceColor.needsUpdate=true;
+  }
+  window.__trees={ setSeason:setSeason, getSeason:function(){return _curSeason;},
+    count:placed, pines:pineN, deciduous:decidN, species:TREE_SPECIES.map(function(s){return s.n;}) };
 })();
 
 /* ================= PLAYER (full-body, 6'1" = 1.85u) ================= */
@@ -6910,6 +7000,10 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <script src="bird_drones.js"></script>
 <script src="schoolbus_system.js"></script>
 <script src="infracrew_system.js"></script>
+<script src="surveyfleet_system.js"></script>
+<script src="cityworkforce.js"></script>
+<script src="hq_staff_system.js"></script>
+<script src="daycycle.js"></script>
 <!-- ===== INLINE SCRIPT BLOCK 3: final placement audit (v2.0 - Joshua's
      automatic check) ===== Runs ONCE, after EVERY building system has loaded
      (OSM, churches, schools, plaza, gas, Marriott, clubs, MARTA). Summarizes
