@@ -617,7 +617,9 @@ function buildUI(){
   try{
     var css=document.createElement('style');
     css.textContent=
-      '#ic-btn{position:fixed;left:188px;top:8px;z-index:20;width:52px;height:52px;border-radius:12px;'+
+      /* v1.21: icon sits in the HUD icon row at top:96px, adjacent to the
+         backpack (#inv-btn at left:12px). Title corner is left clear. */
+      '#ic-btn{position:fixed;left:192px;top:96px;z-index:20;width:52px;height:52px;border-radius:12px;'+
       'border:2px solid #a8d800;background:rgba(20,24,34,.88);color:#a8d800;font-size:24px;}'+
       '@media (max-width:820px),(pointer:coarse){#ic-btn{left:128px!important;top:96px!important;bottom:auto!important;}}'+
       '#ic-panel{position:fixed;inset:0;z-index:50;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.72);}'+
