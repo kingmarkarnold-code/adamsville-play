@@ -68,9 +68,9 @@
     },
     {
       "name": "index.html",
-      "size": 696970,
-      "sha256": "84b970fd0ee0ac0e1fe02e79b68925ea152f9ac7bd7e5203ddfc0f1eda47abf0",
-      "hash": "36a6a38f0ff6f02d"
+      "size": 697698,
+      "sha256": "ce302231f7f7502eb410b414c164dcf5a3437799c43cc661ee6dad43c234127f",
+      "hash": "ce302231f7f7502e"
     },
     {
       "name": "infracrew_system.js",
@@ -267,6 +267,6 @@
       "hash": "1af37c06001c4b1c"
     }
   ],
-  "ui_version": "2026.10.10.100",
+  "ui_version": "2026.10.10.101",
   "version": "1.13.0"
 }
