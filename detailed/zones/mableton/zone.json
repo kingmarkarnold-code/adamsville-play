@@ -1,0 +1,27 @@
+{
+  "id": "mableton",
+  "name": "Mableton",
+  "bounds": {
+    "xMin": -200,
+    "xMax": 2147,
+    "zMin": -200,
+    "zMax": 4218
+  },
+  "original_bounds": {
+    "xMin": -200,
+    "xMax": 2147,
+    "zMin": -200,
+    "zMax": 4218
+  },
+  "scale": 1.0,
+  "is_start": false,
+  "counts": {
+    "roads": 1125,
+    "buildings": 611,
+    "pins": 1830,
+    "lifts": 1466,
+    "signs": 8
+  },
+  "generated": "2026-10-10",
+  "generator": "split-zones.py"
+}
