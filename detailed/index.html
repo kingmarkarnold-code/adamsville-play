@@ -5953,6 +5953,27 @@ function updatePlayer(dt){
   player.x=Math.max(60,Math.min(WX-60,player.x));
   player.z=Math.max(60,Math.min(WZ-60,player.z));
   resolveCollision(player, 0.5);
+  /* v1.20 PLAYER-NPC COLLISION (Joshua 2026-10-09): the player cannot walk
+     through NPCs. Push the player out of NPC body space (player r~0.5 +
+     NPC r~0.45 = 0.95u min separation). NPCs are data-only {x,z} exposed
+     via window.NPC_DEBUG.npcs; the 2u box pre-check keeps this cheap
+     (1000 NPCs x simple math per frame is TCL-safe). NPCs do NOT move —
+     the player is the one blocked, per Joshua's rule. */
+  try{
+    var _npcArr=(window.NPC_DEBUG&&window.NPC_DEBUG.npcs)||null;
+    if (_npcArr){
+      for (var _ni=0;_ni<_npcArr.length;_ni++){
+        var _np=_npcArr[_ni];
+        var _pdx=player.x-_np.x, _pdz=player.z-_np.z;
+        if (_pdx>2||_pdx<-2||_pdz>2||_pdz<-2) continue;  // quick reject
+        var _pd2=_pdx*_pdx+_pdz*_pdz, _pmin=0.95;
+        if (_pd2<_pmin*_pmin && _pd2>0.0001){
+          var _pd=Math.sqrt(_pd2), _pp=(_pmin-_pd)/_pd;
+          player.x+=_pdx*_pp; player.z+=_pdz*_pp;
+        }
+      }
+    }
+  }catch(e){}
   // water: float in place until the joystick moves, then swim (v0.3)
   var inW=!player.inside && inWater(player.x, player.z);
   if (inW && !player.swimming) player.swimming=true;
