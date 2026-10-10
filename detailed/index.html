@@ -3661,18 +3661,53 @@ function heroPorchY(x, z){
      garage was converted to living space (no garage door). The basement
      door is ENTERABLE (see enter-basement action); the basement is also
      reachable via the interior stairs. */
-  // south foundation wall — v3.3: garage converted, only the walkout door
-  // gets a gap [hx+1.0,hx+2.2]. The old garage span is solid brick wall now.
-  box(hx+1.0-x0, fH, foundT, brick, (x0+hx+1.0)/2, fCy, zS);
-  box(x1-(hx+2.2), fH, foundT, brick, (hx+2.2+x1)/2, fCy, zS);
-  addSegCollider(x0,zS,hx+1.0,zS, bY0,bY1);
-  addSegCollider(hx+2.2,zS,x1,zS, bY0,bY1);
-  // walkout door gap: sealed at the edges so there's no hairline crack —
-  // entry is ONLY via the ENTER HOUSE action at the basement door.
-  addSegCollider(hx+0.65,zS,hx+2.55,zS, bY0,bY1);
-  // north foundation wall: solid (buried / uphill side)
-  box(W, fH, foundT, brick, hx, fCy, zN);
-  addSegCollider(x0,zN,x1,zN, bY0,bY1);
+  /* south foundation wall — v3.3 HILL (Joshua): the front yard slopes up
+     and covers the basement on the street side. The visible wall is only the
+     top 0.9u; the hill berm (below) covers the rest. NO door on this face —
+     the walkout door is on the NORTH (back) face where the hill drops away.
+     Colliders still span the full height (the buried part still blocks). */
+  var visBH = 0.9, visBCy = mainY - visBH/2;  // visible band: top 0.9u
+  box(W, visBH, foundT, brick, hx, visBCy, zS);
+  addSegCollider(x0,zS,x1,zS, bY0,bY1);
+  /* v3.3 HILL (Joshua): front-yard hill berm — the yard slopes up from the
+     street and covers the basement on the street side. That's why 535 looks
+     like a single-story ranch from Dollar Mill Rd. The berm is a grass-
+     covered wedge: high at the house wall (just below the visible brick
+     band), sloping down to meet the yard near the road. The basement door
+     is on the NORTH (back) face where the hill drops away. */
+  (function hillBerm(){
+    var bermW = W + 4;          // a bit wider than the house
+    var bermD = 9;              // from the south wall toward the road
+    var bermZ = zS + bermD/2;   // centered in the front yard
+    var topN = mainY - 0.85;    // north top: just below the visible brick
+    var topS = heightAt(hx, zS + bermD) + 0.15;  // south top: meets the yard
+    var slopeH = topN - topS;   // total rise
+    if (slopeH < 0.3) return;   // terrain already high — no berm needed
+    // Wedge via a rotated box: tilt so the north edge is high.
+    var ang = Math.atan2(slopeH, bermD);
+    var diag = Math.sqrt(slopeH*slopeH + bermD*bermD);
+    var berm = new THREE.Mesh(
+      new THREE.BoxGeometry(bermW, 1.2, diag),
+      new THREE.MeshLambertMaterial({ color: 0x4a7a3a }));  // grass green
+    berm.rotation.x = ang;   // north edge rises
+    // Position: center the box so its top surface runs topS -> topN.
+    var midY = (topN + topS)/2 - 0.6;  // 1.2-thick box, top at midY+0.6
+    berm.position.set(hx, midY, bermZ);
+    scene.add(berm);
+    // Keep the player from clipping through the berm sides: low ring collider
+    // at the berm's south toe (the north side is the house wall itself).
+    addSegCollider(hx-bermW/2, zS+bermD, hx+bermW/2, zS+bermD, topS-1.0, topS+1.9);
+  })();
+  /* north foundation wall — v3.3 HILL (Joshua): the hill drops away on the
+     back side, exposing the FULL basement. The walkout door is here:
+     "there's a door at the bottom." Gap [hx+1.0,hx+2.2], enterable via
+     the ENTER HOUSE action (enter-basement). */
+  box(hx+1.0-x0, fH, foundT, brick, (x0+hx+1.0)/2, fCy, zN);
+  box(x1-(hx+2.2), fH, foundT, brick, (hx+2.2+x1)/2, fCy, zN);
+  addSegCollider(x0,zN,hx+1.0,zN, bY0,bY1);
+  addSegCollider(hx+2.2,zN,x1,zN, bY0,bY1);
+  // door-gap edge seals (no hairline crack) — entry ONLY via ENTER HOUSE.
+  addSegCollider(hx+0.65,zN,hx+2.55,zN, bY0,bY1);
   // east + west foundation walls: solid
   box(foundT, fH, D, brick, x0, fCy, hz);
   box(foundT, fH, D, brick, x1, fCy, hz);
@@ -3697,19 +3732,16 @@ function heroPorchY(x, z){
   /* v3.3 (2026-10-10 Joshua correction): the garage was CONVERTED to living
      space — no garage door. The south foundation wall here is solid brick with
      windows, matching the converted interior. */
-  // converted garage windows (south foundation wall, was garage door opening)
-  [hx-4.5, hx-2.5].forEach(function(wx){
-    box(1.4, 0.9, 0.14, trim, wx, bsmtY+fH-0.8, zS+0.02);
-    box(1.2, 0.7, 0.16, glassC, wx, bsmtY+fH-0.8, zS+0.02);
-  });
-  // walkout basement door (FUNCTIONAL — Joshua: "there's a door at the bottom")
-  box(1.2, 2.05, 0.15, 0x5a3a22, hx+1.6, bsmtY+1.02, zS+0.05);
-  box(1.5, 0.18, 0.18, trim, hx+1.6, bsmtY+2.1, zS+0.05);  // door header trim
-  // basement windows (south, high on the exposed wall)
-  [hx-0.5, hx+4.5].forEach(function(wx){
-    box(1.4, 0.9, 0.14, trim, wx, bsmtY+fH-0.8, zS+0.02);
-    box(1.2, 0.7, 0.16, glassC, wx, bsmtY+fH-0.8, zS+0.02);
-  });
+  /* v3.3 HILL: converted-garage windows buried by the front-yard hill. */
+  /* walkout basement door — v3.3 HILL: moved to the NORTH (back) face.
+     Joshua: the front yard hill covers the basement on the street side;
+     "there's a door at the bottom" where the hill drops away (back/side).
+     FUNCTIONAL — enter via the ENTER HOUSE action (enter-basement). */
+  box(1.2, 2.05, 0.15, 0x5a3a22, hx+1.6, bsmtY+1.02, zN-0.05);
+  box(1.5, 0.18, 0.18, trim, hx+1.6, bsmtY+2.1, zN-0.05);  // door header trim
+  /* v3.3 HILL: south basement windows REMOVED — the hill berm covers this
+     wall on the street side. The converted-garage windows are also buried;
+     only the main-floor windows show from the street (ranch look). */
   // basement windows (north, small — buried side)
   [hx-3, hx+3].forEach(function(wx){
     box(1.2, 0.7, 0.14, trim, wx, bsmtY+fH-0.7, zN-0.02);
@@ -3756,9 +3788,10 @@ function heroPorchY(x, z){
   box(1.2, 2.05, 0.18, 0x5a3a22, hx, mainY+1.02, zN);
   heroHouse.frontDoor = { x: hx, z: zS };   // SOUTH — faces Dollar Mill Rd
   heroHouse.backDoor  = { x: hx, z: zN };   // NORTH
-  /* v3.3: basement walkout door — SOUTH foundation wall, at ground level.
-     Joshua: "there's a door at the bottom." Enterable via enter-basement. */
-  heroHouse.bsmtDoor  = { x: hx+1.6, z: zS };
+  /* v3.3 HILL: basement walkout door — NORTH (back) foundation wall, at
+     ground level where the hill drops away. Joshua: "there's a door at the
+     bottom." Enterable via enter-basement. */
+  heroHouse.bsmtDoor  = { x: hx+1.6, z: zN };   // v3.3 HILL: NORTH face
 
   /* win(): surface-mounted window — trim frame + glass + mullion.
      ry rotates for the side walls. */
@@ -3970,8 +4003,11 @@ function heroPorchY(x, z){
      Dollar Mill Rd centerline, i.e. ON the asphalt (road is 7u wide), and
      9.4u east of the driveway mouth. Moved to the north verge (house side),
      ~1.7u off the road edge and beside the driveway mouth, as in the photo. */
+  /* v3.3 (2026-10-10 Joshua): mailbox was IN THE MIDDLE OF THE STREET.
+     Moved to (3127, 3705) — just off the road edge, by the driveway mouth,
+     at the property edge. Brick pillar, as in the photo. */
   (function(){
-    var mbx=3130.4, mbz=3705.4, mby=heightAt(mbx,mbz);
+    var mbx=3127, mbz=3705, mby=heightAt(mbx,mbz);
     box(0.7,1.3,0.7, brick, mbx, mby+0.65, mbz);
     box(0.9,0.4,0.5, 0x2a2a2a, mbx, mby+1.5, mbz);
     addCollider(mbx,mbz,0.8);
@@ -3990,7 +4026,7 @@ function heroPorchY(x, z){
       if (Math.hypot(tx-hx,tz-hz)<13) continue;
       if (tx>x0-5&&tx<x1+5&&tz>zN-5&&tz<zS+5) continue;  // house footprint
       if (distToRoadEdge(tx,tz)<10) continue;
-      if (Math.hypot(tx-3130.4,tz-3705.4)<3.5) continue;  // mailbox
+      if (Math.hypot(tx-3127,tz-3705)<3.5) continue;  // mailbox (v3.3 moved)
       var dD=1e9;
       for (var di=0;di<dvPts.length;di++){
         var dd=Math.hypot(tx-dvPts[di][0],tz-dvPts[di][1]);
@@ -5661,10 +5697,11 @@ actionBtn.addEventListener('click', function(){
     player.x=heroHouse.backDoor.x; player.z=heroHouse.backDoor.z+2.2;
     player.inside=true; player.heroFloor=1; setDrivingUI(false);
   } else if (a==='enter-basement'){
-    /* v3.3: basement walkout door on the SOUTH foundation wall. Step INSIDE
-       (north of the south wall), onto the BASEMENT level (heroFloor=0).
-       Joshua: "there's a door at the bottom" — full basement, garage converted. */
-    player.x=heroHouse.bsmtDoor.x; player.z=heroHouse.bsmtDoor.z-2.2;
+    /* v3.3 HILL: basement walkout door on the NORTH (back) foundation wall.
+       Step INSIDE (south of the north wall), onto the BASEMENT level
+       (heroFloor=0). Joshua: "there's a door at the bottom" where the hill
+       drops away. Full basement, garage converted. */
+    player.x=heroHouse.bsmtDoor.x; player.z=heroHouse.bsmtDoor.z+2.2;
     player.inside=true; player.heroFloor=0; setDrivingUI(false);
   } else if (a==='pickup'){
     doPickup();
@@ -5694,8 +5731,9 @@ actionBtn.addEventListener('click', function(){
     var ds=sd ? Math.hypot(player.x-sd.x, player.z-sd.z) : 1e9;
     // v3.0: front door on the SOUTH wall — exit SOUTH onto the porch
     // (heroPorchY gives the raised porch Y); back door on the NORTH wall.
-    // v3.3: basement door exits SOUTH at ground level (no porch — walkout).
-    if (ds<df && ds<db){ player.x=sd.x; player.z=sd.z+1.5; }
+    // v3.3 HILL: basement door is on the NORTH wall — exit NORTH at ground
+    // level (walkout, no porch).
+    if (ds<df && ds<db){ player.x=sd.x; player.z=sd.z-1.5; }
     else if (df<db){ player.x=fd.x; player.z=fd.z+1.5; }
     else { player.x=bd.x; player.z=bd.z-1.5; }
     player.inside=false; setDrivingUI(false);
@@ -7295,10 +7333,11 @@ function updateActionButton(){
     // back door on the NORTH wall — trigger NORTH of it.
     var df=Math.hypot(player.x-heroHouse.frontDoor.x, player.z-(heroHouse.frontDoor.z+1.5));
     var db=Math.hypot(player.x-heroHouse.backDoor.x, player.z-(heroHouse.backDoor.z-1.5));
-    /* v3.3: basement walkout door — trigger SOUTH of it at ground level.
-       Joshua: "there's a door at the bottom." */
+    /* v3.3 HILL: basement walkout door is on the NORTH wall — trigger
+       NORTH of it at ground level. Joshua: "there's a door at the bottom"
+       where the hill drops away. */
     var dbs=heroHouse.bsmtDoor ?
-      Math.hypot(player.x-heroHouse.bsmtDoor.x, player.z-(heroHouse.bsmtDoor.z+1.5)) : 1e9;
+      Math.hypot(player.x-heroHouse.bsmtDoor.x, player.z-(heroHouse.bsmtDoor.z-1.5)) : 1e9;
     if (player.inside){
       if (player.locIdx>=0 && typeof spCheckEnterables==='function'){
         var spIn=spCheckEnterables(); if (spIn){ act=spIn.act; label=spIn.label; }
@@ -7329,8 +7368,8 @@ function updateActionButton(){
       if (pendingCar){ act='enter-car'; label='ENTER CAR'; }
       else if (df<5){ act='enter-front'; label='ENTER HOUSE'; }
       else if (db<5){ act='enter-back'; label='ENTER HOUSE'; }
-      /* v3.3: basement walkout door — same ENTER HOUSE label, drops the
-         player on the basement level (heroFloor=0). */
+      /* v3.3 HILL: basement walkout door (north face) — same ENTER HOUSE
+         label, drops the player on the basement level (heroFloor=0). */
       else if (dbs<5){ act='enter-basement'; label='ENTER HOUSE'; }
       else { pendingPickup=nearestPickup(); if (pendingPickup){ act='pickup'; label='PICK UP'; } }
       if (!act && typeof martaCheckBoard==='function'){
