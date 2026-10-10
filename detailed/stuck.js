@@ -322,6 +322,13 @@ function recoverStuckUnit(u, opts){
 var _stuckHotspots=[];  // [{x, z, count, causes:{}, firstSeen, lastSeen}]
 function trackStuckLocation(x, z, cause, logFn){
   try{
+    /* v1.17 ROADFIX (Joshua 2026-10-09): spots with a CONFIRMED fix in the
+       unified registry are skipped — the repair is recorded and applied at
+       boot; re-flagging them would spam the dispatch log. If the anomaly
+       recurs, StuckDiag.record() reopens the spot (repair didn't hold). */
+    try{
+      if (typeof RoadFix!=='undefined' && RoadFix.isFixed && RoadFix.isFixed(x, z)) return;
+    }catch(_e){}
     var found=null;
     for (var i=0;i<_stuckHotspots.length;i++){
       var h=_stuckHotspots[i];
