@@ -43,10 +43,14 @@ var MQ = {
   inside: false
 };
 
+/* Floor base Y for floor f. f<=1 returns ground (lobby level); the lobby
+   occupies the first LOBBY_H units, upper floors are spaced FLOOR_H apart. */
 function mqFloorY(f) {
   if (f <= 1) return MQ.gy;
   return MQ.gy + MQ.LOBBY_H + (f - 2) * MQ.FLOOR_H;
 }
+/* Set the player's current floor: updates MQ.floor, pins player.locFloorY
+   and this enterable's floorY so exit/entry math follows the player. */
 function mqSetFloorY(f) {
   MQ.floor = f;
   var y = mqFloorY(f);
@@ -56,7 +60,8 @@ function mqSetFloorY(f) {
   return y;
 }
 
-/* ---------- tiny builders (add to interior group) ---------- */
+/* Tiny builders (add to interior group). mqBox: general box mesh, optional
+   Y rotation; returns the mesh. */
 function mqBox(w, h, d, color, x, y, z, ry) {
   var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d),
     new THREE.MeshLambertMaterial({ color: color }));
@@ -65,6 +70,8 @@ function mqBox(w, h, d, color, x, y, z, ry) {
   MQ.interior.add(m);
   return m;
 }
+/* Wall helper for per-floor detail: axis-aligned box + segment collider,
+   added to MQ.floorDetail (rebuilt on floor change). */
 function mqWall(x1, z1, x2, z2, h, yBase, color) {
   var len = Math.hypot(x2 - x1, z2 - z1);
   if (len < 0.01) return;
@@ -75,9 +82,12 @@ function mqWall(x1, z1, x2, z2, h, yBase, color) {
   MQ.floorDetail.add(m);
   addSegCollider(x1, z1, x2, z2);
 }
+/* Shorthand for a round point collider (delegates to the global). */
 function mqCol(x, z, r) { addCollider(x, z, r); }
 
 /* ---------- exterior: entrance + sign (always visible) ---------- */
+/* Box helper for the ALWAYS-VISIBLE exterior group (canopy, sign frame).
+   Same as mqBox but adds to MQ.exterior instead of MQ.interior. */
 function mqBoxExt(w, h, d, color, x, y, z) {
   var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d),
     new THREE.MeshLambertMaterial({ color: color }));
@@ -85,6 +95,11 @@ function mqBoxExt(w, h, d, color, x, y, z) {
   MQ.exterior.add(m);
   return m;
 }
+/* Build the always-visible exterior: entrance canopy + posts on the south
+   face, revolving-door frame (visual only), the MARRIOTT MARQUIS canvas sign,
+   a LANDMARKS entry, and the ENTERABLES registration (door outside -> lobby
+   inside). Also locates the matching OSM tower instance (__bldgMeshes.kept)
+   so it can be hidden while the player is inside (see mqHideExterior). */
 function mqBuildExterior() {
   var gy = MQ.gy, cx = MQ.cx, cz = MQ.cz;
   // entrance canopy on south face (toward Peachtree Center Ave)
@@ -126,6 +141,10 @@ function mqBuildExterior() {
     }
   } catch (e) {}
 }
+/* Swap the exterior OSM tower shell while the player is inside: hide=true
+   shrinks the instanced tower to zero and sinks it underground (the detailed
+   interior is shown instead); hide=false restores the original matrix.
+   No-op when the tower instance was never found. */
 function mqHideExterior(hide) {
   try {
     var bm = window.__bldgMeshes;
@@ -151,6 +170,13 @@ function mqHideExterior(hide) {
 }
 
 /* ---------- interior core: slabs, lobby, atrium ---------- */
+/* Build the interior core (created once, hidden until entry): the 52 floor
+   slabs as ONE InstancedMesh (4 strips per floor around the open atrium
+   void — no center slab), instanced glass atrium railings per floor, the
+   floor-1 lobby (front desk + sign, seating clusters, atrium trees,
+   hanging lights, outer lobby walls with a south entrance gap), and the
+   roof slab + skylight over floor 52. The south entrance gap is sealed with
+   a door-blocker segment collider so the player must use the EXIT action. */
 function mqBuildInterior() {
   var gy = MQ.gy, cx = MQ.cx, cz = MQ.cz, P = MQ.PLATE, A = MQ.ATRIUM;
   MQ.interior = new THREE.Group();
@@ -272,6 +298,10 @@ function mqBuildInterior() {
   mqBox(P, 0.5, P, 0x4a3a2e, cx, roofY + 0.25, cz);
   mqBox(A - 1, 0.2, A - 1, 0x99ccff, cx, roofY + 0.1, cz);  // skylight
 }
+/* Lobby wall helper: unlike mqWall this writes into MQ.interior (not the
+   per-floor detail group) and records its segment so the persistent lobby
+   colliders can be audited/restored. Lobby colliders persist for the whole
+   visit (floor 1 is always built). */
 function mqLobbyWall(x1, z1, x2, z2, h, gy) {
   var len = Math.hypot(x2 - x1, z2 - z1);
   var m = new THREE.Mesh(
@@ -286,6 +316,12 @@ function mqLobbyWall(x1, z1, x2, z2, h, gy) {
 }
 
 /* ---------- elevator: glass cab on north atrium edge ---------- */
+/* Build the elevator: shaft frame (4 full-height corner posts + solid north
+   back wall), instanced landing doors for all 52 floors (visual, 2 panels
+   each, facing south toward the hallway), and the glass cab group (glass
+   box + top/bottom frame + ceiling light + 2 sliding doors). Initializes
+   the MQ.elev state machine object (idle | moving | doors, with doorT for
+   door animation 0=closed..1=open) and the call-button position. */
 function mqBuildElevator() {
   var gy = MQ.gy, cx = MQ.cx, cz = MQ.cz, a = MQ.ATRIUM / 2;
   var ex = cx, ez = cz - 16;   // north room zone; lobby alcove in front
@@ -358,6 +394,11 @@ function mqBuildElevator() {
 }
 
 /* elevator per-frame update */
+/* Per-frame elevator state machine: 'moving' lerps the cab toward targetY
+   (speed 9 u/s — fast enough for 52 floors, not nauseating); a riding
+   player follows the cab via mqSetFloorY. On arrival, state -> 'doors' and
+   the doors animate open with a DING toast; doors hold ~6s then auto-close
+   (unless the player is interacting), then serve any pending callFloor. */
 function mqUpdateElevator(dt) {
   var E = MQ.elev;
   if (!E || !MQ.inside) return;
@@ -392,6 +433,9 @@ function mqUpdateElevator(dt) {
     }
   }
 }
+/* Dispatch the elevator to a floor: sets target Y and state='moving'.
+   The player floor is NOT updated here — mqUpdateElevator moves the cab and
+   mqSetFloorY follows it for a riding player. */
 function mqSendElevator(floor) {
   var E = MQ.elev;
   E.floor = floor;
@@ -399,6 +443,7 @@ function mqSendElevator(floor) {
   E.state = 'moving';
   E.wantOpen = false; E.holdT = 0;
 }
+/* Show a transient HUD toast (uses the #toast div; fades after ~1.8s). */
 function mqToast(msg) {
   try {
     var t = document.getElementById('toast');
@@ -408,6 +453,9 @@ function mqToast(msg) {
 }
 
 /* ---------- floor-select panel (HTML) ---------- */
+/* Build the floor-select panel: a centered HTML dialog with an 8-column
+   button grid for floors 1..52 (each calls mqRideTo) plus a CLOSE button.
+   Created once, hidden; shown when the player boards or requests FLOORS. */
 function mqBuildPanel() {
   var p = document.createElement('div');
   p.id = 'mq-panel';
@@ -442,8 +490,12 @@ function mqBuildPanel() {
   document.body.appendChild(p);
   MQ.panel = p;
 }
+/* Show / hide the floor-select HTML panel. */
 function mqShowPanel() { if (MQ.panel) MQ.panel.style.display = 'block'; }
+/* Hide the floor-select HTML panel. */
 function mqHidePanel() { if (MQ.panel) MQ.panel.style.display = 'none'; }
+/* Ride to a floor from the panel: hide panel, dispatch elevator. If already
+   on that floor, just close the doors and stay. */
 function mqRideTo(floor) {
   mqHidePanel();
   if (floor === MQ.elev.floor) {
@@ -457,6 +509,11 @@ function mqRideTo(floor) {
 
 /* ---------- floor detail: hallway + rooms (rebuilt per floor) ---------- */
 var MQ_ROOM_TEMPLATE = null;
+/* Build the uniform hotel-room template (built once, cloned per room):
+   queen bed + blanket + pillows + headboard, nightstands with lamps, wall
+   TV, desk + chair, bathroom alcove (toilet/tank/sink/pedestal), and a
+   north window. Local furniture collider spots are stored in
+   g.userData.colliders so clones can register world colliders. */
 function mqMakeRoomTemplate() {
   var g = new THREE.Group();
   var mat = function(c) { return new THREE.MeshLambertMaterial({ color: c }); };
@@ -517,6 +574,10 @@ function mqMakeRoomTemplate() {
   return g;
 }
 
+/* Tear down the current floor's detail: remove the floorDetail group,
+   reset the auto-doors list, and truncate the global collider arrays back
+   to the bookmarks taken when this floor was built (colliders are owned by
+   the floor, lobby colliders persist). */
 function mqClearFloorDetail() {
   if (MQ.floorDetail) {
     MQ.interior.remove(MQ.floorDetail);
@@ -530,6 +591,13 @@ function mqClearFloorDetail() {
   } catch (e) {}
 }
 
+/* Build full detail for floor f (only the player's current floor +/- 1 gets
+   this; called on entry and on floor change): hallway outer walls with door
+   gaps (6 rooms per side), the north elevator-lobby alcove (rooms 2,3 on the
+   north side are skipped — that's the lobby), room divider walls, outer
+   building walls, and cloned room interiors with furniture colliders
+   (local offsets rotated to each room's facing). Floor 1 returns early —
+   the lobby is persistent. */
 function mqBuildFloorDetail(f) {
   mqClearFloorDetail();
   MQ.colStart = colliders.length;
@@ -551,6 +619,9 @@ function mqBuildFloorDetail(f) {
   var perSide = 6, roomW = MQ.PLATE / perSide;  // 7.33
   var doorW = 1.4;
   // north side rooms 2,3 (0-indexed) are the elevator lobby — no doors there
+  /* Local helper: build a hallway wall segment with door gaps for rooms
+     rStart..rEnd-1, skipping the north-side elevator-lobby rooms (2,3).
+     Also records each door position via mqAddDoor for auto-swing doors. */
   function wallWithDoors(x1, z1, x2, z2, isX, side, rStart, rEnd) {
     var segs = [];
     var start = isX ? (cx - extR) : (cz - extR);  // full-side origin
@@ -648,6 +719,10 @@ function mqBuildFloorDetail(f) {
 }
 
 /* auto-swing room door + number label */
+/* Create an auto-swinging room door at (x,z): a hinge group with the door
+   panel offset so it swings open, plus a number plate reading
+   floor*100 + (roomIdx+1) (e.g. 1205 = floor 12, room 5). Registered in
+   MQ.doors; mqUpdateDoors animates it by player proximity. */
 function mqAddDoor(x, z, ry, floor, roomIdx) {
   var y0 = mqFloorY(floor);
   var hinge = new THREE.Group();
@@ -673,6 +748,8 @@ function mqAddDoor(x, z, ry, floor, roomIdx) {
   MQ.doors.push({ hinge: hinge, x: x, z: z, open: 0, num: num });
 }
 
+/* Per-frame: swing room doors toward open when the player is within 3.2u
+   (hinge rotates up to ~1.9 rad), closed otherwise. No-op when outside. */
 function mqUpdateDoors(dt) {
   if (!MQ.inside) return;
   for (var i = 0; i < MQ.doors.length; i++) {
@@ -686,9 +763,16 @@ function mqUpdateDoors(dt) {
 }
 
 /* ---------- action-button integration ---------- */
+/* True when the player is inside THIS building (guard against other
+   enterables sharing the spDoEnter/spDoExit wrappers). */
 function mqIsMarriott() {
   return MQ.inside && player.inside && player.locIdx === MQ.enterIdx;
 }
+/* Universal-action-button integration for the hotel. Returns null unless the
+   player is on foot inside the Marriott. States: inside the cab with doors
+   open -> 'EXIT ELEVATOR'; inside cab otherwise -> 'FLOORS' (re-open panel);
+   near the landing doors (3.5u, cab at this floor, doors open) -> 'ENTER
+   ELEVATOR'; near doors but cab elsewhere -> 'CALL ELEVATOR'. */
 function mqCheck() {
   if (car.driving) return null;
   if (!mqIsMarriott()) return null;
@@ -711,6 +795,10 @@ function mqCheck() {
   }
   return null;
 }
+/* Execute a Marriott action from mqCheck: 'mq-call' sends the cab to the
+   player's floor (or opens the doors if it's already here); 'mq-enter-elev'
+   boards (player follows the cab, floor panel opens); 'mq-panel' re-opens
+   the panel; 'mq-exit-elev' steps out. */
 function mqDoAction(a) {
   var E = MQ.elev;
   if (a === 'mq-call') {
@@ -732,6 +820,9 @@ function mqDoAction(a) {
     mqExitElevator();
   }
 }
+/* Step out of the elevator: clear boarding state, hide panel, place the
+   player south of the cab, pin the floor, rebuild that floor's detail, and
+   let the doors close behind. */
 function mqExitElevator() {
   var E = MQ.elev;
   MQ.inElev = false;
@@ -745,6 +836,9 @@ function mqExitElevator() {
 
 /* ---------- enter / exit the hotel ---------- */
 var mqOrigEnter = null, mqOrigExit = null;
+/* Wrap the global spDoEnter/spDoExit (once) so entering THIS enterable
+   shows the interior + hides the exterior shell, and exiting tears it
+   down. Other enterables pass through untouched. */
 function mqHookEnterable() {
   // wrap spDoEnter/spDoExit to manage interior visibility + exterior shell
   if (typeof spDoEnter === 'function' && !mqOrigEnter) {
@@ -763,6 +857,9 @@ function mqHookEnterable() {
     };
   }
 }
+/* On hotel entry: flag inside, show interior group, hide the exterior OSM
+   shell, pin to floor 1, build lobby detail, reset the elevator cab to the
+   lobby, and log the event. */
 function mqOnEnter() {
   MQ.inside = true;
   MQ.interior.visible = true;
@@ -775,6 +872,9 @@ function mqOnEnter() {
   E.floor = 1; E.state = 'idle'; E.doorT = 0; E.wantOpen = false;
   try { Report.note('marriott', { event: 'enter' }); } catch (e) {}
 }
+/* On hotel exit: reverse of mqOnEnter — clear boarding state, hide panel,
+   hide the interior group, restore the exterior shell, clear per-floor
+   detail/colliders, and log the event. */
 function mqOnExit() {
   MQ.inside = false;
   MQ.inElev = false;
@@ -787,6 +887,9 @@ function mqOnExit() {
 }
 
 /* ---------- per-frame ---------- */
+/* Per-frame hotel tick (inside only): drive the elevator state machine and
+   auto-doors; rebuild per-floor detail when the player's floor changed
+   (e.g. after an elevator ride); while riding, the player follows the cab. */
 function mqUpdate(dt) {
   if (!MQ.inside) return;
   mqUpdateElevator(dt);
@@ -807,6 +910,10 @@ function mqUpdate(dt) {
 }
 
 /* ---------- init ---------- */
+/* One-time init: sample ground height, build interior core + exterior +
+   elevator + floor panel, hook the enter/exit wrappers, restore the
+   inside-state if the player loaded while inside, and mark the system
+   online. Failures are logged, not thrown. */
 function mqInit() {
   try { MQ.gy = heightAt(MQ.cx, MQ.cz); } catch (e) { MQ.gy = 0; }
   mqBuildInterior();   // creates interior + exterior groups
