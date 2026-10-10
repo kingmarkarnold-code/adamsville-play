@@ -13,19 +13,19 @@
        reversals in the window (oscillation; also catches tight circular
        loops where 2s-apart move directions swing >90°). Jitter under 1u is
        ignored. 90s cooldown before re-reporting.
-     - recoverStuckUnit(u, opts): logs the event, blacklists the unit's
-       current segment (max 8 kept), then probes up to 14 random points in a
-       ±2000u box for a new patrol area: must be a real segment with ≥8
-       points (skips tiny stubs/loops — the Utoy Circle problem), must not
-       be blacklisted, must be ≥500u away. On success calls opts.reposition.
-       Returns false if no clear area found (unit holds and retries next
-       detection).
-   JOSHUA SPECS ENCODED (stuck-loop recovery protocol):
+     - recoverStuckUnit(u, opts): logs the event with the root-cause
+       diagnosis, files the persistent data-cause workup, then — v1.16
+       (Joshua's rule) — the unit PULLS OVER to the road shoulder and WAITS
+       PATIENTLY for the data fix. No reassignment, no rerouting around the
+       bad spot. It resumes only after the fix is confirmed
+       (StuckDiag.markFixed or the periodic auto-recheck).
+   JOSHUA SPECS ENCODED (stuck-loop recovery protocol, updated v1.16):
      - When a road worker is stuck in a loop, it recognizes it can't finish
-       its direction of travel — files a report and requests police
-       assistance. Police escort it THROUGH THE GRASS (the authorized
-       exception to the no-grass rule) to the nearest road, where it resumes
-       patrol. Each crew system wires this via opts.reposition.
+       its direction of travel — it files a report with the root-cause
+       diagnosis, pulls over to the side of the road, and waits patiently
+       for the data team to repair the underlying road data. The unit does
+       NOT reroute around the problem. Each repair's fix time (report→fix)
+       is documented in the registry.
    USAGE: attach one StuckDetector per unit; call .sample(x,z,dt) each frame
    (skip while legitimately paused at a task); on true call recoverStuckUnit
    with the system's callbacks. Load BEFORE the crew systems that use it;
@@ -239,16 +239,20 @@ StuckDetector.prototype.noteRecovery=function(){
   this.cooldown=Math.max(this.cooldown, 30);
 };
 
-/* recoverStuckUnit(u, opts) — shared stuck recovery. Logs the filed report,
-   blacklists the unit's current segment (cap 8), then hunts for a fresh
-   patrol area: up to 14 random probes in a ±2000u box, each run through
-   opts.nearestRoad. A candidate is rejected when: it's a stub (<8 points —
-   the Utoy Circle problem), it's blacklisted, or it's within 500u of the
-   stuck spot. On success opts.reposition(u, nr) moves the unit and the
-   event is logged; on failure the unit holds position and the NEXT
-   detection retries. Returns true/false.
+/* recoverStuckUnit(u, opts) — shared stuck recovery. Logs the filed report
+   with the root-cause diagnosis, files the persistent data-cause workup,
+   then — v1.16 (Joshua's directive, 2026-10-09) — the unit PULLS OVER to
+   the road shoulder and WAITS PATIENTLY for the data team to fix the
+   problem. There is NO automatic reassignment and NO rerouting around the
+   bad spot: the crew sits by the road until the fix is confirmed, then
+   resumes its route. The dev team confirms repairs with
+   StuckDiag.markFixed(x, z, name); the unit's update loop also re-checks
+   the data periodically (StuckDiag.waitTick) and auto-releases when the
+   anomaly is gone.
    opts = { unitLabel, log(msg), toast(msg), nearestRoad(x,z)→{seg,idx}|null,
-            reposition(u, nr), blacklist:[seg] }. */
+            reposition(u, nr), blacklist:[seg] }.
+   NOTE v1.16: nearestRoad/reposition/blacklist are deprecated — kept in the
+   opts shape for compatibility but NO LONGER USED. Do not rely on them. */
 function recoverStuckUnit(u, opts){
   var x=u.mesh.position.x, z=u.mesh.position.z;
   var where='('+Math.round(x)+', '+Math.round(z)+')';
@@ -268,53 +272,38 @@ function recoverStuckUnit(u, opts){
       }
     }
   }catch(e){}
-  opts.log('⚠️ '+opts.unitLabel+' STUCK IN A LOOP near '+where+
-    ' — 80s of movement with no progress.'+diagMsg+
-    ' Report filed, requesting reassignment.');
-  try{ opts.toast('⚠️ '+opts.unitLabel+' was stuck in a loop — reassigning patrol'); }catch(e){}
   /* v1.15 (StuckDiag): file the full data-cause workup in the PERSISTENT
-     registry (v1.14's hotspots are memory-only — this one survives restarts,
-     so the system LEARNS). Routing avoidance below reads this registry. */
+     registry (survives restarts — the system LEARNS). */
+  var _sd=null;
   try{
     if (typeof StuckDiag!=='undefined' && StuckDiag.suspectCause){
-      var _sd=StuckDiag.suspectCause(x, z, u);
+      _sd=StuckDiag.suspectCause(x, z, u);
       if (_sd.flagged)
         opts.log('🚩 StuckDiag: '+_sd.count+' stuck events near '+where+
-          ' — flagged for DATA REPAIR ('+_sd.causeLabel+'). '+
-          'Routing will avoid this spot on its own.');
+          ' — flagged for DATA REPAIR ('+_sd.causeLabel+').');
     }
   }catch(e){}
-  if (u.seg && opts.blacklist){
-    if (opts.blacklist.indexOf(u.seg)<0) opts.blacklist.push(u.seg);
-    while (opts.blacklist.length>8) opts.blacklist.shift();
-  }
-  var nr=null, tries=0;
-  while (tries<14 && !nr){
-    tries++;
-    var ax=x+(Math.random()-0.5)*4000, az=z+(Math.random()-0.5)*4000;
-    var cand=null;
-    try{ cand=opts.nearestRoad(ax,az); }catch(e){ cand=null; }
-    if (!cand||!cand.seg||!cand.seg.pts) continue;
-    if (cand.seg.pts.length<MIN_SEG_PTS) continue;      // skip tiny stubs/loops
-    if (opts.blacklist && opts.blacklist.indexOf(cand.seg)>=0) continue;
-    var p=cand.seg.pts[Math.max(0,Math.min(cand.idx,cand.seg.pts.length-1))];
-    if (Math.hypot(p[0]-x,p[1]-z)<REASSIGN_MIN_D) continue;
-    /* v1.15 (StuckDiag) self-prevention: don't reassign onto a flagged bad
-       spot — the registry learned this road data is bad, so steer clear. */
-    try{
-      if (typeof StuckDiag!=='undefined' && StuckDiag.isBadSpot &&
-          StuckDiag.isBadSpot(p[0],p[1])) continue;
-    }catch(e){}
-    nr=cand;
-  }
-  if (!nr){
-    opts.log('⚠️ '+opts.unitLabel+' reassignment found no clear area — holding position, will retry on next detection.');
-    return false;
-  }
-  opts.reposition(u, nr);
-  var np=nr.seg.pts[Math.max(0,Math.min(nr.idx,nr.seg.pts.length-1))];
-  opts.log('✅ '+opts.unitLabel+' reassigned to a new patrol area near ('+
-    Math.round(np[0])+', '+Math.round(np[1])+') — resuming patrol, problem segment skipped.');
+  opts.log('⚠️ '+opts.unitLabel+' STUCK IN A LOOP near '+where+
+    ' — 80s of movement with no progress.'+diagMsg+
+    ' Report filed with the data team.');
+  try{ opts.toast('⚠️ '+opts.unitLabel+' was stuck in a loop — pulling over to wait for the data fix'); }catch(e){}
+  /* v1.16 (Joshua's directive): NO reassignment, NO bad-spot avoidance.
+     The unit pulls over to the shoulder and waits patiently. It resumes its
+     route only after the data team confirms the fix (StuckDiag.markFixed)
+     or the periodic auto-recheck finds the anomaly gone. */
+  try{
+    if (typeof StuckDiag!=='undefined' && StuckDiag.waitForFix){
+      StuckDiag.waitForFix(x, z, u, opts.unitLabel, opts.log);
+      return true;
+    }
+  }catch(e){}
+  // Fallback if StuckDiag failed to load: hold in place with the wait flag
+  // set, so the update loop still skips movement until a manual clear.
+  try{
+    u.waitingForFix=true; u.waitStartT=Date.now();
+    u.waitSpot={x:Math.round(x), z:Math.round(z)}; u._waitAcc=0;
+  }catch(e){}
+  opts.log('🅿️ '+opts.unitLabel+' holding position — waiting for the data fix (StuckDiag unavailable; needs a manual clear).');
   return true;
 }
 
