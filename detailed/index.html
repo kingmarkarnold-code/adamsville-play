@@ -787,6 +787,13 @@ var MAPVER=(function(){
        (~2KB), never touches the running game. */
     if (!pending){
       try{
+        /* DOWNLOAD SOURCE — this URL is the MAP-side twin of the ASSETVER
+           BASE constant (see the DOWNLOAD SOURCE ARCHITECTURE comment
+           there). Both currently point at the GitHub Pages deployment and
+           MUST stay in sync: if Joshua migrates to his own server, change
+           this URL to <new-server>/detailed/map-manifest.json to match the
+           new BASE. Full checklist:
+           ~/workspace/game-map/SERVER-MIGRATION-PLAN.md */
         var url='https://kingmarkarnold-code.github.io/adamsville-play/detailed/map-manifest.json';
         fetch(url,{cache:'no-store'}).then(function(r){ return r.ok?r.json():null; })
         .then(function(m){
@@ -899,7 +906,69 @@ var MAPVER=(function(){
 var ASSETVER=(function(){
   var TYPES=['ui','vehicles','music'];
   var LABELS={ui:'UI',vehicles:'Vehicles',music:'Music',map:'Map'};
-  var BASE='https://kingmarkarnold-code.github.io/adamsville-play/detailed/';
+  var BASE=
+  /* ========================================================================
+     DOWNLOAD SOURCE ARCHITECTURE — where this game gets its data files.
+     ------------------------------------------------------------------------
+     CURRENT SOURCE (2026-10-09): GitHub Pages (free static file hosting).
+     BASE is the web-side single point of control for ALL downloads. Every
+     manifest URL is built from it via manifestUrl() (just below), and the
+     per-file download loops in forceRedownload() fetch each file from the
+     URL listed in its manifest entry (map manifests carry absolute URLs;
+     the native bridges resolve BASE + filename when a manifest entry has
+     no url field).
+
+     THE FOUR MANIFESTS (one per downloadable artifact type):
+       map-manifest.json      — world data: roads.js, junction_pins.js,
+                                osm_buildings.js, elev.js, terrain_lifts.js…
+                                (~5 MB total). Version field: map_version.
+                                Tracked by MAPVER (above).
+       ui-manifest.json       — game code: index.html inline scripts plus
+                                every <script src> file (~2.3 MB). Version
+                                field: ui_version. Tracked by ASSETVER.
+       vehicles-manifest.json — vehicle mesh/data files. Tracked by ASSETVER.
+       music-manifest.json    — soundtrack files (~45 MB). Tracked by
+                                ASSETVER.
+
+     HOW UPDATES FLOW (Joshua's rules):
+       1. checkPending() runs 30s after boot, then every 2 minutes (plus on
+          tab refocus): each manifest is fetched with cache:'no-store' and
+          its <type>_version compared against the session's active version.
+       2. On mismatch the new version is STAGED as pending — the running
+          game is NEVER touched mid-session. A red dot appears on the
+          settings gear, and per-type status tags in the Administrator
+          panel show "vCurrent -> vPending".
+       3. Map updates apply ONLY on New Game (MAPVER.applyOnNewGame()).
+          UI/vehicle/music updates auto-apply at launch
+          (autoApplyBootUpdates()) or on New Game; a page reload then
+          parses the fresh files.
+       4. Downloads NEVER hot-swap a running world — Joshua's standing rule.
+
+     OFFLINE PLAY: on the APK, the native bridges (window.MapDownload /
+     window.AssetDownload) download each manifest's files ONCE (first-run
+     setup screen, or a manual re-download from the Administrator panel)
+     and store them on-device. After that the game runs fully offline; the
+     2-minute manifest checks simply fail silently with no connection and
+     the game keeps playing the cached copy.
+
+     SWITCHING TO A CUSTOM SERVER (Joshua's plan — full checklist in
+     ~/workspace/game-map/SERVER-MIGRATION-PLAN.md):
+       1. Copy the published detailed/ folder to the server. Any plain
+          static host works (nginx/Apache + free HTTPS via Let's Encrypt);
+          no database or app server is needed — the client only ever does
+          plain HTTPS GETs of static files.
+       2. Change BASE below to the server's detailed/ URL (keep the
+          trailing slash). Web clients pick it up on the next page load —
+          no other web-side change is needed.
+       3. ALSO update the native side and recompile the APK:
+          AssetBridge.java BASE_URL, and the map-manifest URL inside
+          MainActivity.checkMapUpdatesInBackground() — both are marked
+          with DOWNLOAD SOURCE comments. Web BASE and native BASE_URL
+          MUST stay in sync or the APK and web clients pull different files.
+       4. Rollback = change BASE back to the GitHub Pages URL. GitHub
+          Pages stays a working fallback as long as the repo publishes.
+     ======================================================================== */
+  'https://kingmarkarnold-code.github.io/adamsville-play/detailed/';
   var active={}, pending={}, noticeShown=false, bootTried=false, bootAutoApplied=false;
   /* Joshua's rule: yellow = downloaded, restart needed. Tracked per-type,
      persisted in localStorage, cleared on boot (restart applies the update). */
