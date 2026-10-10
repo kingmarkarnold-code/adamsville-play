@@ -3566,8 +3566,13 @@ var BORDER = BORDER_LL.map(function(ll){ return xz(ll[0], ll[1]); });
    - heroPorchY(): exterior Y for the raised porch/entry stairs so the player
      walks UP the front steps instead of clipping through them. */
 var heroHouse = {};
+/* v3.3 (2026-10-10 Joshua correction): NOT a single-story ranch — this is a
+   TWO-LEVEL house: full basement (walkout door on the south face at ground
+   level — "there's a door at the bottom") + main floor above. The garage was
+   converted to living space (no garage door). The main floor keeps the porch,
+   shutters, and hip roof from v3.2. */
 var HOUSE_535 = {
-  W: 13.5, D: 8.0,            // footprint — ranch proportions
+  W: 13.5, D: 8.0,            // footprint
   bsmtD: -0.35,               // basement slab 0.35 ABOVE center grade (v3.1:
                              // was 0.3 below — the lot falls 0.92u across the
                              // footprint and terrain poked through the slab in
@@ -3651,19 +3656,20 @@ function heroPorchY(x, z){
   var bY0 = bsmtY-1.0, bY1 = bsmtY+1.9, mY0 = mainY-1.0, mY1 = mainY+1.9;
 
   /* ---- BASEMENT / FOUNDATION walls (brick, bsmtY -> mainY) ----
-     The south face is the walkout: garage door + entry door + windows.
-     The garage and walkout doors are VISUAL ONLY (sealed by colliders) —
-     the player enters/exits through the front/back doors; the basement is
-     reached via the interior stairs. This keeps enter/exit consistent. */
-  // south foundation wall (gaps: garage [hx-5.5,hx-1.5], walkout [hx+1.0,hx+2.2])
-  box(hx-5.5-x0, fH, foundT, brick, (x0+hx-5.5)/2, fCy, zS);
-  box(hx+1.0-(hx-1.5), fH, foundT, brick, (hx-1.5+hx+1.0)/2, fCy, zS);
+     v3.3 (2026-10-10 Joshua correction): this is a FULL BASEMENT with a
+     walkout door on the south face — "there's a door at the bottom." The
+     garage was converted to living space (no garage door). The basement
+     door is ENTERABLE (see enter-basement action); the basement is also
+     reachable via the interior stairs. */
+  // south foundation wall — v3.3: garage converted, only the walkout door
+  // gets a gap [hx+1.0,hx+2.2]. The old garage span is solid brick wall now.
+  box(hx+1.0-x0, fH, foundT, brick, (x0+hx+1.0)/2, fCy, zS);
   box(x1-(hx+2.2), fH, foundT, brick, (hx+2.2+x1)/2, fCy, zS);
-  addSegCollider(x0,zS,hx-5.5,zS, bY0,bY1);
-  addSegCollider(hx-1.5,zS,hx+1.0,zS, bY0,bY1);
+  addSegCollider(x0,zS,hx+1.0,zS, bY0,bY1);
   addSegCollider(hx+2.2,zS,x1,zS, bY0,bY1);
-  addSegCollider(hx-5.5,zS,hx-1.5,zS, bY0,bY1);   // garage door (closed) — sealed
-  addSegCollider(hx+1.0,zS,hx+2.2,zS, bY0,bY1);   // walkout door (locked) — sealed
+  // walkout door gap: sealed at the edges so there's no hairline crack —
+  // entry is ONLY via the ENTER HOUSE action at the basement door.
+  addSegCollider(hx+0.65,zS,hx+2.55,zS, bY0,bY1);
   // north foundation wall: solid (buried / uphill side)
   box(W, fH, foundT, brick, hx, fCy, zN);
   addSegCollider(x0,zN,x1,zN, bY0,bY1);
@@ -3688,11 +3694,17 @@ function heroPorchY(x, z){
   // basement floor slab
   box(W, 0.25, D, 0x8a7a68, hx, bsmtY+0.12, hz);
 
-  // garage door (visual): dark panel + trim header on the south foundation wall
-  box(4.0, 2.2, 0.15, 0x3a3a3a, hx-3.5, bsmtY+1.1, zS+0.05);
-  box(4.4, 0.25, 0.2, trim, hx-3.5, bsmtY+2.32, zS+0.05);
-  // walkout door (visual)
+  /* v3.3 (2026-10-10 Joshua correction): the garage was CONVERTED to living
+     space — no garage door. The south foundation wall here is solid brick with
+     windows, matching the converted interior. */
+  // converted garage windows (south foundation wall, was garage door opening)
+  [hx-4.5, hx-2.5].forEach(function(wx){
+    box(1.4, 0.9, 0.14, trim, wx, bsmtY+fH-0.8, zS+0.02);
+    box(1.2, 0.7, 0.16, glassC, wx, bsmtY+fH-0.8, zS+0.02);
+  });
+  // walkout basement door (FUNCTIONAL — Joshua: "there's a door at the bottom")
   box(1.2, 2.05, 0.15, 0x5a3a22, hx+1.6, bsmtY+1.02, zS+0.05);
+  box(1.5, 0.18, 0.18, trim, hx+1.6, bsmtY+2.1, zS+0.05);  // door header trim
   // basement windows (south, high on the exposed wall)
   [hx-0.5, hx+4.5].forEach(function(wx){
     box(1.4, 0.9, 0.14, trim, wx, bsmtY+fH-0.8, zS+0.02);
@@ -3744,6 +3756,9 @@ function heroPorchY(x, z){
   box(1.2, 2.05, 0.18, 0x5a3a22, hx, mainY+1.02, zN);
   heroHouse.frontDoor = { x: hx, z: zS };   // SOUTH — faces Dollar Mill Rd
   heroHouse.backDoor  = { x: hx, z: zN };   // NORTH
+  /* v3.3: basement walkout door — SOUTH foundation wall, at ground level.
+     Joshua: "there's a door at the bottom." Enterable via enter-basement. */
+  heroHouse.bsmtDoor  = { x: hx+1.6, z: zS };
 
   /* win(): surface-mounted window — trim frame + glass + mullion.
      ry rotates for the side walls. */
@@ -3905,10 +3920,13 @@ function heroPorchY(x, z){
   labelAt('535 DOLLAR MILL RD', hx, hz, 9, 30, '#ffd75e');
 
   /* ---- BASEMENT interior (floor at bsmtY) ----
-     Family room (east) | garage (west) | utility + bath (north-west).
-     The stair bottom lands in the family room. */
+     v3.3 (2026-10-10 Joshua correction): FULL BASEMENT, garage CONVERTED
+     to living space — "there's a door at the bottom." Layout: family room
+     (east) | converted rec room (west, was garage) | utility + bath
+     (north-west). The stair bottom lands in the family room. The walkout
+     door opens into the family room near the south wall. */
   var f0 = bsmtY+0.25;
-  // garage | family room divider, door gap at hz+1.0
+  // converted rec room | family room divider, door gap at hz+1.0
   inWall(hx-1.5, zN+0.3, hx-1.5, zS-0.3, f0, hx-1.5, hz+1.0);
   // utility (north-west) | garage divider, door gap
   inWall(x0+0.3, hz-1.5, hx-1.5, hz-1.5, f0, hx-3.0, hz-1.5);
@@ -3918,6 +3936,12 @@ function heroPorchY(x, z){
   furn(2.8,0.9,1.1, 0x5a4a6a, hx+0.8, f0, hz+2.8);   // couch
   furn(1.2,0.7,0.8, 0x333333, hx+0.8, f0, hz+0.6);   // TV stand
   furn(1.0,0.5,1.0, 0x4a3a2a, hx+2.8, f0, hz+2.8);   // coffee table
+  /* v3.3: converted garage -> rec room (west side). Furnished as living
+     space now, not a garage. Keep clear of the walkout door swing at
+     (hx+1.6, zS) and the divider door gap at (hx-1.5, hz+1.0). */
+  furn(2.4,0.9,1.1, 0x6a5a3a, hx-4.0, f0, hz+2.2);   // rec room couch
+  furn(1.1,0.7,0.8, 0x333333, hx-4.0, f0, hz+0.2);   // rec room TV stand
+  furn(1.4,0.75,1.4, 0x5a4a3a, hx-2.8, f0, hz-0.5);  // pool table
   // utility (north-west)
   furn(1.2,1.1,0.8, 0xaaaaaa, hx-5.8, f0, hz-3.0);   // washer
   furn(1.2,1.1,0.8, 0x999999, hx-4.3, f0, hz-3.0);   // dryer
@@ -5636,6 +5660,12 @@ actionBtn.addEventListener('click', function(){
     // v3.0: back door is on the NORTH wall. Step INSIDE (south of the north wall).
     player.x=heroHouse.backDoor.x; player.z=heroHouse.backDoor.z+2.2;
     player.inside=true; player.heroFloor=1; setDrivingUI(false);
+  } else if (a==='enter-basement'){
+    /* v3.3: basement walkout door on the SOUTH foundation wall. Step INSIDE
+       (north of the south wall), onto the BASEMENT level (heroFloor=0).
+       Joshua: "there's a door at the bottom" — full basement, garage converted. */
+    player.x=heroHouse.bsmtDoor.x; player.z=heroHouse.bsmtDoor.z-2.2;
+    player.inside=true; player.heroFloor=0; setDrivingUI(false);
   } else if (a==='pickup'){
     doPickup();
   } else if (a==='talk-npc'){
@@ -5658,12 +5688,15 @@ actionBtn.addEventListener('click', function(){
     }
     if (ddn2 && typeof directorStartTalk==='function') directorStartTalk();
   } else if (a==='exit-house'){
-    var fd=heroHouse.frontDoor, bd=heroHouse.backDoor;
+    var fd=heroHouse.frontDoor, bd=heroHouse.backDoor, sd=heroHouse.bsmtDoor;
     var df=Math.hypot(player.x-fd.x, player.z-fd.z);
     var db=Math.hypot(player.x-bd.x, player.z-bd.z);
+    var ds=sd ? Math.hypot(player.x-sd.x, player.z-sd.z) : 1e9;
     // v3.0: front door on the SOUTH wall — exit SOUTH onto the porch
     // (heroPorchY gives the raised porch Y); back door on the NORTH wall.
-    if (df<db){ player.x=fd.x; player.z=fd.z+1.5; }
+    // v3.3: basement door exits SOUTH at ground level (no porch — walkout).
+    if (ds<df && ds<db){ player.x=sd.x; player.z=sd.z+1.5; }
+    else if (df<db){ player.x=fd.x; player.z=fd.z+1.5; }
     else { player.x=bd.x; player.z=bd.z-1.5; }
     player.inside=false; setDrivingUI(false);
   } else if (a && a.indexOf('enter-loc:')===0){
@@ -7262,6 +7295,10 @@ function updateActionButton(){
     // back door on the NORTH wall — trigger NORTH of it.
     var df=Math.hypot(player.x-heroHouse.frontDoor.x, player.z-(heroHouse.frontDoor.z+1.5));
     var db=Math.hypot(player.x-heroHouse.backDoor.x, player.z-(heroHouse.backDoor.z-1.5));
+    /* v3.3: basement walkout door — trigger SOUTH of it at ground level.
+       Joshua: "there's a door at the bottom." */
+    var dbs=heroHouse.bsmtDoor ?
+      Math.hypot(player.x-heroHouse.bsmtDoor.x, player.z-(heroHouse.bsmtDoor.z+1.5)) : 1e9;
     if (player.inside){
       if (player.locIdx>=0 && typeof spCheckEnterables==='function'){
         var spIn=spCheckEnterables(); if (spIn){ act=spIn.act; label=spIn.label; }
@@ -7272,7 +7309,10 @@ function updateActionButton(){
       if (!act){
         var dfi=Math.hypot(player.x-(heroHouse.frontDoor.x+2.2), player.z-heroHouse.frontDoor.z);
         var dbi=Math.hypot(player.x-(heroHouse.backDoor.x-2.2), player.z-heroHouse.backDoor.z);
-        if (dfi<5||dbi<5){ act='exit-house'; label='EXIT HOUSE'; }
+        /* v3.3: also offer EXIT HOUSE near the basement door (inside). */
+        var dsbi=heroHouse.bsmtDoor ?
+          Math.hypot(player.x-heroHouse.bsmtDoor.x, player.z-heroHouse.bsmtDoor.z) : 1e9;
+        if (dfi<5||dbi<5||dsbi<5){ act='exit-house'; label='EXIT HOUSE'; }
         else { pendingPickup=nearestPickup(); if (pendingPickup){ act='pickup'; label='PICK UP'; } }
       }
     } else {
@@ -7289,6 +7329,9 @@ function updateActionButton(){
       if (pendingCar){ act='enter-car'; label='ENTER CAR'; }
       else if (df<5){ act='enter-front'; label='ENTER HOUSE'; }
       else if (db<5){ act='enter-back'; label='ENTER HOUSE'; }
+      /* v3.3: basement walkout door — same ENTER HOUSE label, drops the
+         player on the basement level (heroFloor=0). */
+      else if (dbs<5){ act='enter-basement'; label='ENTER HOUSE'; }
       else { pendingPickup=nearestPickup(); if (pendingPickup){ act='pickup'; label='PICK UP'; } }
       if (!act && typeof martaCheckBoard==='function'){
         var martaAct=martaCheckBoard(); if (martaAct){ act=martaAct.act; label=martaAct.label; if(martaAct.train) window.__martaBoardTrain=martaAct.train; }
