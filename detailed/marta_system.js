@@ -1,4 +1,38 @@
 /* ============================================================================
+   FILE: marta_system.js — "Surviving Adamsville" MARTA rail (trains)
+   ----------------------------------------------------------------------------
+   PURPOSE: MARTA rail service: real-position stations, track geometry, and
+   rideable 4-car trains on real GTFS track shapes.
+   KEY SYSTEMS:
+     - Stations: 20 in-map stations at real positions — platform slab, yellow
+       safety edge, canopy on columns, stairs, benches, canvas-texture station
+       name sign, blue "M" pylon. Platforms are placed on the side away from
+       the nearest road, nudged along the track (±30u) to find a spot clear
+       of roads (dense downtown). Walkable.
+     - Tracks: arc-length polylines extended past both in-map ends to the map
+       edge (1500u cap, 100u steps, direction from a 400u baseline so the
+       overrun follows the line's general direction — not a last-segment
+       wiggle). Smoothed terrain heights → bed + rails as BufferGeometry.
+     - Trains: 2 per line (Blue/Gold/Green/Red), constant 30 u/s with eased
+       station stops (slow within 90u, snap + dwell 9s). Stop arc positions
+       are tracked in EXTENDED coordinates (sOffset applied at init).
+     - v1.1 despawn/respawn (Joshua's pattern, same as semis): trains run past
+       the last in-map station to the map edge, VANISH, then a spawn timer
+       (every 8s) keeps 2 per line by respawning at alternating map-edge ends
+       "from out of town". NO turnaround at terminals — a rider still aboard
+       past the last stop is auto-exited onto the platform.
+     - Boarding/riding: on the universal action button via
+       martaCheckBoard (returns {act:'board-train'|'exit-train'}) — board
+       within 30u of a dwelling train; riding hides the player mesh, follows
+       the train head, and shows line + next station in the HUD mode tag.
+       SAFETY: a train is despawned only after auto-exiting a riding player
+       (the player can never be stranded on a vanishing train).
+   JOSHUA SPECS ENCODED:
+     - MARTA content queued by Joshua: design MARTA bus + MARTA train vehicle
+       models, include MARTA stations. (Buses live in marta_bus_system.js.)
+     - Simple sim logic: constant-speed trains, eased stops; no physics.
+   ============================================================================ */
+/* ============================================================================
    SURVIVING ADAMSVILLE — MARTA RAIL SYSTEM (v1.0)
    ----------------------------------------------------------------------------
    STANDALONE MODULE. Include AFTER marta_data.js and the main game script:
@@ -48,6 +82,11 @@ var MAP_X0=60, MAP_X1=7940, MAP_Z0=60, MAP_Z1=11940; // map edge (WX=8000, WZ=12
 var MT = { lines: [], trains: [], stations: [], ready: false, spawnT: SPAWN_CHECK_INTERVAL };
 
 /* ---------------- arc-length path ---------------- */
+/* makePath(pts) — wraps a polyline with arc-length lookup: length, posAt(s)
+   (interpolated point at arc distance s), dirAt(s) (unit tangent). Binary
+   search over the cumulative table — O(log n) per query. Trains advance in
+   world units (u/s), not parameter units, so speed is constant regardless of
+   point spacing. */
 function makePath(pts){
   var cum=[0], i, dx, dz;
   for (i=1;i<pts.length;i++){
@@ -77,8 +116,12 @@ function makePath(pts){
     }
   };
 }
-/* extend a track polyline past both ends toward the map edge (capped).
-   Returns {pts: newPts, sOffset: arc length prepended at the start}. */
+/* extendPtsToEdge(pts) — extends a track polyline past both in-map ends
+   toward the map edge (MAP_X0..X1, MAP_Z0..Z1) in 100u steps, capped at
+   1500u per end. Direction comes from a ~400u baseline, not the last
+   segment, so the overrun follows the line's general direction. Returns
+   {pts, sOffset}: callers MUST shift all in-map arc positions by sOffset
+   (the arc length prepended) before using the new path. */
 function extendPtsToEdge(pts){
   function inBounds(x,z){ return x>MAP_X0&&x<MAP_X1&&z>MAP_Z0&&z<MAP_Z1; }
   // outward direction using a ~400u baseline (smooths local end-curves so the
@@ -117,6 +160,8 @@ function extendPtsToEdge(pts){
 }
 
 /* ---------------- material helpers ---------------- */
+/* mat(color) — cached Lambert materials (one per color). Used by stations
+   and trains to avoid creating hundreds of duplicate materials. */
 var _mats={};
 function mat(color){
   if (!_mats[color]) _mats[color]=new THREE.MeshLambertMaterial({color:color});
@@ -125,6 +170,10 @@ function mat(color){
 function groundY(x,z){
   try{ return heightAt(x,z); }catch(e){ return 0; }
 }
+/* signBoard(text,x,y,z,ry,w,bg) — canvas-texture sign plate: white text on a
+   colored background, double-sided, added to the scene. Used for station
+   name signs (blue #123a7d) and the "M" pylons (#1a5fb4). Text truncates at
+   22 chars. */
 function signBoard(text,x,y,z,ry,w,bg){
   var cv=document.createElement('canvas'); cv.width=512; cv.height=96;
   var c=cv.getContext('2d');
@@ -141,6 +190,10 @@ function signBoard(text,x,y,z,ry,w,bg){
 }
 
 /* ---------------- train mesh (stylized MARTA, silver/blue) ---------------- */
+/* martaTrainMesh() — builds one 4-car stylized MARTA train (silver body,
+   blue stripe, window band, roof, skirt, cab faces with windshield +
+   headlights on the end cars, dark bogies). Faces +Z. userData.len is the
+   total coupled length (used to offset the player/board position). */
 function martaTrainMesh(){
   var g=new THREE.Group();
   var silver=mat(0xc9ced4), blue=mat(0x1a5fb4), dark=mat(0x22262b),
@@ -190,6 +243,13 @@ function martaTrainMesh(){
 }
 
 /* ---------------- track rendering ---------------- */
+/* buildTrack(line) — builds the track geometry: a 5u-wide ballast bed and
+   two rails (±0.9u, 0.3u wide) as BufferGeometry strips following the
+   extended path at 8u steps. Heights come from terrain sampled +0.55u then
+   smoothed (3 passes of (prev+2*cur+next)/4) so the train doesn't bounce
+   over terrain noise; line.trackY(s) gives the smoothed rail height later.
+   clampVehY is applied at runtime but never downward (tunnels legitimately
+   dip below the clamp floor). */
 function buildTrack(line){
   var path=line.path, total=path.length;
   var step=8, n=Math.floor(total/step);
@@ -239,6 +299,14 @@ function buildTrack(line){
   scene.add(bed); scene.add(rail);
 }
 /* ---------------- stations ---------------- */
+/* buildStation(st, line) — builds one station at stop st on line:
+   platform slab (10×76×1.4), yellow safety edge, canopy on 6 columns,
+   stairs down at the south end, 2 benches, station-name sign facing the
+   track, blue "M" pylon at street level. Platform side = the side AWAY from
+   the nearest road (distToRoadEdge at ±9u); then nudged ±30u along the
+   track to the clearest spot — the stop's arc position is updated so trains
+   dwell at the moved platform. Platform deck height = max(track height+0.4,
+   ground+0.2) so it never sinks into a hill or floats above a valley. */
 function buildStation(st, line){
   var path=line.path;
   // find arc position of this stop
@@ -326,6 +394,9 @@ function buildStation(st, line){
 }
 
 /* ---------------- trains ---------------- */
+/* spawnTrain(line, s0, dir) — adds one train mesh to the scene and registers
+   the train record {line, mesh, s (arc pos), dir (+1/-1), speed, state
+   ('run'/'dwell'), dwellT, stopIdx, world x/z/yaw, nextStop}. */
 function spawnTrain(line, s0, dir){
   var mesh=martaTrainMesh();
   scene.add(mesh);
@@ -334,8 +405,10 @@ function spawnTrain(line, s0, dir){
   MT.trains.push(t);
   return t;
 }
+/* trainStopIdx(t) — index of the next stop AHEAD of the train in its travel
+   direction (ds>1 to skip the stop it just left). Returns -1 when nothing
+   is ahead (past the last in-map station, heading to the edge). */
 function trainStopIdx(t){
-  // next stop ahead in travel direction
   var stops=t.line.stops, best=-1, bd=1e18, i, ds;
   for (i=0;i<stops.length;i++){
     ds=(stops[i].s-t.s)*t.dir;
@@ -343,7 +416,9 @@ function trainStopIdx(t){
   }
   return best;
 }
-/* remove a train from the world (it vanished past the map edge) */
+/* despawnTrain(idx) — removes a train from the world after it runs off the
+   map edge. SAFETY FIRST: if the player is riding it, they're auto-exited
+   onto a platform before removal — a vanish must never strand the rider. */
 function despawnTrain(idx){
   var t=MT.trains[idx];
   // safety: never strand the player on a vanishing train
@@ -351,7 +426,10 @@ function despawnTrain(idx){
   try{ scene.remove(t.mesh); }catch(e){}
   MT.trains.splice(idx,1);
 }
-/* drop a rider on the current platform (used at terminals / despawn safety) */
+/* martaAutoExit(t) — safety drop: puts a riding player onto the platform of
+   the train's current stop (or beside the train if no platform exists) and
+   clears player.ridingTrain. Used when a train leaves the map edge with the
+   player still aboard ("End of the line"). */
 function martaAutoExit(t){
   var st=(t.stopIdx>=0&&t.line.stops[t.stopIdx])?t.line.stops[t.stopIdx]:null;
   var bs=st?builtStation(st.name):null;
@@ -366,6 +444,14 @@ function martaAutoExit(t){
   showToast(st?('End of the line — '+st.name):'End of the line', 2200);
   try{ Report.note('marta-autoexit',{station:st?st.name:'?'}); }catch(e){}
 }
+/* updateTrain(t, dt) — one physics tick. Dwell state: countdown, then back
+   to 'run' (NO terminal reversal — the train continues to the map edge;
+   a rider still aboard at the terminal is auto-exited). Run state: ease
+   speed toward the next stop (slow linearly inside BRAKE_DIST=90u, snap +
+   dwell 9s within 6u), advance arc position; returns true when the train
+   reaches the extended path end (map edge) → the caller despawns it.
+   Mesh is positioned at the smoothed track height, -0.55u (rail-to-body
+   offset), yawed to the travel direction. */
 function updateTrain(t, dt){
   var line=t.line;
   var done=false; // true => reached the map edge, despawn
@@ -418,6 +504,10 @@ function updateTrain(t, dt){
   return done;
 }
 /* ---------------- boarding / riding ---------------- */
+/* nearestDwellingTrain() — the closest train currently DWELLING (doors open,
+   stopIdx>=0) whose platform is within BOARD_RANGE=30u of the player.
+   Boarding is only possible at a stopped train — no leapfrogging a moving
+   one. */
 function nearestDwellingTrain(){
   if (typeof player==='undefined') return null;
   var best=null, bd=1e18;
@@ -430,7 +520,11 @@ function nearestDwellingTrain(){
   }
   return best;
 }
-/* called from updateActionButton() in index.html */
+/* martaCheckBoard() — universal action-button hook (called from
+   updateActionButton() in index.html). Returns {act:'board-train', label,
+   train} when a dwelling train is in range, {act:'exit-train'} when already
+   riding, else null. Guarded: no boarding while driving or inside a
+   building. */
 window.martaCheckBoard=function(){
   if (typeof player==='undefined'||car.driving) return null;
   if (player.ridingTrain){
@@ -441,17 +535,25 @@ window.martaCheckBoard=function(){
   if (t) return { act:'board-train', label:'BOARD '+t.line.name+' TRAIN', train:t };
   return null;
 };
+/* martaDoBoard() — action-button handler: stages the nearest dwelling train
+   in window.__martaPendingTrain; the frame loop boards it on the next tick
+   (synchronous-on-click staging avoids racing the train's state change). */
 window.martaDoBoard=function(){
   var t=nearestDwellingTrain();
   if (!t) return;
   window.__martaPendingTrain=t;
 };
+/* doBoardTrain(t) — boards: sets player.ridingTrain, hides the player mesh
+   (they're "inside" the car), toasts the line name. */
 function doBoardTrain(t){
   player.ridingTrain=t;
   try{ player.mesh.visible=false; }catch(e){}
   showToast('Riding MARTA '+t.line.name+' line', 2200);
   try{ Report.note('marta-board',{line:t.line.name}); }catch(e){}
 }
+/* martaDoExit() — action-button handler: drops the player on the platform
+   of the nearest stop on the current line (or beside the train if the
+   platform record is missing), restores the player mesh. */
 window.martaDoExit=function(){
   var t=player.ridingTrain;
   if (!t) return;
@@ -474,10 +576,17 @@ window.martaDoExit=function(){
   showToast(best?best.name:'', 2000);
   try{ Report.note('marta-exit',{station:best?best.name:'?'}); }catch(e){}
 };
+/* builtStation(name) — looks up a BUILT station record by name (has the
+   platform x/z/platY the train-data records lack). Returns null if not
+   found — callers fall back to a point beside the train. */
 function builtStation(name){
   for (var i=0;i<MT.stations.length;i++) if (MT.stations[i].name===name) return MT.stations[i];
   return null;
 }
+/* updateRiding(dt) — while the player rides: their world position follows the
+   train head (+1.2u up on the train mesh), and the HUD mode tag shows the
+   line name + next station (or "END OF LINE", or "doors open" while
+   dwelling). */
 function updateRiding(dt){
   var t=player.ridingTrain;
   if (!t) return;
@@ -496,6 +605,11 @@ function updateRiding(dt){
 }
 
 /* ---------------- init ---------------- */
+/* initMarta() — per line from MARTA_DATA: extend the track polyline to the
+   map edges, shift all stop arc positions by the prepended offset, build the
+   track mesh, build each not-yet-built station (dedup by name — some stops
+   are shared across lines), then spawn 2 trains per line (one at each
+   map-edge end, heading inward = "from out of town"). Publishes window.MARTA. */
 function initMarta(){
   if (!window.MARTA_DATA) throw new Error('MARTA_DATA missing');
   var D=window.MARTA_DATA, li, si;
@@ -534,6 +648,13 @@ function initMarta(){
     note:'MARTA rail: stations + rideable trains'}); }catch(e){}
   window.MARTA=MT;
 }
+/* updateMarta() — frame tick: steps all trains (despawning any that reached
+   the map edge), runs the spawn timer (every 8s, tops each line back up to
+   2 trains, alternating which map-edge end the new one comes from), updates
+   a riding player, and processes the pending board action. dt clamped to
+   60ms. Self-installed: wraps the global animate() once world deps
+   (THREE/scene/animate/MARTA_DATA/heightAt) exist; boot gives up after 60s
+   without breaking the game. */
 var _lastT=0;
 function updateMarta(){
   if (!MT.ready) return;
