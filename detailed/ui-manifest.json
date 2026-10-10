@@ -2,15 +2,15 @@
   "files": [
     {
       "name": "bird_drones.js",
-      "size": 9844,
-      "sha256": "33ba808b172e829b19cbfa2ecedd42eef33562b503e61ded5d1a7c26884d2245",
-      "hash": "fb42d5638380c7b9"
+      "size": 9907,
+      "sha256": "3c56c9d424c704f7ec60da992d9a52ca9011e20236e9378cf869e864b5e0a650",
+      "hash": "99756410276784ce"
     },
     {
       "name": "cityworkforce.js",
-      "size": 28885,
-      "sha256": "fb84d2af364b582f123ddda33d0d447565119b3037f0f56d64cbb58a8ab25df0",
-      "hash": "b9d40b9415c4a059"
+      "size": 29030,
+      "sha256": "37e947b929b456797bc1b8ec2fd5a8016c5c9ac1c8c0066d865d8b5789c808bb",
+      "hash": "1586f7adf419e09f"
     },
     {
       "name": "clubs_diners.js",
@@ -20,9 +20,9 @@
     },
     {
       "name": "codeenforce_system.js",
-      "size": 64532,
-      "sha256": "e6ebcc69152aaf06a7ad153d291d5651c0fce91e696a1a3f07cb9ce5e57438cd",
-      "hash": "5f1b6637d383aa27"
+      "size": 65398,
+      "sha256": "81a2fbf03e14fa18418197058e79a39e25edcf3057a4219a674aaff1f35e779b",
+      "hash": "aa5301da0f35ecf4"
     },
     {
       "name": "daycycle.js",
@@ -44,9 +44,9 @@
     },
     {
       "name": "helicopter_system.js",
-      "size": 33463,
-      "sha256": "ef3e48c8323e8c90116c5770e041b7e8713e8a231f5af6d62f47839a55bb4d92",
-      "hash": "96bea2c3e50f3274"
+      "size": 34431,
+      "sha256": "379a53eac37b910ab5df15dcf3dba557de3d049df6a2a3188076c89cba02372f",
+      "hash": "082f73d697757fbc"
     },
     {
       "name": "hotreload.js",
@@ -75,9 +75,9 @@
     },
     {
       "name": "infracrew_system.js",
-      "size": 34489,
-      "sha256": "9f7655d55242c19956386eaf4449cd72b67885c29c05df1e21649fbe59afb68d",
-      "hash": "35e5f79eaca8add8"
+      "size": 35132,
+      "sha256": "0a7d102cfa279e15e5653e3fe22fc442ba0f29e373d0dcf0be425d212b7b14a4",
+      "hash": "0dbab9a5adbfa9d0"
     },
     {
       "name": "marriott.js",
@@ -136,9 +136,9 @@
     },
     {
       "name": "roadcrew_system.js",
-      "size": 54373,
-      "sha256": "c299003ec754b06b8174feff5ff2669a92107d3f190c4e0d189865ed22d409dc",
-      "hash": "714af2dc18341553"
+      "size": 55453,
+      "sha256": "9a2ec4e131bf6e1e4d0dd49b823d14f892ba52052cb16f5737f400d0676e5941",
+      "hash": "f8ccbceb3dbace50"
     },
     {
       "name": "roadfix.js",
@@ -196,9 +196,9 @@
     },
     {
       "name": "surveyfleet_system.js",
-      "size": 59864,
-      "sha256": "533e94adf8dd7d420f0772987bc15ed95fdd74c32b37475205eee047727260b0",
-      "hash": "b5d238c7d3355164"
+      "size": 59877,
+      "sha256": "8fca2839730245310519dc3c5fb0532119c92edfa76702067ce2660d99cb0ccc",
+      "hash": "56657d163b8dafcc"
     },
     {
       "name": "terrainfix.js",
@@ -221,9 +221,9 @@
     },
     {
       "name": "veteran_crew.js",
-      "size": 28387,
-      "sha256": "12e2a66d00b254d5868b79f9d19147094b84917cce8b35031d9d9f5326f11824",
-      "hash": "4c365ba09f20509b"
+      "size": 28697,
+      "sha256": "e9a3b315ca854ee4bc1b7a865fe2f967e0c40db980bd4467c86825cc9357b6af",
+      "hash": "3f8ac628616bc462"
     },
     {
       "name": "workerhousing.js",
@@ -245,11 +245,11 @@
     },
     {
       "name": "priority_dispatch.js",
-      "size": 12963,
-      "sha256": "945592eebccb15758ec88236b7ecdd9104f8c8f50e5e474ab62dc91fa266e1aa",
-      "hash": "905bb285e31ad1e5"
+      "size": 13047,
+      "sha256": "174682917a80d3af88741b0c8fdc45fa3f8e0d433820b1d27301c7506e3ee6b7",
+      "hash": "1b55483e40cdd59b"
     }
   ],
-  "ui_version": "2026.10.09.85",
+  "ui_version": "2026.10.09.86",
   "version": "1.13.0"
 }
