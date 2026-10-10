@@ -5945,14 +5945,22 @@ function __tryStartGame(){
   try{
     var l=document.getElementById('loader');
     if(!l || l.style.display==='none') return false;  // already started
-    // v1.13.1: Don't block on asset loading — start even if some failed.
-    // The game handles missing assets gracefully.
     l.style.display='none';
     try{ musicStartOnce(); }catch(e){}
     try{ animate(); }catch(e){}
     return true;
   }catch(e){ return false; }
 }
+// v1.13.2: Auto-start the game when assets are ready — no click required.
+// The click handlers remain as backup.
+function __autoStart(){
+  try{
+    var need=window.__loadOrder.length, have=Object.keys(window.__loadDone||{}).length;
+    if(have>=need) __tryStartGame();
+    else setTimeout(__autoStart, 500);
+  }catch(e){ setTimeout(__autoStart, 1000); }
+}
+setTimeout(__autoStart, 1000);
 document.addEventListener('click', function(e){ __tryStartGame(); });
 document.addEventListener('touchend', function(e){ __tryStartGame(); });
 </script>
