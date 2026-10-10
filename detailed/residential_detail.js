@@ -64,6 +64,8 @@ try{
   }
 
   /* ---------- re-derive kept placements (same protocol as osmBuildings) ---- */
+  /* True when (x,z) has at least `need` units of clearance to the nearest
+     road edge — the same safety test the main osmBuildings IIFE used. */
   function bldgClear(x,z,need){
     var d=1e9;
     try{ d=distToRoadEdge(x,z); }catch(e){}
@@ -92,10 +94,15 @@ try{
       carportRoofs=[], carportPosts=[], driveways=[], aptDoors=[], aptWins=[],
       balconies=[], balcRails=[], stairs=[], lots=[], lotLines=[], walks=[];
 
+  /* Deterministic 0..1 hash of the building index (mulberry32 with a
+     Knuth multiplier) — used so detail choices (door color, porch,
+     garage/carport/driveway split) are stable across builds. */
   function hash01(n){ var f=mulberry32((n*2654435761)|0); return f(); }
 
   // local (lx,lz) -> world, given building center (bx,bz) and facing yaw
   // (local +z faces the road)
+  /* Local->world transform for building-relative detail placement: rotates
+     local (lx,lz) by yaw so local +z faces the road. */
   function l2w(bx,bz,yaw,lx,lz){
     var c=Math.cos(yaw), s=Math.sin(yaw);
     return [bx+lx*c+lz*s, bz-lx*s+lz*c];
@@ -109,7 +116,7 @@ try{
   for (var k=0;k<kept.length;k++){
     var kb=kept[k];
     if (kb[5]!==0) continue;                        // houses only here
-    if (HX!==null && Math.hypot(kb[0]-HX,kb[1]-HZ)<16){ stats.heroSkipped++; continue; } // hero house has own detail
+    if (HX!==null && Math.hypot(kb[0]-HX,kb[1]-HZ)<16){ stats.heroSkipped++; continue; } // hero house has own detail (built by the main game)
     var bx=kb[0], bz=kb[1], bw=kb[2], bd=kb[3], bh=Math.max(2.5,kb[4]);
     var ri=roadInfo(bx,bz);
     if (ri.dist>1e8) continue;
@@ -216,7 +223,7 @@ try{
     var ab=kept[k2];
     if (ab[5]!==2) continue;
     var ax=ab[0], az=ab[1], aw=ab[2], ad=ab[3], ah=Math.max(2.5,ab[4]);
-    if (ah>35 || Math.max(aw,ad)>60) continue;      // towers: skip unit detail
+    if (ah>35 || Math.max(aw,ad)>60) continue;      // towers: skip unit detail (doors/windows/balconies don't scale to towers)
     var ri2=roadInfo(ax,az);
     if (ri2.dist>1e8) continue;
     var yaw2=Math.atan2(ri2.dx,ri2.dz);
@@ -307,6 +314,9 @@ try{
   }
 
   /* ---------- build InstancedMeshes (one per detail type) ---------- */
+  /* One InstancedMesh per detail type: unit box geometry (base at y=0 via
+     translate) instanced per collected op {x,y,z,yaw,sx,sy,sz,c}, with
+     per-instance color. frustumCulled=false because instances span the map. */
   var meshSpecs=[
     [doors,'doors'],[wins,'wins'],[porchSlabs,'porchSlabs'],[porchPosts,'porchPosts'],
     [garages,'garages'],[garageDoors,'garageDoors'],
@@ -342,6 +352,10 @@ try{
   });
 
   /* ---------- post-placement audit: nothing new on a road ---------- */
+  /* Standing QA gate (in this module's scope): re-check every garage,
+     carport, lot, stair, and driveway against road clearance and count
+     violations in the Report. Placement is never deleted — violations are
+     flagged for review. */
   try{
     var checkLists=[['garage',garages,4],['carport',carportRoofs,4],
       ['lot',lots,8],['stair',stairs,3],['driveway',driveways,2]];
