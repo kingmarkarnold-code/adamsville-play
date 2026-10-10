@@ -1199,7 +1199,7 @@ function initRoadCrew(){
   try{
     if (typeof animate==='function' && !animate.__roadcrewWrap){
       var orig=animate;
-      var wrapped=function(){ orig(); updateRoadCrew(0.016); };
+      var wrapped=function(){ orig(); if(!window.__npcPaused) updateRoadCrew(0.016); };
       wrapped.__roadcrewWrap=true;
       animate=wrapped;
     }
