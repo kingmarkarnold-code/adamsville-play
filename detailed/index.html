@@ -3400,7 +3400,7 @@ function groundRefY(x,z){
   var t=terrainMeshY(x,z);
   if (t<-1e8){ try{ t=heightAt(x,z); }catch(e){ t=0; } }
   var r=roadSurfaceY(x,z);
-  return (r!==null&&r>t)?r:t;}
+  return (r!==null&&r>t)?r:t;
 }
 
 /* ================= WATER ================= */
@@ -3503,6 +3503,11 @@ function waterLevelAt(x,z){
    (parabolic profile, 0 at the shoreline); the creek is uniformly shallow. */
 var WADE_LIMIT=1.2;   // van fords water up to 1.2u deep (~1/3 of van height)
 var LAKE_MAXD=9, POND_MAXD=5, CREEK_DEPTH=0.8;
+/* SWIM_DEPTH (Joshua 2026-10-10): player only enters the swimming state in
+   DEEP water. Below this depth (streams, puddles, lake shallows) he just
+   wades through on foot — no swim animation, no float. Threshold is just
+   above waist height for the 6'1" (1.85u) player. */
+var SWIM_DEPTH=1.1;
 function waterDepthAt(x,z){
   var best=0;
   for (var i=0;i<WATER.length;i++){
@@ -5664,7 +5669,7 @@ function exitCar(fromWater){
   }
   player.yaw=car.yaw; player.mesh.rotation.y=player.yaw;  // face the car's heading
   player.mesh.visible=true;                               // v0.3: he was invisible after exit
-  player.swimming=!!fromWater || inWater(player.x,player.z);
+  player.swimming=!!fromWater || (inWater(player.x,player.z) && waterDepthAt(player.x,player.z)>=SWIM_DEPTH); // shallow water: wade, don't swim (Joshua 2026-10-10)
   setDrivingUI(false); updateDamageHUD();
   // snap the camera behind him immediately (no lerp-only drift)
   var gy=player.swimming ? (waterLevelAt(player.x,player.z)||heightAt(player.x,player.z)) : heightAt(player.x,player.z);
@@ -6768,8 +6773,9 @@ function updatePlayer(dt){
       }
     }
   }catch(e){}
-  // water: float in place until the joystick moves, then swim (v0.3)
-  var inW=!player.inside && inWater(player.x, player.z);
+  // water: deep water triggers swimming; shallow water (streams, puddles, lake
+  // shallows below SWIM_DEPTH) is just waded through on foot (Joshua 2026-10-10)
+  var inW=!player.inside && inWater(player.x, player.z) && waterDepthAt(player.x, player.z)>=SWIM_DEPTH;
   if (inW && !player.swimming) player.swimming=true;
   if (!inW && player.swimming) player.swimming=false;  // climbed out at the shore
   // v0.8: mode tag tracks the live state — swimming shows SWIMMING, not ON FOOT
