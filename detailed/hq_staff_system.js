@@ -724,7 +724,8 @@ function wrapAnimate(){
   try {
     if (typeof animate === 'function' && !animate.__hqstaffWrap){
       var orig = animate;
-      var wrapped = function(){ orig(); if(!window.__npcPaused) updateHQStaff(0.016); };
+      /* v1.22 LAUNCHER (Joshua 2026-10-10): skip when HQ staff disabled in launch options. */
+      var wrapped = function(){ orig(); if(!window.__npcPaused && (!window.__launchOpts || window.__launchOpts.hqStaff!==false)) updateHQStaff(0.016); };
       wrapped.__hqstaffWrap = true;
       animate = wrapped;
     }
