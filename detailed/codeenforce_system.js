@@ -1252,7 +1252,9 @@ function updateCodeEnforce(dt){
     dt=Math.min(0.05, dt||0.016);
     CE.tick++; CE.time+=dt;
     var i;
-    for (i=0;i<CE.patrols.length;i++) updatePatrol(CE.patrols[i], dt);
+    // v1.15 DISTANCE CULLING (Joshua 2026-10-10)
+    var _zu=window.ZONEUNLOCK;
+    for (i=0;i<CE.patrols.length;i++){ var _p=CE.patrols[i]; if(_zu&&_p&&_zu.shouldCull(_p.x,_p.z)) continue; updatePatrol(_p, dt); }
     updateJobs(dt);
     updateSlides(dt);
     CE.repT-=dt;
