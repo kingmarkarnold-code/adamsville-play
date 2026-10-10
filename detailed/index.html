@@ -6238,6 +6238,9 @@ function drawMinimap(dt){
       mm.fillText((Math.round(mmZoom*10)/10)+'x', R*2-10, 18);
     }
   }catch(e){}
+  // v1.15 ZONE OVERLAY (Joshua 2026-10-10): locked zones shown darkened
+  // with lock icons on the minimap. Unlocked zones render normally.
+  try{ if(window.ZONEUNLOCK) window.ZONEUNLOCK.drawZoneOverlay(mm, toMap, px, pz, range, R); }catch(e){}
   // car markers (all vehicles; wrecks stay visible)
   cars.forEach(function(c){
     if (c.sunk) return;
@@ -7149,6 +7152,9 @@ function animate(){
   updateSmoke(dt);
   updateStreetName(dt);
   drawMinimap(dt);
+  // v1.15 ZONE UNLOCK + CULLING (Joshua 2026-10-10): track player for zone
+  // exploration, enforce locked-zone boundaries, update culling state.
+  try{ if(window.ZONEUNLOCK) window.ZONEUNLOCK.trackPlayer(dt); }catch(e){}
   try{ if(typeof updateNPCs!=='undefined') updateNPCs(dt, player.mesh.position); }catch(e){}
   try{ resolveNPCVehicleCollisions(); }catch(e){}   // v1.18: no vehicle passes through another — Period (Joshua)
   renderer.render(scene, camera);
@@ -7400,6 +7406,7 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <script src="priority_dispatch.js"></script>
 <script src="stayawake.js"></script>
 <script src="agentdock.js"></script>
+<script src="zoneunlock.js"></script>
 <script src="hotreload.js"></script>
 <!-- ===== INLINE SCRIPT BLOCK 3: final placement audit (v2.0 - Joshua's
      automatic check) ===== Runs ONCE, after EVERY building system has loaded
