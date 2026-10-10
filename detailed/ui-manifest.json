@@ -14,9 +14,9 @@
     },
     {
       "name": "codeenforce_system.js",
-      "size": 61902,
-      "sha256": "092357f93ac225018144ee2954962c5000468c8935004b752df8f54eb2791f7c",
-      "hash": "1730b55d72c5d571"
+      "size": 64170,
+      "sha256": "92c537e3f179627cdad69521d1590ef73a1c4425122aed541cbb35c61a532f77",
+      "hash": "245fd990d69580d9"
     },
     {
       "name": "face_platform.js",
@@ -32,9 +32,9 @@
     },
     {
       "name": "index.html",
-      "size": 654050,
-      "sha256": "9161befc370750a07e266a7f096b96b298de4bb5ee69cebcb2e08da0ecac60a1",
-      "hash": "6618e1428a854f21"
+      "size": 654090,
+      "sha256": "03685c581bf67f7c275ba5b35874a3f48dfb45192d4bc27bee8b4927ac225641",
+      "hash": "4099191f8c826fb5"
     },
     {
       "name": "marriott.js",
@@ -98,9 +98,9 @@
     },
     {
       "name": "roadcrew_system.js",
-      "size": 50905,
-      "sha256": "145f03ee8fb0d531452650af68fd482f0a2d46145bb0973b2aa10525f4bfbe8b",
-      "hash": "afb6e84fcfe8e439"
+      "size": 53236,
+      "sha256": "75323916e5fd48b565a796f06d5a6279a29444b517407f24edce0c35aaa1f8aa",
+      "hash": "a7e92360952da5d3"
     },
     {
       "name": "school_plaza.js",
@@ -164,17 +164,23 @@
     },
     {
       "name": "infracrew_system.js",
-      "size": 31158,
-      "sha256": "2a9266e40607f137a0cb638232da92f2b7fd5626268f07723d04bd4bfe0280e0",
-      "hash": "cecba572ea84801f"
+      "size": 33350,
+      "sha256": "aab6ff9f4f50612bcdec668f4657b8fa6bb22c32c23230adaa50da8c0a7eb55a",
+      "hash": "718c79e063568f05"
     },
     {
       "name": "roadfix.js",
       "size": 24236,
       "sha256": "341172c854b4622f35301bf36bffe9f6ddbf2ae14ddea5520afbec74fe71c275",
       "hash": "3bdb270f6ffa21a3"
+    },
+    {
+      "name": "veteran_crew.js",
+      "size": 28387,
+      "sha256": "12e2a66d00b254d5868b79f9d19147094b84917cce8b35031d9d9f5326f11824",
+      "hash": "4c365ba09f20509b"
     }
   ],
-  "ui_version": "2026.10.09.61",
+  "ui_version": "2026.10.09.62",
   "version": "1.13.0"
 }
