@@ -1290,7 +1290,10 @@ function initCodeEnforce(){
   if (!CE.log.length) clog('Code enforcement online — officers on 24/7 patrol, construction crews standing by.');
   CE.ready=true;
   try{ Report.setSys('codeenforce', sysReport()); }catch(e){}
-  window.CODEENFORCE={defects:DEFECTS, log:CE.log, toggle:togglePanel};
+  window.CODEENFORCE={defects:DEFECTS, log:CE.log, toggle:togglePanel,
+    patrols:CE.patrols,  /* v1.19 CITYWORKFORCE (2026-10-09): expose patrol units
+                            so the municipal workforce roster can assign named
+                            officer identities. */};
   try{
     if (typeof animate==='function' && !animate.__codeenforceWrap){
       var orig=animate;
