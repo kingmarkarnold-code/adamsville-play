@@ -1070,7 +1070,14 @@ function updateRoadCrew(dt){
     dt=Math.min(0.05, dt||0.016);
     RC.tick++;
     var i;
-    for (i=0;i<RC.patrols.length;i++) updatePatrol(RC.patrols[i], dt);
+    // v1.15 DISTANCE CULLING (Joshua 2026-10-10): skip patrol AI beyond
+    // cull distance. Patrols freeze until player approaches.
+    var _zu=window.ZONEUNLOCK;
+    for (i=0;i<RC.patrols.length;i++){
+      var _p=RC.patrols[i];
+      if(_zu && _p && _zu.shouldCull(_p.x,_p.z)) continue;
+      updatePatrol(_p, dt);
+    }
     updateJobs(dt);
     fallbackCheck(dt);
     RC.repT-=dt;
