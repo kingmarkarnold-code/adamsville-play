@@ -808,7 +808,7 @@ function initInfraCrew(){
   try{
     if (typeof animate==='function' && !animate.__infracrewWrap){
       var orig=animate;
-      var wrapped=function(){ orig(); updateInfraCrew(0.016); };
+      var wrapped=function(){ orig(); if(!window.__npcPaused) updateInfraCrew(0.016); };
       wrapped.__infracrewWrap=true;
       animate=wrapped;
     }
