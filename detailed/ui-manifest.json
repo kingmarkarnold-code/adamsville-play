@@ -38,9 +38,9 @@
     },
     {
       "name": "marta_bus_system.js",
-      "size": 20576,
-      "sha256": "182138129a122eb48e3397e53ac0886765029f43c58ec28f311e83d846efa169",
-      "hash": "ae95ec40a1c69205"
+      "size": 27959,
+      "sha256": "8f63a2cffdf0dab9a1641a1057c9f53924fe8416b33d19317f87f799ade36364",
+      "hash": "ca01b006120ca398"
     },
     {
       "name": "marta_data.js",
@@ -140,11 +140,11 @@
     },
     {
       "name": "traffic_system.js",
-      "size": 39100,
-      "sha256": "a9101b3468d9b3f4838ebadc2ff25c62366790df84c429c117decee822a37360",
-      "hash": "fadea3d74d0c147d"
+      "size": 42302,
+      "sha256": "889924aad4cd32c55441fa778252bf8825554e624ef8c561f522b6249f6fb89f",
+      "hash": "ae4987b12645235a"
     }
   ],
-  "ui_version": "2026.10.09.52",
+  "ui_version": "2026.10.09.53",
   "version": "1.13.0"
 }
