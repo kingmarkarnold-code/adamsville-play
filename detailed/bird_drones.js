@@ -1,52 +1,60 @@
 /* ============================================================================
-   BIRD DRONES v1.0 (2026-10-09)
-   Joshua's directive: the 100 inspection drones must be disguised as BIRDS.
-   To anyone watching, they are just birds flying over the city — crows,
-   hawks, pigeons, cardinals, blue jays, robins. Under the fiction they are
-   still the inspection fleet: each bird patrols one sector of the 10x10
-   city grid (800x1200u sectors over the 8000x12000 world).
+   AIRPLANE DRONES v2.0 (2026-10-10)
+   Joshua's directive: REPLACE the bird drones — 500 flapping birds were the
+   heaviest performance load in the game and stalled his phone. New tactic:
+   miniature airplane drones (like RC planes). Simpler models, no wing-flap
+   animation, far fewer units.
 
-   Follow-up directive: randomize species and colors — NOT all the same bird.
+   v1.x history: inspection drones disguised as birds (crows, hawks, pigeons,
+   cardinals, blue jays, robins) with per-species sinusoidal wing-flap.
+   v1.1 5x expansion took the fleet 100 -> 500. That is now reversed.
+
+   v2.0 AIRPLANES:
+   - 50 miniature airplane drones (down from 500 birds).
+   - Each plane: fuselage + fixed main wing + horizontal stabilizer +
+     vertical tail fin, all merged into ONE geometry = 1 InstancedMesh.
+   - Propeller: simple 2-blade cross = 1 more InstancedMesh (spins cheaply).
+   - Total: 2 draw calls for the whole fleet (was 3 draw calls for birds,
+     plus 1500 matrix updates/frame for flap math — now 100/frame).
+   - NO wing-flap animation. Wings are static. The only per-frame math is
+     patrol position + orientation + prop spin.
+   - Same patrol/inspection behavior: elliptical patrol paths, banking into
+     turns, cruise altitude above terrain, distance culling.
+
+   Filename kept as bird_drones.js (index.html script tag + ui-manifest entry
+   unchanged). window.BIRD_DRONES is still exposed with a .birds array so
+   priority_dispatch.js keeps working untouched.
 
    Self-contained module. Zero edits to index.html logic required: this file
    boot-polls for (THREE, scene, player, animate), then wraps the global
-   animate() exactly like traffic_system.js does, so updateBirdDrones() runs
+   animate() exactly like traffic_system.js does, so updatePlaneDrones() runs
    every frame.
-
-   Performance: 3 InstancedMeshes (bodies / left wings / right wings) = 3 draw
-   calls for all 100 birds. 300 matrix updates per frame. frustumCulled=false
-   on all three (instances span the whole map; the default bounding sphere
-   would wrongly cull them).
 
    Depends on globals: THREE, scene, heightAt, mulberry32, Report (optional).
    ============================================================================ */
-(function birdDrones(){
+(function airplaneDrones(){
 'use strict';
 
-/* ---------- species table ----------
-   body/wing: plumage colors. size: overall scale multiplier.
-   flap: wingbeats per second. glide: fraction of time spent gliding with
-   wings held flat (hawks soar; pigeons almost never glide).
-   count: how many of the 500 birds are this species (sums to 500).
-   v1.1 CREW 5X (Joshua 2026-10-09): 5x birds (100 -> 500). */
-var BIRD_SPECIES=[
-  {name:'crow',     body:0x1b1b1b, wing:0x2a2a2a, size:1.25, flap:9,  glide:0.30, count:110,
-   note:'all-black, broad wings, slow rowing flap with glide breaks'},
-  {name:'pigeon',   body:0x8b8b98, wing:0x54545e, size:0.95, flap:13, glide:0.05, count:150,
-   note:'gray body, darker wingtips, fast constant flutter'},
-  {name:'hawk',     body:0x5e3d22, wing:0x4a3018, size:1.70, flap:5,  glide:0.85, count:30,
-   note:'red-tailed hawk: brown body, broad wings, mostly soaring'},
-  {name:'cardinal', body:0xc22424, wing:0x981818, size:0.85, flap:12, glide:0.10, count:80,
-   note:'bright red male northern cardinal'},
-  {name:'bluejay',  body:0xb9c2cc, wing:0x2b5fc4, size:0.90, flap:12, glide:0.10, count:70,
-   note:'blue wings/tail, pale gray body'},
-  {name:'robin',    body:0x8a5c34, wing:0x5e4028, size:0.85, flap:12, glide:0.10, count:60,
-   note:'rust-red breast, brown back'}
+/* ---------- configuration ----------
+   N_PLANES: fleet size. 50 is the sweet spot Joshua approved — enough for
+   visible coverage, cheap enough for a 3GB phone. Bump only if profiling
+   says the phone can take it. */
+var N_PLANES=50;
+
+/* Paint schemes for the fleet (fuselage color).
+   Miniature RC-plane look: bright, high-visibility colors. One material for
+   the whole airframe, so wings share the body color per instance — full
+   two-tone would need a second InstancedMesh (not worth a draw call). */
+var PAINT_SCHEMES=[
+  {body:0xd42a1e, note:'red'},
+  {body:0x1e5fd4, note:'blue'},
+  {body:0xf2c41e, note:'yellow'},
+  {body:0x2a9d3a, note:'green'},
+  {body:0xe06a1e, note:'orange'}
 ];
-var N_BIRDS=500;
 
 /* ---------- module state ---------- */
-var BD=null;           // state object once initialized
+var PD=null;           // state object once initialized
 var _lastT=0;          // internal clock for dt
 var _dummy=null, _m=new (typeof THREE!=='undefined'?THREE.Matrix4:Function)(),
     _q=new (typeof THREE!=='undefined'?THREE.Quaternion:Function)(),
@@ -54,137 +62,158 @@ var _dummy=null, _m=new (typeof THREE!=='undefined'?THREE.Matrix4:Function)(),
     _e=new (typeof THREE!=='undefined'?THREE.Euler:Function)(),
     _v=new (typeof THREE!=='undefined'?THREE.Vector3:Function)(),
     _s=new (typeof THREE!=='undefined'?THREE.Vector3:Function)(),
-    _wq=new (typeof THREE!=='undefined'?THREE.Quaternion:Function)(),
-    _wm=new (typeof THREE!=='undefined'?THREE.Matrix4:Function)();
+    _nose=new (typeof THREE!=='undefined'?THREE.Vector3:Function)();
 
-/* initBirdDrones() — builds the fleet.
-   Each bird gets: a species (deterministic via seeded rng so the mix is
-   stable across loads), a home sector of the 10x10 grid, an elliptical
-   patrol path inside it, a cruise altitude above the local terrain, and
-   flight parameters tuned to its species. */
-function initBirdDrones(){
-  var rng=mulberry32(0xB1BD);   // fixed seed: same birds every load
-  // species roster: expand counts into a 100-entry list, then shuffle
-  var roster=[];
-  BIRD_SPECIES.forEach(function(sp,si){
-    for(var k=0;k<sp.count;k++) roster.push(si);
+/* mergeBoxParts(parts) — build ONE BufferGeometry out of several boxes.
+   Each part: {w,h,d, x,y,z, rx,ry,rz} (size, offset, optional rotation).
+   We convert each BoxGeometry to non-indexed and concatenate the position /
+   normal / uv arrays manually, so this works without BufferGeometryUtils.
+   Returns a single merged BufferGeometry. */
+function mergeBoxParts(parts){
+  var pos=[], nor=[], uv=[];
+  parts.forEach(function(p){
+    var g=new THREE.BoxGeometry(p.w, p.h, p.d);
+    if(p.rx||p.ry||p.rz){
+      _e.set(p.rx||0, p.ry||0, p.rz||0); _q.setFromEuler(_e);
+      g.applyQuaternion(_q);
+    }
+    g.translate(p.x||0, p.y||0, p.z||0);
+    var ng=g.toNonIndexed();
+    var pa=ng.getAttribute('position').array,
+        na=ng.getAttribute('normal').array,
+        ua=ng.getAttribute('uv').array;
+    for(var i=0;i<pa.length;i++) pos.push(pa[i]);
+    for(var j=0;j<na.length;j++) nor.push(na[j]);
+    for(var k=0;k<ua.length;k++) uv.push(ua[k]);
+    g.dispose(); ng.dispose();
   });
-  for(var i=roster.length-1;i>0;i--){
-    var j=Math.floor(rng()*(i+1)), t=roster[i]; roster[i]=roster[j]; roster[j]=t;
-  }
-  // geometries: body = elongated sphere; wings = planes pivoted at the body
-  var bodyGeo=new THREE.SphereGeometry(0.55, 8, 6);
-  var wingRGeo=new THREE.PlaneGeometry(2.4, 1.0); wingRGeo.translate(1.2, 0, 0);
-  var wingLGeo=new THREE.PlaneGeometry(2.4, 1.0); wingLGeo.translate(-1.2, 0, 0);
-  var bodyMat=new THREE.MeshLambertMaterial({color:0xffffff});
-  var wingMat=new THREE.MeshLambertMaterial({color:0xffffff, side:THREE.DoubleSide});
-  var bodies=new THREE.InstancedMesh(bodyGeo, bodyMat, N_BIRDS);
-  var wingR=new THREE.InstancedMesh(wingRGeo, wingMat, N_BIRDS);
-  var wingL=new THREE.InstancedMesh(wingLGeo, wingMat, N_BIRDS);
-  [bodies, wingR, wingL].forEach(function(m){
+  var out=new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+  out.setAttribute('normal',   new THREE.Float32BufferAttribute(nor,3));
+  out.setAttribute('uv',       new THREE.Float32BufferAttribute(uv,2));
+  return out;
+}
+
+/* initPlaneDrones() — builds the fleet.
+   Each plane gets: a paint scheme (deterministic via seeded rng so the mix
+   is stable across loads), a home sector of a 10x5 grid (800x2400u sectors
+   over the 8000x12000 world = 50 sectors, one plane each), an elliptical
+   patrol path inside it, a cruise altitude above the local terrain, and
+   flight parameters. */
+function initPlaneDrones(){
+  var rng=mulberry32(0xA1B5);   // fixed seed: same fleet every load
+  // airframe geometry: fuselage + main wing + tailplane + fin, merged.
+  // Forward = +Z (matches the yaw math: yaw=atan2(vx,vz) faces +Z along
+  // the velocity vector). Units are game units; the plane is ~4 long.
+  var airframeGeo=mergeBoxParts([
+    {w:0.7, h:0.7, d:4.0, x:0, y:0,    z:0},     // fuselage
+    {w:6.0, h:0.12,d:1.1, x:0, y:0.15, z:0.3},   // main wing (fixed, no flap)
+    {w:2.4, h:0.1, d:0.7, x:0, y:0.12, z:-1.7},  // horizontal stabilizer
+    {w:0.1, h:1.0, d:0.8, x:0, y:0.55, z:-1.7}   // vertical tail fin
+  ]);
+  // propeller: 2-blade cross at the nose (z=+2.05), spins about the Z axis
+  var propGeo=mergeBoxParts([
+    {w:0.16, h:2.4, d:0.08, x:0, y:0, z:0},
+    {w:2.4, h:0.16, d:0.08, x:0, y:0, z:0}
+  ]);
+  var frameMat=new THREE.MeshLambertMaterial({color:0xffffff});
+  var propMat=new THREE.MeshLambertMaterial({color:0x2b2b2b});
+  var frames=new THREE.InstancedMesh(airframeGeo, frameMat, N_PLANES);
+  var props=new THREE.InstancedMesh(propGeo, propMat, N_PLANES);
+  [frames, props].forEach(function(m){
     m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     m.frustumCulled=false;   // instances cover the whole map
     scene.add(m);
   });
-  var birds=[];
-  for(var b=0;b<N_BIRDS;b++){
-    var sp=BIRD_SPECIES[roster[b]];
-    // home sector: bird b patrols sector (b%10, floor(b/10)) of the 10x10 grid
+  var birds=[];   // kept named "birds" — priority_dispatch.js reads BD.birds
+  for(var b=0;b<N_PLANES;b++){
+    var scheme=PAINT_SCHEMES[b%PAINT_SCHEMES.length];
+    // home sector: plane b patrols sector (b%10, floor(b/10)) of the 10x5 grid
     var col=b%10, row=Math.floor(b/10);
-    var scx=col*800+400, scz=row*1200+600;
+    var scx=col*800+400, scz=row*2400+1200;
     var gy=30; try{ gy=heightAt(scx, scz); }catch(e){}
     birds.push({
-      sp:sp, si:roster[b],
-      cx:scx+(rng()-0.5)*300, cz:scz+(rng()-0.5)*400,   // patrol center jitter
-      rx:150+rng()*220, rz:150+rng()*260,                // patrol ellipse radii
-      alt:gy+28+rng()*38,                               // cruise altitude above terrain
-      dir:rng()<0.5?1:-1,                               // clockwise / counter
-      spd:(sp.name==='hawk'?7+rng()*3:9+rng()*7),        // hawks soar slow
-      ph:rng()*Math.PI*2,                               // path phase
-      fp:rng()*Math.PI*2,                               // flap phase
-      bobA:1.5+rng()*2.5, bobR:0.5+rng()*0.8             // vertical bob
+      scheme:scheme,
+      cx:scx+(rng()-0.5)*300, cz:scz+(rng()-0.5)*600,   // patrol center jitter
+      rx:180+rng()*260, rz:220+rng()*340,                // patrol ellipse radii
+      alt:gy+42+rng()*55,                                // cruise altitude (higher than birds)
+      dir:rng()<0.5?1:-1,                                // clockwise / counter
+      spd:17+rng()*13,                                   // planes cruise faster than birds
+      ph:rng()*Math.PI*2,                                // path phase
+      prop:rng()*Math.PI*2,                              // propeller phase
+      propSpd:28+rng()*14,                               // propeller rad/sec
+      bobA:1.0+rng()*1.5, bobR:0.4+rng()*0.6             // gentle vertical bob
     });
-    var bc=new THREE.Color(sp.body), wc=new THREE.Color(sp.wing);
-    // slight per-bird tint variation so no two birds are identical
+    var bc=new THREE.Color(scheme.body);
+    // slight per-plane tint variation so no two planes are identical
     var tv=0.92+rng()*0.16;
-    bodies.setColorAt(b, bc.multiplyScalar(tv));
-    wingR.setColorAt(b, wc.clone().multiplyScalar(tv));
-    wingL.setColorAt(b, wc.clone().multiplyScalar(tv*0.96));
+    frames.setColorAt(b, bc.multiplyScalar(tv));
   }
-  bodies.instanceColor.needsUpdate=true;
-  wingR.instanceColor.needsUpdate=true;
-  wingL.instanceColor.needsUpdate=true;
+  frames.instanceColor.needsUpdate=true;
   _dummy=new THREE.Object3D();
-  BD={birds:birds, bodies:bodies, wingR:wingR, wingL:wingL, t:0};
+  PD={birds:birds, frames:frames, props:props, t:0};
   _lastT=performance.now()/1000;
   // hook the frame loop (same wrap pattern as traffic_system.js)
   try{
-    if(typeof animate==='function' && !animate.__birdWrap){
+    if(typeof animate==='function' && !animate.__planeWrap){
       var orig=animate;
-      var wrapped=function(){ orig(); updateBirdDrones(); };
-      wrapped.__birdWrap=true;
+      var wrapped=function(){ orig(); updatePlaneDrones(); };
+      wrapped.__planeWrap=true;
       animate=wrapped;
     }
   }catch(e){}
   try{
-    var mix={}; BIRD_SPECIES.forEach(function(sp){ mix[sp.name]=sp.count; });
-    if(typeof Report!=='undefined') Report.setSys('birds',
-      {status:'ok', version:'1.0', count:N_BIRDS, species:mix,
-       note:'inspection drones disguised as birds; one per city sector'});
+    if(typeof Report!=='undefined') Report.setSys('drones',
+      {status:'ok', version:'2.0', count:N_PLANES,
+       note:'miniature airplane inspection drones; one per city sector'});
   }catch(e){}
-  window.BIRD_DRONES=BD;   // expose only after a clean init
+  window.BIRD_DRONES=PD;   // keep legacy name: priority_dispatch.js reads this
+  window.PLANE_DRONES=PD;  // new canonical name
 }
 
-/* updateBirdDrones() — per-frame tick. Each bird flies its elliptical patrol,
-   banks into the turn, bobs gently, and flaps (or glides, per species).
-   Wing matrices are derived from the body matrix so wings stay attached. */
-function updateBirdDrones(){
-  if(!BD) return;
+/* updatePlaneDrones() — per-frame tick. Each plane flies its elliptical
+   patrol, banks into the turn, bobs gently. Wings are STATIC (no flap) —
+   the only per-plane work is one airframe matrix + one propeller matrix.
+   2 matrix composes x 50 planes = 100/frame (was 3 x 500 = 1500/frame). */
+function updatePlaneDrones(){
+  if(!PD) return;
   var now=performance.now()/1000;
   var dt=Math.min(0.05, now-_lastT); _lastT=now;
-  BD.t+=dt;
-  var T=BD.t, D=_dummy;
-  // v1.15 DISTANCE CULLING (Joshua 2026-10-10): skip matrix updates for
-  // birds beyond cull distance — they freeze in place until player nears.
-  // With 500 birds, this is the single biggest perf win on low-end phones.
-  var _zu = window.ZONEUNLOCK;
-  for(var i=0;i<BD.birds.length;i++){
-    var b=BD.birds[i], sp=b.sp;
+  PD.t+=dt;
+  var T=PD.t;
+  // DISTANCE CULLING (Joshua 2026-10-10): skip matrix updates for planes
+  // beyond cull distance — they freeze in place until the player nears.
+  var _zu=null; try{ _zu=window.ZONEUNLOCK; }catch(e){}
+  for(var i=0;i<PD.birds.length;i++){
+    var b=PD.birds[i];
     if(_zu && _zu.shouldCull(b.cx, b.cz)) continue;
-    var a=b.ph + T*b.dir*b.spd/Math.max(1,(b.rx+b.rz)/2);
+    var avgR=Math.max(1,(b.rx+b.rz)/2);
+    var a=b.ph + T*b.dir*b.spd/avgR;
     var px=b.cx+Math.cos(a)*b.rx, pz=b.cz+Math.sin(a)*b.rz;
-    var py=b.alt+Math.sin(T*b.bobR+b.fp)*b.bobA;
+    var py=b.alt+Math.sin(T*b.bobR+b.prop)*b.bobA;
     // velocity -> yaw (face travel direction), pitch, bank
     var vx=-Math.sin(a)*b.rx*b.dir, vz=Math.cos(a)*b.rz*b.dir;
     var yaw=Math.atan2(vx, vz);
-    var vy=Math.cos(T*b.bobR+b.fp)*b.bobA*b.bobR;
+    var vy=Math.cos(T*b.bobR+b.prop)*b.bobA*b.bobR;
     var pitch=Math.atan2(vy, Math.hypot(vx,vz))*0.6;
-    var bank=-b.dir*0.38;   // bank into the turn
-    // flap: sinusoidal wingbeats; gliders hold wings ~flat between bursts
-    var cyc=(T+b.fp)%6;
-    var gliding=cyc < 6*sp.glide;
-    var flapAmp=gliding?0.06:0.85;
-    var flap=Math.sin(T*sp.flap*Math.PI*2+b.fp*7)*flapAmp;
-    // body matrix
+    var bank=-b.dir*0.35;   // bank into the turn
+    // airframe matrix (one compose per plane)
     _e.set(pitch, yaw, bank, 'YXZ'); _q.setFromEuler(_e);
-    _v.set(px, py, pz); _s.set(0.75*sp.size, 0.62*sp.size, 1.55*sp.size);
+    _v.set(px, py, pz); _s.set(1, 1, 1);
     _m.compose(_v, _q, _s);
-    BD.bodies.setMatrixAt(i, _m);
-    // wings: body orientation * flap rotation about the forward (Z) axis
-    _wq.copy(_q);
-    // right wing (+X side)
-    _e.set(0, 0, flap); _q2.setFromEuler(_e);
-    _wm.compose(_v, _wq.multiply(_q2), _s.set(sp.size, sp.size, sp.size));
-    BD.wingR.setMatrixAt(i, _wm);
-    // left wing (-X side): mirrored flap
-    _wq.copy(_q);
-    _e.set(0, 0, -flap); _q2.setFromEuler(_e);
-    _wm.compose(_v, _wq.multiply(_q2), _s.set(sp.size, sp.size, sp.size));
-    BD.wingL.setMatrixAt(i, _wm);
+    PD.frames.setMatrixAt(i, _m);
+    // propeller: nose offset in plane-local space, spun about the forward axis
+    b.prop+=dt*b.propSpd;
+    _nose.set(0, 0, 2.05).applyQuaternion(_q);  // nose world offset
+    _e.set(0, 0, b.prop); _q2.setFromEuler(_e);  // spin about local Z
+    _q2.premultiply(_q);                          // plane orientation * spin
+    _v.set(px+_nose.x, py+_nose.y, pz+_nose.z);
+    _s.set(1, 1, 1);
+    _m.compose(_v, _q2, _s);
+    PD.props.setMatrixAt(i, _m);
   }
-  BD.bodies.instanceMatrix.needsUpdate=true;
-  BD.wingR.instanceMatrix.needsUpdate=true;
-  BD.wingL.instanceMatrix.needsUpdate=true;
+  PD.frames.instanceMatrix.needsUpdate=true;
+  PD.props.instanceMatrix.needsUpdate=true;
 }
 
 /* Boot: wait until the main script has built the world (scene, player,
@@ -199,13 +228,13 @@ var bootTimer=setInterval(function(){
            typeof heightAt==='function');
   }catch(e){ ready=false; }
   if(ready){
-    try{ initBirdDrones(); }catch(e){
-      try{ if(typeof Report!=='undefined') Report.noteError('birds','init failed',String(e&&e.message||e)); }catch(x){}
+    try{ initPlaneDrones(); }catch(e){
+      try{ if(typeof Report!=='undefined') Report.noteError('drones','init failed',String(e&&e.message||e)); }catch(x){}
     }
     clearInterval(bootTimer);
   }else if(bootTries>240){   // 60s — give up quietly, never break the game
     clearInterval(bootTimer);
-    try{ if(typeof Report!=='undefined') Report.noteError('birds','boot-timeout','deps never ready'); }catch(e){}
+    try{ if(typeof Report!=='undefined') Report.noteError('drones','boot-timeout','deps never ready'); }catch(e){}
   }
 }, 250);
 
