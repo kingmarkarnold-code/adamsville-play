@@ -272,6 +272,18 @@ function recoverStuckUnit(u, opts){
     ' — 80s of movement with no progress.'+diagMsg+
     ' Report filed, requesting reassignment.');
   try{ opts.toast('⚠️ '+opts.unitLabel+' was stuck in a loop — reassigning patrol'); }catch(e){}
+  /* v1.15 (StuckDiag): file the full data-cause workup in the PERSISTENT
+     registry (v1.14's hotspots are memory-only — this one survives restarts,
+     so the system LEARNS). Routing avoidance below reads this registry. */
+  try{
+    if (typeof StuckDiag!=='undefined' && StuckDiag.suspectCause){
+      var _sd=StuckDiag.suspectCause(x, z, u);
+      if (_sd.flagged)
+        opts.log('🚩 StuckDiag: '+_sd.count+' stuck events near '+where+
+          ' — flagged for DATA REPAIR ('+_sd.causeLabel+'). '+
+          'Routing will avoid this spot on its own.');
+    }
+  }catch(e){}
   if (u.seg && opts.blacklist){
     if (opts.blacklist.indexOf(u.seg)<0) opts.blacklist.push(u.seg);
     while (opts.blacklist.length>8) opts.blacklist.shift();
@@ -287,6 +299,12 @@ function recoverStuckUnit(u, opts){
     if (opts.blacklist && opts.blacklist.indexOf(cand.seg)>=0) continue;
     var p=cand.seg.pts[Math.max(0,Math.min(cand.idx,cand.seg.pts.length-1))];
     if (Math.hypot(p[0]-x,p[1]-z)<REASSIGN_MIN_D) continue;
+    /* v1.15 (StuckDiag) self-prevention: don't reassign onto a flagged bad
+       spot — the registry learned this road data is bad, so steer clear. */
+    try{
+      if (typeof StuckDiag!=='undefined' && StuckDiag.isBadSpot &&
+          StuckDiag.isBadSpot(p[0],p[1])) continue;
+    }catch(e){}
     nr=cand;
   }
   if (!nr){
