@@ -1,0 +1,27 @@
+{
+  "id": "unioncity",
+  "name": "Union City",
+  "bounds": {
+    "xMin": -200,
+    "xMax": 2147,
+    "zMin": 4218,
+    "zMax": 12200
+  },
+  "original_bounds": {
+    "xMin": -200,
+    "xMax": 2147,
+    "zMin": 4218,
+    "zMax": 12200
+  },
+  "scale": 1.0,
+  "is_start": false,
+  "counts": {
+    "roads": 1290,
+    "buildings": 2756,
+    "pins": 1843,
+    "lifts": 2934,
+    "signs": 3
+  },
+  "generated": "2026-10-10",
+  "generator": "split-zones.py"
+}
