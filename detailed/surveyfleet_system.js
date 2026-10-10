@@ -1195,9 +1195,12 @@ function updateSurveyFleet(dt){
   if (!SF.ready) return;
   try{
     SF.time+=dt; SF.tick++;
+    // v1.15 DISTANCE CULLING (Joshua 2026-10-10): skip cars beyond cull distance
+    var _zu=window.ZONEUNLOCK;
     for (var i=0;i<SF.cars.length;i++){
       var car=SF.cars[i];
       if (car.state==='idle') continue;
+      if(_zu && _zu.shouldCull(car.x,car.z)) continue;
       /* v1.18 WAIT-FOR-FIX (Joshua's directive): a car whose wait ended
          EXTERNALLY (crew called StuckDiag.markFixed while we were parked)
          has waitingForFix already cleared — run the resume path so the
