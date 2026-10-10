@@ -157,7 +157,8 @@ function initPlaneDrones(){
   try{
     if(typeof animate==='function' && !animate.__planeWrap){
       var orig=animate;
-      var wrapped=function(){ orig(); updatePlaneDrones(); };
+      /* v1.22 LAUNCHER (Joshua 2026-10-10): skip when drones disabled in launch options. */
+      var wrapped=function(){ orig(); if(!window.__launchOpts || window.__launchOpts.drones!==false) updatePlaneDrones(); };
       wrapped.__planeWrap=true;
       animate=wrapped;
     }
