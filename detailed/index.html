@@ -647,6 +647,45 @@
   .inv-empty{color:#888;font-size:15px;text-align:center;padding:24px 0;}
   #inv-close{margin-top:12px;padding:10px 18px;font-size:15px;border-radius:10px;border:none;
     background:#ffd75e;color:#111;font-weight:bold;width:100%;}
+
+/* ===== v1.22 LAUNCHER OPTIONS SCREEN (Joshua 2026-10-10) =====
+   Pre-game options screen: checkbox column for heavy systems (NPCs, crews,
+   MARTA, drones) + graphics (shadows, antialiasing, building detail).
+   Shown BEFORE the loader; game does not start until user picks options. */
+#launcher{position:fixed;inset:0;z-index:200;background:rgba(10,12,20,.97);
+  display:flex;flex-direction:column;align-items:center;overflow-y:auto;
+  padding:20px 16px 32px;color:#fff;font-family:Arial,sans-serif;}
+#launcher.hidden{display:none;}
+#launch-title{font-size:26px;font-weight:bold;letter-spacing:3px;color:#ffd75e;
+  margin:8px 0 2px;text-shadow:0 0 12px rgba(255,215,94,.4);}
+#launch-sub{font-size:14px;color:#aaa;margin-bottom:14px;}
+.launch-section{width:100%;max-width:440px;background:#1a1e2c;border:1px solid #333;
+  border-radius:12px;padding:12px 14px;margin-bottom:12px;}
+.launch-section h3{margin:0 0 8px;font-size:15px;color:#7ec8ff;letter-spacing:1px;}
+.launch-opt{display:flex;align-items:center;padding:9px 6px;border-bottom:1px solid #2a2e3e;
+  cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent;}
+.launch-opt:last-child{border-bottom:none;}
+.launch-opt input{width:22px;height:22px;margin-right:12px;flex-shrink:0;accent-color:#39ff6a;cursor:pointer;}
+.launch-opt .opt-label{flex:1;font-size:15px;}
+.launch-opt .opt-impact{font-size:11px;font-weight:bold;padding:3px 8px;border-radius:8px;margin-left:8px;}
+.opt-impact.heavy{background:#5a1e1e;color:#ff8a8a;}
+.opt-impact.medium{background:#5a4a1e;color:#ffd75e;}
+.opt-impact.light{background:#1e5a2e;color:#8aff8a;}
+.launch-opt.sub{padding-left:34px;}
+.launch-opt.sub .opt-label{font-size:14px;color:#ccc;}
+.launch-presets{display:flex;gap:8px;width:100%;max-width:440px;margin-bottom:12px;}
+.launch-presets button{flex:1;padding:10px 6px;font-size:13px;font-weight:bold;border-radius:10px;
+  border:2px solid #444;background:#222836;color:#fff;cursor:pointer;}
+.launch-presets button:active{background:#333a4e;}
+#launch-start{width:100%;max-width:440px;padding:16px;font-size:19px;font-weight:bold;
+  letter-spacing:2px;border-radius:14px;border:none;background:#39ff6a;color:#062b0f;cursor:pointer;
+  box-shadow:0 0 20px rgba(57,255,106,.4);}
+#launch-start:active{background:#2bd95a;}
+#launch-note{font-size:12px;color:#777;margin-top:10px;text-align:center;max-width:440px;line-height:1.5;}
+@media (max-width:480px){
+  #launch-title{font-size:21px;}
+  .launch-opt .opt-label{font-size:14px;}
+}
 </style>
 <button id="inv-btn" title="Inventory (I)">&#127890;</button>
 <div id="inv-panel"><div class="card">
@@ -703,6 +742,58 @@
   <div id="satview-hint">Drag to pan • Pinch or scroll to zoom</div>
 </div>
 
+<!-- ===== v1.22 LAUNCHER OPTIONS SCREEN (Joshua 2026-10-10) =====
+     Pre-game options: checkbox column for heavy systems + graphics.
+     Shown before the loader; __tryStartGame() is gated until the user
+     picks options and hits START GAME. Settings persist in localStorage. -->
+<div id="launcher">
+  <div id="launch-title">SURVIVING ADAMSVILLE</div>
+  <div id="launch-sub">Launch Options — pick what runs in your game</div>
+
+  <div class="launch-section">
+    <h3>⚙️ PERFORMANCE</h3>
+    <label class="launch-opt"><input type="checkbox" data-opt="npcs" checked>
+      <span class="opt-label">NPCs (1,000 citizens)</span><span class="opt-impact heavy">HEAVY</span></label>
+    <label class="launch-opt"><input type="checkbox" data-opt="crews" checked>
+      <span class="opt-label">Work crews (all)</span><span class="opt-impact medium">MEDIUM</span></label>
+    <label class="launch-opt sub"><input type="checkbox" data-opt="roadCrew" checked>
+      <span class="opt-label">↳ Road crew</span><span class="opt-impact light">LIGHT</span></label>
+    <label class="launch-opt sub"><input type="checkbox" data-opt="surveyFleet" checked>
+      <span class="opt-label">↳ Survey fleet</span><span class="opt-impact light">LIGHT</span></label>
+    <label class="launch-opt sub"><input type="checkbox" data-opt="infraCrew" checked>
+      <span class="opt-label">↳ Infra crew</span><span class="opt-impact light">LIGHT</span></label>
+    <label class="launch-opt sub"><input type="checkbox" data-opt="hqStaff" checked>
+      <span class="opt-label">↳ HQ staff</span><span class="opt-impact light">LIGHT</span></label>
+    <label class="launch-opt"><input type="checkbox" data-opt="martaBuses" checked>
+      <span class="opt-label">MARTA buses</span><span class="opt-impact medium">MEDIUM</span></label>
+    <label class="launch-opt"><input type="checkbox" data-opt="martaTrains" checked>
+      <span class="opt-label">MARTA trains</span><span class="opt-impact medium">MEDIUM</span></label>
+    <label class="launch-opt"><input type="checkbox" data-opt="drones" checked>
+      <span class="opt-label">Airplane drones (50)</span><span class="opt-impact light">LIGHT</span></label>
+    <label class="launch-opt"><input type="checkbox" data-opt="traffic" checked>
+      <span class="opt-label">Ambient traffic</span><span class="opt-impact medium">MEDIUM</span></label>
+  </div>
+
+  <div class="launch-section">
+    <h3>🎨 GRAPHICS</h3>
+    <label class="launch-opt"><input type="checkbox" data-opt="shadows" checked>
+      <span class="opt-label">Shadows</span><span class="opt-impact light">LIGHT</span></label>
+    <label class="launch-opt"><input type="checkbox" data-opt="antialias" checked>
+      <span class="opt-label">Antialiasing</span><span class="opt-impact heavy">HEAVY</span></label>
+    <label class="launch-opt"><input type="checkbox" data-opt="hiDetail" checked>
+      <span class="opt-label">High-detail buildings</span><span class="opt-impact medium">MEDIUM</span></label>
+  </div>
+
+  <div class="launch-presets">
+    <button id="launch-all">SELECT ALL</button>
+    <button id="launch-none">SELECT NONE</button>
+    <button id="launch-weak">WEAK HARDWARE</button>
+  </div>
+
+  <button id="launch-start">▶ START GAME</button>
+  <div id="launch-note">Your choices are saved on this device.<br>
+  Graphics changes (antialiasing) need a reload to take effect.</div>
+</div>
 <!-- ===== LOADER OVERLAY (covers the screen while assets load) =====
      Title, game icon, progress bar (#load-fill - driven by __loadStep()),
      current-step line (#load-status), and the CLICK-ANYWHERE-TO-START button
@@ -880,6 +971,86 @@ try{
   document.addEventListener('touchend',__earlyStartRequest,{capture:true,passive:true});
   document.addEventListener('click',__earlyStartRequest,{capture:true});
 }catch(e){}
+/* ===== v1.22 LAUNCHER UI WIRING (runs in block 1 so the launcher is
+   interactive during the download phase, before block 2's sync init) ===== */
+(function __wireLauncher(){
+  try {
+    var launcher = document.getElementById('launcher');
+    if (!launcher) return;
+    var boxes = launcher.querySelectorAll('input[data-opt]');
+    // Sync checkboxes to current __launchOpts (from localStorage/defaults)
+    function syncBoxes(){
+      for (var i = 0; i < boxes.length; i++) {
+        var key = boxes[i].getAttribute('data-opt');
+        if (key === 'crews') {
+          // master: checked if ANY sub-crew is on
+          boxes[i].checked = !!(window.__launchOpts.roadCrew || window.__launchOpts.surveyFleet ||
+                                window.__launchOpts.infraCrew || window.__launchOpts.hqStaff);
+        } else if (key in window.__launchOpts) {
+          boxes[i].checked = !!window.__launchOpts[key];
+        }
+      }
+    }
+    syncBoxes();
+    // Checkbox changes update __launchOpts live
+    launcher.addEventListener('change', function(e){
+      var t = e.target;
+      if (!t || t.tagName !== 'INPUT' || !t.getAttribute('data-opt')) return;
+      var key = t.getAttribute('data-opt');
+      if (key === 'crews') {
+        window.__applyCrewMaster(t.checked);
+      } else if (key in window.__launchOpts) {
+        window.__launchOpts[key] = t.checked;
+      }
+      syncBoxes(); // keep master/sub in sync
+    });
+    // Presets
+    function setAll(on){
+      for (var k in window.__launchOpts) window.__launchOpts[k] = on;
+      syncBoxes();
+    }
+    var bAll = document.getElementById('launch-all');
+    if (bAll) bAll.addEventListener('click', function(){ setAll(true); });
+    var bNone = document.getElementById('launch-none');
+    if (bNone) bNone.addEventListener('click', function(){ setAll(false); });
+    var bWeak = document.getElementById('launch-weak');
+    if (bWeak) bWeak.addEventListener('click', function(){
+      /* v1.22 WEAK HARDWARE preset: keep the world, drop the expensive stuff */
+      setAll(true);
+      window.__launchOpts.npcs = false;
+      window.__launchOpts.martaBuses = false;
+      window.__launchOpts.martaTrains = false;
+      window.__launchOpts.traffic = false;
+      window.__launchOpts.drones = false;
+      window.__launchOpts.antialias = false;
+      window.__launchOpts.hiDetail = false;
+      window.__launchOpts.shadows = false;
+      syncBoxes();
+    });
+    // START GAME: save, hide launcher, reveal loader
+    var bStart = document.getElementById('launch-start');
+    if (bStart) bStart.addEventListener('click', function(){
+      // v1.22: if NPCs are unchecked, engage the v1.21 kill switch too so
+      // the NPC meshes are hidden (not just frozen).
+      try {
+        if (window.__launchOpts.npcs === false && typeof window.__setNpcPaused === 'function') {
+          window.__setNpcPaused(true);
+        }
+      } catch(e){}
+      // Snapshot graphics flags at init time to detect a change needing reload
+      var needReload = (window.__launchOpts.antialias !== window.__initAA);
+      window.__saveLaunchOpts();
+      window.__launcherConfirmed = true;
+      launcher.classList.add('hidden');
+      if (needReload) {
+        try { window.location.reload(); } catch(e){}
+        return;
+      }
+      // Let any pending start request through now
+      try { if (typeof __tryStartGame === 'function') __tryStartGame(); } catch(e){}
+    });
+  } catch(e){}
+})();
 </script>
 <!-- ===== ENGINE + DATA SCRIPTS ===== Each fires __loadStep() on load/error
      so block 1's progress bar can track it. Data files (elev / roads /
@@ -2181,6 +2352,46 @@ window.__setNpcPaused = function(paused){
   } catch(e){}
   try { if (typeof showToast === 'function') showToast(window.__npcPaused ? 'NPCs PAUSED' : 'NPCs RESUMED', 2000); } catch(e){}
 };
+/* ===== v1.22 LAUNCHER OPTIONS (Joshua 2026-10-10) =====
+   Pre-game options screen: lets Joshua pick which heavy systems run
+   (NPCs, crews, MARTA, drones, traffic) and graphics (shadows, AA,
+   building detail). Persisted in localStorage['sa_launch_opts_v1'].
+   Each flag defaults to true (everything on). System update wrappers
+   check their flag: `window.__launchOpts.<key>!==false`.
+   Graphics flags are read at init (renderer creation); changing AA
+   needs a page reload, which the launcher handles automatically. */
+window.__launchOpts = {
+  npcs: true, roadCrew: true, surveyFleet: true, infraCrew: true, hqStaff: true,
+  martaBuses: true, martaTrains: true, drones: true, traffic: true,
+  shadows: true, antialias: true, hiDetail: true
+};
+window.__launcherConfirmed = false;  // set true when user hits START GAME
+(function __loadLaunchOpts(){
+  try {
+    var saved = null;
+    try { saved = JSON.parse(localStorage.getItem('sa_launch_opts_v1') || 'null'); } catch(e){}
+    if (saved && typeof saved === 'object') {
+      for (var k in window.__launchOpts) {
+        if (typeof saved[k] === 'boolean') window.__launchOpts[k] = saved[k];
+      }
+    }
+    // Backward compat: ?nonpc=1 URL param (v1.21 kill switch) maps to npcs:false
+    try {
+      var q = new URLSearchParams(window.location.search);
+      if (q.get('nonpc') === '1') window.__launchOpts.npcs = false;
+    } catch(e){}
+  } catch(e){}
+})();
+window.__saveLaunchOpts = function(){
+  try { localStorage.setItem('sa_launch_opts_v1', JSON.stringify(window.__launchOpts)); } catch(e){}
+};
+/* v1.22: "crews" master checkbox controls all four sub-crew flags. */
+window.__applyCrewMaster = function(on){
+  window.__launchOpts.roadCrew = on;
+  window.__launchOpts.surveyFleet = on;
+  window.__launchOpts.infraCrew = on;
+  window.__launchOpts.hqStaff = on;
+};
 (function detectWeakHardware(){
   try {
     var canvas = document.createElement('canvas');
@@ -2219,8 +2430,13 @@ window.__setNpcPaused = function(paused){
 
 var container = document.getElementById('game');
 /* v1.20: Disable antialiasing on weak hardware — it's the #1 CPU killer.
-   Also cap pixel ratio at 1.0 for software rendering. */
-var _useAA = !window.__weakHardware;
+   Also cap pixel ratio at 1.0 for software rendering.
+   v1.22 LAUNCHER: the antialias checkbox overrides (user's explicit choice wins
+   over auto-detect, unless weak hardware forces it off). __initAA snapshots
+   the value used at renderer creation so the launcher knows if a change
+   needs a page reload to take effect. */
+var _useAA = (window.__launchOpts && window.__launchOpts.antialias===false) ? false : !window.__weakHardware;
+window.__initAA = _useAA;
 var _pixelRatio = window.__weakHardware ? 1.0 : Math.min(window.devicePixelRatio || 1, 1.5);
 /* v1.21 DIAGNOSTIC (Joshua 2026-10-10): On weak hardware, show a small
    FPS + input indicator so we can tell if the game loop is running and
@@ -7133,7 +7349,9 @@ function updatePlayer(dt){
     }
   }
   // blob shadow tracks his feet — the contact cue (hidden while swimming/driving)
-  player.shadow.visible=player.mesh.visible && !player.swimming;
+  /* v1.22 LAUNCHER: shadows toggle (blob shadow). */
+  player.shadow.visible=player.mesh.visible && !player.swimming &&
+    (!window.__launchOpts || window.__launchOpts.shadows!==false);
   if (player.shadow.visible) player.shadow.position.set(player.x, player.mesh.position.y+0.04, player.z);
   // roof visibility
   var _rv=!player.inside;
@@ -7856,7 +8074,9 @@ function animate(){
      smoothly via the render slots; only the AI decisions are throttled.
      v1.21 NPC KILL SWITCH: skip entirely when __npcPaused (diagnostic). */
   try{
-    if(typeof updateNPCs!=='undefined' && !window.__npcPaused){
+    /* v1.22 LAUNCHER: skip when NPCs are disabled in launch options. */
+    if(typeof updateNPCs!=='undefined' && !window.__npcPaused &&
+       (!window.__launchOpts || window.__launchOpts.npcs!==false)){
       if(window.__weakHardware){
         window.__npcTick=(window.__npcTick||0)+1;
         if(window.__npcTick%6===0) updateNPCs(dt*6, player.mesh.position);
@@ -8047,6 +8267,10 @@ __loadStep('music');
    on-screen instead of dying to a silent black screen. */
 function __tryStartGame(){
   try{
+    /* v1.22 LAUNCHER GATE: do not start until the user has picked options
+       and hit START GAME. The launcher covers the loader, so the game
+       waits here instead of auto-starting behind it. */
+    if (!window.__launcherConfirmed) return false;
     var l=document.getElementById('loader');
     if(!l || l.style.display==='none') return false;
     /* v1.15 CLICK-BUG HARDENING (Joshua 2026-10-10: click did nothing on APK
