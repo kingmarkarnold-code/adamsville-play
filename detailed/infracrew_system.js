@@ -34,6 +34,9 @@
        full collider cleanup.
      - Fix-duration tracking (Joshua's rule): every issue records report→fix
        duration, shown in the dispatch log.
+     - v1.19 WAIT-FOR-FIX (Joshua's directive 2026-10-09): finishJob()
+       notifies StuckDiag.markFixed() when a repair completes, releasing any
+       units parked waiting on that spot (survey cars included).
      - Public API: window.INFRACREW.reportIssue({kind,x,z,desc}) — the sign
        inspectors, helicopter units, watcher feedback, and any other system
        call this to file an issue. Guards dedupe near-duplicates.
@@ -522,7 +525,10 @@ function removeJobColliders(job){
 }
 /* finishJob — end of the repair window: lay a permanent asphalt patch for
    road work, clean the work zone, mark fixed, record the report→fix
-   duration (Joshua's rule), persist. */
+   duration (Joshua's rule), persist.
+   v1.19 WAIT-FOR-FIX (Joshua's directive 2026-10-09): notify StuckDiag that
+   a fix landed here so any units parked waiting on this spot — survey cars
+   included — are released to resume their routes (no unit waits forever). */
 function finishJob(job){
   var d=job.issue;
   if (d.kind==='road'){
@@ -539,6 +545,12 @@ function finishJob(job){
   var durStr=durMs>0?(' (report→fix: '+Math.round(durMs/60000)+'m)'):'';
   dlog(d.id+' ('+d.street+') REPAIRED — '+kindLabel(d.kind)+' serviced per spec'+durStr+'. Crew clear.');
   toast('✅ '+kindLabel(d.kind)+' repaired'+(d.street?(' @ '+d.street):''));
+  try{
+    if (typeof StuckDiag!=='undefined' && typeof StuckDiag.markFixed==='function'){
+      var rel=StuckDiag.markFixed(d.x, d.z, 'infra crew');
+      if (rel && rel.released) dlog('🔓 '+rel.released+' waiting unit(s) released — fix confirmed @ ('+Math.round(d.x)+','+Math.round(d.z)+').');
+    }
+  }catch(e){}
   saveLS();
   try{ Report.setSys('infracrew', sysReport()); }catch(e){}
   try{ refreshPanel(); }catch(e){}
