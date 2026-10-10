@@ -331,13 +331,54 @@ function updateRiding(dt){
    bounces on terrain noise). Then builds all stop signs (SignRules
    validated), spawns 2 buses per route spaced half a path apart, publishes
    the sign audit, and exposes window.MARTA_BUS. */
+/* ============================================================================
+   BUS ROUTE TESTER FIX (v1.15, 2026-10-09):
+   Trim bus routes to the in-map portion. Real GTFS data extends beyond the
+   game border (e.g. Route 55 to Forest Park, Route 2 to Candler Park). Without
+   trimming, buses drive through empty terrain outside the road network.
+   
+   trimRouteToMap(pts) finds the longest contiguous run of points within the
+   playable map bounds and returns the trimmed array. Buses then shuttle on
+   the in-map portion only, reversing at the trimmed termini.
+   
+   Map bounds derived from road network extent: X [-200, 8200], Z [-200, 12200].
+   A point is "in-map" if within these bounds with a 50u margin.
+   ============================================================================ */
+var BUS_MAP_X0=-250, BUS_MAP_X1=8250, BUS_MAP_Z0=-250, BUS_MAP_Z1=12250;
+
+function busPtInMap(x, z){
+  return x>=BUS_MAP_X0 && x<=BUS_MAP_X1 && z>=BUS_MAP_Z0 && z<=BUS_MAP_Z1;
+}
+
+function trimRouteToMap(pts){
+  if (!pts || pts.length<2) return pts;
+  // Find all in-map runs
+  var bestStart=0, bestLen=0, curStart=-1, curLen=0;
+  for (var i=0;i<pts.length;i++){
+    if (busPtInMap(pts[i][0], pts[i][1])){
+      if (curStart<0){ curStart=i; curLen=0; }
+      curLen++;
+      if (curLen>bestLen){ bestLen=curLen; bestStart=curStart; }
+    } else {
+      curStart=-1; curLen=0;
+    }
+  }
+  // If no in-map points or all in-map, return as-is
+  if (bestLen===0) return pts.slice(0,2); // degenerate: keep 2 pts to avoid crash
+  if (bestLen===pts.length) return pts;
+  // Return the longest in-map run
+  return pts.slice(bestStart, bestStart+bestLen);
+}
+
 function initBus(){
   if (!window.MARTA_BUS_DATA) throw new Error('MARTA_BUS_DATA missing');
   var D=window.MARTA_BUS_DATA, ri;
   for (ri=0;ri<D.routes.length;ri++){
     var R=D.routes[ri];
+    // v1.15: trim to in-map portion before building path (bus route tester fix)
+    var trimmedPts=trimRouteToMap(R.pts);
     var route={ id:R.id, num:R.num, name:R.name, color:R.color,
-                headway:R.headway, stops:[], path:makePath(R.pts) };
+                headway:R.headway, stops:[], path:makePath(trimmedPts) };
     // compute arc position for each stop (nearest point on path)
     // outlier stops (>40u from path) get snapped to the path so the
     // bus actually stops where the sign is
