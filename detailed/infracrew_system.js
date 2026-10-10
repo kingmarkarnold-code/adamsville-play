@@ -61,7 +61,8 @@ window.__infracrewV1 = true;
    Tuned for a living-city feel without spamming the map with work zones. */
 var LS_KEY      = 'sa_infracrew_v1';  // localStorage persistence key
 var DISPATCH_T  = 5;      // seconds from 'reported' -> crew dispatched
-var REPAIR_T    = {signal:60, road:45, sign:30};  // seconds per kind
+var REPAIR_T    = {signal:30, road:25, sign:20};  // seconds per kind (Joshua
+   // 2026-10-10: sped up from {60,45,30} — faster fixes, less waiting)
 var PATROL_SPEED= 13;     // patrol truck speed (u/s)
 var N_PATROLS   = 2;      // infra patrol trucks out at all times
 var OUTAGE_P    = 0.0015; // per-tick chance a patrol discovers a signal outage
@@ -225,8 +226,27 @@ function makeInfraWorker(){
   g.userData.armL=armL; g.userData.armR=armR;
   return g;
 }
-/* makeWarnSign — work-zone warning sign; text varies by issue kind. */
-function makeWarnSign(main, sub){
+/* icLabelSprite(text) — Joshua 2026-10-10: floating "WORK ZONE" banner over an
+   active site so the closed area is obvious at a glance. Canvas sprite, no
+   per-frame cost. */
+function icLabelSprite(text){
+  try{
+    var k=makeCanvas(512,128), x=k.ctx;
+    x.fillStyle='rgba(20,24,34,0.85)';
+    x.font='bold 52px sans-serif';
+    var tw=x.measureText(text).width;
+    x.fillRect(256-tw/2-24, 14, tw+48, 100);
+    x.strokeStyle='#ffb02e'; x.lineWidth=6;
+    x.strokeRect(256-tw/2-24, 14, tw+48, 100);
+    x.fillStyle='#ffb02e'; x.textAlign='center'; x.textBaseline='middle';
+    x.fillText(text, 256, 66);
+    var t=new THREE.CanvasTexture(k.c);
+    var s=new THREE.Sprite(new THREE.SpriteMaterial({map:t, depthTest:false, transparent:true}));
+    s.scale.set(26,6.5,1);
+    return s;
+  }catch(e){ return null; }
+}
+/* makeWarnSign — work-zone warning sign; text varies by issue kind. */function makeWarnSign(main, sub){
   var g=new THREE.Group();
   var p1=box(0.18,3.0,0.18,0x555c66); p1.position.set(-1.1,1.5,0); g.add(p1);
   var p2=box(0.18,3.0,0.18,0x555c66); p2.position.set(1.1,1.5,0); g.add(p2);
@@ -464,7 +484,24 @@ function dispatchCrew(d){
     var wx=d.x+o[0], wz=d.z+o[1];
     w.position.set(wx, groundY(wx,wz), wz);
     w.rotation.y=Math.random()*6.28; grp.add(w); workers.push(w);
+    /* Joshua 2026-10-10: STATIC work pose (set once, no per-frame anim). */
+    try{
+      if(w.userData.armR) w.userData.armR.rotation.x=-0.55;
+      if(w.userData.armL) w.userData.armL.rotation.x=-0.35;
+    }catch(e){}
   });
+  /* Joshua 2026-10-10: floating "WORK ZONE" banner over the site. */
+  try{
+    var wzL=icLabelSprite('🔧 WORK ZONE');
+    if(wzL){ wzL.position.set(d.x, groundY(d.x,d.z)+13, d.z); grp.add(wzL); }
+  }catch(e){}
+  /* Joshua 2026-10-10: WORK-ZONE PERIMETER — circle collider around the site
+     so the player can't enter until the fix is done. Removed in finishJob. */
+  var zoneCol=null, zoneR=11;
+  try{ if(typeof addCollider==='function'){
+    zoneCol={x:d.x, z:d.z, r:zoneR, y0:-1e9, y1:1e9, _workzone:true};
+    colliders.push(zoneCol);
+  }}catch(e){}
   /* warning signs on both approaches */
   var wt=warnText(d.kind), signs=[], signCols=[];
   [[-46,0],[46,0]].forEach(function(o){
@@ -489,7 +526,8 @@ function dispatchCrew(d){
   d.state='repairing';
   var job={issue:d, group:grp, truck:truck, workers:workers, signs:signs,
     coneData:coneData, t:0, dur:REPAIR_T[d.kind]||45,
-    truckCol:truckCol, signCols:signCols, coneCols:coneCols};
+    truckCol:truckCol, signCols:signCols, coneCols:coneCols,
+    zoneCol:zoneCol, zoneR:zoneR};
   IC.jobs.push(job);
   /* v1.18 VETERAN CREW (Joshua 2026-10-09): 30-year-veteran workflow —
      assess → report → dispatch → setup → fix → verify → auto-save.
@@ -525,11 +563,14 @@ function removeJobColliders(job){
       if (job.truckCol) removeCollider(job.truckCol);
       (job.signCols||[]).forEach(function(c){ removeCollider(c); });
       (job.coneCols||[]).forEach(function(c){ removeCollider(c); });
+      /* Joshua 2026-10-10: pull the work-zone perimeter too. */
+      if (job.zoneCol) removeCollider(job.zoneCol);
     } else if (typeof colliders!=='undefined'){
       var doomed={};
       if (job.truckCol) doomed[colliders.indexOf(job.truckCol)]=1;
       (job.signCols||[]).forEach(function(c){ doomed[colliders.indexOf(c)]=1; });
       (job.coneCols||[]).forEach(function(c){ doomed[colliders.indexOf(c)]=1; });
+      if (job.zoneCol) doomed[colliders.indexOf(job.zoneCol)]=1;
       for (var i=colliders.length-1;i>=0;i--){ if (doomed[i]) colliders.splice(i,1); }
     }
   }catch(e){}
@@ -570,11 +611,10 @@ function finishJob(job){
    animation + amber light-bar flash. updateJobs calls this during the
    'fixing' phase for veteran jobs, or every frame for legacy jobs. */
 function icFixTick(j, dt){
-  j.workers.forEach(function(w,k){
-    w.position.y+=Math.sin(IC.time*7+k*2.4)*0.012;
-    w.rotation.y+=Math.sin(IC.time*1.3+k)*0.01;
-    var a=w.userData.armR; if(a) a.rotation.x=Math.sin(IC.time*7+k)*0.7;
-  });
+  /* Joshua 2026-10-10: worker on-foot animation SIMPLIFIED for phone
+     performance. Workers hold a static work pose (set once at dispatch) —
+     no per-frame bobbing/arm-swing math. The amber light-bar flash stays
+     (one visibility toggle, negligible cost). */
   var bar=j.truck.userData.lightBar; if (bar) bar.visible=(IC.tick%14<7);
 }
 /* updateJobs(dt) — per-frame job ticks.
@@ -592,12 +632,30 @@ function updateJobs(dt){
         log:function(m){ dlog(m); }, toast:function(m){ toast(m); }});
       if (ph==='fixing') icFixTick(j,dt);
       else if (ph==='done'){ finishJob(j); IC.jobs.splice(i,1); }
+      icWorkZoneNudge(j);
       continue;
     }
     j.t+=dt;
     icFixTick(j,dt);
+    icWorkZoneNudge(j);
     if (j.t>=j.dur){ finishJob(j); IC.jobs.splice(i,1); }
   }
+}
+/* icWorkZoneNudge(j) — Joshua 2026-10-10: when the player presses against an
+   active work-zone perimeter, show a throttled "please wait" toast so they
+   know WHY they're blocked. Cheap distance check, one toast per 6s max. */
+var _icNudgeT=0;
+function icWorkZoneNudge(j){
+  try{
+    if(!j.zoneCol || typeof player==='undefined' || !player.mesh) return;
+    var px=player.mesh.position.x, pz=player.mesh.position.z;
+    var dx=px-j.zoneCol.x, dz=pz-j.zoneCol.z;
+    var d=Math.sqrt(dx*dx+dz*dz);
+    if(d < j.zoneR+2 && Date.now()-_icNudgeT>6000){
+      _icNudgeT=Date.now();
+      toast('🔧 Work zone — please wait, crew is on it');
+    }
+  }catch(e){}
 }
 /* intakeCheck — newly 'reported' issues get a crew after DISPATCH_T. */
 function intakeCheck(dt){
