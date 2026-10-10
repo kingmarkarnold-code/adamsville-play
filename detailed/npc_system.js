@@ -549,7 +549,7 @@ function spawnNPC(id){
     boarding:null, boardT:0, commT:0, lockY:false
   };
   n.speed = type===0 ? 1.3+srand()*0.4 : type===1 ? 1.2+srand()*0.4 : 1.6+srand()*0.5;
-  try{ n.y=(typeof clampVehY==='function')?clampVehY(n.x,n.z,heightAt(n.x,n.z)):heightAt(n.x,n.z); }catch(e){ n.y=0; }
+  try{ n.y=(typeof clampVehY==='function')?clampVehY(n.x,n.z,groundRefY(n.x,n.z)):groundRefY(n.x,n.z); }catch(e){ n.y=0; }
   n.lx=n.x; n.lz=n.z;
   return n;
 }
@@ -593,7 +593,7 @@ function aiNPC(n, dt){
     if (n.boardT<=0){ n.boarding=null; n.waiting=true; n.waitT=TR_WAIT_T; setState(n,ST_IDLE,1e9); return; }
     n.heading=Math.atan2(bdx,bdz); n.state=ST_WALK;
     var bstep=n.speed*dt, bnx=n.x+Math.sin(n.heading)*bstep, bnz=n.z+Math.cos(n.heading)*bstep;
-    if (!npcBlocked(bnx,bnz,n)){ n.x=bnx; n.z=bnz; separateNPC(n); separateFromPlayer(n); if(!n.lockY){ try{n.y=heightAt(n.x,n.z);}catch(e){} } }
+    if (!npcBlocked(bnx,bnz,n)){ n.x=bnx; n.z=bnz; separateNPC(n); separateFromPlayer(n); if(!n.lockY){ try{n.y=groundRefY(n.x,n.z);}catch(e){} } }
     return;
   }
   /* v1.17 walking to a transit stop/station (n.goto = {x,z}). Steers straight
@@ -615,7 +615,7 @@ function aiNPC(n, dt){
     }
     n.heading=Math.atan2(gdx,gdz); n.state=ST_WALK;
     var gstep=n.speed*dt, gnx=n.x+Math.sin(n.heading)*gstep, gnz=n.z+Math.cos(n.heading)*gstep;
-    if (!npcBlocked(gnx,gnz,n)){ n.x=gnx; n.z=gnz; separateNPC(n); separateFromPlayer(n); try{n.y=heightAt(n.x,n.z);}catch(e){} }
+    if (!npcBlocked(gnx,gnz,n)){ n.x=gnx; n.z=gnz; separateNPC(n); separateFromPlayer(n); try{n.y=groundRefY(n.x,n.z);}catch(e){} }
     else {
       var gok=false;
       for (var ga=0;ga<4&&!gok;ga++){
