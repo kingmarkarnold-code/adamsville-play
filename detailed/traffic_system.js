@@ -468,13 +468,35 @@ function stepCar(c,dt,px,pz){
   if (!c.blockedByPlayer){
     try{ if (busDwellsAhead(c)){ c.desired=0; c.blockedByBus=true; } }catch(e){}
   }
+  /* v1.17 — JOSHUA'S SCHOOL BUS STOP LAW: while a school bus has its stop
+     sign out (window.__sbActive, published by schoolbus_system.js), ALL
+     approaching vehicles must stop and wait — both travel directions (real
+     stop-arm law). The sign retracts when boarding finishes and the queue
+     releases on its own. Blocked cars are excluded from the stuck audit. */
+  c.blockedBySchoolBus=false;
+  if (!c.blockedByPlayer && !c.blockedByBus){
+    try{
+      var _sbA=window.__sbActive;
+      if (_sbA && _sbA.length){
+        for (var _bi=0; _bi<_sbA.length; _bi++){
+          var _sb=_sbA[_bi];
+          var _bx=_sb.x-c.x, _bz=_sb.z-c.z, _bd2=_bx*_bx+_bz*_bz;
+          if (_bd2<3600){                       // within 60u
+            var _bd=Math.sqrt(_bd2)||1;
+            var _sdot=(_bx*sy+_bz*cy)/_bd;
+            if (Math.abs(_sdot)>0.6){ c.desired=0; c.blockedBySchoolBus=true; break; }
+          }
+        }
+      }
+    }catch(e){}
+  }
   // integrate speed toward desired
   var dv=c.desired-c.speed, mx=dv>0?ACCEL_US*dt:BRAKE_US*dt;
   c.speed+=Math.max(-mx,Math.min(mx,dv));
   if (c.speed<0) c.speed=0;
   // stuck audit (only when genuinely trying, not when yielding)
   var trying=(st==='drive'||st==='pulling'||st==='resuming')&&c.desired>1;
-  if (trying&&c.speed<0.35&&!c.blockedByPlayer&&!c.blockedByBus){
+  if (trying&&c.speed<0.35&&!c.blockedByPlayer&&!c.blockedByBus&&!c.blockedBySchoolBus){
     c.stuckT+=dt;
     if (c.stuckT>STUCK_AFTER_S){ logStuck(c); c.stuckT=-STUCK_COOLDOWN; }
   } else if (c.stuckT>0) c.stuckT=0;
