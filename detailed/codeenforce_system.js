@@ -752,13 +752,9 @@ function ceFindConnection(x, z, selfSeg, blacklist){
       if (!seg||seg===selfSeg) continue;
       if (seg.pts.length<CE_MIN_SEG) continue;      // skip stubs
       if (blacklist && blacklist.indexOf(seg)>=0) continue;
-      /* v1.15 (StuckDiag) self-prevention: don't hop onto a segment whose
-         endpoint sits on a flagged bad spot — the registry learned the road
-         data there is bad. */
-      try{
-        if (typeof StuckDiag!=='undefined' && StuckDiag.isBadSpot &&
-            StuckDiag.isBadSpot(c.x,c.z)) continue;
-      }catch(e){}
+      /* v1.16 (Joshua's directive): the old StuckDiag.isBadSpot avoidance
+         was REMOVED — units do not reroute around flagged bad spots; they
+         pull over and wait for the data fix. Connection-finding stays. */
       var dx=c.x-x, dz=c.z-z, d2=dx*dx+dz*dz;
       if (d2<bd){ bd=d2; best=c; }
       if (c.name && c.name===selfName && d2<bdSame){ bdSame=d2; bestSame=c; }
@@ -831,9 +827,10 @@ function patrolTarget(u){
 }
 /* ---------------- stuck-loop recovery (shared stuck.js module) ---------------- */
 /* stuckRecoverCE(u) — wraps recoverStuckUnit() for code enforcement:
-   'Officer N' label, dispatch-log logging, bad-segment blacklist in
-   CE.badSegs, and reposition onto the nearest road. Same shared protocol as
-   the road crew (report filed, police-escort recovery). */
+   'Officer N' label, dispatch-log logging. v1.16 (Joshua's rule): the
+   officer pulls over and waits for the data fix — no reassignment, no
+   rerouting. The reposition callback below is deprecated (kept for opts
+   compatibility but no longer called by recoverStuckUnit). */
 function stuckRecoverCE(u){
   if (typeof recoverStuckUnit!=='function') return;
   recoverStuckUnit(u, {
@@ -868,6 +865,18 @@ function updatePatrol(u, dt){
   var m=u.mesh;
   /* 24/7 watchdog: if the mesh somehow left the scene, put the unit back */
   if (!m.parent){ try{ scene.add(m); }catch(e){} }
+  /* v1.16 wait-for-fix (Joshua's rule): an officer parked at a bad spot sits
+     PATIENTLY by the road until the data team fixes it — no rerouting
+     around the problem. waitTick re-checks the data periodically; the
+     officer resumes only after the fix is confirmed. */
+  if (u.waitingForFix){
+    try{
+      if (typeof StuckDiag!=='undefined' && typeof StuckDiag.waitTick==='function')
+        StuckDiag.waitTick(u, dt, function(mm){ clog(mm); });
+    }catch(e){}
+    var _wb2=m.userData.lightBar; if (_wb2) _wb2.visible=(CE.tick%10<5);  // flash while waiting
+    return;
+  }
   if (u.pauseT>0){
     u.pauseT-=dt;
     var b=m.userData.lightBar;
