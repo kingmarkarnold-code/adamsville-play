@@ -506,12 +506,23 @@ function spawnPatrol(unitNo, dx, dz, highway){
 }
 /* patrolTarget(u) — the nearest STRUCTURAL, still-undiscovered defect to the
    unit. Used for the discovery check only (units discover by proximity, they
-   don't pathfind to the defect — simple sim logic per Joshua's rule). */
+   don't pathfind to the defect — simple sim logic per Joshua's rule).
+   v1.22 PRIORITY DISPATCH (Joshua 2026-10-09): when window.PRIORITY_DISPATCH
+   is active, defects inside the priority corridors (I-285 → MLK → Fulton
+   Industrial → Boulder Park → Dollar Mill → Bakers Ferry) are strongly
+   preferred — distance is divided by (10 - priority) so a corridor defect
+   effectively outranks any non-corridor defect. */
 function patrolTarget(u){
   var best=null, bd=1e18;
+  var PD=null;
+  try{ PD=(window.PRIORITY_DISPATCH && window.PRIORITY_DISPATCH.active)?window.PRIORITY_DISPATCH:null; }catch(e){}
   DEFECTS.forEach(function(d){
     if (!d.structural || d.state!=='undiscovered') return;
     var dd=dist2(u.mesh.position.x,u.mesh.position.z,d.x,d.z);
+    if (PD){
+      var pr=PD.priorityAt(d.x,d.z);  // 0-5 in corridors, 99 outside
+      if (pr<99) dd=dd/Math.max(1,(10-pr));  // corridor defects win
+    }
     if (dd<bd){ bd=dd; best=d; }
   });
   return best;
@@ -1085,7 +1096,12 @@ function initRoadCrew(){
   // patrol 3: Fulton Industrial corridor
   spawnPatrol(3, 2000, 3800, false);
   // patrol 4: Fairburn / south sector
-  spawnPatrol(4, 3500, 5500, false);
+  // v1.22 PRIORITY DISPATCH (Joshua 2026-10-09): when active, patrol 4
+  // deploys to the I-285 corridor (highest priority) instead of Fairburn.
+  var _pdActive=false;
+  try{ _pdActive=!!(window.PRIORITY_DISPATCH && window.PRIORITY_DISPATCH.active); }catch(e){}
+  if (_pdActive) spawnPatrol(4, 4450, 3200, true);  // I-285 corridor
+  else spawnPatrol(4, 3500, 5500, false);
   // re-lay patches for defects already fixed in a past session
   DEFECTS.forEach(function(d){
     if (d.structural && d.state==='fixed'){
