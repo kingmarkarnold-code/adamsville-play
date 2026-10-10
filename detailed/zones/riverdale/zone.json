@@ -1,0 +1,27 @@
+{
+  "id": "riverdale",
+  "name": "Riverdale",
+  "bounds": {
+    "xMin": 5398,
+    "xMax": 8200,
+    "zMin": 4218,
+    "zMax": 12200
+  },
+  "original_bounds": {
+    "xMin": 5398,
+    "xMax": 8200,
+    "zMin": 4218,
+    "zMax": 12200
+  },
+  "scale": 1.0,
+  "is_start": false,
+  "counts": {
+    "roads": 3280,
+    "buildings": 6459,
+    "pins": 5473,
+    "lifts": 5049,
+    "signs": 187
+  },
+  "generated": "2026-10-10",
+  "generator": "split-zones.py"
+}
