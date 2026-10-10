@@ -2154,6 +2154,32 @@ function clipToWorld(pts, margin){
 }
 try{ ['highway','arterial','local'].forEach(function(c){ roadSegsTotal+=ROAD_DATA[c].length; }); }catch(e){}
 (function buildRoads(){
+  /* v1.17 ROADFIX BOOT PATCHES (Joshua 2026-10-09): construction-crew pin
+     re-surveys recorded in localStorage ('sa_roadfixes_v1', patch
+     type 'pin-y') are applied to JUNCTION_PINS BEFORE the smoothHeights
+     pin pass below, so repaired pin heights bake into the road ribbons
+     on THIS load. Ribbons are baked at build — a mid-game pin correction
+     cannot reshape them until the next load; the fix is still confirmed
+     (and waiting units released) when the crew finishes the work. */
+  try{
+    var _rfp=null;
+    try{ _rfp=JSON.parse(window.localStorage.getItem('sa_roadfixes_v1')||'[]'); }catch(_e){}
+    if (_rfp && _rfp.length && typeof JUNCTION_PINS!=='undefined'){
+      var _rfn=0;
+      for (var _rfi=0;_rfi<_rfp.length;_rfi++){
+        var _rfe=_rfp[_rfi];
+        if (!_rfe || _rfe.status!=='fixed' || !_rfe.patch || _rfe.patch.type!=='pin-y') continue;
+        for (var _pj=0;_pj<JUNCTION_PINS.length;_pj++){
+          var _pn=JUNCTION_PINS[_pj];
+          if (Math.abs(_pn.x-_rfe.patch.px)<1 && Math.abs(_pn.z-_rfe.patch.pz)<1){
+            _pn.y=_rfe.patch.y; _rfn++; break;
+          }
+        }
+      }
+      if (_rfn && typeof console!=='undefined' && console.log)
+        console.log('[roadfix] boot: applied '+_rfn+' saved pin-height patch(es)');
+    }
+  }catch(_re){}
   var asphalt={pos:[],idx:[]}, lines={pos:[],idx:[]};
   function pushInto(store, geo){
     var base=store.pos.length/3;
@@ -6854,12 +6880,14 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <script src="stuck_diag.js"></script>
 <script src="codeenforce_system.js"></script>
 <script src="roadcrew_system.js" onload="__loadStep('roadcrew')" onerror="__loadStep('roadcrew',true)"></script>
+<script src="roadfix.js"></script>
 <script src="marta_data.js"></script>
 <script src="marta_system.js" onload="__loadStep('marta')" onerror="__loadStep('marta',true)"></script>
 <script src="marta_bus_data.js" onload="__loadStep('busdata')" onerror="__loadStep('busdata',true)"></script>
 <script src="marta_bus_system.js" onload="__loadStep('bus')" onerror="__loadStep('bus',true)"></script>
 <script src="bird_drones.js"></script>
 <script src="schoolbus_system.js"></script>
+<script src="infracrew_system.js"></script>
 <!-- ===== INLINE SCRIPT BLOCK 3: final placement audit (v2.0 - Joshua's
      automatic check) ===== Runs ONCE, after EVERY building system has loaded
      (OSM, churches, schools, plaza, gas, Marriott, clubs, MARTA). Summarizes
