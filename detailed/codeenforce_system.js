@@ -885,6 +885,8 @@ function updatePatrol(u, dt){
       var d=u.target; u.target=null;
       d.state='found';
       clog('Officer '+u.no+' flagged '+d.id+' ('+d.street+') — contacted dispatch.');
+      /* v1.18 veteran field note — the officer reads it with 30-year eyes. */
+      try{ if(typeof VeteranCrew!=='undefined') clog('Officer '+u.no+' field note: "'+VeteranCrew.fieldNote('building')+'"'); }catch(e){}
       toast('🏢 Code enforcement flagged a building ('+d.street+') — dispatch notified');
       setTimeout(function(){
         if (d.state!=='found') return;
@@ -1060,6 +1062,28 @@ function dispatchConstruction(d){
   d.state='working';
   CE.jobs.push({defect:d, group:grp, truck:truck, workers:workers,
     scaf:scaf, sign:usign, barriers:barriers, t:0, applied:false});
+  /* v1.18 VETERAN CREW (Joshua 2026-10-09): 30-year-veteran workflow —
+     assess → report → dispatch → setup → fix → verify → auto-save.
+     A foreman (white hard hat + clipboard) leads the job; the workers
+     stage by the truck and walk out to their stations in the setup phase. */
+  try{
+    if (typeof VeteranCrew!=='undefined'){
+      var _job=CE.jobs[CE.jobs.length-1];
+      var _vt3=[];
+      _job.workers.forEach(function(w){ _vt3.push({x:w.position.x, z:w.position.z}); });
+      var _fm3=VeteranCrew.makeForeman('constr');
+      if (_fm3){ _fm3.position.set(txp, groundY(txp,tzp), tzp); _job.group.add(_fm3); _job.foreman=_fm3; }
+      _job.vet=VeteranCrew.jobState({crew:'CONSTR', kind:d.kind, issue:d,
+        fixDur:WORK_T, siteR:(bw/2+7), truckPos:{x:txp, z:tzp},
+        workerTargets:_vt3, foremanStyle:'constr'});
+      /* stage the crew by the truck — the setup phase walks them out. */
+      var _stg3=[[2.5,0.5],[-2.5,0.5],[1.5,3],[-1.5,3]];
+      _job.workers.forEach(function(w,k){
+        var _s3=_stg3[k%_stg3.length];
+        w.position.set(txp+_s3[0], groundY(txp+_s3[0],tzp+_s3[1]), tzp+_s3[1]);
+      });
+    }
+  }catch(e){}
   clog('Construction crew on site at '+d.id+' ('+d.street+') — scaffolding up, renovation underway.');
   toast('🏢 Construction crew fixing a building ('+d.street+')');
   try{ Report.setSys('codeenforce', sysReport()); }catch(e){}
@@ -1084,33 +1108,52 @@ function finishJob(job){
     if (nxt.state==='dispatched') dispatchConstruction(nxt);
   }
 }
-/* updateJobs(dt) — per-frame job ticks: worker repair animation (bob + arm
-   swing), truck light-bar flash. At 35% of WORK_T the fix APPLIES (encroach
-   moves slide ~3s animated; sideways rotates instantly; a failed apply
-   defers the defect to Joshua's review). At WORK_T the job finishes and is
-   removed. */
+/* ceFixTick(j, dt) — the legacy per-frame construction work: worker
+   repair animation, truck light-bar flash, and the mid-job correction
+   apply (at 35% of WORK_T: encroach moves slide animated, sideways
+   rotates; a failed apply defers the defect to Joshua's review).
+   updateJobs calls this during the 'fixing' phase for veteran jobs, or
+   every frame for legacy jobs. */
+function ceFixTick(j, dt){
+  j.workers.forEach(function(w,k){
+    w.position.y+=Math.sin(CE.time*6+k*2.1)*0.014;
+    w.rotation.y+=Math.sin(CE.time*1.1+k)*0.012;
+    var a=w.userData.armR; if(a) a.rotation.x=Math.sin(CE.time*6+k)*0.8;
+  });
+  var bar=j.truck.userData.lightBar; if (bar) bar.visible=(CE.tick%14<7);
+  /* apply the fix midway through the work */
+  if (!j.applied && j.t>WORK_T*0.35){
+    j.applied=true;
+    var ok=applyCorrection(j.defect, j.defect.kind==='encroach');
+    if (!ok && j.defect.kind==='sideways') ok=applyCorrection(j.defect, false);
+    if (!ok){
+      j.defect.state='deferred';
+      clog(j.defect.id+' could not be corrected in place — flagged for Joshua\u2019s review.');
+    } else {
+      clog(j.defect.id+': correction applied — '+j.defect.fix);
+    }
+    saveLS(); refreshPanel(); refreshBoard();
+  }
+}
+/* updateJobs(dt) — per-frame job ticks.
+   v1.18 VETERAN CREW (Joshua 2026-10-09): jobs carrying vet state run the
+   30-year-veteran phase machine (arrive → assess → report → setup → fix →
+   verify). The legacy construction animation runs only during 'fixing';
+   when the machine returns 'done' the normal finishJob path runs
+   (finishing touches, cleanup, localStorage persistence, 24/7 queue pull).
+   Jobs without vet state keep the legacy timing. */
 function updateJobs(dt){
   for (var i=CE.jobs.length-1;i>=0;i--){
-    var j=CE.jobs[i]; j.t+=dt;
-    j.workers.forEach(function(w,k){
-      w.position.y+=Math.sin(CE.time*6+k*2.1)*0.014;
-      w.rotation.y+=Math.sin(CE.time*1.1+k)*0.012;
-      var a=w.userData.armR; if(a) a.rotation.x=Math.sin(CE.time*6+k)*0.8;
-    });
-    var bar=j.truck.userData.lightBar; if (bar) bar.visible=(CE.tick%14<7);
-    /* apply the fix midway through the work */
-    if (!j.applied && j.t>WORK_T*0.35){
-      j.applied=true;
-      var ok=applyCorrection(j.defect, j.defect.kind==='encroach');
-      if (!ok && j.defect.kind==='sideways') ok=applyCorrection(j.defect, false);
-      if (!ok){
-        j.defect.state='deferred';
-        clog(j.defect.id+' could not be corrected in place — flagged for Joshua\u2019s review.');
-      } else {
-        clog(j.defect.id+': correction applied — '+j.defect.fix);
-      }
-      saveLS(); refreshPanel(); refreshBoard();
+    var j=CE.jobs[i];
+    if (j.vet && typeof VeteranCrew!=='undefined'){
+      var ph=VeteranCrew.updateJob(j, dt, {time:CE.time,
+        log:function(m){ clog(m); }, toast:function(m){ toast(m); }});
+      if (ph==='fixing'){ j.t+=dt; ceFixTick(j,dt); }
+      else if (ph==='done'){ finishJob(j); CE.jobs.splice(i,1); }
+      continue;
     }
+    j.t+=dt;
+    ceFixTick(j,dt);
     if (j.t>=WORK_T){
       finishJob(j);
       CE.jobs.splice(i,1);
