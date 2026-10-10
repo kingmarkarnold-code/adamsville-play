@@ -1,6 +1,6 @@
 {
   "version": "1.11.0",
-  "map_version": "2026.10.10.1",
+  "map_version": "2026.10.10.2",
   "files": [
     {
       "name": "roads.js",
@@ -16,9 +16,10 @@
     },
     {
       "name": "osm_buildings.js",
-      "sha256": "5d7d8421b57d29548706539db04fd955101bbe2496c2c39e147c251b359e63e8",
-      "size": 1228452,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/osm_buildings.js"
+      "sha256": "de964944226eb1a90380e29abaff3bc7579a3259cfd8ab11f0ee2b73ccb35fa3",
+      "size": 1134733,
+      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/osm_buildings.js",
+      "md5": "ce2f9b32fd174860376549fa7e836e39"
     },
     {
       "name": "gas_stations_real.js",
