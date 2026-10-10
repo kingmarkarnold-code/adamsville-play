@@ -1102,6 +1102,31 @@ function initRoadCrew(){
   try{ _pdActive=!!(window.PRIORITY_DISPATCH && window.PRIORITY_DISPATCH.active); }catch(e){}
   if (_pdActive) spawnPatrol(4, 4450, 3200, true);  // I-285 corridor
   else spawnPatrol(4, 3500, 5500, false);
+  // v1.23 CREW 5X (Joshua 2026-10-09): 5x patrols (4 -> 20). Patrols 5-20
+  // spread across the Adamsville priority corridors: I-285, MLK, Fulton
+  // Industrial, Boulder Park, Dollar Mill, Bakers Ferry.
+  // patrols 5-8: I-285 corridor (highest priority)
+  spawnPatrol(5, 4600, 3100, true);
+  spawnPatrol(6, 4300, 3400, true);
+  spawnPatrol(7, 4750, 3300, true);
+  spawnPatrol(8, 4450, 3500, true);
+  // patrols 9-12: MLK Jr Dr corridor
+  spawnPatrol(9, 3900, 2700, false);
+  spawnPatrol(10, 4100, 2800, false);
+  spawnPatrol(11, 3700, 2600, false);
+  spawnPatrol(12, 4300, 2900, false);
+  // patrols 13-15: Fulton Industrial corridor
+  spawnPatrol(13, 1800, 3700, false);
+  spawnPatrol(14, 2200, 3900, false);
+  spawnPatrol(15, 1600, 3600, false);
+  // patrols 16-17: Boulder Park area
+  spawnPatrol(16, 2800, 4200, false);
+  spawnPatrol(17, 3000, 4400, false);
+  // patrols 18-19: Dollar Mill / Bakers Ferry
+  spawnPatrol(18, 3100, 3700, false);
+  spawnPatrol(19, 3300, 3900, false);
+  // patrol 20: Cascade Rd (southern boundary)
+  spawnPatrol(20, 3200, 4800, false);
   // re-lay patches for defects already fixed in a past session
   DEFECTS.forEach(function(d){
     if (d.structural && d.state==='fixed'){
@@ -1110,7 +1135,7 @@ function initRoadCrew(){
       scene.add(patch); RC.patchMeshes.push(patch);
     }
   });
-  if (!RC.log.length) dlog('Road crew system online — 4 patrol units out, 24/7 operation. Continuously repairing the map, keeping it accurate.');
+  if (!RC.log.length) dlog('Road crew system online — 20 patrol units out (5x), 24/7 operation. Continuously repairing the map, keeping it accurate.');
   RC.ready=true;
   try{ Report.setSys('roadcrew', sysReport()); }catch(e){}
   window.ROADCREW={defects:DEFECTS, log:RC.log, toggle:togglePanel};
