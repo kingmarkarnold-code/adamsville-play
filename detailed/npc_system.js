@@ -991,6 +991,51 @@ var TALK_BOY16=[
  "Stone Mountain laser show with the family — classic.",
  "The High Museum has student days. Art's actually kind of cool."
 ];
+/* ============================================================================
+   v1.22 CONTEXT-AWARE TALK (Joshua 2026-10-10): commuters WAITING at a stop
+   or station talk about THAT — not generic city chatter. npcTalkLine() checks
+   n.waiting + n.commuter first and serves from these pools before falling
+   back to the personality pools. All lines first-person, casual, PG —
+   things a real rider would say while waiting. No named real people.
+   ============================================================================ */
+/* TALK_WAITBUS — bus commuters standing at a stop. */
+var TALK_WAITBUS=[
+ "Bus is running late again. Story of my life.",
+ "You waiting on the bus too? This one is always late.",
+ "I catch this bus every morning. Never on time, but it gets me there.",
+ "Headed downtown. You know how long the ride is from here?",
+ "I just missed the last one. Now I'm stuck waiting.",
+ "This stop is the only one that gets me to work on time. Usually.",
+ "MARTA bus — love it or hate it, it's my ride.",
+ "Waiting on my bus. You'd think they'd add more by now.",
+ "I got my transfer ready. This driver's cool, he waits if he sees you running.",
+ "Going to meet my sister. Bus is cheaper than gas these days.",
+ "I ride this route every day. I know all the drivers by name.",
+ "Hope this bus has AC. Last one was a sauna on wheels.",
+ "Going to work. This bus gets me there if traffic behaves.",
+ "I take the bus so I don't have to fight for parking.",
+ "Ever tried to catch the bus in the rain? Not fun.",
+ "My stop's coming up after about ten more. Long ride."
+];
+/* TALK_WAITTRAIN — train commuters standing on a station platform. */
+var TALK_WAITTRAIN=[
+ "Train's coming. I can feel it in the rails.",
+ "Gold Line downtown — fastest way through the city.",
+ "I ride to Five Points every morning for work.",
+ "You ever ridden to the airport? Station's right in the terminal.",
+ "This platform gets packed at rush hour. Get here early.",
+ "Red Line, Gold Line — I mix them up every time.",
+ "The train beats sitting in Connector traffic. Every time.",
+ "Headed to the airport to pick up my cousin.",
+ "I love the train at night. City lights the whole way.",
+ "I take the train so I don't have to fight for parking downtown.",
+ "Next stop's mine. Well — after about six more stops.",
+ "Going to work. Train gets me there faster than driving.",
+ "The train to the airport beats sitting in traffic any day.",
+ "I ride this line every day. Best seat is by the window.",
+ "They keep the platform clean here. I appreciate that.",
+ "Almost missed it last time — the doors close fast."
+];
 /* TALK_LINES — legacy combined pool, kept for the inspector/debug rig.
    The live picker (npcTalkLine) uses the personality pools above. */
 var TALK_LINES=TALK_SHARED.concat(TALK_MAN,TALK_WOMAN,TALK_BOY16);
@@ -1016,13 +1061,33 @@ function npcTalkPool(n){
   return {name:'all', lines:TALK_LINES};
 }
 function npcTalkLine(n){
-  var pool=npcTalkPool(n), i, guard=0, key;
+  /* v1.22 context-aware (Joshua 2026-10-10): a commuter WAITING at a stop or
+     station talks about that — bus riders get the bus pool, train riders on
+     the platform get the train pool. Falls through to personality pools for
+     everyone else (wanderers, commuters still walking to their stop).
+     talkPickFresh() keeps the never-repeat-twice rule for every pool. */
+  try{
+    if (n && n.waiting){
+      if (n.commuter===2 && typeof TALK_WAITTRAIN!=='undefined' && TALK_WAITTRAIN.length)
+        return talkPickFresh('waittrain', TALK_WAITTRAIN);
+      if (n.commuter===1 && typeof TALK_WAITBUS!=='undefined' && TALK_WAITBUS.length)
+        return talkPickFresh('waitbus', TALK_WAITBUS);
+    }
+  }catch(e){}
+  var pool=npcTalkPool(n);
+  return talkPickFresh(pool.name, pool.lines);
+}
+/* talkPickFresh(poolName, lines) — picks a random line from the given pool,
+   never the same pool+index twice in a row (talkLastKey). Shared by the
+   context-aware picker above and the personality picker. */
+function talkPickFresh(poolName, lines){
+  var i, guard=0, key;
   do {
-    i=(Math.random()*pool.lines.length)|0; guard++;
-    key=pool.name+':'+i;
+    i=(Math.random()*lines.length)|0; guard++;
+    key=poolName+':'+i;
   } while (key===talkLastKey && guard<10);
   talkLastKey=key;
-  return pool.lines[i];
+  return lines[i];
 }
 /* npcDisplayName(n) — the speaker label shown in the dialogue panel.
    Kept generic per Joshua's spec (no named characters yet). */
