@@ -1,4 +1,41 @@
 /* ============================================================================
+   FILE: npc_system.js — "Surviving Adamsville" pedestrian system (~1,000 NPCs)
+   ----------------------------------------------------------------------------
+   PURPOSE: Free-thinking pedestrian population streaming around the player.
+   KEY SYSTEMS:
+     - Population: NPC_COUNT=1000 plain data objects (positions only) — no
+       geometry unless near the player. Placement is DETERMINISTIC (seeded
+       mulberry32, seed 19951013): stable spawns across loads. AI uses
+       Math.random (non-deterministic behavior).
+     - Free-think AI: no waypoints, no pathfinding — WALK a heading for a few
+       seconds, IDLE (look around), TURN to a new heading; a 3.2u lookahead
+       probe turns the NPC away from blockages. Simple sim, Joshua's rule.
+     - Streaming renderer: only MAX_VISIBLE=40 bodies within 150u of the
+       camera get instanced bodies (hysteresis: released beyond 200u), 6
+       InstancedMeshes (torso/head/2 arms/2 legs), per-instance colors
+       (skin head+arms = short-sleeve look, shirt torso, pants legs).
+       Limb animation only within 80u (LOD); distant bodies are static.
+       TCL T513V (Joshua's phone) budget drove these caps.
+     - Border containment: BORDER convex quad → inward half-planes, 10u inner
+       margin; NPCs turn around at the world edge instead of walking out.
+     - NPC QA testers: every NPC files "glitch dispatch calls" into the
+       Report when stuck >5s, blocked >10 failed turns, or in deep water —
+       Joshua's live audit of broken geometry.
+   JOSHUA SPECS ENCODED:
+     - NPC population ~1,000: adult men (~45%), adult women (~40%), and a
+       smaller number of 16-year-old boys (~15%). NOBODY under 16, NOBODY
+       over 65 — hard rule, encoded in TYPE_NAMES and the age-16 boy model
+       (0.85 scale). No children, no elderly.
+     - Pedestrians never spawn on highways (I-20/85/75/285).
+     - Spawn mix: 55% roadside (off the asphalt: half-width + 2.5-5.5u),
+       20% commercial, 25% residential.
+     - LIFE SIM (queued, not yet in this file): each NPC can have a home
+       residence, a car, and a workplace — unassigned shows "unspecified";
+       Joshua assigns homes from a dropdown of houses/apartments. Building
+       entry is fade/morph-through-the-door (no door animation) — NPC
+       disappears inside a while, reappears when leaving.
+   ============================================================================ */
+/* ============================================================================
    NPC PEDESTRIAN SYSTEM — "Surviving Adamsville" v1.9
    ~1,000 free-think pedestrians. Each NPC is DATA ONLY when distant
    (no geometry, no Three.js objects). Bodies stream in as instanced boxes
@@ -68,6 +105,9 @@ var srand=mulberry32(19951013);
 /* ---------------- border containment ----------------
    BORDER is a convex quad [{x,z}x4]. Precompute inward half-planes so NPCs
    TURN around instead of wandering out of the world. 10u inner margin. */
+/* buildBorder() — precomputes the BORDER polygon's inward-facing half-planes
+   (one per edge) so insideBorder() can cheaply test containment. BORDER is a
+   convex quad; edge direction follows the polygon's winding (s=+1/-1). */
 function buildBorder(){
   try{
     if (typeof BORDER==='undefined'||!BORDER||BORDER.length<3){ borderOK=null; return; }
@@ -82,6 +122,9 @@ function buildBorder(){
     borderOK=E;
   }catch(e){ borderOK=null; }
 }
+/* insideBorder(x,z) — true when (x,z) is at least 10u inside every border
+   edge. The 10u margin keeps NPCs off the world wall. Returns true when no
+   border constraint exists. */
 function insideBorder(x,z){
   if (!borderOK) return true;
   for (var i=0;i<borderOK.length;i++){
@@ -97,6 +140,12 @@ function insideBorder(x,z){
    colliders (spatial grid, cell 40u — same grid the game uses), ranch
    houses (PLACED_HOUSES is small, direct loop). Trees/furniture are
    intentionally ignored: walking past a trunk is invisible at this scale. */
+/* npcBlocked(x,z) — cheap "can I step here?" probe. Returns true for water,
+   road corridors, border edges, OSM building colliders (40u spatial grid —
+   the same grid the game uses), and ranch houses (small list, direct loop).
+   Trees/furniture are INTENTIONALLY ignored: walking past a trunk is
+   invisible at this scale, and checking them would cost far more than it
+   saves. All wrapped — a missing world feature degrades to "not blocked". */
 function npcBlocked(x,z){
   try{
     if (typeof inWater==='function' && inWater(x,z)) return true;
@@ -126,6 +175,11 @@ function npcBlocked(x,z){
 /* ---------------- glitch dispatch ----------------
    Every NPC is a QA tester. problem = what went wrong; what = what it was
    doing (state); why = its intent. Newest 50 kept. */
+/* npcGlitch(n, problem, what, why) — files one NPC QA dispatch call: who
+   (NPC#id + type), where (rounded x,z), what they were doing (state), why
+   (intent), and what went wrong. Keeps the newest 50; forces the next report
+   tick (repT=0) so the Report panel shows it promptly. Joshua reads these
+   as his live geometry audit. */
 function npcGlitch(n, problem, what, why){
   glitchTotal++;
   try{
@@ -143,6 +197,9 @@ function npcGlitch(n, problem, what, why){
 }
 
 /* ---------------- spawn placement (deterministic) ---------------- */
+/* collectSpots() — builds the three spawn pools once: walkRoads (non-highway
+   roads only — nobody spawns on I-20/85/75/285), comSpots (OSM type 1/2 =
+   commercial/apartment), resSpots (PLACED_HOUSES). Called once at init. */
 function collectSpots(){
   walkRoads=[]; comSpots=[]; resSpots=[];
   try{
@@ -166,6 +223,9 @@ function collectSpots(){
       for (var k=0;k<PLACED_HOUSES.length;k++) resSpots.push(PLACED_HOUSES[k]);
   }catch(e){}
 }
+/* roadsideSpot() — random point along a random non-highway road, offset
+   perpendicular (half-width + 2.5-5.5u, random side) so the spawn is OFF the
+   asphalt — pedestrians start on the shoulder/grass, never in traffic. */
 function roadsideSpot(){
   var r=walkRoads[(srand()*walkRoads.length)|0];
   var pts=r.pts, si=(srand()*(pts.length-1))|0;
@@ -175,12 +235,24 @@ function roadsideSpot(){
   var side=srand()<0.5?1:-1, off=r.w/2+2.5+srand()*3;   // off the asphalt
   return [x+(-dz/L)*off*side, z+(dx/L)*off*side];
 }
+/* nearSpot(list, isOSM) — random point on a ring around a building
+   (half the building's footprint + 3-9u out): "near the building" without
+   being inside it. isOSM picks the OSM [x,z,w,d,...] layout vs the
+   PLACED_HOUSES [x,z,w,d] layout. */
 function nearSpot(list, isOSM){
   var s=list[(srand()*list.length)|0];
   var w=isOSM?s[2]:s[2], d=isOSM?s[3]:s[3];
   var ang=srand()*Math.PI*2, dist=Math.max(w,d)/2+3+srand()*6;
   return [s[0]+Math.cos(ang)*dist, s[1]+Math.sin(ang)*dist];
 }
+/* spawnNPC(id) — creates one NPC data object: up to 12 placement tries
+   (55% roadside / 20% commercial / 25% residential, falling back to roadside
+   when a pool is empty; [4000,6000] is the last-resort map middle), then
+   type by roll (45% man / 40% woman / 15% boy16 — Joshua's age rule: nobody
+   under 16, nobody over 65), walk speed by type (boys fastest: 1.6-2.1 u/s),
+   0.85 body scale for boys, 3 random body-width variants, and randomized
+   skin (brown tones per spec)/shirt/pants. Speeds use srand (stable) at
+   spawn; AI uses Math.random per frame. */
 function spawnNPC(id){
   var pt=null, tries=0, roll=srand();
   // 55% roadside / 20% commercial / 25% residential (fall back to roadside)
@@ -218,7 +290,20 @@ function spawnNPC(id){
 
 /* ---------------- free-think AI ----------------
    No waypoints, no pathfinding. WALK a heading for a few seconds, IDLE and
-   look around, TURN to a new heading. Sample ahead; if blocked, TURN. */
+   look around, TURN to a new heading. Sample ahead; if blocked, TURN.
+   PERF trick: the lookahead probe and stuck check are staggered per NPC
+   ((npcTick+n.id)%18 and %60) so only ~1/18th of the population probes per
+   frame — 1000 NPCs × probes every frame would be too slow on the TCL. */
+/* aiNPC(n, dt) — one AI tick:
+     WALK: advance along heading; every ~0.3s probe 3.2u ahead and TURN if
+       blocked; every ~1s check displacement (moved <0.6u while walking =
+       stuck): after 5s file a glitch and TURN; unexpected deep water also
+       files a glitch. Timer end → 35% IDLE, else TURN.
+     IDLE: gentle sinusoidal heading wander (look around), no position drift.
+     TURN: pick a random new heading, probe it; walk it if clear, else retry —
+       after 10 failed turns file a glitch and walk anyway (the stuck
+       detector watches; better to keep moving than spin forever). */
+/* setState(n, st, t) — sets the NPC's AI state and its countdown timer. */
 function setState(n, st, t){ n.state=st; n.stateT=t; }
 function aiNPC(n, dt){
   n.stateT-=dt;
@@ -275,6 +360,10 @@ function aiNPC(n, dt){
 }
 
 /* ---------------- streaming: bodies only near the camera ---------------- */
+/* assignSlot(s,n) — binds NPC n to render slot s and bakes its per-instance
+   colors: skin on head+arms (short-sleeve look), shirt on torso, pants on
+   legs. Slot count is set to the visible count each frame; unassigned slots
+   are never drawn. */
 function assignSlot(s,n){
   n.slot=s; slots[s]=n;
   _col.set(n.skin);
@@ -284,6 +373,13 @@ function assignSlot(s,n){
   var mk=[_mesh.torso,_mesh.head,_mesh.armL,_mesh.armR,_mesh.legL,_mesh.legR];
   for (var i=0;i<mk.length;i++) if (mk[i].instanceColor) mk[i].instanceColor.needsUpdate=true;
 }
+/* refreshSlots(px,pz) — reassigns the 40 render slots every 0.5s: releases
+   NPCs beyond HIDE_R (200u — hysteresis so bodies don't pop at the
+   VISIBLE_R 150u boundary), then fills freed slots with the nearest
+   unslotted NPCs inside VISIBLE_R. No allocation: a _pick flag on each NPC
+   prevents double-picking within one pass, and _free is a reused scratch
+   array. Note: the fill scan is O(slots × npcs) — acceptable at 0.5s
+   cadence, would not be per frame. */
 function refreshSlots(px,pz){
   var VR2=VISIBLE_R*VISIBLE_R, HR2=HIDE_R*HIDE_R, i, s, n;
   _free.length=0;
@@ -313,6 +409,10 @@ function refreshSlots(px,pz){
    One unit box per part, scaled by matrix. Per-instance colors: skin on head
    + arms (short-sleeve look), shirt on torso, pants on legs. Boys render at
    0.85 scale; 3 width variants via wid. */
+/* partMat(...) — composes one body-part's matrix from 7 premultiplied
+   matrices: world translate → yaw → body scale → part offset → limb swing
+   (rotation X) → pivot drop → part size. All scratch matrices are allocated
+   once at init (never in the hot loop); _out is returned. */
 function partMat(wx,wy,wz,yaw,scl, px,py,pz, swing,drop, sx,sy,sz){
   _m1.makeTranslation(wx,wy,wz);
   _m2.makeRotationY(yaw);
@@ -324,6 +424,13 @@ function partMat(wx,wy,wz,yaw,scl, px,py,pz, swing,drop, sx,sy,sz){
   return _out.copy(_m1).multiply(_m2).multiply(_m3)
               .multiply(_m4).multiply(_m5).multiply(_m6).multiply(_m7);
 }
+/* renderNPCs(dt,px,pz) — writes body-part matrices for every slotted NPC.
+   walkAmt eases toward 1 (walking) / 0 (idle) so limbs don't snap; the walk
+   phase advances at 3.2+speed*2.6 rad/s; legs swing opposed (sw / -sw),
+   arms counter-swing (asw / -asw); distant NPCs get a static pose
+   (ANIM_R=80u LOD — animation only near the camera). A non-finite terrain
+   height is reported as a "fell through world" glitch and clamped to the
+   last good height. */
 function renderNPCs(dt,px,pz){
   var s, n, vis=0, AR2=ANIM_R*ANIM_R;
   for (s=0;s<MAX_VISIBLE;s++){
@@ -356,7 +463,9 @@ function renderNPCs(dt,px,pz){
   for (var i=0;i<mk.length;i++){ mk[i].count=vis; mk[i].instanceMatrix.needsUpdate=true; }
 }
 
-/* ---------------- report ---------------- */
+/* publishReport() — pushes the NPC status to the Report panel every 5s:
+   population, visible count, and the live glitch log (Joshua's NPC QA
+   dispatch calls). Guarded — safe when Report isn't loaded. */
 function publishReport(){
   try{
     if (typeof Report!=='undefined' && Report.setSys){
@@ -370,6 +479,11 @@ function publishReport(){
 }
 
 /* ---------------- init ---------------- */
+/* initNPCs() — allocates scratch matrices, builds the border, fills spawn
+   pools, creates all 1000 NPCs, the 40 render slots, and the 6
+   InstancedMeshes (one per body part, unit-box geometry scaled per part).
+   Meshes are frustumCulled=false (positions update every frame; culling the
+   batch would hide everyone) with cast/receive shadows off for perf. */
 function initNPCs(){
   _m1=new THREE.Matrix4(); _m2=new THREE.Matrix4(); _m3=new THREE.Matrix4();
   _m4=new THREE.Matrix4(); _m5=new THREE.Matrix4(); _m6=new THREE.Matrix4();
@@ -393,7 +507,9 @@ function initNPCs(){
   publishReport();
 }
 
-/* Wait for the main script's world to exist, then init. Never break the game. */
+/* tryInit() — waits for the main script's world (THREE, scene,
+   roadDrawData) to exist, then inits once. ~20s grace (40 × 500ms); after
+   that the NPC system stays off and the game is unaffected. */
 var initTries=0;
 function tryInit(){
   try{
@@ -407,6 +523,11 @@ function tryInit(){
 }
 
 /* ---------------- main-loop entry ---------------- */
+/* updateNPCs(dt, playerPos) — frame tick (wired by the build agent into
+   animate()): AI for all 1000 NPCs always runs (data-only), slots refresh
+   every 0.5s, bodies render, Report publishes every 5s. When the player is
+   driving, the streaming center follows the CAR, not the player on foot.
+   dt clamped to 50ms. Never throws. */
 function updateNPCs(dt, playerPos){
   if (!npcReady) return;
   try{
