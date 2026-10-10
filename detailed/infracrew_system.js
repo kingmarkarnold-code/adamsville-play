@@ -299,6 +299,8 @@ function reportIssue(o){
     x:o.x, z:o.z, desc:o.desc||('Crew report: '+kindLabel(kind)+' needs service.'),
     state:'reported', reportedAt:Date.now(), fixedAt:0});
   dlog('New '+kindLabel(kind)+' issue '+id+' reported'+(o.street?(' ('+o.street+')'):'')+' — dispatching crew.');
+  /* v1.18 veteran field note — the reporting unit reads it with 30-year eyes. */
+  try{ if(typeof VeteranCrew!=='undefined') dlog('Field note: "'+VeteranCrew.fieldNote(kind)+'"'); }catch(e){}
   toast('🔧 Infra crew dispatched: '+kindLabel(kind)+' issue'+(o.street?(' @ '+o.street):''));
   saveLS();
   try{ Report.setSys('infracrew', sysReport()); }catch(e){}
@@ -475,6 +477,27 @@ function dispatchCrew(d){
     coneData:coneData, t:0, dur:REPAIR_T[d.kind]||45,
     truckCol:truckCol, signCols:signCols, coneCols:coneCols};
   IC.jobs.push(job);
+  /* v1.18 VETERAN CREW (Joshua 2026-10-09): 30-year-veteran workflow —
+     assess → report → dispatch → setup → fix → verify → auto-save.
+     A foreman (gray hard hat + clipboard) leads the job; the workers
+     stage by the truck and walk out to their stations in the setup phase. */
+  try{
+    if (typeof VeteranCrew!=='undefined'){
+      var _vt2=[];
+      workers.forEach(function(w){ _vt2.push({x:w.position.x, z:w.position.z}); });
+      var _fm2=VeteranCrew.makeForeman('infra');
+      if (_fm2){ _fm2.position.set(tx, groundY(tx,tz), tz); grp.add(_fm2); job.foreman=_fm2; }
+      job.vet=VeteranCrew.jobState({crew:'INFRA', kind:d.kind, issue:d,
+        fixDur:job.dur, siteR:9, truckPos:{x:tx, z:tz},
+        workerTargets:_vt2, foremanStyle:'infra'});
+      /* stage the crew by the truck — the setup phase walks them out. */
+      var _stg2=[[2.5,0.5],[-2.5,0.5],[0,3]];
+      workers.forEach(function(w,k){
+        var _s2=_stg2[k%_stg2.length];
+        w.position.set(tx+_s2[0], groundY(tx+_s2[0],tz+_s2[1]), tz+_s2[1]);
+      });
+    }
+  }catch(e){}
   dlog('Infra crew on site at '+d.id+' ('+d.street+') — '+kindLabel(d.kind)+' repair underway.');
   toast('🔧 Infra crew repairing '+kindLabel(d.kind)+(d.street?(' @ '+d.street):''));
   saveLS();
@@ -520,17 +543,36 @@ function finishJob(job){
   try{ Report.setSys('infracrew', sysReport()); }catch(e){}
   try{ refreshPanel(); }catch(e){}
 }
+/* icFixTick(j, dt) — the legacy per-frame repair work: worker repair
+   animation + amber light-bar flash. updateJobs calls this during the
+   'fixing' phase for veteran jobs, or every frame for legacy jobs. */
+function icFixTick(j, dt){
+  j.workers.forEach(function(w,k){
+    w.position.y+=Math.sin(IC.time*7+k*2.4)*0.012;
+    w.rotation.y+=Math.sin(IC.time*1.3+k)*0.01;
+    var a=w.userData.armR; if(a) a.rotation.x=Math.sin(IC.time*7+k)*0.7;
+  });
+  var bar=j.truck.userData.lightBar; if (bar) bar.visible=(IC.tick%14<7);
+}
+/* updateJobs(dt) — per-frame job ticks.
+   v1.18 VETERAN CREW (Joshua 2026-10-09): jobs carrying vet state run the
+   30-year-veteran phase machine (arrive → assess → report → setup → fix →
+   verify). The legacy repair animation runs only during 'fixing'; when the
+   machine returns 'done' the normal finishJob path runs (permanent patch,
+   collider cleanup, localStorage persistence). Jobs without vet state keep
+   the legacy timing. */
 function updateJobs(dt){
   for (var i=IC.jobs.length-1;i>=0;i--){
-    var j=IC.jobs[i]; j.t+=dt;
-    /* workers: repair animation (arm bob + body sway) */
-    j.workers.forEach(function(w,k){
-      w.position.y+=Math.sin(IC.time*7+k*2.4)*0.012;
-      w.rotation.y+=Math.sin(IC.time*1.3+k)*0.01;
-      var a=w.userData.armR; if(a) a.rotation.x=Math.sin(IC.time*7+k)*0.7;
-    });
-    /* amber bar flashes while the crew works */
-    var bar=j.truck.userData.lightBar; if (bar) bar.visible=(IC.tick%14<7);
+    var j=IC.jobs[i];
+    if (j.vet && typeof VeteranCrew!=='undefined'){
+      var ph=VeteranCrew.updateJob(j, dt, {time:IC.time,
+        log:function(m){ dlog(m); }, toast:function(m){ toast(m); }});
+      if (ph==='fixing') icFixTick(j,dt);
+      else if (ph==='done'){ finishJob(j); IC.jobs.splice(i,1); }
+      continue;
+    }
+    j.t+=dt;
+    icFixTick(j,dt);
     if (j.t>=j.dur){ finishJob(j); IC.jobs.splice(i,1); }
   }
 }
