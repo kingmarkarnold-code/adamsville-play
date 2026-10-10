@@ -2159,6 +2159,28 @@ function clampVehY(x, z, y){
    gracefully. Antialiasing is the #1 killer on CPU-only rendering. */
 window.__weakHardware = false;
 window.__perfMode = 'full';
+/* v1.21 NPC KILL SWITCH (Joshua 2026-10-10): Diagnostic flag to completely
+   pause all NPCs (AI, rendering, physics, crews). Toggle via ?nonpc=1 URL
+   param or Shift+N keyboard shortcut. When true, updateNPCs() is skipped,
+   NPC meshes are hidden, and crew system ticks are gated. Player, vehicles,
+   and world continue normally. For diagnosing movement issues on APK. */
+window.__npcPaused = false;
+try {
+  var _npcQ = new URLSearchParams(window.location.search);
+  if (_npcQ.get('nonpc') === '1') window.__npcPaused = true;
+} catch(e){}
+window.__setNpcPaused = function(paused){
+  window.__npcPaused = !!paused;
+  try {
+    // Hide/show the 1000-NPC InstancedMeshes immediately
+    if (window.__npcMeshes) {
+      for (var i = 0; i < window.__npcMeshes.length; i++) {
+        window.__npcMeshes[i].visible = !window.__npcPaused;
+      }
+    }
+  } catch(e){}
+  try { if (typeof showToast === 'function') showToast(window.__npcPaused ? 'NPCs PAUSED' : 'NPCs RESUMED', 2000); } catch(e){}
+};
 (function detectWeakHardware(){
   try {
     var canvas = document.createElement('canvas');
@@ -7831,9 +7853,10 @@ function animate(){
   try{ if(window.SATVIEW) window.SATVIEW.update(dt); }catch(e){}  // v1.16 SATELLITE VIEW per-frame camera/labels
   /* v1.20 PERFORMANCE: Throttle NPC AI on weak hardware to 10Hz.
      1000 NPCs at 60Hz crushes weak CPUs. Visual positions still update
-     smoothly via the render slots; only the AI decisions are throttled. */
+     smoothly via the render slots; only the AI decisions are throttled.
+     v1.21 NPC KILL SWITCH: skip entirely when __npcPaused (diagnostic). */
   try{
-    if(typeof updateNPCs!=='undefined'){
+    if(typeof updateNPCs!=='undefined' && !window.__npcPaused){
       if(window.__weakHardware){
         window.__npcTick=(window.__npcTick||0)+1;
         if(window.__npcTick%6===0) updateNPCs(dt*6, player.mesh.position);
@@ -7845,7 +7868,8 @@ function animate(){
   /* v1.20 PERFORMANCE: The O(n²) vehicle collision resolver is expensive.
      On weak hardware, run it at 15Hz instead of every frame. */
   try{
-    if(window.__weakHardware){
+    if(window.__npcPaused){ /* v1.21 NPC KILL SWITCH: skip when paused */ }
+    else if(window.__weakHardware){
       window.__collTick=(window.__collTick||0)+1;
       if(window.__collTick%4===0) resolveNPCVehicleCollisions();
     } else {
@@ -7873,6 +7897,10 @@ window.addEventListener('keydown', function(e){
   else if (k==='e'){
     var ab=document.getElementById('action-btn');
     if (ab && ab.style.display!=='none') ab.click();
+  }
+  /* v1.21 NPC KILL SWITCH: Shift+N toggles all NPCs paused/resumed (diagnostic). */
+  else if (k==='n' && e.shiftKey){
+    try{ window.__setNpcPaused(!window.__npcPaused); }catch(x){}
   }
 });
 window.addEventListener('keyup', function(e){ keys[e.key.toLowerCase()]=false; });
