@@ -27,8 +27,11 @@
         real road data; follows road polylines where consecutive stops share
         a road, short direct hops otherwise.
 
-   Reads (all optional/guarded): THREE, scene, animate, roadDrawData,
-   PLACED_HOUSES, HOME, heightAt, inWater, bldgGrid, ENTERABLES, Report.
+   Reads (all optional/guarded except where noted): THREE, scene, animate, roadDrawData,
+   PLACED_HOUSES, HOME, heightAt, inWater, bldgGrid, ENTERABLES, Report,
+   vehLam (material helper, expected global), schoolBusMesh (bus mesh
+   builder, expected global), ShirtDesigns (shirt graphics), IS_APK,
+   buildFace3D/addLegoFacePlane (face_platform.js), clampVehY.
    Writes: 8 character Groups + 1 bus Group in scene; window.updateRefNPCs;
    window.REFNPC (debug); tiny HUD clock.
    ============================================================================ */
@@ -90,6 +93,12 @@ var DAYS=['MON','TUE','WED','THU','FRI','SAT','SUN'];
 var RN=null; // runtime state
 
 /* ---------------- character mesh (stylized, matches shipped NPC look) ----- */
+/* Build one photo-based kid mesh from a Character Studio recipe: legs with
+   hip pivots, torso whose front face carries that character's original
+   shirt graphic (ShirtDesigns, when available), arms with shoulder pivots,
+   head + PLATFORM-SPLIT face (APK: buildFace3D geometry; web:
+   addLegoFacePlane texture), then cap (crown+brim) or long hair. Limb
+   pivots + walk phase are stored in userData for the animation loop. */
 function buildKid(r){
   var g=new THREE.Group();
   var P=r.params, C=r.colors, scl=P.heightScale||0.88;
@@ -151,8 +160,11 @@ function buildKid(r){
 
 
 /* ---------------- helpers ---------------- */
+/* Safe ground-height lookup (never NaN — falls back to 0). */
 function groundY(x,z){ try{ var y=heightAt(x,z); return isFinite(y)?y:0; }catch(e){ return 0; } }
 /* spatial hash for PLACED_HOUSES (13k entries — no full loops in hot path) */
+/* Build the 40-unit-cell spatial hash over PLACED_HOUSES so walkStep's
+   obstacle probes stay O(1)-ish instead of scanning ~13k houses. */
 var houseGrid=null;
 function buildHouseGrid(){
   houseGrid={};
@@ -163,6 +175,9 @@ function buildHouseGrid(){
     }
   }catch(e){}
 }
+/* Blocked-test for walkStep probes: true when the point is in water, inside
+   a building collider (bldgGrid, 3x3 cell sweep), or inside a placed-house
+   footprint (houseGrid, same sweep). Guarded — returns false on any error. */
 function wBlocked(x,z){
   try{
     if (typeof inWater==='function' && inWater(x,z)) return true;
@@ -201,9 +216,14 @@ function nearestRoadPt(x,z){
   }catch(e){}
   return best;
 }
+/* Build a cumulative arc-length table for a road polyline (for roadPointAt /
+   segTOf). */
 function arcTable(pts){ var cum=[0];
   for (var i=1;i<pts.length;i++) cum.push(cum[i-1]+Math.hypot(pts[i][0]-pts[i-1][0],pts[i][1]-pts[i-1][1]));
   return cum; }
+/* Interpolate a point on road R at arc-length t: x/z (linear), y (from the
+   road's ys profile, or groundY fallback), and heading (atan2 of segment
+   direction). Binary search over the arc table. */
 function roadPointAt(R,cum,t){
   t=Math.max(0,Math.min(R.len,t));
   var pts=R.pts, ys=R.ys, lo=0, hi=cum.length-2, segL, f, dx, dz, hd;
@@ -216,6 +236,8 @@ function roadPointAt(R,cum,t){
           y:(ys?ys[lo]+(ys[lo+1]-ys[lo])*f:groundY(p0[0]+dx*f,p0[1]+dz*f)),
           heading:hd};
 }
+/* Arc-length t of the nearest road-polyline point to (x,z) — used to snap
+   bus stops / bus position onto a road at route build time. */
 function segTOf(R,cum,x,z){
   var best=0, bd=1e18;
   for (var i=0;i<R.pts.length;i++){ var p=R.pts[i], dx=p[0]-x, dz=p[1]-z, d=dx*dx+dz*dz;
@@ -224,10 +246,28 @@ function segTOf(R,cum,x,z){
 }
 
 /* ---------------- schedule state machine ---------------- */
+/* State ids: SLEEP / HOME / TO_STOP / WAIT / RIDE / SCHOOL / TO_HOME / HANGOUT. */
 var ST={SLEEP:0,HOME:1,TO_STOP:2,WAIT:3,RIDE:4,SCHOOL:5,TO_HOME:6,HANGOUT:7};
+/* day0 = MON; first 5 days are school days, weekends are hangout-only. */
 function isSchoolDay(){ return (RN.day%7)<5; } // day0=MON
+/* Transition a kid to a state and reset its state timer. */
 function setKidState(k,st){ k.state=st; k.stateT=0; }
 
+/* The kid's daily-schedule brain (called once per frame per kid):
+   - 22:00-05:30 is a GLOBAL sleep override (goSleep hides the mesh)
+   - SLEEP: wake at T_WAKE -> HOME on school days, HANGOUT on weekends
+   - HOME: walk to the bus stop before pickup, wander otherwise, evening
+     hangout 16:00-21:00
+   - TO_STOP: walk to the bus stop (or school stop in the afternoon);
+     arrival -> WAIT
+   - WAIT: bus pickup happens via busBoardCheck; fallback: walk to school if
+     the bus was missed (T_WAIT_FALLBACK)
+   - RIDE: the bus moves the kid (no per-kid logic)
+   - SCHOOL: wander the grounds; at T_SCHOOL_END walk to the school stop
+   - TO_HOME: walk to home (or school on the missed-bus fallback);
+     arrival -> HOME (or SCHOOL)
+   - HANGOUT: wander the neighborhood via hangoutTick; back to TO_STOP on
+     school mornings before pickup */
 function kidThink(k, nowMin){
   // global sleep window: 22:00 -> 05:30 — overrides any daytime state
   if (k.state!==ST.SLEEP && (nowMin>=T_SLEEP || nowMin<T_WAKE-60)){ goSleep(k); return; }
@@ -273,8 +313,12 @@ function kidThink(k, nowMin){
       break;
   }
 }
+/* Put a kid to sleep: state SLEEP + hide the mesh (kid is "inside" home). */
 function goSleep(k){ setKidState(k,ST.SLEEP); k.mesh.visible=false; }
+/* True when the kid is within radius r of (tx,tz). */
 function arrived(k,tx,tz,r){ var dx=k.x-tx, dz=k.z-tz; return dx*dx+dz*dz<r*r; }
+/* Pick a hangout target ~40-250u from home (friend's house / yard / corner),
+   retrying up to 10 times to avoid blocked (water/building) spots. */
 function pickHangout(k){
   // friend's house, yard, or nearby corner — within ~250u of home
   var a=Math.random()*Math.PI*2, d=40+Math.random()*210;
@@ -283,6 +327,8 @@ function pickHangout(k){
     tx=k.home.x+Math.cos(a)*d; tz=k.home.z+Math.sin(a)*d; tries++; }
   k.hx=tx; k.hz=tz; k.pauseT=2+Math.random()*6;
 }
+/* Wander around (cx,cz) within rad: pick a random unblocked target, walk to
+   it, pause, repeat. Defaults to the kid's home. */
 function wanderTick(k, cx, cz, rad){
   cx=(cx===undefined)?k.home.x:cx; cz=(cz===undefined)?k.home.z:cz; rad=rad||40;
   k.stateT-=1/60;
@@ -294,6 +340,8 @@ function wanderTick(k, cx, cz, rad){
   }
   if (k.wt){ if (arrived(k,k.wt.x,k.wt.z,2.5)) k.wt=null; else walkStep(k,k.wt.x,k.wt.z,1/60); }
 }
+/* Evening/weekend behavior: walk to the current hangout spot, pause
+   (pauseT), then pick a new spot. */
 function hangoutTick(k){
   if (k.pauseT>0){ k.pauseT-=1/60; k.moving=false; return; }
   if (!k.hx || arrived(k,k.hx,k.hz,3)){ pickHangout(k); return; }
@@ -302,6 +350,8 @@ function hangoutTick(k){
 /* goal-directed walk with obstacle sweep: try headings around the want
    direction, nearest-first (biased by the kid's avoid side), take the first
    with a clear 3u probe. Robust slide-around for houses. */
+/* (see block comment above — obstacle-sweep walk; also steers heading at
+   most 4 rad/s and advances WALK_SPEED; fully-surrounded kids wait.) */
 var SWEEP=[0,0.45,-0.45,0.9,-0.9,1.35,-1.35,1.8,-1.8,2.25,-2.25,2.7,-2.7,3.14];
 function walkStep(k,tx,tz,dt){
   var dx=tx-k.x, dz=tz-k.z, d=Math.hypot(dx,dz);
@@ -322,6 +372,12 @@ function walkStep(k,tx,tz,dt){
 }
 
 /* ---------------- bus ---------------- */
+/* Build the bus route (once, at init): order the 8 stops nearest-neighbor
+   from the first home; then connect consecutive waypoints with 'road' legs
+   (follow the shared road polyline by arc-length) or 'hop' legs (short
+   direct hops when consecutive stops aren't on the same road). Builds both
+   the AM pickup route (stops -> school) and the reversed PM dropoff route
+   (school -> stops). */
 function buildRoute(){
   // order stops nearest-neighbor from the first home
   var order=[0], used={0:true};
@@ -367,6 +423,10 @@ function buildRoute(){
   }
   RN.pmLegs=legs2;
 }
+/* Board kids near the bus (25u): AM — a WAITing kid boards for school;
+   PM — boarding at the school stop for the ride home (records the kid's
+   dropStop), and drop-off when the bus reaches that kid's stop (kid becomes
+   TO_HOME, mesh shown at the bus). */
 function busBoardCheck(){
   var b=RN.bus;
   if (b.mode!=='am' && b.mode!=='pm') return;
@@ -388,6 +448,8 @@ function busBoardCheck(){
   }
 }
 /* all pm riders aboard? (no one left heading to the school stop) */
+/* True when no kid is still walking to / waiting at the school stop — i.e.
+   the PM bus can end its boarding phase and roll. */
 function pmReady(){
   for (var i=0;i<RN.kids.length;i++){ var k=RN.kids[i];
     if (k.busAtSchool && (k.state===ST.TO_STOP||k.state===ST.WAIT)) return false; }
@@ -409,6 +471,17 @@ function parkBus(b, where){
   b.mesh.rotation.y=b.heading;
   b.mesh.visible=true;
 }
+/* Drive the bus state machine per frame. Modes:
+   - off / parked_off: idle — park at the school
+   - am: morning pickup loop (spawns near T_BUS_AM); pauses at each stop
+     (60s) until that stop's kid boards (max wait)
+   - pm: afternoon — first a boarding phase at the school (waits for riders
+     or 150s timeout), then the reversed dropoff legs
+   - midday / done_pm: route finished — park at the school
+   Weekends and non-school days: always parked at the school. The bus mesh
+   stays visible while parked (Joshua: buses don't vanish). Riding kids are
+   pinned to the bus; AM riders become SCHOOL kids at the school, PM riders
+   become TO_HOME kids at their stops. */
 function updateBus(dt, nowMin){
   var b=RN.bus, schoolDay=isSchoolDay();
   if (!schoolDay){ if(b.mode!=='parked_off'){ parkBus(b,'school'); b.mode='parked_off'; } return; }
@@ -503,6 +576,8 @@ function updateBus(dt, nowMin){
 }
 
 /* ---------------- init ---------------- */
+/* Find the school's coordinates: prefer the 'HARPER ARCHER' enterable's
+   door, fall back to the schools3 build constants. */
 function findSchool(){
   var sx=4060, sz=2595; // Harper Archer High School (per schools3 build)
   try{
@@ -515,6 +590,11 @@ function findSchool(){
   }catch(e){}
   return {x:sx, z:sz};
 }
+/* One-time init: pick 8 distinct homes (nearest placed houses to HOME,
+   spread >=45u apart, fallback = random spots), spawn each kid with their
+   recipe + nearest-road bus stop, create the school bus, build the route,
+   add the tiny HUD clock, and wrap the global animate() so updateRefNPCs
+   runs every frame. Game clock starts Mon 06:00. */
 function initRefNPC(){
   RN={kids:[], bus:null, day:0, clockMin:360, hud:null};
   buildHouseGrid();
@@ -589,6 +669,11 @@ function initRefNPC(){
 
 /* ---------------- main loop ---------------- */
 var hudT=0;
+/* Per-frame tick (called from the wrapped animate(), dt clamped to 50ms):
+   advance the game clock (1 real sec = 1 game min, day rolls at 1440),
+   run kidThink + walk movement per kid, pose visible meshes with a simple
+   limb-swing walk animation, drive the bus, and update the HUD clock
+   once per second. */
 function updateRefNPCs(dt){
   if (!RN || !RN.kids.length) return;
   try{
@@ -635,6 +720,10 @@ function updateRefNPCs(dt){
 }
 window.updateRefNPCs=function(dt){ updateRefNPCs(dt||0.016); };
 
+/* Boot poller: init runs only when THREE, scene, roadDrawData (>100 roads),
+   PLACED_HOUSES, and animate are all ready — checked every 250ms, giving up
+   with a logged error after 60s (240 tries). Module is single-instance via
+   window.__refnpcV1. */
 var bootTries=0;
 var bootTimer=setInterval(function(){
   bootTries++;
