@@ -27,22 +27,23 @@
    body/wing: plumage colors. size: overall scale multiplier.
    flap: wingbeats per second. glide: fraction of time spent gliding with
    wings held flat (hawks soar; pigeons almost never glide).
-   count: how many of the 100 birds are this species (sums to 100). */
+   count: how many of the 500 birds are this species (sums to 500).
+   v1.1 CREW 5X (Joshua 2026-10-09): 5x birds (100 -> 500). */
 var BIRD_SPECIES=[
-  {name:'crow',     body:0x1b1b1b, wing:0x2a2a2a, size:1.25, flap:9,  glide:0.30, count:22,
+  {name:'crow',     body:0x1b1b1b, wing:0x2a2a2a, size:1.25, flap:9,  glide:0.30, count:110,
    note:'all-black, broad wings, slow rowing flap with glide breaks'},
-  {name:'pigeon',   body:0x8b8b98, wing:0x54545e, size:0.95, flap:13, glide:0.05, count:30,
+  {name:'pigeon',   body:0x8b8b98, wing:0x54545e, size:0.95, flap:13, glide:0.05, count:150,
    note:'gray body, darker wingtips, fast constant flutter'},
-  {name:'hawk',     body:0x5e3d22, wing:0x4a3018, size:1.70, flap:5,  glide:0.85, count:6,
+  {name:'hawk',     body:0x5e3d22, wing:0x4a3018, size:1.70, flap:5,  glide:0.85, count:30,
    note:'red-tailed hawk: brown body, broad wings, mostly soaring'},
-  {name:'cardinal', body:0xc22424, wing:0x981818, size:0.85, flap:12, glide:0.10, count:16,
+  {name:'cardinal', body:0xc22424, wing:0x981818, size:0.85, flap:12, glide:0.10, count:80,
    note:'bright red male northern cardinal'},
-  {name:'bluejay',  body:0xb9c2cc, wing:0x2b5fc4, size:0.90, flap:12, glide:0.10, count:14,
+  {name:'bluejay',  body:0xb9c2cc, wing:0x2b5fc4, size:0.90, flap:12, glide:0.10, count:70,
    note:'blue wings/tail, pale gray body'},
-  {name:'robin',    body:0x8a5c34, wing:0x5e4028, size:0.85, flap:12, glide:0.10, count:12,
+  {name:'robin',    body:0x8a5c34, wing:0x5e4028, size:0.85, flap:12, glide:0.10, count:60,
    note:'rust-red breast, brown back'}
 ];
-var N_BIRDS=100;
+var N_BIRDS=500;
 
 /* ---------- module state ---------- */
 var BD=null;           // state object once initialized
