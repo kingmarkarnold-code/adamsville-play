@@ -411,8 +411,11 @@ function patrolDiscover(u){
   }catch(e){}
 }
 function updatePatrols(dt){
+  // v1.15 DISTANCE CULLING (Joshua 2026-10-10)
+  var _zu=window.ZONEUNLOCK;
   for (var i=0;i<IC.patrols.length;i++){
     var u=IC.patrols[i];
+    if(_zu && u && _zu.shouldCull(u.x,u.z)) continue;
     patrolAdvance(u, dt);
     patrolDiscover(u);
   }
