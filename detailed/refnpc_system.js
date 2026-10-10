@@ -1,5 +1,5 @@
 /* ============================================================================
-   REFNPC — 8 photo-based NPCs with daily schedules + school bus (v1.0)
+   REFNPC — 8 photo-based NPCs with daily schedules + school bus (v1.1)
    ----------------------------------------------------------------------------
    STANDALONE MODULE. Include AFTER the main game script + npc_system.js —
    zero edits to index.html logic required:
@@ -11,12 +11,12 @@
         2026-10-08) as residents of the Adamsville / Dollar Mill area, each
         with a distinct home (a real nearby house).
      2. Daily SCHEDULES (simple sim) driven by a game clock
-        (1 real second = 1 game minute; day starts Mon 06:00):
+        (24 game hrs = 124 real min, Joshua 2026-10-09; day starts Mon 06:00):
           22:00-06:30 SLEEP at home (hidden)
-          06:30-07:10 HOME (wander near home)
-          ~07:10      walk to bus stop, WAIT
-          ~07:25      school bus pickup -> RIDE to Harper Archer High School
-          08:00-15:00 AT SCHOOL (wander grounds)
+          06:30-walk  HOME (wander near home)
+          ~2 min before bus  walk to bus stop, WAIT (per-stop timed arrival)
+          ~07:40-08:40 school bus pickup -> RIDE to Harper Archer High School
+          08:40-15:00 AT SCHOOL (wander grounds)
           15:00       bus home -> dropped at stop -> walk TO_HOME
           15:30-22:00 HANGOUT / HOME (evening wander near home)
         Weekends: no bus/school — hang out around the neighborhood all day.
@@ -83,9 +83,15 @@ var RECIPES=[
 
 /* ---------------- config ---------------- */
 var WALK_SPEED=1.7, BUS_SPEED=16;
-/* Schedule (game clock: 1 real sec = 1 game min; gaps sized for real-time
-   walking ~15-30s and bus driving). */
-var T_WAKE=390, T_TOSTOP=395, T_BUS_AM=475, T_SCHOOL=560, T_SCHOOL_END=900,
+/* Day cycle (Joshua 2026-10-09): 24 game hours = 124 real minutes.
+   DAY_SCALE converts real seconds to game minutes. */
+var DAY_SCALE=1440/7440; // ≈0.1935 game-min per real-sec; 1 game hr = 310 real sec
+/* Bus dwell is a fixed real-seconds pause per stop (deterministic) so kids
+   can time their walk to arrive ~2 game-min before the bus. */
+var BUS_DWELL_S=20;
+/* Schedule (game minutes). T_TOSTOP is gone — each kid gets a personal
+   k.leaveForStop computed from their stop's bus arrival time. */
+var T_WAKE=390, T_BUS_AM=475, T_SCHOOL=560, T_SCHOOL_END=900,
     T_BUS_PM=905, T_SLEEP=1320; // minutes
 var T_WAIT_FALLBACK=620; // 10:20 — walk to school if bus was missed
 var DAYS=['MON','TUE','WED','THU','FRI','SAT','SUN'];
@@ -256,8 +262,9 @@ function setKidState(k,st){ k.state=st; k.stateT=0; }
 /* The kid's daily-schedule brain (called once per frame per kid):
    - 22:00-05:30 is a GLOBAL sleep override (goSleep hides the mesh)
    - SLEEP: wake at T_WAKE -> HOME on school days, HANGOUT on weekends
-   - HOME: walk to the bus stop before pickup, wander otherwise, evening
-     hangout 16:00-21:00
+   - HOME: leave for the bus stop at k.leaveForStop (timed so the kid
+     arrives ~2 game-min before the bus), wander otherwise, evening
+     hangout 16:00-21:00; missed the bus -> walk to school
    - TO_STOP: walk to the bus stop (or school stop in the afternoon);
      arrival -> WAIT
    - WAIT: bus pickup happens via busBoardCheck; fallback: walk to school if
@@ -267,7 +274,7 @@ function setKidState(k,st){ k.state=st; k.stateT=0; }
    - TO_HOME: walk to home (or school on the missed-bus fallback);
      arrival -> HOME (or SCHOOL)
    - HANGOUT: wander the neighborhood via hangoutTick; back to TO_STOP on
-     school mornings before pickup */
+     school mornings at k.leaveForStop */
 function kidThink(k, nowMin){
   // global sleep window: 22:00 -> 05:30 — overrides any daytime state
   if (k.state!==ST.SLEEP && (nowMin>=T_SLEEP || nowMin<T_WAKE-60)){ goSleep(k); return; }
@@ -277,11 +284,18 @@ function kidThink(k, nowMin){
       if (nowMin>=T_WAKE){ setKidState(k, schoolDay?ST.HOME:ST.HANGOUT); k.mesh.visible=true; }
       break;
     case ST.HOME:
-      if (schoolDay && nowMin>=T_TOSTOP && nowMin<T_BUS_AM){ setKidState(k,ST.TO_STOP); k.tx=k.stop.x; k.tz=k.stop.z; }
-      else if (!schoolDay && nowMin>=T_WAKE+30 && nowMin<1200){ setKidState(k,ST.HANGOUT); pickHangout(k); }
-      else if (nowMin>=960 && nowMin<T_SLEEP-60){ setKidState(k,ST.HANGOUT); pickHangout(k); } // evening hangout 16:00-21:00
-      else if (nowMin>=T_SLEEP){ goSleep(k); }
-      else wanderTick(k);
+      if (schoolDay){
+        if (nowMin>=k.leaveForStop && nowMin<=k.busArrival+5){ setKidState(k,ST.TO_STOP); k.tx=k.stop.x; k.tz=k.stop.z; }
+        else if (nowMin>k.busArrival+5 && nowMin<T_SCHOOL_END){ k.tx=RN.school.x; k.tz=RN.school.z; setKidState(k,ST.TO_HOME); k.toSchool=true; } // missed bus: walk to school
+        else if (nowMin>=960 && nowMin<T_SLEEP-60){ setKidState(k,ST.HANGOUT); pickHangout(k); } // evening hangout 16:00-21:00
+        else if (nowMin>=T_SLEEP){ goSleep(k); }
+        else wanderTick(k);
+      } else {
+        if (nowMin>=T_WAKE+30 && nowMin<1200){ setKidState(k,ST.HANGOUT); pickHangout(k); }
+        else if (nowMin>=960 && nowMin<T_SLEEP-60){ setKidState(k,ST.HANGOUT); pickHangout(k); }
+        else if (nowMin>=T_SLEEP){ goSleep(k); }
+        else wanderTick(k);
+      }
       break;
     case ST.TO_STOP:
       var ax=k.busAtSchool?RN.schoolStop.x:k.stop.x, az=k.busAtSchool?RN.schoolStop.z:k.stop.z;
@@ -308,7 +322,8 @@ function kidThink(k, nowMin){
       break;
     case ST.HANGOUT:
       if (nowMin>=T_SLEEP){ goSleep(k); }
-      else if (schoolDay && nowMin>=T_TOSTOP && nowMin<T_BUS_AM){ setKidState(k,ST.TO_STOP); k.tx=k.stop.x; k.tz=k.stop.z; }
+      else if (schoolDay && nowMin>=k.leaveForStop && nowMin<=k.busArrival+5){ setKidState(k,ST.TO_STOP); k.tx=k.stop.x; k.tz=k.stop.z; }
+      else if (schoolDay && nowMin>k.busArrival+5 && nowMin<T_SCHOOL_END){ k.tx=RN.school.x; k.tz=RN.school.z; setKidState(k,ST.TO_HOME); k.toSchool=true; } // missed bus
       else hangoutTick(k);
       break;
   }
@@ -423,6 +438,34 @@ function buildRoute(){
   }
   RN.pmLegs=legs2;
 }
+/* Per-stop bus arrival times + per-kid departure times (Joshua 2026-10-09).
+   The AM bus is fully deterministic now: spawns at stopOrder[0] at
+   T_BUS_AM-15, dwells BUS_DWELL_S (real sec) per stop, drives legs at
+   BUS_SPEED. Arrival at each stop is computed in game minutes; each kid's
+   walk time (straight-line * 1.5 for detours, at WALK_SPEED) is subtracted
+   along with a 2-game-minute buffer so the kid arrives just before the bus
+   instead of standing around for an hour. */
+function computeStopSchedule(){
+  RN.stopArrivals={};
+  var t=T_BUS_AM-15; // bus spawns at the first stop
+  RN.stopArrivals[RN.stopOrder[0]]=t;
+  t+=BUS_DWELL_S*DAY_SCALE;
+  for (var w=0; w<RN.amLegs.length-1; w++){
+    var leg=RN.amLegs[w];
+    var dist=(leg.type==='road')?Math.abs(leg.t1-leg.t0)
+                                :Math.hypot(leg.x1-leg.x0,leg.z1-leg.z0);
+    t+=(dist/BUS_SPEED)*DAY_SCALE; // drive this leg
+    RN.stopArrivals[RN.stopOrder[w+1]]=t; // bus reaches the next stop
+    t+=BUS_DWELL_S*DAY_SCALE; // dwell there
+  }
+  for (var i=0;i<RN.kids.length;i++){
+    var k=RN.kids[i];
+    k.busArrival=RN.stopArrivals[k.stopIdx];
+    var wd=Math.hypot(k.stop.x-k.home.x,k.stop.z-k.home.z);
+    var walkMin=(wd/WALK_SPEED)*DAY_SCALE*1.5; // 1.5x for obstacle detours
+    k.leaveForStop=Math.max(T_WAKE, k.busArrival-walkMin-2); // 2-min buffer
+  }
+}
 /* Board kids near the bus (25u): AM — a WAITing kid boards for school;
    PM — boarding at the school stop for the ride home (records the kid's
    dropStop), and drop-off when the bus reaches that kid's stop (kid becomes
@@ -488,7 +531,7 @@ function updateBus(dt, nowMin){
   b.mesh.visible=true;
   if (b.mode==='off' || b.mode==='parked_off'){ parkBus(b,'school'); b.mode='off'; }
   if (nowMin>=T_BUS_AM-15 && nowMin<T_BUS_AM+120 && b.mode==='off'){
-    b.mode='am'; b.leg=0; b.t=0; b.tInit=false; b.pauseT=25; b.atStop=RN.stopOrder[0];
+    b.mode='am'; b.leg=0; b.t=0; b.tInit=false; b.pauseT=BUS_DWELL_S; b.atStop=RN.stopOrder[0];
     b.waitKid=RN.stopOrder[0];
     var s0=RN.kids[RN.stopOrder[0]].stop; b.x=s0.x; b.z=s0.z; b.y=groundY(s0.x,s0.z);
   }
@@ -522,11 +565,8 @@ function updateBus(dt, nowMin){
   }
   if (b.pauseT>0){
     b.pauseT-=dt;
-    // morning: don't leave until this stop's kid has boarded (max 60s wait)
-    if (b.mode==='am' && b.waitKid>=0 && b.pauseT<55){
-      var wk=RN.kids[b.waitKid];
-      if (wk && wk.state!==ST.WAIT && wk.state!==ST.TO_STOP) b.pauseT=Math.min(b.pauseT,2);
-    }
+    /* Dwell is deterministic (BUS_DWELL_S) so kids can time their arrival.
+       No early departure — the schedule is the schedule. */
     busBoardCheck(); return;
   }
   var leg=legs[b.leg], arrived=false;
@@ -552,7 +592,7 @@ function updateBus(dt, nowMin){
   }
   if (arrived){
     b.atStop=leg.stopKid;
-    b.pauseT=(b.mode==='am')?60:6; b.waitKid=(b.mode==='am')?leg.stopKid:-1;
+    b.pauseT=(b.mode==='am')?BUS_DWELL_S:6; b.waitKid=(b.mode==='am')?leg.stopKid:-1;
     b.leg++; b.tInit=false;
     if (b.mode==='am'){ /* kids board during pause via busBoardCheck */ }
     else { // pm: drop this kid now
@@ -644,6 +684,7 @@ function initRefNPC(){
           x:0, z:0, y:0, heading:0, atStop:-1, waitKid:-1,
           boarding:false, boardT:0};
   buildRoute();
+  computeStopSchedule(); // per-stop arrivals + per-kid leave times (v1.1)
   // HUD clock (tiny, top-center)
   try{
     var div=document.createElement('div');
@@ -662,25 +703,24 @@ function initRefNPC(){
     }
   }catch(e){}
   try{ if (typeof Report!=='undefined' && Report.setSys)
-    Report.setSys('refnpc',{status:'ok',version:'1.0',kids:RN.kids.length,
-      note:'8 photo NPCs w/ daily schedules + school bus (Harper Archer High)'}); }catch(e){}
+    Report.setSys('refnpc',{status:'ok',version:'1.1',kids:RN.kids.length,
+      note:'8 photo NPCs w/ daily schedules + school bus (Harper Archer High); 124-min day, per-stop timed arrivals'}); }catch(e){}
   window.REFNPC=RN;
 }
 
 /* ---------------- main loop ---------------- */
 var hudT=0;
 /* Per-frame tick (called from the wrapped animate(), dt clamped to 50ms):
-   advance the game clock (1 real sec = 1 game min, day rolls at 1440),
-   run kidThink + walk movement per kid, pose visible meshes with a simple
-   limb-swing walk animation, drive the bus, and update the HUD clock
-   once per second. */
+   advance the game clock (24 game hrs = 124 real min via DAY_SCALE, day
+   rolls at 1440), run kidThink + walk movement per kid, pose visible meshes
+   with a simple limb-swing walk animation, drive the bus, and update the
+   HUD clock once per second. */
 function updateRefNPCs(dt){
   if (!RN || !RN.kids.length) return;
   try{
     dt=Math.min(0.05, dt||0.016);
-    // game clock: 1 real second = 1 game minute
-    // 1 real second = 1 game minute (dt is in seconds)
-    RN.clockMin+=dt;
+    // game clock: 24 game hrs = 124 real min (Joshua 2026-10-09)
+    RN.clockMin+=dt*DAY_SCALE;
     if (RN.clockMin>=1440){ RN.clockMin-=1440; RN.day++; }
     var nowMin=RN.clockMin;
     for (var i=0;i<RN.kids.length;i++){
