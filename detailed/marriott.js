@@ -204,6 +204,7 @@ function mqBuildInterior() {
     [(a + (hp - a) / 2), 0, hp - a, A]            // east
   ];
   var slabs = new THREE.InstancedMesh(slabGeo, slabMat, MQ.FLOORS * 4);
+    slabs.frustumCulled=false; // v1.17 FIX: InstancedMesh spans the map — r128 culls it as a tiny sphere at origin, making meshes invisible
   var m4 = new THREE.Matrix4();
   var q0 = new THREE.Quaternion(), s3 = new THREE.Vector3();
   var si = 0;
@@ -223,6 +224,7 @@ function mqBuildInterior() {
   var railMat = new THREE.MeshLambertMaterial({ color: 0x88aacc, transparent: true, opacity: 0.45 });
   var perSide = 8, railCount = perSide * 4 * (MQ.FLOORS - 1);
   var rails = new THREE.InstancedMesh(railGeo, railMat, railCount);
+    rails.frustumCulled=false; // v1.17 FIX: InstancedMesh spans the map — r128 culls it as a tiny sphere at origin, making meshes invisible
   var ri = 0, q = new THREE.Quaternion(), e = new THREE.Euler();
   var sc = new THREE.Vector3(A / perSide, 1, 1);
   for (var rf = 2; rf <= MQ.FLOORS; rf++) {
@@ -351,6 +353,7 @@ function mqBuildElevator() {
   var doorGeo = new THREE.BoxGeometry(1.4, 2.6, 0.15);
   var doorMat = new THREE.MeshLambertMaterial({ color: 0x9aa0a8 });
   var landDoors = new THREE.InstancedMesh(doorGeo, doorMat, MQ.FLOORS * 2);
+    landDoors.frustumCulled=false; // v1.17 FIX: InstancedMesh spans the map — r128 culls it as a tiny sphere at origin, making meshes invisible
   var m4 = new THREE.Matrix4(), q0 = new THREE.Quaternion(),
       s1 = new THREE.Vector3(1, 1, 1), di = 0;
   for (var f = 1; f <= MQ.FLOORS; f++) {
