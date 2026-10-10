@@ -1351,7 +1351,12 @@ var ASSETVER=(function(){
             var f=files[i++];
             say('Downloading map: '+f.name+' ('+i+'/'+files.length+')');
             setTimeout(function(){
-              try{ var r=mb.downloadFile(f.url,f.name)||''; if(r.indexOf('OK:')!==0) failed++; }
+              /* FIX 2026-10-09 (APK UI download failure): manifest entries do not
+               always carry a url field (ui-manifest.json has none). Fall back
+               to BASE + filename so the native bridge always gets a real URL
+               instead of undefined (which caused NullPointerException in
+               AssetBridge and failed ALL files). */
+            try{ var fileUrl=f.url||(BASE+f.name); var r=mb.downloadFile(fileUrl,f.name)||''; if(r.indexOf('OK:')!==0) failed++; }
               catch(e){ failed++; }
               next();
             },30);
@@ -1418,7 +1423,12 @@ var ASSETVER=(function(){
           var f=files[i++];
           say('Downloading '+LABELS[type]+': '+f.name+' ('+i+'/'+files.length+')');
           setTimeout(function(){
-            try{ var r=b.downloadAssetFile(type,f.url,f.name)||''; if(r.indexOf('OK:')!==0) failed++; }
+            /* FIX 2026-10-09 (APK UI download failure): manifest entries do not
+               always carry a url field (ui-manifest.json has none). Fall back
+               to BASE + filename so the native bridge always gets a real URL
+               instead of undefined (which caused NullPointerException in
+               AssetBridge and failed ALL 41 UI files). */
+            try{ var fileUrl=f.url||(BASE+f.name); var r=b.downloadAssetFile(type,fileUrl,f.name)||''; if(r.indexOf('OK:')!==0) failed++; }
             catch(e){ failed++; }
             next();
           },30);
@@ -5910,7 +5920,47 @@ function startNewGame(){
 }
 var mmCanvas=document.getElementById('minimap');
 var fmCanvas=document.getElementById('fullmap-canvas');  // before gesture handlers attach
-mmCanvas.addEventListener('click', function(){ openFullMap(); });
+mmCanvas.addEventListener('click', function(){
+  if(Date.now()<mmSuppressClickUntil) return;  // v1.14: was a pinch-zoom, not a tap
+  openFullMap();
+});
+// v1.14 MINIMAP ZOOM (Joshua 2026-10-09): pinch with two fingers (touch) or
+// the mouse wheel (desktop) zooms the minimap 1x-4x. Zooming in reveals
+// street names on the minimap — the closer the zoom, the more names appear.
+// Street-name labels are minimap-UI only, never painted into the 3D world.
+var mmZoom=1, mmZoomHintUntil=0, mmSuppressClickUntil=0;
+(function(){
+  function setZ(z){
+    mmZoom=Math.max(1,Math.min(4,z));
+    mmZoomHintUntil=Date.now()+1500;  // brief zoom-level hint
+  }
+  mmCanvas.addEventListener('wheel', function(e){
+    e.preventDefault();
+    setZ(mmZoom*(e.deltaY<0?1.25:0.8));
+  }, {passive:false});
+  var pinchD0=0, pinchZ0=1, pinching=false;
+  mmCanvas.addEventListener('touchstart', function(e){
+    if(e.touches.length===2){
+      pinching=true;
+      var t0=e.touches[0], t1=e.touches[1];
+      pinchD0=Math.hypot(t0.clientX-t1.clientX, t0.clientY-t1.clientY);
+      pinchZ0=mmZoom;
+      mmSuppressClickUntil=Date.now()+600;  // keep the pinch from opening the full map
+    }
+  }, {passive:true});
+  mmCanvas.addEventListener('touchmove', function(e){
+    if(pinching && e.touches.length===2){
+      e.preventDefault();
+      var t0=e.touches[0], t1=e.touches[1];
+      var d=Math.hypot(t0.clientX-t1.clientX, t0.clientY-t1.clientY);
+      if(pinchD0>0) setZ(pinchZ0*d/pinchD0);
+    }
+  }, {passive:false});
+  mmCanvas.addEventListener('touchend', function(e){
+    if(e.touches.length<2) pinching=false;
+  }, {passive:true});
+  mmCanvas.addEventListener('touchcancel', function(){ pinching=false; }, {passive:true});
+})();
 document.getElementById('fullmap-close').addEventListener('click', closeFullMap);
 // v0.5: tap (not drag) on the map closes it; mouse click still works (guarded
 // against the synthetic click that follows a touch)
@@ -6068,7 +6118,7 @@ function drawMinimap(dt){
   mm.save();
   mm.beginPath(); mm.arc(R,R,R-2,0,Math.PI*2); mm.clip();
   mm.fillStyle='#0e2a1a'; mm.fillRect(0,0,S,S);
-  var range=260;  // world units visible
+  var range=260/mmZoom;  // world units visible (v1.14: pinch/wheel zoom 1x-4x)
   var px=car.driving?car.x:player.x, pz=car.driving?car.z:player.z;
   var yaw=car.driving?car.yaw:player.yaw;
   function toMap(x,z){
@@ -6123,6 +6173,66 @@ function drawMinimap(dt){
         mm.fillStyle='#ffffff'; mm.font='bold 8px Arial';
         mm.fillText('M', m[0], m[1]+3);
       });
+    }
+  }catch(e){}
+  // v1.14 ZOOM-DEPENDENT STREET NAMES (Joshua 2026-10-09): the closer the
+  // minimap zoom, the more street names appear. Tier 0 (zoom<1.5x): interstates/
+  // highways only. Tier 1 (1.5x-2.75x): + arterials. Tier 2 (2.75x+): all named
+  // roads. Labels are minimap-UI only — never painted into the 3D world.
+  try{
+    var mmTier = mmZoom>=2.75 ? 2 : (mmZoom>=1.5 ? 1 : 0);
+    var mmPlaced=[];  // screen-space boxes of drawn labels, for declutter
+    var mmByName={};  // cleaned name -> {vis:[[sx,sy]..]} (longest visible run wins)
+    for(var ri=0; ri<roadDrawData.length; ri++){
+      var rr=roadDrawData[ri];
+      if(!rr.name) continue;
+      var rt = rr.cat==='highway'?0 : (rr.cat==='arterial'?1 : 2);
+      if(rt>mmTier) continue;
+      var mp=rr.mmPts||rr.pts, vis=[];
+      for(var pi=0; pi<mp.length; pi++){
+        var pp=mp[pi];
+        if(Math.abs(pp[0]-px)>range*1.15 || Math.abs(pp[1]-pz)>range*1.15) continue;
+        vis.push(toMap(pp[0],pp[1]));
+      }
+      if(vis.length<2) continue;
+      var nm=String(rr.name).replace(/\s*\([^)]*\)/g,'').replace(/\s*-\s*/g,'-').trim();
+      if(!nm || /^(unnamed|unknown)\b/i.test(nm)) continue;
+      var prev=mmByName[nm];
+      if(!prev || vis.length>prev.vis.length) mmByName[nm]={vis:vis};
+    }
+    var mmNames=Object.keys(mmByName);
+    mmNames.sort(function(a,b){  // interstates first so major labels win placement
+      return (/^I-/.test(a)?0:1)-(/^I-/.test(b)?0:1);
+    });
+    mm.font='bold 11px Arial'; mm.textAlign='center'; mm.textBaseline='middle';
+    var mmMaxLabels = mmTier===2?14 : (mmTier===1?10 : 6), mmDrawn=0;
+    for(var ni=0; ni<mmNames.length && mmDrawn<mmMaxLabels; ni++){
+      var cv=mmByName[mmNames[ni]].vis;
+      var mid=Math.floor(cv.length/2);
+      var pa=cv[Math.max(0,mid-1)], pb=cv[Math.min(cv.length-1,mid+1)];
+      var ang=Math.atan2(pb[1]-pa[1], pb[0]-pa[0]);
+      if(ang>Math.PI/2) ang-=Math.PI; else if(ang<-Math.PI/2) ang+=Math.PI;
+      var lx=cv[mid][0], ly=cv[mid][1];
+      var wpx=mm.measureText(mmNames[ni]).width+10, clash=false;
+      for(var qi=0; qi<mmPlaced.length; qi++){
+        var qq=mmPlaced[qi];
+        if(Math.abs(qq.x-lx)<(qq.w+wpx)/2 && Math.abs(qq.y-ly)<16){ clash=true; break; }
+      }
+      if(clash) continue;
+      var dcx=lx-R, dcy=ly-R;  // keep labels inside the circular clip
+      if(Math.sqrt(dcx*dcx+dcy*dcy)>R-26) continue;
+      mm.save(); mm.translate(lx,ly); mm.rotate(ang);
+      mm.lineWidth=3; mm.strokeStyle='rgba(0,0,0,.75)';
+      mm.strokeText(mmNames[ni],0,0);
+      mm.fillStyle = /^I-/.test(mmNames[ni]) ? '#ffd75e' : '#ffffff';
+      mm.fillText(mmNames[ni],0,0);
+      mm.restore();
+      mmPlaced.push({x:lx,y:ly,w:wpx}); mmDrawn++;
+    }
+    if(mmZoom>1.01 && Date.now()<mmZoomHintUntil){  // subtle zoom-level hint
+      mm.fillStyle='rgba(255,255,255,.85)'; mm.font='bold 12px Arial';
+      mm.textAlign='right'; mm.textBaseline='alphabetic';
+      mm.fillText((Math.round(mmZoom*10)/10)+'x', R*2-10, 18);
     }
   }catch(e){}
   // car markers (all vehicles; wrecks stay visible)
