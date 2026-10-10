@@ -724,7 +724,7 @@ function wrapAnimate(){
   try {
     if (typeof animate === 'function' && !animate.__hqstaffWrap){
       var orig = animate;
-      var wrapped = function(){ orig(); updateHQStaff(0.016); };
+      var wrapped = function(){ orig(); if(!window.__npcPaused) updateHQStaff(0.016); };
       wrapped.__hqstaffWrap = true;
       animate = wrapped;
     }
