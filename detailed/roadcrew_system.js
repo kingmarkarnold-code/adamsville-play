@@ -1082,4 +1082,9 @@ var bootTimer=setInterval(function(){
     try{ if(typeof Report!=='undefined') Report.noteError('roadcrew','boot-timeout','deps never ready'); }catch(e){}
   }
 },500);
+/* v1.17 ROADFIX export (Joshua 2026-10-09): the crew↔dev coordination layer
+   (roadfix.js) needs the repair pipeline, the active job list, and the
+   asphalt patch builder to dispatch construction repairs and re-lay saved
+   patches at boot. Guarded — roadfix.js degrades cleanly without it. */
+try{ window.__roadCrewOps={ dispatchRepair:dispatchRepair, makePatch:makePatch, jobs:function(){ return RC.jobs; } }; }catch(e){}
 })();
