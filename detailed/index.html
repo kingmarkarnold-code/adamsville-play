@@ -5938,16 +5938,7 @@ setDrivingUI(false);
 /* v1.11: loading screen — the game only starts on tap (also unlocks mobile audio) */
 __loadStep('world');
 __loadStep('music');
-document.getElementById('loader').addEventListener('click', function(){
-  try{
-    var need=window.__loadOrder.length, have=Object.keys(window.__loadDone||{}).length;
-    if(have<need) return;  // still loading — ignore taps
-  }catch(e){}
-  var l=document.getElementById('loader');
-  if(l) l.style.display='none';
-  try{ musicStartOnce(); }catch(e){}
-  try{ animate(); }catch(e){}
-});
+/* v1.13.1: old loader click handler removed — document-level __tryStartGame handles all clicks/taps */
 /* v1.13: CLICK ANYWHERE TO START — entire page is clickable once assets are ready.
    Handles clicks on body/document for maximum compatibility (mouse, touch, trackpad). */
 function __tryStartGame(){
