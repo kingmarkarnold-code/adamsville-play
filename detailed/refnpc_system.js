@@ -693,7 +693,8 @@ function initRefNPC(){
   try{
     if (typeof animate==='function' && !animate.__refnpcWrap){
       var orig=animate;
-      var wrapped=function(){ orig(); if(!window.__npcPaused) updateRefNPCs(); };
+      /* v1.22 LAUNCHER (Joshua 2026-10-10): photo NPCs follow the NPCs launch option. */
+      var wrapped=function(){ orig(); if(!window.__npcPaused && (!window.__launchOpts || window.__launchOpts.npcs!==false)) updateRefNPCs(); };
       wrapped.__refnpcWrap=true; animate=wrapped;
     }
   }catch(e){}
