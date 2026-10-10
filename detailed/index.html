@@ -4880,6 +4880,9 @@ actionBtn.addEventListener('click', function(){
        Atlanta small-talk. The NPC is already facing the player (npcFaceTick).
        Tapping TALK again mid-chat serves a fresh line. */
     var tn=window.__talkNPC;
+    if (!tn && typeof npcTalkNearest==='function'){
+      try{ tn=npcTalkNearest(player.x, player.z); }catch(e){}
+    }
     if (tn && typeof npcStartTalk==='function') npcStartTalk(tn);
   } else if (a==='exit-house'){
     var fd=heroHouse.frontDoor, bd=heroHouse.backDoor;
@@ -6229,9 +6232,11 @@ function updateActionButton(){
       if (!act && typeof spCheckEnterables==='function'){
         var spOut=spCheckEnterables(); if (spOut){ act=spOut.act; label=spOut.label; }
       }
-      /* v1.14 NPC talk (Joshua): nearest visible pedestrian in range gets a
-         TALK prompt on the universal action button — same pattern as ENTER CAR.
-         npcTalkNearest() already excludes driving/inside/riding states. */
+      /* v1.14 NPC talk (Joshua) / v1.14.1 Dialogue Director: nearest visible
+         pedestrian in range gets a TALK prompt on the universal action button —
+         same pattern as ENTER CAR. npcTalkNearest() already excludes
+         driving/inside/riding states. Lines come from personality pools
+         (man/woman/boy16 + shared Atlanta pool) via npcTalkLine(n). */
       if (!act && typeof npcTalkNearest==='function'){
         var tn=npcTalkNearest(player.x,player.z);
         if (tn){ act='talk-npc'; label='TALK'; window.__talkNPC=tn; }
