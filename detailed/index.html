@@ -3386,7 +3386,11 @@ var BORDER = BORDER_LL.map(function(ll){ return xz(ll[0], ll[1]); });
 var heroHouse = {};
 var HOUSE_535 = {
   W: 13.5, D: 8.0,            // footprint — ranch proportions
-  bsmtD: 0.3,                 // basement floor 0.3 BELOW grade (at house center)
+  bsmtD: -0.35,               // basement slab 0.35 ABOVE center grade (v3.1:
+                             // was 0.3 below — the lot falls 0.92u across the
+                             // footprint and terrain poked through the slab in
+                             // the north rooms. All dependents derive from
+                             // bsmtY so stairs/doors/windows/driveway follow.)
   mainUp: 2.4,                // main floor 2.4 ABOVE grade (the photo's rise)
   wallH: 2.75,                // main-level wall height
   foundT: 0.4, wallT: 0.35,   // foundation / main wall thickness
@@ -3482,6 +3486,19 @@ function heroPorchY(x, z){
   box(foundT, fH, D, brick, x1, fCy, hz);
   addSegCollider(x0,zN,x0,zS, bY0,bY1);
   addSegCollider(x1,zN,x1,zS, bY0,bY1);
+  /* v3.1 footing skirt (2026-10-09 inspection): a slightly proud footing
+     0.7u tall under the foundation perimeter, reaching 0.6u below the wall
+     base. Covers terrain dips (e.g. the SW corner daylight gap) so no
+     daylight ever shows under the walls. */
+  (function footing(){
+    var ftH=0.8, ftCy=bsmtY-0.6;   // spans bsmtY-1.0 .. bsmtY-0.2: covers the
+                                   // SW-corner terrain dip (0.26u below the old
+                                   // wall base) with margin, overlaps the wall
+    box(W+0.15, ftH, foundT+0.18, brick, hx, ftCy, zS);
+    box(W+0.15, ftH, foundT+0.18, brick, hx, ftCy, zN);
+    box(foundT+0.18, ftH, D+0.15, brick, x0, ftCy, hz);
+    box(foundT+0.18, ftH, D+0.15, brick, x1, ftCy, hz);
+  })();
   // basement floor slab
   box(W, 0.25, D, 0x8a7a68, hx, bsmtY+0.12, hz);
 
@@ -3602,6 +3619,19 @@ function heroPorchY(x, z){
     var rl = box(0.08, 0.08, 3.9, trim, hx+ox, (stTopY+stBotY)/2+0.9, zS+4.25);
     rl.rotation.x = Math.atan2(stTopY-stBotY, 3.5);
   });
+  /* v3.1 porch footings (2026-10-09 inspection): the porch slab cantilevered
+     with no support and the entry treads were floating slabs. Brick piers
+     carry the porch outer edge to the ground; a solid concrete mass sits
+     under the treads. */
+  (function porchFootings(){
+    [[hx-1.9],[hx+1.9]].forEach(function(o){
+      var ty=heightAt(o[0], zS+2.3), ph=(mainY-0.125)-ty;
+      if (ph>0.2) box(0.5, ph, 0.5, brick, o[0], ty+ph/2, zS+2.3);
+    });
+    var rise=stTopY-stBotY, len=Math.hypot(3.5, rise);
+    var mass=box(2.0, 0.5, len, 0x8a8a8a, hx, (stTopY+stBotY)/2-0.35, zS+4.25);
+    mass.rotation.x=Math.atan2(rise, 3.5);
+  })();
 
   /* ---- INTERIOR STAIRS: basement <-> main (east side, straight run) ----
      Bottom (basement) at the south end, top (main) at the north end.
@@ -3726,14 +3756,20 @@ function heroPorchY(x, z){
     addCollider(mbx,mbz,0.8);
   })();
 
-  /* ---- dense tall pines around the lot (per the photo) ---- */
+  /* ---- dense tall pines around the lot (per the photo) ----
+     v3.1 (2026-10-09 inspection): the ring was 42-58u (legacy v2.0) — 3-4x
+     farther than the photo, which shows pines ~10-20u from the house ON the
+     lot. Ring is now 15-26u. Neighbor houses keep >=28u from HOME
+     (subdivision), so the tighter ring also reduces neighbor overlap risk. */
   (function(){
     for (var pa=0; pa<16; pa++){
       var ang=pa/16*Math.PI*2+0.35;
-      var pr2=42+rand()*16;
+      var pr2=15+rand()*11;
       var tx=hx+Math.cos(ang)*pr2, tz=hz+Math.sin(ang)*pr2*0.85;
-      if (Math.hypot(tx-hx,tz-hz)<24) continue;
+      if (Math.hypot(tx-hx,tz-hz)<13) continue;
+      if (tx>x0-5&&tx<x1+5&&tz>zN-5&&tz<zS+5) continue;  // house footprint
       if (distToRoadEdge(tx,tz)<10) continue;
+      if (Math.hypot(tx-3130.4,tz-3705.4)<3.5) continue;  // mailbox
       var dD=1e9;
       for (var di=0;di<dvPts.length;di++){
         var dd=Math.hypot(tx-dvPts[di][0],tz-dvPts[di][1]);
@@ -5109,8 +5145,13 @@ function makeCar(x,z,yaw,color,drivable,kind){
 }
 var car=null;
 (function(){
-  // Joshua's GMC Safari van (brown/gold two-tone), parked in the 535 driveway
-  car=makeCar(heroHouse.drivewayPark.x, heroHouse.drivewayPark.z, Math.PI/2, 0x8b2e2e, true, 'safari');
+  // Joshua's GMC Safari van (brown/gold two-tone), parked in the 535 driveway.
+  // v3.1 FIX (2026-10-09 inspection): yaw 0 = nose SOUTH toward Dollar Mill Rd
+  // (was Math.PI/2 — the 5.6u van lay sideways across the 4.5u driveway,
+  // overhanging the grass). The driveway ribbon is graded at heightAt+0.32,
+  // so the van sits on the concrete instead of sinking to the axles.
+  car=makeCar(heroHouse.drivewayPark.x, heroHouse.drivewayPark.z, 0, 0x8b2e2e, true, 'safari');
+  car.mesh.position.y=heightAt(car.x,car.z)+0.32;
 })();
 // v1.6: parked cars sit in DRIVEWAYS at dwellings — never on the road surface.
 // (Cars on roads should be moving traffic; that's NPC work for later.)
@@ -5741,9 +5782,12 @@ function loadSlot(n){
       c.damage=s.car.damage|0; c.dead=!!s.car.dead;
       if(s.car.sunk){ // restore sunk cars to the driveway instead of underwater
         c.x=heroHouse.drivewayPark.x; c.z=heroHouse.drivewayPark.z; c.sunk=false;
+        c.yaw=0; // v3.1: nose toward the road, not sideways (see van creation)
       }
       c.sinking=false;
-      c.mesh.position.set(c.x,heightAt(c.x,c.z),c.z); c.mesh.rotation.y=c.yaw;
+      // v3.1: sit on the driveway concrete (+0.32) when parked at the house
+      var atHome=Math.hypot(c.x-heroHouse.drivewayPark.x, c.z-heroHouse.drivewayPark.z)<2;
+      c.mesh.position.set(c.x,heightAt(c.x,c.z)+(atHome?0.32:0),c.z); c.mesh.rotation.y=c.yaw;
     }
     camYaw=s.camYaw||p.yaw; look.yawOff=s.lookYawOff||0;
     var cb=camYaw+Math.PI, gy=heightAt(player.x,player.z);
