@@ -2,9 +2,9 @@
   "files": [
     {
       "name": "bird_drones.js",
-      "size": 11286,
-      "sha256": "3c0491cd7619b17be64b911636b9900fab9fa9c34d8303c26ce49893cd5a625a",
-      "hash": "b09554e0fb87cffc"
+      "size": 11442,
+      "sha256": "2a963dc0dfbf4c4d1a6e6fcb0be1633f1cd3339b7512604cdb43e878f325e05b",
+      "hash": "2a963dc0dfbf4c4d"
     },
     {
       "name": "cityworkforce.js",
@@ -57,9 +57,9 @@
     },
     {
       "name": "hq_staff_system.js",
-      "size": 26612,
-      "sha256": "45b29898e8a4ad6f531e4febf141708cf399e9c10988749f5ef8b04e11dcd4cd",
-      "hash": "f51af332ecae98e4"
+      "size": 26796,
+      "sha256": "48e59604f26d26471504b02ce270acf3db4e68f5bcbc7a1572a58cc8bc226b7d",
+      "hash": "48e59604f26d2647"
     },
     {
       "name": "icon.png",
@@ -69,16 +69,16 @@
     },
     {
       "name": "index.html",
-      "size": 722243,
-      "sha256": "95d597ff2dfb28cc7d5a76d45c04b9268f40656f21c30b585be878da57dd091c",
-      "hash": "391f0ff92cdecf93",
+      "size": 734287,
+      "sha256": "c28184c6aa811fecf3fc9565f54f4e71caa0f11812553ab4645632c17e256874",
+      "hash": "c28184c6aa811fec",
       "md5": "baf9460296c6b0af3e7a4259acdc44db"
     },
     {
       "name": "infracrew_system.js",
-      "size": 38280,
-      "sha256": "9db40da52f06ca41044ecd0d3d12c08a186e17f2331d0fb47feaef7442a5e15c",
-      "hash": "9db40da52f06ca41",
+      "size": 38468,
+      "sha256": "c20bae59207f7c4779e49296f20efe5b98b80dc9a4757424ecce1d2b5a4995e1",
+      "hash": "c20bae59207f7c47",
       "md5": "c116524f9c996b030400aed486738efa"
     },
     {
@@ -95,9 +95,9 @@
     },
     {
       "name": "marta_bus_system.js",
-      "size": 27959,
-      "sha256": "8f63a2cffdf0dab9a1641a1057c9f53924fe8416b33d19317f87f799ade36364",
-      "hash": "ca01b006120ca398"
+      "size": 28126,
+      "sha256": "a56a8f69f3455a3848a756686653c10dbe8dfba3cfda88f2ea56b5ef9f18c1c2",
+      "hash": "a56a8f69f3455a38"
     },
     {
       "name": "marta_data.js",
@@ -107,9 +107,9 @@
     },
     {
       "name": "marta_system.js",
-      "size": 34368,
-      "sha256": "281b307d6fb755a1ed3db2e80ca04a11d10faee35c5586f4530e616591c8b38b",
-      "hash": "281b307d6fb755a1",
+      "size": 34537,
+      "sha256": "b976c07ec2440cf4223354935c6c3dc4a12a4ee9908e79c99628bfd5cdeb1771",
+      "hash": "b976c07ec2440cf4",
       "md5": "4f970caef19be1760a8d44f0efa0f200"
     },
     {
@@ -126,21 +126,21 @@
     },
     {
       "name": "refnpc_system.js",
-      "size": 37273,
-      "sha256": "dc195c184b1a4bfc80a766203f016414b9bd4bb70ecd87aa990c7a605f81bdea",
-      "hash": "5b2d0892405aee35"
+      "size": 37449,
+      "sha256": "6d826bc9ced5325f0c480e45983443ee4f2f7f3f658c54280c9d75287b9b4d54",
+      "hash": "6d826bc9ced5325f"
     },
     {
       "name": "residential_detail.js",
-      "size": 22428,
-      "sha256": "34b490055eceb9dc30aaf13d5b4c7e7f34d048550bc4b174c8bed5646cf14fd8",
-      "hash": "e3016f900eac43ed"
+      "size": 22746,
+      "sha256": "b1927d2fe0c8280050a97a0e24e566b8accacebae5a06ddb40d795495b67c508",
+      "hash": "b1927d2fe0c82800"
     },
     {
       "name": "roadcrew_system.js",
-      "size": 57992,
-      "sha256": "dc10b7bd54aa36389214834aeae64884a433e5bc8c3d3c2661517f9b3cf4985e",
-      "hash": "dc10b7bd54aa3638",
+      "size": 58178,
+      "sha256": "0fb69542ce00618d433a293ded33a23c1f57fefd2606fd4eb2c6a8875f00dad9",
+      "hash": "0fb69542ce00618d",
       "md5": "53cd8794990db2421f1e907f4e26f0b5"
     },
     {
@@ -199,9 +199,9 @@
     },
     {
       "name": "surveyfleet_system.js",
-      "size": 60390,
-      "sha256": "62b967d27822581eb1409d490788ffc5b2d99f57ffa35c7e4bed095973d28f42",
-      "hash": "62b967d27822581e",
+      "size": 60582,
+      "sha256": "3ca151e19396511c8e90c793e93a1b113df2d610daa6ff57b4524c149100ba25",
+      "hash": "3ca151e19396511c",
       "md5": "50d9d2b4d219a8f8e43af86cb6b74ac0"
     },
     {
@@ -218,9 +218,9 @@
     },
     {
       "name": "traffic_system.js",
-      "size": 43791,
-      "sha256": "d9cfc5c2194ce28786caeb7fa062155ef495238dbab4e30563f2e8351d73670a",
-      "hash": "ebbce3dcc8f81e64",
+      "size": 43949,
+      "sha256": "8e2aebe54076c5ef53e588acef08c368045052367942214e1f2c7a9a68c92314",
+      "hash": "8e2aebe54076c5ef",
       "md5": "0b260d7d865e0dd3"
     },
     {
@@ -279,6 +279,6 @@
       "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zoneloader.js"
     }
   ],
-  "ui_version": "2026.10.10.112",
+  "ui_version": "2026.10.10.113",
   "version": "1.13.0"
 }
