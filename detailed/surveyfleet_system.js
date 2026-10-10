@@ -32,6 +32,27 @@
    write the report, send it back to dispatch, set up cones, fix the
    problem, and the fix AUTO-SAVES so the problem does not recur.
 
+   v1.18 WAIT-FOR-FIX (Joshua's directive 2026-10-09): a survey car that gets
+   stuck follows the SAME protocol as every other vehicle — it does NOT push
+   through and does NOT drive off to its next assignment. notDrivable()
+   parks the car on the road shoulder via StuckDiag.waitForFix() (right
+   shoulder, 8u offset; collider moved with the mesh), sets waitingForFix,
+   and registers the car on the spot so StuckDiag.markFixed() releases it.
+   updateSurveyFleet() skips ALL movement for waiting cars and runs
+   StuckDiag.waitTick() each frame (periodic data re-check auto-releases).
+   On release, resumeAfterFix() clears the segment's 'nd' flag and retargets
+   the car so it re-surveys the just-fixed segment. INFRACREW.reportIssue +
+   RoadFix.autoTriage still file the work order (dispatch → assess → fix →
+   auto-save → report); infracrew_system.js finishJob() now calls
+   StuckDiag.markFixed() so waiting units are released the moment the crew
+   finishes. forceResurvey() releases any parked cars cleanly. The 'nd'
+   flag is cleared on release so the segment is re-surveyed; stale flags
+   from a previous session are reconciled at boot (and every 5 min) against
+   fixed INFRACREW issues and confirmed RoadFix entries. If StuckDiag
+   is unavailable, notDrivable() degrades to the legacy report-and-retarget
+   path. Ghost scan already skips survey cars (no false red flags on a
+   parked car).
+
    KEY SYSTEMS:
      - 5 survey cars (white "ROAD SURVEY" livery, roof lidar mast, amber
        beacons) driving the real road network via endpoint-connection hops
@@ -496,7 +517,8 @@ function spawnSurveyCars(){
       }catch(e){}
       var car={no:c+1, mesh:mesh, col:col, seg:pick, i:mid, dir:1,
                state:'survey', path:[], target:pick, visited:{},
-               stuckT:0, lastX:p[0], lastZ:p[1], task:'surveying'};
+               stuckT:0, lastX:p[0], lastZ:p[1], task:'surveying',
+               waitSeg:-1};   // v1.18 WAIT-FOR-FIX: segment index we are parked waiting on (-1 = not waiting)
       claims[pick]=car.no;
       SF.cars.push(car);
       dlog('Survey Car '+car.no+' online — starting on '+segName(pick)+'.');
@@ -613,15 +635,22 @@ function assignNext(car){
     car.task=(car.path.length?'en route to ':'surveying ')+segName(t);
   }catch(e){}
 }
-/* notDrivable(car, ri) — survey car could not traverse the segment:
-   flag it, file a crew issue, move on. */
+/* notDrivable(car, ri) — survey car could not traverse the segment.
+   v1.18 WAIT-FOR-FIX (Joshua's directive 2026-10-09): the survey car follows
+   the SAME protocol as every other vehicle — it does NOT push through and
+   does NOT drive off to the next assignment. It pulls safely to the road
+   shoulder via StuckDiag.waitForFix(), waits patiently while the dispatch
+   team assesses/fixes the problem (INFRACREW.reportIssue + RoadFix.autoTriage
+   file the work order), and resumes its route only after the fix is
+   confirmed (StuckDiag.markFixed from the crew, or the waitTick auto-recheck).
+   Auto-save + reporting ride on the existing crew systems. */
 function notDrivable(car, ri){
   try{
     if (SF.flags[ri]==='nd') return;
     SF.flags[ri]='nd';
     markDirty(); saveLS(true);
-    dlog('⚠️ Survey Car '+car.no+': '+segName(ri)+' NOT DRIVABLE — reporting to road crew.');
-    toast('⚠️ Road not drivable: '+segName(ri));
+    dlog('⚠️ Survey Car '+car.no+': '+segName(ri)+' NOT DRIVABLE — pulling over and WAITING for the fix crew (Joshua\'s rule: no pushing through).');
+    toast('⚠️ Road not drivable: '+segName(ri)+' — survey car waiting for fix');
     try{
       if (window.INFRACREW) window.INFRACREW.reportIssue({
         kind:'road', x:car.mesh.position.x, z:car.mesh.position.z,
@@ -630,7 +659,92 @@ function notDrivable(car, ri){
     try{
       if (window.RoadFix) window.RoadFix.autoTriage(car.mesh.position.x, car.mesh.position.z, {cause:'not-drivable'});
     }catch(e){}
-    retarget(car,'segment not drivable');
+    /* WAIT-FOR-FIX: park on the shoulder, set waitingForFix, register with
+       the spot so markFixed() releases us. StuckDiag.waitForFix reads
+       unit.seg.pts — the survey car keeps seg as an INDEX, so swap in the
+       real segment object for the (synchronous) call and restore after. */
+    var parked=false;
+    try{
+      if (window.StuckDiag && typeof StuckDiag.waitForFix==='function'){
+        var mx=car.mesh.position.x, mz=car.mesh.position.z;
+        var savedSeg=car.seg;
+        try{ car.seg=roadDrawData[car.seg]; }catch(e2){}
+        parked=StuckDiag.waitForFix(mx, mz, car, 'Survey Car '+car.no,
+          function(m){ dlog(m); });
+        car.seg=savedSeg;
+        if (parked && car.col){
+          /* keep the physical collider on the parked mesh, not in the lane */
+          car.col.x=car.mesh.position.x; car.col.z=car.mesh.position.z;
+        }
+      }
+    }catch(e){ parked=false; }
+    if (!parked){
+      /* StuckDiag unavailable — degrade to legacy behavior: report and move on */
+      dlog('Survey Car '+car.no+': wait-for-fix unavailable — falling back to re-routing.');
+      retarget(car,'segment not drivable');
+    } else {
+      car.waitSeg=ri;   // set ONLY once we are genuinely parked and waiting
+      car.task='waiting for fix — '+segName(ri);
+    }
+  }catch(e){}
+}
+/* resumeAfterFix(car) — the fix at our wait location was confirmed
+   (crew markFixed or the waitTick auto-recheck). Clear the 'nd' flag so the
+   segment is surveyable again, then re-enter the normal assignment loop —
+   the nearest unexplored segment (usually the just-fixed one) gets picked. */
+function resumeAfterFix(car){
+  try{
+    var ri=car.waitSeg;
+    if (typeof ri==='number' && SF.flags[ri]==='nd'){
+      delete SF.flags[ri];
+      markDirty(); saveLS(true);
+    }
+    car.waitSeg=-1;
+    car.stuckT=0;
+    if (car.mesh){ try{ car.lastX=car.mesh.position.x; car.lastZ=car.mesh.position.z; }catch(e){} }
+    dlog('✅ Survey Car '+car.no+': fix confirmed — resuming survey route.');
+    toast('✅ Survey Car '+car.no+' resuming — fix confirmed');
+    retarget(car,'fix confirmed');
+  }catch(e){}
+}
+/* reconcileStaleFlags() — v1.18 WAIT-FOR-FIX. 'nd' flags persist across
+   sessions, but a fix may have landed while the game was closed (the crew
+   systems persist their own 'fixed' states). For each not-drivable segment,
+   check the crew records: a fixed INFRACREW issue within 50u, or a
+   confirmed RoadFix entry at the segment midpoint, means the road is
+   repaired — clear the flag so the fleet surveys it again. Runs at boot
+   and every 5 minutes of fleet time (covers crew systems that boot later). */
+var lastReconcile=-1e9;
+function reconcileStaleFlags(){
+  try{
+    var cleared=0;
+    for (var ri=0; ri<SF.segCount; ri++){
+      if (SF.flags[ri]!=='nd') continue;
+      var m=null;
+      try{ m=segMid(ri); }catch(e){}
+      if (!m) continue;
+      var fixed=false;
+      try{
+        if (window.INFRACREW && INFRACREW.issues){
+          var iss=INFRACREW.issues;
+          for (var k=0;k<iss.length;k++){
+            var d=iss[k];
+            if (d && d.state==='fixed'){
+              var dx=d.x-m.x, dz=d.z-m.z;
+              if (dx*dx+dz*dz<2500){ fixed=true; break; }
+            }
+          }
+        }
+      }catch(e){}
+      try{
+        if (!fixed && window.RoadFix && typeof RoadFix.isFixed==='function'){
+          fixed=!!RoadFix.isFixed(m.x, m.z);
+        }
+      }catch(e){}
+      if (fixed){ delete SF.flags[ri]; cleared++; }
+    }
+    if (cleared){ markDirty(); saveLS(true); dlog('🧹 Cleared '+cleared+' stale not-drivable flag(s) — crew fixes confirmed.'); }
+    lastReconcile=SF.time;
   }catch(e){}
 }
 
@@ -1072,6 +1186,28 @@ function updateSurveyFleet(dt){
     for (var i=0;i<SF.cars.length;i++){
       var car=SF.cars[i];
       if (car.state==='idle') continue;
+      /* v1.18 WAIT-FOR-FIX (Joshua's directive): a car whose wait ended
+         EXTERNALLY (crew called StuckDiag.markFixed while we were parked)
+         has waitingForFix already cleared — run the resume path so the
+         'nd' flag is lifted and the car re-surveys the fixed segment. */
+      if (car.waitSeg>=0 && !car.waitingForFix){
+        resumeAfterFix(car);
+        continue;
+      }
+      /* while a survey car is waiting for the fix crew, it does NOT move —
+         same as road crew / code-enforcement units. waitTick() re-checks
+         the data periodically and auto-releases; crew markFixed() releases
+         immediately (handled by the branch above). */
+      if (car.waitingForFix){
+        try{
+          if (typeof StuckDiag!=='undefined' && typeof StuckDiag.waitTick==='function'){
+            if (StuckDiag.waitTick(car, dt, function(m){ dlog(m); })){
+              resumeAfterFix(car);   // fix confirmed — back to work
+            }
+          }
+        }catch(e){}
+        continue;
+      }
       if (car.target<0 || (car.target>=0 && !claims[car.target] && !SF.explored[car.target])){
         /* target lost or finished without claim — reassign */
         if (car.target>=0 && SF.explored[car.target]) assignNext(car);
@@ -1083,6 +1219,9 @@ function updateSurveyFleet(dt){
     /* ghost scan on a timer */
     SF.ghostAcc+=dt;
     if (SF.ghostAcc>=GHOST_T){ SF.ghostAcc=0; ghostScan(); }
+    /* v1.18: periodic stale-flag reconciliation (covers crew systems that
+       boot after the fleet, and fixes that land mid-session) */
+    if (SF.time-lastReconcile>300) reconcileStaleFlags();
     updatePolice(dt);
     saveLS(false);
     if (SF.tick%1200===0){ try{ Report.setSys('surveyfleet', sysReport()); }catch(e){} }
@@ -1098,6 +1237,7 @@ function initSurveyFleet(){
   for (var i=0;i<SF.segCount;i++) SF.explored[i]=0;
   loadLS();  // restores explored bitmask if the map signature matches
   var ex=0; for (var j=0;j<SF.segCount;j++) if (SF.explored[j]) ex++;
+  reconcileStaleFlags();  // v1.18: lift 'nd' flags whose fixes landed while away
   buildNetwork();
   buildUI();
   spawnSurveyCars();
@@ -1133,7 +1273,16 @@ function initSurveyFleet(){
       for (var k=0;k<SF.segCount;k++) SF.explored[k]=0;
       SF.flags={}; markDirty(); saveLS(true);
       dlog('Fleet ordered to re-survey the entire map.');
-      SF.cars.forEach(function(car){ retarget(car,'re-survey ordered'); });
+      /* v1.18 WAIT-FOR-FIX: a car parked waiting has nothing to wait for
+         once every flag is wiped — release it cleanly (mirror of
+         StuckDiag's internal release) before re-tasking. */
+      SF.cars.forEach(function(car){
+        if (car.waitingForFix){
+          car.waitingForFix=false; car.waitStartT=null; car.waitSpot=null;
+          car._waitAcc=0; car.waitSeg=-1; car.stuckT=0;
+        }
+        retarget(car,'re-survey ordered');
+      });
     }
   };
   /* hook into the frame loop — chains with other module wraps */
