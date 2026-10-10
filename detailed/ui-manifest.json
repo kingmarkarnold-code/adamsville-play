@@ -14,9 +14,9 @@
     },
     {
       "name": "codeenforce_system.js",
-      "size": 64383,
-      "sha256": "34ff8765be377f640cdc67a11afd203d75caeb4f590c477e5553b120da96ba81",
-      "hash": "2050b437a39c7ccd"
+      "size": 64532,
+      "sha256": "e6ebcc69152aaf06a7ad153d291d5651c0fce91e696a1a3f07cb9ce5e57438cd",
+      "hash": "5f1b6637d383aa27"
     },
     {
       "name": "face_platform.js",
@@ -32,9 +32,9 @@
     },
     {
       "name": "index.html",
-      "size": 662336,
-      "sha256": "03d9da5456dbbf1de3b023cd12c47e27e07a89b5f6635699b9db82cf196a2898",
-      "hash": "0f503a206c1c2b60"
+      "size": 664191,
+      "sha256": "660a2c636aff55bf909def986584aad0024d7510aa9e02cf12d76fdc1e481b3b",
+      "hash": "b7716d014cba9f7e"
     },
     {
       "name": "marriott.js",
@@ -98,9 +98,9 @@
     },
     {
       "name": "roadcrew_system.js",
-      "size": 53236,
-      "sha256": "75323916e5fd48b565a796f06d5a6279a29444b517407f24edce0c35aaa1f8aa",
-      "hash": "a7e92360952da5d3"
+      "size": 53386,
+      "sha256": "faef1a47eb85fa2ed49e39e24c1b7499471aad8f28084d957462edecd5731c98",
+      "hash": "d665e73acb63478d"
     },
     {
       "name": "school_plaza.js",
@@ -164,9 +164,9 @@
     },
     {
       "name": "infracrew_system.js",
-      "size": 34339,
-      "sha256": "15843b1f8e4e9ac5292553c9f4c8f6f24447f9f56ccb0acee9bc6f028e432227",
-      "hash": "f6ccc25e24977e34"
+      "size": 34489,
+      "sha256": "9f7655d55242c19956386eaf4449cd72b67885c29c05df1e21649fbe59afb68d",
+      "hash": "35e5f79eaca8add8"
     },
     {
       "name": "roadfix.js",
@@ -188,21 +188,21 @@
     },
     {
       "name": "surveyfleet_system.js",
-      "size": 59120,
-      "sha256": "262177dd8d76197ac9af976cfe8d70aa4a2db8350a7165718080a56514ae965b",
-      "hash": "35e44d4325b783fc"
+      "size": 59270,
+      "sha256": "48a5148208d6e5b50c6e61aec9656ec1c34472f8e00ea30e865c9edcabec49b0",
+      "hash": "6a766fed5efa9036"
     },
     {
       "name": "terrainfix.js",
       "size": 12693,
       "sha256": "ebdf20dfceb44ec523def8633a048c1226cdce0e699062e8f9d76cdfa84faa0f",
-      "hash": "ebdf20dfceb44ec5"
+      "hash": "cec2147c8ceb2a4f"
     },
     {
       "name": "daycycle.js",
       "size": 13395,
       "sha256": "82ac1b4ec67aa686ee103f31440676f04664682a76600fc0a1c15dcfb0a36eb7",
-      "hash": "82ac1b4ec67aa686"
+      "hash": "750338231c9b44ab"
     },
     {
       "name": "dialogue_director_npc.js",
@@ -223,6 +223,6 @@
       "hash": "5a7b41fe2ab41fda"
     }
   ],
-  "ui_version": "2026.10.09.74",
+  "ui_version": "2026.10.09.76",
   "version": "1.13.0"
 }
