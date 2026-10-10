@@ -36,7 +36,16 @@
        disappears inside a while, reappears when leaving.
    ============================================================================ */
 /* ============================================================================
-   NPC PEDESTRIAN SYSTEM — "Surviving Adamsville" v1.9
+   NPC PEDESTRIAN SYSTEM — "Surviving Adamsville" v1.20
+   v1.20 SOLID WORLD (Joshua 2026-10-09): NPCs cannot walk through trees,
+   buildings, vehicles, or each other. npcColGrid (cell 20u) covers all
+   static colliders[] (tree trunks r=0.8, sign posts, light poles); per-frame
+   npcHash (cell 4u, persistent arrays) drives NPC-NPC separation; vehicle
+   blockers (van, MARTA buses, traffic cars, semis, school buses) refresh
+   4x/sec. Boarding/transit NPCs are exempt from vehicle blocking so they
+   can REACH their bus/train.
+   ----------------------------------------------------------------------------
+   v1.9
    ~1,000 free-think pedestrians. Each NPC is DATA ONLY when distant
    (no geometry, no Three.js objects). Bodies stream in as instanced boxes
    only near the camera. Every NPC is also a QA tester: when one hits a
@@ -146,15 +155,167 @@ function insideBorder(x,z){
 /* ---------------- blockage probe ----------------
    Cheap "can I step here?" test: water, road corridor, OSM building
    colliders (spatial grid, cell 40u — same grid the game uses), ranch
-   houses (PLACED_HOUSES is small, direct loop). Trees/furniture are
-   intentionally ignored: walking past a trunk is invisible at this scale. */
-/* npcBlocked(x,z) — cheap "can I step here?" probe. Returns true for water,
+   houses (PLACED_HOUSES is small, direct loop), static world colliders
+   (trees/signs/poles via npcColGrid, cell 20u), and vehicles (van, MARTA
+   buses, traffic cars, semis, school buses — refreshed 4x/sec).
+   v1.20 SOLID WORLD (Joshua 2026-10-09): NPCs cannot walk through trees,
+   buildings, vehicles, or each other. The old "trees intentionally ignored"
+   rule is GONE — a trunk is solid. */
+/* npcColGrid — v1.20 spatial hash (cell 20u) over the world's static
+   colliders[] (trees r=0.8, sign posts r=0.4, light poles, small structures).
+   Built once at init; NPCs are blocked by every solid object, not just
+   buildings. Huge area colliders (r>20, POI zones) are skipped — NPC spawn
+   logic already avoids those districts, and including them would wall off
+   whole neighborhoods. */
+var npcColGrid=null;
+var NPC_COL_CELL=20;
+function buildNpcColGrid(){
+  npcColGrid={};
+  try{
+    if (typeof colliders==='undefined' || !colliders) return;
+    for (var i=0;i<colliders.length;i++){
+      var c=colliders[i];
+      if (!c || c.r>20) continue;   // skip POI-scale area colliders
+      var k=Math.floor(c.x/NPC_COL_CELL)+','+Math.floor(c.z/NPC_COL_CELL);
+      (npcColGrid[k]=npcColGrid[k]||[]).push(c);
+    }
+  }catch(e){}
+}
+/* npcHitsStatic(x,z) — v1.20: true if (x,z) is inside any static world
+   collider (tree trunk, sign post, light pole, small structure). NPC body
+   radius ~0.5u is added to the collider radius. */
+function npcHitsStatic(x,z){
+  if (!npcColGrid) return false;
+  try{
+    var cx=Math.floor(x/NPC_COL_CELL), cz=Math.floor(z/NPC_COL_CELL);
+    for (var gx=cx-1;gx<=cx+1;gx++) for (var gz=cz-1;gz<=cz+1;gz++){
+      var cell=npcColGrid[gx+','+gz]; if(!cell) continue;
+      for (var i=0;i<cell.length;i++){
+        var c=cell[i], dx=x-c.x, dz=z-c.z, rr=c.r+0.5;
+        if (dx*dx+dz*dz < rr*rr) return true;
+      }
+    }
+  }catch(e){}
+  return false;
+}
+/* npcVehicleBlocked(x,z,n) — v1.20: true if (x,z) is inside a vehicle.
+   Checks the player's van (when parked/slow), MARTA buses, AI traffic cars,
+   semis, and school buses. NPCs already avoid road corridors via onRoad(),
+   so this catches parked vehicles, dwelling buses at stops (commuters walk
+   TO stops — they must not walk THROUGH the bus), and the van on grass.
+   EXEMPTION: an NPC actively boarding (n.boarding) or walking to transit
+   (n.goto) skips this check — it needs to REACH the vehicle, and the
+   boarding logic handles the final approach. */
+var _vehList=[], _vehListT=0;
+function refreshVehList(nowMs){
+  if (nowMs-_vehListT < 250) return;   // refresh at most 4x/sec
+  _vehListT=nowMs; _vehList.length=0;
+  try{
+    // player van — solid when parked or crawling (fast van is on roads,
+    // which NPCs already avoid via onRoad)
+    if (typeof car!=='undefined' && car && (!car.driving || (car.speed||0)<5))
+      _vehList.push({x:car.x, z:car.z, r:2.6});
+  }catch(e){}
+  try{
+    var MB=window.MARTA_BUS;
+    if (MB && MB.buses) for (var i=0;i<MB.buses.length;i++){
+      var b=MB.buses[i]; if(b) _vehList.push({x:b.x, z:b.z, r:3.2});
+    }
+  }catch(e){}
+  try{
+    var TRF=window.TRAFFIC;
+    if (TRF && TRF.cars) for (var j=0;j<TRF.cars.length;j++){
+      var tc=TRF.cars[j]; if(tc) _vehList.push({x:tc.x, z:tc.z, r:2.2});
+    }
+  }catch(e){}
+  try{
+    var SE=window.SEMIS;
+    if (SE && SE.semis) for (var k=0;k<SE.semis.length;k++){
+      var s=SE.semis[k]; if(s) _vehList.push({x:s.x, z:s.z, r:4.2});
+    }
+  }catch(e){}
+  try{
+    var SBA=window.__sbActive;   // school buses with sign out (dwell)
+    if (SBA) for (var m=0;m<SBA.length;m++){
+      var sb=SBA[m]; if(sb) _vehList.push({x:sb.x, z:sb.z, r:3.2});
+    }
+  }catch(e){}
+}
+/* ---------------- NPC-NPC collision (v1.20) ----------------
+   JOSHUA'S RULE (2026-10-09): NPCs cannot walk through each other.
+   Per-frame spatial hash (cell 4u) over all 1,000 NPC positions; after an
+   NPC moves, separateNPC() pushes it out of any neighbor's body space.
+   The hash uses PERSISTENT cell arrays (cleared, never reallocated) so the
+   per-frame rebuild creates zero garbage — TCL-safe. Separation is soft:
+   each NPC moves only itself, so pairs resolve symmetrically over frames
+   without oscillation. NPC body radius ~0.5u -> 1.0u min separation. */
+var npcHash={};
+var NPC_HASH_CELL=4;
+function rebuildNpcHash(){
+  for (var k in npcHash){ npcHash[k].length=0; }  // clear, keep arrays
+  for (var i=0;i<npcs.length;i++){
+    var n=npcs[i];
+    var key=Math.floor(n.x/NPC_HASH_CELL)+','+Math.floor(n.z/NPC_HASH_CELL);
+    var arr=npcHash[key];
+    if (!arr){ arr=npcHash[key]=[]; }
+    arr.push(n);
+  }
+}
+/* separateNPC(n) — push n out of overlapping NPC body space. Called after
+   every NPC position change (WALK step, goto step, boarding step, settle).
+   Only moves n itself — the neighbor resolves itself on its own tick. */
+function separateNPC(n){
+  try{
+    var cx=Math.floor(n.x/NPC_HASH_CELL), cz=Math.floor(n.z/NPC_HASH_CELL);
+    for (var gx=cx-1;gx<=cx+1;gx++) for (var gz=cz-1;gz<=cz+1;gz++){
+      var cell=npcHash[gx+','+gz]; if(!cell) continue;
+      for (var i=0;i<cell.length;i++){
+        var o=cell[i];
+        if (o===n) continue;
+        var dx=n.x-o.x, dz=n.z-o.z, d2=dx*dx+dz*dz;
+        if (d2 < 1.0 && d2 > 0.0001){
+          var d=Math.sqrt(d2), push=(1.0-d)/d*0.5;
+          n.x+=dx*push; n.z+=dz*push;
+        }
+      }
+    }
+  }catch(e){}
+}
+/* npcNearOther(x,z,r) — v1.20: true if another NPC is within r of (x,z).
+   Used by the lookahead probe so NPCs TURN away from crowds instead of
+   walking into them. */
+function npcNearOther(x,z,r){
+  try{
+    var cx=Math.floor(x/NPC_HASH_CELL), cz=Math.floor(z/NPC_HASH_CELL);
+    var r2=r*r;
+    for (var gx=cx-1;gx<=cx+1;gx++) for (var gz=cz-1;gz<=cz+1;gz++){
+      var cell=npcHash[gx+','+gz]; if(!cell) continue;
+      for (var i=0;i<cell.length;i++){
+        var o=cell[i], dx=x-o.x, dz=z-o.z;
+        if (dx*dx+dz*dz < r2) return true;
+      }
+    }
+  }catch(e){}
+  return false;
+}
+function npcHitsVehicle(x,z,n){
+  // boarding / walking-to-transit NPCs must REACH their vehicle
+  if (n && (n.boarding || n.goto)) return false;
+  try{ refreshVehList(Date.now()); }catch(e){}
+  for (var i=0;i<_vehList.length;i++){
+    var v=_vehList[i], dx=x-v.x, dz=z-v.z, rr=v.r+0.5;
+    if (dx*dx+dz*dz < rr*rr) return true;
+  }
+  return false;
+}
+/* npcBlocked(x,z,n) — cheap "can I step here?" probe. Returns true for water,
    road corridors, border edges, OSM building colliders (40u spatial grid —
-   the same grid the game uses), and ranch houses (small list, direct loop).
-   Trees/furniture are INTENTIONALLY ignored: walking past a trunk is
-   invisible at this scale, and checking them would cost far more than it
-   saves. All wrapped — a missing world feature degrades to "not blocked". */
-function npcBlocked(x,z){
+   the same grid the game uses), ranch houses (small list, direct loop),
+   static world colliders (trees/signs/poles — v1.20 npcColGrid), and
+   vehicles (v1.20). n is the NPC asking (optional) — used for the
+   boarding/transit vehicle exemption. All wrapped — a missing world feature
+   degrades to "not blocked". */
+function npcBlocked(x,z,n){
   try{
     if (typeof inWater==='function' && inWater(x,z)) return true;
     if (typeof onRoad==='function' && onRoad(x,z)) return true;
@@ -176,6 +337,8 @@ function npcBlocked(x,z){
         if (hx*hx+hz*hz < hr*hr) return true;
       }
     }
+    if (npcHitsStatic(x,z)) return true;      // v1.20: trees/signs/poles
+    if (npcHitsVehicle(x,z,n)) return true;   // v1.20: vehicles
   }catch(e){}
   return false;
 }
@@ -343,7 +506,7 @@ function aiNPC(n, dt){
     if (n.boardT<=0){ n.boarding=null; n.waiting=true; n.waitT=TR_WAIT_T; setState(n,ST_IDLE,1e9); return; }
     n.heading=Math.atan2(bdx,bdz); n.state=ST_WALK;
     var bstep=n.speed*dt, bnx=n.x+Math.sin(n.heading)*bstep, bnz=n.z+Math.cos(n.heading)*bstep;
-    if (!npcBlocked(bnx,bnz)){ n.x=bnx; n.z=bnz; if(!n.lockY){ try{n.y=heightAt(n.x,n.z);}catch(e){} } }
+    if (!npcBlocked(bnx,bnz,n)){ n.x=bnx; n.z=bnz; separateNPC(n); if(!n.lockY){ try{n.y=heightAt(n.x,n.z);}catch(e){} } }
     return;
   }
   /* v1.17 walking to a transit stop/station (n.goto = {x,z}). Steers straight
@@ -365,13 +528,13 @@ function aiNPC(n, dt){
     }
     n.heading=Math.atan2(gdx,gdz); n.state=ST_WALK;
     var gstep=n.speed*dt, gnx=n.x+Math.sin(n.heading)*gstep, gnz=n.z+Math.cos(n.heading)*gstep;
-    if (!npcBlocked(gnx,gnz)){ n.x=gnx; n.z=gnz; try{n.y=heightAt(n.x,n.z);}catch(e){} }
+    if (!npcBlocked(gnx,gnz,n)){ n.x=gnx; n.z=gnz; separateNPC(n); try{n.y=heightAt(n.x,n.z);}catch(e){} }
     else {
       var gok=false;
       for (var ga=0;ga<4&&!gok;ga++){
         var ha=n.heading+((ga%2)?1:-1)*(0.6+0.5*((ga/2)|0));
         var tx2=n.x+Math.sin(ha)*gstep, tz2=n.z+Math.cos(ha)*gstep;
-        if (!npcBlocked(tx2,tz2)){ n.x=tx2; n.z=tz2; gok=true; }
+        if (!npcBlocked(tx2,tz2,n)){ n.x=tx2; n.z=tz2; separateNPC(n); gok=true; }
       }
       if (!gok){
         n.stuckT=(n.stuckT||0)+dt;
@@ -394,10 +557,11 @@ function aiNPC(n, dt){
     var step=n.speed*dt;
     n.x+=Math.sin(n.heading)*step;
     n.z+=Math.cos(n.heading)*step;
+    separateNPC(n);   // v1.20: never overlap another NPC
     // staggered lookahead probe (~every 0.3s per NPC at 60fps)
     if ( ((npcTick+n.id)%18)===0 ){
       var px=n.x+Math.sin(n.heading)*3.2, pz=n.z+Math.cos(n.heading)*3.2;
-      if (npcBlocked(px,pz)){ n.fails++; setState(n,ST_TURN,0); }
+      if (npcBlocked(px,pz,n) || npcNearOther(px,pz,1.6)){ n.fails++; setState(n,ST_TURN,0); }
     }
     // staggered stuck check (~every 1s): moved <0.6u while walking = stuck
     if ( ((npcTick+n.id)%60)===0 ){
@@ -429,7 +593,7 @@ function aiNPC(n, dt){
   else { // ST_TURN: pick a heading, verify it, walk it — or try another
     n.heading+=(Math.random()*2-1)*2.4;
     var tx=n.x+Math.sin(n.heading)*3.2, tz=n.z+Math.cos(n.heading)*3.2;
-    if (!npcBlocked(tx,tz)){
+    if (!npcBlocked(tx,tz,n) && !npcNearOther(tx,tz,1.6)){
       n.fails=0; setState(n,ST_WALK,2.5+Math.random()*3.5);
     } else {
       n.fails++;
@@ -570,6 +734,7 @@ function publishReport(){
    Meshes are frustumCulled=false (positions update every frame; culling the
    batch would hide everyone) with cast/receive shadows off for perf. */
 function initNPCs(){
+  try{ buildNpcColGrid(); }catch(e){}   // v1.20: static collider grid (trees/signs/poles)
   _m1=new THREE.Matrix4(); _m2=new THREE.Matrix4(); _m3=new THREE.Matrix4();
   _m4=new THREE.Matrix4(); _m5=new THREE.Matrix4(); _m6=new THREE.Matrix4();
   _m7=new THREE.Matrix4(); _out=new THREE.Matrix4();
@@ -1018,7 +1183,7 @@ function settleAtStop(n){
     var offs=[[1.2,0.8],[-1.2,0.8],[1.2,-0.8],[-1.2,-0.8]], i, wx, wz;
     for (i=0;i<offs.length;i++){
       wx=s.x+offs[i][0]; wz=s.z+offs[i][1];
-      if (!npcBlocked(wx,wz)){ n.x=wx; n.z=wz; return; }
+      if (!npcBlocked(wx,wz,n)){ n.x=wx; n.z=wz; separateNPC(n); return; }
     }
   }catch(e){}
 }
@@ -1147,6 +1312,7 @@ function updateNPCs(dt, playerPos){
     var i;
     try{ npcFaceTick(dt,px,pz); }catch(e){}   // v1.14: NPCs turn to face a nearby player
     if ((npcTick%15)===0){ try{ transitTick(); }catch(e){} }  // v1.17: transit commuters (staggered)
+    rebuildNpcHash();   // v1.20: NPC-NPC collision spatial hash (persistent arrays, zero garbage)
     for (i=0;i<npcs.length;i++) aiNPC(npcs[i],dt);   // data-only, always runs
     streamT-=dt;
     if (streamT<=0){ streamT=0.5; refreshSlots(px,pz); }
