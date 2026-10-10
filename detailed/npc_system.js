@@ -339,6 +339,27 @@ function npcBlocked(x,z,n){
     }
     if (npcHitsStatic(x,z)) return true;      // v1.20: trees/signs/poles
     if (npcHitsVehicle(x,z,n)) return true;   // v1.20: vehicles
+    if (npcHitsHeroHouse(x,z)) return true;   // v3.1: 535 Dollar Mill Rd
+  }catch(e){}
+  return false;
+}
+/* npcHitsHeroHouse(x,z) — v3.1 (2026-10-09 inspection): the hero house at 535
+   Dollar Mill Rd is not in PLACED_HOUSES and its wall segments are never
+   consulted by NPC logic — NPCs could walk through the walls. NPCs never
+   enter the hero house (the player uses the action button), so the full
+   footprint counts as solid, including the door gaps. Reads the live
+   window.heroHouse / window.HOUSE_535 constants; degrades to false if the
+   house isn't built yet. */
+function npcHitsHeroHouse(x,z){
+  try{
+    var hh=window.heroHouse, H=window.HOUSE_535;
+    if (!hh || hh.cx===undefined || !H) return false;
+    var m=0.9; // wall thickness + NPC body radius
+    var hw=H.W/2+m, hd=H.D/2+m;
+    if (x>hh.cx-hw && x<hh.cx+hw && z>hh.cz-hd && z<hh.cz+hd) return true;
+    // entry-stair strip (south): the treads are solid underfoot for the
+    // player via heroPorchY, but NPCs have no stair logic — keep them off.
+    if (x>hh.cx-1.6 && x<hh.cx+1.6 && z>=hh.cz+hd && z<hh.cz+hd+7.5) return true;
   }catch(e){}
   return false;
 }
