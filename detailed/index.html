@@ -111,15 +111,23 @@
   #gear-dot.show.restart { background:#ffcc00; box-shadow:0 0 6px rgba(255,204,0,.9); }
   /* v0.8: settings menu (gear replaces the ? button) */
   #settings { position:fixed; inset:0; z-index:40; display:none; align-items:center; justify-content:center;
-    background:rgba(0,0,0,.72); color:#fff; }
+    background:rgba(0,0,0,.72); color:#fff; padding:12px; box-sizing:border-box; }
   #settings.show { display:flex; }
-  #settings .card { background:#161b26; border-radius:14px; padding:20px 22px; max-width:430px; width:82%;
+  #settings .card { background:#161b26; border-radius:14px; padding:clamp(14px,4vw,22px);
+    max-width:430px; width:100%;
     /* scrollable: menu grew long (Administrator panel etc.) */
-    max-height:92vh; overflow-y:auto; -webkit-overflow-scrolling:touch; }
-  #settings h3 { margin:0 0 12px 0; color:#ffd75e; }
-  #settings .row { display:block; width:100%; margin:8px 0; padding:12px 14px; font-size:16px; font-weight:bold;
-    border-radius:10px; border:2px solid #444; background:#222836; color:#fff; text-align:left; }
+    max-height:92vh; max-height:92dvh; overflow-y:auto; -webkit-overflow-scrolling:touch;
+    box-sizing:border-box; }
+  #settings h3 { margin:0 0 12px 0; color:#ffd75e; font-size:clamp(17px,5vw,22px); }
+  #settings .row { display:block; width:100%; margin:8px 0; padding:clamp(10px,3vw,14px);
+    font-size:clamp(14px,4.2vw,16px); font-weight:bold;
+    border-radius:10px; border:2px solid #444; background:#222836; color:#fff; text-align:left;
+    box-sizing:border-box; }
   #settings .row:active { background:#2d3547; }
+  /* v1.15: standard breakpoints for the settings card */
+  @media (min-width:600px){
+    #settings .card{ padding:22px 26px; }
+  }
   /* v1.13: Administrator panel download status */
   #settings .adm-tag { float:right; font-size:12px; font-weight:normal; color:#8a93a8; }
   #settings .adm-tag.ready { color:#ff3b30; font-weight:bold; }
@@ -178,19 +186,27 @@
   /* v1.15: zone picker for New Game (Joshua 2026-10-10 demo). The zone list
      MUST scroll — zones won't all fit on a phone screen. */
   #zonepick { position:fixed; inset:0; z-index:50; display:none; align-items:center; justify-content:center;
-    background:rgba(0,0,0,.72); color:#fff; }
+    background:rgba(0,0,0,.72); color:#fff; padding:12px; box-sizing:border-box; }
   #zonepick.show { display:flex; }
-  #zonepick .card { background:#161b26; border-radius:14px; padding:20px 22px; max-width:430px; width:82%;
-    max-height:92vh; display:flex; flex-direction:column; }
-  #zonepick h3 { margin:0 0 12px 0; color:#ffd75e; }
-  #zonepick-list { overflow-y:auto; -webkit-overflow-scrolling:touch; max-height:60vh;
+  #zonepick .card { background:#161b26; border-radius:14px; padding:clamp(14px,4vw,22px);
+    max-width:430px; width:100%; max-height:92vh; max-height:92dvh; display:flex; flex-direction:column;
+    box-sizing:border-box; }
+  #zonepick h3 { margin:0 0 12px 0; color:#ffd75e; font-size:clamp(17px,5vw,22px); }
+  #zonepick-list { overflow-y:auto; -webkit-overflow-scrolling:touch; max-height:60vh; max-height:60dvh;
     margin:0 -4px; padding:0 4px; }
-  #zonepick .zrow { display:block; width:100%; margin:8px 0; padding:12px 14px; font-size:16px; font-weight:bold;
-    border-radius:10px; border:2px solid #444; background:#222836; color:#fff; text-align:left; }
+  #zonepick .zrow { display:block; width:100%; margin:8px 0; padding:clamp(10px,3vw,14px);
+    font-size:clamp(14px,4.2vw,16px); font-weight:bold;
+    border-radius:10px; border:2px solid #444; background:#222836; color:#fff; text-align:left;
+    box-sizing:border-box; }
   #zonepick .zrow:active { background:#2d3547; }
   #zonepick .zrow .home { color:#ffd75e; font-size:13px; font-weight:normal; }
   #zonepick #zonepick-cancel { margin-top:12px; padding:10px 18px; font-size:15px; border-radius:10px; border:none;
     background:#ffd75e; color:#111; font-weight:bold; width:100%; }
+  /* v1.15: standard breakpoints for the zone picker card */
+  @media (min-width:600px){
+    #zonepick .card{ padding:22px 26px; }
+    #zonepick h3{ font-size:22px; }
+  }
   /* v1.12 save-and-exit dialog */
   #saveexit { position:fixed; inset:0; z-index:60; display:none; align-items:center; justify-content:center;
     background:rgba(0,0,0,.55); }
@@ -306,22 +322,61 @@
   #gas-bar { width:110px; height:10px; border-radius:5px; background:#3a3f45; overflow:hidden; }
   #gas-fill { height:100%; width:100%; background:#3fd34f; border-radius:5px; }
 
-  /* v1.11 LOADING SCREEN (all devices) */
+  /* v1.15 LOADING SCREEN — responsive across standard breakpoints.
+     Joshua's directive (2026-10-10): startup screen text was cut off on his
+     TCL (small screen). Base is mobile-first (320px+); standard breakpoints
+     scale up: 375px (standard phones), 414px (large phones), 600px (tablets),
+     1024px (desktop). Uses viewport-relative units + flexbox so the bottom
+     content (progress bar, status, start button) is never pushed off-screen. */
   #loader{position:fixed;inset:0;z-index:100;background:#000;display:flex;flex-direction:column;
-    align-items:center;justify-content:space-between;padding:12vh 0 6vh;}
-  #load-title{color:#39ff6a;font-size:34px;font-weight:bold;letter-spacing:3px;text-align:center;
-    text-shadow:0 0 18px #39ff6a;padding:0 16px;}
-  #load-icon{width:128px;height:128px;border-radius:28px;box-shadow:0 0 28px rgba(57,255,106,.55);}
-  #load-bottom{width:100%;display:flex;flex-direction:column;align-items:center;padding:0 16px;}
-  #load-bar{width:70%;max-width:420px;height:14px;border:2px solid #39ff6a;border-radius:8px;overflow:hidden;}
-  #load-fill{height:100%;width:0%;background:#39ff6a;box-shadow:0 0 12px #39ff6a;transition:width .3s;}
-  #load-status{margin-top:10px;color:#39ff6a;font-size:15px;font-weight:bold;min-height:20px;text-align:center;
-    transition:opacity .15s;}
-  #load-start{display:none;margin-top:14px;color:#39ff6a;font-size:22px;font-weight:bold;letter-spacing:2px;
-    animation:loadpulse 1.2s infinite;text-align:center;cursor:pointer;pointer-events:auto;
-    border:2px solid #39ff6a;border-radius:12px;padding:12px 28px;background:rgba(0,40,0,.55);
-    box-shadow:0 0 16px rgba(57,255,106,.45);user-select:none;-webkit-tap-highlight-color:transparent;}
+    align-items:center;justify-content:center;gap:2.5vh;padding:4vh 16px;box-sizing:border-box;
+    overflow-y:auto;}
+  #load-title{color:#39ff6a;font-size:clamp(22px,7vw,34px);font-weight:bold;letter-spacing:2px;
+    text-align:center;text-shadow:0 0 18px #39ff6a;padding:0 8px;line-height:1.2;}
+  #load-icon{width:clamp(72px,22vw,128px);height:clamp(72px,22vw,128px);border-radius:22%;
+    box-shadow:0 0 28px rgba(57,255,106,.55);flex-shrink:0;}
+  #load-bottom{width:100%;display:flex;flex-direction:column;align-items:center;padding:0 8px;
+    box-sizing:border-box;}
+  #load-bar{width:min(88%,420px);height:14px;border:2px solid #39ff6a;border-radius:8px;overflow:hidden;}
+  #load-fill{height:100%;width:0%;background:#39ff6a;box-shadow:0 0 12px #39ff6a;transition:width .2s;}
+  #load-pct{margin-top:6px;color:#39ff6a;font-size:13px;font-weight:bold;text-align:center;min-height:18px;}
+  #load-status{margin-top:8px;color:#39ff6a;font-size:clamp(13px,3.8vw,15px);font-weight:bold;
+    min-height:20px;text-align:center;transition:opacity .15s;padding:0 8px;
+    max-width:92vw;overflow:hidden;text-overflow:ellipsis;}
+  #load-start{display:none;margin-top:12px;color:#39ff6a;font-size:clamp(17px,5vw,22px);font-weight:bold;
+    letter-spacing:2px;animation:loadpulse 1.2s infinite;text-align:center;cursor:pointer;
+    pointer-events:auto;border:2px solid #39ff6a;border-radius:12px;
+    padding:12px 24px;background:rgba(0,40,0,.55);
+    box-shadow:0 0 16px rgba(57,255,106,.45);user-select:none;-webkit-tap-highlight-color:transparent;
+    max-width:92vw;box-sizing:border-box;}
   @keyframes loadpulse{0%,100%{opacity:1;}50%{opacity:.35;}}
+  /* Standard breakpoint refinements for the loader */
+  @media (min-width:375px){
+    #loader{gap:3vh;}
+    #load-title{letter-spacing:3px;}
+  }
+  @media (min-width:414px){
+    #load-bar{height:16px;}
+    #load-pct{font-size:14px;}
+  }
+  @media (min-width:600px){
+    #loader{padding:6vh 24px;}
+    #load-title{font-size:32px;}
+    #load-start{padding:14px 32px;}
+  }
+  @media (min-width:1024px){
+    #loader{gap:3.5vh;}
+    #load-title{font-size:34px;}
+    #load-icon{width:128px;height:128px;}
+  }
+  /* Short landscape screens: keep everything visible without scrolling */
+  @media (max-height:500px){
+    #loader{gap:1.5vh;padding:2vh 12px;}
+    #load-icon{width:56px;height:56px;}
+    #load-title{font-size:20px;}
+    #load-start{font-size:16px;padding:8px 20px;margin-top:8px;}
+    #load-status{font-size:12px;margin-top:4px;}
+  }
   /* v1.11 toast (track names, error messages) */
   #toast{position:fixed;z-index:90;top:64px;left:50%;transform:translateX(-50%);color:#fff;
     background:rgba(0,0,0,.72);padding:10px 18px;border-radius:10px;font-size:15px;font-weight:bold;
@@ -597,6 +652,7 @@
   <img id="load-icon" src="icon.png" alt="Surviving Adamsville">
   <div id="load-bottom">
     <div id="load-bar"><div id="load-fill"></div></div>
+    <div id="load-pct">0%</div>
     <div id="load-status">Loading...</div>
     <div id="load-start">CLICK ANYWHERE TO START</div>
   </div>
@@ -610,7 +666,12 @@
        window.__loadNames - human-readable label per step
        __loadStep(key, failed) - marks one step done, advances #load-fill and
          rewrites #load-status ("Loading roads..."); reveals #load-start when
-         every step is done. A 20s watchdog marks any unreported step failed.
+         every step is done.
+       v1.15 REAL PROGRESS (Joshua 2026-10-10): the bar is now weighted by
+         ACTUAL file sizes (roads.js=2.8MB counts 600x more than elev.js=4.4K),
+         not just file count. The old 20s fake-complete watchdog is GONE —
+         failures show a real warning instead of pretending 100%. The bar only
+         hits 100% when every step has genuinely reported in.
      It does NOT start the game - that is __tryStartGame/__autoStart at the
      end of script block 2. -->
 <script>
@@ -619,14 +680,37 @@ window.__loadOrder=['engine','elev','roads','signs','lifts','pins','buildings','
 window.__loadNames={engine:'3D engine',elev:'Elevation data',roads:'Roads',signs:'Exit signs',
   lifts:'Terrain lifts',pins:'Junction pins',buildings:'Buildings',vehmeshes:'Vehicle models',world:'Game world',music:'Music',
   npc:'NPC system',refnpc:'Photo NPCs',gasdata:'Gas station data',traffic:'Traffic system',semis:'Delivery trucks',roadcrew:'Road crew',marta:'MARTA rail',busdata:'MARTA bus data',bus:'MARTA buses'};
+/* v1.15: REAL file sizes in bytes (measured 2026-10-10). The progress bar is
+   weighted by these so a 2.8MB file moves the bar proportionally more than
+   a 4KB file. Steps without a listed size default to 40KB. */
+window.__loadWeight={engine:604160,elev:4505,roads:2936012,signs:57344,
+  lifts:623616,pins:1258291,buildings:454656,vehmeshes:40960,world:40960,music:40960,
+  npc:72704,refnpc:37888,gasdata:40960,traffic:44032,semis:40960,roadcrew:56320,
+  marta:40960,busdata:171008,bus:40960};
 window.__loadDone={};
+function __loadWeightOf(key){ return window.__loadWeight[key]||40960; }
+function __realProgressPct(){
+  var total=0, done=0, i, k;
+  for(i=0;i<window.__loadOrder.length;i++){
+    k=window.__loadOrder[i];
+    total+=__loadWeightOf(k);
+    if(window.__loadDone[k]) done+=__loadWeightOf(k);
+  }
+  return total>0 ? Math.min(100,Math.round(done/total*100)) : 0;
+}
+function __paintProgress(){
+  var pct=__realProgressPct();
+  var fill=document.getElementById('load-fill');
+  if(fill) fill.style.width=pct+'%';
+  var pc=document.getElementById('load-pct');
+  if(pc) pc.textContent=pct+'%';
+  return pct;
+}
 function __loadStep(key,failed){
   if(window.__loadDone[key]) return;
   window.__loadDone[key]=failed?'warn':'ok';
-  var n=Object.keys(window.__loadDone).length, total=window.__loadOrder.length;
-  var fill=document.getElementById('load-fill');
-  if(fill) fill.style.width=Math.round(n/total*100)+'%';
-  var next=null,i;
+  __paintProgress();
+  var next=null,i,total=window.__loadOrder.length;
   for(i=0;i<total;i++){ if(!window.__loadDone[window.__loadOrder[i]]){ next=window.__loadOrder[i]; break; } }
   var st=document.getElementById('load-status');
   if(st){
@@ -641,18 +725,22 @@ function __loadStep(key,failed){
       setTimeout(function(){ st.textContent='Ready'; st.style.opacity='1'; },150);
     }
   }
-  if(!next){ var s=document.getElementById('load-start'); if(s) s.style.display='block'; }
+  if(!next){
+    /* v1.15: only reveal START when progress is genuinely 100% */
+    var pct=__paintProgress();
+    var s=document.getElementById('load-start'); if(s) s.style.display='block';
+  }
 }
 /* show the first step right away so the single line is never generic */
 (function(){
   var st=document.getElementById('load-status');
   if(st&&window.__loadOrder.length) st.textContent='Loading '+window.__loadNames[window.__loadOrder[0]].toLowerCase()+'...';
+  __paintProgress();
 })();
-window.addEventListener('load',function(){
-  setTimeout(function(){
-    window.__loadOrder.forEach(function(k){ if(!window.__loadDone[k]) __loadStep(k,true); });
-  },20000);
-});
+/* v1.15: NO fake-complete watchdog. The old 20s timer marked unreported steps
+   as done even when their bytes never arrived — that is exactly the "fake"
+   behavior Joshua flagged. If a step genuinely fails, its onerror fires
+   __loadStep(key,true) and the status line shows the warning. */
 /* v1.13.4 CLICK-ANYWHERE-TO-START fix (Joshua: click was not starting the game).
    Capture-phase start-intent handler, attached HERE in block 1 so clicks count
    even while block 2 (~5500 lines) is still initializing. If __tryStartGame is
@@ -7406,6 +7494,21 @@ function __tryStartGame(){
   try{
     var l=document.getElementById('loader');
     if(!l || l.style.display==='none') return false;
+    /* v1.15 CLICK-BUG HARDENING (Joshua 2026-10-10: click did nothing on APK
+       and web): do not start until every load step has genuinely reported.
+       Starting early (before roads/3D engine arrived) left the game in a
+       broken state where the loader was hidden but nothing ran. */
+    var pending=[], i;
+    for(i=0;i<window.__loadOrder.length;i++){
+      if(!window.__loadDone[window.__loadOrder[i]]) pending.push(window.__loadOrder[i]);
+    }
+    if(pending.length>0){
+      /* assets still arriving — acknowledge the click but wait for bytes */
+      var st=document.getElementById('load-status');
+      if(st){ st.textContent='Still loading… '+__realProgressPct()+'% — one moment'; st.style.opacity='1'; }
+      try{ __paintProgress(); }catch(e){}
+      return false;
+    }
     l.style.display='none';
     /* v1.13.4: start the animate() loop exactly ONCE. After save-and-exit
        re-shows the loader, a click must only dismiss it (the loop is still
@@ -7414,7 +7517,7 @@ function __tryStartGame(){
     window.__gameStarted=true;
     try{ musicStartOnce(); }catch(e){ console.error('musicStartOnce failed:', e); }
     try{
-      if(typeof animate==='undefined') throw new Error('animate is not defined');
+      if(typeof animate==='undefined') throw new Error('animate is not defined — core game script did not finish initializing');
       animate();
       /* v1.14: hot-reload session restore — if the last page saved its spot
          before a UI-apply reload, put Joshua back exactly where he was. */
@@ -7422,14 +7525,44 @@ function __tryStartGame(){
     }catch(e){
       console.error('animate failed:', e);
       window.__gameStarted=false; /* allow a retry */
-      document.body.innerHTML='<div style="color:white;padding:20px;font-family:monospace;">Game start failed:<br>'+String(e&&e.message||e)+'<br><br>Check console for details.</div>';
+      /* v1.15: show the loader again with the error instead of a dead page */
+      l.style.display='flex';
+      var st2=document.getElementById('load-status');
+      if(st2){ st2.textContent='⚠ Start failed: '+String(e&&e.message||e)+' — tap to retry'; st2.style.opacity='1'; }
+      var s2=document.getElementById('load-start');
+      if(s2){ s2.style.display='block'; s2.textContent='TAP TO RETRY'; }
     }
     return true;
-  }catch(e){ 
+  }catch(e){
     console.error('__tryStartGame failed:', e);
-    return false; 
+    return false;
   }
 }
+/* v1.15: STUCK-LOADER WATCHDOG — if the loader is still visible 45s after
+   block 2 parsed and the game never started, surface a diagnostic instead of
+   a dead "click to continue". This catches the exact symptom Joshua reported. */
+setTimeout(function(){
+  try{
+    var l=document.getElementById('loader');
+    if(l && l.style.display!=='none' && !window.__gameStarted){
+      var pending=[];
+      for(var i=0;i<window.__loadOrder.length;i++){
+        if(!window.__loadDone[window.__loadOrder[i]]) pending.push(window.__loadNames[window.__loadOrder[i]]);
+      }
+      var st=document.getElementById('load-status');
+      if(st){
+        if(pending.length){
+          st.textContent='⚠ Stuck waiting for: '+pending.slice(0,3).join(', ')+(pending.length>3?'…':'');
+        }else{
+          st.textContent='⚠ Ready but not starting — tap anywhere';
+        }
+        st.style.opacity='1';
+      }
+      var s=document.getElementById('load-start');
+      if(s){ s.style.display='block'; s.textContent='TAP TO START'; }
+    }
+  }catch(e){}
+},45000);
 /* __autoStart() - Joshua's NO-SKIP rule: the game starts ITSELF ~3s after the
    loader reports Ready - no manual "press start" step, no update-download
    gate. The document-level click handler, the #load-start button, and the
