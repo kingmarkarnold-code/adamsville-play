@@ -4861,6 +4861,7 @@ actionBtn.addEventListener('click', function(){
     camera.lookAt(car.x+Math.sin(car.yaw)*3, _cgy+1.2, car.z+Math.cos(car.yaw)*3);
     setCarDoors(car,true); car._doorT=1.4;
     setDrivingUI(true); updateDamageHUD();
+    try{ hideNpcDialog(); }catch(e){}   // v1.14: end any NPC chat when driving off
     try{Report.note('enter-car',{x:Math.round(car.x),z:Math.round(car.z),kind:car.kind||'?'});}catch(e){}
   } else if (a==='exit-car'){
     exitCar(false);
@@ -4874,6 +4875,12 @@ actionBtn.addEventListener('click', function(){
     player.inside=true; player.heroFloor=1; setDrivingUI(false);
   } else if (a==='pickup'){
     doPickup();
+  } else if (a==='talk-npc'){
+    /* v1.14 NPC conversation (Joshua): engage the nearest pedestrian in
+       Atlanta small-talk. The NPC is already facing the player (npcFaceTick).
+       Tapping TALK again mid-chat serves a fresh line. */
+    var tn=window.__talkNPC;
+    if (tn && typeof npcStartTalk==='function') npcStartTalk(tn);
   } else if (a==='exit-house'){
     var fd=heroHouse.frontDoor, bd=heroHouse.backDoor;
     var df=Math.hypot(player.x-fd.x, player.z-fd.z);
@@ -6159,6 +6166,24 @@ function updateGasHUD(){
     try{ showToast('LOW FUEL — pull up to a gas pump',2600); }catch(e){}
   } else if (pct>=20){ car._lowFuelWarned=false; }
 }
+/* v1.14 NPC conversation panel (Joshua: non-crew NPCs talk about Atlanta).
+   showNpcDialog(name,line) opens the bottom sheet; hideNpcDialog() closes it.
+   The game calls hideNpcDialog when the player drives off, enters a building,
+   or walks away (npcFaceTick handles the walk-away case via window hook). */
+function showNpcDialog(name,line){
+  try{
+    document.getElementById('npc-dialog-name').textContent=name||'ATLANTA LOCAL';
+    document.getElementById('npc-dialog-text').textContent=line||'...';
+    document.getElementById('npc-dialog').style.display='block';
+  }catch(e){}
+}
+function hideNpcDialog(){
+  try{
+    document.getElementById('npc-dialog').style.display='none';
+    if (typeof npcEndTalk==='function') npcEndTalk();
+  }catch(e){}
+}
+document.getElementById('npc-dialog-bye').addEventListener('click', function(){ hideNpcDialog(); });
 function updateActionButton(){
   var act=null, label='';
   pendingPickup=null;   // v1.12: reset each frame; set fresh below when in range
@@ -6203,6 +6228,13 @@ function updateActionButton(){
       }
       if (!act && typeof spCheckEnterables==='function'){
         var spOut=spCheckEnterables(); if (spOut){ act=spOut.act; label=spOut.label; }
+      }
+      /* v1.14 NPC talk (Joshua): nearest visible pedestrian in range gets a
+         TALK prompt on the universal action button — same pattern as ENTER CAR.
+         npcTalkNearest() already excludes driving/inside/riding states. */
+      if (!act && typeof npcTalkNearest==='function'){
+        var tn=npcTalkNearest(player.x,player.z);
+        if (tn){ act='talk-npc'; label='TALK'; window.__talkNPC=tn; }
       }
       }
     }
