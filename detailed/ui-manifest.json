@@ -68,10 +68,9 @@
     },
     {
       "name": "index.html",
-      "size": 680964,
-      "sha256": "559635c72110554cd9f28a609e0f0eb752d03523d571f1ff8a7a494197485eaf",
-      "hash": "83e3c7a9dcde7753",
-      "md5": "83e3c7a9dcde77536cb1a1a1873b9b5c"
+      "size": 681173,
+      "sha256": "12a627daa8e2cbefdf18090c4136b5a373a4d7ab288245e9155df7d3d9a773b5",
+      "hash": "66c18cf19be16cd0"
     },
     {
       "name": "infracrew_system.js",
@@ -248,8 +247,14 @@
       "size": 13047,
       "sha256": "174682917a80d3af88741b0c8fdc45fa3f8e0d433820b1d27301c7506e3ee6b7",
       "hash": "1b55483e40cdd59b"
+    },
+    {
+      "name": "stayawake.js",
+      "size": 9476,
+      "sha256": "b192b1aaceead7082db689f4a0e0417fff70544d569b1d38e954da3913919e8d",
+      "hash": "59e804d2ce14e400"
     }
   ],
-  "ui_version": "2026.10.09.86",
+  "ui_version": "2026.10.09.87",
   "version": "1.13.0"
 }
