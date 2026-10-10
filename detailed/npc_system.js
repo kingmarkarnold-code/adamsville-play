@@ -1399,7 +1399,15 @@ function updateNPCs(dt, playerPos){
     try{ npcFaceTick(dt,px,pz); }catch(e){}   // v1.14: NPCs turn to face a nearby player
     if ((npcTick%15)===0){ try{ transitTick(); }catch(e){} }  // v1.17: transit commuters (staggered)
     rebuildNpcHash();   // v1.20: NPC-NPC collision spatial hash (persistent arrays, zero garbage)
-    for (i=0;i<npcs.length;i++) aiNPC(npcs[i],dt);   // data-only, always runs
+    // v1.15 DISTANCE CULLING (Joshua 2026-10-10): skip AI for NPCs beyond
+    // cull distance — massive perf win on low-end phones. Culled NPCs freeze
+    // in place (no AI, no movement) until player gets closer.
+    var _zu = window.ZONEUNLOCK;
+    for (i=0;i<npcs.length;i++){
+      var _n=npcs[i];
+      if(_zu && _n && _zu.shouldCull(_n.x,_n.z)) continue;
+      aiNPC(_n,dt);
+    }
     streamT-=dt;
     if (streamT<=0){ streamT=0.5; refreshSlots(px,pz); }
     renderNPCs(dt,px,pz);
