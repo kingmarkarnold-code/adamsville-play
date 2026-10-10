@@ -82,7 +82,11 @@ function _short(s,n){ s=String(s||''); return s.length>n ? s.slice(0,n-3)+'...' 
    Thirty-year veterans all have a name the crew actually uses. Assigned
    round-robin so every job gets its own foreman. */
 var FOREMAN_NAMES=['Deacon','Big Mike','Sarge','Pops','Mack','Red','Sonny',
-  'Hank','Preacher','T-Bone','Walt','Gus'];
+  'Hank','Preacher','T-Bone','Walt','Gus',
+  /* v1.1 CREW 5X (Joshua 2026-10-09): expanded roster for 5x crews */
+  'Chief','Dusty','Iron','Slim','Bubba','Tank','Cletus','Roscoe','Jed','Elmer',
+  'Virgil','Otis','Grady','Floyd','Lester','Buford','Jethro','Cooter','Enos',
+  'Boss','Doc','Sarge2','Gunny','Top','Chief2','Duke','Ace','Tex','Buck','Colt'];
 var _foremanSeq=0;
 function _nextForeman(){ return FOREMAN_NAMES[(_foremanSeq++)%FOREMAN_NAMES.length]; }
 var _chatterIdx=0;  // rotates radio lines + field notes so they don't repeat
