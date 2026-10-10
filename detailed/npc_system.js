@@ -306,6 +306,10 @@ function spawnNPC(id){
 /* setState(n, st, t) — sets the NPC's AI state and its countdown timer. */
 function setState(n, st, t){ n.state=st; n.stateT=t; }
 function aiNPC(n, dt){
+  /* v1.14: conversation focus — the NPC is facing the player for a chat.
+     Pause the wander AI (no walking off, no state-timer expiry) while
+     npcFaceTick eases the heading toward the player. */
+  if (n.focus){ n.stateT=Math.max(n.stateT,0.5); return; }
   n.stateT-=dt;
   if (n.state===ST_WALK){
     var step=n.speed*dt;
@@ -522,6 +526,323 @@ function tryInit(){
   }catch(e){ /* NPC system stays off; game unaffected */ }
 }
 
+/* ---------------- NPC conversations (v1.14) ----------------
+   JOSHUA'S DIRECTIVE (2026-10-09): NPCs that are NOT part of the work crew
+   should talk about Atlanta. When the player walks up to one:
+     1. the NPC turns to face the player,
+     2. a TALK prompt appears on the universal action button
+        (same pattern as ENTER CAR),
+     3. tapping it opens a dialogue panel with a randomized Atlanta-themed
+        line — Zoo, Aquarium, Botanical Garden, Centennial Olympic Park,
+        High Museum, Fox Theatre, Ponce City Market, BeltLine, Underground
+        Atlanta, Stone Mountain, World of Coca-Cola, MARTA, restaurants,
+        parks, neighborhoods, events.
+   NOTE: every NPC in THIS file is a pedestrian — the road crew lives in
+   roadcrew_system.js, so no crew-filtering is needed here.
+   While an NPC has "focus" (player nearby) it pauses its wander AI and
+   eases its heading toward the player. The dialogue panel is owned by
+   index.html (showNpcDialog/hideNpcDialog); this module only supplies the
+   lines and the proximity/talk state. */
+/* TALK_LINES — the Atlanta conversation pool. First-person, casual, PG.
+   ~64 unique lines across the categories Joshua named. */
+/* ============================================================================
+   NPC DIALOGUE DATABASE (v1.14.1) — NPC Dialogue Director's domain.
+   ----------------------------------------------------------------------------
+   Joshua's directive (2026-10-09): NPCs that are NOT part of the work crew
+   talk about Atlanta — attractions, food, transit, neighborhoods, events.
+   When the player walks up, the NPC turns to face them and a TALK prompt
+   appears on the universal action button (same pattern as ENTER CAR).
+
+   STRUCTURE: personality pools. Every NPC type (man / woman / boy16) gets
+   its own voice plus a shared pool of general Atlanta lines. npcTalkLine(n)
+   merges the NPC's pool with the shared pool and picks a random line —
+   never the same line twice in a row (talkLastKey tracks pool+index).
+
+   VOICE RULES (set by the Dialogue Director):
+     - All lines first-person, casual, PG. Things a real Atlanta local
+       would actually say out loud to a stranger on the sidewalk.
+     - boy16 lines are age-appropriate: school, friends, games, sports —
+       never bars, clubs, or adult nightlife.
+     - No named real people. Places are fine (they're public landmarks).
+   GROWTH: add new lines to the right pool; the picker needs no changes.
+   ============================================================================ */
+/* TALK_SHARED — general Atlanta lines any NPC can say. */
+var TALK_SHARED=[
+ /* --- Zoo Atlanta --- */
+ "Have you checked out Zoo Atlanta yet? The pandas are something else.",
+ "I just came from the zoo — the gorillas were putting on a show today.",
+ "Zoo Atlanta's got that African savanna exhibit now, you gotta see it.",
+ "Took my cousins to the zoo last weekend — they loved the giraffes.",
+ "The reptile house at the zoo gives me the creeps, but it's cool.",
+ /* --- Georgia Aquarium --- */
+ "Have you been to the Georgia Aquarium yet? It's massive!",
+ "The whale sharks at the aquarium — you won't believe how big they are.",
+ "I just came from the aquarium downtown. That ocean tunnel is unreal.",
+ "The dolphin show at the Georgia Aquarium is worth every penny.",
+ "One of the biggest aquariums in the world and it's right here. Wild.",
+ /* --- Atlanta Botanical Garden --- */
+ "You been to the Atlanta Botanical Garden? Beautiful this time of year.",
+ "The Garden's holiday lights are the best night out in the city.",
+ "I was just over at the Botanical Garden. The orchid house smells amazing.",
+ "The canopy walk at the Garden — you're walking through the treetops.",
+ /* --- Centennial Olympic Park --- */
+ "Centennial Olympic Park is where it's at on weekends.",
+ "They still run the Fountain of Rings show at the park — kids love it.",
+ "I just came from Centennial Park. Perfect day for it.",
+ "The park was built for the '96 Olympics. Still the heart of downtown.",
+ /* --- High Museum --- */
+ "The High Museum has a new exhibit — thinking about going Saturday.",
+ "Have you been to the High? That building alone is a work of art.",
+ "The High's folk art collection is underrated. Go see it.",
+ /* --- Fox Theatre --- */
+ "Have you been to the Fox Theatre? Caught a show there last week.",
+ "The Fox is the prettiest building in Atlanta. Fight me.",
+ "They're doing a classic movie night at the Fox next month.",
+ "That Moorish architecture on the Fox — nothing else like it.",
+ /* --- Ponce City Market --- */
+ "Have you tried the food at Ponce City Market? So many options.",
+ "I was just up at Ponce City Market — the rooftop view is crazy.",
+ "Skip the line, hit the food hall at Ponce early.",
+ "Ponce used to be a Sears warehouse. Now look at it.",
+ /* --- Atlanta BeltLine --- */
+ "The BeltLine is perfect for walking — have you been?",
+ "I just biked the whole Eastside Trail. Best free thing in Atlanta.",
+ "BeltLine on a Sunday afternoon — that's the move.",
+ "The art on the BeltLine changes all the time. Always something new.",
+ /* --- Underground Atlanta --- */
+ "I was just down at Underground Atlanta. Lots of history down there.",
+ "Underground's been changing a lot lately — worth another look.",
+ /* --- Stone Mountain --- */
+ "Stone Mountain is worth the drive, especially for the laser show.",
+ "Hiked up Stone Mountain this morning — the skyline view is unreal.",
+ "The train around Stone Mountain is a whole vibe.",
+ /* --- World of Coca-Cola --- */
+ "The World of Coca-Cola is a must-see if you haven't been.",
+ "You can taste like a hundred sodas from around the world at Coca-Cola. Wild.",
+ "Coke was invented right here in Atlanta. That's our thing.",
+ /* --- MARTA --- */
+ "Have you ridden MARTA to the airport? So convenient.",
+ "The train to the airport beats sitting in Connector traffic any day.",
+ "MARTA's got its problems, but the Gold Line gets me downtown fast.",
+ "Pro tip: the airport station is right inside the terminal. Can't miss it.",
+ /* --- Getting around --- */
+ "Avoid the Downtown Connector at rush hour. Trust me on this.",
+ "285 is a parking lot after 4. Plan accordingly.",
+ "It rained for ten minutes and everybody forgot how to drive.",
+ "Atlanta weather — wait five minutes, it'll change.",
+ "The Perimeter is where the real traffic lives.",
+ /* --- General Atlanta --- */
+ "You new around here? Welcome to the A.",
+ "This heat? Yeah, it's always like this. You'll get used to it.",
+ "Have you seen the skyline at night from the Westside? Beautiful.",
+ "Mercedes-Benz Stadium looks like a spaceship landed downtown.",
+ "Have you been out to the Chattahoochee? Good fishing out there.",
+ "Atlanta's a city in a forest. Look up — trees everywhere.",
+ "The King Center downtown — everybody should visit at least once.",
+ "Oakland Cemetery does tours — spooky and historic.",
+ "The Center for Civil Rights downtown — powerful stuff."
+];
+/* TALK_MAN — adult men's pool: sports, work commute, local history. */
+var TALK_MAN=[
+ "Did you catch the Braves game? This city's buzzing.",
+ "Falcons better get it together this season, I'm saying.",
+ "Hawks are fun to watch this year. State Farm Arena gets loud.",
+ "Atlanta United matches — the atmosphere is unreal. Best fans in MLS.",
+ "I remember when the Braves were at Turner Field. Times change.",
+ "Dragon Con takes over downtown every year — it's wild.",
+ "Have you toured the CNN Center? Right by the park.",
+ "Sweet Auburn — that's where Atlanta's Black history lives. Go walk it.",
+ "The Varsity — been going since I was a kid. Chili dogs never miss.",
+ "Best lemon pepper wings in the city? Don't even get me started.",
+ "I drive the Connector every morning. Pray for me.",
+ "You ever been stuck on 75/85 when it shuts down? Nightmare.",
+ "They finally fixed that pothole on Cascade. Only took a year.",
+ "My commute's twenty minutes unless 285 says otherwise.",
+ "Adamsville's home. Been here my whole life.",
+ "East Point's got that old-school Atlanta feel.",
+ "Buckhead's fancy, but the real Atlanta's down here.",
+ "I grew up going to Adams Park. Still play ball there sometimes.",
+ "Wilson Mill Park — good spot to clear your head.",
+ "You know they filmed half of Hollywood out here now? Tyler Perry Studios and all.",
+ "The old GM plant in Doraville — my uncle worked there thirty years.",
+ "Fulton Industrial at night — nothing but trucks and streetlights.",
+ "Have you had real soul food on Cascade? Life-changing.",
+ "Go to The Beautiful for breakfast. Trust me on this one.",
+ "Sweet tea here hits different. It's basically the city drink."
+];
+/* TALK_WOMAN — adult women's pool: community, food, parks, culture. */
+var TALK_WOMAN=[
+ "Piedmont Park on a Saturday — everybody's out there.",
+ "Grant Park is underrated. The historic homes around it are gorgeous.",
+ "Have you walked the trails at Cascade Springs? Real peaceful.",
+ "The farmers market in East Point on Saturdays — fresh everything.",
+ "Have you been to the High Museum's Friday jazz nights? So nice.",
+ "Little Five Points is... an experience. Go see for yourself.",
+ "Have you been down to Castleberry Hill? The art scene is blowing up.",
+ "The Fox Theatre's Mighty Mo organ — they still play it before shows.",
+ "I take my niece to the Children's Museum downtown. She loves it.",
+ "The Center for Puppetry Arts — sounds silly, it's actually wonderful.",
+ "Have you tried the food trucks at the park? The lines move fast.",
+ "Real talk — the best peach cobbler is at my church's bake sale.",
+ "You gotta try the Varsity — it's an Atlanta institution.",
+ "Mary Mac's Tea Room — classic Atlanta comfort food.",
+ "The BeltLine's Eastside Trail is my morning walk. Every morning.",
+ "Chastain Park concerts in the summer — bring a picnic.",
+ "Have you seen the Swan House? It's like a movie set.",
+ "The MLK historic district — take the whole tour, not just the house.",
+ "I just came from Trader Joe's on Piedmont. That parking lot is a war zone.",
+ "Lenox on a Saturday — I don't know why I do this to myself.",
+ "The aquarium's sleepovers for kids — mine still talks about it.",
+ "Zoo Atlanta's behind-the-scenes tour — worth saving up for.",
+ "Have you been to the Alliance Theatre? Great shows.",
+ "The Wren's Nest in West End — storytelling at its finest."
+];
+/* TALK_BOY16 — 16-year-old boys: school, friends, sports, games. PG, age-fit. */
+var TALK_BOY16=[
+ "You go to school around here? I'm at Harper Archer.",
+ "Man, practice ran long today. Coach is killing us.",
+ "Have you been to the skate park yet? It's decent.",
+ "We hoop at Adams Park after school. Pull up sometime.",
+ "The new Spider-Man game? I've been grinding all week.",
+ "You play 2K? I'm nice with the Hawks, no cap.",
+ "Madden with the Falcons — we rebuilding, but it's fun.",
+ "Have you been to a Braves game? Truist Park is electric.",
+ "I wanna catch Atlanta United live one day. The tifo looks crazy.",
+ "The aquarium field trip was actually fire, not gonna lie.",
+ "Zoo Atlanta with the school — the lions were active that day.",
+ "Have you walked the BeltLine? Me and my boys bike it.",
+ "Centennial Park after school — everybody be out there.",
+ "The Chick-fil-A on Cascade — that's the after-school spot.",
+ "You tried the lemon pepper wings from J.R. Crickets? Elite.",
+ "American Deli wings hit different after practice.",
+ "MARTA to Five Points then walk to the park — easy day.",
+ "The train to the airport just to ride it — we've all done it.",
+ "My mom says stay off 285 on foot. Obviously.",
+ "Have you seen the new sneakers at the mall? I need those.",
+ "Six Flags over Georgia — the Goliath is still the best ride.",
+ "White Water in the summer — that's the move.",
+ "Stone Mountain laser show with the family — classic.",
+ "The High Museum has student days. Art's actually kind of cool."
+];
+/* TALK_LINES — legacy combined pool, kept for the inspector/debug rig.
+   The live picker (npcTalkLine) uses the personality pools above. */
+var TALK_LINES=TALK_SHARED.concat(TALK_MAN,TALK_WOMAN,TALK_BOY16);
+var TALK_R=4.5;        // TALK prompt range (units) — matches ENTER CAR's 4.5u
+var TALK_FACE_R=8;     // NPC turns to face the player inside this range
+var TALK_END_R=6;      // conversation auto-ends beyond this range
+var talkNPC=null;      // NPC currently in conversation (data object or null)
+var talkLastIdx=-1;    // index of the last line spoken — never repeat twice in a row
+/* npcTalkLine(n) — picks a random line for NPC n from its personality pool
+   (TALK_MAN / TALK_WOMAN / TALK_BOY16) merged with TALK_SHARED — never the
+   same pool+index twice in a row (talkLastKey tracks "pool:index"). Falls
+   back to the combined TALK_LINES if the NPC type is unreadable. The guard
+   loop caps at 10 tries; pools are 70+ lines each, so a repeat is only
+   possible on pathological RNG. */
+var talkLastKey='';
+function npcTalkPool(n){
+  /* type: 0=man, 1=woman, 2=boy16 (see TYPE_NAMES). Unknown -> shared only. */
+  try{
+    if (n && n.type===0) return {name:'man',  lines:TALK_MAN.concat(TALK_SHARED)};
+    if (n && n.type===1) return {name:'woman',lines:TALK_WOMAN.concat(TALK_SHARED)};
+    if (n && n.type===2) return {name:'boy',  lines:TALK_BOY16.concat(TALK_SHARED)};
+  }catch(e){}
+  return {name:'all', lines:TALK_LINES};
+}
+function npcTalkLine(n){
+  var pool=npcTalkPool(n), i, guard=0, key;
+  do {
+    i=(Math.random()*pool.lines.length)|0; guard++;
+    key=pool.name+':'+i;
+  } while (key===talkLastKey && guard<10);
+  talkLastKey=key;
+  return pool.lines[i];
+}
+/* npcDisplayName(n) — the speaker label shown in the dialogue panel.
+   Kept generic per Joshua's spec (no named characters yet). */
+function npcDisplayName(n){
+  try{ return n.type===2 ? 'LOCAL TEEN' : 'ATLANTA LOCAL'; }catch(e){ return 'ATLANTA LOCAL'; }
+}
+/* npcTalkEligible() — true only when the player is on foot and outside.
+   No TALK prompt while driving, inside a building, or riding transit.
+   All reads are guarded: a missing global degrades to "not eligible". */
+function npcTalkEligible(){
+  try{
+    if (typeof car!=='undefined' && car && car.driving) return false;
+    if (typeof player!=='undefined' && player &&
+        (player.inside || player.ridingTrain || player.ridingBus)) return false;
+  }catch(e){}
+  return true;
+}
+/* npcTalkNearest(px,pz) — nearest VISIBLE (slotted) NPC within TALK_R of
+   (px,pz), or null. Only slotted NPCs have bodies on screen, so the player
+   can only meaningfully talk to those. Called every frame from the game's
+   updateActionButton() — the slotted scan is tiny (<=40), never the full
+   population. */
+function npcTalkNearest(px,pz){
+  if (!npcReady || !npcTalkEligible()) return null;
+  var best=null, bd=TALK_R*TALK_R;
+  try{
+    for (var s=0;s<MAX_VISIBLE;s++){
+      var n=slots[s]; if(!n) continue;
+      var dx=px-n.x, dz=pz-n.z, d2=dx*dx+dz*dz;
+      if (d2<bd){ bd=d2; best=n; }
+    }
+  }catch(e){ return null; }
+  return best;
+}
+/* npcFaceTick(dt,px,pz) — runs inside updateNPCs each frame. Every NPC
+   within TALK_FACE_R eases its heading toward the player ("turns to the
+   individual", Joshua's words) and gets n.focus=true, which pauses its
+   wander AI (see aiNPC). Leaving the radius clears focus and AI resumes.
+   Also ends the active conversation if the player walks beyond TALK_END_R. */
+function npcFaceTick(dt,px,pz){
+  if (!npcReady) return;
+  var eligible=npcTalkEligible();
+  var FR2=TALK_FACE_R*TALK_FACE_R;
+  try{
+    for (var i=0;i<npcs.length;i++){
+      var n=npcs[i];
+      var dx=px-n.x, dz=pz-n.z, d2=dx*dx+dz*dz;
+      if (eligible && d2<FR2){
+        var want=Math.atan2(dx,dz);   // heading convention: 0 = +z (see aiNPC)
+        var diff=want-n.heading;
+        while (diff>Math.PI) diff-=Math.PI*2;
+        while (diff<-Math.PI) diff+=Math.PI*2;
+        n.heading+=diff*Math.min(1,10*dt);   // quick ease, no snap
+        n.focus=true;
+      } else if (n.focus){ n.focus=false; }
+    }
+    if (talkNPC){
+      var tx=px-talkNPC.x, tz=pz-talkNPC.z;
+      if (tx*tx+tz*tz > TALK_END_R*TALK_END_R){
+        talkNPC.focus=false; talkNPC=null;
+        try{ if (typeof hideNpcDialog==='function') hideNpcDialog(); }catch(e){}
+      }
+    }
+  }catch(e){}
+}
+/* npcStartTalk(n) — begins (or continues) a conversation with NPC n.
+   Locks focus so the NPC keeps facing the player while the panel is open.
+   Tapping TALK again mid-conversation just serves a fresh line. */
+function npcStartTalk(n){
+  if (!n) return;
+  try{
+    talkNPC=n; n.focus=true;
+    var line=npcTalkLine(n);
+    if (typeof showNpcDialog==='function') showNpcDialog(npcDisplayName(n), line);
+  }catch(e){}
+}
+/* npcEndTalk() — closes the conversation from the NPC side (panel close
+   button calls hideNpcDialog directly; this clears the module state). */
+function npcEndTalk(){
+  try{ if (talkNPC) talkNPC.focus=false; }catch(e){}
+  talkNPC=null;
+}
+window.npcTalkNearest=npcTalkNearest;
+window.npcStartTalk=npcStartTalk;
+window.npcEndTalk=npcEndTalk;
+window.NPC_TALK_LINES=TALK_LINES;   // inspector/debug visibility
+
 /* ---------------- main-loop entry ---------------- */
 /* updateNPCs(dt, playerPos) — frame tick (wired by the build agent into
    animate()): AI for all 1000 NPCs always runs (data-only), slots refresh
@@ -539,6 +860,7 @@ function updateNPCs(dt, playerPos){
     else return;
     try{ if (typeof car!=='undefined' && car && car.driving){ px=car.x; pz=car.z; } }catch(e){}
     var i;
+    try{ npcFaceTick(dt,px,pz); }catch(e){}   // v1.14: NPCs turn to face a nearby player
     for (i=0;i<npcs.length;i++) aiNPC(npcs[i],dt);   // data-only, always runs
     streamT-=dt;
     if (streamT<=0){ streamT=0.5; refreshSlots(px,pz); }
