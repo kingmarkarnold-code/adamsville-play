@@ -27,6 +27,10 @@
    ============================================================================ */
 (function residentialDetail(){
 'use strict';
+/* v1.22 LAUNCHER (Joshua 2026-10-10): skip the detail pass entirely when
+   "High-detail buildings" is unchecked in launch options. Saves parse time
+   and memory on weak hardware (doors, windows, porches, garages skipped). */
+try{ if (window.__launchOpts && window.__launchOpts.hiDetail===false) return; }catch(e){}
 try{
   if (typeof THREE==='undefined' || typeof scene==='undefined') return;
   if (typeof OSM_BUILDINGS==='undefined' || !OSM_BUILDINGS || !OSM_BUILDINGS.length) return;
