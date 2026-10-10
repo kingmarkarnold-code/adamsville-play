@@ -277,6 +277,18 @@ function logStuck(c){
   TR.stuckSpots.push({x:Math.round(c.x), z:Math.round(c.z),
     road:R?R.name:'?', t:tsLocal()});
   if (TR.stuckSpots.length>STUCK_MAX) TR.stuckSpots.shift();
+  /* v1.15 (StuckDiag): attach the root-cause data diagnosis to the stuck
+     spot — Joshua's live road audit now says WHY, not just WHERE. The
+     registry also learns the spot (persistent across sessions). */
+  try{
+    if (typeof StuckDiag!=='undefined' && StuckDiag.suspectCause){
+      var _sd=StuckDiag.suspectCause(c.x, c.z, null);
+      var _sp=TR.stuckSpots[TR.stuckSpots.length-1];
+      _sp.cause=_sd.cause; _sp.causeLabel=_sd.causeLabel;
+      if (_sd.detail) _sp.causeDetail=_sd.detail;
+      if (_sd.flagged) _sp.dataRepair=true;
+    }
+  }catch(e){}
   try{ Report.note('traffic-stuck', TR.stuckSpots[TR.stuckSpots.length-1]); }catch(e){}
 }
 
