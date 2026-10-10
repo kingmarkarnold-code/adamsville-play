@@ -348,7 +348,7 @@ function spShelf(x, z, len, gy, alongX) {
    Building: (3750, 4297), 24 x 96. Storefronts face WEST (-x).
    Clear of: Fairburn Rd SW, Cascade Rd, Research Center Dr SW,
    Utoy Springs Rd SW (all verified).
-   Real anchor: Walgreens. 10 storefronts.
+   Fictitious anchor: ALL GREENS. 10 storefronts.
    ============================================================================ */
 (function buildCascadePlaza() {
   var cx = 3750, cz = 4297;
@@ -360,8 +360,8 @@ function spShelf(x, z, len, gy, alongX) {
   var pz0 = cz - 48, pz1 = cz + 48;      // 4249 - 4345
 
   var stores = [
-    { name: 'WALGREENS', w: 24, enter: true, color: '#cc2222' },
-    { name: "MOE'S", w: 8, enter: true, color: '#2a8a3a' },
+    { name: 'ALL GREENS', w: 24, enter: true, color: '#cc2222' },
+    { name: "JOE'S", w: 8, enter: true, color: '#2a8a3a' },
     { name: 'NAIL SALON', w: 8, enter: false, color: '#aa44aa' },
     { name: 'BARBER', w: 8, enter: false, color: '#224488' },
     { name: 'DOLLAR STORE', w: 8, enter: true, color: '#228822' },
@@ -397,7 +397,7 @@ function spShelf(x, z, len, gy, alongX) {
 
     if (st.enter) {
       var inX = px0 + 6, inZ = zM;
-      if (st.name === 'WALGREENS') {
+      if (st.name === 'ALL GREENS') {
         for (var a = 0; a < 3; a++) {
           spShelf(inX - 2 + a * 4, inZ - 4, 9, gy, false);
           spShelf(inX - 2 + a * 4, inZ + 4, 9, gy, false);
@@ -406,7 +406,7 @@ function spShelf(x, z, len, gy, alongX) {
           new THREE.MeshLambertMaterial({ color: 0xdddddd }));
         pc.position.set(px1 - 4, gy + 0.7, inZ); scene.add(pc);
         addCollider(px1 - 4, inZ, 4.5);
-      } else if (st.name === "MOE'S") {
+      } else if (st.name === "JOE'S") {
         var mc = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.1, 6),
           new THREE.MeshLambertMaterial({ color: 0x8a4a2a }));
         mc.position.set(px1 - 3, gy + 0.7, inZ); scene.add(mc);
