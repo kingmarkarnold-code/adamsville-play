@@ -889,7 +889,8 @@ function initTraffic(){
   try{
     if (typeof animate==='function'&&!animate.__trafWrap){
       var orig=animate;
-      var wrapped=function(){ orig(); updateTraffic(); };
+      /* v1.22 LAUNCHER (Joshua 2026-10-10): skip when traffic disabled in launch options. */
+      var wrapped=function(){ orig(); if(!window.__launchOpts || window.__launchOpts.traffic!==false) updateTraffic(); };
       wrapped.__trafWrap=true;
       animate=wrapped;
     }
