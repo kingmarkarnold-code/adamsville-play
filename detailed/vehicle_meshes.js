@@ -734,9 +734,12 @@ function schoolBusMesh(){
   box(2.4,1.0,0.15,glass,0,2.2,4.85);               // windshield
   box(2.6,0.9,1.6,yellow,0,1.35,5.4);               // hood
   box(2.62,0.18,9.62,black,0,2.86,0);               // roof edge
-  // stop sign (folded out on the left side)
+  // stop sign (driver's/left side) — v1.17: animated. Retracted flush
+  // against the body (x=1.32); schoolbus_system.js eases userData.signT
+  // 0->1 to swing it out to x=2.12 when children board, then retracts.
+  // Joshua's rule: the sign lives on the LEFT (driver's) side.
   var sign=new THREE.Mesh(new THREE.CylinderGeometry(0.45,0.45,0.06,8),vehLam(0xc23b2e));
-  sign.rotation.z=Math.PI/2; sign.position.set(1.45,2.0,3.2); g.add(sign); // v1.16: left side per Joshua
+  sign.rotation.z=Math.PI/2; sign.position.set(1.32,2.0,3.2); g.add(sign);
   // wheels
   function wheel(x,z){ var w=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.5,0.4,12),tireM);
     w.rotation.z=Math.PI/2; w.position.set(x,0.5,z); g.add(w);
@@ -744,10 +747,14 @@ function schoolBusMesh(){
     hub.rotation.z=Math.PI/2; hub.position.set(x,0.5,z); g.add(hub); return w; }
   var wheels=[wheel(-1.25,3.4),wheel(1.25,3.4),wheel(-1.25,-2.6),wheel(1.25,-2.6),
               wheel(-1.25,-3.6),wheel(1.25,-3.6)];
-  // roof warning lights
-  box(0.3,0.15,0.15,vehLam(0xff3300),-0.5,2.95,4.7);
-  box(0.3,0.15,0.15,vehLam(0xff3300),0.5,2.95,4.7);
+  // roof warning lights — v1.17: refs stored so schoolbus_system.js can
+  // flash them red while the stop sign is out (real school bus behavior).
+  var warnL=box(0.3,0.15,0.15,vehLam(0xff3300),-0.5,2.95,4.7);
+  var warnR=box(0.3,0.15,0.15,vehLam(0xff3300),0.5,2.95,4.7);
   g.userData.wheels=wheels;
+  g.userData.stopSign=sign;        // animated stop-sign mesh
+  g.userData.signT=0;              // 0=retracted, 1=fully out
+  g.userData.warnLights=[warnL,warnR];
   return g;
 }
 
