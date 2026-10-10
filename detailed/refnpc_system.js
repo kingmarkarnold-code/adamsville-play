@@ -693,7 +693,7 @@ function initRefNPC(){
   try{
     if (typeof animate==='function' && !animate.__refnpcWrap){
       var orig=animate;
-      var wrapped=function(){ orig(); updateRefNPCs(); };
+      var wrapped=function(){ orig(); if(!window.__npcPaused) updateRefNPCs(); };
       wrapped.__refnpcWrap=true; animate=wrapped;
     }
   }catch(e){}
