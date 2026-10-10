@@ -96,7 +96,15 @@ var IC={jobs:[], patrols:[], log:[], ready:false, time:0, tick:0,
 function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
 function dist2(ax,az,bx,bz){ var dx=ax-bx,dz=az-bz; return dx*dx+dz*dz; }
 /* groundY — terrain height with a safe fallback; never throws. */
-function groundY(x,z){ try{ var y=heightAt(x,z); return isFinite(y)?y:0; }catch(e){ return 0; } }
+function groundY(x,z){
+  // v2.0 TERRAIN-ROAD ALIGNMENT (2026-10-10): use road-aware mesh-based height
+  // so crew vehicles drive ON roads, not through them. Falls back to heightAt.
+  try{
+    if (typeof groundRefY==='function'){ var y=groundRefY(x,z); return isFinite(y)?y:0; }
+    var mh=(typeof terrainMeshY==='function')?terrainMeshY(x,z):-1e9;
+    var y=(mh>-1e8)?mh:heightAt(x,z);
+    return isFinite(y)?y:0;
+  }catch(e){ return 0; } }
 /* toast — HUD toast if the helper exists, silent otherwise. */
 function toast(msg,ms){ try{ if(typeof showToast==='function') showToast(msg,ms||2600); }catch(e){} }
 function nowT(){ var d=new Date(); function p(n){return (n<10?'0':'')+n;} return p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds()); }
