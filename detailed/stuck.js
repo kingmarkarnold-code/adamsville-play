@@ -1,4 +1,37 @@
 /* ============================================================================
+   FILE: stuck.js — "Surviving Adamsville" shared stuck-loop detection
+   ----------------------------------------------------------------------------
+   PURPOSE: Shared stuck-loop detector + recovery used by ALL crew systems
+   (road crew, code enforcement, ...). A patrolling unit that repeats the
+   same pattern without making progress breaks the loop: it files a report
+   and gets reassigned to a fresh patrol area, skipping the bad segment.
+   KEY SYSTEMS:
+     - StuckDetector: a 40-sample position history (one sample per 2s = 80s
+       window). TRIGGERS stuck when: path traveled >150u BUT max spread
+       <100u (moved a lot, got nowhere — NOT net displacement, which would
+       falsely read ~0 around a legitimate turnaround), OR ≥6 direction
+       reversals in the window (oscillation; also catches tight circular
+       loops where 2s-apart move directions swing >90°). Jitter under 1u is
+       ignored. 90s cooldown before re-reporting.
+     - recoverStuckUnit(u, opts): logs the event, blacklists the unit's
+       current segment (max 8 kept), then probes up to 14 random points in a
+       ±2000u box for a new patrol area: must be a real segment with ≥8
+       points (skips tiny stubs/loops — the Utoy Circle problem), must not
+       be blacklisted, must be ≥500u away. On success calls opts.reposition.
+       Returns false if no clear area found (unit holds and retries next
+       detection).
+   JOSHUA SPECS ENCODED (stuck-loop recovery protocol):
+     - When a road worker is stuck in a loop, it recognizes it can't finish
+       its direction of travel — files a report and requests police
+       assistance. Police escort it THROUGH THE GRASS (the authorized
+       exception to the no-grass rule) to the nearest road, where it resumes
+       patrol. Each crew system wires this via opts.reposition.
+   USAGE: attach one StuckDetector per unit; call .sample(x,z,dt) each frame
+   (skip while legitimately paused at a task); on true call recoverStuckUnit
+   with the system's callbacks. Load BEFORE the crew systems that use it;
+   all hooks are guarded so a missing stuck.js changes nothing.
+   ============================================================================ */
+/* ============================================================================
    SURVIVING ADAMSVILLE — STUCK-LOOP DETECTION (shared crew AI module)
    ----------------------------------------------------------------------------
    Joshua's spec: every crew member that patrols or navigates gets a short
@@ -38,12 +71,26 @@ var MIN_SEG_PTS   = 8;    // don't reassign onto tiny segments (the Utoy Circle
                           // problem: a stub/loop too short to patrol)
 
 /* ---------------- detector ---------------- */
+/* StuckDetector — one instance per patrolling unit. Keeps a 40-sample
+   position history (sampled every 2s → 80s window), each sample storing
+   position + normalized move direction. Call .sample(x,z,dt) each frame;
+   it returns true exactly once per detection (cooldown then applies). */
 function StuckDetector(){
   this.hist=[];        // [{x,z,dx,dz}] dx,dz = normalized move dir this sample
   this._acc=0;
   this.cooldown=0;
   this.events=0;
 }
+/* sample(x,z,dt) — records position every 2s; once the 40-sample window is
+   full, tests two stuck conditions and returns true if either fires:
+     (1) path>150u but max spread<100u — the unit covered ground yet never
+         got anywhere (max spread, not net displacement: a unit sitting
+         symmetrically around a legitimate turnaround would read ~0 net
+         displacement without being stuck).
+     (2) ≥6 direction reversals (move directions >90° apart) in the window —
+         oscillation or a tight circular loop — with max spread <200u.
+   Sub-1u moves are ignored as jitter. Returns false on cooldown or until
+   the window fills. */
 StuckDetector.prototype.sample=function(x,z,dt){
   if (this.cooldown>0){ this.cooldown-=dt; return false; }
   this._acc+=dt;
@@ -90,6 +137,8 @@ StuckDetector.prototype.sample=function(x,z,dt){
   if (rev>=MAX_REVERSALS && maxD<MAX_SPREAD*2) return this._trigger();
   return false;
 };
+/* _trigger() — internal: counts the event, starts the 90s cooldown, clears
+   the history so a re-detection starts fresh, returns true to the caller. */
 StuckDetector.prototype._trigger=function(){
   this.events++;
   this.cooldown=COOLDOWN;
@@ -102,15 +151,16 @@ StuckDetector.prototype.noteRecovery=function(){
   this.cooldown=Math.max(this.cooldown, 30);
 };
 
-/* ---------------- shared recovery ----------------
-   opts: {
-     unitLabel : string  ("Unit 2" / "Officer 3"),
-     log       : function(msg),
-     toast     : function(msg),
-     nearestRoad: function(x,z) -> {seg, idx} | null   (any road ok),
-     reposition: function(u, nr),
-     blacklist : array   (bad segments are pushed here, max 8 kept)
-   } */
+/* recoverStuckUnit(u, opts) — shared stuck recovery. Logs the filed report,
+   blacklists the unit's current segment (cap 8), then hunts for a fresh
+   patrol area: up to 14 random probes in a ±2000u box, each run through
+   opts.nearestRoad. A candidate is rejected when: it's a stub (<8 points —
+   the Utoy Circle problem), it's blacklisted, or it's within 500u of the
+   stuck spot. On success opts.reposition(u, nr) moves the unit and the
+   event is logged; on failure the unit holds position and the NEXT
+   detection retries. Returns true/false.
+   opts = { unitLabel, log(msg), toast(msg), nearestRoad(x,z)→{seg,idx}|null,
+            reposition(u, nr), blacklist:[seg] }. */
 function recoverStuckUnit(u, opts){
   var x=u.mesh.position.x, z=u.mesh.position.z;
   var where='('+Math.round(x)+', '+Math.round(z)+')';
