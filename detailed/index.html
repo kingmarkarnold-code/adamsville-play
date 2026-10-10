@@ -367,10 +367,28 @@
     box-sizing:border-box;}
   #load-bar{width:min(88%,420px);height:14px;border:2px solid #39ff6a;border-radius:8px;overflow:hidden;}
   #load-fill{height:100%;width:0%;background:#39ff6a;box-shadow:0 0 12px #39ff6a;transition:width .2s;}
+  /* v1.16 TWO-PHASE BAR (Joshua 2026-10-10): blue = downloading, green = parsing.
+     The bar color tells the user which phase they're in at a glance. */
+  #load-bar.phase-download #load-fill{background:#29b6ff;box-shadow:0 0 12px #29b6ff;}
+  #load-bar.phase-parse #load-fill{background:#39ff6a;box-shadow:0 0 12px #39ff6a;}
+  #load-bar.phase-download{border-color:#29b6ff;}
+  #load-bar.phase-parse{border-color:#39ff6a;}
+  #load-pct.phase-download{color:#29b6ff;}
+  #load-pct.phase-parse{color:#39ff6a;}
+  #load-status.phase-download{color:#29b6ff;}
+  #load-status.phase-parse{color:#39ff6a;}
   #load-pct{margin-top:6px;color:#39ff6a;font-size:13px;font-weight:bold;text-align:center;min-height:18px;}
   #load-status{margin-top:8px;color:#39ff6a;font-size:clamp(13px,3.8vw,15px);font-weight:bold;
     min-height:20px;text-align:center;transition:opacity .15s;padding:0 8px;
     max-width:92vw;overflow:hidden;text-overflow:ellipsis;}
+  /* v1.16: animated dots (pure CSS @keyframes — keeps animating during JS freeze,
+     proving the page is alive while block-2 synchronously builds the world) */
+  .load-dots span{animation:loaddot 1.2s infinite;display:inline-block;font-weight:bold;}
+  .load-dots span:nth-child(2){animation-delay:.2s;}
+  .load-dots span:nth-child(3){animation-delay:.4s;}
+  @keyframes loaddot{0%,100%{opacity:.2;}50%{opacity:1;}}
+  #load-detail{margin-top:4px;color:#39ff6a;font-size:12px;opacity:.85;text-align:center;
+    min-height:16px;max-width:92vw;padding:0 8px;box-sizing:border-box;}
   #load-start{display:none;margin-top:12px;color:#39ff6a;font-size:clamp(17px,5vw,22px);font-weight:bold;
     letter-spacing:2px;animation:loadpulse 1.2s infinite;text-align:center;cursor:pointer;
     pointer-events:auto;border:2px solid #39ff6a;border-radius:12px;
@@ -695,9 +713,10 @@
   <div id="load-title">SURVIVING ADAMSVILLE</div>
   <img id="load-icon" src="icon.png" alt="Surviving Adamsville">
   <div id="load-bottom">
-    <div id="load-bar"><div id="load-fill"></div></div>
-    <div id="load-pct">0%</div>
-    <div id="load-status">Loading...</div>
+    <div id="load-bar" class="phase-download"><div id="load-fill"></div></div>
+    <div id="load-pct" class="phase-download">0%</div>
+    <div id="load-status" class="phase-download">Loading...</div>
+    <div id="load-detail"></div>
     <div id="load-start">CLICK ANYWHERE TO START</div>
   </div>
 </div>
@@ -733,6 +752,11 @@ window.__loadWeight={engine:604160,elev:4505,roads:2936012,signs:57344,
   marta:40960,busdata:171008,bus:40960};
 window.__loadDone={};
 function __loadWeightOf(key){ return window.__loadWeight[key]||40960; }
+/* v1.16: download base/span for honest two-phase mapping.
+   Phase 1 (blue): base=0, span=100 — downloads are 0-100% of blue phase.
+   After green phase completes, late scripts map 90-100%. */
+window.__dlBase=0; window.__dlSpan=100;
+window.__dlT0=Date.now();
 function __realProgressPct(){
   var total=0, done=0, i, k;
   for(i=0;i<window.__loadOrder.length;i++){
@@ -740,7 +764,8 @@ function __realProgressPct(){
     total+=__loadWeightOf(k);
     if(window.__loadDone[k]) done+=__loadWeightOf(k);
   }
-  return total>0 ? Math.min(100,Math.round(done/total*100)) : 0;
+  var base=window.__dlBase||0, span=(window.__dlSpan!=null?window.__dlSpan:100);
+  return total>0 ? Math.min(base+span, base+Math.round(done/total*span)) : base;
 }
 function __paintProgress(){
   var pct=__realProgressPct();
@@ -748,11 +773,63 @@ function __paintProgress(){
   if(fill) fill.style.width=pct+'%';
   var pc=document.getElementById('load-pct');
   if(pc) pc.textContent=pct+'%';
+  /* v1.16: show explicit MB counts in blue phase so users can estimate wait
+     time from their connection speed. (Joshua 2026-10-10) */
+  if(window.__loadPhase==='download'){
+    var total=0, done=0, i, k;
+    for(i=0;i<window.__loadOrder.length;i++){
+      k=window.__loadOrder[i];
+      total+=__loadWeightOf(k);
+      if(window.__loadDone[k]) done+=__loadWeightOf(k);
+    }
+    var dt=document.getElementById('load-detail');
+    if(dt){
+      var dMB=(done/1048576).toFixed(1), tMB=(total/1048576).toFixed(1);
+      dt.textContent='Downloaded: '+dMB+' MB / '+tMB+' MB';
+    }
+  }
   return pct;
+}
+/* v1.16 TWO-PHASE LOADER (Joshua 2026-10-10):
+   PHASE 1 (blue): downloading scripts — byte-weighted, 0-100%.
+   PHASE 2 (green): parsing/processing — resets to 0%, shows build steps.
+   Blue = "we're downloading", Green = "we're building". The color change
+   tells Joshua which phase he's in without reading text.
+   The parse phase runs SYNCHRONOUSLY during block-2 parse, so the browser
+   cannot repaint mid-phase. We set honest labels BEFORE each heavy operation;
+   pure-CSS animated dots (.load-dots) keep moving during the freeze to prove
+   the page is alive. Counts come from the actual data (not estimates). */
+window.__loadPhase='download';
+function __setLoadPhase(phase){
+  window.__loadPhase=phase;
+  var bar=document.getElementById('load-bar');
+  var pc=document.getElementById('load-pct');
+  var st=document.getElementById('load-status');
+  if(bar){ bar.classList.remove('phase-download','phase-parse'); bar.classList.add('phase-'+phase); }
+  if(pc){ pc.classList.remove('phase-download','phase-parse'); pc.classList.add('phase-'+phase); }
+  if(st){ st.classList.remove('phase-download','phase-parse'); st.classList.add('phase-'+phase); }
+}
+/* Set parse-phase progress: label + detail + percentage (0-100, green phase).
+   Dots are pure CSS so they animate even when JS is blocked. */
+function __parseSet(label, detail, pct){
+  __setLoadPhase('parse');
+  var st=document.getElementById('load-status');
+  if(st){ st.innerHTML=label+'<span class="load-dots"><span>.</span><span>.</span><span>.</span></span>'; st.style.opacity='1'; }
+  var dt=document.getElementById('load-detail');
+  if(dt) dt.textContent=detail||'';
+  var pc=document.getElementById('load-pct');
+  if(pc) pc.textContent=pct+'%';
+  var fill=document.getElementById('load-fill');
+  if(fill) fill.style.width=pct+'%';
 }
 function __loadStep(key,failed){
   if(window.__loadDone[key]) return;
   window.__loadDone[key]=failed?'warn':'ok';
+  /* v1.16: late download steps (after green phase) switch bar back to blue.
+     The __dlBase/__dlSpan maps them to 90-100%. */
+  if(window.__dlBase>0 && window.__loadPhase!=='download'){
+    __setLoadPhase('download');
+  }
   __paintProgress();
   var next=null,i,total=window.__loadOrder.length;
   for(i=0;i<total;i++){ if(!window.__loadDone[window.__loadOrder[i]]){ next=window.__loadOrder[i]; break; } }
@@ -822,6 +899,39 @@ try{
 <script src="vehicle_meshes.js" onload="__loadStep('vehmeshes')" onerror="__loadStep('vehmeshes',true)"></script>
 <script src="shirt_designs.js" onload="__loadStep('shirtdesigns')" onerror="__loadStep('shirtdesigns',true)"></script>
 <script src="sign_rules.js" onload="__loadStep('signrules')" onerror="__loadStep('signrules',true)"></script>
+<!-- v1.16 TWO-PHASE: GREEN PHASE START — separate script element so the browser
+     PAINTS the phase switch BEFORE block 2's synchronous init freezes the main
+     thread. Blue (downloading) -> Green (parsing). The CSS dots animate during
+     the freeze (pure @keyframes, no JS needed). Counts from actual data. -->
+<script>
+try{
+  window.__wbT0=Date.now();
+  /* Count data items for honest labels */
+  var _rc=0, _bc=0;
+  try{
+    if(typeof ROAD_DATA!=='undefined'&&ROAD_DATA){
+      _rc=(ROAD_DATA.highway?ROAD_DATA.highway.length:0)+
+          (ROAD_DATA.arterial?ROAD_DATA.arterial.length:0)+
+          (ROAD_DATA.local?ROAD_DATA.local.length:0);
+    }
+  }catch(e){}
+  try{
+    if(typeof OSM_BUILDINGS!=='undefined'&&OSM_BUILDINGS) _bc=OSM_BUILDINGS.length;
+  }catch(e){}
+  window.__wbRoadTotal=_rc;
+  window.__wbBldgTotal=_bc;
+  /* Last download timing for slow-connection warning */
+  var _dlSecs=Math.round((Date.now()-(window.__dlT0||Date.now()))/1000);
+  __parseSet('Parsing game world',
+    (_rc?_rc.toLocaleString()+' road segments':'')+(_rc&&_bc?' • ':'')+(_bc?_bc.toLocaleString()+' buildings':''),
+    0);
+  /* If downloads took >30s, note it (slow connection) */
+  if(_dlSecs>30){
+    var dt=document.getElementById('load-detail');
+    if(dt) dt.textContent+=' (downloads took '+_dlSecs+'s on your connection)';
+  }
+}catch(e){}
+</script>
 <!-- ===== INLINE SCRIPT BLOCK 2: CORE GAME LOGIC (~5,500 lines) =====
      Contents, in order:
        APP_VERSION + HUD version stamping (hud-sub / ver-tag / help-ver)
@@ -2183,6 +2293,10 @@ function resolveCollision(p, radius){
       status:(pos.count===_expVerts)?'ok':'BROKEN'});
   }catch(e){}
 })();
+/* v1.16 GREEN PHASE: terrain built (15%) — browser still frozen, label queued.
+   CSS dots animate to prove aliveness. */
+try{ __parseSet('Building roads',
+  (window.__wbRoadTotal?window.__wbRoadTotal.toLocaleString()+' road segments':''), 15); }catch(e){}
 
 // ---------- mesh helpers (meters) ----------
 function box(w,h,d,color,x,z,yBase,ry){
@@ -2783,6 +2897,8 @@ try{ ['highway','arterial','local'].forEach(function(c){ roadSegsTotal+=ROAD_DAT
     }catch(e){}
   }catch(e){}
 })();
+/* v1.16 GREEN PHASE: roads built (40%) — placing street furniture next. */
+try{ __parseSet('Placing street furniture', '', 40); }catch(e){}
 /* ================= v1.5 STREET FURNITURE =================
    Street-name signs (1995 names), stop signs, and traffic lights at
    intersections. Intersections found by spatial hash: sample points from
@@ -5025,6 +5141,13 @@ buildRoadGrids();
    violators are auto-nudged clear and logged to placementViolations
    (id, original pos, new pos, road name). Never deletes. */
 try{ runOsmBuildings(); }catch(e){ try{Report.noteError('runOsmBuildings','deferred call failed',String(e&&e.stack||e));}catch(x){} }
+/* v1.16 GREEN PHASE: buildings placed (70%) — show real count. */
+try{
+  var _bp=0;
+  try{ _bp=(typeof placedBuildings!=='undefined'&&placedBuildings)?placedBuildings.length:0; }catch(e){}
+  if(!_bp){ try{ _bp=window.__wbBldgTotal||0; }catch(e){} }
+  __parseSet('Buildings placed', (_bp?_bp.toLocaleString()+' buildings in world':''), 70);
+}catch(e){}
 // 90s parked cars (ON STREETS, parallel-parked — never on grass)
 /* Vehicle mesh builders (sedanMesh, safariMesh, boxChevyMesh, bubbleChevyMesh,
    pickupMesh, suvMesh, semiMesh, martaBusMesh, schoolBusMesh, addCockpit and paint
@@ -7653,6 +7776,17 @@ window.addEventListener('keyup', function(e){ keys[e.key.toLowerCase()]=false; }
 })();
 
 setDrivingUI(false);
+/* v1.16 GREEN PHASE COMPLETE: world built. Show honest 90%, record timing.
+   Late scripts (npc, etc.) will bring it to 100%. */
+try{
+  var _wbSecs=Math.round((Date.now()-(window.__wbT0||Date.now()))/1000);
+  try{ localStorage.setItem('sa_wb_secs', String(_wbSecs)); }catch(e){}
+  var _wbMsg='World built';
+  if(_wbSecs>10) _wbMsg+=' (took '+_wbSecs+'s — slow device)';
+  __parseSet(_wbMsg, '', 90);
+  /* Switch back to download phase for late scripts (they'll map 90-100%) */
+  window.__dlBase=90; window.__dlSpan=10;
+}catch(e){}
 /* v1.11: loading screen — the game only starts on tap (also unlocks mobile audio) */
 __loadStep('world');
 __loadStep('music');
