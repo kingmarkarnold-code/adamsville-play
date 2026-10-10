@@ -89,10 +89,13 @@
     font-family: Arial, Helvetica, sans-serif; }
   #game { position:fixed; inset:0; }
   canvas { display:block; }
-  #hud-title { position:fixed; top:10px; left:140px; color:#fff; z-index:10;
+  /* v1.21: HUD title sits alone in the top-left corner (Joshua's rule —
+     no icons overlapping the title). Icon buttons live in a row at top:96px
+     adjacent to the backpack (#inv-btn). */
+  #hud-title { position:fixed; top:10px; left:12px; color:#fff; z-index:10;
     background:rgba(0,0,0,.45); padding:8px 12px; border-radius:10px;
     font-size:15px; font-weight:bold; letter-spacing:.5px; pointer-events:none; }
-  #hud-sub { position:fixed; top:52px; left:140px; color:#ffd75e; z-index:10;
+  #hud-sub { position:fixed; top:52px; left:12px; color:#ffd75e; z-index:10;
     background:rgba(0,0,0,.35); padding:5px 10px; border-radius:8px;
     font-size:12px; pointer-events:none; }
   #help-btn { position:fixed; top:10px; right:12px; z-index:30; width:44px; height:44px;
@@ -615,6 +618,24 @@ window.addEventListener('load',function(){
     window.__loadOrder.forEach(function(k){ if(!window.__loadDone[k]) __loadStep(k,true); });
   },20000);
 });
+/* v1.13.4 CLICK-ANYWHERE-TO-START fix (Joshua: click was not starting the game).
+   Capture-phase start-intent handler, attached HERE in block 1 so clicks count
+   even while block 2 (~5500 lines) is still initializing. If __tryStartGame is
+   already defined it is invoked at once; otherwise __startRequested is picked
+   up at the end of block 2 and the game starts immediately instead of making
+   the user wait out the 3s auto-start. Capture phase runs before any
+   stopPropagation() on inner elements. Idempotent and passive-safe. */
+window.__startRequested=false;
+window.__gameStarted=false;
+function __earlyStartRequest(){
+  window.__startRequested=true;
+  if(typeof __tryStartGame==='function'){ try{ __tryStartGame(); }catch(e){} }
+}
+try{
+  document.addEventListener('mousedown',__earlyStartRequest,{capture:true,passive:true});
+  document.addEventListener('touchend',__earlyStartRequest,{capture:true,passive:true});
+  document.addEventListener('click',__earlyStartRequest,{capture:true});
+}catch(e){}
 </script>
 <!-- ===== ENGINE + DATA SCRIPTS ===== Each fires __loadStep() on load/error
      so block 1's progress bar can track it. Data files (elev / roads /
@@ -6994,12 +7015,18 @@ function __tryStartGame(){
     var l=document.getElementById('loader');
     if(!l || l.style.display==='none') return false;
     l.style.display='none';
+    /* v1.13.4: start the animate() loop exactly ONCE. After save-and-exit
+       re-shows the loader, a click must only dismiss it (the loop is still
+       running) — spawning a second loop would double game speed. */
+    if(window.__gameStarted) return true;
+    window.__gameStarted=true;
     try{ musicStartOnce(); }catch(e){ console.error('musicStartOnce failed:', e); }
     try{ 
       if(typeof animate==='undefined') throw new Error('animate is not defined');
       animate(); 
     }catch(e){ 
       console.error('animate failed:', e);
+      window.__gameStarted=false; /* allow a retry */
       document.body.innerHTML='<div style="color:white;padding:20px;font-family:monospace;">Game start failed:<br>'+String(e&&e.message||e)+'<br><br>Check console for details.</div>';
     }
     return true;
@@ -7017,6 +7044,10 @@ function __autoStart(){
   try{ __tryStartGame(); }catch(e){}
 }
 setTimeout(__autoStart, 3000);
+/* v1.13.4: the user already clicked during load (block-1 capture handler set
+   __startRequested) — start RIGHT NOW instead of making them wait 3s.
+   __tryStartGame is idempotent, so the 3s auto-start above stays as backup. */
+if(window.__startRequested){ try{ __tryStartGame(); }catch(e){} }
 document.addEventListener('click', function(e){ __tryStartGame(); });
 /* v1.13.3: wire the START button itself directly (not just document-level). */
 (function(){
