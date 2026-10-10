@@ -752,6 +752,13 @@ function ceFindConnection(x, z, selfSeg, blacklist){
       if (!seg||seg===selfSeg) continue;
       if (seg.pts.length<CE_MIN_SEG) continue;      // skip stubs
       if (blacklist && blacklist.indexOf(seg)>=0) continue;
+      /* v1.15 (StuckDiag) self-prevention: don't hop onto a segment whose
+         endpoint sits on a flagged bad spot — the registry learned the road
+         data there is bad. */
+      try{
+        if (typeof StuckDiag!=='undefined' && StuckDiag.isBadSpot &&
+            StuckDiag.isBadSpot(c.x,c.z)) continue;
+      }catch(e){}
       var dx=c.x-x, dz=c.z-z, d2=dx*dx+dz*dz;
       if (d2<bd){ bd=d2; best=c; }
       if (c.name && c.name===selfName && d2<bdSame){ bdSame=d2; bestSame=c; }
