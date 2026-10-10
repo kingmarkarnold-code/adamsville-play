@@ -23,6 +23,9 @@
 var ENTERABLES = [];   // {name, doorX, doorZ, inX, inZ, floorY, roofs:[]}
 if (typeof player !== 'undefined') { player.locIdx = -1; player.locFloorY = 0; }
 
+/* Register an enterable location; returns its ENTERABLES index.
+   doorX/doorZ = outside door spot, inX/inZ = inside landing spot,
+   floorY = player Y inside. */
 function spRegisterEnterable(name, doorX, doorZ, inX, inZ, floorY) {
   ENTERABLES.push({ name: name, doorX: doorX, doorZ: doorZ,
     inX: inX, inZ: inZ, floorY: floorY, roofs: [] });
@@ -30,6 +33,9 @@ function spRegisterEnterable(name, doorX, doorZ, inX, inZ, floorY) {
 }
 
 /* Proximity check — called from updateActionButton() in index.html */
+/* Universal-action-button integration: inside a location near its inside
+   spot -> offer 'exit-loc'; outside near a door (5u) -> offer 'enter-loc:<i>'.
+   No-op while driving. Returns null when nothing is near. */
 function spCheckEnterables() {
   if (typeof player === 'undefined' || car.driving) return null;
   var i, e, d;
@@ -49,6 +55,8 @@ function spCheckEnterables() {
   return null;
 }
 
+/* Enter a location: teleport the player to its inside spot, mark inside,
+   hide its roofs (see-through while interior), and log. */
 function spDoEnter(idx) {
   var e = ENTERABLES[idx];
   if (!e) return;
@@ -59,6 +67,8 @@ function spDoEnter(idx) {
   try { Report.note('enter-loc', { name: e.name }); } catch (err) {}
 }
 
+/* Exit the current location: teleport the player to the door spot, nudged
+   2.5u outward so they don't instantly re-trigger entry; restore roofs. */
 function spDoExit() {
   var e = ENTERABLES[player.locIdx];
   if (e) {
@@ -74,6 +84,10 @@ function spDoExit() {
 }
 
 /* ---------- small builders ---------- */
+/* Wall from (x1,z1) to (x2,z2), height h, base at gy, colored. gaps =
+   [{at, w}] door/window openings measured along the wall from the start;
+   the wall is split into solid segments around them. Each segment gets a
+   box mesh + segment collider. */
 function spWall(x1, z1, x2, z2, h, color, gy, gaps) {
   var len = Math.hypot(x2 - x1, z2 - z1);
   if (len < 0.01) return;
@@ -102,6 +116,8 @@ function spWall(x1, z1, x2, z2, h, color, gy, gaps) {
   });
 }
 
+/* Flat floor slab (0.3 thick) at gy+yOff. Returns the mesh (callers use it
+   for roofs or hide-on-entry). */
 function spSlab(x, z, w, d, color, gy, yOff) {
   var m = new THREE.Mesh(new THREE.BoxGeometry(w, 0.3, d),
     new THREE.MeshLambertMaterial({ color: color }));
@@ -110,6 +126,8 @@ function spSlab(x, z, w, d, color, gy, yOff) {
   return m;
 }
 
+/* Roof slab (slight overhang) at gy+h+0.2. Returned so enterables can hide
+   it while the player is inside. */
 function spRoof(x, z, w, d, color, gy, h) {
   var m = new THREE.Mesh(new THREE.BoxGeometry(w + 1, 0.4, d + 1),
     new THREE.MeshLambertMaterial({ color: color }));
@@ -118,6 +136,8 @@ function spRoof(x, z, w, d, color, gy, h) {
   return m;
 }
 
+/* Canvas-text sign board: white text on bgColor, auto-sized by width w.
+   faceWest=true rotates it to face -x (west); otherwise faces +z. */
 function spSignBoard(text, x, y, z, w, bgColor, faceWest) {
   var cv = document.createElement('canvas'); cv.width = 512; cv.height = 64;
   var c = cv.getContext('2d');
@@ -134,6 +154,8 @@ function spSignBoard(text, x, y, z, w, bgColor, faceWest) {
   return m;
 }
 
+/* Asphalt lot slab with nRows of painted parking-space lines (~3.2u per
+   space). Pure visual — no colliders on the lines. */
 function spParkingLot(cx, cz, w, d, gy, nRows) {
   spSlab(cx, cz, w, d, 0x3a3a3e, gy, 0.1);
   var lineMat = new THREE.MeshBasicMaterial({ color: 0xcccccc });
@@ -148,6 +170,7 @@ function spParkingLot(cx, cz, w, d, gy, nRows) {
   }
 }
 
+/* Classroom desk (box + collider). */
 function spDesk(x, z, gy) {
   var m = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.75, 0.6),
     new THREE.MeshLambertMaterial({ color: 0x7a5a3a }));
@@ -155,6 +178,8 @@ function spDesk(x, z, gy) {
   addCollider(x, z, 0.8);
 }
 
+/* Store shelf (1.8 tall), oriented along x (alongX=true) or z, with a
+   collider sized to its footprint. */
 function spShelf(x, z, len, gy, alongX) {
   var w = alongX ? len : 0.9, d = alongX ? 0.9 : len;
   var m = new THREE.Mesh(new THREE.BoxGeometry(w, 1.8, d),
