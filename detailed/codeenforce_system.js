@@ -1287,6 +1287,30 @@ function initCodeEnforce(){
   spawnPatrol(3, 1500, 4500);
   /* patrol 4: Riverdale / south side */
   spawnPatrol(4, 5000, 9000);
+  /* v1.21 CREW 5X (Joshua 2026-10-09): 5x patrols (4 -> 20). Patrols 5-20
+     focus on the Adamsville priority corridors. */
+  /* patrols 5-8: I-285 corridor */
+  spawnPatrol(5, 4450, 3200);
+  spawnPatrol(6, 4650, 3350);
+  spawnPatrol(7, 4300, 3100);
+  spawnPatrol(8, 4750, 3450);
+  /* patrols 9-12: MLK Jr Dr corridor */
+  spawnPatrol(9, 3900, 2700);
+  spawnPatrol(10, 4100, 2800);
+  spawnPatrol(11, 3700, 2600);
+  spawnPatrol(12, 4250, 2900);
+  /* patrols 13-15: Fulton Industrial corridor */
+  spawnPatrol(13, 1800, 3700);
+  spawnPatrol(14, 2200, 3900);
+  spawnPatrol(15, 2000, 4000);
+  /* patrols 16-17: Boulder Park area */
+  spawnPatrol(16, 2800, 4200);
+  spawnPatrol(17, 3000, 4400);
+  /* patrols 18-19: Dollar Mill / Bakers Ferry */
+  spawnPatrol(18, 3100, 3700);
+  spawnPatrol(19, 3300, 3900);
+  /* patrol 20: Cascade Rd */
+  spawnPatrol(20, 3200, 4800);
   /* restore saved extras (sidewalks/driveways/doors placed in past sessions) */
   restoreExtras();
   if (!CE.log.length) clog('Code enforcement online — officers on 24/7 patrol, construction crews standing by.');
