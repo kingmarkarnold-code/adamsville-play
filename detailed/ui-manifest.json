@@ -2,9 +2,9 @@
   "files": [
     {
       "name": "bird_drones.js",
-      "size": 10216,
-      "sha256": "39f97c3da4bd5ec5ff9307cf4b29159690de357625e48dd5a431b93499ed87fa",
-      "hash": "861ad515f9c918c9"
+      "size": 11286,
+      "sha256": "3c0491cd7619b17be64b911636b9900fab9fa9c34d8303c26ce49893cd5a625a",
+      "hash": "b09554e0fb87cffc"
     },
     {
       "name": "cityworkforce.js",
@@ -244,9 +244,9 @@
     },
     {
       "name": "priority_dispatch.js",
-      "size": 13047,
-      "sha256": "174682917a80d3af88741b0c8fdc45fa3f8e0d433820b1d27301c7506e3ee6b7",
-      "hash": "1b55483e40cdd59b"
+      "size": 13199,
+      "sha256": "c6476c4b5a258ee53ffb02a0801d93af9307072ebfbd05a9803d042f2bcee3a8",
+      "hash": "10c8d2f958c6fa8d"
     },
     {
       "name": "stayawake.js",
@@ -261,6 +261,6 @@
       "hash": "d9eabe05deb93a3e"
     }
   ],
-  "ui_version": "2026.10.10.95",
+  "ui_version": "2026.10.10.96",
   "version": "1.13.0"
 }
