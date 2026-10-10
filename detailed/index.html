@@ -2594,10 +2594,12 @@ try{ ['highway','arterial','local'].forEach(function(c){ roadSegsTotal+=ROAD_DAT
     // posts (shared by all)
     var postGeo=new THREE.CylinderGeometry(0.09,0.09,3.8,6); postGeo.translate(0,1.9,0);  // v1.10.1 road-pass-1
     var posts=new THREE.InstancedMesh(postGeo, new THREE.MeshLambertMaterial({color:0x8a8f96}), Math.max(1,nPost));
+    posts.frustumCulled=false; // v1.17 FIX: InstancedMesh spans the map — r128 culls it as a tiny sphere at origin, making meshes invisible
     var pi=0;
     // street-name signs: green boards + text sprites (1995 names)
     var boardGeo=new THREE.BoxGeometry(5.2,1.15,0.08); boardGeo.translate(0,3.3,0);  // v1.10.1 road-pass-1: bigger for phone readability
     var boards=new THREE.InstancedMesh(boardGeo, new THREE.MeshLambertMaterial({color:0x1a6b3c}), Math.max(1,nameSigns.length));
+    boards.frustumCulled=false; // v1.17 FIX: InstancedMesh spans the map — r128 culls it as a tiny sphere at origin, making meshes invisible
     function name1995(n){
       try{
         if (STREET1995 && STREET1995[n]) return STREET1995[n];
@@ -2629,6 +2631,7 @@ try{ ['highway','arterial','local'].forEach(function(c){ roadSegsTotal+=ROAD_DAT
     // stop signs: red octagons
     var stopGeo=new THREE.CylinderGeometry(0.85,0.85,0.08,8); stopGeo.translate(0,2.6,0); stopGeo.rotateY(Math.PI/8);
     var stopMesh=new THREE.InstancedMesh(stopGeo, new THREE.MeshLambertMaterial({color:0xc02020}), Math.max(1,stops.length));
+    stopMesh.frustumCulled=false; // v1.17 FIX: InstancedMesh spans the map — r128 culls it as a tiny sphere at origin, making meshes invisible
     stops.forEach(function(s, i){
       placeInst(posts, pi++, s.x, s.y, s.z, 0);
       placeInst(stopMesh, i, s.x, s.y, s.z, s.yaw);
@@ -2637,10 +2640,14 @@ try{ ['highway','arterial','local'].forEach(function(c){ roadSegsTotal+=ROAD_DAT
     // traffic lights: housing + 3 bulbs (red lit)
     var housGeo=new THREE.BoxGeometry(0.55,1.7,0.55); housGeo.translate(0,3.6,0);
     var housMesh=new THREE.InstancedMesh(housGeo, new THREE.MeshLambertMaterial({color:0x222226}), Math.max(1,lights.length));
+    housMesh.frustumCulled=false; // v1.17 FIX: InstancedMesh spans the map — r128 culls it as a tiny sphere at origin, making meshes invisible
     var bulbGeo=new THREE.SphereGeometry(0.16,8,8);
     var bulbR=new THREE.InstancedMesh(bulbGeo, new THREE.MeshBasicMaterial({color:0xff2222}), Math.max(1,lights.length));
+    bulbR.frustumCulled=false; // v1.17 FIX: InstancedMesh spans the map — r128 culls it as a tiny sphere at origin, making meshes invisible
     var bulbY=new THREE.InstancedMesh(bulbGeo, new THREE.MeshBasicMaterial({color:0x553a00}), Math.max(1,lights.length));
+    bulbY.frustumCulled=false; // v1.17 FIX: InstancedMesh spans the map — r128 culls it as a tiny sphere at origin, making meshes invisible
     var bulbG=new THREE.InstancedMesh(bulbGeo, new THREE.MeshBasicMaterial({color:0x0a3a0a}), Math.max(1,lights.length));
+    bulbG.frustumCulled=false; // v1.17 FIX: InstancedMesh spans the map — r128 culls it as a tiny sphere at origin, making meshes invisible
     lights.forEach(function(s, i){
       placeInst(posts, pi++, s.x, s.y, s.z, 0);
       placeInst(housMesh, i, s.x, s.y, s.z, s.yaw);
@@ -2669,8 +2676,10 @@ try{ ['highway','arterial','local'].forEach(function(c){ roadSegsTotal+=ROAD_DAT
     if (typeof EXIT_SIGNS==='undefined' || !EXIT_SIGNS.length) return;
     var postG=new THREE.CylinderGeometry(0.12,0.12,5.2,6); postG.translate(0,2.6,0);
     var posts=new THREE.InstancedMesh(postG, new THREE.MeshLambertMaterial({color:0x8a8f96}), EXIT_SIGNS.length*2);
+    posts.frustumCulled=false; // v1.17 FIX: InstancedMesh spans the map — r128 culls it as a tiny sphere at origin, making meshes invisible
     var boardG=new THREE.BoxGeometry(7.5,1.9,0.15); boardG.translate(0,4.6,0);
     var boards=new THREE.InstancedMesh(boardG, new THREE.MeshLambertMaterial({color:0x14532d}), EXIT_SIGNS.length);
+    boards.frustumCulled=false; // v1.17 FIX: InstancedMesh spans the map — r128 culls it as a tiny sphere at origin, making meshes invisible
     var m4=new THREE.Matrix4(), qt=new THREE.Quaternion(), eul=new THREE.Euler(),
         pv=new THREE.Vector3(), sv=new THREE.Vector3(1,1,1);
     var drawn=0;
@@ -3723,10 +3732,12 @@ function runOsmBuildings(){
     bodyGeo.translate(0,0.5,0);
     var bodies=new THREE.InstancedMesh(bodyGeo,
       new THREE.MeshLambertMaterial({color:0xffffff}), kept.length);
+    bodies.frustumCulled=false; // v1.17 FIX: InstancedMesh spans the map — r128 culls it as a tiny sphere at origin, making meshes invisible
     var roofGeo=new THREE.ConeGeometry(0.72,1,4);
     roofGeo.rotateY(Math.PI/4); roofGeo.translate(0,0.5,0);
     var roofs=new THREE.InstancedMesh(roofGeo,
       new THREE.MeshLambertMaterial({color:0xffffff}), kept.length);
+    roofs.frustumCulled=false; // v1.17 FIX: InstancedMesh spans the map — r128 culls it as a tiny sphere at origin, making meshes invisible
     var m4=new THREE.Matrix4(), qt=new THREE.Quaternion(),
         sv=new THREE.Vector3(), pv=new THREE.Vector3(), col=new THREE.Color();
     /* v1.14: Y-axis for yaw rotation (building front faces street/lot). */
