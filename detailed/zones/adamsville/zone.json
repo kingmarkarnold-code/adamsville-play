@@ -1,0 +1,29 @@
+{
+  "id": "adamsville",
+  "name": "Adamsville",
+  "bounds": {
+    "xMin": -832.1294014084506,
+    "xMax": 8377.12940140845,
+    "zMin": -4248.536971830986,
+    "zMax": 8266.536971830985
+  },
+  "original_bounds": {
+    "xMin": 2147,
+    "xMax": 5398,
+    "zMin": -200,
+    "zMax": 4218
+  },
+  "scale": 2.8327464788732395,
+  "is_start": true,
+  "counts": {
+    "roads": 12552,
+    "buildings": 23373,
+    "pins": 3017,
+    "lifts": 2847,
+    "signs": 54
+  },
+  "generated": "2026-10-10",
+  "generator": "split-zones.py",
+  "roads_rebuilt": "2026-10-10",
+  "roads_source": "OpenStreetMap (georgia-latest.osm.pbf), true 1:1 scale"
+}
