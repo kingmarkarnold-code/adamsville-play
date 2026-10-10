@@ -105,7 +105,8 @@ window.__codeenforceV1 = true;
 var DISCOVER_R   = 60;     // patrol spots a defect inside this radius (u)
 var INSPECT_T    = 3;      // seconds the patrol unit stops to "radio in"
 var DISPATCH_T   = 6;      // seconds from found -> crew dispatched
-var WORK_T       = 60;     // seconds the construction crew works a site
+var WORK_T       = 30;     // seconds the construction crew works a site (Joshua
+                               // 2026-10-10: sped up from 60s — faster fixes)
 var PATROL_SPEED = 12;
 var N_PATROLS    = 2;
 var LS_KEY       = 'sa_codeenforce_v1';
@@ -1047,6 +1048,11 @@ function dispatchConstruction(d){
     var wx=d.x+o[0], wz=d.z+o[1];
     w.position.set(wx, groundY(wx,wz), wz);
     w.rotation.y=Math.random()*6.28; grp.add(w); workers.push(w);
+    /* Joshua 2026-10-10: STATIC work pose (set once, no per-frame anim). */
+    try{
+      if(w.userData.armR) w.userData.armR.rotation.x=-0.55;
+      if(w.userData.armL) w.userData.armL.rotation.x=-0.35;
+    }catch(e){}
   });
   /* scaffolding + UNDER RENOVATION sign */
   var reg=bldgReg(), b=reg?reg.kept[d.bi]:null;
@@ -1068,8 +1074,16 @@ function dispatchConstruction(d){
     bar.rotation.y=-ang; grp.add(bar); barriers.push(bar);
   }
   d.state='working';
+  /* Joshua 2026-10-10: WORK-ZONE PERIMETER — circle collider matching the
+     barrier ring so the player can't enter until the fix is done. */
+  var zoneCol=null, zoneR=(bw/2+7);
+  try{ if(typeof addCollider==='function'){
+    zoneCol={x:d.x, z:d.z, r:zoneR, y0:-1e9, y1:1e9, _workzone:true};
+    colliders.push(zoneCol);
+  }}catch(e){}
   CE.jobs.push({defect:d, group:grp, truck:truck, workers:workers,
-    scaf:scaf, sign:usign, barriers:barriers, t:0, applied:false});
+    scaf:scaf, sign:usign, barriers:barriers, t:0, applied:false,
+    zoneCol:zoneCol, zoneR:zoneR});
   /* v1.18 VETERAN CREW (Joshua 2026-10-09): 30-year-veteran workflow —
      assess → report → dispatch → setup → fix → verify → auto-save.
      A foreman (white hard hat + clipboard) leads the job; the workers
@@ -1103,6 +1117,8 @@ function dispatchConstruction(d){
 function finishJob(job){
   var d=job.defect;
   crewFinishingTouches(d);
+  /* Joshua 2026-10-10: pull the work-zone perimeter collider. */
+  try{ if(job.zoneCol && typeof removeCollider==='function') removeCollider(job.zoneCol); }catch(e){}
   scene.remove(job.group);
   d.state='fixed';
   clog(d.id+' ('+d.street+') CORRECTED — '+d.fix+' Crew clear, site clean.');
@@ -1123,11 +1139,9 @@ function finishJob(job){
    updateJobs calls this during the 'fixing' phase for veteran jobs, or
    every frame for legacy jobs. */
 function ceFixTick(j, dt){
-  j.workers.forEach(function(w,k){
-    w.position.y+=Math.sin(CE.time*6+k*2.1)*0.014;
-    w.rotation.y+=Math.sin(CE.time*1.1+k)*0.012;
-    var a=w.userData.armR; if(a) a.rotation.x=Math.sin(CE.time*6+k)*0.8;
-  });
+  /* Joshua 2026-10-10: worker on-foot animation SIMPLIFIED for phone
+     performance. Workers hold a static work pose (set once at dispatch) —
+     no per-frame bobbing/arm-swing math. The light-bar flash stays. */
   var bar=j.truck.userData.lightBar; if (bar) bar.visible=(CE.tick%14<7);
   /* apply the fix midway through the work */
   if (!j.applied && j.t>WORK_T*0.35){
@@ -1158,15 +1172,32 @@ function updateJobs(dt){
         log:function(m){ clog(m); }, toast:function(m){ toast(m); }});
       if (ph==='fixing'){ j.t+=dt; ceFixTick(j,dt); }
       else if (ph==='done'){ finishJob(j); CE.jobs.splice(i,1); }
+      ceWorkZoneNudge(j);
       continue;
     }
     j.t+=dt;
     ceFixTick(j,dt);
+    ceWorkZoneNudge(j);
     if (j.t>=WORK_T){
       finishJob(j);
       CE.jobs.splice(i,1);
     }
   }
+}
+/* ceWorkZoneNudge(j) — Joshua 2026-10-10: throttled "please wait" toast when
+   the player presses against an active construction perimeter. */
+var _ceNudgeT=0;
+function ceWorkZoneNudge(j){
+  try{
+    if(!j.zoneCol || typeof player==='undefined' || !player.mesh) return;
+    var px=player.mesh.position.x, pz=player.mesh.position.z;
+    var dx=px-j.zoneCol.x, dz=pz-j.zoneCol.z;
+    var d=Math.sqrt(dx*dx+dz*dz);
+    if(d < j.zoneR+2 && Date.now()-_ceNudgeT>6000){
+      _ceNudgeT=Date.now();
+      toast('🏢 Work zone — please wait, crew is fixing this building');
+    }
+  }catch(e){}
 }
 
 /* ---------------- HUD: dispatch button + shared log panel ---------------- */
