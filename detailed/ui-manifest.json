@@ -20,9 +20,10 @@
     },
     {
       "name": "codeenforce_system.js",
-      "size": 65542,
-      "sha256": "181fddb734b080abe7d49d527cd401d641859a2b13955c10db70642f2a9a0a1e",
-      "hash": "e85f3d0f900615fd"
+      "size": 65887,
+      "sha256": "40aac3843366cc9253ccdbfc3dec88fc2ae408fd984b5be86743c23a186cc378",
+      "hash": "40aac3843366cc92",
+      "md5": "d8d9b1e9e3a6f8891006cec86ee9910e"
     },
     {
       "name": "daycycle.js",
@@ -68,16 +69,17 @@
     },
     {
       "name": "index.html",
-      "size": 703285,
-      "sha256": "b5c6784ab6d1e0c68e9d9486290e7a2ef7c067009c4ab2401de820452229082c",
-      "hash": "b5c6784a",
-      "md5": "9fa9ec4f6fc9df522d57372c961caaba"
+      "size": 703870,
+      "sha256": "0613413909539cef0ecd3b7d649ebcded1943b55dcf8764a466b5b5d702e4cd3",
+      "hash": "0613413909539cef",
+      "md5": "640bd9c525dcea6b00880cd99de4d5c4"
     },
     {
       "name": "infracrew_system.js",
-      "size": 35263,
-      "sha256": "2d7eb89d947353bf1f43080b97c7305c55d57e5227a310398faa135976803dfe",
-      "hash": "75d3589bd557dc8a"
+      "size": 35608,
+      "sha256": "f10213a85d5a3807c0f1ed66f58cf7bace78ef9a66f2f025e541e91198abbaab",
+      "hash": "f10213a85d5a3807",
+      "md5": "77286e2b6680bb173f7d8708f006f908"
     },
     {
       "name": "marriott.js",
@@ -136,9 +138,10 @@
     },
     {
       "name": "roadcrew_system.js",
-      "size": 55708,
-      "sha256": "b94dcc311061718c35c3433ba2fe4e0838a6840a5725efedd632bff1ead68436",
-      "hash": "d2a210a9cf85f2e2"
+      "size": 56053,
+      "sha256": "7d2d007b2105121e00e4fd2ced847a784ff003cdce546ac053b635b0b59c0991",
+      "hash": "7d2d007b2105121e",
+      "md5": "fc885443c9ad8d7f654ad27bdb42dfb3"
     },
     {
       "name": "roadfix.js",
@@ -196,9 +199,10 @@
     },
     {
       "name": "surveyfleet_system.js",
-      "size": 60045,
-      "sha256": "b79fee71da780ae0136b17c6375ee1421ce046a7535a4f8246881559d1beceb7",
-      "hash": "19694d73aadfa9ef"
+      "size": 60390,
+      "sha256": "62b967d27822581eb1409d490788ffc5b2d99f57ffa35c7e4bed095973d28f42",
+      "hash": "62b967d27822581e",
+      "md5": "50d9d2b4d219a8f8e43af86cb6b74ac0"
     },
     {
       "name": "terrainfix.js",
@@ -239,9 +243,10 @@
     },
     {
       "name": "npc_system.js",
-      "size": 72686,
-      "sha256": "ee4b330f8ac3ee21de899ed718c2c0716b17c0059769a6c4d846bf7ab164a9db",
-      "hash": "ee4b330f8ac3ee21de899ed718c2c0716b17c0059769a6c4d846bf7ab164a9db"
+      "size": 72694,
+      "sha256": "b2795a90b8b386c3c56a7919262a43b32a82afcded21f6d1ab1a926711a7d5df",
+      "hash": "b2795a90b8b386c3",
+      "md5": "2293420987eb14ae29fe9f00f778164f"
     },
     {
       "name": "priority_dispatch.js",
@@ -268,6 +273,6 @@
       "hash": "1af37c06001c4b1c"
     }
   ],
-  "ui_version": "2026.10.10.103",
+  "ui_version": "2026.10.10.104",
   "version": "1.13.0"
 }
