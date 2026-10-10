@@ -697,6 +697,22 @@ function initInfraCrew(){
   spawnInfraPatrol(1, 4200, 2900);
   /* patrol 2: south sector — Fairburn / Riverdale */
   spawnInfraPatrol(2, 3500, 6500);
+  /* v1.20 CREW 5X (Joshua 2026-10-09): 5x patrols (2 -> 10). Patrols 3-10
+     cover the Adamsville priority corridors. */
+  /* patrols 3-4: I-285 corridor */
+  spawnInfraPatrol(3, 4450, 3200);
+  spawnInfraPatrol(4, 4650, 3350);
+  /* patrols 5-6: MLK Jr Dr corridor */
+  spawnInfraPatrol(5, 4000, 2750);
+  spawnInfraPatrol(6, 4150, 2850);
+  /* patrol 7: Fulton Industrial corridor */
+  spawnInfraPatrol(7, 2000, 3800);
+  /* patrol 8: Boulder Park area */
+  spawnInfraPatrol(8, 2900, 4300);
+  /* patrol 9: Dollar Mill / Bakers Ferry */
+  spawnInfraPatrol(9, 3200, 3800);
+  /* patrol 10: Cascade Rd */
+  spawnInfraPatrol(10, 3200, 4800);
   /* re-lay patches for road issues already fixed in a past session */
   ISSUES.forEach(function(d){
     if (d.kind==='road' && d.state==='fixed'){
@@ -705,7 +721,7 @@ function initInfraCrew(){
       scene.add(patch); IC.patchMeshes.push(patch);
     }
   });
-  if (!IC.log.length) dlog('Infrastructure crew online — 2 patrol units out, 24/7 operation. Signals, roads, signs.');
+  if (!IC.log.length) dlog('Infrastructure crew online — 10 patrol units out (5x), 24/7 operation. Signals, roads, signs.');
   IC.ready=true;
   try{ Report.setSys('infracrew', sysReport()); }catch(e){}
   /* PUBLIC API — this is how the sign inspectors, helicopter units, watcher
