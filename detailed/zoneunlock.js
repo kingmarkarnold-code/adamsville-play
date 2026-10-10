@@ -72,10 +72,11 @@ var ZONES=[
   {id:'eastatlanta',name:'East Atlanta',xMin:5398, xMax:8200, zMin:2202, zMax:4218},
   // Row 2 (south of Adamsville) — REVERTED 2026-10-10: Joshua asked to undo
   // the 70/30 horizontal split; these three zones run Cascade to the
-  // south map edge again (z 4218 -> 12200).
-  {id:'westend',   name:'West End',      xMin:-200, xMax:2147, zMin:4218, zMax:12200},
-  {id:'cascade',   name:'Cascade',       xMin:2147, xMax:5398, zMin:4218, zMax:12200},
-  {id:'southatl',  name:'South Atlanta', xMin:5398, xMax:8200, zMin:4218, zMax:12200},
+  // south map edge again (z 4218 -> 12200). Renamed 2026-10-10 per Joshua:
+  // Union City, South Fulton, Riverdale. Boundaries to be readjusted later.
+  {id:'unioncity',  name:'Union City',    xMin:-200, xMax:2147, zMin:4218, zMax:12200},
+  {id:'southfulton',name:'South Fulton',   xMin:2147, xMax:5398, zMin:4218, zMax:12200},
+  {id:'riverdale',  name:'Riverdale',     xMin:5398, xMax:8200, zMin:4218, zMax:12200},
 ];
 
 /* ---------------- persistence ---------------- */
