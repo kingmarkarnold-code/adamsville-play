@@ -4505,6 +4505,35 @@ function bldgFaceYaw(x, z){
   if (best>1e8) return null;
   return Math.atan2(bdx,bdz);  // local +z faces the road
 }
+/* v2.1 BUILDING-TERRAIN ALIGNMENT (2026-10-10, Joshua's bug report:
+   "houses were added based on satellite but the terrain was not stretched
+   to accommodate — looks like houses are stacked on top of each other").
+   Root cause: buildings sampled heightAt() (ANALYTIC terrain) for their base
+   Y, but the VISIBLE terrain is the rendered mesh (terrainMeshY), which
+   differs ~2u due to 40u grid chording. On slopes, the mismatch varied per
+   building, making neighbors sit at inconsistent heights ("stacked").
+   Fix: sample the RENDERED mesh at the building center + 4 footprint corners
+   and use the MINIMUM — the base never floats on a slope, and the existing
+   -0.6 embed in the placement loop sinks it slightly into the ground.
+   Falls back to heightAt() if the mesh grid isn't built yet.
+   Player scale reference: 6'1" = 1.85u, so 1u ≈ 1m. */
+function bldgGroundY(x,z,w,d){
+  var ys=[];
+  try{
+    var yc=terrainMeshY(x,z);
+    if (yc>-1e8) ys.push(yc);
+    var hw=(w||8)/2, hd=(d||8)/2;
+    var corners=[[x-hw,z-hd],[x+hw,z-hd],[x-hw,z+hd],[x+hw,z+hd]];
+    for (var i=0;i<corners.length;i++){
+      var cy=terrainMeshY(corners[i][0],corners[i][1]);
+      if (cy>-1e8) ys.push(cy);
+    }
+  }catch(e){}
+  if (!ys.length){ try{ return heightAt(x,z); }catch(e2){ return 0; } }
+  var mn=ys[0];
+  for (var j=1;j<ys.length;j++) if (ys[j]<mn) mn=ys[j];
+  return mn;
+}
 /* v2.0 (2026-10-09): DEFERRED INVOCATION — this is now a named function CALLED
    after the final road-grid rebuild (see call site below), so the automatic
    placement check sees ALL roads including Fulton Industrial Blvd and the MLK
@@ -4623,7 +4652,9 @@ function runOsmBuildings(){
     var placed=0;
     for (var j=0;j<kept.length;j++){
       var k2=kept[j], gy=0;
-      try{ gy=heightAt(k2[0],k2[1]); }catch(e){}
+      /* v2.1 (2026-10-10): sample the RENDERED terrain mesh (center+corners),
+         not analytic heightAt — fixes "stacked houses" on slopes. */
+      try{ gy=bldgGroundY(k2[0],k2[1],k2[2],k2[3]); }catch(e){ try{ gy=heightAt(k2[0],k2[1]); }catch(e2){} }
       var bw=k2[2], bd=k2[3], bh=Math.max(2.5,k2[4]), tp=k2[5];
       /* v1.14 (Joshua's directive): rotate the body so its front (+z local)
          faces the street — or the parking lot for apartments (type 2).
@@ -4722,7 +4753,7 @@ var BUSINESSES=[];
       // ensure uniqueness by appending suffix if needed
       var suffix=2, base=nm;
       while(BUSINESSES.some(function(e){return e.name===nm;})){ nm=base+' '+(suffix++); }
-      var gy=0; try{ gy=heightAt(b[0],b[1]); }catch(e){}
+      var gy=0; try{ gy=bldgGroundY(b[0],b[1],b[2],b[3]); }catch(e){ try{ gy=heightAt(b[0],b[1]); }catch(e2){} }
       var biz={x:b[0], z:b[1], y:gy, w:b[2], d:b[3], h:Math.max(2.5,b[4]),
         type:tp, name:nm};
       BUSINESSES.push(biz);
