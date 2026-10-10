@@ -406,8 +406,10 @@
      Top: Settings rows (How to play, Music, View report, Record, Gameplay).
      Bottom: ADMINISTRATOR section - per-type Re-download buttons (Map / UI /
      Vehicles / Music, each with a live status tag: adm-map-tag, adm-ui-tag,
-     adm-vehicles-tag, adm-music-tag), Road Dispatch Log, Test Connection,
-     status line (#adm-status) and the diagnostics box (#adm-diag).
+     adm-vehicles-tag, adm-music-tag), Live UI updates toggle + check/apply,
+     Stay Awake toggle (adm-stayawake, wired by stayawake.js), Road Dispatch
+     Log, Test Connection, status line (#adm-status) and the diagnostics box
+     (#adm-diag).
      Re-downloads are wired by ASSETVER.boot() -> confirmRedownload(). -->
 <div id="settings"><div class="card">
   <h3>Settings</h3>
@@ -423,6 +425,7 @@
   <button class="row" id="adm-music">Re-download Music <span class="adm-tag" id="adm-music-tag"></span></button>
   <button class="row" id="adm-hrauto">Live UI updates: ON</button>
   <button class="row" id="adm-hrcheck">Check for updates now</button>
+  <button class="row" id="adm-stayawake">Stay Awake: OFF</button>
   <button class="row" id="adm-hrapply" style="display:none">Apply UI update &#8212; keep my spot</button>
   <div id="adm-hrlog"></div>
   <button class="row" id="adm-dispatch">&#128679; Road Dispatch Log</button>
@@ -7395,6 +7398,7 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <script src="daycycle.js"></script>
 <script src="helicopter_system.js"></script>
 <script src="priority_dispatch.js"></script>
+<script src="stayawake.js"></script>
 <script src="agentdock.js"></script>
 <script src="hotreload.js"></script>
 <!-- ===== INLINE SCRIPT BLOCK 3: final placement audit (v2.0 - Joshua's
