@@ -1,4 +1,34 @@
 /* ============================================================================
+   FILE: traffic_system.js — "Surviving Adamsville" AI traffic
+   ----------------------------------------------------------------------------
+   PURPOSE: Ambient AI traffic vehicles driving the highway/arterial/local
+   road network, plus real-world gas stations with NPC refueling.
+   KEY SYSTEMS:
+     - Road index (arc-length tables) + endpoint connection grid — cars hop
+       onto connecting roads at junctions or loop when a road dead-ends.
+     - Car state machine: drive / toGas / refueling / backToRoad / pulling /
+       parked / resuming — 35% of cars are "owned" NPC cars that pull over,
+       park on the shoulder, and resume.
+     - Streaming InstancedMesh renderer: only the <=40 nearest cars within
+       ~350u get geometry (3 draw calls total). Distant cars stay data-only.
+     - Joshua's live road audit: a car trying to move but at ~0 speed for
+       >5s logs a "stuck spot" to TRAFFIC.stuckSpots (surfaced in the Report
+       panel) so broken road geometry gets flagged for fixing.
+     - Gas stations: ~109 REAL OSM fuel-station positions, 6 draw calls for
+       all stations, drivable lots, per-object colliders (no station-wide
+       invisible wall). NPCs refuel when fuel < FUEL_LOW.
+     - Self-install: polls until world deps exist, then wraps the global
+       animate() so updateTraffic() runs every frame. Never breaks the frame
+       (all hot-path calls guarded).
+   JOSHUA SPECS ENCODED:
+     - Stuck-spot audit (his live road audit rule: >5s at ~0 speed = bad spot).
+     - Gas stations at real OSM positions; fictitious display brands only
+       (trademark avoidance — never real brand names in game).
+     - Drivable cars live in v1.6 `cars[]`; traffic cars are NEVER drivable.
+     - Joshua's ground truth (v1.14): gas station on Fairburn Rd just north
+       of MLK Jr Dr, WEST side (left heading north).
+   ============================================================================ */
+/* ============================================================================
    SURVIVING ADAMSVILLE — TRAFFIC SYSTEM (v1.12)
    ----------------------------------------------------------------------------
    STANDALONE MODULE. Include AFTER the main game script — zero edits to
@@ -127,6 +157,9 @@ function buildEndpointGrid(roads){
   return {grid:grid,cell:CELL,key:key};
 }
 function findConnection(ep, selfRi, selfEnd){
+  // Finds a DIFFERENT road whose endpoint is within 70u of this road's end,
+  // so the car can continue onto the connected road instead of looping.
+  // Checks the 3x3 neighboring grid cells; excludes the car's own road end.
   var CELL=ep.cell, gx=Math.floor(ep.x0/ep.cell), gz=Math.floor(ep.z0/ep.cell);
   var best=null,bd=70*70;   // 70u snap radius
   for (var ix=gx-1;ix<=gx+1;ix++) for (var iz=gz-1;iz<=gz+1;iz++){
@@ -142,6 +175,11 @@ function findConnection(ep, selfRi, selfEnd){
 }
 
 /* ---------------- car data ---------------- */
+/* Assigns a random lane on road R. Lanes are numbered from the anatomical
+   right of the direction of travel (US right-hand driving); laneTarget is
+   the lateral offset the car eases toward each frame, and shoulderOff is
+   where "owned" cars park when they pull over. Also clamps the car's current
+   lateral offset so merges onto the new road stay inside its corridor. */
 function newLane(c,R){
   c.lane=(TR.rng()*R.lanesPerDir)|0;
   c.laneOffBase=(c.lane+0.5)*R.laneW;   // anatomical-right lane center
@@ -150,6 +188,10 @@ function newLane(c,R){
   c.off=Math.max(-c.shoulderOff,Math.min(c.shoulderOff,c.off));
   if (c.state==='drive'||c.state==='resuming') c.laneTarget=c.laneOffBase;
 }
+/* Spawns n cars spread along the given road list, weighted by road length.
+   Each car starts at 60% of its target speed (avoids a spawn burst), picks
+   a random travel direction, and retries up to 8 times to find a spawn
+   position at least 22u from another same-road/same-direction car. */
 function spawnOn(list,n,v0,v1){
   var tot=0,i;
   for (i=0;i<list.length;i++) tot+=list[i].len;
@@ -202,7 +244,9 @@ function roadPose(c){
   c.heading=hd;
 }
 
-/* Road end: hop onto a connected road when one exists, else loop the path. */
+/* Road end: hop onto a connected road when one exists, else loop the path.
+   When a connection is found the car starts at the matching end of the new
+   road (its segT and direction are re-anchored) and gets a fresh lane. */
 function roadEnd(c){
   var R=TR.roads[c.road];
   var atEnd = c.dir>0 ? c.segT>=R.len : c.segT<=0;
@@ -237,6 +281,22 @@ function logStuck(c){
 }
 
 /* ---------------- per-frame car step ---------------- */
+/* stepCar — one physics/AI tick for a single car (dt seconds).
+   Params: c (car), dt (delta time), px/pz (player position for the
+   player-yield check). Handles:
+     - drive: cruise; drains fuel; 35%-owned cars count down to a pull-over;
+       low fuel diverts to a gas station (state 'toGas').
+     - toGas/backToRoad: free-steer off the road network (uses the collision
+       resolver, not road geometry) to a pump spot / back to the leave point.
+     - refueling: parked at the pump for 6-12s, then tank refills to 100%.
+     - pulling/parked/resuming: owned-car shoulder stop cycle (12-42s parked).
+     - Simple spacing: matches the speed of the car ahead on the same
+       road+direction (stops if <7u behind). Never drives through the player
+       or the player's van (stops when either is <11u ahead of the nose).
+     - Stuck audit: trying to move but speed <0.35 u/s for >5s logs a stuck
+       spot (Joshua's live road audit); yielding to the player doesn't count.
+     - Lane easing: lateral offset glides toward laneTarget at <=3 u/s
+       (pull-over / merge-back motion). */
 var _targets=[[0,0],[0,0]];   // scratch: player + driven van positions
 function stepCar(c,dt,px,pz){
   var st=c.state;
@@ -355,7 +415,10 @@ function stepCar(c,dt,px,pz){
 
 /* ---------------- streaming renderer ----------------
    3 draw calls for ALL traffic: bodies + glasshouses + wheels as
-   InstancedMesh. Slots are reassigned every 0.3s to the nearest cars. */
+   InstancedMesh. Slots are reassigned every 0.3s to the nearest cars.
+   PERFORMANCE: geometry exists only for cars near the player; distant cars
+   are pure data (positions only). Wheel spin is faked from distance driven
+   (wheelA += speed*dt / wheelRadius). */
 function buildRenderPool(){
   var bodyG=new THREE.BoxGeometry(2.0,0.62,4.6); bodyG.translate(0,0.55,0);
   var glassG=new THREE.BoxGeometry(1.75,0.5,2.4); glassG.translate(0,1.12,-0.2);
@@ -376,6 +439,11 @@ function buildRenderPool(){
   TR.glassIM.instanceMatrix.needsUpdate=true;
   TR.wheelIM.instanceMatrix.needsUpdate=true;
 }
+/* assignSlots(px,pz) — rebinds the MAX_RENDERED instanced slots to the
+   nearest cars within STREAM_DIST of the player (nearest-first sort).
+   Cars that lose a slot keep driving as data; emptied slots are zero-scaled
+   (hidden). Reassigns at most every 0.3s — the hysteresis-free cadence
+   keeps pop-in cheap while tracking a moving player. */
 function assignSlots(px,pz){
   var cand=[], i;
   for (i=0;i<TR.cars.length;i++){ var c=TR.cars[i];
@@ -395,6 +463,10 @@ function assignSlots(px,pz){
   if (TR.bodyIM.instanceColor) TR.bodyIM.instanceColor.needsUpdate=true;
   TR.rendered=n;
 }
+/* renderSlots(dt) — writes body/glass/wheel matrices for every assigned slot.
+   Wheels are rotated by wheelA (distance-driven spin) on a 'YXZ' euler so
+   spin and steering yaw compose correctly; offsets are rotated into heading
+   space so wheels track the body. */
 function renderSlots(dt){
   for (var s=0;s<MAX_RENDERED;s++){
     var ci=TR.slots[s]; if (ci<0) continue;
@@ -437,6 +509,9 @@ var FUEL_LOW=18;          // NPC heads for a station below this level
 var GAS_SEARCH_R=600;     // NPC station search radius (u)
 var GAS_PUMP_SPOTS=[];    // flat [{x,z}] for player refuel + NPC targeting
 
+/* uniqueGasName(base) — appends a number if base collides with the game's
+   business namer (BUSINESSES), so gas-station brands never duplicate names
+   the world already owns. */
 function uniqueGasName(base){
   var nm=base, n=2;
   var taken=function(x){ for (var i=0;i<BUSINESSES.length;i++)
@@ -477,7 +552,9 @@ function gasInstancing(){
   S.colIM=mk(S.colG,S.colM,GAS_MAX*6);
   S.pumpIM=mk(S.pumpG,S.pumpM,GAS_MAX*4);
 }
-/* nearest road point → face the station's approach side (+z local) at it */
+/* gasFaceAngle(x,z) — aims the station's approach side (+z local) at the
+   nearest road centerline point (sampled every 4th path point for speed),
+   so the lot always faces the road players/NPCs drive past. */
 function gasFaceAngle(x,z){
   var bx=x,bz=z,bd=1e18;
   try{
@@ -491,6 +568,12 @@ function gasFaceAngle(x,z){
   }catch(e){}
   return Math.atan2(bx-x,bz-z);
 }
+/* buildGasStation(sx,sz,brand,colorHex) — builds one station from the shared
+   instanced parts (pad, canopy, kiosk, roof, 6 columns, 4 pump islands),
+   rotated so +z local faces the nearest road. Registers 4 pump parking spots
+   (on the approach side, +4.6u local z) for NPC fueling and the player's
+   refuel hook, adds per-object colliders (columns, pumps, kiosk only — the
+   LOT stays drivable), and pushes the business into BUSINESSES/LANDMARKS. */
 function buildGasStation(sx,sz,brand,colorHex){
   var S=gasShared(); gasInstancing();
   if (S.n>=GAS_MAX) return null;
@@ -544,6 +627,12 @@ function buildGasStation(sx,sz,brand,colorHex){
   TR.gas.push(biz);
   return biz;
 }
+/* placeGasStations() — places all stations: prefers REAL_FUEL_STATIONS
+   (real OSM coordinates converted with xz()) placed via placeStruct so they
+   never collide with buildings/roads; falls back to procedural arterial
+   placement if the data file is missing (should never happen — it's
+   bundled). Then adds Joshua's hand-verified ground-truth station
+   (Fairburn Rd north of MLK, west side). Reports placed/skipped counts. */
 function placeGasStations(){
   var list=(typeof REAL_FUEL_STATIONS!=='undefined'&&REAL_FUEL_STATIONS.length)
     ? REAL_FUEL_STATIONS : null;
@@ -593,7 +682,8 @@ function placeGasStations(){
     note:'real OSM positions; drivable lots; per-object colliders'}); }catch(e){}
 }
 window.GAS_PUMP_SPOTS=GAS_PUMP_SPOTS;
-/* nearest station with a free pump spot (NPC fuel) */
+/* nearestGasStation(x,z,maxD) — closest station within maxD units. Used by
+   NPC cars in the 'drive' state when fuel drops below FUEL_LOW. */
 function nearestGasStation(x,z,maxD){
   var best=null,bd=maxD*maxD;
   for (var i=0;i<TR.gas.length;i++){
@@ -602,6 +692,9 @@ function nearestGasStation(x,z,maxD){
   }
   return best;
 }
+/* freePumpSpot(g) — least-busy of the station's 4 pump spots. Returns the
+   first free spot (busy=0) when ties occur; caller marks spot.busy=1 so two
+   NPCs never target the same pump. */
 function freePumpSpot(g){
   var best=g.pumpSpots[0],bb=1e18;
   for (var i=0;i<g.pumpSpots.length;i++){
@@ -612,6 +705,11 @@ function freePumpSpot(g){
 }
 
 /* ---------------- public update ---------------- */
+/* updateTraffic(dt,px,pz) — frame tick. Steps every car, reassigns render
+   slots every 0.3s, writes instances, and reports to the Report panel every
+   2s. All args optional: dt falls back to performance.now() clamped to 50ms
+   (prevents physics explosions after tab switches); px/pz fall back to the
+   player. Never throws — a traffic bug must never break the game frame. */
 var _lastT=0;
 function updateTraffic(dt,px,pz){
   if (!TR) return;
@@ -638,6 +736,14 @@ function updateTraffic(dt,px,pz){
 window.updateTraffic=updateTraffic;
 
 /* ---------------- init + self-install ---------------- */
+/* initTraffic() — builds the road index, endpoint grid, render pool, and
+   spawns the car fleet: 44 highway cars (25-31 u/s ≈ 54-67 mph), 28 arterial
+   (13-19 u/s ≈ 28-41 mph), 24 local (8-14 u/s ≈ 17-30 mph neighborhood
+   pace). A guaranteed cluster of up to 12 local cars spawns within 1200u of
+   the player's start so Joshua sees traffic immediately at home base
+   (535 Dollar Mill Rd SW). Finally wraps the global animate() so the inner
+   requestAnimationFrame(animate) re-reads the wrapped binding every frame —
+   updateTraffic runs with zero edits to index.html. */
 function initTraffic(){
   TR={ cars:[], stuckSpots:[], gas:[], slots:[], rendered:0,
        rng:mulberry32(0x7AFF1C), assignT:0, repT:0, time:0 };
