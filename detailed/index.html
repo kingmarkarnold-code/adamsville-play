@@ -890,12 +890,13 @@ try{
      page load. -->
 <script src="three.min.js" onload="__loadStep('engine')" onerror="__loadStep('engine',true)"></script>
 <script src="elev.js" onload="__loadStep('elev')" onerror="__loadStep('elev',true)"></script>
-<script src="roads.js" onload="__loadStep('roads')" onerror="__loadStep('roads',true)"></script>
-<script src="exit_signs.js" onload="__loadStep('signs')" onerror="__loadStep('signs',true)"></script>
-<script src="terrain_lifts.js" onload="__loadStep('lifts')" onerror="__loadStep('lifts',true)"></script>
+<!-- v2.0 ZONE-SEPARATED MAPS (2026-10-10, Joshua's directive):
+     Zone data files are now loaded per-zone from zones/<zone_id>/.
+     zoneloader.js reads ?zone= from URL (default 'adamsville') and
+     injects the correct zone's data scripts via document.write.
+     To enter a different zone, the page reloads with ?zone=<id>. -->
+<script src="zoneloader.js"></script>
 <script src="terrainfix.js"></script>
-<script src="junction_pins.js" onload="__loadStep('pins')" onerror="__loadStep('pins',true)"></script>
-<script src="osm_buildings.js" onload="__loadStep('buildings')" onerror="__loadStep('buildings',true)"></script>
 <script src="vehicle_meshes.js" onload="__loadStep('vehmeshes')" onerror="__loadStep('vehmeshes',true)"></script>
 <script src="shirt_designs.js" onload="__loadStep('shirtdesigns')" onerror="__loadStep('shirtdesigns',true)"></script>
 <script src="sign_rules.js" onload="__loadStep('signrules')" onerror="__loadStep('signrules',true)"></script>
@@ -1992,7 +1993,16 @@ var LON_MIN=-84.6209, LON_RANGE=0.2418, LAT_MAX=33.8392, LAT_RANGE=0.3184;
 var WX=8000, WZ=12000;
 /* xz(lat, lon) -> {x, z}: project geographic coords into world units. */
 function xz(lat, lon){
-  return { x:(lon-LON_MIN)/LON_RANGE*WX, z:(LAT_MAX-lat)/LAT_RANGE*WZ };
+  var x=(lon-LON_MIN)/LON_RANGE*WX, z=(LAT_MAX-lat)/LAT_RANGE*WZ;
+  /* ZONE-SEPARATED MAPS (2026-10-10): Adamsville rescaled to true 1:1.
+     Apply rescale transform when in Adamsville zone. */
+  try{
+    if(typeof ZONELOADER!=='undefined'&&ZONELOADER.currentZone==='adamsville'){
+      x=3772.5+(x-3772.5)*2.8327464788732395;
+      z=2009+(z-2009)*2.8327464788732395;
+    }
+  }catch(e){}
+  return { x:x, z:z };
 }
 /* latLon(x, z) -> {lat, lon}: inverse of xz() — world units back to geo. */
 function latLon(x, z){
@@ -2416,7 +2426,7 @@ function labelAt(text, x, z, yOff, worldW, color){
 }
 
 /* ================= ROADS (real TIGER/Line geometry) ================= */
-var ROAD_WIDTHS = { highway: 22, arterial: 11, local: 7 };
+var ROAD_WIDTHS = { highway: 22, arterial: 18.4, local: 7.2 }; /* 2026-10-10 Joshua: local=7.2m (2x3.6m lanes), no center lines on neighborhood streets */
 var roadDrawData = [];  // {pts:[[x,z]..], w} for minimap + bridges
 
 function ribbonGeom(pts, width, yOff){
@@ -2628,7 +2638,7 @@ try{ ['highway','arterial','local'].forEach(function(c){ roadSegsTotal+=ROAD_DAT
         console.log('[roadfix] boot: applied '+_rfn+' saved pin-height patch(es)');
     }
   }catch(_re){}
-  var asphalt={pos:[],idx:[]}, lines={pos:[],idx:[]};
+  var asphalt={pos:[],idx:[]}, lines={pos:[],idx:[]}, median={pos:[],idx:[]}; /* v2.0 ARTERIAL MEDIAN (2026-10-10 Joshua): grass median geometry */
   function pushInto(store, geo){
     var base=store.pos.length/3;
     var pa=geo.attributes.position.array, ia=geo.index.array;
@@ -2737,6 +2747,27 @@ try{ ['highway','arterial','local'].forEach(function(c){ roadSegsTotal+=ROAD_DAT
       }
     });
   }
+  /* v2.0 GRASS MEDIAN (2026-10-10, Joshua's arterial spec):
+     4m grass median with yellow lines on each side.
+     - Grass ribbon: 4m wide, centered, slightly raised (+0.1) above asphalt
+     - Yellow edge lines: at +/-2m (median edges), solid yellow
+     - White dashes between lanes handled by laneDashes() */
+  function grassMedian(dpts, dys){
+    // Grass ribbon (4m wide, raised slightly)
+    var mdys = dys.map(function(y){ return (y||0)+0.27; });  // +0.1 above road surface
+    pushInto(median, ribbonGeomY(dpts, 4.0, mdys));
+    // Yellow lines at median edges (+/-2m)
+    [-2.0, 2.0].forEach(function(off){
+      for (var i=0;i<dpts.length-1;i++){
+        var a=dpts[i], b=dpts[i+1];
+        var ya=(dys[i]||0)+0.17, yb=(dys[i+1]||0)+0.17;
+        var dx=b[0]-a[0], dz=b[1]-a[1], segLen=Math.hypot(dx,dz)||1;
+        dx/=segLen; dz/=segLen;
+        var px=-dz*off, pz=dx*off;
+        pushInto(lines, ribbonGeomY([[a[0]+px,a[1]+pz],[b[0]+px,b[1]+pz]], 0.3, [ya,yb]));
+      }
+    });
+  }
   ['highway','arterial','local'].forEach(function(cat){
     ROAD_DATA[cat].forEach(function(r){
       if (r.pts.length<2) return;
@@ -2783,7 +2814,7 @@ try{ ['highway','arterial','local'].forEach(function(c){ roadSegsTotal+=ROAD_DAT
                divider + 3/dir; arterial: divider + 2/dir; local: center dashes. */
           if (isInterstate){ centerDoubleYellow(dpts, dys); laneDashes(dpts, dys, w, 5); }
           else if (cat==='highway'){ centerDoubleYellow(dpts, dys); laneDashes(dpts, dys, w, 3); }
-          else if (cat==='arterial'){ centerDoubleYellow(dpts, dys); laneDashes(dpts, dys, w, 2); }
+          else if (cat==='arterial'){ grassMedian(dpts, dys); laneDashes(dpts, dys, w, 2); } /* v2.0: grass median replaces painted divider */
           else { dashes(dpts, dys); }
         });
       });
@@ -2833,9 +2864,10 @@ try{ ['highway','arterial','local'].forEach(function(c){ roadSegsTotal+=ROAD_DAT
   }
   try{
     var aMesh=bake(asphalt, 0x33373c, -2);   // asphalt
+    var mMesh=bake(median, 0x3a7d2a, -3);     // v2.0 grass median (green, between asphalt and lines)
     var lMesh=bake(lines, 0xf2e9a4, -4);     // lane dashes (drawn over asphalt)
-    roadMeshesBuilt=(aMesh?1:0)+(lMesh?1:0);
-    roadVerts=((asphalt.pos.length/3)|0)+((lines.pos.length/3)|0);
+    roadMeshesBuilt=(aMesh?1:0)+(lMesh?1:0)+(mMesh?1:0);
+    roadVerts=((asphalt.pos.length/3)|0)+((lines.pos.length/3)|0)+((median.pos.length/3)|0);
   }catch(e){
     roadMeshesBuilt=0; roadVerts=0;
     try{Report.noteError('roadtest','buildRoads threw',String(e&&e.stack||e));}catch(x){}
