@@ -655,7 +655,7 @@ function buildUI(){
     var panel=document.createElement('div');
     panel.id='heli-panel';
     panel.innerHTML='<div class="card"><h3>🚁 Helicopter Aerial Survey</h3>'+
-      '<div class="sub">EAGLE 1 North · EAGLE 2 South — real pilots, real patrols</div>'+
+      '<div class="sub">10 EAGLE units — real pilots, real patrols</div>'+
       '<div id="heli-list"></div><button id="heli-close">Close</button></div>';
     document.body.appendChild(panel);
     document.getElementById('heli-close').addEventListener('click', function(){ togglePanel(false); });
@@ -699,18 +699,28 @@ function initHeli(){
   /* helipads near the Municipal Services HQ */
   H.pads.push(buildHelipad(HQ.x+60, HQ.z+40));
   H.pads.push(buildHelipad(HQ.x+60, HQ.z-40));
-  /* the two units */
+  /* v1.21 CREW 5X (Joshua 2026-10-09): 5x helicopter units (2 -> 10).
+     EAGLE 1-2 cover North/South sectors; EAGLE 3-10 concentrate on the
+     Adamsville priority corridors. */
   H.units.push(makeUnit(0,'EAGLE 1','James R.', true, 0xd23c3c));   /* red stripe */
   H.units.push(makeUnit(1,'EAGLE 2','Maria S.', false, 0x2c5fd2));  /* blue stripe */
+  H.units.push(makeUnit(2,'EAGLE 3','David K.', true, 0x2cd25f));   /* green stripe - I-285 */
+  H.units.push(makeUnit(3,'EAGLE 4','Lisa T.', false, 0xd2a02c));   /* amber stripe - MLK */
+  H.units.push(makeUnit(4,'EAGLE 5','Robert H.', true, 0x9b2cd2));   /* purple stripe - Fulton Ind */
+  H.units.push(makeUnit(5,'EAGLE 6','Angela W.', false, 0x2cd2c2)); /* teal stripe - Boulder Park */
+  H.units.push(makeUnit(6,'EAGLE 7','Marcus B.', true, 0xd22c8a));  /* pink stripe - Dollar Mill */
+  H.units.push(makeUnit(7,'EAGLE 8','Denise F.', false, 0x5f8a2c));  /* olive stripe - Bakers Ferry */
+  H.units.push(makeUnit(8,'EAGLE 9','Kevin L.', true, 0x2c6ed2));   /* sky stripe - I-285 */
+  H.units.push(makeUnit(9,'EAGLE 10','Rosa M.', false, 0xd25f2c));  /* orange stripe - MLK */
   /* findings from real data */
   H.findings=scanFindings();
   buildUI();
-  dlog('Aerial survey online — EAGLE 1 (North) and EAGLE 2 (South) on station.');
+  dlog('Aerial survey online — 10 EAGLE units (5x) on station. EAGLE 1-2 on sectors, 3-10 on Adamsville corridors.');
   dlog(H.findings.length+' data-driven findings queued for patrol verification.');
   H.ready=true;
   try{ if(typeof Report!=='undefined') Report.setSys('heli',
-    {status:'ok', version:'1.0', units:2,
-     note:'2 NPC helicopter patrols, data-driven aerial findings'}); }catch(e){}
+    {status:'ok', version:'1.0', units:10,
+     note:'10 NPC helicopter patrols (5x), data-driven aerial findings'}); }catch(e){}
   /* PUBLIC API */
   window.HELI={
     units:function(){ return H.units.map(function(u){
