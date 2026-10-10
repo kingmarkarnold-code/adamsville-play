@@ -736,7 +736,7 @@ function schoolBusMesh(){
   box(2.62,0.18,9.62,black,0,2.86,0);               // roof edge
   // stop sign (folded out on the left side)
   var sign=new THREE.Mesh(new THREE.CylinderGeometry(0.45,0.45,0.06,8),vehLam(0xc23b2e));
-  sign.rotation.z=Math.PI/2; sign.position.set(-1.45,2.0,3.2); g.add(sign);
+  sign.rotation.z=Math.PI/2; sign.position.set(1.45,2.0,3.2); g.add(sign); // v1.16: left side per Joshua
   // wheels
   function wheel(x,z){ var w=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.5,0.4,12),tireM);
     w.rotation.z=Math.PI/2; w.position.set(x,0.5,z); g.add(w);
