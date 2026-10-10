@@ -1572,11 +1572,18 @@ var Report=(function(){
    ============================================================ */
 
 // ---------- geo mapping ----------
+// World <-> lat/lon projection. The map is a flat local tangent plane:
+// lon maps linearly to +X (east), lat maps linearly to +Z with north = -Z
+// (GTA San Andreas style camera convention). LON_MIN/LAT_MAX anchor the
+// world origin (0,0); WX/WZ are the world size in game units (meters-ish).
+// All world data (roads, buildings, lifts) is stored in these X/Z units.
 var LON_MIN=-84.6209, LON_RANGE=0.2418, LAT_MAX=33.8392, LAT_RANGE=0.3184;
 var WX=8000, WZ=12000;
+/* xz(lat, lon) -> {x, z}: project geographic coords into world units. */
 function xz(lat, lon){
   return { x:(lon-LON_MIN)/LON_RANGE*WX, z:(LAT_MAX-lat)/LAT_RANGE*WZ };
 }
+/* latLon(x, z) -> {lat, lon}: inverse of xz() — world units back to geo. */
 function latLon(x, z){
   return { lat: LAT_MAX - z/WZ*LAT_RANGE, lon: LON_MIN + x/WX*LON_RANGE };
 }
@@ -1586,6 +1593,9 @@ function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a
 var rand = mulberry32(1995);
 
 // ---------- elevation: real SRTM + hand-tuned local features ----------
+/* elevRaw(lat, lon): bilinear sample of the coarse SRTM elevation grid
+   (ELEV, 34x24 cells over the map bounds). Result is meters above sea
+   level; clamped to the grid edges so out-of-bounds queries don't throw. */
 function elevRaw(lat, lon){
   var i=(lon-ELEV.lon0)/ELEV.dLon, j=(lat-ELEV.lat0)/ELEV.dLat;
   i=Math.max(0,Math.min(ELEV.cols-1.001,i));
@@ -1594,8 +1604,14 @@ function elevRaw(lat, lon){
   var a=ELEV.g[j0][i0], b=ELEV.g[j0][i0+1], c=ELEV.g[j0+1][i0], d=ELEV.g[j0+1][i0+1];
   return a+(b-a)*fi+(c-a)*fj+(a-b-c+d)*fi*fj;
 }
+/* ELEV_SCALE: compresses real-world relief (ELEV.min..max meters) into
+   game-world vertical units. 60u of relief across the whole map keeps hills
+   readable at the game's camera distances without dwarfing buildings. */
 var ELEV_SCALE = 60/(ELEV.max-ELEV.min);
 var HOME = xz(33.7411, -84.52645);
+/* gauss(x,z,cx,cz,amp,sig): symmetric gaussian bump (amp>0) or carve
+   (amp<0), sigma sig. The building block for all hand-tuned terrain
+   features in heightAt() — hills, lake basins, road-adjacent shaping. */
 function gauss(x,z,cx,cz,amp,sig){
   var dx=x-cx, dz=z-cz;
   return amp*Math.exp(-(dx*dx+dz*dz)/(2*sig*sig));
@@ -1620,7 +1636,13 @@ function _liftGrid(){
   try{
     if (typeof TERRAIN_LIFTS!=='undefined' && TERRAIN_LIFTS.length){
       for (var i=0;i<TERRAIN_LIFTS.length;i++){
-        var L=TERRAIN_LIFTS[i], R=L.r*3;
+        var L=TERRAIN_LIFTS[i];
+        /* v1.13.1 LANDSCAPE: skip null lifts — the data file marks
+           hand-reviewed flat spots with lift:null (no raise needed).
+           null*exp() is 0 anyway, so skipping is behavior-identical;
+           it just keeps ~10k dead entries out of the spatial hash. */
+        if(!L.lift) continue;
+        var R=L.r*3;
         var x0=Math.floor((L.x-R)/_LIFT_CELL), x1=Math.floor((L.x+R)/_LIFT_CELL);
         var z0=Math.floor((L.z-R)/_LIFT_CELL), z1=Math.floor((L.z+R)/_LIFT_CELL);
         for (var cx=x0;cx<=x1;cx++) for (var cz=z0;cz<=z1;cz++){
@@ -3064,6 +3086,9 @@ function waterDisc(cx, cz, rx, rz, name){
   // v0.3: NO invented bridges — overpasses only where they really exist (see I-20 below)
 })();
 // ---------- water mechanics (v0.3): cars sink, people float-then-swim ----------
+/* distToCreek(x,z): shortest distance from (x,z) to the creek polyline.
+   O(segments) scan — the creek is short, so no spatial hash needed. Used by
+   inWater(), tree placement exclusion, and wading depth. */
 function distToCreek(x,z){
   var pts=null;
   for (var i=0;i<WATER.length;i++) if (WATER[i].creek) pts=WATER[i].creek;
@@ -3079,6 +3104,9 @@ function distToCreek(x,z){
   }
   return best;
 }
+/* inWater(x,z): true inside a lake/pond disc (normalized ellipse test)
+   or within 4.5u of the creek centerline. Drives swimming, sinking,
+   splash effects, and placement exclusion. */
 function inWater(x,z){
   for (var i=0;i<WATER.length;i++){
     var w=WATER[i];
@@ -3087,6 +3115,10 @@ function inWater(x,z){
   }
   return false;
 }
+/* waterLevelAt(x,z): Y of the water surface at (x,z), or null on dry
+   land. Lakes/ponds sit 0.35u above the analytic terrain at their center;
+   the creek rides 0.18u above terrain. (Visual meshes use the same rule —
+   see waterDisc.) */
 function waterLevelAt(x,z){
   var best=null;
   for (var i=0;i<WATER.length;i++){
@@ -5279,6 +5311,11 @@ function fmTouchEnd(){
   fmT.lastTouch=Date.now();
   if (wasTap) closeFullMap();
 }
+/* v1.13.5: fmT state object for full-map touch/mouse handlers.
+   Declared BEFORE the event handlers that reference it — previously
+   declared after (line 5336), which broke mouse handlers on some
+   browsers due to use-before-declaration in strict contexts. */
+var fmT={pinch:null,pan:null,tapOk:false,tapX:0,tapY:0,tapT:0,lastTouch:0,mDown:false,mPan:null,mDragged:false,suppressClickUntil:0};
 fmCanvas.addEventListener('touchend', fmTouchEnd);
 fmCanvas.addEventListener('touchcancel', function(){ fmT.pinch=null; fmT.pan=null; fmT.tapOk=false; fmT.lastTouch=Date.now(); });
 /* v1.13: MOUSE controls for desktop/laptop - click-drag to pan, wheel to zoom.
@@ -5333,7 +5370,6 @@ var fullMapOpen=false;
    (bigger screen shows more detail than the minimap); pinch-to-zoom,
    drag-to-pan, tap or X to close. Player arrow stays visible (edge-clamped). */
 var fmView={cx:4000,cz:6000,sc:0.05,scFit:0.05,rot:0};  // v0.6: rot = two-finger map rotation (radians)
-var fmT={pinch:null,pan:null,tapOk:false,tapX:0,tapY:0,tapT:0,lastTouch:0,mDown:false,mPan:null,mDragged:false,suppressClickUntil:0};
 function fmFitScale(W,H){
   var xs=BORDER.map(function(p){return p.x;}), zs=BORDER.map(function(p){return p.z;});
   var x0=Math.min.apply(0,xs)-200, x1=Math.max.apply(0,xs)+200;
