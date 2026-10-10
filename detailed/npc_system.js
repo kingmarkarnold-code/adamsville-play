@@ -70,6 +70,14 @@ var ANIM_R      = 80;     // limb animation only inside this range (LOD)
 var ST_WALK = 0, ST_IDLE = 1, ST_TURN = 2;
 var STATE_NAMES = ['WALK','IDLE','TURN'];
 var TYPE_NAMES  = ['man','woman','boy16'];   // nobody under 16, nobody over 65
+/* v1.17 transit commuters (Joshua's citizen rule 2026-10-09): if a citizen
+   is catching a bus they MUST stand at a bus stop; train riders wait on the
+   station platform. ~22% of NPCs are bus commuters, ~6% train commuters. */
+var TR_BUS_R=0.22, TR_TRAIN_R=0.06;   // commuter mix at spawn
+var TR_WAIT_T=300;                    // give up waiting after 5 min
+var TR_GOTO_T=150;                    // give up walking to a stop after 2.5 min
+var TR_BOARD_T=10;                    // give up reaching the vehicle after 10s
+var TR_ARRIVE_R=4;                     // arrival radius at a stop/station (u)
 
 /* 1995-Atlanta palettes. Skin: range of brown tones (per spec). */
 var SKINS  = [0x4a2f1c,0x5a3a24,0x6b4429,0x7d5230,0x8a5f36,0x93683c,0xa07a48];
@@ -280,7 +288,15 @@ function spawnNPC(id){
     wid:  type===2?0.9:[0.9,1.0,1.18][(srand()*3)|0],  // 3 body-type widths
     skin: SKINS[(srand()*SKINS.length)|0],
     shirt:SHIRTS[(srand()*SHIRTS.length)|0],
-    pants:PANTS[(srand()*PANTS.length)|0]
+    pants:PANTS[(srand()*PANTS.length)|0],
+    /* v1.17 transit commuter fields (Joshua's citizen rule): commuter 0 =
+       wanderer, 1 = bus commuter, 2 = train commuter. transit = target
+       {kind,stop|station...}, goto = walk target {x,z}, waiting = standing
+       at the stop, boarding = {kind,ref} vehicle being boarded. lockY pins
+       the render height (train platforms are elevated). */
+    commuter: (function(){ var r=srand(); return r<TR_BUS_R?1:(r<TR_BUS_R+TR_TRAIN_R?2:0); })(),
+    transit:null, goto:null, gotoT:0, waiting:false, waitT:0,
+    boarding:null, boardT:0, commT:0, lockY:false
   };
   n.speed = type===0 ? 1.3+srand()*0.4 : type===1 ? 1.2+srand()*0.4 : 1.6+srand()*0.5;
   try{ n.y=(typeof clampVehY==='function')?clampVehY(n.x,n.z,heightAt(n.x,n.z)):heightAt(n.x,n.z); }catch(e){ n.y=0; }
@@ -310,6 +326,69 @@ function aiNPC(n, dt){
      Pause the wander AI (no walking off, no state-timer expiry) while
      npcFaceTick eases the heading toward the player. */
   if (n.focus){ n.stateT=Math.max(n.stateT,0.5); return; }
+  /* v1.17 transit boarding — walk to the dwelling vehicle and get on.
+     boarding = {kind:'bus'|'train', ref: vehicle record}. If the vehicle
+     leaves before the NPC reaches it, go back to waiting for the next one.
+     Within 3u of the vehicle = boarded: the NPC "rides away" and respawns
+     elsewhere in the world. */
+  if (n.boarding){
+    var stillDw=false, bvx=0, bvz=0;
+    try{ var _br=n.boarding.ref; stillDw=(_br.state==='dwell'); bvx=_br.x; bvz=_br.z; }catch(e){}
+    if (!stillDw){  // missed it — back to waiting for the next one
+      n.boarding=null; n.waiting=true; n.waitT=TR_WAIT_T; setState(n,ST_IDLE,1e9); return;
+    }
+    var bdx=bvx-n.x, bdz=bvz-n.z, bd=Math.hypot(bdx,bdz);
+    if (bd<3){ npcRespawn(n); return; }   // boarded — rode away
+    n.boardT-=dt;
+    if (n.boardT<=0){ n.boarding=null; n.waiting=true; n.waitT=TR_WAIT_T; setState(n,ST_IDLE,1e9); return; }
+    n.heading=Math.atan2(bdx,bdz); n.state=ST_WALK;
+    var bstep=n.speed*dt, bnx=n.x+Math.sin(n.heading)*bstep, bnz=n.z+Math.cos(n.heading)*bstep;
+    if (!npcBlocked(bnx,bnz)){ n.x=bnx; n.z=bnz; if(!n.lockY){ try{n.y=heightAt(n.x,n.z);}catch(e){} } }
+    return;
+  }
+  /* v1.17 walking to a transit stop/station (n.goto = {x,z}). Steers straight
+     at the target with sidestep probes around blockages (same probe the
+     free-think AI uses). On arrival: settle into the waiting spot and WAIT.
+     Times out after TR_GOTO_T and reverts to wandering. */
+  if (n.goto){
+    n.gotoT-=dt;
+    var gdx=n.goto.x-n.x, gdz=n.goto.z-n.z, gd=Math.hypot(gdx,gdz);
+    if (gd<TR_ARRIVE_R || n.gotoT<=0){
+      if (gd<TR_ARRIVE_R){
+        n.goto=null;
+        if (n.transit&&n.transit.kind==='train') settleAtStation(n); else settleAtStop(n);
+        n.waiting=true; n.waitT=TR_WAIT_T; setState(n,ST_IDLE,1e9);
+      } else {  // couldn't reach it — wander instead
+        n.goto=null; n.transit=null; setState(n,ST_TURN,0);
+      }
+      return;
+    }
+    n.heading=Math.atan2(gdx,gdz); n.state=ST_WALK;
+    var gstep=n.speed*dt, gnx=n.x+Math.sin(n.heading)*gstep, gnz=n.z+Math.cos(n.heading)*gstep;
+    if (!npcBlocked(gnx,gnz)){ n.x=gnx; n.z=gnz; try{n.y=heightAt(n.x,n.z);}catch(e){} }
+    else {
+      var gok=false;
+      for (var ga=0;ga<4&&!gok;ga++){
+        var ha=n.heading+((ga%2)?1:-1)*(0.6+0.5*((ga/2)|0));
+        var tx2=n.x+Math.sin(ha)*gstep, tz2=n.z+Math.cos(ha)*gstep;
+        if (!npcBlocked(tx2,tz2)){ n.x=tx2; n.z=tz2; gok=true; }
+      }
+      if (!gok){
+        n.stuckT=(n.stuckT||0)+dt;
+        if (n.stuckT>4){ npcGlitch(n,'cannot reach transit stop','GOTO','walking to bus stop'); n.stuckT=0; n.goto=null; n.transit=null; setState(n,ST_TURN,0); }
+      }
+    }
+    return;
+  }
+  /* v1.17 waiting at a stop/station — stand, look around, never wander off.
+     Joshua's rule: bus riders stand AT the bus stop; train riders on the
+     platform. Gives up after TR_WAIT_T and wanders. */
+  if (n.waiting){
+    n.heading+=Math.sin(npcTick*0.05+n.seed*6.283)*0.4*dt;  // look around
+    n.waitT-=dt;
+    if (n.waitT<=0){ n.waiting=false; n.transit=null; n.lockY=false; setState(n,ST_TURN,0); }
+    return;
+  }
   n.stateT-=dt;
   if (n.state===ST_WALK){
     var step=n.speed*dt;
@@ -441,7 +520,9 @@ function renderNPCs(dt,px,pz){
     n=slots[s]; if(!n) continue;
     vis++;
     var dx=n.x-px, dz=n.z-pz, near=(dx*dx+dz*dz)<AR2;
-    var y; try{ y=heightAt(n.x,n.z); }catch(e){ y=NaN; }
+    /* v1.17: lockY pins the render height for train-platform waiters
+       (platforms are elevated; heightAt would drop them to the ground). */
+    var y; try{ y = n.lockY ? n.y : heightAt(n.x,n.z); }catch(e){ y=NaN; }
     if (!isFinite(y)){
       npcGlitch(n,'fell through world','WALK','standing on terrain');
       y=isFinite(n.y)?n.y:0;
@@ -843,6 +924,210 @@ window.npcStartTalk=npcStartTalk;
 window.npcEndTalk=npcEndTalk;
 window.NPC_TALK_LINES=TALK_LINES;   // inspector/debug visibility
 
+/* ---------------- NPC transit commuters (v1.17) ----------------
+   JOSHUA'S CITIZEN RULE (2026-10-09): if a citizen is catching a bus, they
+   MUST stand at a bus stop — the only exception is waiting at a train
+   station for a train.
+
+   How it works:
+   - At spawn, ~22% of NPCs are bus commuters and ~6% train commuters
+     (n.commuter: 0=wanderer, 1=bus, 2=train). The rest wander freely.
+   - A staggered tick assigns each commuter the NEAREST stop/station once
+     the transit systems have booted (MARTA_BUS / MARTA boot after NPCs, so
+     assignment is lazy and guarded). Commuters whose system never boots
+     revert to wanderers after ~90s.
+   - The commuter walks to the stop/station (n.goto — straight-line steer
+     with sidestep probes; see the v1.17 branches in aiNPC), then WAITS
+     (n.waiting) standing at the stop — never in the road, never at a
+     random spot. Bus riders settle just off the sign pole (shoulder);
+     train riders step onto the platform deck (lockY pins their height).
+   - When a bus/train DWELLS at that stop, waiting NPCs walk to the vehicle
+     (n.boarding) and board: they despawn and respawn elsewhere, as if they
+     rode to their destination. A vehicle that leaves early just means they
+     wait for the next one.
+   - window.npcWaitingStops() exposes the stops with waiting NPCs so the
+     smart-stop system can skip empty stops (buses only stop where
+     passengers wait). */
+/* transitReady(kind) — true when the requested transit system has booted
+   and published its stop/station list. 1=bus, 2=train. */
+function transitReady(kind){
+  try{
+    if (kind===1){ var MB=window.MARTA_BUS; return !!(MB&&MB.ready&&MB.stops&&MB.stops.length); }
+    if (kind===2){ var MT=window.MARTA; return !!(MT&&MT.ready&&MT.stations&&MT.stations.length); }
+  }catch(e){}
+  return false;
+}
+/* nearestBusStop(x,z) — closest MARTA bus stop object to (x,z), or null.
+   The returned object is the LIVE stop record (identity matches the objects
+   buses dwell at), so boarding can match by reference. */
+function nearestBusStop(x,z){
+  var best=null, bd=1e18;
+  try{
+    var MB=window.MARTA_BUS, i, s, dx, dz, d2;
+    for (i=0;i<MB.stops.length;i++){
+      s=MB.stops[i]; dx=x-s.x; dz=z-s.z; d2=dx*dx+dz*dz;
+      if (d2<bd){ bd=d2; best=s; }
+    }
+  }catch(e){}
+  return best;
+}
+/* nearestStation(x,z) — closest built MARTA rail station record, or null. */
+function nearestStation(x,z){
+  var best=null, bd=1e18;
+  try{
+    var MT=window.MARTA, i, st, dx, dz, d2;
+    for (i=0;i<MT.stations.length;i++){
+      st=MT.stations[i]; dx=x-st.x; dz=z-st.z; d2=dx*dx+dz*dz;
+      if (d2<bd){ bd=d2; best=st; }
+    }
+  }catch(e){}
+  return best;
+}
+/* assignTransit(n) — gives a commuter its NEAREST stop/station target.
+   Nearest (not random) so the walk is actually reachable. Returns true
+   when assigned. */
+function assignTransit(n){
+  try{
+    if (n.commuter===1){
+      var s=nearestBusStop(n.x,n.z);
+      if (!s) return false;
+      n.transit={kind:'bus', stop:s};
+      n.goto={x:s.x, z:s.z};
+      n.gotoT=TR_GOTO_T;
+      return true;
+    }
+    if (n.commuter===2){
+      var st=nearestStation(n.x,n.z);
+      if (!st) return false;
+      n.transit={kind:'train', stationName:st.name, station:st};
+      n.goto={x:st.x, z:st.z};
+      n.gotoT=TR_GOTO_T;
+      return true;
+    }
+  }catch(e){}
+  return false;
+}
+/* settleAtStop(n) — on arrival at a bus stop, nudge to a standing spot just
+   off the sign pole (pole collider r=0.35 at the stop coords; the sign sits
+   on the road shoulder per the v2.0 placement rules, so standing here is
+   never in a driving lane). Tries 4 offsets; keeps the arrival spot if all
+   are blocked. */
+function settleAtStop(n){
+  try{
+    var s=n.transit&&n.transit.stop; if(!s) return;
+    var offs=[[1.2,0.8],[-1.2,0.8],[1.2,-0.8],[-1.2,-0.8]], i, wx, wz;
+    for (i=0;i<offs.length;i++){
+      wx=s.x+offs[i][0]; wz=s.z+offs[i][1];
+      if (!npcBlocked(wx,wz)){ n.x=wx; n.z=wz; return; }
+    }
+  }catch(e){}
+}
+/* settleAtStation(n) — on arrival at a train station, step onto the platform
+   deck (platY) at a small random offset so commuters don't stack on one
+   spot. lockY pins the render height — renderNPCs would otherwise drop them
+   back to terrain height every frame. Platform is 10u x 76u; offsets stay
+   well inside it. */
+function settleAtStation(n){
+  try{
+    var st=n.transit&&n.transit.station; if(!st) return;
+    var ax=-(st.pz||0), az=(st.px||0);   // along-track unit (perp of perp)
+    var al=(Math.random()*2-1)*8, pp=(Math.random()*2-1)*2;
+    n.x=st.x+ax*al+(st.px||0)*pp;
+    n.z=st.z+az*al+(st.pz||0)*pp;
+    n.y=st.platY||n.y; n.lockY=true;
+  }catch(e){}
+}
+/* npcRespawn(n) — the NPC "rode away": regenerate it in place (same object,
+   so the 40 render slots stay valid) as a fresh spawn — new spot, new look,
+   new commuter roll. It re-enters the world as if it got off somewhere
+   else. Never throws. */
+function npcRespawn(n){
+  try{
+    var fresh=spawnNPC(n.id);
+    for (var k in fresh) n[k]=fresh[k];
+  }catch(e){}
+}
+/* transitTick() — staggered (every 15 frames) from updateNPCs:
+   1. Assigns transit targets to commuters whose systems just booted.
+      Long-unassigned commuters (system never boots) revert to wanderers.
+   2. Finds dwelling buses/trains and starts boarding for waiting NPCs
+      whose stop/station matches: buses match by stop-object identity
+      (same live records), trains by station name (stations are deduped
+      by name across lines). */
+var _trAssignT=0;
+function transitTick(){
+  if (!npcReady) return;
+  var i, n;
+  // 1. commuter assignment — cheap: only unassigned commuters are scanned
+  _trAssignT++;
+  if ((_trAssignT%4)===0){
+    for (i=0;i<npcs.length;i++){
+      n=npcs[i];
+      if (n.commuter && !n.transit && !n.goto && !n.waiting && !n.boarding){
+        if (transitReady(n.commuter)){ assignTransit(n); }
+        else {
+          n.commT=(n.commT||0)+1;
+          if (n.commT>360){ n.commuter=0; }  // ~90s: system never booted, wander
+        }
+      }
+    }
+  }
+  // 2. boarding: match dwelling vehicles to waiting NPCs
+  var dwellers=[];
+  try{
+    var MB=window.MARTA_BUS;
+    if (MB&&MB.ready){
+      for (i=0;i<MB.buses.length;i++){
+        var b=MB.buses[i];
+        if (b.state==='dwell'&&b.stopIdx>=0&&b.route&&b.route.stops[b.stopIdx])
+          dwellers.push({kind:'bus', ref:b, stop:b.route.stops[b.stopIdx]});
+      }
+    }
+  }catch(e){}
+  try{
+    var MT=window.MARTA;
+    if (MT&&MT.ready){
+      for (var j=0;j<MT.trains.length;j++){
+        var t=MT.trains[j];
+        if (t.state==='dwell'&&t.stopIdx>=0&&t.line&&t.line.stops[t.stopIdx])
+          dwellers.push({kind:'train', ref:t, name:t.line.stops[t.stopIdx].name});
+      }
+    }
+  }catch(e){}
+  if (!dwellers.length) return;
+  for (i=0;i<npcs.length;i++){
+    n=npcs[i];
+    if (!n.waiting||n.boarding||!n.transit) continue;
+    for (var d=0;d<dwellers.length;d++){
+      var dw=dwellers[d], match=false;
+      if (dw.kind==='bus'&&n.transit.kind==='bus'&&n.transit.stop===dw.stop) match=true;
+      if (dw.kind==='train'&&n.transit.kind==='train'&&dw.name&&n.transit.stationName===dw.name) match=true;
+      if (match){
+        n.boarding={kind:dw.kind, ref:dw.ref};
+        n.waiting=false; n.focus=false; n.boardT=TR_BOARD_T;
+        n.state=ST_WALK;
+        break;
+      }
+    }
+  }
+}
+/* npcWaitingStops() — stops (live MARTA_BUS stop objects) with NPCs
+   currently waiting. The smart-stop system queries this so buses only stop
+   where passengers wait. Identity matches the bus system's stop records. */
+window.npcWaitingStops=function(){
+  var out=[], seen={};
+  try{
+    for (var i=0;i<npcs.length;i++){
+      var n=npcs[i];
+      if (n.waiting&&n.transit&&n.transit.kind==='bus'&&n.transit.stop){
+        var s=n.transit.stop, key=s.name+'|'+s.x+'|'+s.z;
+        if (!seen[key]){ seen[key]=1; out.push(s); }
+      }
+    }
+  }catch(e){}
+  return out;
+};
+
 /* ---------------- main-loop entry ---------------- */
 /* updateNPCs(dt, playerPos) — frame tick (wired by the build agent into
    animate()): AI for all 1000 NPCs always runs (data-only), slots refresh
@@ -861,6 +1146,7 @@ function updateNPCs(dt, playerPos){
     try{ if (typeof car!=='undefined' && car && car.driving){ px=car.x; pz=car.z; } }catch(e){}
     var i;
     try{ npcFaceTick(dt,px,pz); }catch(e){}   // v1.14: NPCs turn to face a nearby player
+    if ((npcTick%15)===0){ try{ transitTick(); }catch(e){} }  // v1.17: transit commuters (staggered)
     for (i=0;i<npcs.length;i++) aiNPC(npcs[i],dt);   // data-only, always runs
     streamT-=dt;
     if (streamT<=0){ streamT=0.5; refreshSlots(px,pz); }
@@ -870,7 +1156,9 @@ function updateNPCs(dt, playerPos){
   }catch(e){}
 }
 window.updateNPCs=updateNPCs;
-/* debug handle for the inspector rig: window.NPC_DEBUG.npcs / .glitches */
+/* debug/testing handles: window.npcTransitTick (staggered transit tick),
+   window.NPC_DEBUG.npcs / .glitches for the inspector rig */
+window.npcTransitTick=transitTick;
 window.NPC_DEBUG={ get npcs(){return npcs;}, get glitches(){return glitchLog;} };
 
 tryInit();
