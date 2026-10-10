@@ -64,7 +64,7 @@ if (window.__martaV1) return;
 window.__martaV1 = true;
 
 /* ---------------- config ---------------- */
-var TRAIN_SPEED   = 30;    // units/sec cruising
+var TRAIN_SPEED   = 40;    // units/sec cruising (v1.2: was 30 — faster trains = more frequent station arrivals)
 var DWELL_TIME    = 9;     // seconds stopped at each station
 var TRAINS_PER_LINE = 2;
 var BRAKE_DIST    = 90;    // start slowing this far from a stop
@@ -73,8 +73,8 @@ var PLATFORM_W    = 10, PLATFORM_L = 76, PLATFORM_H = 1.4;
 /* v1.1 despawn/respawn (Joshua): trains run past the last in-map station to
    the map edge, VANISH (like the 18-wheelers), then respawn later coming back
    "from out of town". No more turn-around at terminal stations. */
-var TRAIN_TARGET_PER_LINE = 2;   // spawn timer keeps this many per line
-var SPAWN_CHECK_INTERVAL  = 8;   // seconds between spawn checks
+var TRAIN_TARGET_PER_LINE = 6;   // spawn timer keeps this many per line (v1.2: was 2 — Joshua reported waiting 'forever' at stations)
+var SPAWN_CHECK_INTERVAL  = 4;   // seconds between spawn checks (v1.2: was 8 — faster top-up for more frequent service)
 var EXTEND_STEP           = 100; // track extension step (units)
 var EXTEND_MAX            = 1500;// max overrun past terminal (units)
 var MAP_X0=60, MAP_X1=7940, MAP_Z0=60, MAP_Z1=11940; // map edge (WX=8000, WZ=12000)
@@ -248,8 +248,8 @@ function martaTrainMesh(){
    extended path at 8u steps. Heights come from terrain sampled +0.55u then
    smoothed (3 passes of (prev+2*cur+next)/4) so the train doesn't bounce
    over terrain noise; line.trackY(s) gives the smoothed rail height later.
-   clampVehY is applied at runtime but never downward (tunnels legitimately
-   dip below the clamp floor). */
+   clampVehY is applied at runtime (v1.13: snaps up only below -40u, so
+   legitimate shallow dips and cuttings are untouched). */
 function buildTrack(line){
   var path=line.path, total=path.length;
   var step=8, n=Math.floor(total/step);
@@ -497,7 +497,7 @@ function updateTrain(t, dt){
     t.x=p[0]; t.z=p[1];
     t.yaw=Math.atan2(d[0],d[1]);
     var y=line.trackY(t.s);
-    if (typeof clampVehY==='function') y=clampVehY(t.x,t.z,y);  // v1.12: ground clamp — no sky-floaters (never clamps downward: tunnels legit)
+    if (typeof clampVehY==='function') y=clampVehY(t.x,t.z,y);  // v1.12/v1.13 ground clamp — no sky-floaters, no below-world trains
     t.mesh.position.set(t.x, y-0.55, t.z);
     t.mesh.rotation.y=t.yaw;
   }
@@ -635,12 +635,19 @@ function initMarta(){
       }
     }
   }
-  // spawn trains: 2 per line, one at each map-edge end heading inward
+  // spawn trains: 3 per line at each map-edge end heading inward (v1.2: was 1 per end = 2 total)
   // ("from out of town"). The spawn timer keeps this topped up.
   for (li=0;li<MT.lines.length;li++){
     var ln=MT.lines[li];
-    spawnTrain(ln, 2, 1);
-    spawnTrain(ln, ln.path.length-2, -1);
+    /* v1.2: distribute TRAIN_TARGET_PER_LINE trains evenly along the line so
+       stations get service immediately at boot (was: 2 trains at the far ends,
+       meaning long waits at middle stations). Alternate directions. */
+    var n=TRAIN_TARGET_PER_LINE, plen=ln.path.length;
+    for (var ti=0; ti<n; ti++){
+      var s0=2+Math.floor((plen-4)*ti/n);
+      var dir=(ti%2===0)?1:-1;
+      spawnTrain(ln, s0, dir);
+    }
   }
   MT.ready=true;
   try{ Report.setSys('marta',{status:'ok',version:'1.0',
