@@ -52,10 +52,10 @@
      listReports()             — persisted reports (oldest first).
 
    PHASES (durations in seconds; 'fixing' uses the crew's own work window):
-     arriving  (5)  — crew on site, staging by the truck.
-     assessing (18) — foreman walks the full perimeter, clipboard up.
-     reporting (8)  — foreman radios dispatch; the field report is filed.
-     setup     (12) — workers walk out to their stations, staggered.
+     arriving  (3)  — crew on site, staging by the truck.
+     assessing (8)  — foreman walks the full perimeter, clipboard up.
+     reporting (4)  — foreman radios dispatch; the field report is filed.
+     setup     (6)  — workers walk out to their stations, staggered.
      fixing    (crew work window) — expert repair; radio at 25/50/75%.
      verifying (10) — foreman walks the finished work, bends to inspect,
                       then signs off.
@@ -69,7 +69,8 @@ if (window.VeteranCrew) return;
 var LS_REPORTS='sa_veteran_reports_v1';  // persisted field-report registry
 var MAX_REPORTS=100;                     // cap the registry
 /* Phase durations (seconds). 'fixing' always uses the crew's own window. */
-var PHASE_DUR={arriving:5, assessing:18, reporting:8, setup:12, verifying:10};
+var PHASE_DUR={arriving:3, assessing:8, reporting:4, setup:6, verifying:5};
+/* Joshua 2026-10-10: phases sped up from {5,18,8,12,10} — faster fixes. */
 var WALK_SPEED=5.5;   // foreman/worker walk speed (u/s)
 
 /* ---------------- tiny helpers (module-local, guarded) ---------------- */
@@ -382,11 +383,14 @@ function _walkTo(fig, tx, tz, dt, time){
     return false;
   }catch(e){ return true; }
 }
-/* _idleBob(fig, time, k) — subtle standing idle so staged crew look alive. */
+/* _idleBob(fig, time, k) — Joshua 2026-10-10: SIMPLIFIED for phone performance.
+   Was a per-frame sin bob; now sets a static standing pose ONCE (guarded by
+   _posed flag) so staged crew still look varied with zero per-frame cost. */
 function _idleBob(fig, time, k){
   try{
-    fig.position.y+=Math.sin(time*2.2+(k||0)*1.7)*0.008;
-    fig.rotation.y+=Math.sin(time*0.6+(k||0))*0.004;
+    if(fig.userData && fig.userData._posed) return;
+    fig.rotation.y+=(k||0)*0.35;
+    if(fig.userData) fig.userData._posed=true;
   }catch(e){}
 }
 
