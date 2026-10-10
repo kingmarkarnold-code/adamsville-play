@@ -3577,8 +3577,12 @@ var HOUSE_535 = {
   wallH: 2.75,                // main-level wall height
   foundT: 0.4, wallT: 0.35,   // foundation / main wall thickness
   roofRise: 1.7, overhang: 0.6,
-  brick: 0x9d5f43, foundC: 0x8a6f5a, trim: 0xf2ede2,
-  roofC: 0x4a3a2e, glassC: 0x9fc4d8
+  brick: 0xa05c42, foundC: 0x8a6f5a, trim: 0xf2ede2,
+  roofC: 0x35322e, glassC: 0x9fc4d8
+  /* v3.2 (2026-10-10 StreetView verify): roof was 0x4a3a2e (dark brown) but
+     the StreetView photo shows charcoal/dark-gray shingles -> 0x35322e.
+     Brick was 0x9d5f43 (medium brown); the photo's 1963 brick reads more
+     red-brown -> 0xa05c42. */
 };
 /* Player floor tracking for the hero house. Called when player.inside and not
    in another enterable. heroFloor: 0 = basement, 1 = main level.
@@ -3755,6 +3759,17 @@ function heroPorchY(x, z){
   // front (south): two windows each side of the door
   win(hx-3.4, wy, wzS, 1.4); win(hx-1.8, wy, wzS, 1.1);
   win(hx+1.8, wy, wzS, 1.1); win(hx+3.4, wy, wzS, 1.4);
+  /* v3.2 (2026-10-10 StreetView verify): dark shutters flank the front
+     windows in the photo — the v3.0 rebuild omitted them. Shutter color
+     matches the charcoal roof. */
+  (function shutters(){
+    var shC = 0x35322e;
+    [[hx-3.4,1.4],[hx-1.8,1.1],[hx+1.8,1.1],[hx+3.4,1.4]].forEach(function(w){
+      var wx=w[0], ww=w[1];
+      box(0.45, 1.5, 0.1, shC, wx-ww/2-0.35, wy, wzS+0.02);
+      box(0.45, 1.5, 0.1, shC, wx+ww/2+0.35, wy, wzS+0.02);
+    });
+  })();
   // back (north): three windows
   win(hx-3.0, wy, wzN, 1.4); win(hx, wy, wzN, 1.4); win(hx+3.0, wy, wzN, 1.4);
   // sides: two each
