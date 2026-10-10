@@ -226,7 +226,7 @@ function seedCorridorInspections(){
 }
 
 /* ---------------- bird drone redirection ----------------
-   The 100 bird-disguised inspection drones each patrol a fixed sector.
+   The 500 bird-disguised inspection drones each patrol a fixed sector.
    When priority dispatch is active, reassign their patrol centers into the
    Adamsville priority corridors — spread across all 6 corridors by priority
    (more birds on higher-priority corridors). Runs once at boot; re-runs if
@@ -240,8 +240,9 @@ function redirectBirds(){
   if (!PD.active) return;
   try{
     // Assign birds to corridors by priority: I-285 gets the most, then MLK, etc.
-    // Weights: 30, 25, 20, 12, 8, 5 = 100 birds
-    var weights=[30,25,20,12,8,5];
+    // v1.1 CREW 5X (Joshua 2026-10-09): weights scaled 5x for 500 birds.
+    // Weights: 150, 125, 100, 60, 40, 25 = 500 birds
+    var weights=[150,125,100,60,40,25];
     var assignments=[];
     for(var c=0;c<CORRIDORS.length;c++){
       for(var k=0;k<weights[c];k++) assignments.push(c);
