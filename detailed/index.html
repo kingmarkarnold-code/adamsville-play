@@ -3331,7 +3331,7 @@ function roadSurfaceY(x,z){
   if(!roadSurfGrid) return null;
   var best=null, bestScore=1e9;
   var terr=0;
-  try{ terr=heightAt(x,z); }catch(e){}
+  try{ terr=terrainMeshY(x,z); if(terr<-1e8) terr=heightAt(x,z); }catch(e){}
   try{
     var arr=roadSurfGrid.map[Math.floor(x/40)+','+Math.floor(z/40)];
     if(!arr) return null;
@@ -3391,9 +3391,16 @@ function roadNameNear(x,z,maxD){
   return best;
 }
 function groundRefY(x,z){
-  // v1.0: the true drivable surface — road wins on corridors, terrain elsewhere
-  var t=heightAt(x,z), r=roadSurfaceY(x,z);
-  return (r!==null&&r>t)?r:t;
+  // v2.0 TERRAIN-ROAD ALIGNMENT (2026-10-10, Joshua's bug: walking/driving through roads).
+  // Root cause: roads render on terrainMeshY (the VISIBLE mesh surface), but entities
+  // sampled heightAt (analytic), which differs ~2u from the mesh due to 40u chording.
+  // Now the terrain reference is the rendered mesh itself — the surface the player SEES.
+  // Falls back to analytic only if the mesh grid isn't built yet.
+  // Player scale reference: 6'1" = 1.85u, so 1u ≈ 1m; all heights use this scale.
+  var t=terrainMeshY(x,z);
+  if (t<-1e8){ try{ t=heightAt(x,z); }catch(e){ t=0; } }
+  var r=roadSurfaceY(x,z);
+  return (r!==null&&r>t)?r:t;}
 }
 
 /* ================= WATER ================= */
@@ -6024,7 +6031,7 @@ document.getElementById('gp-restart').addEventListener('click', function(){
     player.x=HOME.x-14; player.z=HOME.z+8; player.yaw=Math.PI/2;
     player.speed=0; player.inside=false; player.swimming=false;
     player.mesh.visible=true;
-    player.mesh.position.set(player.x,heightAt(player.x,player.z),player.z);
+    player.mesh.position.set(player.x,groundRefY(player.x,player.z),player.z);
     player.mesh.rotation.y=player.yaw;
     camYaw=player.yaw; look.yawOff=0;
     var cb=player.yaw+Math.PI, gy=heightAt(player.x,player.z);
@@ -6068,7 +6075,7 @@ function loadSlot(n){
     player.locFloorY=(player.locIdx>=0&&typeof ENTERABLES!=='undefined'&&ENTERABLES[player.locIdx])?ENTERABLES[player.locIdx].floorY:0;
     if(player.locIdx>=0&&typeof ENTERABLES!=='undefined'&&ENTERABLES[player.locIdx]){ENTERABLES[player.locIdx].roofs.forEach(function(r){r.visible=false;});}
     player.mesh.visible=true;
-    player.mesh.position.set(player.x,heightAt(player.x,player.z),player.z);
+    player.mesh.position.set(player.x,groundRefY(player.x,player.z),player.z);
     player.mesh.rotation.y=player.yaw;
     var c=(s.carIdx>=0&&cars[s.carIdx])?cars[s.carIdx]:cars[0];
     car=c;
@@ -6780,15 +6787,15 @@ function updatePlayer(dt){
     // v3.0 535 PORCH: outside on the raised front porch/entry stairs, use the
     // porch Y (the main floor sits 2.4u above grade — the photo's elevated entry).
     var _phy=(!player.inside && typeof heroPorchY==='function')?heroPorchY(player.x,player.z):null;
-    gy=player.inside ? ((player.locIdx>=0&&player.locFloorY)?player.locFloorY:heroHouseFloorY()) : (_phy!==null?_phy:heightAt(player.x,player.z));
-    player.mesh.position.set(player.x, gy, player.z);  // pin feet to terrain EVERY frame
+    gy=player.inside ? ((player.locIdx>=0&&player.locFloorY)?player.locFloorY:heroHouseFloorY()) : (_phy!==null?_phy:groundRefY(player.x,player.z));
+    player.mesh.position.set(player.x, gy, player.z);  // pin feet to terrain EVERY frame (v2.0: groundRefY = road-aware, mesh-based)
   }
   player.mesh.rotation.y=player.yaw;
   animateHero(dt);  // v1.7: 3D rig walk/idle/swim
   // v0.5 SAFETY NET: never fall through the world — snap back to the surface
   // (and log it, so real holes get found instead of silently papered over)
   if (!player.swimming && !player.inside){
-    var _pg=heightAt(player.x,player.z);
+    var _pg=groundRefY(player.x,player.z);
     if (player.mesh.position.y < _pg-2.5){
       player.mesh.position.y=_pg;
       try{Report.note('snapback',{who:'player',x:Math.round(player.x),z:Math.round(player.z)});}catch(e){}
