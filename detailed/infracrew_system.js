@@ -699,6 +699,9 @@ function initInfraCrew(){
   window.INFRACREW={
     reportIssue:reportIssue,
     issues:ISSUES,
+    jobs:IC.jobs,  /* v1.19 CITYWORKFORCE (2026-10-09): expose active repair
+                      jobs so the municipal workforce roster can assign named
+                      worker identities to deployed crew figures. */
     log:IC.log,
     toggle:function(f){ togglePanel(f); }
   };
