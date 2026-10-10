@@ -32,9 +32,9 @@
     },
     {
       "name": "index.html",
-      "size": 654220,
-      "sha256": "63c483c2e44dca61c1e1ebb7d479bb0885e67a5c947edf120d78d845a5fc6ece",
-      "hash": "63c483c2e44dca61"
+      "size": 658776,
+      "sha256": "87fd730ae9171ae15a38026c80ddcbadf7e88404c9a08e2347dc6abd2a3f23b9",
+      "hash": "6be13a0a04c2ff1c"
     },
     {
       "name": "marriott.js",
@@ -199,6 +199,6 @@
       "hash": "ebdf20dfceb44ec5"
     }
   ],
-  "ui_version": "2026.10.09.65",
+  "ui_version": "2026.10.09.66",
   "version": "1.13.0"
 }
