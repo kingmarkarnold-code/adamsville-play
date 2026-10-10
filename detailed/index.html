@@ -5770,6 +5770,38 @@ function updateCar(dt){
     if (drive.brake) accel-= car.speed>1?30*SPD_SCALE:12*SPD_SCALE;  // brake or reverse
   }
   if (drive.hb) accel-= car.speed*4;
+  /* v1.17 SCHOOL BUS STOP LAW (Joshua): when a school bus has its stop sign
+     out (window.__sbActive, published by schoolbus_system.js), ALL approaching
+     vehicles must stop and wait — including the player's van. The van is
+     braked hard while the bus is ahead within 60u; a dashboard warning shows.
+     The hold releases on its own when the sign retracts. */
+  var _sbHold=false;
+  try{
+    var _sbA2=window.__sbActive;
+    if (_sbA2 && _sbA2.length && car && car.driving){
+      for (var _sj=0;_sj<_sbA2.length;_sj++){
+        var _bs=_sbA2[_sj];
+        var _qx=_bs.x-car.x, _qz=_bs.z-car.z, _qq=_qx*_qx+_qz*_qz;
+        if (_qq<3600){
+          var _qd=Math.sqrt(_qq)||1;
+          var _psy=Math.sin(car.yaw), _pcy=Math.cos(car.yaw);
+          var _pdot=(_qx*_psy+_qz*_pcy)/_qd;
+          if (_pdot>0.25 || _qd<20){ _sbHold=true; break; }
+        }
+      }
+    }
+  }catch(e){}
+  if (_sbHold){
+    accel=Math.min(accel,0);
+    if (car.speed>0.5) accel-=40*SPD_SCALE;
+    try{
+      if (!window.__sbWarned){
+        window.__sbWarned=true;
+        if (typeof showToast==='function') showToast('🛑 SCHOOL BUS — STOP', 2500);
+        setTimeout(function(){ window.__sbWarned=false; }, 6000);
+      }
+    }catch(e){}
+  }
   // grass slows
   grassSlow = onRoad(car.x,car.z) ? 1 : 0.55;
   // v1.2 FORDING: shallow water drags the van (splash-slow) but never sinks it
@@ -5852,7 +5884,7 @@ function updateCar(dt){
         var oalg=odx*ofx+odz*ofz, osid=odx*osx+odz*osz;
         var OHL=chl+ohl, OHW=chw+ohw;
         if (Math.abs(oalg)<OHL && Math.abs(osid)<OHW){
-          var opa=OHL-Math.abs(oalg), ops=OHW-Math.abs(osid);
+          var opa=OHL-Math.abs(oalg)+0.02, ops=OHW-Math.abs(osid)+0.02;   // v1.18: +epsilon guarantees strict separation (no float-boundary touching)
           if (opa<ops){ car.x+=ofx*(oalg>0?opa:-opa); car.z+=ofz*(oalg>0?opa:-opa); }
           else { car.x+=osx*(osid>0?ops:-ops); car.z+=osz*(osid>0?ops:-ops); }
           var cnow=performance.now()/1000;
@@ -5863,6 +5895,32 @@ function updateCar(dt){
           } else if (spd>0.5){ car.speed*=0.85; }
         }
       }
+      /* v1.18 EXTENSION (Joshua's directive: "vehicles cannot go through each
+         other. Period."): the driven car also collides with MARTA buses,
+         work-crew / inspector patrols, semis, and NPC traffic cars — same
+         oriented-box push-out + impact damage as the cars[] loop above. */
+      function __hitOther(ox,oz,oyaw,ohl,ohw){
+        var ofx=Math.sin(oyaw), ofz=Math.cos(oyaw);
+        var osx=Math.cos(oyaw), osz=-Math.sin(oyaw);
+        var odx=car.x-ox, odz=car.z-oz;
+        var oalg=odx*ofx+odz*ofz, osid=odx*osx+odz*osz;
+        var OHL=chl+ohl, OHW=chw+ohw;
+        if (Math.abs(oalg)<OHL && Math.abs(osid)<OHW){
+          var opa=OHL-Math.abs(oalg), ops=OHW-Math.abs(osid);
+          if (opa<ops){ car.x+=ofx*(oalg>0?opa:-opa); car.z+=ofz*(oalg>0?opa:-opa); }
+          else { car.x+=osx*(osid>0?ops:-ops); car.z+=osz*(osid>0?ops:-ops); }
+          var cnow2=performance.now()/1000;
+          if (spd>6 && cnow2-(car.lastHit||0)>0.4){
+            car.lastHit=cnow2; addDamage(car, spd*1.2); car.speed*=0.4;
+          } else if (spd>0.5){ car.speed*=0.85; }
+        }
+      }
+      var _bi, _bu;
+      try{ if (typeof MB!=='undefined'&&MB&&MB.buses) for (_bi=0;_bi<MB.buses.length;_bi++){ _bu=MB.buses[_bi]; __hitOther(_bu.x,_bu.z,_bu.yaw,6,1.25); } }catch(e){}
+      try{ if (typeof RC!=='undefined'&&RC&&RC.patrols) for (_bi=0;_bi<RC.patrols.length;_bi++){ _bu=RC.patrols[_bi]; if(_bu.mesh) __hitOther(_bu.mesh.position.x,_bu.mesh.position.z,_bu.mesh.rotation.y,3,1.3); } }catch(e){}
+      try{ if (typeof CE!=='undefined'&&CE&&CE.patrols) for (_bi=0;_bi<CE.patrols.length;_bi++){ _bu=CE.patrols[_bi]; if(_bu.mesh) __hitOther(_bu.mesh.position.x,_bu.mesh.position.z,_bu.mesh.rotation.y,3,1.3); } }catch(e){}
+      try{ if (typeof SE!=='undefined'&&SE&&SE.semis) for (_bi=0;_bi<SE.semis.length;_bi++){ _bu=SE.semis[_bi]; __hitOther(_bu.x,_bu.z,_bu.heading,9.5,1.5); } }catch(e){}
+      try{ if (typeof TR!=='undefined'&&TR&&TR.cars) for (_bi=0;_bi<TR.cars.length;_bi++){ _bu=TR.cars[_bi]; __hitOther(_bu.x,_bu.z,_bu.heading,2.5,1.1); } }catch(e){}
     }catch(e){}
   })();
   // v0.8: the car rides ON TOP of the ground at all times. Sample terrain under
@@ -6262,6 +6320,80 @@ function updateActionButton(){
 spawnStarterPickups();
 document.getElementById('inv-btn').addEventListener('click', function(){ toggleInv(); });
 document.getElementById('inv-close').addEventListener('click', function(){ toggleInv(false); });
+/* ============================================================================
+   v1.18 COMPREHENSIVE NPC VEHICLE-VEHICLE COLLISION
+   Joshua's directive: "vehicles cannot go through each other. Period."
+
+   Every frame, ALL non-driven vehicles from every fleet are gathered into
+   one list and pairwise tested as oriented boxes (same math as the v1.6
+   driven-car block). The driven car is EXCLUDED here — v1.6 (extended above)
+   already resolves driven-vs-everything with its own damage logic.
+
+   Fleet adapters (positions are primary state in each system):
+   - TR.cars[]    : NPC traffic cars — movers (x/z re-derived from road each
+                    tick, so a push lasts one frame; paired with desired=0 so
+                    the intruder brakes instead of grinding).
+   - cars[]       : driveway/parked NPC cars — anchors when stationary.
+   - MB.buses[]   : MARTA buses — anchors (route-driven; never pushed).
+   - RC/CE patrols: work/inspector trucks — anchors (segment-driven; position
+                    lives on the mesh, pushing it would desync the patrol).
+   - SE.semis[]   : 18-wheelers — anchors (portal-driven).
+
+   Push rule: anchors never move. Mover-vs-anchor → mover takes the full
+   push. Mover-vs-mover → 50/50 split. Both stationary → skip (parked cars
+   were placed deliberately; queued traffic is owned by the spacing logic).
+   Runs inside animate() before renderer.render — after updateCar/updatePlayer
+   so the driven car's v1.6 resolution is already applied.
+   ============================================================================ */
+function resolveNPCVehicleCollisions(){
+  try{
+    var B=[], i, o;
+    try{ if (typeof TR!=='undefined'&&TR&&TR.cars) for (i=0;i<TR.cars.length;i++){ o=TR.cars[i]; B.push({x:o.x,z:o.z,yaw:o.heading,hl:2.5,hw:1.1,spd:o.speed||0,kind:'traf',anchor:false,ref:o}); } }catch(e){}
+    try{ for (i=0;i<cars.length;i++){ o=cars[i]; if(o===car||o.sunk||o.sinking) continue; B.push({x:o.x,z:o.z,yaw:o.yaw,hl:o.halfL||2.5,hw:o.halfW||1.1,spd:o.speed||0,kind:'car',anchor:(o.speed||0)<0.5,ref:o}); } }catch(e){}
+    try{ if (typeof MB!=='undefined'&&MB&&MB.buses) for (i=0;i<MB.buses.length;i++){ o=MB.buses[i]; B.push({x:o.x,z:o.z,yaw:o.yaw,hl:6,hw:1.25,spd:o.speed||0,kind:'bus',anchor:true,ref:o}); } }catch(e){}
+    try{ if (typeof RC!=='undefined'&&RC&&RC.patrols) for (i=0;i<RC.patrols.length;i++){ o=RC.patrols[i]; if(!o.mesh) continue; B.push({x:o.mesh.position.x,z:o.mesh.position.z,yaw:o.mesh.rotation.y,hl:3,hw:1.3,spd:o.speed||0,kind:'patrol',anchor:true,ref:o}); } }catch(e){}
+    try{ if (typeof CE!=='undefined'&&CE&&CE.patrols) for (i=0;i<CE.patrols.length;i++){ o=CE.patrols[i]; if(!o.mesh) continue; B.push({x:o.mesh.position.x,z:o.mesh.position.z,yaw:o.mesh.rotation.y,hl:3,hw:1.3,spd:o.speed||0,kind:'patrol',anchor:true,ref:o}); } }catch(e){}
+    try{ if (typeof SE!=='undefined'&&SE&&SE.semis) for (i=0;i<SE.semis.length;i++){ o=SE.semis[i]; B.push({x:o.x,z:o.z,yaw:o.heading,hl:9.5,hw:1.5,spd:o.speed||0,kind:'semi',anchor:true,ref:o}); } }catch(e){}
+    for (i=0;i<B.length;i++) for (var j=i+1;j<B.length;j++){
+      var a=B[i], b=B[j];
+      if (a.spd<0.5 && b.spd<0.5) continue;   // both stopped: parked/queued — nothing to resolve
+      var dx=a.x-b.x, dz=a.z-b.z;
+      var maxR=Math.hypot(a.hl,a.hw)+Math.hypot(b.hl,b.hw);   // broadphase
+      if (dx*dx+dz*dz > maxR*maxR) continue;
+      /* oriented-box overlap test in b's frame (same convention as v1.6:
+         yaw=0 faces +z, forward=(sin yaw, cos yaw)) */
+      var fx=Math.sin(b.yaw), fz=Math.cos(b.yaw), sx=Math.cos(b.yaw), sz=-Math.sin(b.yaw);
+      var alg=dx*fx+dz*fz, sid=dx*sx+dz*sz;
+      var HL=a.hl+b.hl, HW=a.hw+b.hw;
+      if (Math.abs(alg)<HL && Math.abs(sid)<HW){
+        var pa=HL-Math.abs(alg)+0.02, ps=HW-Math.abs(sid)+0.02, px, pz;   // v1.18: +epsilon guarantees strict separation
+        if (pa<ps){ px=fx*(alg>0?pa:-pa); pz=fz*(alg>0?pa:-pa); }
+        else { px=sx*(sid>0?ps:-ps); pz=sz*(sid>0?ps:-ps); }
+        var aMove=a.anchor?0:(b.anchor?1:0.5), bMove=b.anchor?0:(a.anchor?1:0.5);
+        if (aMove>0){ a.x+=px*aMove; a.z+=pz*aMove; }
+        if (bMove>0){ b.x-=px*bMove; b.z-=pz*bMove; }
+        /* traffic intruders brake instead of grinding into the obstacle —
+           feeds Joshua's wait-behind rules (MARTA bus dwell, stop signs) */
+        if (a.kind==='traf' && aMove>0){ try{ a.ref.desired=0; }catch(e){} }
+        if (b.kind==='traf' && bMove>0){ try{ b.ref.desired=0; }catch(e){} }
+      }
+    }
+    /* writeback: B entries are working copies — push resolved positions back
+       to the real fleet records (anchors never moved, so nothing to write). */
+    for (var w=0;w<B.length;w++){
+      var W=B[w];
+      if (W.anchor) continue;
+      try{
+        if (W.kind==='traf'){ W.ref.x=W.x; W.ref.z=W.z; }
+        else if (W.kind==='car'){
+          W.ref.x=W.x; W.ref.z=W.z;
+          if (W.ref.mesh) W.ref.mesh.position.set(W.x, W.ref.mesh.position.y, W.z);
+        }
+      }catch(e){}
+    }
+  }catch(e){}
+}
+
 function animate(){
   requestAnimationFrame(animate);
   var dt=Math.min(0.05, clock.getDelta());
@@ -6275,6 +6407,7 @@ function animate(){
   updateStreetName(dt);
   drawMinimap(dt);
   try{ if(typeof updateNPCs!=='undefined') updateNPCs(dt, player.mesh.position); }catch(e){}
+  try{ resolveNPCVehicleCollisions(); }catch(e){}   // v1.18: no vehicle passes through another — Period (Joshua)
   renderer.render(scene, camera);
   // v1.10.1: first frame is on screen — dismiss the native loading screen.
   if (!window.__gameReadyFired) {
@@ -6497,6 +6630,7 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <script src="marta_bus_data.js" onload="__loadStep('busdata')" onerror="__loadStep('busdata',true)"></script>
 <script src="marta_bus_system.js" onload="__loadStep('bus')" onerror="__loadStep('bus',true)"></script>
 <script src="bird_drones.js"></script>
+<script src="schoolbus_system.js"></script>
 <!-- ===== INLINE SCRIPT BLOCK 3: final placement audit (v2.0 - Joshua's
      automatic check) ===== Runs ONCE, after EVERY building system has loaded
      (OSM, churches, schools, plaza, gas, Marriott, clubs, MARTA). Summarizes
