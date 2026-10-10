@@ -1,266 +1,266 @@
 {
- "files": [
-  {
-   "name": "bird_drones.js",
-   "size": 10216,
-   "sha256": "39f97c3da4bd5ec5ff9307cf4b29159690de357625e48dd5a431b93499ed87fa",
-   "hash": "861ad515f9c918c9"
-  },
-  {
-   "name": "cityworkforce.js",
-   "size": 29030,
-   "sha256": "37e947b929b456797bc1b8ec2fd5a8016c5c9ac1c8c0066d865d8b5789c808bb",
-   "hash": "1586f7adf419e09f"
-  },
-  {
-   "name": "clubs_diners.js",
-   "size": 13197,
-   "sha256": "8951521787d7cceacaea39806c19c269176e98ad289c50f2a481073347e8489c",
-   "hash": "07542c70006652fc"
-  },
-  {
-   "name": "codeenforce_system.js",
-   "size": 65542,
-   "sha256": "181fddb734b080abe7d49d527cd401d641859a2b13955c10db70642f2a9a0a1e",
-   "hash": "e85f3d0f900615fd"
-  },
-  {
-   "name": "daycycle.js",
-   "size": 13395,
-   "sha256": "82ac1b4ec67aa686ee103f31440676f04664682a76600fc0a1c15dcfb0a36eb7",
-   "hash": "750338231c9b44ab"
-  },
-  {
-   "name": "dialogue_director_npc.js",
-   "size": 25884,
-   "sha256": "b6b83e3a7179664a45ced8c6e3d8466becacd4578a9cf61c4c4efec98523893d",
-   "hash": "d6916ca8fe0e34d7"
-  },
-  {
-   "name": "face_platform.js",
-   "size": 3765,
-   "sha256": "b2a73f3d84e06bfd6342c491df9a6c382e5e703b202083450d56ba0323987e25",
-   "hash": "e7cdd523410bf7a4"
-  },
-  {
-   "name": "helicopter_system.js",
-   "size": 34591,
-   "sha256": "ca9134741bfd97bd3ffecc4a7a1398e021f2d2f5d6bb338bc1deeee1dbbfb270",
-   "hash": "e62fd34167a1fb66"
-  },
-  {
-   "name": "hotreload.js",
-   "size": 15642,
-   "sha256": "189f64f2434c5e76a865c595f8e567238317eda53bfaef9bec0bfdd436d1417c",
-   "hash": "2e3d7261fcaa0fb4"
-  },
-  {
-   "name": "hq_staff_system.js",
-   "size": 26612,
-   "sha256": "45b29898e8a4ad6f531e4febf141708cf399e9c10988749f5ef8b04e11dcd4cd",
-   "hash": "f51af332ecae98e4"
-  },
-  {
-   "name": "icon.png",
-   "size": 69132,
-   "sha256": "be119f2f4e02c4c20be2dc2db973b64e1d8c68ed202c9e6077deb7fbd7620574",
-   "hash": "65739422acb0f942"
-  },
-  {
-   "name": "index.html",
-   "size": 681682,
-   "sha256": "d2e882c08b672add6b5ec17d501bea193480bd2b607066d547a42a83559be487",
-   "hash": "9a7d9960e71e9431"
-  },
-  {
-   "name": "infracrew_system.js",
-   "size": 35263,
-   "sha256": "2d7eb89d947353bf1f43080b97c7305c55d57e5227a310398faa135976803dfe",
-   "hash": "75d3589bd557dc8a"
-  },
-  {
-   "name": "marriott.js",
-   "size": 41698,
-   "sha256": "16426962e66e784eddef96ab6fcec0e634e7a8bc54987bae042af47cf89c832a",
-   "hash": "44524ba37af62d42"
-  },
-  {
-   "name": "marta_bus_data.js",
-   "size": 171909,
-   "sha256": "ef99f042c58607e6e4aa83eb8a501988bf9e4eeaee190e6c5cfc4b2a43806de7",
-   "hash": "9f51f0e04b06e1d0"
-  },
-  {
-   "name": "marta_bus_system.js",
-   "size": 27959,
-   "sha256": "8f63a2cffdf0dab9a1641a1057c9f53924fe8416b33d19317f87f799ade36364",
-   "hash": "ca01b006120ca398"
-  },
-  {
-   "name": "marta_data.js",
-   "size": 18261,
-   "sha256": "8d744dd2a014e8af202a28f542619f14210697e83d31a0cdd559996f4804065a",
-   "hash": "ab49e61b7fc6d530"
-  },
-  {
-   "name": "marta_system.js",
-   "size": 32365,
-   "sha256": "e7c79234e1b2841b97e38e66a50c341aa7ab3b6ebde2f96af0fe7518c4214580",
-   "hash": "788bae667d6ffb70",
-   "md5": "b5d3ee3876f5cc8d"
-  },
-  {
-   "name": "mlk_fairburn.js",
-   "size": 5265,
-   "sha256": "0c61eaef199212d0f5d028ff099d5be321e02e4d20788276cbc1e48ff51426e8",
-   "hash": "922b07c8ca84c620"
-  },
-  {
-   "name": "poi_map.js",
-   "size": 9075,
-   "sha256": "38df503c54d0b8167afe85646883ce3ca11dfb459e0222dd51dee370056cdd56",
-   "hash": "8a3de148fa6fdafe"
-  },
-  {
-   "name": "refnpc_system.js",
-   "size": 37273,
-   "sha256": "dc195c184b1a4bfc80a766203f016414b9bd4bb70ecd87aa990c7a605f81bdea",
-   "hash": "5b2d0892405aee35"
-  },
-  {
-   "name": "residential_detail.js",
-   "size": 22428,
-   "sha256": "34b490055eceb9dc30aaf13d5b4c7e7f34d048550bc4b174c8bed5646cf14fd8",
-   "hash": "e3016f900eac43ed"
-  },
-  {
-   "name": "roadcrew_system.js",
-   "size": 55708,
-   "sha256": "b94dcc311061718c35c3433ba2fe4e0838a6840a5725efedd632bff1ead68436",
-   "hash": "d2a210a9cf85f2e2"
-  },
-  {
-   "name": "roadfix.js",
-   "size": 24236,
-   "sha256": "341172c854b4622f35301bf36bffe9f6ddbf2ae14ddea5520afbec74fe71c275",
-   "hash": "3bdb270f6ffa21a3"
-  },
-  {
-   "name": "school_plaza.js",
-   "size": 20996,
-   "sha256": "655bf887b532b92a640293358706cf832dcff5c7d7850dc6e88f681890e0c005",
-   "hash": "e2bc5c12afb8b28f"
-  },
-  {
-   "name": "schoolbus_system.js",
-   "size": 13218,
-   "sha256": "77c793f9ddd01770577ea41a7c8353aee1b67b4f9c2695acf4150100d4745487",
-   "hash": "eb737b91c6c87c5b"
-  },
-  {
-   "name": "schools3.js",
-   "size": 14602,
-   "sha256": "420f6d2a428070761bd2dbaf63af42a1a86efb12ec3afb767ecfa867670e9154",
-   "hash": "bc66bbd2ec6786f5"
-  },
-  {
-   "name": "semi_system.js",
-   "size": 17444,
-   "sha256": "14ce6d9db1b4d5791e40b6d3467817e9c5b83a66a5f380824c3051eb3d3a8d6a",
-   "hash": "fae7c8a87d33a7c3"
-  },
-  {
-   "name": "shirt_designs.js",
-   "size": 6967,
-   "sha256": "ab88444351442063032a1de7cf03811c10a5ed59d60f66a3c246e41fa56d51af",
-   "hash": "8876d4c4f3cba0e8"
-  },
-  {
-   "name": "sign_rules.js",
-   "size": 6882,
-   "sha256": "35406b69bafddbfe8df6df3604b409ec1d06c2a885e9d05406fdb54bb7a00a65",
-   "hash": "b2ad7808d123c7b5"
-  },
-  {
-   "name": "stuck.js",
-   "size": 17891,
-   "sha256": "1ddbeafb54746cf643edb347efcee471040af2b64d1e2864a3220d8b8076e63a",
-   "hash": "21e16691ee1d56ae"
-  },
-  {
-   "name": "stuck_diag.js",
-   "size": 30066,
-   "sha256": "082134f070b004a7c7b46d55692a1247d5150d57dc4392da1af283c3fb913c08",
-   "hash": "96a72cf194f9f5a3"
-  },
-  {
-   "name": "surveyfleet_system.js",
-   "size": 60045,
-   "sha256": "b79fee71da780ae0136b17c6375ee1421ce046a7535a4f8246881559d1beceb7",
-   "hash": "19694d73aadfa9ef"
-  },
-  {
-   "name": "terrainfix.js",
-   "size": 12693,
-   "sha256": "ebdf20dfceb44ec523def8633a048c1226cdce0e699062e8f9d76cdfa84faa0f",
-   "hash": "cec2147c8ceb2a4f"
-  },
-  {
-   "name": "three.min.js",
-   "size": 603445,
-   "sha256": "9274bbcec8d96168626c732b5d31c775aa8cfb7eaa0599bec0c175908a2c1ce2",
-   "hash": "eb8549863a973554"
-  },
-  {
-   "name": "traffic_system.js",
-   "size": 43791,
-   "sha256": "d9cfc5c2194ce28786caeb7fa062155ef495238dbab4e30563f2e8351d73670a",
-   "hash": "ebbce3dcc8f81e64",
-   "md5": "0b260d7d865e0dd3"
-  },
-  {
-   "name": "veteran_crew.js",
-   "size": 28697,
-   "sha256": "e9a3b315ca854ee4bc1b7a865fe2f967e0c40db980bd4467c86825cc9357b6af",
-   "hash": "3f8ac628616bc462"
-  },
-  {
-   "name": "workerhousing.js",
-   "size": 37188,
-   "sha256": "4472689a6849075d869ce63b03a5fb1c6d2b2aa719535c7222110083b5a70699",
-   "hash": "5a7b41fe2ab41fda"
-  },
-  {
-   "name": "agentdock.js",
-   "size": 4982,
-   "sha256": "ed5017309e3f077ed4797d923409e4ae2ee5de91fd5a34c52ccc03742824eee3",
-   "hash": "6b9ed0b64b6fc187"
-  },
-  {
-   "name": "npc_system.js",
-   "size": 68957,
-   "sha256": "4f8f9a2fbddda1ae0537364c8a82addfcef8f5ebdafca8e29f376ff8acdb978d",
-   "hash": "ddc10f405e2f6c42"
-  },
-  {
-   "name": "priority_dispatch.js",
-   "size": 13047,
-   "sha256": "174682917a80d3af88741b0c8fdc45fa3f8e0d433820b1d27301c7506e3ee6b7",
-   "hash": "1b55483e40cdd59b"
-  },
-  {
-   "name": "stayawake.js",
-   "size": 9476,
-   "sha256": "b192b1aaceead7082db689f4a0e0417fff70544d569b1d38e954da3913919e8d",
-   "hash": "59e804d2ce14e400"
-  },
-  {
-   "name": "zoneunlock.js",
-   "size": 13732,
-   "sha256": "98909e634ea1c7d14b6861b3ba83838a6529c0d74da79191e8092f35c07333cb",
-   "hash": "89451190aca3f493"
-  }
- ],
- "ui_version": "2026.10.09.89",
- "version": "1.13.0"
+  "files": [
+    {
+      "name": "bird_drones.js",
+      "size": 10216,
+      "sha256": "39f97c3da4bd5ec5ff9307cf4b29159690de357625e48dd5a431b93499ed87fa",
+      "hash": "861ad515f9c918c9"
+    },
+    {
+      "name": "cityworkforce.js",
+      "size": 29030,
+      "sha256": "37e947b929b456797bc1b8ec2fd5a8016c5c9ac1c8c0066d865d8b5789c808bb",
+      "hash": "1586f7adf419e09f"
+    },
+    {
+      "name": "clubs_diners.js",
+      "size": 13197,
+      "sha256": "8951521787d7cceacaea39806c19c269176e98ad289c50f2a481073347e8489c",
+      "hash": "07542c70006652fc"
+    },
+    {
+      "name": "codeenforce_system.js",
+      "size": 65542,
+      "sha256": "181fddb734b080abe7d49d527cd401d641859a2b13955c10db70642f2a9a0a1e",
+      "hash": "e85f3d0f900615fd"
+    },
+    {
+      "name": "daycycle.js",
+      "size": 13395,
+      "sha256": "82ac1b4ec67aa686ee103f31440676f04664682a76600fc0a1c15dcfb0a36eb7",
+      "hash": "750338231c9b44ab"
+    },
+    {
+      "name": "dialogue_director_npc.js",
+      "size": 25884,
+      "sha256": "b6b83e3a7179664a45ced8c6e3d8466becacd4578a9cf61c4c4efec98523893d",
+      "hash": "d6916ca8fe0e34d7"
+    },
+    {
+      "name": "face_platform.js",
+      "size": 3765,
+      "sha256": "b2a73f3d84e06bfd6342c491df9a6c382e5e703b202083450d56ba0323987e25",
+      "hash": "e7cdd523410bf7a4"
+    },
+    {
+      "name": "helicopter_system.js",
+      "size": 34591,
+      "sha256": "ca9134741bfd97bd3ffecc4a7a1398e021f2d2f5d6bb338bc1deeee1dbbfb270",
+      "hash": "e62fd34167a1fb66"
+    },
+    {
+      "name": "hotreload.js",
+      "size": 15642,
+      "sha256": "189f64f2434c5e76a865c595f8e567238317eda53bfaef9bec0bfdd436d1417c",
+      "hash": "2e3d7261fcaa0fb4"
+    },
+    {
+      "name": "hq_staff_system.js",
+      "size": 26612,
+      "sha256": "45b29898e8a4ad6f531e4febf141708cf399e9c10988749f5ef8b04e11dcd4cd",
+      "hash": "f51af332ecae98e4"
+    },
+    {
+      "name": "icon.png",
+      "size": 69132,
+      "sha256": "be119f2f4e02c4c20be2dc2db973b64e1d8c68ed202c9e6077deb7fbd7620574",
+      "hash": "65739422acb0f942"
+    },
+    {
+      "name": "index.html",
+      "size": 681682,
+      "sha256": "d2e882c08b672add6b5ec17d501bea193480bd2b607066d547a42a83559be487",
+      "hash": "9a7d9960e71e9431"
+    },
+    {
+      "name": "infracrew_system.js",
+      "size": 35263,
+      "sha256": "2d7eb89d947353bf1f43080b97c7305c55d57e5227a310398faa135976803dfe",
+      "hash": "75d3589bd557dc8a"
+    },
+    {
+      "name": "marriott.js",
+      "size": 41698,
+      "sha256": "16426962e66e784eddef96ab6fcec0e634e7a8bc54987bae042af47cf89c832a",
+      "hash": "44524ba37af62d42"
+    },
+    {
+      "name": "marta_bus_data.js",
+      "size": 171909,
+      "sha256": "ef99f042c58607e6e4aa83eb8a501988bf9e4eeaee190e6c5cfc4b2a43806de7",
+      "hash": "9f51f0e04b06e1d0"
+    },
+    {
+      "name": "marta_bus_system.js",
+      "size": 27959,
+      "sha256": "8f63a2cffdf0dab9a1641a1057c9f53924fe8416b33d19317f87f799ade36364",
+      "hash": "ca01b006120ca398"
+    },
+    {
+      "name": "marta_data.js",
+      "size": 18261,
+      "sha256": "8d744dd2a014e8af202a28f542619f14210697e83d31a0cdd559996f4804065a",
+      "hash": "ab49e61b7fc6d530"
+    },
+    {
+      "name": "marta_system.js",
+      "size": 32365,
+      "sha256": "e7c79234e1b2841b97e38e66a50c341aa7ab3b6ebde2f96af0fe7518c4214580",
+      "hash": "788bae667d6ffb70",
+      "md5": "b5d3ee3876f5cc8d"
+    },
+    {
+      "name": "mlk_fairburn.js",
+      "size": 5265,
+      "sha256": "0c61eaef199212d0f5d028ff099d5be321e02e4d20788276cbc1e48ff51426e8",
+      "hash": "922b07c8ca84c620"
+    },
+    {
+      "name": "poi_map.js",
+      "size": 9075,
+      "sha256": "38df503c54d0b8167afe85646883ce3ca11dfb459e0222dd51dee370056cdd56",
+      "hash": "8a3de148fa6fdafe"
+    },
+    {
+      "name": "refnpc_system.js",
+      "size": 37273,
+      "sha256": "dc195c184b1a4bfc80a766203f016414b9bd4bb70ecd87aa990c7a605f81bdea",
+      "hash": "5b2d0892405aee35"
+    },
+    {
+      "name": "residential_detail.js",
+      "size": 22428,
+      "sha256": "34b490055eceb9dc30aaf13d5b4c7e7f34d048550bc4b174c8bed5646cf14fd8",
+      "hash": "e3016f900eac43ed"
+    },
+    {
+      "name": "roadcrew_system.js",
+      "size": 55708,
+      "sha256": "b94dcc311061718c35c3433ba2fe4e0838a6840a5725efedd632bff1ead68436",
+      "hash": "d2a210a9cf85f2e2"
+    },
+    {
+      "name": "roadfix.js",
+      "size": 24236,
+      "sha256": "341172c854b4622f35301bf36bffe9f6ddbf2ae14ddea5520afbec74fe71c275",
+      "hash": "3bdb270f6ffa21a3"
+    },
+    {
+      "name": "school_plaza.js",
+      "size": 20996,
+      "sha256": "655bf887b532b92a640293358706cf832dcff5c7d7850dc6e88f681890e0c005",
+      "hash": "e2bc5c12afb8b28f"
+    },
+    {
+      "name": "schoolbus_system.js",
+      "size": 13218,
+      "sha256": "77c793f9ddd01770577ea41a7c8353aee1b67b4f9c2695acf4150100d4745487",
+      "hash": "eb737b91c6c87c5b"
+    },
+    {
+      "name": "schools3.js",
+      "size": 14602,
+      "sha256": "420f6d2a428070761bd2dbaf63af42a1a86efb12ec3afb767ecfa867670e9154",
+      "hash": "bc66bbd2ec6786f5"
+    },
+    {
+      "name": "semi_system.js",
+      "size": 17444,
+      "sha256": "14ce6d9db1b4d5791e40b6d3467817e9c5b83a66a5f380824c3051eb3d3a8d6a",
+      "hash": "fae7c8a87d33a7c3"
+    },
+    {
+      "name": "shirt_designs.js",
+      "size": 6967,
+      "sha256": "ab88444351442063032a1de7cf03811c10a5ed59d60f66a3c246e41fa56d51af",
+      "hash": "8876d4c4f3cba0e8"
+    },
+    {
+      "name": "sign_rules.js",
+      "size": 6882,
+      "sha256": "35406b69bafddbfe8df6df3604b409ec1d06c2a885e9d05406fdb54bb7a00a65",
+      "hash": "b2ad7808d123c7b5"
+    },
+    {
+      "name": "stuck.js",
+      "size": 17891,
+      "sha256": "1ddbeafb54746cf643edb347efcee471040af2b64d1e2864a3220d8b8076e63a",
+      "hash": "21e16691ee1d56ae"
+    },
+    {
+      "name": "stuck_diag.js",
+      "size": 30066,
+      "sha256": "082134f070b004a7c7b46d55692a1247d5150d57dc4392da1af283c3fb913c08",
+      "hash": "96a72cf194f9f5a3"
+    },
+    {
+      "name": "surveyfleet_system.js",
+      "size": 60045,
+      "sha256": "b79fee71da780ae0136b17c6375ee1421ce046a7535a4f8246881559d1beceb7",
+      "hash": "19694d73aadfa9ef"
+    },
+    {
+      "name": "terrainfix.js",
+      "size": 12693,
+      "sha256": "ebdf20dfceb44ec523def8633a048c1226cdce0e699062e8f9d76cdfa84faa0f",
+      "hash": "cec2147c8ceb2a4f"
+    },
+    {
+      "name": "three.min.js",
+      "size": 603445,
+      "sha256": "9274bbcec8d96168626c732b5d31c775aa8cfb7eaa0599bec0c175908a2c1ce2",
+      "hash": "eb8549863a973554"
+    },
+    {
+      "name": "traffic_system.js",
+      "size": 43791,
+      "sha256": "d9cfc5c2194ce28786caeb7fa062155ef495238dbab4e30563f2e8351d73670a",
+      "hash": "ebbce3dcc8f81e64",
+      "md5": "0b260d7d865e0dd3"
+    },
+    {
+      "name": "veteran_crew.js",
+      "size": 28697,
+      "sha256": "e9a3b315ca854ee4bc1b7a865fe2f967e0c40db980bd4467c86825cc9357b6af",
+      "hash": "3f8ac628616bc462"
+    },
+    {
+      "name": "workerhousing.js",
+      "size": 37188,
+      "sha256": "4472689a6849075d869ce63b03a5fb1c6d2b2aa719535c7222110083b5a70699",
+      "hash": "5a7b41fe2ab41fda"
+    },
+    {
+      "name": "agentdock.js",
+      "size": 4982,
+      "sha256": "ed5017309e3f077ed4797d923409e4ae2ee5de91fd5a34c52ccc03742824eee3",
+      "hash": "6b9ed0b64b6fc187"
+    },
+    {
+      "name": "npc_system.js",
+      "size": 68957,
+      "sha256": "4f8f9a2fbddda1ae0537364c8a82addfcef8f5ebdafca8e29f376ff8acdb978d",
+      "hash": "ddc10f405e2f6c42"
+    },
+    {
+      "name": "priority_dispatch.js",
+      "size": 13047,
+      "sha256": "174682917a80d3af88741b0c8fdc45fa3f8e0d433820b1d27301c7506e3ee6b7",
+      "hash": "1b55483e40cdd59b"
+    },
+    {
+      "name": "stayawake.js",
+      "size": 9476,
+      "sha256": "b192b1aaceead7082db689f4a0e0417fff70544d569b1d38e954da3913919e8d",
+      "hash": "59e804d2ce14e400"
+    },
+    {
+      "name": "zoneunlock.js",
+      "size": 13771,
+      "sha256": "774a9146e66ed8cc11fb586e9a9b2849c1d343bb3c8a0f86e5b1002dd5e3e85a",
+      "hash": "b67cd29efc207c69"
+    }
+  ],
+  "ui_version": "2026.10.09.90",
+  "version": "1.13.0"
 }
