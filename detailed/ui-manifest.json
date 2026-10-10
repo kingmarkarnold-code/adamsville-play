@@ -32,9 +32,9 @@
     },
     {
       "name": "index.html",
-      "size": 661439,
-      "sha256": "736b80f86e79422d53a95b9d6289a22fc2c761ac3fdafa6e6f82c506b6255d78",
-      "hash": "63c3243ed0057f98"
+      "size": 662336,
+      "sha256": "03d9da5456dbbf1de3b023cd12c47e27e07a89b5f6635699b9db82cf196a2898",
+      "hash": "0f503a206c1c2b60"
     },
     {
       "name": "marriott.js",
@@ -205,6 +205,12 @@
       "hash": "82ac1b4ec67aa686"
     },
     {
+      "name": "dialogue_director_npc.js",
+      "size": 25884,
+      "sha256": "b6b83e3a7179664a45ced8c6e3d8466becacd4578a9cf61c4c4efec98523893d",
+      "hash": "d6916ca8fe0e34d7"
+    },
+    {
       "name": "hq_staff_system.js",
       "size": 26612,
       "sha256": "45b29898e8a4ad6f531e4febf141708cf399e9c10988749f5ef8b04e11dcd4cd",
@@ -217,6 +223,6 @@
       "hash": "5a7b41fe2ab41fda"
     }
   ],
-  "ui_version": "2026.10.09.72",
+  "ui_version": "2026.10.09.74",
   "version": "1.13.0"
 }
