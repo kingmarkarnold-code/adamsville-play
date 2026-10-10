@@ -68,8 +68,8 @@
     },
     {
       "name": "index.html",
-      "size": 681682,
-      "sha256": "d2e882c08b672add6b5ec17d501bea193480bd2b607066d547a42a83559be487",
+      "size": 686425,
+      "sha256": "1d6c48b06f6036d76f3befd1b689be6c9fbdaa6482bfe02b1c735db5f8cc5b0b",
       "hash": "9a7d9960e71e9431"
     },
     {
@@ -261,6 +261,6 @@
       "hash": "d9eabe05deb93a3e"
     }
   ],
-  "ui_version": "2026.10.09.93",
+  "ui_version": "2026.10.09.94",
   "version": "1.13.0"
 }
