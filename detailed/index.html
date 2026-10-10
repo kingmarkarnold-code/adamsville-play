@@ -175,6 +175,22 @@
   #gameplay .slot.empty { border-color:#333; color:#777; }
   #gameplay #gp-back { margin-top:12px; padding:10px 18px; font-size:15px; border-radius:10px; border:none;
     background:#ffd75e; color:#111; font-weight:bold; width:100%; }
+  /* v1.15: zone picker for New Game (Joshua 2026-10-10 demo). The zone list
+     MUST scroll — zones won't all fit on a phone screen. */
+  #zonepick { position:fixed; inset:0; z-index:50; display:none; align-items:center; justify-content:center;
+    background:rgba(0,0,0,.72); color:#fff; }
+  #zonepick.show { display:flex; }
+  #zonepick .card { background:#161b26; border-radius:14px; padding:20px 22px; max-width:430px; width:82%;
+    max-height:92vh; display:flex; flex-direction:column; }
+  #zonepick h3 { margin:0 0 12px 0; color:#ffd75e; }
+  #zonepick-list { overflow-y:auto; -webkit-overflow-scrolling:touch; max-height:60vh;
+    margin:0 -4px; padding:0 4px; }
+  #zonepick .zrow { display:block; width:100%; margin:8px 0; padding:12px 14px; font-size:16px; font-weight:bold;
+    border-radius:10px; border:2px solid #444; background:#222836; color:#fff; text-align:left; }
+  #zonepick .zrow:active { background:#2d3547; }
+  #zonepick .zrow .home { color:#ffd75e; font-size:13px; font-weight:normal; }
+  #zonepick #zonepick-cancel { margin-top:12px; padding:10px 18px; font-size:15px; border-radius:10px; border:none;
+    background:#ffd75e; color:#111; font-weight:bold; width:100%; }
   /* v1.12 save-and-exit dialog */
   #saveexit { position:fixed; inset:0; z-index:60; display:none; align-items:center; justify-content:center;
     background:rgba(0,0,0,.55); }
@@ -457,6 +473,15 @@
   <button class="row" id="gp-load">Load game</button>
   <div id="gp-slots"></div>
   <button id="gp-back">Back</button>
+</div></div>
+<!-- Zone picker for New Game (Joshua 2026-10-10, demo behavior):
+     the very first game ever starts at 535 Dollar Mill Rd (Adamsville);
+     every later New Game shows this scrollable list so the player can
+     pick which zone to start in. -->
+<div id="zonepick"><div class="card">
+  <h3>What zone?</h3>
+  <div id="zonepick-list"></div>
+  <button id="zonepick-cancel">Cancel</button>
 </div></div>
 <!-- Save-and-exit confirmation dialog. -->
 <div id="saveexit"><div class="card">
@@ -5738,7 +5763,17 @@ document.getElementById('gp-newgame').addEventListener('click', function(){
   try{ if (typeof MAPVER!=='undefined' && MAPVER.applyOnNewGame()) return; }catch(e){}
   // v1.13: staged UI/vehicles/music updates apply here too.
   try{ if (typeof ASSETVER!=='undefined' && ASSETVER.applyOnNewGame()) return; }catch(e){}
-  startNewGame();
+  // v1.15 zone picker (Joshua 2026-10-10, demo behavior): the VERY FIRST game
+  // ever always starts at 535 Dollar Mill Rd (Adamsville home base). Every
+  // later New Game shows a scrollable zone picker instead.
+  try{
+    if (!localStorage.getItem('sa_ever_started_v1')){
+      localStorage.setItem('sa_ever_started_v1','1');
+      startNewGame();  // defaults to the 535 spawn
+    } else {
+      showZonePicker();
+    }
+  }catch(e){ startNewGame(); }
 });
 /* Restart level: player back to the 535 spawn, on foot, camera reset.
    The car stays where it is (reset to the driveway only if sunk/dead). */
@@ -5888,21 +5923,33 @@ document.getElementById('se-cancel').addEventListener('click', function(){
   window.__pendingSaveSlot=0;
   document.getElementById('saveexit').classList.remove('show');
 });
-function startNewGame(){
+/* startNewGame(spawnX, spawnZ) — v1.15: optional spawn coordinates.
+   No args (or non-numbers) = the classic 535 Dollar Mill Rd spawn:
+   hero car rebuilt in the 535 driveway, player on foot beside it.
+   With coords (from the zone picker): player spawns there on foot and the
+   hero car is rebuilt next to the player instead of at 535. */
+function startNewGame(spawnX, spawnZ){
   try{
+    var customSpawn = (typeof spawnX==='number' && isFinite(spawnX) &&
+                       typeof spawnZ==='number' && isFinite(spawnZ));
+    var px = customSpawn ? spawnX : HOME.x-14;
+    var pz = customSpawn ? spawnZ : HOME.z+8;
     // 1. stop any driving state
     if (car){ car.driving=false; car.speed=0; }
-    // 2. rebuild the hero Safari fresh in the 535 driveway (wipes damage/dents/sink/smoke)
+    // 2. rebuild the hero Safari fresh (wipes damage/dents/sink/smoke).
+    //    At 535 it goes in the driveway; in another zone it parks by the player.
     var hero=cars[0];
     if (hero){
       if (hero.smoke) hero.smoke.forEach(function(s){ scene.remove(s); });
       if (hero.mesh) scene.remove(hero.mesh);
     }
-    var fresh=makeCar(heroHouse.drivewayPark.x, heroHouse.drivewayPark.z, Math.PI/2, 0x8b2e2e, true, 'safari');
+    var carX = customSpawn ? px+6 : heroHouse.drivewayPark.x;
+    var carZ = customSpawn ? pz+2 : heroHouse.drivewayPark.z;
+    var fresh=makeCar(carX, carZ, Math.PI/2, 0x8b2e2e, true, 'safari');
     cars.pop(); cars[0]=fresh;   // makeCar pushed; keep the hero at index 0
     car=fresh;
-    // 3. player back to 535, on foot, visible
-    player.x=HOME.x-14; player.z=HOME.z+8; player.yaw=Math.PI/2;
+    // 3. player to spawn point, on foot, visible
+    player.x=px; player.z=pz; player.yaw=Math.PI/2;
     player.speed=0; player.inside=false; player.swimming=false;
     player.mesh.visible=true;
     player.mesh.position.set(player.x, heightAt(player.x,player.z), player.z);
@@ -5921,6 +5968,50 @@ function startNewGame(){
     try{ Report.note('newgame',{x:Math.round(player.x),z:Math.round(player.z)}); Report.save(); }catch(e){}
   }catch(e){ try{ Report.noteError('newgame','startNewGame threw',String(e&&e.stack||e)); }catch(x){} }
 }
+/* ============ v1.15 ZONE PICKER (Joshua 2026-10-10, demo behavior) ============
+   Called from the New Game button when the player has started a game before.
+   Shows a scrollable popup listing every zone from ZONEUNLOCK.zones; the
+   player picks one and the new game spawns at that zone's center.
+   ALL zones are selectable for the demo (locked or not) — the chosen zone
+   is auto-unlocked so the zone-boundary enforcement won't push the player
+   back out. Adamsville is flagged as the Home Base. */
+function showZonePicker(){
+  try{
+    var list=document.getElementById('zonepick-list');
+    list.innerHTML='';
+    var zones=[];
+    try{ zones=(window.ZONEUNLOCK && ZONEUNLOCK.zones) || []; }catch(e){}
+    if (!zones.length){
+      // ZoneUnlock missing — fall back to the classic 535 spawn.
+      startNewGame();
+      return;
+    }
+    zones.forEach(function(z){
+      var b=document.createElement('button');
+      b.className='zrow';
+      var isHome=!!z.start;
+      b.innerHTML=escapeHtml(z.name)+(isHome?' <span class="home">&#9733; Home Base</span>':'');
+      b.addEventListener('click', function(){
+        document.getElementById('zonepick').classList.remove('show');
+        try{ if (window.ZONEUNLOCK) ZONEUNLOCK.unlockZone(z.id); }catch(e){}
+        var cx=(z.xMin+z.xMax)/2, cz=(z.zMin+z.zMax)/2;
+        try{ Report.note('newgame-zone',{zone:z.id}); }catch(e){}
+        startNewGame(cx, cz);
+      });
+      list.appendChild(b);
+    });
+    list.scrollTop=0;
+    document.getElementById('zonepick').classList.add('show');
+  }catch(e){ startNewGame(); }
+}
+/* Small HTML escaper for zone names rendered into the picker list. */
+function escapeHtml(s){
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+                  .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+document.getElementById('zonepick-cancel').addEventListener('click', function(){
+  document.getElementById('zonepick').classList.remove('show');
+});
 var mmCanvas=document.getElementById('minimap');
 var fmCanvas=document.getElementById('fullmap-canvas');  // before gesture handlers attach
 mmCanvas.addEventListener('click', function(){
