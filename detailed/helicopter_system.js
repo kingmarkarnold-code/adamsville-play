@@ -746,7 +746,9 @@ function updateHeli(dt){
   if(!H.ready) return;
   H.t+=dt;
   var gm=gameMin();
-  H.units.forEach(function(u){ updateUnit(u, dt, gm); });
+  // v1.15 DISTANCE CULLING (Joshua 2026-10-10): skip heli AI beyond cull distance
+  var _zu=window.ZONEUNLOCK;
+  H.units.forEach(function(u){ if(_zu && u && _zu.shouldCull(u.x,u.z)) return; updateUnit(u, dt, gm); });
   /* throttle panel refresh to ~2x/sec while open */
   H._panelT=(H._panelT||0)+dt;
   if(H.panelOpen && H._panelT>0.5){ H._panelT=0; refreshPanel(); }
