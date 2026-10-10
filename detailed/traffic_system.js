@@ -215,7 +215,7 @@ function spawnOn(list,n,v0,v1){
       state:'drive', owned:TR.rng()<0.35,          // 35% are "owned" NPC cars
       pullT:20+TR.rng()*50, parkT:0, stuckT:0,
       fuel:65+TR.rng()*35, gasSt:null, gasSpot:null, gasLeave:null, refuelT:0,  // v1.12 fuel
-      blockedByPlayer:false, wheelA:TR.rng()*6.28, slot:-1,
+      blockedByPlayer:false, blockedByBus:false, wheelA:TR.rng()*6.28, slot:-1,
       color:PAINTS[(TR.rng()*PAINTS.length)|0]};
     newLane(c,R); c.off=c.laneOffBase;
     TR.cars.push(c);
@@ -309,6 +309,61 @@ function logStuck(c){
        spot (Joshua's live road audit); yielding to the player doesn't count.
      - Lane easing: lateral offset glides toward laneTarget at <=3 u/s
        (pull-over / merge-back motion). */
+/* ============================================================================
+   v1.16 — JOSHUA'S MARTA BUS TRAFFIC RULE (2026-10-09):
+   When a MARTA bus stops to pick up passengers (dwelling at a stop), ALL
+   traffic vehicles BEHIND the bus must STOP and WAIT. They cannot go around
+   it and cannot drive through it — they wait until the bus finishes boarding
+   and pulls away, then proceed. Real bus behavior.
+
+   How it works: the bus system publishes window.MARTA_BUS (see
+   marta_bus_system.js) with MB.ready and MB.buses[]; each bus carries
+   state ('run'|'dwell'), x, z, stopIdx. Once per frame updateTraffic()
+   rebuilds _dwellBuses (usually 0-3 buses), and stepCar() checks whether a
+   dwelling bus sits ahead of the car in its lane. Cars have NO lane-change
+   / overtake logic anywhere in this module, so a forced stop behind the bus
+   inherently means "no going around" — the car simply waits.
+
+   The waiting car is also excluded from the stuck-spot audit (same as
+   blockedByPlayer): waiting behind a bus is correct behavior, not a bad
+   road spot.
+   ============================================================================ */
+var _dwellBuses=[];   // per-frame cache: MARTA buses currently dwelling
+/* refreshDwellBuses() — rebuild the dwelling-bus cache once per frame.
+   Called from updateTraffic() before stepping cars so stepCar() does a
+   cheap list scan instead of touching window.MARTA_BUS per car. Guarded:
+   if the bus module isn't loaded/ready yet, the cache is just empty and
+   traffic behaves as before. */
+function refreshDwellBuses(){
+  _dwellBuses.length=0;
+  var MB=null;
+  try{ MB=window.MARTA_BUS; }catch(e){}
+  if (!MB||!MB.ready||!MB.buses) return;
+  for (var i=0;i<MB.buses.length;i++){
+    var b=MB.buses[i];
+    if (b&&b.state==='dwell'&&b.stopIdx>=0) _dwellBuses.push(b);
+  }
+}
+/* busDwellsAhead(c) — true when a dwelling MARTA bus is in front of car c
+   in c's lane: within 28u, ahead in the heading cone (dot>0.8), and within
+   7u laterally (same lane/road, not a parallel street). A bus overlapping
+   the car (<4u) is skipped — that's not "behind the bus". */
+function busDwellsAhead(c){
+  if (!_dwellBuses.length) return false;
+  var sy=Math.sin(c.heading), cy=Math.cos(c.heading);
+  for (var i=0;i<_dwellBuses.length;i++){
+    var b=_dwellBuses[i];
+    var dx=b.x-c.x, dz=b.z-c.z;
+    var dist=Math.hypot(dx,dz);
+    if (dist>28||dist<4) continue;
+    var dot=(dx*sy+dz*cy)/dist;
+    if (dot<0.8) continue;
+    var lat=Math.abs(dx*cy-dz*sy);
+    if (lat>7) continue;
+    return true;
+  }
+  return false;
+}
 var _targets=[[0,0],[0,0]];   // scratch: player + driven van positions
 function stepCar(c,dt,px,pz){
   var st=c.state;
@@ -393,6 +448,7 @@ function stepCar(c,dt,px,pz){
   }
   // never drive through Joshua or his van: stop when either is ahead
   c.blockedByPlayer=false;
+  c.blockedByBus=false;
   _targets[0][0]=px; _targets[0][1]=pz;
   var nT=1;
   try{ if (typeof car!=='undefined'&&car){ _targets[1][0]=car.x; _targets[1][1]=car.z; nT=2; } }catch(e){}
@@ -404,13 +460,21 @@ function stepCar(c,dt,px,pz){
       if (dot>0.75){ c.desired=0; c.blockedByPlayer=true; break; }
     }
   }
+  /* v1.16 — JOSHUA'S MARTA BUS RULE: a dwelling bus ahead in our lane means
+     stop and wait. No going around (this module has no lane-change/overtake
+     logic, so a forced stop IS the wait), no driving through. The bus
+     resumes on its own when boarding finishes (dwellT expires) and the
+     cache clears next frame, releasing the queue. */
+  if (!c.blockedByPlayer){
+    try{ if (busDwellsAhead(c)){ c.desired=0; c.blockedByBus=true; } }catch(e){}
+  }
   // integrate speed toward desired
   var dv=c.desired-c.speed, mx=dv>0?ACCEL_US*dt:BRAKE_US*dt;
   c.speed+=Math.max(-mx,Math.min(mx,dv));
   if (c.speed<0) c.speed=0;
   // stuck audit (only when genuinely trying, not when yielding)
   var trying=(st==='drive'||st==='pulling'||st==='resuming')&&c.desired>1;
-  if (trying&&c.speed<0.35&&!c.blockedByPlayer){
+  if (trying&&c.speed<0.35&&!c.blockedByPlayer&&!c.blockedByBus){
     c.stuckT+=dt;
     if (c.stuckT>STUCK_AFTER_S){ logStuck(c); c.stuckT=-STUCK_COOLDOWN; }
   } else if (c.stuckT>0) c.stuckT=0;
@@ -732,6 +796,7 @@ function updateTraffic(dt,px,pz){
     }
     if (px===undefined){ try{ px=player.x; pz=player.z; }catch(e){ px=0;pz=0; } }
     var i;
+    refreshDwellBuses();   // v1.16: rebuild the dwelling-MARTA-bus cache once per frame
     for (i=0;i<TR.cars.length;i++) stepCar(TR.cars[i],dt,px,pz);
     TR.assignT-=dt;
     if (TR.assignT<=0){ assignSlots(px,pz); TR.assignT=0.3; }
