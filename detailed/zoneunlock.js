@@ -70,10 +70,15 @@ var ZONES=[
   {id:'adamsville',name:'Adamsville',   xMin:2147, xMax:5398, zMin:-200, zMax:4218, start:true},
   {id:'downtown',  name:'Downtown',     xMin:5398, xMax:8200, zMin:-200, zMax:2202},
   {id:'eastatlanta',name:'East Atlanta',xMin:5398, xMax:8200, zMin:2202, zMax:4218},
-  // Row 2 (south of Adamsville)
-  {id:'westend',   name:'West End',      xMin:-200, xMax:2147, zMin:4218, zMax:12200},
-  {id:'cascade',   name:'Cascade',       xMin:2147, xMax:5398, zMin:4218, zMax:12200},
-  {id:'southatl',  name:'South Atlanta', xMin:5398, xMax:8200, zMin:4218, zMax:12200},
+  // Row 2 (south of Adamsville) — split 70/30 horizontally 2026-10-10:
+  // top 70% (Cascade side) keeps the name, bottom 30% gets a "South"
+  // suffix placeholder name Joshua can rename later.
+  {id:'westend',   name:'West End',      xMin:-200, xMax:2147, zMin:4218, zMax:9805},
+  {id:'westends',  name:'West End South',xMin:-200, xMax:2147, zMin:9805, zMax:12200},
+  {id:'cascade',   name:'Cascade',       xMin:2147, xMax:5398, zMin:4218, zMax:9805},
+  {id:'cascades',  name:'Cascade South', xMin:2147, xMax:5398, zMin:9805, zMax:12200},
+  {id:'southatl',  name:'South Atlanta', xMin:5398, xMax:8200, zMin:4218, zMax:9805},
+  {id:'southatls', name:'South Atlanta South', xMin:5398, xMax:8200, zMin:9805, zMax:12200},
 ];
 
 /* ---------------- persistence ---------------- */
