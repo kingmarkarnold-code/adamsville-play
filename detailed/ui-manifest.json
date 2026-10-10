@@ -8,8 +8,8 @@
     },
     {
       "name": "codeenforce_system.js",
-      "size": 61349,
-      "sha256": "00cc53437800fba54cbc3d67fd24b2d98b854c1b6c07dc77adb6f51ffded0f7f",
+      "size": 61902,
+      "sha256": "092357f93ac225018144ee2954962c5000468c8935004b752df8f54eb2791f7c",
       "hash": "1a35f920efc6910e"
     },
     {
@@ -20,8 +20,8 @@
     },
     {
       "name": "index.html",
-      "size": 631512,
-      "sha256": "21bb2d42759ba927343766a755fde98dee4ecd36c03b60a6baef600006aff111",
+      "size": 641092,
+      "sha256": "1dd6ef388043921914ffbd91fba4cfd885f7f05720f557f640b6848c3ca9a69c",
       "hash": "6a49a7b68022699a"
     },
     {
@@ -86,8 +86,8 @@
     },
     {
       "name": "roadcrew_system.js",
-      "size": 50178,
-      "sha256": "3fd282337a65bf533a89ee4b7f00a04ceeebaa05a447b678c371c0e83be93c6b",
+      "size": 50474,
+      "sha256": "f2634cac27efe16331d0fd418ceceb83c2a7d5c59dd0c2fd4a3a83c738595751",
       "hash": "92c27ff890a49f09"
     },
     {
@@ -122,14 +122,14 @@
     },
     {
       "name": "stuck.js",
-      "size": 17910,
-      "sha256": "eecd5e85bac601386f33071e69e6ee8e7596b9a0ac387a448065340712715115",
+      "size": 17469,
+      "sha256": "c3aadaf3c823a8be5dd23ebee175d0b97d1aa665ebc1d28067cc6149f5e3dc8c",
       "hash": "da2e10e90d327ce3"
     },
     {
       "name": "stuck_diag.js",
-      "size": 19283,
-      "sha256": "2bd601086631dc82e72a7a9a7d56bbbdfcb9b5d298ba600cc3d1aa837927b9d8",
+      "size": 30066,
+      "sha256": "082134f070b004a7c7b46d55692a1247d5150d57dc4392da1af283c3fb913c08",
       "hash": "343a46b19419addf"
     },
     {
@@ -145,6 +145,6 @@
       "hash": "ae4987b12645235a"
     }
   ],
-  "ui_version": "2026.10.09.53",
+  "ui_version": "2026.10.09.54",
   "version": "1.13.0"
 }
