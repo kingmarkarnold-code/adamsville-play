@@ -1312,7 +1312,7 @@ function initSurveyFleet(){
   try{
     if (typeof animate==='function' && !animate.__surveyfleetWrap){
       var orig=animate;
-      var wrapped=function(){ orig(); updateSurveyFleet(0.016); };
+      var wrapped=function(){ orig(); if(!window.__npcPaused) updateSurveyFleet(0.016); };
       wrapped.__surveyfleetWrap=true;
       animate=wrapped;
     }
