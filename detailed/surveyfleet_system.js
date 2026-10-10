@@ -91,7 +91,7 @@ window.__surveyfleetV1 = true;
 
 /* ---------------- config ---------------- */
 var LS_KEY      = 'sa_surveyfleet_v1';  // localStorage persistence key
-var N_CARS      = 5;        // Joshua's directive: five self-driving cars
+var N_CARS      = 25;       // Joshua's directive 2026-10-09: 5x survey cars (5 -> 25)
 var CAR_SPEED   = 15;       // survey cruise speed (u/s)
 var COVER_FRAC  = 0.70;     // fraction of segment points = explored
 var SAVE_EVERY  = 20;       // seconds between periodic persistence writes
