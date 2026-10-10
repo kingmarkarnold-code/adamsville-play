@@ -1,4 +1,51 @@
 /* ============================================================================
+   FILE: codeenforce_system.js — "Surviving Adamsville" code enforcement
+   ----------------------------------------------------------------------------
+   PURPOSE: Joshua's in-world building inspectors + construction crews.
+   Officers patrol 24/7; when a building looks off (on/near a road, sideways
+   to the street) they radio dispatch, and a construction crew rolls out to
+   MOVE the building, ROTATE it 90°, or ADD sidewalks/driveways/doors+
+   windows. Crews are ALWAYS on duty, day and night.
+   KEY SYSTEMS:
+     - Boot defect scan: every placed building is checked — encroach
+       (footprint inside road clearance: distance-to-road-edge < half-extent
+       + 2u) and sideways (commercial long axis perpendicular to the street:
+       |tangent·longaxis| < 0.35). Cap 40 live defects. Audit-pending items
+       from buildings.json sit as 'monitoring' (no crew sent).
+     - Defect states: undiscovered → inspecting → found → dispatched →
+       working → fixed | deferred (deferred = uncertain — pending audit
+       covers the spot, or no clear spot: lands on Joshua's review list).
+     - Patrol units (4 SUVs): drive non-highway roads 24/7, discover defects
+       within 60u, shared stuck.js recovery; 24/7 watchdog re-adds a mesh
+       that somehow left the scene; "sector clear" heartbeat every 300s.
+     - Construction jobs (max 2 concurrent, rest QUEUE): crew truck + 4
+       hi-vis workers (lime vest + WHITE hard hat — distinct from road crew's
+       orange/yellow), scaffolding, UNDER RENOVATION sign, barriers. The fix
+       applies at 35% of the 60s work window; encroach moves SLIDE over ~3s
+       (smoothstep easing, animated via updateSlides); then finishing touches
+       (sidewalk + driveway for houses + door/windows on the street side).
+     - Persistence: corrections (moves/rotates) saved to localStorage and
+       RE-APPLIED on boot (instanced transforms + colliders + PLACED_HOUSES
+       updated); extras (sidewalks/driveways/doors) are keyed to avoid
+       duplicates. In-progress states reset — crews re-run.
+     - NEVER deletes a building — only move/rotate/fix (Joshua's standing
+       rule: deletion is not an option; when in doubt, flag for review).
+     - Shared dispatch office next to the road-crew office
+       (window.__dispatchOffice, offset +46,+8 so they don't overlap); the 🏢
+       HUD panel lists building defects + road-crew road defects (when loaded)
+       + one combined event log.
+   INTEGRATION NOTE: requires ONE additive hook in index.html's osmBuildings
+   IIFE — window.__bldgMeshes={bodies, roofs, kept} published right before
+   scene.add(bodies)/scene.add(roofs), so corrections can rewrite the
+   instanced transforms. Without it the module logs an error and stays off.
+   JOSHUA SPECS ENCODED:
+     - 24/7 operation; simple sim logic, no pathfinding.
+     - Officers and crews look DIFFERENT from regular characters (navy
+       inspector uniform/gold badge/navy cap/clipboard; white SUV with blue
+       stripe + CODE ENFORCEMENT decal) so the player instantly knows them.
+     - Stuck-loop recovery: same shared stuck.js protocol as the road crew.
+   ============================================================================ */
+/* ============================================================================
    SURVIVING ADAMSVILLE — CODE ENFORCEMENT + CONSTRUCTION CREW (v1.0)
    ----------------------------------------------------------------------------
    Joshua's vision: code enforcement officers patrol the map 24/7. When a
@@ -105,6 +152,9 @@ function groundY(x,z){ try{ var y=heightAt(x,z); return isFinite(y)?y:0; }catch(
 function toast(msg,ms){ try{ if(typeof showToast==='function') showToast(msg,ms||2600); }catch(e){} }
 function nowT(){ var d=new Date(); function p(n){return (n<10?'0':'')+n;} return p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds()); }
 
+/* clog(msg) — timestamped code-enforcement event log (cap 60 entries):
+   persists to localStorage, refreshes the HUD panel + spec board, and
+   reports to the Report panel. Every dispatch event goes here. */
 function clog(msg){
   CE.log.push({t:nowT(), msg:msg});
   if (CE.log.length>60) CE.log.splice(0, CE.log.length-60);
@@ -306,6 +356,10 @@ function makeScaffold(w,d,h){
 }
 
 /* ---------------- building registry access ---------------- */
+/* bldgReg() — the shared building-registry handle published by the
+   index.html hook: {bodies, roofs (InstancedMeshes), kept (placed building
+   records [x,z,w,d,h,type])}. Corrections rewrite these instanced
+   transforms. Returns null when the hook is missing (module stays off). */
 function bldgReg(){
   try{
     if (window.__bldgMeshes && window.__bldgMeshes.kept && window.__bldgMeshes.kept.length)
@@ -313,6 +367,10 @@ function bldgReg(){
   }catch(e){}
   return null;
 }
+/* nearestRoad(x,z,highwayOnly) — brute-force nearest road lookup over every
+   roadDrawData point (same pattern as roadcrew_system.js, kept local so the
+   module stays standalone). Returns {seg, idx, dist} or null. O(road points)
+   — used at spawn/recovery/defect-scan time, never per frame. */
 function nearestRoad(x,z,highwayOnly){
   var best=null, bestD=1e18, bestI=0;
   try{
@@ -329,6 +387,8 @@ function nearestRoad(x,z,highwayOnly){
   }catch(e){}
   return best?{seg:best, idx:bestI, dist:Math.sqrt(bestD)}:null;
 }
+/* roadTangent(nr) — unit tangent of the road at the nearestRoad result's
+   point index. Used for the "sideways" test and to aim doors/sidewalks. */
 function roadTangent(nr){
   try{
     var pts=nr.seg.pts, i=clamp(nr.idx,0,pts.length-2);
@@ -336,7 +396,9 @@ function roadTangent(nr){
     return {x:dx/L, z:dz/L};
   }catch(e){ return {x:1,z:0}; }
 }
-/* direction from building to nearest road (unit) */
+/* toRoadDir(x,z) — unit direction from (x,z) toward the nearest NON-highway
+   road, plus distance and the road's tangent. Patrols and construction use
+   it to face buildings at the street. Returns null when no road is found. */
 function toRoadDir(x,z){
   var nr=nearestRoad(x,z,false);
   if (!nr) return null;
@@ -346,11 +408,18 @@ function toRoadDir(x,z){
     return {x:dx/L, z:dz/L, dist:L, tangent:roadTangent(nr)};
   }catch(e){ return null; }
 }
+/* clearForBldg(x,z,w,d) — true when a w×d footprint at (x,z) clears the road
+   edge with room to spare (half the footprint's long side + 4u). */
 function clearForBldg(x,z,w,d){
   var need=Math.max(w,d)/2+4, dd=1e9;
   try{ dd=distToRoadEdge(x,z); }catch(e){ return false; }
   return dd>=need;
 }
+/* spiralSpot(x,z,w,d) — finds the nearest clear spot for a w×d footprint:
+   returns the original spot when it already clears, else a spiral search
+   (radius 6→48u, 12 angles per ring). Returns null when nothing clear is
+   found — the defect is then flagged for Joshua's review instead of being
+   moved anywhere bad. */
 function spiralSpot(x,z,w,d){
   if (clearForBldg(x,z,w,d)) return [x,z];
   for (var r=6;r<=48;r+=6){
@@ -363,6 +432,13 @@ function spiralSpot(x,z,w,d){
 }
 
 /* ---------------- defect scan (runs at boot) ---------------- */
+/* scanBuildings() — checks every placed building (cap 40 live defects) for:
+     ENCROACH: footprint inside road clearance (distToRoadEdge < half the
+       long side + 2u) → the crew moves it to the spiralSpot clear spot.
+     SIDEWAYS: commercial/industrial (type 1/3) whose long axis is
+       perpendicular to the street (|tangent·longaxis| < 0.35, within 80u of
+       the road) → the crew rotates it 90°.
+   Buildings are found by INDEX (bi) into the shared kept[] array. */
 function scanBuildings(){
   var reg=bldgReg(); if(!reg) return;
   var kept=reg.kept, found=0;
@@ -406,6 +482,8 @@ function scanBuildings(){
   if (found) clog('Code enforcement scan: '+found+' building defect(s) found. Officers dispatched on patrol.');
   else clog('Code enforcement scan: no structural building defects — patrols out, monitoring audit items.');
 }
+/* streetNear(x,z) — nearest non-highway road's name for defect labeling;
+   'nearby street' when unknown (never blank in the log/panel). */
 function streetNear(x,z){
   try{
     var nr=nearestRoad(x,z,false);
@@ -417,6 +495,12 @@ function streetNear(x,z){
 /* ---------------- corrections: apply + persist ---------------- */
 CE.corrections={};
 function correctionKey(b){ return b[0].toFixed(1)+','+b[1].toFixed(1); }
+/* ---------------- corrections: apply + persist ---------------- */
+/* setInstanceTransform(i, x, z, w, d, h, rot90) — rewrites the instanced
+   body+roof matrices for kept[i]: re-poses the unit-box body (w×bh×d at
+   terrain height) and re-proportions the roof cap. rot90 swaps w/d first
+   (the rotation fix is a 90° footprint swap on the instanced box — no mesh
+   rotation needed for axis-aligned boxes). */
 function setInstanceTransform(i, x, z, w, d, h, rot90){
   var reg=bldgReg(); if(!reg) return false;
   var m4=new THREE.Matrix4(), qt=new THREE.Quaternion(), sv=new THREE.Vector3(), pv=new THREE.Vector3();
@@ -431,6 +515,10 @@ function setInstanceTransform(i, x, z, w, d, h, rot90){
   reg.roofs.instanceMatrix.needsUpdate=true;
   return true;
 }
+/* moveCollider(ox,oz,nx,nz,r) — moves the building's collider entry in the
+   game's 40u bldgGrid from the old cell to the new one (matched within
+   0.05u of the old position), so the player collides with the building
+   WHERE IT IS NOW, not where it was. Skipped if a collider is missing. */
 function moveCollider(ox,oz,nx,nz,r){
   try{
     if (typeof bldgGrid==='undefined') return;
@@ -444,6 +532,9 @@ function moveCollider(ox,oz,nx,nz,r){
     (bldgGrid[nk]=bldgGrid[nk]||[]).push({x:nx,z:nz,r:r});
   }catch(e){}
 }
+/* updatePlacedHouse(ox,oz,nx,nz) — moves the PLACED_HOUSES record when a
+   ranch house is corrected, so the house registry and spawn data agree with
+   the rendered position. */
 function updatePlacedHouse(ox,oz,nx,nz){
   try{
     if (typeof PLACED_HOUSES==='undefined') return;
@@ -453,6 +544,16 @@ function updatePlacedHouse(ox,oz,nx,nz){
     }
   }catch(e){}
 }
+/* applyCorrection(def, animate) — applies a defect's fix:
+     encroach + animate=true: queues a CE.slides entry — the building SLIDES
+       to the clear spot over ~3s with smoothstep easing (updateSlides), so
+       Joshua can watch it move instead of it popping.
+     encroach + animate=false / sideways: applies instantly (used on boot
+       re-apply and for rotations, which swap the w/d footprint in kept[]).
+   Every application updates: kept[] record, instanced transforms,
+   bldgGrid collider, PLACED_HOUSES, and CE.corrections (keyed by original
+   position for boot re-apply). Returns false when it can't be done in
+   place → the defect is deferred to Joshua's review. */
 function applyCorrection(def, animate){
   var reg=bldgReg(); if(!reg) return false;
   var kept=reg.kept, i=def.bi;
@@ -484,6 +585,10 @@ function applyCorrection(def, animate){
   }
   return false;
 }
+/* updateSlides(dt) — ticks all in-progress building slides: smoothstep
+   (k²(3-2k)) interpolation from (fx,fz) to (tx,tz) over 3s, rewriting the
+   instanced transform each frame; on completion the kept[] record,
+   collider, and PLACED_HOUSES are committed and the correction is saved. */
 function updateSlides(dt){
   if (!CE.slides || !CE.slides.length) return;
   for (var s=CE.slides.length-1;s>=0;s--){
@@ -502,7 +607,10 @@ function updateSlides(dt){
     }
   }
 }
-/* re-apply saved corrections on boot (visual persistence) */
+/* reapplyCorrections() — on boot, re-applies every saved correction:
+   matches kept[] by original position (±0.06u — kept[] may have shifted
+   slightly between builds), applies rot swaps, rewrites transforms and
+   colliders. This is visual persistence — the fixed map survives reloads. */
 function reapplyCorrections(){
   var reg=bldgReg(); if(!reg || !CE.corrections) return;
   var kept=reg.kept, n=0;
@@ -527,11 +635,19 @@ function reapplyCorrections(){
 }
 
 /* ---------------- add-on builders (sidewalk / driveway / door+windows) ---- */
+/* These run as "finishing touches" after a correction: every extra is keyed
+   (kind + rounded position) and placed ONCE per session lifetime —
+   hasExtra/markExtra prevents duplicates across jobs and reloads. */
+// extraKey/hasExtra/markExtra — dedupe keys for placed extras ('walk',
+// 'drive', 'door' at rounded x,z); marking persists to localStorage.
 function extraKey(kind,x,z){ return kind+':'+x.toFixed(0)+','+z.toFixed(0); }
 function hasExtra(kind,x,z){
   return CE.extras.indexOf(extraKey(kind,x,z))>=0;
 }
 function markExtra(kind,x,z){ CE.extras.push(extraKey(kind,x,z)); saveLS(); }
+/* addSidewalk(x,z,w,dir) — concrete strip (w+6 × 2.2u) on the road-facing
+   side of the building (offset half-width + 3.4u toward the road), rotated
+   to run along the building's street face. */
 function addSidewalk(x,z,w,dir){
   if (hasExtra('walk',x,z)) return;
   var g=new THREE.Group();
@@ -541,6 +657,9 @@ function addSidewalk(x,z,w,dir){
   g.rotation.y=Math.atan2(px,pz);
   scene.add(g); markExtra('walk',x,z);
 }
+/* addDriveway(x,z,w,dir) — asphalt strip (3.4 × 10u) from the street to the
+   house (houses only, type 0), offset half-width + 6u toward the road.
+   Joshua's standing QA rule: the entrance must be reachable from the road. */
 function addDriveway(x,z,w,dir){
   if (hasExtra('drive',x,z)) return;
   var dx=dir?dir.x:0, dz=dir?dir.z:1;
@@ -550,6 +669,9 @@ function addDriveway(x,z,w,dir){
   g.rotation.y=Math.atan2(dx,dz);
   scene.add(g); markExtra('drive',x,z);
 }
+/* addDoorWindows(x,z,w,h,dir) — street-facing door (1.4 × 2.6u, centered)
+   + two windows on the building's street face, rotated to face the road.
+   This is the "storefronts face the street" fix from the audit. */
 function addDoorWindows(x,z,w,h,dir){
   if (hasExtra('door',x,z)) return;
   var dx=dir?dir.x:0, dz=dir?dir.z:1;
@@ -563,8 +685,11 @@ function addDoorWindows(x,z,w,h,dir){
   g.rotation.y=Math.atan2(dx,dz);
   scene.add(g); markExtra('door',x,z);
 }
+/* crewFinishingTouches(def) — after a correction, the crew makes the site
+   proper: sidewalk (all types), driveway (houses only, type 0), and
+   door+windows on the street-facing side. All aimed via toRoadDir so the
+   extras face the road. */
 function crewFinishingTouches(def){
-  /* after a move/rotate, the crew makes the site proper */
   try{
     var reg=bldgReg(); if(!reg) return;
     var b=reg.kept[def.bi]; if(!b) return;
@@ -576,6 +701,10 @@ function crewFinishingTouches(def){
 }
 
 /* ---------------- patrol units (24/7) ---------------- */
+/* spawnPatrol(unitNo, dx, dz) — one code-enforcement SUV on the nearest
+   non-highway road to (dx,dz), with an inspector figure riding in the
+   passenger seat (+0.55,+0.6). Patrols: home-base/Dollar Mill, downtown
+   commercial, Mableton/west, Riverdale/south. */
 function spawnPatrol(unitNo, dx, dz){
   var nr=nearestRoad(dx,dz,false);
   if (!nr) return null;
@@ -592,6 +721,9 @@ function spawnPatrol(unitNo, dx, dz){
   CE.patrols.push(u);
   return u;
 }
+/* patrolTarget(u) — the nearest STRUCTURAL, still-undiscovered defect.
+   Officers discover by proximity (60u); they don't pathfind to defects —
+   simple sim logic, Joshua's rule. */
 function patrolTarget(u){
   var best=null, bd=1e18;
   DEFECTS.forEach(function(d){
@@ -602,6 +734,10 @@ function patrolTarget(u){
   return best;
 }
 /* ---------------- stuck-loop recovery (shared stuck.js module) ---------------- */
+/* stuckRecoverCE(u) — wraps recoverStuckUnit() for code enforcement:
+   'Officer N' label, dispatch-log logging, bad-segment blacklist in
+   CE.badSegs, and reposition onto the nearest road. Same shared protocol as
+   the road crew (report filed, police-escort recovery). */
 function stuckRecoverCE(u){
   if (typeof recoverStuckUnit!=='function') return;
   recoverStuckUnit(u, {
@@ -620,6 +756,18 @@ function stuckRecoverCE(u){
     }
   });
 }
+/* updatePatrol(u, dt) — per-frame officer logic:
+   1. 24/7 watchdog: re-adds the mesh to the scene if it somehow left it.
+   2. If paused to inspect: flash the light bar, count down INSPECT_T; then
+      mark 'found' and, after DISPATCH_T (6s), either DEFER (pending audit
+      covers the spot, or no clear spot exists — flagged for Joshua's
+      review) or mark 'dispatched' and roll the construction crew.
+   3. Stuck-loop sampling (shared StuckDetector; skipped while legitimately
+      paused).
+   4. Drive the road polyline at 12 u/s, bouncing off the ends.
+   5. Discovery: within 60u of an undiscovered structural defect → stop and
+      inspect. Nothing to find: "sector clear" heartbeat every 300s keeps
+      the 24/7 beat honest in the log. */
 function updatePatrol(u, dt){
   var m=u.mesh;
   /* 24/7 watchdog: if the mesh somehow left the scene, put the unit back */
@@ -691,7 +839,10 @@ function updatePatrol(u, dt){
     if (u.clearT>300){ u.clearT=0; clog('Officer '+u.no+': sector clear — continuing patrol.'); }
   }
 }
-/* a pending audit item near the defect => uncertain => defer to Joshua */
+/* auditCovers(d) — true when a MONITORING (non-structural) audit item sits
+   within 120u of the defect. That means dispatch data is uncertain here —
+   the crew stands down and the defect is deferred to Joshua's review rather
+   than guessing. */
 function auditCovers(d){
   for (var i=0;i<DEFECTS.length;i++){
     var a=DEFECTS[i];
@@ -703,6 +854,11 @@ function auditCovers(d){
 }
 
 /* ---------------- dispatch office (shared with road crew) ---------------- */
+/* buildDispatch() — the code-enforcement dispatch office (hall + spec board
+   + inspector figure + floating label). Placed at window.__dispatchOffice +
+   (46, 8) when the road-crew office already claimed the area, so the two
+   offices sit side by side instead of overlapping; sets __dispatchOffice if
+   it doesn't exist yet (ordering is safe either way). */
 function buildDispatch(){
   var bx=2160, bz=3760;
   if (typeof window.__dispatchOffice!=='undefined' && window.__dispatchOffice){
@@ -750,6 +906,12 @@ function refreshBoard(){
 }
 
 /* ---------------- construction jobs ---------------- */
+/* dispatchConstruction(d) — rolls the crew: yellow work truck parked 16u to
+   the side, 4 hi-vis workers (lime vest + white hard hat), scaffolding
+   around the building's footprint, UNDER RENOVATION sign, and 6 barriers in
+   a ring. When MAX_JOBS (2) are already active, the defect QUEUES instead
+   (24/7 rotation — the queue drains as jobs finish). defect state →
+   'working'. */
 function dispatchConstruction(d){
   if (CE.jobs.length>=MAX_JOBS){ CE.queue.push(d); d.state='dispatched';
     clog(d.id+' queued — crews are on other sites (24/7 rotation).'); return; }
@@ -797,6 +959,9 @@ function dispatchConstruction(d){
   try{ Report.setSys('codeenforce', sysReport()); }catch(e){}
   refreshBoard(); refreshPanel();
 }
+/* finishJob(job) — end of the 60s work window: finishing touches
+   (sidewalk/driveway/door+windows), remove the whole work-zone group, mark
+   the defect 'fixed', persist, then pull the next queued job (24/7). */
 function finishJob(job){
   var d=job.defect;
   crewFinishingTouches(d);
@@ -813,6 +978,11 @@ function finishJob(job){
     if (nxt.state==='dispatched') dispatchConstruction(nxt);
   }
 }
+/* updateJobs(dt) — per-frame job ticks: worker repair animation (bob + arm
+   swing), truck light-bar flash. At 35% of WORK_T the fix APPLIES (encroach
+   moves slide ~3s animated; sideways rotates instantly; a failed apply
+   defers the defect to Joshua's review). At WORK_T the job finishes and is
+   removed. */
 function updateJobs(dt){
   for (var i=CE.jobs.length-1;i>=0;i--){
     var j=CE.jobs[i]; j.t+=dt;
@@ -922,6 +1092,9 @@ function togglePanel(force){
 window.toggleCodeEnforceLog=togglePanel;
 
 /* ---------------- main loop ---------------- */
+/* updateCodeEnforce(dt) — frame tick: ticks all officer patrols, ticks all
+   construction jobs, ticks building slides, reports to the Report panel
+   every 10s. dt clamped to 50ms. Guarded — never breaks the frame. */
 function updateCodeEnforce(dt){
   if (!CE.ready) return;
   try{
@@ -937,6 +1110,14 @@ function updateCodeEnforce(dt){
 }
 
 /* ---------------- init ---------------- */
+/* initCodeEnforce() — load saved state, re-apply saved corrections (visual
+   persistence), build the dispatch office + HUD, run the boot defect scan,
+   spawn 4 patrol SUVs, restore saved extras. Stays OFF (with a Report
+   error) when the __bldgMeshes hook is missing — corrections are impossible
+   without the shared registry. Wraps the global animate() so
+   updateCodeEnforce runs every frame; boot waits for world deps
+   (roadDrawData, heightAt, onRoad, distToRoadEdge, __bldgMeshes) and gives
+   up after 120s without breaking the game. */
 function initCodeEnforce(){
   loadLS();
   if (!bldgReg()){
@@ -970,7 +1151,11 @@ function initCodeEnforce(){
     }
   }catch(e){}
 }
-/* re-place saved extras after reload */
+/* restoreExtras() — after reload: extras are re-created by
+   crewFinishingTouches only when jobs run; the persisted markExtra keys
+   prevent double-placement. Nothing to rebuild geometrically here — the keys
+   simply guard against duplicates. (Kept as a named hook in case Joshua
+   later wants physical restore of sidewalks/driveways.) */
 function restoreExtras(){
   /* extras are re-created by crewFinishingTouches only when jobs run;
      positions persist via markExtra keys to avoid duplicates. Nothing to
