@@ -207,7 +207,9 @@
   #load-status{margin-top:10px;color:#39ff6a;font-size:15px;font-weight:bold;min-height:20px;text-align:center;
     transition:opacity .15s;}
   #load-start{display:none;margin-top:14px;color:#39ff6a;font-size:22px;font-weight:bold;letter-spacing:2px;
-    animation:loadpulse 1.2s infinite;text-align:center;}
+    animation:loadpulse 1.2s infinite;text-align:center;cursor:pointer;pointer-events:auto;
+    border:2px solid #39ff6a;border-radius:12px;padding:12px 28px;background:rgba(0,40,0,.55);
+    box-shadow:0 0 16px rgba(57,255,106,.45);user-select:none;-webkit-tap-highlight-color:transparent;}
   @keyframes loadpulse{0%,100%{opacity:1;}50%{opacity:.35;}}
   /* v1.11 toast (track names, error messages) */
   #toast{position:fixed;z-index:90;top:64px;left:50%;transform:translateX(-50%);color:#fff;
@@ -5962,6 +5964,14 @@ function __autoStart(){
 }
 setTimeout(__autoStart, 1000);
 document.addEventListener('click', function(e){ __tryStartGame(); });
+/* v1.13.3: wire the START button itself directly (not just document-level). */
+(function(){
+  var b=document.getElementById('load-start');
+  if(b){
+    b.addEventListener('click', function(e){ e.stopPropagation(); __tryStartGame(); });
+    b.addEventListener('touchend', function(e){ e.stopPropagation(); e.preventDefault(); __tryStartGame(); });
+  }
+})();
 document.addEventListener('touchend', function(e){ __tryStartGame(); });
 </script>
 <script src="npc_system.js" onload="__loadStep('npc')" onerror="__loadStep('npc',true)"></script>
