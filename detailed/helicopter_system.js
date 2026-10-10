@@ -394,9 +394,29 @@ function scanFindings(){
   return out;
 }
 
-/* ---------------- patrol waypoints (lawnmower grid per sector) ---------------- */
+/* ---------------- patrol waypoints (lawnmower grid per sector) ----------------
+   v1.20 PRIORITY DISPATCH (Joshua 2026-10-09): when window.PRIORITY_DISPATCH
+   is active, both units fly concentrated lawnmower patterns over the Adamsville
+   priority zone (covering I-285, MLK, Fulton Industrial, Boulder Park,
+   Dollar Mill, Bakers Ferry) instead of their full north/south sectors. */
 function buildWaypoints(north){
   var wps=[];
+  /* priority dispatch: concentrate on Adamsville zone */
+  var PD=null;
+  try{ PD=(window.PRIORITY_DISPATCH && window.PRIORITY_DISPATCH.active)?window.PRIORITY_DISPATCH:null; }catch(e){}
+  if (PD){
+    var Z=PD.zone;
+    var step=400;  // tighter grid for thorough corridor coverage
+    var rows=[];
+    for(var z=Z.zMin; z<=Z.zMax; z+=step) rows.push(z);
+    rows.forEach(function(rz,ri){
+      var xs=[];
+      for(var x=Z.xMin;x<=Z.xMax;x+=step) xs.push(x);
+      if(ri%2===1) xs.reverse();  /* boustrophedon */
+      xs.forEach(function(wx){ wps.push({x:wx,z:rz}); });
+    });
+    return wps;
+  }
   var z0=north?200:SECTOR_SPLIT+200, z1=north?SECTOR_SPLIT-200:11800;
   var rows=[];
   for(var z=z0; z<=z1; z+=GRID_STEP) rows.push(z);
