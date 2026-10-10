@@ -388,7 +388,7 @@
 <!-- HUD title + demo version subtitle. Both are STAMPED from APP_VERSION at
      boot (top of script block 2) - never hand-edit this text. -->
 <div id="hud-title">SURVIVING ADAMSVILLE</div>
-<div id="hud-sub">1995 demo v1.4</div>
+<div id="hud-sub">demo v1.4</div>
 <!-- Settings GEAR button (opens the settings panel). The nested #gear-dot is
      the UPDATE BADGE: red = an update is available, yellow = downloaded and
      waiting on a restart. Driven by ASSETVER.updateGearBadge(). -->
@@ -536,7 +536,7 @@
 <canvas id="minimap" width="296" height="296"></canvas>
 <div id="fullmap">
   <canvas id="fullmap-canvas"></canvas>
-  <div id="fullmap-title">SURVIVING ADAMSVILLE &mdash; 1995</div>
+  <div id="fullmap-title">SURVIVING ADAMSVILLE</div>
   <button id="fullmap-close">&times;</button>
   <div id="fullmap-legend">
     <div class="fm-leg-title">MAP KEY</div>
@@ -674,7 +674,7 @@ window.addEventListener('load',function(){
    The tags below are stamped from here so they can never go stale again. */
 var APP_VERSION='1.12.3';
 try{
-  document.getElementById('hud-sub').textContent='1995 demo v'+APP_VERSION;
+  document.getElementById('hud-sub').textContent='demo v'+APP_VERSION;
   document.getElementById('ver-tag').textContent='v'+APP_VERSION;
   document.getElementById('help-ver').textContent='How to play (demo v'+APP_VERSION+')';
 }catch(e){}
@@ -5283,6 +5283,16 @@ actionBtn.addEventListener('click', function(){
       try{ tn=npcTalkNearest(player.x, player.z); }catch(e){}
     }
     if (tn && typeof npcStartTalk==='function') npcStartTalk(tn);
+  } else if (a==='talk-director'){
+    /* v1.21 Dialogue Director conversation (Joshua): talk to the in-world
+       writer of the city's dialogue. Lines come from the Director's own
+       pool (TALK_DIRECTOR) via directorStartTalk — npc_system.js pools
+       are untouched. Conversation finalization stays with the agent team. */
+    var ddn2=window.__talkDirector;
+    if (!ddn2 && typeof directorTalkNearest==='function'){
+      try{ ddn2=directorTalkNearest(player.x, player.z); }catch(e){}
+    }
+    if (ddn2 && typeof directorStartTalk==='function') directorStartTalk();
   } else if (a==='exit-house'){
     var fd=heroHouse.frontDoor, bd=heroHouse.backDoor;
     var df=Math.hypot(player.x-fd.x, player.z-fd.z);
@@ -6722,6 +6732,14 @@ function updateActionButton(){
          same pattern as ENTER CAR. npcTalkNearest() already excludes
          driving/inside/riding states. Lines come from personality pools
          (man/woman/boy16 + shared Atlanta pool) via npcTalkLine(n). */
+      /* v1.21 Dialogue Director NPC (Joshua): the in-world writer behind
+         the city's dialogue, now a living character. If the Director is near
+         and visible, offer TALK with their own line pool — same universal
+         action button pattern. Guarded: no-ops if the module is missing. */
+      if (!act && typeof directorTalkNearest==='function'){
+        var ddn=directorTalkNearest(player.x,player.z);
+        if (ddn){ act='talk-director'; label='TALK'; window.__talkDirector=ddn; }
+      }
       if (!act && typeof npcTalkNearest==='function'){
         var tn=npcTalkNearest(player.x,player.z);
         if (tn){ act='talk-npc'; label='TALK'; window.__talkNPC=tn; }
@@ -7053,8 +7071,10 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <script src="surveyfleet_system.js"></script>
 <script src="cityworkforce.js"></script>
 <script src="hq_staff_system.js"></script>
+<script src="dialogue_director_npc.js"></script>
 <script src="workerhousing.js"></script>
 <script src="daycycle.js"></script>
+<script src="helicopter_system.js"></script>
 <!-- ===== INLINE SCRIPT BLOCK 3: final placement audit (v2.0 - Joshua's
      automatic check) ===== Runs ONCE, after EVERY building system has loaded
      (OSM, churches, schools, plaza, gas, Marriott, clubs, MARTA). Summarizes
