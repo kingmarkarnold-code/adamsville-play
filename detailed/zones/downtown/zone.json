@@ -1,0 +1,27 @@
+{
+  "id": "downtown",
+  "name": "Downtown",
+  "bounds": {
+    "xMin": 5398,
+    "xMax": 8200,
+    "zMin": -200,
+    "zMax": 2202
+  },
+  "original_bounds": {
+    "xMin": 5398,
+    "xMax": 8200,
+    "zMin": -200,
+    "zMax": 2202
+  },
+  "scale": 1.0,
+  "is_start": false,
+  "counts": {
+    "roads": 1227,
+    "buildings": 520,
+    "pins": 1934,
+    "lifts": 1740,
+    "signs": 40
+  },
+  "generated": "2026-10-10",
+  "generator": "split-zones.py"
+}
