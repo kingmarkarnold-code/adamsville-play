@@ -3244,337 +3244,378 @@ var BORDER = BORDER_LL.map(function(ll){ return xz(ll[0], ll[1]); });
 })();
 
 /* ================= HERO HOUSE — 535 Dollar Mill Rd =================
-   Brick ranch (Adamsville style, from satellite). ENTERABLE:
-   front door + back door, basic interior (living/kitchen/hall/bedroom).
-   Stand-in for exact facade details (no public interior photos). */
+   v3.0 REBUILD (2026-10-09, Joshua's directive): raised brick RANCH with
+   walkout basement, rebuilt from the StreetView reference photo
+   (535-dollar-mill-streetview-ref.png) — Joshua's ground truth outranks data.
+
+   WHAT THE PHOTO SHOWS:
+   - Brick ranch, single story from the front (south/road side)
+   - Sits ELEVATED on a sloped lot — the land rises from Dollar Mill Rd up
+     to the house; the house reads ~1 story above the road
+   - Concrete driveway runs from the road UP to the house
+   - Brick mailbox pillar at the street by the driveway
+   - Dense tall pines around the lot
+
+   HOW IT'S BUILT (no terrain surgery — the road 13u south is untouched):
+   - Main level: single-story brick ranch, 13.5 x 8.0m (~1,160 sq ft, matches
+     the ~1,100 sq ft property records). FRONT FACES SOUTH to Dollar Mill Rd.
+   - The main floor sits 2.4u above grade on a full brick foundation. This is
+     the "two levels": the walkout BASEMENT below (family room, garage,
+     utility) is exposed on the downhill (south) side and buried on the
+     uphill (north) side — exactly like the photo.
+   - Covered front porch with exterior entry stairs; basement garage with a
+     concrete driveway that meets the road SQUARELY (perpendicular).
+   - Walkable: MAIN (living/kitchen/3bd/1ba) + BASEMENT (family/garage/
+     utility/bath), joined by an interior staircase.
+     player.heroFloor: 0 = basement, 1 = main.
+   - heroPorchY(): exterior Y for the raised porch/entry stairs so the player
+     walks UP the front steps instead of clipping through them. */
 var heroHouse = {};
-/* v0.6 HOUSE_535 SPEC — remodel pass. Source: satellite (brick ranch, side driveway).
-   PENDING: exact footprint/roof/pitch/windows from current street-level imagery
-   (no browser access in this build env — verify before calling it final).
-   1995-vs-now differences are a LATER pass per Joshua; geometry = current. */
-var HOUSE_535={W:12.2, D:7.6, H:2.75, T:0.35, roofRise:1.6, overhang:0.5,
-  brick:0x9d5f43, trim:0xf2ede2, roofC:0x4a3a2e, glassC:0x9fc4d8};
-/* ================= HERO HOUSE — 535 Dollar Mill Rd =================
-   TWO-STORY brick colonial (Adamsville style). ENTERABLE both floors:
-   front door + back door, full downstairs (living/kitchen/bath) + upstairs
-   (3 bedrooms/bath) connected by a walkable staircase.
-   Records: ~1,100 sq ft, 3 bed / 1-2 bath, brick, Ridgecrest Forest subdiv.
-   Joshua's ground truth: upstairs AND downstairs — built as 2 stories. */
-var heroHouse = {};
-/* v2.0 HOUSE_535 SPEC — two-story rebuild. Footprint 12.2x7.6m per floor
-   (~93 sqm/floor, records ~1,100 sq ft total living). Brick veneer, gable roof. */
-var HOUSE_535={W:12.2, D:7.6, FH:2.75, T:0.35, roofRise:1.6, overhang:0.5,
-  brick:0x9d5f43, trim:0xf2ede2, roofC:0x4a3a2e, glassC:0x9fc4d8};
+var HOUSE_535 = {
+  W: 13.5, D: 8.0,            // footprint — ranch proportions
+  bsmtD: 0.3,                 // basement floor 0.3 BELOW grade (at house center)
+  mainUp: 2.4,                // main floor 2.4 ABOVE grade (the photo's rise)
+  wallH: 2.75,                // main-level wall height
+  foundT: 0.4, wallT: 0.35,   // foundation / main wall thickness
+  roofRise: 1.7, overhang: 0.6,
+  brick: 0x9d5f43, foundC: 0x8a6f5a, trim: 0xf2ede2,
+  roofC: 0x4a3a2e, glassC: 0x9fc4d8
+};
 /* Player floor tracking for the hero house. Called when player.inside and not
-   in another enterable. Returns the correct Y (floor 1, floor 2, or stairs). */
+   in another enterable. heroFloor: 0 = basement, 1 = main level.
+   The interior stairwell (east side, x [hx+4.6,hx+5.8], z [hz-2.5,hz+1.5])
+   interpolates between the two floors; the bottom is at the south end. */
 function heroHouseFloorY(){
-  var gy0=heightAt(heroHouse.cx,heroHouse.cz);
-  var f1=gy0+0.25, f2=gy0+3.0;
-  var hx=heroHouse.cx, hz=heroHouse.cz;
-  // stairwell: x [hx+4.5, hx+5.7], z [hz-1.5, hz+2.5]; bottom at z=hz+2.5
-  if(player.x>=hx+4.5&&player.x<=hx+5.7&&player.z>=hz-1.5&&player.z<=hz+2.5){
-    var t=(hz+2.5-player.z)/4.0;
-    t=Math.max(0,Math.min(1,t));
-    if(t>0.85) player.heroFloor=2;
-    else if(t<0.15) player.heroFloor=1;
-    return f1+t*(f2-f1);
+  var gy0 = heightAt(heroHouse.cx, heroHouse.cz);
+  var f0 = gy0 - HOUSE_535.bsmtD + 0.25;   // basement floor
+  var f1 = gy0 + HOUSE_535.mainUp + 0.25;   // main floor
+  var hx = heroHouse.cx, hz = heroHouse.cz;
+  if (player.x >= hx+4.6 && player.x <= hx+5.8 &&
+      player.z >= hz-2.5 && player.z <= hz+1.5){
+    var t = (hz+1.5 - player.z) / 4.0;
+    t = Math.max(0, Math.min(1, t));
+    if (t > 0.85) player.heroFloor = 1;
+    else if (t < 0.15) player.heroFloor = 0;
+    return f0 + t*(f1-f0);
   }
-  return (player.heroFloor===2)?f2:f1;
+  return (player.heroFloor === 1) ? f1 : f0;
+}
+/* heroPorchY(x,z): exterior Y for the raised front porch slab + entry stairs.
+   Returns null when the player isn't on the porch/stairs (fall back to the
+   terrain). Without this the player would clip through the porch — the main
+   floor sits 2.4u above grade, per the photo's elevated entry. */
+function heroPorchY(x, z){
+  if (!heroHouse.cx && heroHouse.cx !== 0) return null;
+  var hx = heroHouse.cx, hz = heroHouse.cz, D = HOUSE_535.D;
+  var mainY = heroHouse.mainY;
+  if (mainY === undefined) return null;
+  var pz0 = hz + D/2;   // porch starts at the south (front) wall
+  // porch slab: 4u wide, 2.5u deep, at main-floor level
+  if (x >= hx-2 && x <= hx+2 && z >= pz0 && z <= pz0+2.5) return mainY + 0.12;
+  // entry stairs: 2u wide, 3.5u run, lerping porch -> grade
+  if (x >= hx-1 && x <= hx+1 && z > pz0+2.5 && z <= pz0+6.0){
+    var t = (z - (pz0+2.5)) / 3.5;
+    var gg = heightAt(hx, pz0+6.5);
+    return (mainY+0.12)*(1-t) + (gg+0.1)*t;
+  }
+  return null;
 }
 (function buildHeroHouse(){
-  var hx=HOME.x, hz=HOME.z, gy=heightAt(hx,hz);
-  var W=HOUSE_535.W, D=HOUSE_535.D, FH=HOUSE_535.FH, T=HOUSE_535.T;
-  var brick=HOUSE_535.brick, trim=HOUSE_535.trim, roofC=HOUSE_535.roofC, glassC=HOUSE_535.glassC;
-  var H2=FH*2; // total wall height: two stories
-  heroHouse.cx=hx; heroHouse.cz=hz; heroHouse.inside=false;
+  var hx = HOME.x, hz = HOME.z, gy = heightAt(hx, hz);
+  var W = HOUSE_535.W, D = HOUSE_535.D;
+  var bsmtY = gy - HOUSE_535.bsmtD;    // basement floor
+  var mainY = gy + HOUSE_535.mainUp;   // main floor (top of foundation)
+  var topY  = mainY + HOUSE_535.wallH; // top of main walls (roof base)
+  var foundT = HOUSE_535.foundT, wallT = HOUSE_535.wallT;
+  var brick = HOUSE_535.brick, trim = HOUSE_535.trim;
+  var roofC = HOUSE_535.roofC, glassC = HOUSE_535.glassC;
+  heroHouse.cx = hx; heroHouse.cz = hz; heroHouse.inside = false;
+  heroHouse.bsmtY = bsmtY; heroHouse.mainY = mainY;
 
-  function wallSeg(w,h,d,color,x,y,z){
-    var m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),
-      new THREE.MeshLambertMaterial({ color:color }));
-    m.position.set(x, y, z); scene.add(m); return m;
+  /* box(): one Lambert-shaded box in the scene. The workhorse for the whole
+     house — walls, slabs, doors, windows, stairs, furniture. */
+  function box(w,h,d,color,x,y,z){
+    var m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d),
+      new THREE.MeshLambertMaterial({ color: color }));
+    m.position.set(x,y,z); scene.add(m); return m;
   }
-  // ---- exterior walls: TWO STORIES ----
-  var fx1=hx-W/2, fx2=hx-1, fx3=hx+1, fx4=hx+W/2;
-  // front (north, z-) wall: full height with door gap at center
-  wallSeg(fx2-fx1,H2,T, brick, (fx1+fx2)/2, gy+H2/2, hz-D/2);
-  wallSeg(fx4-fx3,H2,T, brick, (fx3+fx4)/2, gy+H2/2, hz-D/2);
-  // back (south, z+) wall: full height with door gap at center
-  wallSeg(fx2-fx1,H2,T, brick, (fx1+fx2)/2, gy+H2/2, hz+D/2);
-  wallSeg(fx4-fx3,H2,T, brick, (fx3+fx4)/2, gy+H2/2, hz+D/2);
-  // west (x-) and east (x+) walls: full height, solid
-  wallSeg(T,H2,D, brick, hx-W/2, gy+H2/2, hz);
-  wallSeg(T,H2,D, brick, hx+W/2, gy+H2/2, hz);
-  // wall colliders (both floors share the footprint)
-  var dg=1.0;
-  addSegCollider(fx1,hz-D/2,hx-dg,hz-D/2); addSegCollider(hx+dg,hz-D/2,fx4,hz-D/2);
-  addSegCollider(fx1,hz+D/2,hx-dg,hz+D/2); addSegCollider(hx+dg,hz+D/2,fx4,hz+D/2);
-  addSegCollider(hx-W/2,hz-D/2,hx-W/2,hz+D/2);
-  addSegCollider(hx+W/2,hz-D/2,hx+W/2,hz+D/2);
 
-  // floor slab (ground)
-  var floor=new THREE.Mesh(new THREE.BoxGeometry(W,0.25,D),
-    new THREE.MeshLambertMaterial({ color:0x8a6f4d }));
-  floor.position.set(hx, gy+0.12, hz); scene.add(floor);
+  var fH = mainY - bsmtY, fCy = bsmtY + fH/2;   // foundation wall height / center Y
+  var wH = HOUSE_535.wallH, wCy = mainY + wH/2; // main wall height / center Y
+  var x0 = hx-W/2, x1 = hx+W/2, zN = hz-D/2, zS = hz+D/2;
+  // floor-aware collider bands — basement walls only block the basement,
+  // main walls only block the main level (so the stacked walls don't fight)
+  var bY0 = bsmtY-1.0, bY1 = bsmtY+1.9, mY0 = mainY-1.0, mY1 = mainY+1.9;
 
-  // ---- second-floor slab with stairwell opening ----
-  // stairwell hole: x [hx+4.5, hx+5.7], z [hz-1.5, hz+2.5]
-  var sx1=hx+4.5, sx2=hx+5.7, sz1=hz-1.5, sz2=hz+2.5;
-  var slabY=gy+FH+0.125;
-  function slab(x1,z1,x2,z2){
-    var m=new THREE.Mesh(new THREE.BoxGeometry(x2-x1,0.25,z2-z1),
-      new THREE.MeshLambertMaterial({ color:0x9a8a6a }));
-    m.position.set((x1+x2)/2, slabY, (z1+z2)/2); scene.add(m);
-  }
-  slab(hx-W/2, hz-D/2, sx1, hz+D/2);       // west of stairs
-  slab(sx1, hz-D/2, sx2, sz1);              // east, north of stair top
-  slab(sx1, sz2, sx2, hz+D/2);              // east, south of stair bottom
-  slab(sx2, hz-D/2, hx+W/2, hz+D/2);        // far east strip
+  /* ---- BASEMENT / FOUNDATION walls (brick, bsmtY -> mainY) ----
+     The south face is the walkout: garage door + entry door + windows.
+     The garage and walkout doors are VISUAL ONLY (sealed by colliders) —
+     the player enters/exits through the front/back doors; the basement is
+     reached via the interior stairs. This keeps enter/exit consistent. */
+  // south foundation wall (gaps: garage [hx-5.5,hx-1.5], walkout [hx+1.0,hx+2.2])
+  box(hx-5.5-x0, fH, foundT, brick, (x0+hx-5.5)/2, fCy, zS);
+  box(hx+1.0-(hx-1.5), fH, foundT, brick, (hx-1.5+hx+1.0)/2, fCy, zS);
+  box(x1-(hx+2.2), fH, foundT, brick, (hx+2.2+x1)/2, fCy, zS);
+  addSegCollider(x0,zS,hx-5.5,zS, bY0,bY1);
+  addSegCollider(hx-1.5,zS,hx+1.0,zS, bY0,bY1);
+  addSegCollider(hx+2.2,zS,x1,zS, bY0,bY1);
+  addSegCollider(hx-5.5,zS,hx-1.5,zS, bY0,bY1);   // garage door (closed) — sealed
+  addSegCollider(hx+1.0,zS,hx+2.2,zS, bY0,bY1);   // walkout door (locked) — sealed
+  // north foundation wall: solid (buried / uphill side)
+  box(W, fH, foundT, brick, hx, fCy, zN);
+  addSegCollider(x0,zN,x1,zN, bY0,bY1);
+  // east + west foundation walls: solid
+  box(foundT, fH, D, brick, x0, fCy, hz);
+  box(foundT, fH, D, brick, x1, fCy, hz);
+  addSegCollider(x0,zN,x0,zS, bY0,bY1);
+  addSegCollider(x1,zN,x1,zS, bY0,bY1);
+  // basement floor slab
+  box(W, 0.25, D, 0x8a7a68, hx, bsmtY+0.12, hz);
 
-  // ---- doors (floor 1) ----
-  function door(x,z,onNS,white){
-    var d=new THREE.Mesh(new THREE.BoxGeometry(onNS?1.2:0.18,2.03,onNS?0.18:1.2),
-      new THREE.MeshLambertMaterial({ color:white?0xf5f2ea:0x5a3a22 }));
-    d.position.set(x, gy+1.015, z); scene.add(d);
-    var s=new THREE.Mesh(new THREE.BoxGeometry(onNS?2.4:2.2,0.25,onNS?2.2:2.4),
-      new THREE.MeshLambertMaterial({ color:0x9a9a9a }));
-    s.position.set(x+(onNS?0:(x<hx?-1.2:1.2)), gy+0.12,
-      z+(onNS?(z<hz?-1.2:1.2):0)); scene.add(s);
-  }
-  door(hx, hz-D/2, true, true); heroHouse.frontDoor={x:hx, z:hz-D/2};
-  door(hx, hz+D/2, true, false); heroHouse.backDoor={x:hx, z:hz+D/2};
-  // v1.12.2 door-gap seal (Joshua): blockers overlap wall ends by 0.35
-  // so there's no hairline crack to slip through — exit is ONLY via EXIT HOUSE.
-  addSegCollider(hx-dg-0.35,hz-D/2,hx+dg+0.35,hz-D/2);
-  addSegCollider(hx-dg-0.35,hz+D/2,hx+dg+0.35,hz+D/2);
-
-  // ---- windows: both floors ----
-  function window_(x,y,z,w,ry){
-    var f=new THREE.Mesh(new THREE.BoxGeometry(w+0.3,1.5,0.12),
-      new THREE.MeshLambertMaterial({ color:0xf2ede2 }));
-    f.position.set(x, y, z); f.rotation.y=ry||0; scene.add(f);
-    var gl=new THREE.Mesh(new THREE.BoxGeometry(w,1.2,0.14),
-      new THREE.MeshLambertMaterial({ color:glassC, emissive:0x223344 }));
-    gl.position.set(x, y, z); gl.rotation.y=ry||0; scene.add(gl);
-    var m1=new THREE.Mesh(new THREE.BoxGeometry(0.08,1.2,0.15),
-      new THREE.MeshLambertMaterial({ color:0xf2ede2 }));
-    m1.position.set(x, y, z); m1.rotation.y=ry||0; scene.add(m1);
-  }
-  var nz=hz-D/2-0.12, sz=hz+D/2+0.12;
-  var wx=hx-W/2-0.12, ex=hx+W/2+0.12;
-  var y1=gy+1.7, y2=gy+FH+1.7; // floor 1 and floor 2 window heights
-  // front (north): 3 windows per floor
-  [y1,y2].forEach(function(yy){
-    window_(hx-2.8, yy, nz, 1.4, 0); window_(hx+2.8, yy, nz, 1.4, 0);
-    window_(hx, yy, nz, 1.1, 0);
+  // garage door (visual): dark panel + trim header on the south foundation wall
+  box(4.0, 2.2, 0.15, 0x3a3a3a, hx-3.5, bsmtY+1.1, zS+0.05);
+  box(4.4, 0.25, 0.2, trim, hx-3.5, bsmtY+2.32, zS+0.05);
+  // walkout door (visual)
+  box(1.2, 2.05, 0.15, 0x5a3a22, hx+1.6, bsmtY+1.02, zS+0.05);
+  // basement windows (south, high on the exposed wall)
+  [hx-0.5, hx+4.5].forEach(function(wx){
+    box(1.4, 0.9, 0.14, trim, wx, bsmtY+fH-0.8, zS+0.02);
+    box(1.2, 0.7, 0.16, glassC, wx, bsmtY+fH-0.8, zS+0.02);
   });
-  // back (south): 2 per floor
-  [y1,y2].forEach(function(yy){
-    window_(hx-2.5, yy, sz, 1.4, 0); window_(hx+2.5, yy, sz, 1.4, 0);
-  });
-  // sides: 2 per floor per side
-  [y1,y2].forEach(function(yy){
-    window_(wx, yy, hz-1.8, 1.4, Math.PI/2); window_(wx, yy, hz+1.8, 1.4, Math.PI/2);
-    window_(ex, yy, hz-1.8, 1.4, Math.PI/2); window_(ex, yy, hz+1.8, 1.4, Math.PI/2);
+  // basement windows (north, small — buried side)
+  [hx-3, hx+3].forEach(function(wx){
+    box(1.2, 0.7, 0.14, trim, wx, bsmtY+fH-0.7, zN-0.02);
+    box(1.0, 0.5, 0.16, glassC, wx, bsmtY+fH-0.7, zN-0.02);
   });
 
-  // porch roof over front door
-  var pr=new THREE.Mesh(new THREE.BoxGeometry(3.4,0.18,3),
-    new THREE.MeshLambertMaterial({ color:roofC }));
-  pr.position.set(hx, gy+2.9, hz-D/2-1.6); scene.add(pr);
-  [[-1.2,-2.9],[1.2,-2.9]].forEach(function(o){
-    var post=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.12,2.9,8),
-      new THREE.MeshLambertMaterial({ color:trim }));
-    post.position.set(hx+o[0], gy+1.45, hz-D/2+o[1]); scene.add(post);
-  });
-
-  // ---- gable roof (now at two-story height) ----
-  (function gableRoof(){
-    var rise=HOUSE_535.roofRise, ov=HOUSE_535.overhang;
-    var half=D/2+ov, slopeLen=Math.hypot(half, rise), ang=Math.atan2(rise, half);
-    var rb=gy+H2; // roof base = top of second story
-    heroHouse.roofParts=[];
-    [-1,1].forEach(function(sd){
-      var panel=new THREE.Mesh(new THREE.BoxGeometry(W+ov*2, 0.14, slopeLen),
-        new THREE.MeshLambertMaterial({ color:roofC }));
-      panel.position.set(hx, rb+rise/2, hz+sd*half/2);
-      panel.rotation.x=sd*ang;
-      scene.add(panel); heroHouse.roofParts.push(panel);
-    });
-    [-1,1].forEach(function(e){
-      var x=hx+e*W/2;
-      var v=[x,rb,hz-half,  x,rb,hz+half,  x,rb+rise,hz];
-      var tg=new THREE.BufferGeometry();
-      tg.setAttribute('position', new THREE.Float32BufferAttribute(v,3));
-      tg.setIndex([0,2,1]); tg.computeVertexNormals();
-      var tri=new THREE.Mesh(tg, new THREE.MeshLambertMaterial({ color:brick, side:THREE.DoubleSide }));
-      tri.frustumCulled=false; scene.add(tri); heroHouse.roofParts.push(tri);
-    });
-    var ridge=new THREE.Mesh(new THREE.BoxGeometry(W+ov*2, 0.16, 0.5),
-      new THREE.MeshLambertMaterial({ color:roofC }));
-    ridge.position.set(hx, rb+rise, hz); scene.add(ridge);
-    heroHouse.roofParts.push(ridge);
-    heroHouse.roof=ridge;
+  /* ---- MAIN LEVEL walls (brick, mainY -> topY) ----
+     FRONT FACES SOUTH to Dollar Mill Rd. Front door on the south wall,
+     back door on the north wall. */
+  // south (front) wall: gap for the front door [hx-0.6, hx+0.6]
+  box(hx-0.6-x0, wH, wallT, brick, (x0+hx-0.6)/2, wCy, zS);
+  box(x1-(hx+0.6), wH, wallT, brick, (hx+0.6+x1)/2, wCy, zS);
+  addSegCollider(x0,zS,hx-0.6,zS, mY0,mY1);
+  addSegCollider(hx+0.6,zS,x1,zS, mY0,mY1);
+  // door-gap seal (Joshua's rule): blockers overlap the wall ends so there's
+  // no hairline crack to slip through — exit is ONLY via EXIT HOUSE.
+  addSegCollider(hx-0.95,zS,hx+0.95,zS, mY0,mY1);
+  // north (back) wall: gap for the back door [hx-0.6, hx+0.6]
+  box(hx-0.6-x0, wH, wallT, brick, (x0+hx-0.6)/2, wCy, zN);
+  box(x1-(hx+0.6), wH, wallT, brick, (hx+0.6+x1)/2, wCy, zN);
+  addSegCollider(x0,zN,hx-0.6,zN, mY0,mY1);
+  addSegCollider(hx+0.6,zN,x1,zN, mY0,mY1);
+  addSegCollider(hx-0.95,zN,hx+0.95,zN, mY0,mY1);
+  // east + west main walls: solid
+  box(wallT, wH, D, brick, x0, wCy, hz);
+  box(wallT, wH, D, brick, x1, wCy, hz);
+  addSegCollider(x0,zN,x0,zS, mY0,mY1);
+  addSegCollider(x1,zN,x1,zS, mY0,mY1);
+  // main floor slab (basement ceiling) with a stairwell opening:
+  // stairs at x [hx+4.6,hx+5.8], z [hz-2.5,hz+1.5]
+  (function mainSlab(){
+    var sy = mainY+0.12;
+    function slab(xa,za,xb,zb){
+      box(xb-xa, 0.25, zb-za, 0x9a8a6a, (xa+xb)/2, sy, (za+zb)/2);
+    }
+    slab(x0, zN, hx+4.6, zS);            // west of the stairwell
+    slab(hx+5.8, zN, x1, zS);            // east of the stairwell
+    slab(hx+4.6, zN, hx+5.8, hz-2.5);    // north of the opening
+    slab(hx+4.6, hz+1.5, hx+5.8, zS);    // south of the opening
   })();
 
-  // ---- STAIRCASE (walkable, east side) ----
-  // run: z from hz+2.5 (bottom) to hz-1.5 (top), x center hx+5.1, width 1.2
-  var stX=hx+5.1, stZ0=hz+2.5, stZ1=hz-1.5, stRun=4.0, stRise=FH;
-  var nSteps=12;
-  for(var si=0; si<nSteps; si++){
-    var t0=si/nSteps, t1=(si+1)/nSteps;
-    var zc=stZ0-(t0+t1)/2*stRun;
-    var yTop=gy+0.25+t1*stRise;
-    var step=new THREE.Mesh(new THREE.BoxGeometry(1.2,0.12,stRun/nSteps+0.05),
-      new THREE.MeshLambertMaterial({ color:0xb09a72 }));
-    step.position.set(stX, yTop-0.06, zc); scene.add(step);
-  }
-  // stair stringers (sides)
-  [-0.65,0.65].forEach(function(ox){
-    var str=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.3,stRun+0.3),
-      new THREE.MeshLambertMaterial({ color:0x8a6f4d }));
-    var ang=Math.atan2(stRise, stRun);
-    str.position.set(stX+ox, gy+0.25+stRise/2, (stZ0+stZ1)/2);
-    str.rotation.x=ang; scene.add(str);
-  });
-  // railing along the open (west) side of the stairs
-  var rail=new THREE.Mesh(new THREE.BoxGeometry(0.08,0.9,stRun),
-    new THREE.MeshLambertMaterial({ color:0x6a4a2a }));
-  rail.position.set(stX-0.65, gy+0.25+stRise/2+0.9, (stZ0+stZ1)/2);
-  rail.rotation.x=Math.atan2(stRise,stRun); scene.add(rail);
-  // railing around the stairwell opening on floor 2 (north + south + west edges)
-  // NOTE: visual only, no colliders — the stair-zone Y logic in heroHouseFloorY()
-  // handles the transition; 2D colliders would block stair entry at floor 1.
-  function frail(x1,z1,x2,z2){
-    var r=new THREE.Mesh(new THREE.BoxGeometry(Math.abs(x2-x1)||0.08,0.9,Math.abs(z2-z1)||0.08),
-      new THREE.MeshLambertMaterial({ color:0x6a4a2a }));
-    r.position.set((x1+x2)/2, gy+FH+0.25+0.9, (z1+z2)/2); scene.add(r);
-  }
-  frail(sx1,sz1,sx2,sz1);       // north edge of opening
-  frail(sx1,sz2,sx2,sz2);       // south edge of opening
-  frail(sx1,sz1,sx1,sz2);       // west edge of opening
-  // (east edge is the exterior wall)
+  // front door (south, main level) + back door (north, main level)
+  box(1.2, 2.05, 0.18, 0xf5f2ea, hx, mainY+1.02, zS);
+  box(1.2, 2.05, 0.18, 0x5a3a22, hx, mainY+1.02, zN);
+  heroHouse.frontDoor = { x: hx, z: zS };   // SOUTH — faces Dollar Mill Rd
+  heroHouse.backDoor  = { x: hx, z: zN };   // NORTH
 
-  // ---- interior wall helper ----
-  var inMat=0xe8dcc0;
+  /* win(): surface-mounted window — trim frame + glass + mullion.
+     ry rotates for the side walls. */
+  function win(x, y, z, w, ry){
+    var f = box(w+0.3, 1.5, 0.12, trim, x, y, z); f.rotation.y = ry||0;
+    var g2 = new THREE.Mesh(new THREE.BoxGeometry(w, 1.2, 0.14),
+      new THREE.MeshLambertMaterial({ color: glassC, emissive: 0x223344 }));
+    g2.position.set(x, y, z); g2.rotation.y = ry||0; scene.add(g2);
+    var mull = box(0.08, 1.2, 0.15, trim, x, y, z); mull.rotation.y = ry||0;
+  }
+  var wzS = zS+0.1, wzN = zN-0.1, wxW = x0-0.1, wxE = x1+0.1;
+  var wy = mainY+1.7;
+  // front (south): two windows each side of the door
+  win(hx-3.4, wy, wzS, 1.4); win(hx-1.8, wy, wzS, 1.1);
+  win(hx+1.8, wy, wzS, 1.1); win(hx+3.4, wy, wzS, 1.4);
+  // back (north): three windows
+  win(hx-3.0, wy, wzN, 1.4); win(hx, wy, wzN, 1.4); win(hx+3.0, wy, wzN, 1.4);
+  // sides: two each
+  win(wxW, wy, hz-2.0, 1.4, Math.PI/2); win(wxW, wy, hz+2.0, 1.4, Math.PI/2);
+  win(wxE, wy, hz-2.0, 1.4, Math.PI/2); win(wxE, wy, hz+2.0, 1.4, Math.PI/2);
+
+  /* ---- HIP ROOF (ranch style, low pitch) ----
+     Four-sided pyramid, same pattern as the neighborhood ranchHouse() shells
+     so 535 sits naturally among them. Ridge-free hip reads "ranch" at a glance. */
+  (function hipRoof(){
+    var rise = HOUSE_535.roofRise, ov = HOUSE_535.overhang;
+    heroHouse.roofParts = [];
+    var roof = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.01, 1, rise, 4, 1),
+      new THREE.MeshLambertMaterial({ color: roofC }));
+    roof.scale.set(W/2+ov, 1, D/2+ov);
+    roof.rotation.y = Math.PI/4;
+    roof.position.set(hx, topY+rise/2, hz);
+    roof.frustumCulled = false;   // never let culling hide the home-base roof
+    scene.add(roof); heroHouse.roofParts.push(roof);
+    heroHouse.roof = roof;
+  })();
+
+  /* ---- FRONT PORCH + ENTRY STAIRS (south, facing the road) ----
+     The porch slab sits at main-floor level; 12 steps run down to grade.
+     heroPorchY() (above) gives the player the right Y out here. */
+  box(4.0, 0.25, 2.5, 0x9a9a9a, hx, mainY, zS+1.25);   // porch slab
+  // porch roof on two posts
+  box(4.4, 0.16, 2.9, roofC, hx, mainY+2.7, zS+1.35);
+  [[-1.9],[1.9]].forEach(function(o){
+    box(0.14, 2.7, 0.14, trim, hx+o[0], mainY+1.35, zS+2.5);
+  });
+  // entry stairs: 12 steps, porch -> grade
+  var stTopY = mainY+0.12, stBotY = heightAt(hx, zS+6.5)+0.1;
+  var nSt = 12;
+  for (var si=0; si<nSt; si++){
+    var t0=si/nSt, t1=(si+1)/nSt;
+    var sz0=zS+2.5+t0*3.5, sz1=zS+2.5+t1*3.5;
+    var sy1=stTopY+(stBotY-stTopY)*t1;
+    box(2.0, 0.14, (sz1-sz0)+0.06, 0x9a9a9a, hx, sy1-0.07, (sz0+sz1)/2);
+  }
+  // sloped handrails (visual)
+  [-1.05, 1.05].forEach(function(ox){
+    var rl = box(0.08, 0.08, 3.9, trim, hx+ox, (stTopY+stBotY)/2+0.9, zS+4.25);
+    rl.rotation.x = Math.atan2(stTopY-stBotY, 3.5);
+  });
+
+  /* ---- INTERIOR STAIRS: basement <-> main (east side, straight run) ----
+     Bottom (basement) at the south end, top (main) at the north end.
+     heroHouseFloorY() interpolates the player's Y through this zone. */
+  var istX = hx+5.2, istZ0 = hz+1.5, istZ1 = hz-1.5, istRun = 4.0;
+  var istRise = mainY - bsmtY, inSt = 12;
+  for (var ii=0; ii<inSt; ii++){
+    var it0=ii/inSt, it1=(ii+1)/inSt;
+    var izc=istZ0-(it0+it1)/2*istRun;
+    var iyTop=bsmtY+0.25+it1*istRise;
+    box(1.2, 0.12, istRun/inSt+0.05, 0xb09a72, istX, iyTop-0.06, izc);
+  }
+  // railing along the open (west) side of the interior stairs
+  var irail = box(0.08, 0.08, istRun, 0x6a4a2a,
+    istX-0.65, bsmtY+0.25+istRise/2+0.9, (istZ0+istZ1)/2);
+  irail.rotation.x = Math.atan2(istRise, istRun);
+
+  /* ---- interior wall + furniture helpers ----
+     inWall(): wall segment with an optional door gap at (gx,gz); floor-aware
+     colliders so main-level walls never block the basement and vice versa.
+     furn(): furniture box + tight floor-aware circle collider. */
+  var inMat = 0xe8dcc0;
   function inWall(x1,z1,x2,z2,floorY,gx,gz){
-    var len=Math.hypot(x2-x1,z2-z1);
-    var segs=[];
-    if(gx!==undefined){
+    var len=Math.hypot(x2-x1,z2-z1), segs=[];
+    if (gx!==undefined){
       var t=((gx-x1)*(x2-x1)+(gz-z1)*(z2-z1))/(len*len);
       var g0=Math.max(0,t-1.1/len), g1=Math.min(1,t+1.1/len);
       segs.push([0,g0],[g1,1]);
     } else segs.push([0,1]);
-    // floor-aware collider height: only blocks the player when on this floor
-    // (f1 walls: y<f1+1.75; f2 walls: y>f2-1.5; stairs at y~f1+1.4 hit both, correct)
     var cy0=floorY-1.0, cy1=floorY+1.75;
     segs.forEach(function(s){
-      if(s[1]-s[0]<=0.01) return;
+      if (s[1]-s[0]<=0.01) return;
       var ax=x1+(x2-x1)*s[0], az=z1+(z2-z1)*s[0];
       var bx=x1+(x2-x1)*s[1], bz=z1+(z2-z1)*s[1];
-      var m=new THREE.Mesh(new THREE.BoxGeometry(Math.abs(bx-ax)||0.18, FH-0.1, Math.abs(bz-az)||0.18),
-        new THREE.MeshLambertMaterial({ color:inMat }));
-      m.position.set((ax+bx)/2, floorY+(FH-0.1)/2, (az+bz)/2); scene.add(m);
+      box(Math.abs(bx-ax)||0.18, HOUSE_535.wallH-0.1, Math.abs(bz-az)||0.18,
+        inMat, (ax+bx)/2, floorY+(HOUSE_535.wallH-0.1)/2, (az+bz)/2);
       addSegCollider(ax,az,bx,bz,cy0,cy1);
     });
   }
   function furn(w,h,d,c,x,y,z){
-    var m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),
-      new THREE.MeshLambertMaterial({ color:c }));
-    m.position.set(x, y+h/2, z); scene.add(m);
+    box(w,h,d,c,x,y+h/2,z);
     // v1.12.2 tighter collider (Joshua): +0.15 instead of +0.4 — frees walkway space
     addCollider(x,z,Math.max(w,d)/2+0.15, y-1.0, y+1.75);
   }
 
-  // ================= DOWNSTAIRS =================
-  var f1=gy+0.25;
-  // living room (north) | kitchen+hall (south), gap for passage
-  inWall(hx-W/2+0.3, hz-0.5, hx+4.5, hz-0.5, f1, hx-1.0, hz-0.5);
-  // kitchen (SW) | bathroom (SE-center), gap for door
-  inWall(hx+0.5, hz-0.5, hx+0.5, hz+D/2-0.3, f1, hx+0.5, hz+2.0);
-  // bathroom north wall (below stairs area)
-  inWall(hx+0.5, hz+0.5, hx+4.5, hz+0.5, f1, hx+2.5, hz+0.5);
-  // furniture: living room
-  furn(3.2,0.9,1.2, 0x7a4a2a, hx-3.0, f1, hz-2.9);   // couch (v1.12.2: pushed to NW wall)
-  furn(1.4,0.7,0.8, 0x333333, hx-3.0, f1, hz-0.7);   // TV stand (v1.12.2: pushed to west wall)
-  furn(1.2,0.5,1.2, 0x5a3a22, hx+2.0, f1, hz-2.9);   // coffee table (v1.12.2: pushed NE)
-  // kitchen
-  furn(2.6,1.0,0.9, 0xd8d0c0, hx-3.9, f1, hz+3.1);   // counter (v1.12.2: pushed to SW wall)
-  furn(0.9,1.0,0.9, 0x888888, hx-0.6, f1, hz+3.1);   // fridge (v1.12.2: pushed south)
-  furn(1.6,0.75,1.6, 0x6a4a2a, hx-3.8, f1, hz+0.8);  // dining table (v1.12.2: pushed west)
-  // bathroom (downstairs)
-  furn(0.7,0.8,0.7, 0xffffff, hx+1.2, f1, hz+3.0);   // toilet
-  furn(0.8,0.9,0.6, 0xe8e8e8, hx+2.5, f1, hz+3.2);   // sink vanity
+  /* ---- MAIN LEVEL interior (floor at mainY) ----
+     Open living/kitchen across the south; 3 bedrooms + bath + stair landing
+     across the north. The stair top lands in the open NE landing. */
+  var f1 = mainY+0.25;
+  // north/south divider (bedrooms | living), door gap at hx-1.0
+  inWall(x0+0.3, hz-0.8, hx+4.4, hz-0.8, f1, hx-1.0, hz-0.8);
+  // bedroom 1 | bedroom 2 divider, door gap
+  inWall(hx-2.0, hz-0.8, hx-2.0, zN+0.3, f1, hx-2.0, hz-2.2);
+  // bedroom 2 | bath divider, door gap
+  inWall(hx+1.0, hz-0.8, hx+1.0, zN+0.3, f1, hx+1.0, hz-2.2);
+  // living room furniture (south-west)
+  furn(3.2,0.9,1.2, 0x7a4a2a, hx-3.0, f1, hz+2.6);   // couch
+  furn(1.4,0.7,0.8, 0x333333, hx-3.0, f1, hz+0.6);   // TV stand
+  furn(1.2,0.5,1.2, 0x5a3a22, hx-0.5, f1, hz+2.6);   // coffee table
+  // kitchen (south-east)
+  furn(2.6,1.0,0.9, 0xd8d0c0, hx+2.8, f1, hz+3.1);   // counter
+  furn(0.9,1.0,0.9, 0x888888, hx+5.6, f1, hz+3.1);   // fridge
+  furn(1.6,0.75,1.6, 0x6a4a2a, hx+2.8, f1, hz+1.4);  // dining table
+  // bedroom 1 (north-west)
+  furn(2.2,0.6,3.2, 0x4a6a8a, hx-4.5, f1, hz-2.4);   // bed
+  furn(0.6,0.8,0.6, 0x6a4a2a, hx-6.0, f1, hz-1.4);   // nightstand
+  // bedroom 2 (north-center)
+  furn(2.0,0.6,2.8, 0x8a4a5a, hx-0.5, f1, hz-2.4);   // bed
+  furn(1.2,1.0,0.6, 0x7a5a3a, hx-1.8, f1, hz-3.2);   // dresser
+  // bath (north-east)
+  furn(0.7,0.8,0.7, 0xffffff, hx+2.2, f1, hz-2.8);   // toilet
+  furn(0.8,0.9,0.6, 0xe8e8e8, hx+3.2, f1, hz-3.0);   // sink
+  furn(1.2,0.6,1.2, 0xd8e8f0, hx+3.6, f1, hz-2.0);   // tub
   labelAt('535 DOLLAR MILL RD', hx, hz, 9, 30, '#ffd75e');
 
-  // ================= UPSTAIRS =================
-  var f2=gy+FH+0.25;
-  // hallway along east (from stair top at z=hz-1.5, going south)
-  // master bedroom (NW) | hallway, gap for door
-  inWall(hx-0.5, hz-D/2+0.3, hx-0.5, hz+1.0, f2, hx-0.5, hz-1.0);
-  // bedroom 2/3 divider (south half)
-  inWall(hx-W/2+0.3, hz+1.0, hx+4.5, hz+1.0, f2, hx-2.0, hz+1.0);
-  // bedroom 2 (SW) | bedroom 3 (S-center)
-  inWall(hx-1.5, hz+1.0, hx-1.5, hz+D/2-0.3, f2, hx-1.5, hz+2.5);
-  // bathroom (NE): north of hallway
-  inWall(hx+1.5, hz-1.5, hx+4.5, hz-1.5, f2, hx+3.0, hz-1.5);
-  inWall(hx+1.5, hz-D/2+0.3, hx+1.5, hz-1.5, f2, hx+1.5, hz-2.5);
-  // furniture: master bedroom (NW)
-  furn(2.2,0.6,3.2, 0x4a6a8a, hx-3.5, f2, hz-2.0);   // bed
-  furn(0.6,0.8,0.6, 0x6a4a2a, hx-5.0, f2, hz-3.0);   // nightstand
-  furn(1.4,1.0,0.6, 0x7a5a3a, hx-1.5, f2, hz-3.2);   // dresser
-  // bedroom 2 (SW)
-  furn(2.0,0.6,2.8, 0x8a4a5a, hx-3.8, f2, hz+2.4);   // bed
-  furn(1.2,1.0,0.6, 0x7a5a3a, hx-5.2, f2, hz+1.5);   // dresser
-  // bedroom 3 (S-center)
-  furn(1.8,0.6,2.6, 0x4a8a6a, hx+1.5, f2, hz+2.6);   // bed
-  furn(0.6,0.8,0.6, 0x6a4a2a, hx+0.2, f2, hz+3.2);   // nightstand
-  // bathroom (NE upstairs)
-  furn(0.7,0.8,0.7, 0xffffff, hx+2.2, f2, hz-2.8);   // toilet
-  furn(0.8,0.9,0.6, 0xe8e8e8, hx+3.5, f2, hz-3.0);   // sink
-  furn(1.2,0.6,1.2, 0xd8e8f0, hx+3.8, f2, hz-2.0);   // tub
+  /* ---- BASEMENT interior (floor at bsmtY) ----
+     Family room (east) | garage (west) | utility + bath (north-west).
+     The stair bottom lands in the family room. */
+  var f0 = bsmtY+0.25;
+  // garage | family room divider, door gap at hz+1.0
+  inWall(hx-1.5, zN+0.3, hx-1.5, zS-0.3, f0, hx-1.5, hz+1.0);
+  // utility (north-west) | garage divider, door gap
+  inWall(x0+0.3, hz-1.5, hx-1.5, hz-1.5, f0, hx-3.0, hz-1.5);
+  // bath | utility divider, door gap
+  inWall(hx-4.5, hz-1.5, hx-4.5, zN+0.3, f0, hx-4.5, hz-0.5);
+  // family room furniture (keep clear of the stair bottom at hx+5.2, hz+1.5)
+  furn(2.8,0.9,1.1, 0x5a4a6a, hx+0.8, f0, hz+2.8);   // couch
+  furn(1.2,0.7,0.8, 0x333333, hx+0.8, f0, hz+0.6);   // TV stand
+  furn(1.0,0.5,1.0, 0x4a3a2a, hx+2.8, f0, hz+2.8);   // coffee table
+  // utility (north-west)
+  furn(1.2,1.1,0.8, 0xaaaaaa, hx-5.8, f0, hz-3.0);   // washer
+  furn(1.2,1.1,0.8, 0x999999, hx-4.3, f0, hz-3.0);   // dryer
+  furn(1.0,1.6,1.0, 0x777777, hx-2.5, f0, hz-3.2);   // furnace
+  // bath (north-west corner)
+  furn(0.7,0.8,0.7, 0xffffff, hx-5.8, f0, hz-0.6);   // toilet
+  furn(0.8,0.9,0.6, 0xe8e8e8, hx-5.8, f0, hz+0.4);   // sink
 
-  // ---- carport (EAST side): open-sided, extended roof ----
-  var cpx=hx+W/2+3.2, cpz=hz, cpW=6.4, cpD=7.2, cpH=3.1;
-  var cpRoof=new THREE.Mesh(new THREE.BoxGeometry(cpW+1.2,0.18,cpD+1.2),
-    new THREE.MeshLambertMaterial({ color:roofC }));
-  cpRoof.position.set(cpx, gy+cpH, cpz); scene.add(cpRoof);
-  [[cpx+cpW/2-0.3,cpz-cpD/2+0.3],[cpx+cpW/2-0.3,cpz+cpD/2-0.3],[cpx+cpW/2-0.3,cpz],
-   [cpx-cpW/2+0.5,cpz-cpD/2+0.3],[cpx-cpW/2+0.5,cpz+cpD/2-0.3]].forEach(function(p){
-    var post=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.12,cpH,8),
-      new THREE.MeshLambertMaterial({ color:trim }));
-    post.position.set(p[0], gy+cpH/2, p[1]); scene.add(post);
-  });
-  var cpslab=new THREE.Mesh(new THREE.BoxGeometry(cpW,0.18,cpD),
-    new THREE.MeshLambertMaterial({ color:0x9a9a9a }));
-  cpslab.position.set(cpx, gy+0.09, cpz); scene.add(cpslab);
-
-  // ---- driveway ----
-  var dvPts=[[3126,3710],[3123,3730],[3118,3752],[3114,3770],[cpx,cpz-1.5]];
-  var dg2=ribbonGeom(dvPts.map(function(p){return [p[0],p[1]];}), 4.5, 0.3);
+  /* ---- DRIVEWAY: road -> basement garage, meeting the road SQUARELY ----
+     Dollar Mill Rd runs east-west past the house; the driveway runs
+     north-south (perpendicular). Concrete, graded up from the road.
+     (The old driveway ran SOUTH away from the house — wrong side.) */
+  var dvPts=[[3126,3709],[3125,3705],[3123.5,3703],[3121.5,3701.2]];
+  var dvYs=dvPts.map(function(p){ return heightAt(p[0],p[1])+0.32; });
+  dvYs[dvYs.length-1]=bsmtY+0.32;   // meet the garage floor
+  var dg2=ribbonGeomY(dvPts.map(function(p){return [p[0],p[1]];}), 4.5, dvYs);
   scene.add(new THREE.Mesh(dg2, new THREE.MeshLambertMaterial({ color:0x9a9a9a })));
-  var ww=ribbonGeom([[3113,3776],[3108,3778],[hx,hz-D/2-1.2]], 1.6, 0.32);
+  // the van parks on the driveway in front of the garage
+  heroHouse.drivewayPark={ x:3124, z:3705 };
+  // walkway: driveway -> front porch stairs
+  var ww=ribbonGeom([[3125,3706],[hx,hz+D/2+6.2]], 1.6, 0.32);
   scene.add(new THREE.Mesh(ww, new THREE.MeshLambertMaterial({ color:0x9a9a9a })));
-  heroHouse.drivewayPark={x:cpx, z:cpz};
 
-  // ---- brick mailbox pillar near the street ----
+  /* ---- brick mailbox pillar at the street (by the driveway, per photo) ---- */
   (function(){
     var mbx=3134, mbz=3714, mby=heightAt(mbx,mbz);
-    var pillar=new THREE.Mesh(new THREE.BoxGeometry(0.7,1.3,0.7),
-      new THREE.MeshLambertMaterial({ color:brick }));
-    pillar.position.set(mbx, mby+0.65, mbz); scene.add(pillar);
-    var mbox=new THREE.Mesh(new THREE.BoxGeometry(0.9,0.4,0.5),
-      new THREE.MeshLambertMaterial({ color:0x2a2a2a }));
-    mbox.position.set(mbx, mby+1.5, mbz); scene.add(mbox);
+    box(0.7,1.3,0.7, brick, mbx, mby+0.65, mbz);
+    box(0.9,0.4,0.5, 0x2a2a2a, mbx, mby+1.5, mbz);
     addCollider(mbx,mbz,0.8);
   })();
 
-  // ---- dense tall pines around the lot ----
+  /* ---- dense tall pines around the lot (per the photo) ---- */
   (function(){
-    for (var pa=0; pa<14; pa++){
-      var ang=pa/14*Math.PI*2+0.35;
-      var pr2=40+rand()*16;
+    for (var pa=0; pa<16; pa++){
+      var ang=pa/16*Math.PI*2+0.35;
+      var pr2=42+rand()*16;
       var tx=hx+Math.cos(ang)*pr2, tz=hz+Math.sin(ang)*pr2*0.85;
-      if (Math.hypot(tx-hx,tz-hz)<22) continue;
+      if (Math.hypot(tx-hx,tz-hz)<24) continue;
       if (distToRoadEdge(tx,tz)<10) continue;
       var dD=1e9;
       for (var di=0;di<dvPts.length;di++){
@@ -3593,6 +3634,7 @@ function heroHouseFloorY(){
     }
   })();
 })();
+
 
 /* ---- neighborhood houses: two tiers ----
    Hero = 535 only. Everything else = believable area-accurate shells. */
@@ -5222,12 +5264,13 @@ actionBtn.addEventListener('click', function(){
   } else if (a==='exit-car'){
     exitCar(false);
   } else if (a==='enter-front'){
-    // front door is on the NORTH wall — step INSIDE (south of the wall)
-    player.x=heroHouse.frontDoor.x; player.z=heroHouse.frontDoor.z+2.2;
+    // v3.0 RANCH REBUILD: front door is on the SOUTH wall (faces Dollar Mill Rd).
+    // Step INSIDE (north of the south wall), onto the main level.
+    player.x=heroHouse.frontDoor.x; player.z=heroHouse.frontDoor.z-2.2;
     player.inside=true; player.heroFloor=1; setDrivingUI(false);
   } else if (a==='enter-back'){
-    // back door is on the SOUTH wall — step INSIDE (north of the wall)
-    player.x=heroHouse.backDoor.x; player.z=heroHouse.backDoor.z-2.2;
+    // v3.0: back door is on the NORTH wall. Step INSIDE (south of the north wall).
+    player.x=heroHouse.backDoor.x; player.z=heroHouse.backDoor.z+2.2;
     player.inside=true; player.heroFloor=1; setDrivingUI(false);
   } else if (a==='pickup'){
     doPickup();
@@ -5244,8 +5287,10 @@ actionBtn.addEventListener('click', function(){
     var fd=heroHouse.frontDoor, bd=heroHouse.backDoor;
     var df=Math.hypot(player.x-fd.x, player.z-fd.z);
     var db=Math.hypot(player.x-bd.x, player.z-bd.z);
-    if (df<db){ player.x=fd.x; player.z=fd.z-2.2; }
-    else { player.x=bd.x; player.z=bd.z+2.2; }
+    // v3.0: front door on the SOUTH wall — exit SOUTH onto the porch
+    // (heroPorchY gives the raised porch Y); back door on the NORTH wall.
+    if (df<db){ player.x=fd.x; player.z=fd.z+1.5; }
+    else { player.x=bd.x; player.z=bd.z-1.5; }
     player.inside=false; setDrivingUI(false);
   } else if (a && a.indexOf('enter-loc:')===0){
     if (typeof spDoEnter==='function') spDoEnter(parseInt(a.split(':')[1],10));
@@ -6080,7 +6125,10 @@ function updatePlayer(dt){
     gy=(wl===null?heightAt(player.x,player.z):wl)+0.05+Math.sin(swimT*2.4)*0.1; // bob
     player.mesh.position.set(player.x, gy, player.z);
   } else {
-    gy=player.inside ? ((player.locIdx>=0&&player.locFloorY)?player.locFloorY:heroHouseFloorY()) : heightAt(player.x,player.z);
+    // v3.0 535 PORCH: outside on the raised front porch/entry stairs, use the
+    // porch Y (the main floor sits 2.4u above grade — the photo's elevated entry).
+    var _phy=(!player.inside && typeof heroPorchY==='function')?heroPorchY(player.x,player.z):null;
+    gy=player.inside ? ((player.locIdx>=0&&player.locFloorY)?player.locFloorY:heroHouseFloorY()) : (_phy!==null?_phy:heightAt(player.x,player.z));
     player.mesh.position.set(player.x, gy, player.z);  // pin feet to terrain EVERY frame
   }
   player.mesh.rotation.y=player.yaw;
@@ -6628,8 +6676,10 @@ function updateActionButton(){
   if (car.driving){
     act='exit-car'; label='EXIT CAR';
   } else {
-    var df=Math.hypot(player.x-heroHouse.frontDoor.x, player.z-(heroHouse.frontDoor.z-1.5));
-    var db=Math.hypot(player.x-heroHouse.backDoor.x, player.z-(heroHouse.backDoor.z+1.5));
+    // v3.0: front door on the SOUTH wall — trigger SOUTH of it (on the porch);
+    // back door on the NORTH wall — trigger NORTH of it.
+    var df=Math.hypot(player.x-heroHouse.frontDoor.x, player.z-(heroHouse.frontDoor.z+1.5));
+    var db=Math.hypot(player.x-heroHouse.backDoor.x, player.z-(heroHouse.backDoor.z-1.5));
     if (player.inside){
       if (player.locIdx>=0 && typeof spCheckEnterables==='function'){
         var spIn=spCheckEnterables(); if (spIn){ act=spIn.act; label=spIn.label; }
