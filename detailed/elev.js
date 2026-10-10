@@ -1,3 +1,15 @@
+/* ============================================================================
+   ELEV — elevation grid (DATA FILE — do not edit)
+   ----------------------------------------------------------------------------
+   What: a coarse lat/lon elevation grid covering the map area, in meters.
+   lat0/lon0 = grid origin, dLat/dLon = cell spacing (degrees), rows x cols =
+   34 x 24, min/max = 225..363 m. g holds the 34 rows of values.
+   Generated from real elevation data for the map bounds.
+   Consumers: heightAt() in index.html (base analytic terrain), the
+   build-terrain-lifts.js pipeline, and junction height smoothing.
+   REGEN RULE: if this changes, re-run pipeline/build-terrain-lifts.js and
+   bump map_version (see terrain_lifts.js header).
+   ============================================================================ */
 var ELEV = {
   lat0: 33.83924, dLat: -0.00965, lon0: -84.62096, dLon: 0.010518,
   rows: 34, cols: 24,
