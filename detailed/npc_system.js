@@ -840,6 +840,12 @@ function initNPCs(){
     m.count=0; scene.add(m); return m;
   }
   _mesh={ torso:im(), head:im(), armL:im(), armR:im(), legL:im(), legR:im() };
+  /* v1.21 NPC KILL SWITCH: register meshes globally so __setNpcPaused can
+     hide/show them instantly without touching the NPC data. */
+  try {
+    window.__npcMeshes=[_mesh.torso,_mesh.head,_mesh.armL,_mesh.armR,_mesh.legL,_mesh.legR];
+    if (window.__npcPaused) for (var _hi=0; _hi<window.__npcMeshes.length; _hi++) window.__npcMeshes[_hi].visible=false;
+  } catch(e){}
   npcReady=true;
   publishReport();
 }
