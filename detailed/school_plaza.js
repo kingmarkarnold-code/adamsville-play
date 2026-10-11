@@ -200,7 +200,8 @@ function spShelf(x, z, len, gy, alongX) {
   var cx = 4060, cz = 2595;
   /* v2.0 auto-check: nudge clear of roads if needed (never on road) */
   try{ var _sp=placeStruct(cx,cz,41,4,'HarperArcherHS'); if(_sp){cx=_sp.x;cz=_sp.z;} }catch(e){}
-  var gy = heightAt(cx, cz);
+  /* v1.35 SNAP-TO-FACE (Joshua 2026-10-11). */
+  var gy = (typeof snapToGround==='function'?snapToGround(cx,cz,76,32,0):heightAt(cx,cz));
   var x0 = cx - 38, x1 = cx + 38, z0 = cz - 16, z1 = cz + 16;
   spWall(x0, z1, x1, z1, 9, brick, gy, [{ at: 38, w: 5 }]);  // front + entrance
   spWall(x0, z0, x1, z0, 9, brick, gy, []);                  // back
@@ -249,7 +250,7 @@ function spShelf(x, z, len, gy, alongX) {
   addSegCollider(cx - 2.8, z1, cx + 2.8, z1);
 
   /* ---- gym: (4045, 2530), 36 x 28, enterable ---- */
-  var gx = 4045, gz = 2530, ggy = heightAt(gx, gz);
+  var gx = 4045, gz = 2530, ggy = (typeof snapToGround==='function'?snapToGround(gx,gz,10,10,0):heightAt(gx,gz)); /* v1.35 snap */
   var ggx0 = gx - 18, ggx1 = gx + 18, ggz0 = gz - 14, ggz1 = gz + 14;
   spWall(ggx0, ggz1, ggx1, ggz1, 8, brick, ggy, []);
   spWall(ggx0, ggz0, ggx1, ggz0, 8, brick, ggy, []);
@@ -279,7 +280,7 @@ function spShelf(x, z, len, gy, alongX) {
   addSegCollider(ggx1, gz - 2.3, ggx1, gz + 2.3);
 
   /* ---- cafeteria: (4092, 2528), 28 x 24, enterable ---- */
-  var fx = 4092, fz = 2528, fgy = heightAt(fx, fz);
+  var fx = 4092, fz = 2528, fgy = (typeof snapToGround==='function'?snapToGround(fx,fz,10,10,0):heightAt(fx,fz)); /* v1.35 snap */
   var ffx0 = fx - 14, ffx1 = fx + 14, ffz0 = fz - 12, ffz1 = fz + 12;
   spWall(ffx0, ffz1, ffx1, ffz1, 6, brick, fgy, []);
   spWall(ffx0, ffz0, ffx1, ffz0, 6, brick, fgy, []);
@@ -304,11 +305,11 @@ function spShelf(x, z, len, gy, alongX) {
   addSegCollider(ffx0, fz - 2.3, ffx0, fz + 2.3);
 
   /* ---- parking lot (south of main, north of Collier Dr) ---- */
-  spParkingLot(4060, 2625, 60, 24, heightAt(4060, 2625), 2);
-  spSlab(4060, 2640, 10, 10, 0x3a3a3e, heightAt(4060, 2640), 0.1); // driveway to Collier
+  spParkingLot(4060, 2625, 60, 24, (typeof snapToGround==='function'?snapToGround(4060,2625,60,24,0):heightAt(4060,2625)), 2);
+  spSlab(4060, 2640, 10, 10, 0x3a3a3e, (typeof snapToGround==='function'?snapToGround(4060,2640,10,10,0):heightAt(4060,2640)), 0.1); // driveway to Collier
 
   /* ---- football field (4030->4060, 2460), 80 x 48 ---- */
-  var fldx = 4060, fldz = 2460, fldgy = heightAt(fldx, fldz);
+  var fldx = 4060, fldz = 2460, fldgy = (typeof snapToGround==='function'?snapToGround(fldx,fldz,20,20,0):heightAt(fldx,fldz)); /* v1.35 snap */
   spSlab(fldx, fldz, 80, 48, 0x3d7a3d, fldgy, 0.08);
   var wlM = new THREE.MeshBasicMaterial({ color: 0xeeeeee });
   for (var yl = -20; yl <= 20; yl += 10) {
@@ -336,10 +337,10 @@ function spShelf(x, z, len, gy, alongX) {
     new THREE.MeshLambertMaterial({ color: 0xcccccc }));
   fp.position.set(cx - 20, gy + 6, z1 + 8); scene.add(fp);
   addCollider(cx - 20, z1 + 8, 0.5);
-  spSlab(cx, 2618, 6, 12, 0x9a9a9a, heightAt(cx, 2618), 0.12);
+  spSlab(cx, 2618, 6, 12, 0x9a9a9a, (typeof snapToGround==='function'?snapToGround(cx,2618,6,12,0):heightAt(cx,2618)), 0.12);
   /* v1.35 SIDEWALK COLLISION (2026-10-11, Joshua: "I can run through sidewalks"):
      register this named sidewalk slab as a solid walkable surface. */
-  try{ if(typeof __regSidewalk==='function') __regSidewalk(cx, 2618, 0, 6, 0.3, 12, heightAt(cx,2618)+0.12-0.15); }catch(e){}
+  try{ if(typeof __regSidewalk==='function') __regSidewalk(cx, 2618, 0, 6, 0.3, 12, (typeof snapToGround==='function'?snapToGround(cx,2618,6,12,0):heightAt(cx,2618))+0.12-0.15); }catch(e){}
 
   labelAt('HARPER ARCHER HIGH SCHOOL', cx, cz, 22, 60, '#ffd75e');
   addCollider(cx, cz, 40);
@@ -357,7 +358,8 @@ function spShelf(x, z, len, gy, alongX) {
   var cx = 3750, cz = 4297;
   /* v2.0 auto-check: nudge clear of roads if needed (never on road) */
   try{ var _sp2=placeStruct(cx,cz,50,4,'ShopsAtCascade'); if(_sp2){cx=_sp2.x;cz=_sp2.z;} }catch(e){}
-  var gy = heightAt(cx, cz);
+  /* v1.35 SNAP-TO-FACE (Joshua 2026-10-11). */
+  var gy = (typeof snapToGround==='function'?snapToGround(cx,cz,24,96,0):heightAt(cx,cz));
   var wallC = 0xb09a78, roofC = 0x3a3a3e, H = 7;
   var px0 = cx - 12, px1 = cx + 12;      // 3738 - 3762
   var pz0 = cz - 48, pz1 = cz + 48;      // 4249 - 4345
@@ -436,16 +438,16 @@ function spShelf(x, z, len, gy, alongX) {
   });
 
   /* ---- parking lot (west of building) ---- */
-  spParkingLot(3705, 4300, 50, 90, heightAt(3705, 4300), 3);
+  spParkingLot(3705, 4300, 50, 90, (typeof snapToGround==='function'?snapToGround(3705,4300,50,90,0):heightAt(3705,4300)), 3);
 
   /* ---- sidewalk along storefronts ---- */
-  spSlab(px0 - 3, cz, 5, 100, 0x9a9a9a, heightAt(px0 - 3, cz), 0.12);
+  spSlab(px0 - 3, cz, 5, 100, 0x9a9a9a, (typeof snapToGround==='function'?snapToGround(px0 - 3,cz,5,100,0):heightAt(px0 - 3,cz)), 0.12);
   /* v1.35 SIDEWALK COLLISION (2026-10-11, Joshua: "I can run through sidewalks"):
      register this named sidewalk slab as a solid walkable surface. */
-  try{ if(typeof __regSidewalk==='function') __regSidewalk(px0-3, cz, 0, 5, 0.3, 100, heightAt(px0-3,cz)+0.12-0.15); }catch(e){}
+  try{ if(typeof __regSidewalk==='function') __regSidewalk(px0-3, cz, 0, 5, 0.3, 100, (typeof snapToGround==='function'?snapToGround(px0-3,cz,5,100,0):heightAt(px0-3,cz))+0.12-0.15); }catch(e){}
 
   /* ---- pylon sign near Fairburn Rd ---- */
-  var pyX = 3690, pyZ = 4260, pyGy = heightAt(pyX, pyZ);
+  var pyX = 3690, pyZ = 4260, pyGy = (typeof snapToGround==='function'?snapToGround(pyX,pyZ,10,10,0):heightAt(pyX,pyZ)); /* v1.35 snap */
   var pole = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 10, 8),
     new THREE.MeshLambertMaterial({ color: 0x666666 }));
   pole.position.set(pyX, pyGy + 5, pyZ); scene.add(pole);
