@@ -70,6 +70,9 @@ var ZONE_BOUNDS = {
 /* ---------------- dynamic script injection ----------------
    Called during HTML parsing via document.write to load zone data
    synchronously before the world-building code runs. */
+/* v1.29 DEFERRED (Joshua 2026-10-11): zone scripts no longer inject via
+   document.write during parsing. Instead, expose the file list; the deferred
+   loader in index.html injects them dynamically after launch confirmation. */
 function injectZoneScripts(zoneId){
   var base = 'zones/' + zoneId + '/';
   var files = [
@@ -79,17 +82,10 @@ function injectZoneScripts(zoneId){
     {src: base + 'pins.js',      key: 'pins'},
     {src: base + 'buildings.js', key: 'buildings'},
   ];
-
-  // Use document.write for synchronous in-order loading during parse.
-  // Each script gets onload/onerror handlers for the progress bar.
-  for (var i = 0; i < files.length; i++){
-    var f = files[i];
-    document.write(
-      '<script src="' + f.src + '" ' +
-      'onload="__loadStep(\'' + f.key + '\')" ' +
-      'onerror="__loadStep(\'' + f.key + '\',true)"><\/script>'
-    );
-  }
+  // Expose for the deferred loader (index.html). Do NOT document.write —
+  // this script now runs after HTML parsing via deferred injection.
+  window.__zoneScriptFiles = files;
+  return files;
 }
 
 /* ---------------- zone transition ----------------
@@ -198,9 +194,9 @@ window.ZONELOADER = {
   ZONE_BOUNDS: ZONE_BOUNDS,
 };
 
-/* ---------------- auto-inject on load ----------------
-   This script is loaded BEFORE the data script tags in index.html.
-   We inject the zone data scripts immediately via document.write. */
+/* ---------------- expose zone files on load ----------------
+   v1.29 DEFERRED: do not document.write. The deferred loader in index.html
+   picks up window.__zoneScriptFiles and injects them after confirmation. */
 injectZoneScripts(CURRENT_ZONE);
 
 })();
