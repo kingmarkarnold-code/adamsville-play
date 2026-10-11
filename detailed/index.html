@@ -9252,28 +9252,20 @@ function resolveNPCVehicleCollisions(){
   }catch(e){}
 }
 
-function animate(){
-  requestAnimationFrame(animate);
-  var dt=Math.min(0.05, clock.getDelta());
+/* v1.46 FIXED TIMESTEP (expert report #13, James Park, Joshua approved):
+   The simulation now runs at a FIXED 30Hz no matter what frame rate the
+   device manages. animate() accumulates real elapsed time and calls
+   simTick(1/30) once per 33.3ms of game time; rendering still happens on
+   every rAF. Net effect: NPCs, vehicles, physics and timers behave
+   IDENTICALLY on Joshua's 30fps TCL and his 60fps laptop. SIM_MAX_STEPS
+   caps catch-up so a single hitch can never spiral into a freeze. */
+var SIM_STEP=1/30, __simAcc=0, SIM_MAX_STEPS=4;
+/* simTick(dt) - one fixed-size simulation step. dt is ALWAYS 1/30 here. */
+function simTick(dt){
   /* v1.39 PERF (expert report #8): rebuild the shared vehicle-avoidance
      snapshot + spatial hash ONCE per frame. Without this, every vehicle
      re-gathers the whole world per query = O(V^2) garbage per frame. */
   try{ if (window.VehicleAvoid && VehicleAvoid.beginFrame) VehicleAvoid.beginFrame(); }catch(e){}
-  /* v1.21 DIAGNOSTIC: Update FPS + input indicator on weak hardware */
-  try{
-    if(window.__diagEl){
-      window.__diagFrames++;
-      var _now=performance.now();
-      if(_now-window.__diagLastT>=1000){
-        window.__diagFPS=window.__diagFrames;
-        window.__diagFrames=0;
-        window.__diagLastT=_now;
-        window.__diagEl.textContent='FPS:'+window.__diagFPS
-          +' key:'+window.__diagLastKey
-          +' px:'+Math.round(player.x)+','+Math.round(player.z);
-      }
-    }
-  }catch(e){}
   if (car.driving) updateCar(dt); else updatePlayer(dt);
   /* v1.31 AUTO-REPAIR (Joshua): a parked van slowly fixes itself - fair, not
      punishing. 1 damage point per 5s parked (~8 min for a full rebuild). */
@@ -9349,6 +9341,32 @@ function animate(){
       resolveNPCVehicleCollisions();
     }
   }catch(e){}   // v1.18: no vehicle passes through another — Period (Joshua)
+} /* end simTick - fixed 30Hz simulation step */
+
+/* animate() - render loop. Steps the fixed-timestep sim, then renders. */
+function animate(){
+  requestAnimationFrame(animate);
+  /* v1.46 FIXED TIMESTEP: bank real elapsed time, spend it in 1/30s sim steps. */
+  var realDt=Math.min(0.25, clock.getDelta());
+  __simAcc+=realDt;
+  var _n=0;
+  while(__simAcc>=SIM_STEP && _n<SIM_MAX_STEPS){ simTick(SIM_STEP); __simAcc-=SIM_STEP; _n++; }
+  if(_n===SIM_MAX_STEPS) __simAcc=0; /* spiral-of-death guard: drop the backlog (brief slow-mo beats a lockup) */
+  /* v1.21 DIAGNOSTIC: Update FPS + input indicator on weak hardware */
+  try{
+    if(window.__diagEl){
+      window.__diagFrames++;
+      var _now=performance.now();
+      if(_now-window.__diagLastT>=1000){
+        window.__diagFPS=window.__diagFrames;
+        window.__diagFrames=0;
+        window.__diagLastT=_now;
+        window.__diagEl.textContent='FPS:'+window.__diagFPS
+          +' key:'+window.__diagLastKey
+          +' px:'+Math.round(player.x)+','+Math.round(player.z);
+      }
+    }
+  }catch(e){}
   renderer.render(scene, camera);
   // v1.10.1: first frame is on screen — dismiss the native loading screen.
   if (!window.__gameReadyFired) {
