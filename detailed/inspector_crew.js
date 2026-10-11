@@ -560,6 +560,11 @@ function boot(){
 /* Boot when scene exists; retry (late-load safe). */
 var _tries=0;
 var _bootTimer=setInterval(function(){
+
+  /* v1.34 LAUNCHER SKIP (Joshua 2026-10-11): player unchecked this system
+     in launch options — do not initialize at all. The deferred loader
+     normally skips the script entirely; this is the backstop. */
+  if (window.__launchOpts && window.__launchOpts.roadCrew===false && window.__launchOpts.infraCrew===false){ try{clearInterval(_bootTimer);}catch(e){} return; }
   _tries++;
   try{
     if (typeof THREE!=='undefined' && typeof scene!=='undefined' && scene){
