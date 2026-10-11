@@ -69,9 +69,9 @@
     },
     {
       "name": "index.html",
-      "size": 764846,
-      "sha256": "2499abbe082ff1beb74f75e5c9a7524358d85897b0cb570f8c24c038aef50ae2",
-      "hash": "2499abbe082ff1be",
+      "size": 764960,
+      "sha256": "7390217267473badbae5fce36d78ece133cec4b91dbcfe5763f5409b657de5ec",
+      "hash": "7390217267473bad",
       "md5": "1bde648123f4ff8e12db651ecb78de3f"
     },
     {
@@ -95,9 +95,9 @@
     },
     {
       "name": "marta_bus_system.js",
-      "size": 30119,
-      "sha256": "e640fac73fa4f347dc270b3d9bcc34c0e55ad9bfeed3aed009a5a98f0d48fb4b",
-      "hash": "e640fac73fa4f347"
+      "size": 31191,
+      "sha256": "bf07fa7a4c3cb08b870a190d7f6ce81982fa20a1a99c931aebae007fb2e4f7d1",
+      "hash": "bf07fa7a4c3cb08b"
     },
     {
       "name": "marta_data.js",
@@ -157,9 +157,9 @@
     },
     {
       "name": "schoolbus_system.js",
-      "size": 13218,
-      "sha256": "77c793f9ddd01770577ea41a7c8353aee1b67b4f9c2695acf4150100d4745487",
-      "hash": "eb737b91c6c87c5b"
+      "size": 13757,
+      "sha256": "956e36af6ff0e1e40bee355f7a7fcc468fa78baca467a1ebd77ac52cabe3146b",
+      "hash": "956e36af6ff0e1e4"
     },
     {
       "name": "schools3.js",
@@ -169,9 +169,9 @@
     },
     {
       "name": "semi_system.js",
-      "size": 17444,
-      "sha256": "14ce6d9db1b4d5791e40b6d3467817e9c5b83a66a5f380824c3051eb3d3a8d6a",
-      "hash": "fae7c8a87d33a7c3"
+      "size": 18232,
+      "sha256": "0f98d8c22d2aa380e3f932ad585e1bbfa3af784809cf158a5d26564a2dd9cc17",
+      "hash": "0f98d8c22d2aa380"
     },
     {
       "name": "shirt_designs.js",
@@ -218,9 +218,9 @@
     },
     {
       "name": "traffic_system.js",
-      "size": 43949,
-      "sha256": "8e2aebe54076c5ef53e588acef08c368045052367942214e1f2c7a9a68c92314",
-      "hash": "8e2aebe54076c5ef",
+      "size": 47494,
+      "sha256": "220fbb73ebc48dd56c68ed994bdfd26621fe0b2383840871aec2722e10f27417",
+      "hash": "220fbb73ebc48dd5",
       "md5": "0b260d7d865e0dd3"
     },
     {
@@ -283,8 +283,14 @@
       "size": 21474,
       "sha256": "7405847ad92e741e4b4a4fd42575f3ee46a1555107e48a309c5c94aed302934a",
       "hash": "7405847ad92e741e"
+    },
+    {
+      "name": "vehicle_avoid.js",
+      "size": 7840,
+      "sha256": "682c3ff82dccfd4e6b914e41068dab46fff4dc8cab2461325c58e91fe1f7eec8",
+      "hash": "682c3ff82dccfd4e"
     }
   ],
-  "ui_version": "2026.10.10.124",
-  "version": "1.13.0"
+  "ui_version": "2026.10.10.125",
+  "version": "2026.10.10.125"
 }
