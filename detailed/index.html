@@ -604,6 +604,7 @@
   <h3 id="help-ver">How to play (demo v1.4)</h3>
   <b>On foot:</b> left thumbstick to walk — push gently to stroll, full push to run. Drag right side to look.<br>
   <b>Driving:</b> left &#9664; &#9654; buttons steer, right pedals = gas / brake / handbrake.<br>
+  <b>On desktop:</b> W/S or &#8593;/&#8595; = gas / brake, A/D or &#8592;/&#8594; = steer, SPACE = handbrake, E = enter/exit van.<br>
   <b>Action button</b> (teal): ENTER/EXIT the Safari van, ENTER/EXIT house at the doors, PICK UP items.<br>
   <b>Inventory:</b> backpack button (top-left, under the title) or press I — tap DROP to put an item back down.<br>
   <b>Minimap</b> (bottom-left): tap to open the full map (opens on you, zoomed in) — pinch to zoom, drag to pan, tap to close. On desktop: drag with the mouse to pan, scroll wheel to zoom, click to close.<br>
@@ -6782,11 +6783,18 @@ renderer.domElement.addEventListener('touchend', endTouch);
 renderer.domElement.addEventListener('touchcancel', endTouch);
 
 // drive buttons
+/* v1.43 DESKTOP DRIVING (expert report #1, Marcus Chen): Pointer Events unify
+   touch + mouse input. The old touchstart/touchend handlers ignored mouse
+   clicks entirely, so desktop players could enter the van but never drive it
+   (a soft trap). pointerdown/pointerup fire for both touch and mouse, so the
+   on-screen pedals now work on PC too. pointerleave is included so a mouse
+   that slides off the button releases it instead of sticking. */
 function bindHold(id, set){
   var el=document.getElementById(id);
-  el.addEventListener('touchstart', function(e){ set(true); e.preventDefault(); }, {passive:false});
-  el.addEventListener('touchend', function(e){ set(false); e.preventDefault(); }, {passive:false});
-  el.addEventListener('touchcancel', function(){ set(false); });
+  el.addEventListener('pointerdown', function(e){ set(true); e.preventDefault(); });
+  el.addEventListener('pointerup', function(e){ set(false); e.preventDefault(); });
+  el.addEventListener('pointercancel', function(){ set(false); });
+  el.addEventListener('pointerleave', function(){ set(false); });
 }
 bindHold('steer-left', function(v){ drive.left=v; });
 bindHold('steer-right', function(v){ drive.right=v; });
@@ -9121,17 +9129,38 @@ window.addEventListener('resize', function(){
 });
 window.addEventListener('keydown', function(e){
   var k=e.key.toLowerCase(); keys[k]=true;
+  if (e.repeat) return;  /* v1.43: ignore key auto-repeat (expert #1, Marcus Chen) */
   if (k==='i'){ toggleInv(); }
   else if (k==='e'){
     var ab=document.getElementById('action-btn');
     if (ab && ab.style.display!=='none') ab.click();
+  }
+  /* v1.43 DESKTOP DRIVING (expert report #1, Marcus Chen): WASD / arrow keys
+     drive the van on PC. Only active while driving so on-foot WASD movement
+     (which reads the separate keys[] object) is unaffected. Space = handbrake.
+     preventDefault stops arrows/space from scrolling the page. */
+  else if (typeof car!=='undefined' && car.driving){
+    if (k==='w'||k==='arrowup'){ drive.gas=true; e.preventDefault(); }
+    else if (k==='s'||k==='arrowdown'){ drive.brake=true; e.preventDefault(); }
+    else if (k==='a'||k==='arrowleft'){ drive.left=true; e.preventDefault(); }
+    else if (k==='d'||k==='arrowright'){ drive.right=true; e.preventDefault(); }
+    else if (k===' '){ drive.hb=true; e.preventDefault(); }
   }
   /* v1.21 NPC KILL SWITCH: Shift+N toggles all NPCs paused/resumed (diagnostic). */
   else if (k==='n' && e.shiftKey){
     try{ window.__setNpcPaused(!window.__npcPaused); }catch(x){}
   }
 });
-window.addEventListener('keyup', function(e){ keys[e.key.toLowerCase()]=false; });
+window.addEventListener('keyup', function(e){
+  var k=e.key.toLowerCase(); keys[k]=false;
+  /* v1.43 DESKTOP DRIVING (expert report #1, Marcus Chen): release the driving
+     key so the van stops accelerating/turning when the key is lifted. */
+  if (k==='w'||k==='arrowup') drive.gas=false;
+  else if (k==='s'||k==='arrowdown') drive.brake=false;
+  else if (k==='a'||k==='arrowleft') drive.left=false;
+  else if (k==='d'||k==='arrowright') drive.right=false;
+  else if (k===' ') drive.hb=false;
+});
 
 // init camera behind player
 (function(){
