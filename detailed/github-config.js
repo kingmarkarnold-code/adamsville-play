@@ -53,8 +53,10 @@
 
 window.GITHUB_CONFIG = {
   /* Paste your fine-grained token between the quotes (Option A),
-     or leave empty and use GitHubReports.setToken() (Option B). */
-  token: "",
+     or leave empty and use GitHubReports.setToken() (Option B).
+     Token placed 2026-10-11 per Joshua's explicit authorization —
+     he understands it is visible to anyone who reads this file. */
+  token: "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",
 
   /* Which repo receives the reports. Do not change unless you
      move the game to a different repository. */
