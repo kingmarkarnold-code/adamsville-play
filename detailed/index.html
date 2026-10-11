@@ -977,6 +977,66 @@ try{
   document.addEventListener('touchend',__earlyStartRequest,{capture:true,passive:true});
   document.addEventListener('click',__earlyStartRequest,{capture:true});
 }catch(e){}
+/* ===== v1.22 LAUNCHER OPTIONS (Joshua 2026-10-10) =====
+   v1.26 FIX (2026-10-10): MOVED to block 1, BEFORE __wireLauncher.
+   __wireLauncher (block 1) does `key in window.__launchOpts` — when this
+   init lived in block 2, __launchOpts was undefined at wiring time, the
+   TypeError was swallowed by try/catch, and NO launcher listeners ever
+   attached (dead buttons/checkboxes). Init must precede wiring.
+   Pre-game options screen: lets Joshua pick which heavy systems run
+   (NPCs, crews, MARTA, drones, traffic) and graphics (shadows, AA,
+   building detail). Persisted in localStorage['sa_launch_opts_v1'].
+   v1.23: defaults are all-OFF for web browsers (fresh visits start with
+   nothing checked; user opts in). APK keeps the old all-on defaults.
+   Saved prefs (loaded below) always override these defaults.
+   System update wrappers check their flag: `window.__launchOpts.<key>!==false`.
+   Graphics flags are read at init (renderer creation); changing AA
+   needs a page reload, which the launcher handles automatically. */
+(function __setLaunchDefaults(){
+  // Detect APK WebView vs plain web browser (same pattern as report badge v1.21)
+  var isAPK=false;
+  try{isAPK=/SurvivingAdamsville|wv/i.test(navigator.userAgent||'');}catch(e){}
+  var dflt=isAPK;  // web: false (everything off), APK: true (everything on)
+  window.__launchOpts={
+    npcs:dflt,roadCrew:dflt,surveyFleet:dflt,infraCrew:dflt,hqStaff:dflt,
+    martaBuses:dflt,martaTrains:dflt,drones:dflt,traffic:dflt,
+    shadows:dflt,antialias:dflt,hiDetail:dflt,
+    drawDist:'medium'  // v1.25: draw distance preset ('short'|'medium'|'long') — not a boolean, excluded from SELECT ALL/NONE presets
+  };
+  window.__isAPKLaunch=isAPK;  // informational: which default set was applied
+})();
+window.__launcherConfirmed = false;  // set true when user hits START GAME
+(function __loadLaunchOpts(){
+  try {
+    var saved = null;
+    try { saved = JSON.parse(localStorage.getItem('sa_launch_opts_v1') || 'null'); } catch(e){}
+    if (saved && typeof saved === 'object') {
+      for (var k in window.__launchOpts) {
+        if (typeof saved[k] === 'boolean') window.__launchOpts[k] = saved[k];
+        // v1.25: drawDist is a string preset, not a boolean
+        else if (k === 'drawDist' && typeof saved[k] === 'string' &&
+                 (saved[k] === 'short' || saved[k] === 'medium' || saved[k] === 'long')) {
+          window.__launchOpts[k] = saved[k];
+        }
+      }
+    }
+    // Backward compat: ?nonpc=1 URL param (v1.21 kill switch) maps to npcs:false
+    try {
+      var q = new URLSearchParams(window.location.search);
+      if (q.get('nonpc') === '1') window.__launchOpts.npcs = false;
+    } catch(e){}
+  } catch(e){}
+})();
+window.__saveLaunchOpts = function(){
+  try { localStorage.setItem('sa_launch_opts_v1', JSON.stringify(window.__launchOpts)); } catch(e){}
+};
+/* v1.22: "crews" master checkbox controls all four sub-crew flags. */
+window.__applyCrewMaster = function(on){
+  window.__launchOpts.roadCrew = on;
+  window.__launchOpts.surveyFleet = on;
+  window.__launchOpts.infraCrew = on;
+  window.__launchOpts.hqStaff = on;
+};
 /* ===== v1.22 LAUNCHER UI WIRING (runs in block 1 so the launcher is
    interactive during the download phase, before block 2's sync init) ===== */
 (function __wireLauncher(){
@@ -2374,61 +2434,7 @@ window.__setNpcPaused = function(paused){
   } catch(e){}
   try { if (typeof showToast === 'function') showToast(window.__npcPaused ? 'NPCs PAUSED' : 'NPCs RESUMED', 2000); } catch(e){}
 };
-/* ===== v1.22 LAUNCHER OPTIONS (Joshua 2026-10-10) =====
-   Pre-game options screen: lets Joshua pick which heavy systems run
-   (NPCs, crews, MARTA, drones, traffic) and graphics (shadows, AA,
-   building detail). Persisted in localStorage['sa_launch_opts_v1'].
-   v1.23: defaults are all-OFF for web browsers (fresh visits start with
-   nothing checked; user opts in). APK keeps the old all-on defaults.
-   Saved prefs (loaded below) always override these defaults.
-   System update wrappers check their flag: `window.__launchOpts.<key>!==false`.
-   Graphics flags are read at init (renderer creation); changing AA
-   needs a page reload, which the launcher handles automatically. */
-(function __setLaunchDefaults(){
-  // Detect APK WebView vs plain web browser (same pattern as report badge v1.21)
-  var isAPK=false;
-  try{isAPK=/SurvivingAdamsville|wv/i.test(navigator.userAgent||'');}catch(e){}
-  var dflt=isAPK;  // web: false (everything off), APK: true (everything on)
-  window.__launchOpts={
-    npcs:dflt,roadCrew:dflt,surveyFleet:dflt,infraCrew:dflt,hqStaff:dflt,
-    martaBuses:dflt,martaTrains:dflt,drones:dflt,traffic:dflt,
-    shadows:dflt,antialias:dflt,hiDetail:dflt,
-    drawDist:'medium'  // v1.25: draw distance preset ('short'|'medium'|'long') — not a boolean, excluded from SELECT ALL/NONE presets
-  };
-  window.__isAPKLaunch=isAPK;  // informational: which default set was applied
-})();
-window.__launcherConfirmed = false;  // set true when user hits START GAME
-(function __loadLaunchOpts(){
-  try {
-    var saved = null;
-    try { saved = JSON.parse(localStorage.getItem('sa_launch_opts_v1') || 'null'); } catch(e){}
-    if (saved && typeof saved === 'object') {
-      for (var k in window.__launchOpts) {
-        if (typeof saved[k] === 'boolean') window.__launchOpts[k] = saved[k];
-        // v1.25: drawDist is a string preset, not a boolean
-        else if (k === 'drawDist' && typeof saved[k] === 'string' &&
-                 (saved[k] === 'short' || saved[k] === 'medium' || saved[k] === 'long')) {
-          window.__launchOpts[k] = saved[k];
-        }
-      }
-    }
-    // Backward compat: ?nonpc=1 URL param (v1.21 kill switch) maps to npcs:false
-    try {
-      var q = new URLSearchParams(window.location.search);
-      if (q.get('nonpc') === '1') window.__launchOpts.npcs = false;
-    } catch(e){}
-  } catch(e){}
-})();
-window.__saveLaunchOpts = function(){
-  try { localStorage.setItem('sa_launch_opts_v1', JSON.stringify(window.__launchOpts)); } catch(e){}
-};
-/* v1.22: "crews" master checkbox controls all four sub-crew flags. */
-window.__applyCrewMaster = function(on){
-  window.__launchOpts.roadCrew = on;
-  window.__launchOpts.surveyFleet = on;
-  window.__launchOpts.infraCrew = on;
-  window.__launchOpts.hqStaff = on;
-};
+
 (function detectWeakHardware(){
   try {
     var canvas = document.createElement('canvas');
