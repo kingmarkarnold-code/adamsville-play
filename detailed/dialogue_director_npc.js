@@ -128,7 +128,12 @@ function srand(){
   return _seed / 0x7fffffff;
 }
 /* vehLam — Lambert material helper, guarded. */
+/* v1.48 (#18): dialogue NPC is a character -> toon palette first,
+   then the vehicle cache, then raw Lambert. */
 function lam(color){
+  try {
+    if (typeof toonMat === 'function'){ var m=toonMat(color); if(m) return m; }
+  } catch(e){}
   try {
     if (typeof vehLam === 'function') return vehLam(color);
   } catch(e){}
@@ -616,11 +621,12 @@ window.updateDirector = function(dt){ updateDirector(dt || 0.016); };
 /* ---------------- boot ---------------- */
 function wrapAnimate(){
   try {
-    if (typeof animate === 'function' && !animate.__directorWrap){
-      var orig = animate;
-      var wrapped = function(){ orig(); updateDirector(0.016); };
-      wrapped.__directorWrap = true;
-      animate = wrapped;
+    /* v1.51 TICK REGISTRY (expert report #14, James Park, Joshua approved):
+       was an animate() monkey-patch — now registers on the central Sim tick
+       registry. Same once-per-frame timing, deterministic priority order. */
+    if(window.Sim && typeof Sim.onTick==='function' && !window.__directorTickReg){
+      window.__directorTickReg=true;
+      Sim.onTick('render', 71, function(dt){ updateDirector(0.016); });
     }
   } catch(e){}
 }
