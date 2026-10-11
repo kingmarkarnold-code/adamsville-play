@@ -532,7 +532,7 @@
   <h3>Settings</h3>
   <button class="row" id="set-help">How to play</button>
   <button class="row" id="set-music">Music: ON</button>
-  <button class="row" id="set-report">View report</button>
+  <!-- v1.12.10: "View report" button removed per Joshua — reports go to GitHub now. -->
   <button class="row" id="set-record">Record: OFF</button>
   <button class="row" id="set-gameplay">Gameplay &#9654;</button>
   <h3>Administrator</h3>
@@ -591,17 +591,7 @@
   <button class="row" id="se-save">Save</button>
   <button class="row" id="se-cancel">Cancel</button>
 </div></div>
-<!-- Live health report viewer (the Report system): session diagnostics JSON
-     plus "SHARE WITH MUSE" export. -->
-<div id="report-view">
-  <h3>Live report (this session)</h3>
-  <p id="rep-status"></p>
-  <pre id="report-json">loading...</pre>
-  <div class="btnrow">
-    <button id="rep-share">SHARE WITH MUSE</button>
-    <button id="rep-close">Close</button>
-  </div>
-</div>
+<!-- v1.12.10: report-view panel removed per Joshua — reporting still runs headless to GitHub. -->
 <!-- HUD readouts: current street name (GTA-style), version tag, how-to-play card. -->
 <div id="street-name"></div>
 <div id="ver-tag">v1.4</div>
@@ -2131,24 +2121,15 @@ var Report=(function(){
   function trunc(s,n){s=String(s==null?"":s);return s.length>n?s.substring(0,n)+"...":s;}
   function setSys(name,obj){ try{ systems[name]=obj; }catch(e){} }
   function ensureBadge(){
-    try{
-      if (badgeEl||!document||!document.body) return;
-      badgeEl=document.createElement('div');
-      badgeEl.id='report-badge';
-      badgeEl.style.cssText='position:fixed;right:8px;bottom:8px;z-index:60;'
-        +'font:11px monospace;color:#fff;background:rgba(0,0,0,.55);'
-        +'padding:3px 7px;border-radius:8px;pointer-events:none;';
-      badgeEl.textContent='\uD83D\uDCDD ...';
-      document.body.appendChild(badgeEl);
-    }catch(e){}
+    /* v1.12.10: Joshua removed the in-game report badge — reports now go
+       to GitHub via github_reports.js, so the badge is redundant. This is
+       intentionally a no-op; Report.note/save still collect and send data. */
+    return;
   }
   function setBadge(txt, ok){
-    try{
-      ensureBadge(); if(!badgeEl) return;
-      badgeEl.textContent=txt;
-      badgeEl.style.background=ok===true?'rgba(20,120,40,.65)'
-        :(ok===false?'rgba(160,30,30,.7)':'rgba(0,0,0,.55)');
-    }catch(e){}
+    /* v1.12.10: no-op — badge removed per Joshua; signature kept so all
+       existing callers keep working. Reporting itself is unaffected. */
+    return;
   }
   function bridgeStatus(){
     try{
@@ -2200,13 +2181,14 @@ var Report=(function(){
         /* v1.21: Don't show the "bridge MISSING" badge on desktop browsers.
            ReportBridge only exists in the APK's WebView. On desktop/laptop
            web browsers this badge is confusing and meaningless — hide it. */
+        /* v1.12.10: badge removed entirely (see ensureBadge) — the desktop
+           special-case is obsolete. Health data still flows to setSys. */
         try{
           var isDesktop=/Windows|Macintosh|Linux/i.test(navigator.userAgent||'');
           var isAPK=/SurvivingAdamsville|wv/i.test(navigator.userAgent||'');
           if(isDesktop&&!isAPK){
-            if(badgeEl) badgeEl.style.display='none';
             setSys('report',{lastWrite:null,ok:false,writes:writeCount,bridge:'n/a-desktop',
-              note:'ReportBridge only exists in APK WebView — badge hidden on desktop'});
+              note:'ReportBridge only exists in APK WebView'});
             return;
           }
         }catch(e){}
@@ -6581,23 +6563,8 @@ document.getElementById('help-close').addEventListener('click', function(){
   document.getElementById('help').classList.remove('show');
 });
 
-/* ============ v0.9 VIEW REPORT — live diagnostics on screen ============ */
-function openReportView(){
-  try{
-    document.getElementById('settings').classList.remove('show');
-    var d=Report.nativeDetail();  // refresh native write diagnostics
-    var st=document.getElementById('rep-status');
-    var detail=(d&&d.status)?(d.status+' @ '+d.step+(d.error?(' — '+d.error):'')):'no native detail';
-    st.textContent='file write: '+detail;
-    var pretty;
-    try{ pretty=JSON.stringify(JSON.parse(Report.buildJson()),null,1); }
-    catch(e){ pretty=Report.buildJson(); }
-    document.getElementById('report-json').textContent=pretty;
-    document.getElementById('report-view').classList.add('show');
-    try{ Report.note('report-view',{opened:true}); }catch(e){}
-  }catch(e){}
-}
-document.getElementById('set-report').addEventListener('click', openReportView);
+/* v1.12.10: openReportView + report-view UI removed per Joshua.
+   Report.note/save/buildJson still collect and ship data to GitHub. */
 
 /* ============ v1.10 GAME RECORDER — in-game screen recorder ============
    Native side (RecorderBridge) uses MediaProjection: 640x360, 24fps,
@@ -6658,28 +6625,9 @@ document.getElementById('set-record').addEventListener('click', function(){
   GameRecorder.toggle();
 });
 setInterval(function(){ GameRecorder.poll(); }, 2500);
-document.getElementById('rep-close').addEventListener('click', function(){
-  document.getElementById('report-view').classList.remove('show');
-});
-/* v0.9 SHARE WITH MUSE — one tap -> Android share sheet with the report JSON */
-document.getElementById('rep-share').addEventListener('click', function(){
-  var st=document.getElementById('rep-status');
-  try{
-    if(typeof ReportBridge!=="undefined"&&ReportBridge.shareReport){
-      st.textContent='opening share sheet...';
-      ReportBridge.shareReport(Report.shareJson());
-      try{ Report.note('report-share',{tapped:true}); }catch(e){}
-      setTimeout(function(){
-        try{
-          var s=String(ReportBridge.getShareStatus());
-          st.textContent='share: '+s;
-        }catch(e){}
-      },1500);
-    }else{
-      st.textContent='share unavailable (bridge missing)';
-    }
-  }catch(e){ st.textContent='share failed: '+e; }
-});
+/* v1.12.10: rep-close listener removed with the report-view panel. */
+/* v1.12.10: SHARE WITH MUSE button removed with the report-view panel.
+   Report.shareJson() still exists for headless use. */
 
 /* ============ v0.9 TWO-CONTEXT MUSIC (Joshua's design) ============
    ON FOOT: first track loops as walking background.
