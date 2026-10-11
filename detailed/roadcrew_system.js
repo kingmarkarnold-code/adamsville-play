@@ -1121,9 +1121,23 @@ function updateRoadCrew(dt){
     var i;
     // v1.15 DISTANCE CULLING (Joshua 2026-10-10): skip patrol AI beyond
     // cull distance. Patrols freeze until player approaches.
+    // v1.30 MESH CULLING (Joshua's directive): also hide the truck mesh when
+    // culled — tracked as data only until visible. Hysteresis via ZONEUNLOCK.
     var _zu=window.ZONEUNLOCK;
+    RC._visT=(RC._visT||0)+dt;
+    var _doVis=RC._visT>0.5;
+    if (_doVis) RC._visT=0;
+    var _px=0,_pz=0;
+    try{ _px=player.x; _pz=player.z; }catch(e){}
     for (i=0;i<RC.patrols.length;i++){
       var _p=RC.patrols[i];
+      if (_doVis && _p && _p.mesh){
+        var _mx=_p.mesh.position.x, _mz=_p.mesh.position.z;
+        var _mdx=_mx-_px, _mdz=_mz-_pz, _md2=_mdx*_mdx+_mdz*_mdz;
+        // 400u show / 500u hide — matches MARTA train thresholds
+        if (_md2>250000){ if (_p.mesh.visible) _p.mesh.visible=false; }
+        else if (_md2<160000){ if (!_p.mesh.visible) _p.mesh.visible=true; }
+      }
       if(_zu && _p && _zu.shouldCull(_p.x,_p.z)) continue;
       updatePatrol(_p, dt);
     }
