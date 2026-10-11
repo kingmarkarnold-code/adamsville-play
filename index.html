@@ -1140,6 +1140,15 @@ function __injectZoneFiles(files, callback){
   }
   nextFile();
 }
+/* v1.44 TERRAIN-PRECOMPUTE (expert report #6 — Dr. Elena Vasquez; Joshua
+   2026-10-11 spec: 600x800): the 600x800 heightfield is precomputed on the
+   build VM by pipeline/build-terrain-heights.js into
+   terrain_heights_adamsville_600x800.bin (481k heightAt() calls would freeze
+   a phone ~30s). The deferred loader fetches it before any game script
+   evaluates; buildTerrain() uses it when present, else synchronous compute.
+   The ?v= cache-buster MUST match ui_version — the generator stamps it. */
+var TERR_PRE_URL='terrain_heights_adamsville_600x800.bin?v=2026.10.11.147';
+var TERR_PRE_LEN=(600+1)*(800+1);
 function __loadDeferredQueue(){
   if (window.__deferredLoading || window.__deferredDone) return;
   window.__deferredLoading = true;
@@ -1184,7 +1193,28 @@ function __loadDeferredQueue(){
       document.head.appendChild(s);
     }
   }
-  next();
+  /* v1.44 TERRAIN-PRECOMPUTE: fetch the precomputed 600x800 heightfield
+     BEFORE the first game script evaluates, so buildTerrain() can skip
+     481k heightAt() calls (~30s main-thread freeze on a phone). Only for
+     the default adamsville zone — other zones, and any fetch failure, fall
+     back to synchronous compute inside buildTerrain (previous behavior). */
+  (function _terrainPreThenStart(){
+    function _go(){ next(); }
+    var _zone='adamsville';
+    try{ var _m=/[?&]zone=([a-z]+)/.exec(location.search); if(_m) _zone=_m[1]; }catch(e){}
+    if (_zone!=='adamsville' || typeof TERR_PRE_URL==='undefined'){ _go(); return; }
+    try{
+      fetch(TERR_PRE_URL).then(function(r){
+        if(!r.ok) throw new Error('terrain precompute http '+r.status);
+        return r.arrayBuffer();
+      }).then(function(buf){
+        var _a=new Float32Array(buf);
+        if (_a.length===TERR_PRE_LEN) window.__TERR_H_PRE=_a;
+        else try{ console.warn('[terrain] precompute length mismatch — synchronous fallback'); }catch(e){}
+        _go();
+      }).catch(function(){ _go(); });
+    }catch(e){ _go(); }
+  })();
 }
 /* Queue deferred loading for after confirmation. */
 window.__whenConfirmed(function(){
@@ -2985,9 +3015,17 @@ function resolveCollision(p, radius){
   }
 }
 
+/* v1.44 TERRAIN RESOLUTION (expert #6; Joshua 2026-10-11: 600x800, finer than
+   the expert's 400x600): the mesh was 200x300 over 8000x12000u (40u cells) —
+   on slopes the straight chords sat ~2u off the analytic terrain, floating
+   or sinking objects. Now 600x800 (13.33x15u cells). Heights come from the
+   precomputed .bin when available (see TERR_PRE_URL); TERR_CX/TERR_CZ are the
+   world-units-per-cell used by terrainMeshY(). */
+var TERR_SEGX=600, TERR_SEGZ=800;
+var TERR_CX=WX/TERR_SEGX, TERR_CZ=WZ/TERR_SEGZ;
 // ---------- terrain ----------
 (function buildTerrain(){
-  var SEGX=200, SEGZ=300;
+  var SEGX=TERR_SEGX, SEGZ=TERR_SEGZ;
   var geo = new THREE.PlaneGeometry(WX, WZ, SEGX, SEGZ);
   geo.rotateX(-Math.PI/2);
   geo.translate(WX/2, 0, WZ/2);  // v0.3 FIX: plane is centered at origin by default;
@@ -2997,9 +3035,12 @@ function resolveCollision(p, radius){
   var c1 = new THREE.Color(0x5d8f4a), c2 = new THREE.Color(0x74a854), c3 = new THREE.Color(0x8aa653);
   var tmp = new THREE.Color();
   TERR_H = new Float32Array(pos.count);
+  /* v1.44 TERRAIN-PRECOMPUTE fast path: heights precomputed on the build VM
+     (see TERR_PRE_URL). Falls back to synchronous heightAt() when missing. */
+  var _pre=(window.__TERR_H_PRE && window.__TERR_H_PRE.length===pos.count)?window.__TERR_H_PRE:null;
   for (var i=0;i<pos.count;i++){
     var x = pos.getX(i), z = pos.getZ(i);
-    var h = heightAt(x,z);
+    var h = _pre?_pre[i]:heightAt(x,z);
     pos.setY(i,h);
     TERR_H[i]=h;
     var t = rand();
@@ -3019,7 +3060,7 @@ function resolveCollision(p, radius){
       var _h=heightAt(_sx/20*WX,_sz/20*WZ);
       if(_h<_mn)_mn=_h; if(_h>_mx)_mx=_h; _sum+=_h; _n++;
     }
-    var _expVerts=(200+1)*(300+1);
+    var _expVerts=(SEGX+1)*(SEGZ+1);  /* v1.44: was hardcoded (200+1)*(300+1) */
     Report.setSys('terrain',{minH:+_mn.toFixed(1),maxH:+_mx.toFixed(1),meanH:+(_sum/_n).toFixed(1),
       meshVerts:pos.count,expectedVerts:_expVerts,
       meshAtOrigin:(terrMesh.position.x===0&&terrMesh.position.z===0),
@@ -3043,7 +3084,8 @@ function box(w,h,d,color,x,z,yBase,ry){
 }
 /* v1.35 SNAP-TO-FACE (Joshua 2026-10-11): global helper now snaps to rendered terrain. */
 function groundY(x, z){ try{ if(typeof snapToGround==='function') return snapToGround(x,z,0,0,0); }catch(e){} return heightAt(x, z); }
-/* v1.1 RENDERED-MESH HEIGHTFIELD: the 40u terrain mesh chords can sit ~2u
+/* v1.1 RENDERED-MESH HEIGHTFIELD: the terrain mesh chords (40u at 200x300,
+   ~14u at 600x800 after v1.44) can sit ~2u
    above/below the analytic heightAt. A road draped on heightAt alone gets
    buried under the VISIBLE terrain (the "second layer"). terrainMeshY()
    bilinear-samples the same grid the mesh was built from, so roads can sit
@@ -3057,10 +3099,12 @@ function terrainMeshY(x,z){
      row for world z is iz=z/40. The flip made roadSitY()=max(local, mirrored)
      — roads followed a ghost landscape up to ~18u off the visible ground.
      That was the bumpiness AND the "not true roads" look. */
-  var fx=Math.max(0,Math.min(200-0.001,x/40)), fz=Math.max(0,Math.min(300-0.001,z/40));
+  /* v1.44: generalized from hardcoded 200x300/40u to TERR_SEGX/TERR_SEGZ. */
+  var _st=TERR_SEGX+1;
+  var fx=Math.max(0,Math.min(TERR_SEGX-0.001,x/TERR_CX)), fz=Math.max(0,Math.min(TERR_SEGZ-0.001,z/TERR_CZ));
   var ix=Math.floor(fx), iz=Math.floor(fz), u=fx-ix, v=fz-iz;
-  var i00=iz*201+ix;
-  var a=TERR_H[i00], b=TERR_H[i00+1], c=TERR_H[i00+201], d=TERR_H[i00+202];
+  var i00=iz*_st+ix;
+  var a=TERR_H[i00], b=TERR_H[i00+1], c=TERR_H[i00+_st], d=TERR_H[i00+_st+1];
   return a+(b-a)*u+(c-a)*v+(a-b-c+d)*u*v;
 }
 function roadSitY(x,z){
@@ -9211,6 +9255,10 @@ function resolveNPCVehicleCollisions(){
 function animate(){
   requestAnimationFrame(animate);
   var dt=Math.min(0.05, clock.getDelta());
+  /* v1.39 PERF (expert report #8): rebuild the shared vehicle-avoidance
+     snapshot + spatial hash ONCE per frame. Without this, every vehicle
+     re-gathers the whole world per query = O(V^2) garbage per frame. */
+  try{ if (window.VehicleAvoid && VehicleAvoid.beginFrame) VehicleAvoid.beginFrame(); }catch(e){}
   /* v1.21 DIAGNOSTIC: Update FPS + input indicator on weak hardware */
   try{
     if(window.__diagEl){
