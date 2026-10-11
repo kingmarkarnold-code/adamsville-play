@@ -46,7 +46,8 @@ function addLegoFacePlane(headG, r, z){
    mSkin/mHair: THREE materials. */
 function buildFace3D(headG, r, mSkin, mHair){
   try{
-    function LM(c){ return new THREE.MeshLambertMaterial({color:c}); }
+    /* v1.48 (#18): sculpted face parts use the shared toon palette. */
+    function LM(c){ return (typeof toonMat==='function')?toonMat(c):new THREE.MeshLambertMaterial({color:c}); }
     var mWhite=LM(0xffffff), mIris=LM(0x6b3a1a), mPupil=LM(0x0a0a0a),
         mDark=LM(0x241a10), mLip=LM(0x7a4438);
     function put(m,x,y,z){ m.position.set(x,y,z); headG.add(m); return m; }
