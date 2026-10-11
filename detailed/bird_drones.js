@@ -182,6 +182,44 @@ function updatePlaneDrones(){
   var dt=Math.min(0.05, now-_lastT); _lastT=now;
   PD.t+=dt;
   var T=PD.t;
+  /* AERIAL VISUAL SCAN (Joshua 2026-10-11): "That's what the inspectors
+     and the drones are to look for. Mistakes in material, textures, and
+     the whole visual." One drone scans per tick, staggered across the
+     fleet (~1 scan per 2s across 50 drones = each sector checked every
+     ~100s). Findings go to Report + PD.visualFindings. */
+  try{
+    if (window.VisualInspect && typeof window.VisualInspect.scanAerial==='function'){
+      if (!PD._vscanT) PD._vscanT=0;
+      if (T - PD._vscanT > 2.0){
+        PD._vscanT=T;
+        var di=Math.floor(T/2)%PD.birds.length;
+        var db=PD.birds[di];
+        if (db){
+          var avgR2=Math.max(1,(db.rx+db.rz)/2);
+          var a2=db.ph + T*db.dir*db.spd/avgR2;
+          var dpx=db.cx+Math.cos(a2)*db.rx, dpz=db.cz+Math.sin(a2)*db.rz;
+          var vdefs=window.VisualInspect.scanAerial(dpx, dpz, 150)||[];
+          if (vdefs.length){
+            if (!PD.visualFindings) PD.visualFindings=[];
+            for (var vi=0;vi<Math.min(vdefs.length,3);vi++){
+              var vd=vdefs[vi];
+              if (!vd) continue;
+              var entry={t:new Date().toISOString(), drone:di,
+                         type:'visual-'+(vd.type||'defect'),
+                         msg:'[drone '+di+' visual] '+(vd.msg||''),
+                         x:vd.x, z:vd.z};
+              PD.visualFindings.push(entry);
+              while (PD.visualFindings.length>40) PD.visualFindings.shift();
+              try{
+                if (typeof Report!=='undefined' && Report.note)
+                  Report.note('drones-visual', entry.msg+' @ ('+entry.x+','+entry.z+')');
+              }catch(e){}
+            }
+          }
+        }
+      }
+    }
+  }catch(e){}
   // DISTANCE CULLING (Joshua 2026-10-10): skip matrix updates for planes
   // beyond cull distance — they freeze in place until the player nears.
   var _zu=null; try{ _zu=window.ZONEUNLOCK; }catch(e){}
