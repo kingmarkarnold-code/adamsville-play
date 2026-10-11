@@ -241,8 +241,17 @@ function updateBus(b, dt){
       if (window.VehicleAvoid && b.state!=='boarding'){
         var _sd=b.path.dirAt(b.s); if (b.dir<0) _sd=[-_sd[0],-_sd[1]];
         var _syaw=Math.atan2(_sd[0],_sd[1]);
-        if (VehicleAvoid.blockedAhead(b.x,b.z,Math.sin(_syaw),Math.cos(_syaw),b,18,1.25,true))
+        if (VehicleAvoid.blockedAhead(b.x,b.z,Math.sin(_syaw),Math.cos(_syaw),b,18,1.25,true)){
           target=0;
+          /* v1.32 WAIT TIMEOUT (Joshua 2026-10-10): school buses wait, but not
+             forever. After WAIT_S, radio traffic assistance for the queue
+             behind. Buses never overtake — kids aboard. */
+          b.waitVehT=(b.waitVehT||0)+dt;
+          if (window.TrafficAssist && b.waitVehT>TrafficAssist.WAIT_S && !b.assistReq){
+            b.assistReq=true;
+            TrafficAssist.request({x:b.x, z:b.z, yaw:_syaw, ref:b, kind:'school'});
+          }
+        } else { b.waitVehT=0; b.assistReq=false; }
       }
     }catch(e){}
     b.speed+=(target-b.speed)*Math.min(1,dt*1.8);
