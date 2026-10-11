@@ -69,16 +69,16 @@
     },
     {
       "name": "index.html",
-      "size": 764616,
-      "sha256": "91a437c3e77c94e5462fad9ba023798e2e3a407f74258f19fb1a140f6fe9bc16",
-      "hash": "91a437c3e77c94e5",
+      "size": 764846,
+      "sha256": "2499abbe082ff1beb74f75e5c9a7524358d85897b0cb570f8c24c038aef50ae2",
+      "hash": "2499abbe082ff1be",
       "md5": "1bde648123f4ff8e12db651ecb78de3f"
     },
     {
       "name": "infracrew_system.js",
-      "size": 38468,
-      "sha256": "c20bae59207f7c4779e49296f20efe5b98b80dc9a4757424ecce1d2b5a4995e1",
-      "hash": "c20bae59207f7c47",
+      "size": 39608,
+      "sha256": "902aa6812817beb004f02ea18cb81488b3bd499404bf79a949cef0b52e1276df",
+      "hash": "902aa6812817beb0",
       "md5": "c116524f9c996b030400aed486738efa"
     },
     {
@@ -107,9 +107,9 @@
     },
     {
       "name": "marta_system.js",
-      "size": 34537,
-      "sha256": "b976c07ec2440cf4223354935c6c3dc4a12a4ee9908e79c99628bfd5cdeb1771",
-      "hash": "b976c07ec2440cf4",
+      "size": 35728,
+      "sha256": "96b211b8314543bab7a6de767110fa224ffcf8fe60344c4b90999baef283357b",
+      "hash": "96b211b8314543ba",
       "md5": "4f970caef19be1760a8d44f0efa0f200"
     },
     {
@@ -138,9 +138,9 @@
     },
     {
       "name": "roadcrew_system.js",
-      "size": 58178,
-      "sha256": "0fb69542ce00618d433a293ded33a23c1f57fefd2606fd4eb2c6a8875f00dad9",
-      "hash": "0fb69542ce00618d",
+      "size": 59479,
+      "sha256": "b30f3c0380e30255cf6f0d61d4237931c5c84c8fb10cedd879c23ea717d06669",
+      "hash": "b30f3c0380e30255",
       "md5": "53cd8794990db2421f1e907f4e26f0b5"
     },
     {
@@ -285,6 +285,6 @@
       "hash": "7405847ad92e741e"
     }
   ],
-  "ui_version": "2026.10.10.123",
+  "ui_version": "2026.10.10.124",
   "version": "1.13.0"
 }
