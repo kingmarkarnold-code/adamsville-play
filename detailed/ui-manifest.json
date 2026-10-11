@@ -142,9 +142,9 @@
     },
     {
       "name": "npc_system.js",
-      "size": 73667,
-      "sha256": "de26025c7d7c4bfb6cbe59d1a7a40ce975a2740d584d500dcb65173cb9aa8c33",
-      "hash": "de26025c7d7c4bfb6cbe59d1a7a40ce975a2740d584d500dcb65173cb9aa8c33",
+      "size": 80793,
+      "sha256": "a69da1422b903dbb18e8d605b2d0e4c3d2a4b0199fe08fd8fed4b12fd1034b47",
+      "hash": "a69da1422b903dbb18e8d605b2d0e4c3d2a4b0199fe08fd8fed4b12fd1034b47",
       "md5": "878bc88ab4f710eab8731b2ea4d4f360"
     },
     {
@@ -277,10 +277,10 @@
     },
     {
       "name": "traffic_system.js",
-      "size": 63827,
-      "sha256": "ae002846242790b8b18f4aa0a908b610a37976f5d68239dd62a9005d94ca7c79",
-      "hash": "ae002846242790b8b18f4aa0a908b610a37976f5d68239dd62a9005d94ca7c79",
-      "md5": "0be38ba630fbabd3f1b9c2ecd7883b8d"
+      "size": 64131,
+      "sha256": "6c20eef9e45140cc1071be90fb299665701d4ae6ce272963fe646f1238a32d10",
+      "hash": "6c20eef9e45140cc1071be90fb299665701d4ae6ce272963fe646f1238a32d10",
+      "md5": "56a48d72d36ccb85097368b614b8e9c3"
     },
     {
       "name": "vehicle_avoid.js",
