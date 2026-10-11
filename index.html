@@ -333,11 +333,11 @@
     background:rgba(0,0,0,.5); padding:4px 10px; border-radius:8px; font-size:12px; font-weight:bold;
     letter-spacing:1px; pointer-events:none; white-space:nowrap; max-width:90vw; }
   /* street-name HUD (GTA style), serif so the I in "FI Boulevard" can't read as L */
-  #street-name { position:fixed; z-index:31; top:12px; right:66px; color:#fff;
+  #street-name { position:fixed; z-index:31; top:54px; right:66px; color:#fff;
     background:rgba(0,0,0,.5); padding:8px 14px; border-radius:8px; font-size:15px; font-weight:bold;
     font-family: Georgia, 'Times New Roman', serif; letter-spacing:.5px; pointer-events:none;
     max-width:calc(100vw - 150px); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-    line-height:22px; }  /* v0.6: top-right row, LEFT of the help button — never under the action button */
+    line-height:22px; }  /* v1.33: moved to top:54px (below daycycle HUD) so the street name is never hidden behind the DAY/time bar — Joshua 2026-10-11; still LEFT of the help button, never under the action button */
   /* vehicle damage HUD (driving) */
   #dmg-wrap { position:fixed; z-index:11; left:50%; transform:translateX(-50%); bottom:26px;
     display:none; align-items:center; gap:8px; color:#fff; background:rgba(0,0,0,.5);
@@ -485,7 +485,7 @@
     #inv-btn{left:96px!important;top:8px!important;bottom:auto!important;}
     #music-btn{left:156px!important;top:8px!important;bottom:auto!important;}
     #cam-btn{left:216px!important;top:8px!important;bottom:auto!important;}
-    #street-name{top:8px!important;left:276px!important;max-width:30vw;}
+    #street-name{top:54px!important;left:276px!important;max-width:30vw;}  /* v1.33: below daycycle HUD */
     #ce-btn{left:8px!important;top:110px!important;bottom:auto!important;}
     #rc-btn{left:68px!important;top:110px!important;bottom:auto!important;}
     #action-btn{top:8px!important;right:64px!important;bottom:auto!important;}
@@ -9110,6 +9110,7 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <script src="police_system.js"></script>
 <script src="github-config.js"></script>
 <script src="github_reports.js"></script>
+<script src="worldfix_sync.js"></script>
 <script src="hq_staff_system.js"></script>
 <script src="dialogue_director_npc.js"></script>
 <script src="workerhousing.js"></script>
