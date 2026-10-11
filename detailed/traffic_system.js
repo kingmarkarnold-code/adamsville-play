@@ -187,6 +187,7 @@ function newLane(c,R){
   // keep the merge continuous but inside the new road's corridor
   c.off=Math.max(-c.shoulderOff,Math.min(c.shoulderOff,c.off));
   if (c.state==='drive'||c.state==='resuming') c.laneTarget=c.laneOffBase;
+  c.passing=false; c.passT=0;          // v1.31: cancel any pass maneuver on road change
 }
 /* Spawns n cars spread along the given road list, weighted by road length.
    Each car starts at 60% of its target speed (avoids a spawn burst), picks
@@ -377,7 +378,10 @@ var _targets=[[0,0],[0,0]];   // scratch: player + driven van positions
 function stepCar(c,dt,px,pz){
   var st=c.state;
   if (st==='drive'){
-    c.desired=c.targetSpeed; c.laneTarget=c.laneOffBase;
+    c.desired=c.targetSpeed;
+    /* v1.31: an active pass maneuver owns laneTarget until it finishes —
+       don't stomp it back to the lane center every frame. */
+    if (!c.passing) c.laneTarget=c.laneOffBase;
     // v1.12 NPC FUEL (simple sim): fuel drains with distance driven
     c.fuel-=c.speed*dt*FUEL_DRAIN;
     if (c.fuel<FUEL_LOW){
@@ -500,6 +504,64 @@ function stepCar(c,dt,px,pz){
     }catch(e){}
   }
   // integrate speed toward desired
+  /* v1.31 — JOSHUA'S NO-DRIVE-THROUGH-VEHICLES RULE (2026-10-10): a bus drove
+     straight through his van. No vehicle may pass through another — not NPC
+     cars, not buses, not the player's van. If ANY vehicle (bus, semi, school
+     bus, oncoming car, the driven van) blocks our lane ahead:
+       (1) when the asphalt is wide enough to slip around it, ease left and
+           pass — the escape corridor is pre-checked for oncoming traffic,
+           and the maneuver never leaves the road surface (no grass, ever);
+       (2) otherwise STOP and WAIT for the blocker to clear. Waiting cars
+           queue naturally behind each other via the spacing check above.
+     TIMEOUT (Joshua: "find an alternate route"): after 30s against a blocker
+     that looks parked, try the pull-over shoulder corridor once — still road
+     corridor, never grass — then keep waiting. All known blockers are
+     transient (dwells end, the player drives off, parked cars resume), so a
+     wait always resolves. */
+  c.blockedByVehicle=false;
+  try{
+    if (c.passing){ c.passT-=dt; if (c.passT<=0){ c.passing=false; c.laneTarget=c.laneOffBase; } }
+    if (window.VehicleAvoid && (st==='drive'||st==='resuming')
+        && !c.blockedByPlayer && !c.blockedByBus && !c.blockedBySchoolBus){
+      var _vh=Math.sin(c.heading), _vc=Math.cos(c.heading);
+      var _vAhead=VehicleAvoid.blockedAhead(c.x,c.z,_vh,_vc,c,26,1.1,false);
+      if (_vAhead && c.desired>0.5){
+        var _o=_vAhead.o, _oSpd=_o.speed||0;
+        if (_oSpd>5 && _vAhead.dist>12){
+          /* blocker is pulling away briskly — just follow at its speed */
+          if (_oSpd<c.desired) c.desired=_oSpd;
+          c.waitVehT=0; c.shoulderTried=false;
+        } else {
+          var _R=TR.roads[c.road], _halfW=_R.w/2;
+          var _need=_o.halfW+1.1+0.9;      // their half-width + ours + margin
+          var _passOff=c.off-_need;         // pass on the left (US convention)
+          if (_passOff>=-( _halfW-0.6) &&
+              VehicleAvoid.corridorClear(c.x,c.z,_vh,_vc,_passOff-c.off,
+                                         _vAhead.dist+12,c,1.1)){
+            /* ROOM ON THE ASPHALT: ease around, merge back when past */
+            c.laneTarget=_passOff; c.passing=true; c.passT=2.5;
+            c.waitVehT=0; c.shoulderTried=false;
+            c.desired=Math.min(c.desired,Math.max(4,c.desired*0.55)); // creep past
+          } else {
+            /* NO ROOM: stop and wait for the blocker to clear */
+            c.desired=0; c.blockedByVehicle=true;
+            c.waitVehT=(c.waitVehT||0)+dt;
+            if (c.waitVehT>30 && !c.shoulderTried){
+              c.shoulderTried=true;         // one attempt, then keep waiting
+              var _shOff=c.off-_need;
+              if (_shOff>=-c.shoulderOff &&
+                  VehicleAvoid.corridorClear(c.x,c.z,_vh,_vc,_shOff-c.off,
+                                             _vAhead.dist+14,c,1.1)){
+                c.laneTarget=_shOff; c.passing=true; c.passT=3.2; c.waitVehT=0;
+              }
+            }
+          }
+        }
+      } else if (!_vAhead){ c.waitVehT=0; c.shoulderTried=false; }
+    } else if (c.passing && !(st==='drive'||st==='resuming')){
+      c.passing=false; c.laneTarget=c.laneOffBase;   // left drive states mid-pass
+    }
+  }catch(e){}
   var dv=c.desired-c.speed, mx=dv>0?ACCEL_US*dt:BRAKE_US*dt;
   c.speed+=Math.max(-mx,Math.min(mx,dv));
   if (c.speed<0) c.speed=0;
