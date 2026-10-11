@@ -707,7 +707,9 @@ function updateMarta(){
   /* v1.30 TRAIN DISTANCE CULLING (Joshua's directive 2026-10-10):
      Trains outside view distance don't render — tracked as data only
      (position on route, schedule, state). Mesh visibility toggles with
-     hysteresis: visible < 400u, hidden > 500u. Throttled to ~2Hz.
+     hysteresis: visible < 150u, hidden > 200u. Throttled to ~2Hz.
+     v1.31 (2026-10-10): tightened per Joshua — 500u was ~5 football fields,
+     too far to see clearly; now ~2 football fields.
      EXCEPTION: a train the player is riding is always visible. */
   try{
     MT._visT=(MT._visT||0)+dt;
@@ -715,7 +717,7 @@ function updateMarta(){
       MT._visT=0;
       var _px=0,_pz=0;
       try{ _px=player.x; _pz=player.z; }catch(e){}
-      var _show2=400*400, _hide2=500*500;
+      var _show2=150*150, _hide2=200*200;
       for (var _vi=0;_vi<MT.trains.length;_vi++){
         var _t=MT.trains[_vi];
         if (!_t||!_t.mesh) continue;
