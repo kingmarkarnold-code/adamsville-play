@@ -299,6 +299,16 @@
     background:rgba(20,40,80,.85); color:#fff; border:2px solid #4ea8ff;
     border-radius:10px; padding:10px 16px; font-size:15px; font-weight:bold; }
   #satview-btn:active { background:rgba(40,80,160,.9); }
+  /* v1.17 GPS NAVIGATION (expert report #27, Thomas Wright — Joshua approved): full-map destination picking. */
+  #gps-nav-btn { position:absolute; top:126px; left:16px; z-index:36;
+    background:rgba(0,90,110,.85); color:#fff; border:2px solid #35e0ff;
+    border-radius:10px; padding:10px 16px; font-size:15px; font-weight:bold; }
+  #gps-nav-btn:active { background:rgba(0,140,170,.9); }
+  #gps-nav-btn.gps-picking { background:rgba(0,160,190,.95); animation:gpsPulse 1s infinite; }
+  @keyframes gpsPulse { 0%,100%{opacity:1;} 50%{opacity:.6;} }
+  #gps-clear-btn { position:absolute; top:182px; left:16px; z-index:36;
+    background:rgba(110,30,30,.85); color:#fff; border:2px solid #ff6666;
+    border-radius:10px; padding:10px 16px; font-size:15px; font-weight:bold; }
   #satview-ui { position:fixed; inset:0; z-index:40; display:none; pointer-events:none; }
   #satview-ui.show { display:block; }
   #satview-touch { position:absolute; inset:0; pointer-events:auto; touch-action:none; cursor:grab; }
@@ -720,6 +730,8 @@
   <div id="fullmap-title">SURVIVING ADAMSVILLE</div>
   <button id="fullmap-close">&times;</button>
   <button id="satview-btn">🛰️ Satellite View</button>
+  <button id="gps-nav-btn">📍 Navigate</button>
+  <button id="gps-clear-btn" style="display:none">✖ Clear GPS</button>
   <div id="fullmap-legend">
     <div class="fm-leg-title">MAP KEY</div>
     <div class="fm-leg-row"><span class="fm-leg-ic" style="background:#ff9a3c"></span>Gas Station</div>
@@ -5999,6 +6011,9 @@ try{
 
 /* ================= LANDMARKS ================= */
 // Adamsville Rec Center — REAL location (verified)
+// #26 LANDMARK AUDIT (2026-10-11): confirmed — this is the C.T. Martin Recreation
+// Center, 3201 MLK Jr Dr SW (33.7540927, -84.4919619 per Nominatim). Game coords
+// are within ~35m. It IS in Adamsville; label kept as-is per Joshua's spec.
 (function(){
   var p=xz(33.75378, -84.49187), gy=heightAt(p.x,p.z);
   box(45,9,28, 0xb09a78, p.x, p.z);
@@ -6007,6 +6022,11 @@ try{
   addCollider(p.x, p.z, 26);
 })();
 // Old South Cobb Library (1995 site)
+// #26 LANDMARK AUDIT (2026-10-11): FLAGGED FOR JOSHUA'S REVIEW — this is the
+// historical pre-2006 library site (label says 1967-2006). The current South Cobb
+// Regional Library is at 805 Clay Rd SW (33.8250345, -84.5775791) per Nominatim,
+// but this marker is intentionally the OLD location. Old coords kept per
+// Joshua's never-delete rule; confirm this is the right historical spot.
 (function(){
   var p=xz(33.81297, -84.57214);
   box(16,5.5,11, 0xa08464, p.x, p.z);
@@ -6038,7 +6058,9 @@ try{
   wc.position.set(p.x-42, heightAt(p.x-42,p.z+18)+34, p.z+18); scene.add(wc);
   labelAt('DOWNTOWN ATLANTA — 1995', p.x, p.z, 80, 60, '#ffd75e');
   // Olympic Stadium under construction + cranes
-  var s=xz(33.732,-84.39);
+  /* #26 LANDMARK AUDIT (2026-10-11): corrected from (33.732,-84.39) — was ~400m SW. */
+  /* Source: Nominatim/OSM — Center Parc Stadium (1996 Olympic Stadium), 755 Hank Aaron Dr SE. */
+  var s=xz(33.73553,-84.38865);
   var bowl=new THREE.Mesh(new THREE.CylinderGeometry(28,30,16,18,1,true),
     new THREE.MeshLambertMaterial({ color:0xb0a894, side:THREE.DoubleSide }));
   bowl.position.set(s.x, heightAt(s.x,s.z)+8, s.z); scene.add(bowl);
@@ -6053,7 +6075,9 @@ try{
   box(44,20,34, 0x7a4a32, o.x, o.z); labelAt('THE OMNI (1972-1997)', o.x, o.z, 30, 36);
   addCollider(o.x, o.z, 28);
   // Techwood demolition = VACANT LOT (rule: torn-down in 1995 -> empty lot)
-  var t=xz(33.767,-84.395);
+  /* #26 LANDMARK AUDIT (2026-10-11): corrected from (33.767,-84.395) — was ~1.1km S. */
+  /* Source: Techwood Homes historical site (demolished 1995), near Techwood Dr NW / Georgia Tech. */
+  var t=xz(33.777,-84.393);
   var lot=new THREE.Mesh(new THREE.PlaneGeometry(120,80),
     new THREE.MeshLambertMaterial({ color:0x8a7a5a }));
   lot.rotation.x=-Math.PI/2; lot.position.set(t.x, heightAt(t.x,t.z)+0.3, t.z); scene.add(lot);
@@ -6061,7 +6085,9 @@ try{
 })();
 // Fairburn W Broad St brick row + I-85 exit
 (function(){
-  var m=xz(33.57, -84.574);
+  /* #26 LANDMARK AUDIT (2026-10-11): corrected from (33.57,-84.574) — was on NE Broad St, ~800m off. */
+  /* Source: Nominatim/OSM — West Broad Street, Fairburn, GA 30213. */
+  var m=xz(33.56621, -84.58205);
   for (var i=0;i<4;i++){ box(18,10+i%2*3,14, 0x96543c, m.x-42+i*24, m.z); addCollider(m.x-42+i*24, m.z, 14); }
   labelAt('W BROAD ST — FAIRBURN', m.x, m.z, 20, 44);
   var e=xz(33.53045, -84.60615);
@@ -7746,9 +7772,44 @@ document.getElementById('satview-btn').addEventListener('click', function(){
   try{ closeFullMap(); }catch(e){}
   try{ if(window.SATVIEW) SATVIEW.open(); }catch(e){}
 });
+/* v1.17 GPS (expert report #27): screen->world for destination picking.
+   Inverse of drawFullMap's M(): screen = center + sc*Rot(rot)*(world-center). */
+function fmScreenToWorld(sx, sy){
+  var W=fmCanvas.width, H=fmCanvas.height;
+  var sc=fmView.sc, rot=fmView.rot||0;
+  var cr=Math.cos(rot), sr=Math.sin(rot);
+  var ox=(sx-W/2)/sc, oy=(sy-H/2)/sc;
+  return { x: fmView.cx + ox*cr + oy*sr, z: fmView.cz - ox*sr + oy*cr };
+}
+/* v1.17 GPS: when pick mode is on, a tap sets the destination instead of
+   closing the map. Snaps to the nearest landmark name for the label. */
+function fmGpsTap(sx, sy){
+  try{
+    if (!(window.GPS && GPS.getPickMode())) return false;
+    var w=fmScreenToWorld(sx, sy);
+    var nm='Destination', bd=100*100;
+    try{
+      for (var i=0;i<LANDMARKS.length;i++){
+        var L=LANDMARKS[i];
+        var dx=L.x-w.x, dz=L.z-w.z, d2=dx*dx+dz*dz;
+        if (d2<bd){ bd=d2; nm=L.name; }
+      }
+    }catch(e){}
+    if (GPS.setDestination(w.x, w.z, nm)){
+      GPS.setPickMode(false);
+      try{
+        var cb=document.getElementById('gps-clear-btn');
+        if (cb) cb.style.display='block';
+      }catch(e){}
+      drawFullMap();
+    }
+    return true;
+  }catch(e){ return false; }
+}
 // v0.5: tap (not drag) on the map closes it; mouse click still works (guarded
 // against the synthetic click that follows a touch)
-fmCanvas.addEventListener('click', function(){
+fmCanvas.addEventListener('click', function(e){
+  if (window.GPS && GPS.getPickMode()){ fmGpsTap(e.clientX, e.clientY); return; }
   if (Date.now()-fmT.lastTouch>600 && Date.now()>(fmT.suppressClickUntil||0)) closeFullMap();
 });
 fmCanvas.addEventListener('touchstart', function(e){
@@ -7808,9 +7869,14 @@ fmCanvas.addEventListener('touchmove', function(e){
 }, {passive:false});
 function fmTouchEnd(){
   var wasTap=fmT.tapOk && (Date.now()-fmT.tapT)<350;
+  var tx=fmT.tapX, ty=fmT.tapY;
   fmT.pinch=null; fmT.pan=null; fmT.tapOk=false;
   fmT.lastTouch=Date.now();
-  if (wasTap) closeFullMap();
+  if (wasTap){
+    /* v1.17 GPS: pick mode intercepts the tap to set a destination */
+    if (window.GPS && GPS.getPickMode()){ fmGpsTap(tx, ty); return; }
+    closeFullMap();
+  }
 }
 /* v1.13.5: fmT state object for full-map touch/mouse handlers.
    Declared BEFORE the event handlers that reference it — previously
@@ -7840,11 +7906,15 @@ fmCanvas.addEventListener('mousemove', function(e){
   fmT.mPan.lx=e.clientX; fmT.mPan.ly=e.clientY;
   drawFullMap();
 });
-function fmMouseUp(){
+function fmMouseUp(e){
   var wasTap=fmT.mDown && fmT.tapOk && (Date.now()-fmT.tapT)<500;
+  var cx=e?e.clientX:0, cy=e?e.clientY:0;
   fmT.mDown=false; fmT.mPan=null;
   fmCanvas.style.cursor='grab';
-  if (wasTap){ fmT.suppressClickUntil=Date.now()+400; fmT.tapOk=false; closeFullMap(); }
+  if (wasTap){ fmT.suppressClickUntil=Date.now()+400; fmT.tapOk=false;
+    /* v1.17 GPS: pick mode intercepts the tap to set a destination */
+    if (window.GPS && GPS.getPickMode()){ fmGpsTap(cx, cy); }
+    else closeFullMap(); }
   else if (fmT.mDragged){ fmT.suppressClickUntil=Date.now()+400; fmT.tapOk=false; }  // drag, not a click
   fmT.mDragged=false;
 }
@@ -7889,7 +7959,9 @@ function openFullMap(){
   fmView.cx=p.x; fmView.cz=p.z; fmView.rot=0;  // v0.6: north-up on open
   drawFullMap();
 }
-function closeFullMap(){ fullMapOpen=false; document.getElementById('fullmap').classList.remove('show'); }
+function closeFullMap(){ fullMapOpen=false; document.getElementById('fullmap').classList.remove('show');
+  /* v1.17 GPS: leaving the map exits destination-pick mode */
+  try{ if(window.GPS && GPS.getPickMode()) GPS.setPickMode(false); }catch(e){} }
 
 /* ================= MINIMAP ================= */
 var mm=mmCanvas.getContext('2d');
@@ -8022,6 +8094,8 @@ function drawMinimap(dt){
   // v1.15 ZONE OVERLAY (Joshua 2026-10-10): locked zones shown darkened
   // with lock icons on the minimap. Unlocked zones render normally.
   try{ if(window.ZONEUNLOCK) window.ZONEUNLOCK.drawZoneOverlay(mm, toMap, px, pz, range, R); }catch(e){}
+  /* v1.17 GPS ROUTE (expert report #27): cyan route line + destination pin. */
+  try{ if(window.GPS) window.GPS.drawMinimapRoute(mm, toMap); }catch(e){}
   // car markers (all vehicles; wrecks stay visible)
   cars.forEach(function(c){
     if (c.sunk) return;
@@ -8114,6 +8188,8 @@ function drawFullMap(){
     g.fillStyle=c.dead?'#7a2a2a':'#ff4444';
     g.beginPath(); g.arc(om[0],om[1],4,0,Math.PI*2); g.fill();
   });
+  /* v1.17 GPS ROUTE (expert report #27): cyan route line + destination label. */
+  try{ if(window.GPS) window.GPS.drawFullMapRoute(g, M); }catch(e){}
   // v0.6 COMPASS: needle always points to TRUE north, counter-rotating as the map turns
   (function(){
     var _n=Mdir(0,-1), nx=_n[0], ny=_n[1];   // true-north dir in screen space
@@ -9890,6 +9966,7 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <script data-dsrc="vehicle_avoid.js" data-dkey=""></script>
 <script data-dsrc="sim_core.js" data-dkey=""></script>
 <script data-dsrc="traffic_system.js" data-dkey="traffic"></script>
+<script data-dsrc="gps_system.js" data-dkey=""></script>
 <script data-dsrc="traffic_assist.js" data-dkey="trafficassist"></script>
 <script data-dsrc="residential_detail.js" data-dkey=""></script>
 <script data-dsrc="semi_system.js" data-dkey="semis"></script>
