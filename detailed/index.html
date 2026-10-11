@@ -1038,7 +1038,12 @@ try{
         }
       } catch(e){}
       // Snapshot graphics flags at init time to detect a change needing reload
-      var needReload = (window.__launchOpts.antialias !== window.__initAA);
+      /* v1.24 FIX (Joshua 2026-10-10: START GAME did nothing for Shannon):
+         __initAA is set in block 2 (~5500 lines of sync JS). If the user
+         clicks START GAME before block 2 finishes, __initAA is undefined
+         and (antialias !== undefined) is always true -> infinite reload
+         loop. Only reload when __initAA is actually defined. */
+      var needReload = (typeof window.__initAA !== 'undefined') && (window.__launchOpts.antialias !== window.__initAA);
       window.__saveLaunchOpts();
       window.__launcherConfirmed = true;
       launcher.classList.add('hidden');
