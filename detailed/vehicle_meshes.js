@@ -243,21 +243,30 @@ function _vbatch(){
 // for the damage system. The game's stylized sedan archetype.
 function sedanMesh(color){
   // TRUE SCALE: overall height ~1.42m (roofline below the 1.85m character's eyeline)
+  // v1.49: static body merged per material (3 meshes -> 2 merged); wheels stay
+  // separate (spin via rotation.x).
   var g=new THREE.Group();
-  var body=new THREE.Mesh(_vbg(2.0,0.62,4.6),
-    vehMat(color));
-  body.position.y=0.55; g.add(body); g.userData.body=body;
-  var cab=new THREE.Mesh(_vbg(1.75,0.5,2.4),
-    vehMat(0x1c2733));
-  cab.position.set(0,1.12,-0.2); g.add(cab); g.userData.cab=cab;
-  var hood=new THREE.Mesh(_vbg(1.9,0.14,1.1),
-    vehMat(color));
-  hood.position.set(0,0.92,1.7); g.add(hood); g.userData.hood=hood;
+  var B=_vbatch();
+  B.add(_vbg(2.0,0.62,4.6),'paint', 0,0.55,0);
+  B.add(_vbg(1.9,0.14,1.1),'paint', 0,0.92,1.7);
+  B.add(_vbg(1.75,0.5,2.4),'glass', 0,1.12,-0.2);
+  var refs=B.flush(g,'sedan',{paint:vehMat(color), glass:vehMat(0x1c2733)});
+  g.userData.body=refs.paint; g.userData.cab=refs.glass; g.userData.hood=refs.paint;
   var wg=_vcg(0.34,0.34,0.3,10);
   var wm=vehMat(0x181818);
+  /* v1.50 WHEEL SPIN + STEER (expert report #23, Katherine Brooks 2026-10-11):
+     wheels register in g.userData.wheels (spun by updateCar via rotation.x —
+     same distance-driven pattern as semi_system.js); front wheels (z>0,
+     forward=+Z) sit in steer groups so updateCar can yaw them with steering. */
+  g.userData.wheels=[];
+  g.userData.steerGroups=[];
   [[0.95,1.5],[-0.95,1.5],[0.95,-1.5],[-0.95,-1.5]].forEach(function(p){
     var w=new THREE.Mesh(wg,wm); w.rotation.z=Math.PI/2;
-    w.position.set(p[0],0.34,p[1]); g.add(w);
+    w.position.set(p[0],0.34,p[1]);
+    if (p[1]>0){ var sg=new THREE.Group(); sg.position.copy(w.position);
+      w.position.set(0,0,0); sg.add(w); g.add(sg); g.userData.steerGroups.push(sg);
+    } else { g.add(w); }
+    g.userData.wheels.push(w);
   });
   return g;
 }
@@ -284,65 +293,50 @@ function addCockpit(carGroup, h){
    it was built right-hand drive). Near-van interaction (Joshua's spec):
    per-door choice — ENTER vehicle OR OPEN door without entering. */
 function safariMesh(){
+  // v1.49: static body merged per material (16 meshes -> 6 merged); the old
+  // cab Group is gone — glass parts merge into the 'glass' slot. Wheels stay
+  // separate (spin via rotation.x).
   var g=new THREE.Group();
   var bronze=0x8a5a1e, cream=0xe6d3a3, trimC=0x1c1c1e, glassC=0x1c2733;
-  // lower body (bronze)
-  var lower=new THREE.Mesh(_vbg(2.0,0.95,4.8),
-    vehMat(bronze));
-  lower.position.y=0.85; g.add(lower); g.userData.body=lower;
-  // upper body (cream)
-  var upper=new THREE.Mesh(_vbg(1.96,0.72,4.5),
-    vehMat(cream));
-  upper.position.set(0,1.68,-0.1); g.add(upper);
-  // dark dividing stripe
-  var stripe=new THREE.Mesh(_vbg(2.02,0.1,4.82),
-    vehMat(trimC));
-  stripe.position.y=1.32; g.add(stripe);
-  // glasshouse (hidden in driver's-seat view)
-  var cab=new THREE.Group();
-  var shield=new THREE.Mesh(_vbg(1.7,0.6,0.08),
-    vehMat(glassC));
-  shield.position.set(0,1.92,2.02); shield.rotation.x=-0.24; cab.add(shield);
+  var B=_vbatch();
+  B.add(_vbg(2.0,0.95,4.8),'bronze', 0,0.85,0);            // lower body
+  B.add(_vbg(1.96,0.72,4.5),'cream', 0,1.68,-0.1);         // upper body
+  B.add(_vbg(2.02,0.1,4.82),'trim', 0,1.32,0);            // dividing stripe
+  B.add(_vbg(1.7,0.6,0.08),'glass', 0,1.92,2.02, -0.24,0,0); // windshield
   [-1,1].forEach(function(s){
-    var win=new THREE.Mesh(_vbg(0.06,0.52,3.3),
-      vehMat(glassC));
-    win.position.set(s*0.99,1.92,-0.2); cab.add(win);
+    B.add(_vbg(0.06,0.52,3.3),'glass', s*0.99,1.92,-0.2); // side glass
   });
-  var rear=new THREE.Mesh(_vbg(1.7,0.52,0.08),
-    vehMat(glassC));
-  rear.position.set(0,1.92,-2.32); cab.add(rear);
-  var roof=new THREE.Mesh(_vbg(1.96,0.1,4.5),
-    vehMat(cream));
-  roof.position.set(0,2.3,-0.1); cab.add(roof);
-  g.add(cab); g.userData.cab=cab;
-  // hood / front clip (pops on damage)
-  var hood=new THREE.Mesh(_vbg(1.9,0.5,0.9),
-    vehMat(bronze));
-  hood.position.set(0,1.02,2.35); g.add(hood); g.userData.hood=hood;
-  // grille + headlights + taillights
-  var grille=new THREE.Mesh(_vbg(1.2,0.34,0.1),
-    vehMat(trimC));
-  grille.position.set(0,0.92,2.82); g.add(grille);
+  B.add(_vbg(1.7,0.52,0.08),'glass', 0,1.92,-2.32);       // rear glass
+  B.add(_vbg(1.96,0.1,4.5),'cream', 0,2.3,-0.1);          // roof
+  B.add(_vbg(1.9,0.5,0.9),'bronze', 0,1.02,2.35);          // hood / front clip
+  B.add(_vbg(1.2,0.34,0.1),'trim', 0,0.92,2.82);          // grille
   [-1,1].forEach(function(s){
-    var hl=new THREE.Mesh(_vbg(0.34,0.24,0.08),
-      _safariHeadMat());
-    hl.position.set(s*0.78,0.95,2.82); g.add(hl);
-    var tl=new THREE.Mesh(_vbg(0.24,0.4,0.08),
-      _taillightMat());
-    tl.position.set(s*0.85,1.08,-2.42); g.add(tl);
+    B.add(_vbg(0.34,0.24,0.08),'shead', s*0.78,0.95,2.82);
+    B.add(_vbg(0.24,0.4,0.08),'tail', s*0.85,1.08,-2.42);
   });
-  // bumpers
   [2.82,-2.42].forEach(function(zz){
-    var b=new THREE.Mesh(_vbg(2.05,0.28,0.25),
-      vehMat(trimC));
-    b.position.set(0,0.52,zz); g.add(b);
+    B.add(_vbg(2.05,0.28,0.25),'trim', 0,0.52,zz);        // bumpers
   });
+  var refs=B.flush(g,'safari',{bronze:vehMat(bronze), cream:vehMat(cream),
+    trim:vehMat(trimC), glass:vehMat(glassC), shead:_safariHeadMat(),
+    tail:_taillightMat()});
+  g.userData.body=refs.bronze; g.userData.cab=refs.glass; g.userData.hood=refs.bronze;
   // gold-style wheels
   var wg=_vcg(0.38,0.38,0.32,10);
   var wm=vehMat(0x8a6a2a);
+  /* v1.50 WHEEL SPIN + STEER (expert report #23, Katherine Brooks 2026-10-11):
+     wheels register in g.userData.wheels (spun by updateCar via rotation.x —
+     same distance-driven pattern as semi_system.js); front wheels (z>0,
+     forward=+Z) sit in steer groups so updateCar can yaw them with steering. */
+  g.userData.wheels=[];
+  g.userData.steerGroups=[];
   [[0.95,1.55],[-0.95,1.55],[0.95,-1.55],[-0.95,-1.55]].forEach(function(p){
     var w=new THREE.Mesh(wg,wm); w.rotation.z=Math.PI/2;
-    w.position.set(p[0],0.38,p[1]); g.add(w);
+    w.position.set(p[0],0.38,p[1]);
+    if (p[1]>0){ var sg=new THREE.Group(); sg.position.copy(w.position);
+      w.position.set(0,0,0); sg.add(w); g.add(sg); g.userData.steerGroups.push(sg);
+    } else { g.add(w); }
+    g.userData.wheels.push(w);
   });
   return g;
 }
@@ -405,62 +399,68 @@ function _addSpokes(face, n, len, w, mat, xOff){
 // register them in g.userData.spinners[] with a random velocity). R = tire
 // radius; rim width derives from it (W=R*0.62).
 function makeDonkWheel(style, R){
+  // v1.49: wheel internals merged per material (tire + chrome + black).
+  // The wheel GROUP still spins as one unit (callers animate rotation.x);
+  // spinner caps stay separate groups (independent spin) with merged
+  // internals of their own.
   var g=new THREE.Group();
   var W=R*0.62, chrome=_chromeMat(), darkT=_darkTireMat(),
       black=vehMat(0x1c1c20);
-  var tire=new THREE.Mesh(_vcg(R,R,W,14), darkT);
-  tire.rotation.z=Math.PI/2; g.add(tire);
-  var barrel=new THREE.Mesh(_vcg(R*0.70,R*0.70,W*1.02,14), chrome);
-  barrel.rotation.z=Math.PI/2; g.add(barrel);
-  var face=new THREE.Group(); g.add(face);
+  var WB=_vbatch();
   var rr=R*0.68;
-  if (style==='spokes'){ _addSpokes(face, 5, rr*1.7, rr*0.22, chrome, W*1.06); }
-  else if (style==='chrome5'){ _addSpokes(face, 5, rr*1.7, rr*0.42, chrome, W*1.06); }
-  else if (style==='mesh'){ _addSpokes(face, 12, rr*1.7, rr*0.10, chrome, W*1.06); }
+  WB.add(_vcg(R,R,W,14),'tire', 0,0,0, 0,0,Math.PI/2);                 // tire
+  WB.add(_vcg(R*0.70,R*0.70,W*1.02,14),'chrome', 0,0,0, 0,0,Math.PI/2); // barrel
+  function spokes(n, len, w, xOff){
+    for(var i=0;i<n;i++){
+      WB.addM(_vbg(xOff, w, len),'chrome',
+        _vmat4(0,0,0, i/n*Math.PI*2,0,0).multiply(_vmat4(0,0,len*0.30, 0,0,0)));
+    }
+  }
+  if (style==='spokes'){ spokes(5, rr*1.7, rr*0.22, W*1.06); }
+  else if (style==='chrome5'){ spokes(5, rr*1.7, rr*0.42, W*1.06); }
+  else if (style==='mesh'){ spokes(12, rr*1.7, rr*0.10, W*1.06); }
   else if (style==='deepdish'){
-    var lip=new THREE.Mesh(_vtg(rr*0.95, rr*0.12, 8, 20), chrome);
-    lip.rotation.y=Math.PI/2; lip.position.x=W*0.5; face.add(lip);
-    var lip2=lip.clone(); lip2.position.x=-W*0.5; face.add(lip2);
-    _addSpokes(face, 5, rr*1.5, rr*0.24, chrome, W*0.9);
+    WB.add(_vtg(rr*0.95, rr*0.12, 8, 20),'chrome', W*0.5,0,0, 0,Math.PI/2,0);
+    WB.add(_vtg(rr*0.95, rr*0.12, 8, 20),'chrome', -W*0.5,0,0, 0,Math.PI/2,0);
+    spokes(5, rr*1.5, rr*0.24, W*0.9);
   }
   else if (style==='blade'){
     // 5 split-spoke blades: black spokes with polished edges
     for(var b=0;b<5;b++){
-      var piv=new THREE.Group();
+      var pivM=_vmat4(0,0,0, b/5*Math.PI*2,0,0);
       [-0.22,0.22].forEach(function(off){
-        var s=new THREE.Mesh(_vbg(W*1.06, rr*0.16, rr*1.6), black);
-        s.position.z=rr*0.5; s.rotation.x=off; piv.add(s);
-        var e=new THREE.Mesh(_vbg(W*1.08, rr*0.05, rr*1.6), chrome);
-        e.position.z=rr*0.5; e.position.y=rr*0.10; e.rotation.x=off; piv.add(e);
+        WB.addM(_vbg(W*1.06, rr*0.16, rr*1.6),'black',
+          pivM.clone().multiply(_vmat4(0,0,rr*0.5, off,0,0)));
+        WB.addM(_vbg(W*1.08, rr*0.05, rr*1.6),'chrome',
+          pivM.clone().multiply(_vmat4(0,rr*0.10,rr*0.5, off,0,0)));
       });
-      piv.rotation.x=b/5*Math.PI*2; face.add(piv);
     }
-    var lipB=new THREE.Mesh(_vtg(rr*0.98, rr*0.07, 8, 20), chrome);
-    lipB.rotation.y=Math.PI/2; face.add(lipB);
+    WB.add(_vtg(rr*0.98, rr*0.07, 8, 20),'chrome', 0,0,0, 0,Math.PI/2,0);
   }
   else if (style==='spinner'){
-    // wire-spoke base + 3-blade spinner cap (spins independently)
-    _addSpokes(face, 18, rr*1.7, rr*0.055, chrome, W*1.04);
-    var spinG=new THREE.Group();
-    var hub=new THREE.Mesh(_vcg(rr*0.22,rr*0.28,W*0.5,10), chrome);
-    hub.rotation.z=Math.PI/2; spinG.add(hub);
-    for(var k=0;k<3;k++){
-      var piv=new THREE.Group();
-      var bl=new THREE.Mesh(_vbg(W*0.9, rr*0.20, rr*1.1), chrome);
-      bl.position.z=rr*0.55; piv.add(bl);
-      var tip=new THREE.Mesh(_vcog(rr*0.14, rr*0.5, 6), chrome);
-      tip.rotation.x=Math.PI/2; tip.position.z=rr*1.15; piv.add(tip);
-      piv.rotation.x=k/3*Math.PI*2;
-      spinG.add(piv);
+    // wire-spoke base + 3-blade spinner caps (spin independently)
+    spokes(18, rr*1.7, rr*0.055, W*1.04);
+    function spinnerCap(){
+      var sg=new THREE.Group(), SB=_vbatch();
+      SB.add(_vcg(rr*0.22,rr*0.28,W*0.5,10),'chrome', 0,0,0, 0,0,Math.PI/2);
+      for(var k=0;k<3;k++){
+        var km=_vmat4(0,0,0, k/3*Math.PI*2,0,0);
+        SB.addM(_vbg(W*0.9, rr*0.20, rr*1.1),'chrome',
+          km.clone().multiply(_vmat4(0,0,rr*0.55, 0,0,0)));
+        SB.addM(_vcog(rr*0.14, rr*0.5, 6),'chrome',
+          km.clone().multiply(_vmat4(0,0,rr*1.15, Math.PI/2,0,0)));
+      }
+      SB.flush(sg,'donkSpin:'+_rk(R),{chrome:chrome});
+      return sg;
     }
-    spinG.position.x=W*0.55;
-    var spinG2=spinG.clone(); spinG2.position.x=-W*0.55; spinG2.rotation.y=Math.PI;
-    g.add(spinG); g.add(spinG2);
+    var spinG=spinnerCap(); spinG.position.x=W*0.55; g.add(spinG);
+    var spinG2=spinnerCap(); spinG2.position.x=-W*0.55;
+    spinG2.rotation.y=Math.PI; g.add(spinG2);
     g.userData.spinnerParts=[spinG, spinG2];
   }
-  // center cap
-  var cap=new THREE.Mesh(_vcg(rr*0.16,rr*0.16,W*1.1,8), chrome);
-  cap.rotation.z=Math.PI/2; face.add(cap);
+  WB.add(_vcg(rr*0.16,rr*0.16,W*1.1,8),'chrome', 0,0,0, 0,0,Math.PI/2); // cap
+  WB.flush(g,'donkWheel:'+style+':'+_rk(R),
+    {tire:darkT, chrome:chrome, black:black});
   return g;
 }
 
@@ -521,6 +521,23 @@ function addCarInterior(g, o){
   g.userData.steerWheel=wheel;
   return wheel;
 }
+// _vinterior(B, o) — v1.49 batch version of addCarInterior: queues the
+// static interior (floor, seats, dash, column) into batch B under the
+// 'dark' and 'seat' slots. The steering wheel is NOT batched — it stays a
+// separate mesh so g.userData.steerWheel keeps pointing at a real wheel.
+// Returns the wheel spec so the caller can add it: {geo, x,y,z, rx}.
+function _vinterior(B, o){
+  var dark='dark', seat='seat';
+  B.add(_vbg(o.width*0.92,0.08,2.7),dark, 0,o.floorY,0.05);
+  [-0.52,0.52].forEach(function(sx){
+    B.add(_vbg(0.58,0.5,0.58),seat, sx,o.floorY+0.32,o.seatZ);
+    B.add(_vbg(0.58,0.62,0.18),seat, sx,o.floorY+0.62,o.seatZ-0.34);
+  });
+  B.add(_vbg(1.55,0.45,0.62),seat, 0,o.floorY+0.28,o.seatZ-1.15);
+  B.add(_vbg(o.width*0.88,0.3,0.5),dark, 0,o.floorY+0.78,o.dashZ);
+  B.add(_vcg(0.05,0.05,0.5,8),dark, 0.52,o.floorY+0.70,o.dashZ-0.28, 0.5,0,0);
+  return {geo:_vtg(0.24,0.045,8,18), x:0.52, y:o.floorY+0.82, z:o.dashZ-0.36, rx:-0.5};
+}
 function glassMat(){ return _glassTMat(); }
 function chromeTrimMat(){ return vehMat(0xd8d8dc); }
 function paintStripe(g, y, z0, z1, width, color){
@@ -537,52 +554,41 @@ function paintStripe(g, y, z0, z1, width, color){
 // hood/trunk, sharp edges; lifted donk stance (0.42u lift), big chrome rims
 // (R=0.48), full interior + hinged doors. paint = pickPaint output.
 function boxChevyMesh(paint, rimStyle){
+  // v1.49: static exterior + interior merged per material (~21 meshes ->
+  // ~9 merged). Doors hinge, wheels spin, spinners spin — all stay separate.
   var g=new THREE.Group();
   var bodyM=vehMat(paint.body);
   var roofM=vehMat(paint.roof||paint.body);
   var chrome=chromeTrimMat(), glass=glassMat(), dark=vehMat(0x1c1c1e);
   var W=2.0, L=5.3, lift=0.42;   // donk lift
-  // lower body
-  var lower=new THREE.Mesh(_vbg(W,0.72,L), bodyM);
-  lower.position.y=0.72+lift; g.add(lower); g.userData.body=lower;
-  // upright greenhouse (formal, near-vertical glass)
-  var cab=new THREE.Mesh(_vbg(1.78,0.62,2.9), glass);
-  cab.position.set(0,1.42+lift,-0.25); g.add(cab); g.userData.cab=cab;
-  // roof (two-tone capable)
-  var roof=new THREE.Mesh(_vbg(1.84,0.1,3.0), roofM);
-  roof.position.set(0,1.78+lift,-0.25); g.add(roof);
-  // pillars (body color, chunky 80s)
+  var B=_vbatch();
+  B.add(_vbg(W,0.72,L),'body', 0,0.72+lift,0);                 // lower body
+  B.add(_vbg(1.78,0.62,2.9),'glass', 0,1.42+lift,-0.25);       // greenhouse
+  B.add(_vbg(1.84,0.1,3.0),'roof', 0,1.78+lift,-0.25);         // roof
   [[0.92,1.05],[-0.92,1.05],[0.92,-1.55],[-0.92,-1.55]].forEach(function(p){
-    var pil=new THREE.Mesh(_vbg(0.09,0.66,0.14), bodyM);
-    pil.position.set(p[0],1.42+lift,p[1]); g.add(pil);
+    B.add(_vbg(0.09,0.66,0.14),'body', p[0],1.42+lift,p[1]);   // pillars
   });
-  // long flat hood
-  var hood=new THREE.Mesh(_vbg(1.9,0.14,1.5), bodyM);
-  hood.position.set(0,1.12+lift,1.85); g.add(hood); g.userData.hood=hood;
-  // upright trunk
-  var trunk=new THREE.Mesh(_vbg(1.9,0.5,1.15), bodyM);
-  trunk.position.set(0,1.28+lift,-2.05); g.add(trunk);
-  // vertical chrome grille + quad headlights (signature box-Chevy face)
-  var grille=new THREE.Mesh(_vbg(1.5,0.42,0.1), chrome);
-  grille.position.set(0,0.95+lift,2.68); g.add(grille);
+  B.add(_vbg(1.9,0.14,1.5),'body', 0,1.12+lift,1.85);           // hood
+  B.add(_vbg(1.9,0.5,1.15),'body', 0,1.28+lift,-2.05);         // trunk
+  B.add(_vbg(1.5,0.42,0.1),'chrome', 0,0.95+lift,2.68);        // grille
   [-0.55,-0.19,0.19,0.55].forEach(function(hx){
-    var hl=new THREE.Mesh(_vbg(0.3,0.24,0.08),
-      _headlightMat());
-    hl.position.set(hx,0.95+lift,2.70); g.add(hl);
+    B.add(_vbg(0.3,0.24,0.08),'head', hx,0.95+lift,2.70);      // quad headlights
   });
-  // chrome bumpers
   [2.72,-2.66].forEach(function(zz){
-    var b=new THREE.Mesh(_vbg(2.06,0.26,0.22), chrome);
-    b.position.set(0,0.62+lift,zz); g.add(b);
+    B.add(_vbg(2.06,0.26,0.22),'chrome', 0,0.62+lift,zz);      // bumpers
   });
-  // taillights (full-width 80s bar)
-  var tl=new THREE.Mesh(_vbg(1.6,0.22,0.08),
-    _taillightMat());
-  tl.position.set(0,1.15+lift,-2.64); g.add(tl);
-  // racing stripes
-  if (paint.stripe) paintStripe(g, 1.20+lift, -2.6, 2.6, 0.5, paint.stripe);
-  // interior + doors
-  addCarInterior(g, {width:W, floorY:0.55+lift, seatZ:0.15, dashZ:1.15, seatColor:0x4a3a30});
+  B.add(_vbg(1.6,0.22,0.08),'tail', 0,1.15+lift,-2.64);        // taillight bar
+  if (paint.stripe) B.add(_vbg(0.5,0.03,5.2),'stripe', 0,1.20+lift,0); // stripe
+  var swSpec=_vinterior(B,{width:W, floorY:0.55+lift, seatZ:0.15, dashZ:1.15});
+  var refs=B.flush(g,'boxChevy'+(paint.stripe?'S':''),
+    {body:bodyM, roof:roofM, glass:glass, chrome:chrome, dark:dark,
+     head:_headlightMat(), tail:_taillightMat(),
+     stripe:vehMat(paint.stripe||0xffffff), seat:vehMat(0x4a3a30)});
+  g.userData.body=refs.body; g.userData.cab=refs.glass; g.userData.hood=refs.body;
+  var swheel=new THREE.Mesh(swSpec.geo, vehMat(0x1a1a1a));
+  swheel.position.set(swSpec.x,swSpec.y,swSpec.z); swheel.rotation.x=swSpec.rx;
+  g.add(swheel); g.userData.steerWheel=swheel;
+  // doors (hinged — stay separate)
   addCarDoor(g, W/2, 1.05, 1.35, 0.62, 1.05+lift, bodyM);
   addCarDoor(g, -W/2, 1.05, 1.35, 0.62, 1.05+lift, bodyM);
   // BIG donk rims
@@ -603,48 +609,39 @@ function boxChevyMesh(paint, rimStyle){
 // sleek aero body, curved rear glass flowing into the trunk, sloped nose,
 // flush rounded styling; same donk treatment as the box Chevy.
 function bubbleChevyMesh(paint, rimStyle){
+  // v1.49: static exterior + interior merged per material. Doors hinge,
+  // wheels spin — stay separate.
   var g=new THREE.Group();
   var bodyM=vehMat(paint.body);
   var roofM=vehMat(paint.roof||paint.body);
   var chrome=chromeTrimMat(), glass=glassMat(), dark=vehMat(0x1c1c1e);
   var W=2.0, L=5.4, lift=0.42;
-  // sleek lower body
-  var lower=new THREE.Mesh(_vbg(W,0.66,L), bodyM);
-  lower.position.y=0.68+lift; g.add(lower); g.userData.body=lower;
-  // flowing greenhouse: curved rear glass (rotated) + sloped windshield
-  var cab=new THREE.Mesh(_vbg(1.76,0.55,2.7), glass);
-  cab.position.set(0,1.32+lift,-0.35); g.add(cab); g.userData.cab=cab;
-  var rearGlass=new THREE.Mesh(_vbg(1.7,0.5,0.9), glass);
-  rearGlass.position.set(0,1.22+lift,-1.85); rearGlass.rotation.x=0.5; g.add(rearGlass);
-  var shield=new THREE.Mesh(_vbg(1.7,0.5,0.1), glass);
-  shield.position.set(0,1.30+lift,1.15); shield.rotation.x=-0.42; g.add(shield);
-  // rounded roof
-  var roof=new THREE.Mesh(_vbg(1.82,0.1,2.5), roofM);
-  roof.position.set(0,1.64+lift,-0.35); g.add(roof);
-  // sloped aero nose
-  var nose=new THREE.Mesh(_vbg(1.9,0.4,1.2), bodyM);
-  nose.position.set(0,0.95+lift,2.15); nose.rotation.x=0.18; g.add(nose); g.userData.hood=nose;
-  // rounded trunk (short, tapered)
-  var trunk=new THREE.Mesh(_vbg(1.85,0.42,0.9), bodyM);
-  trunk.position.set(0,1.05+lift,-2.3); trunk.rotation.x=-0.12; g.add(trunk);
-  // flush rounded headlights + slim grille
+  var B=_vbatch();
+  B.add(_vbg(W,0.66,L),'body', 0,0.68+lift,0);                  // lower body
+  B.add(_vbg(1.76,0.55,2.7),'glass', 0,1.32+lift,-0.35);        // greenhouse
+  B.add(_vbg(1.7,0.5,0.9),'glass', 0,1.22+lift,-1.85, 0.5,0,0); // rear glass
+  B.add(_vbg(1.7,0.5,0.1),'glass', 0,1.30+lift,1.15, -0.42,0,0); // windshield
+  B.add(_vbg(1.82,0.1,2.5),'roof', 0,1.64+lift,-0.35);          // roof
+  B.add(_vbg(1.9,0.4,1.2),'body', 0,0.95+lift,2.15, 0.18,0,0);  // aero nose
+  B.add(_vbg(1.85,0.42,0.9),'body', 0,1.05+lift,-2.3, -0.12,0,0); // trunk
   [-0.62,0.62].forEach(function(hx){
-    var hl=new THREE.Mesh(_vbg(0.5,0.2,0.1),
-      _headlightMat());
-    hl.position.set(hx,0.98+lift,2.72); hl.rotation.x=0.18; g.add(hl);
+    B.add(_vbg(0.5,0.2,0.1),'head', hx,0.98+lift,2.72, 0.18,0,0);
   });
-  var grille=new THREE.Mesh(_vbg(0.9,0.18,0.08), dark);
-  grille.position.set(0,0.82+lift,2.70); g.add(grille);
-  // body-color bumpers (90s aero)
+  B.add(_vbg(0.9,0.18,0.08),'dark', 0,0.82+lift,2.70);          // slim grille
   [2.72,-2.72].forEach(function(zz){
-    var b=new THREE.Mesh(_vbg(2.02,0.3,0.24), bodyM);
-    b.position.set(0,0.60+lift,zz); g.add(b);
+    B.add(_vbg(2.02,0.3,0.24),'body', 0,0.60+lift,zz);          // bumpers
   });
-  var tl=new THREE.Mesh(_vbg(1.5,0.2,0.08),
-    _taillightMat());
-  tl.position.set(0,1.02+lift,-2.74); g.add(tl);
-  if (paint.stripe) paintStripe(g, 1.06+lift, -2.7, 2.7, 0.5, paint.stripe);
-  addCarInterior(g, {width:W, floorY:0.52+lift, seatZ:0.05, dashZ:1.05, seatColor:0x2a2a32});
+  B.add(_vbg(1.5,0.2,0.08),'tail', 0,1.02+lift,-2.74);
+  if (paint.stripe) B.add(_vbg(0.5,0.03,5.4),'stripe', 0,1.06+lift,0);
+  var swSpec=_vinterior(B,{width:W, floorY:0.52+lift, seatZ:0.05, dashZ:1.05});
+  var refs=B.flush(g,'bubbleChevy'+(paint.stripe?'S':''),
+    {body:bodyM, roof:roofM, glass:glass, dark:dark,
+     head:_headlightMat(), tail:_taillightMat(),
+     stripe:vehMat(paint.stripe||0xffffff), seat:vehMat(0x2a2a32)});
+  g.userData.body=refs.body; g.userData.cab=refs.glass; g.userData.hood=refs.body;
+  var swheel=new THREE.Mesh(swSpec.geo, vehMat(0x1a1a1a));
+  swheel.position.set(swSpec.x,swSpec.y,swSpec.z); swheel.rotation.x=swSpec.rx;
+  g.add(swheel); g.userData.steerWheel=swheel;
   addCarDoor(g, W/2, 0.95, 1.35, 0.58, 1.0+lift, bodyM);
   addCarDoor(g, -W/2, 0.95, 1.35, 0.58, 1.0+lift, bodyM);
   var R=0.48;
@@ -661,54 +658,44 @@ function bubbleChevyMesh(paint, rimStyle){
 // with walls + tailgate, grille with square headlights, interior + doors,
 // donk wheels (R=0.40).
 function pickupMesh(paint, rimStyle){
+  // v1.49: static exterior + bed + interior merged per material. Doors
+  // hinge, wheels spin — stay separate.
   var g=new THREE.Group();
   var bodyM=vehMat(paint.body);
   var roofM=vehMat(paint.roof||paint.body);
-  var glass=glassMat(), dark=vehMat(0x1c1c1e);
+  var glass=glassMat(), dark=vehMat(0x1c1c1e), chrome=chromeTrimMat();
   var W=2.0, lift=0.15;
-  // chassis + cab lower
-  var lower=new THREE.Mesh(_vbg(W,0.7,2.2), bodyM);
-  lower.position.set(0,0.75+lift,1.35); g.add(lower); g.userData.body=lower;
-  // cab greenhouse
-  var cab=new THREE.Mesh(_vbg(1.8,0.62,1.5), glass);
-  cab.position.set(0,1.42+lift,1.15); g.add(cab); g.userData.cab=cab;
-  var roof=new THREE.Mesh(_vbg(1.86,0.1,1.6), roofM);
-  roof.position.set(0,1.78+lift,1.15); g.add(roof);
-  // hood
-  var hood=new THREE.Mesh(_vbg(1.9,0.16,1.0), bodyM);
-  hood.position.set(0,1.14+lift,2.6); g.add(hood); g.userData.hood=hood;
-  // grille + square headlights
-  var grille=new THREE.Mesh(_vbg(1.4,0.35,0.1), dark);
-  grille.position.set(0,0.95+lift,3.12); g.add(grille);
+  var B=_vbatch();
+  B.add(_vbg(W,0.7,2.2),'body', 0,0.75+lift,1.35);          // chassis/cab lower
+  B.add(_vbg(1.8,0.62,1.5),'glass', 0,1.42+lift,1.15);      // greenhouse
+  B.add(_vbg(1.86,0.1,1.6),'roof', 0,1.78+lift,1.15);       // roof
+  B.add(_vbg(1.9,0.16,1.0),'body', 0,1.14+lift,2.6);        // hood
+  B.add(_vbg(1.4,0.35,0.1),'dark', 0,0.95+lift,3.12);       // grille
   [-0.7,0.7].forEach(function(hx){
-    var hl=new THREE.Mesh(_vbg(0.36,0.26,0.08),
-      _headlightMat());
-    hl.position.set(hx,0.98+lift,3.12); g.add(hl);
+    B.add(_vbg(0.36,0.26,0.08),'head', hx,0.98+lift,3.12); // headlights
   });
-  var bumper=new THREE.Mesh(_vbg(2.05,0.24,0.2), chromeTrimMat());
-  bumper.position.set(0,0.6+lift,3.14); g.add(bumper);
-  // OPEN BED with walls
-  var bedM=bodyM, bedY=0.78+lift, bedZ0=-2.55, bedZ1=-0.15, bedL=bedZ1-bedZ0;
-  var bedFloor=new THREE.Mesh(_vbg(1.9,0.1,bedL), dark);
-  bedFloor.position.set(0,bedY,(bedZ0+bedZ1)/2); g.add(bedFloor);
-  [[0.95,'x'],[-0.95,'x']].forEach(function(s){
-    var wall=new THREE.Mesh(_vbg(0.08,0.55,bedL), bedM);
-    wall.position.set(s[0],bedY+0.32,(bedZ0+bedZ1)/2); g.add(wall);
+  B.add(_vbg(2.05,0.24,0.2),'chrome', 0,0.6+lift,3.14);     // front bumper
+  var bedY=0.78+lift, bedZ0=-2.55, bedZ1=-0.15, bedL=bedZ1-bedZ0;
+  B.add(_vbg(1.9,0.1,bedL),'dark', 0,bedY,(bedZ0+bedZ1)/2); // bed floor
+  [0.95,-0.95].forEach(function(sx){
+    B.add(_vbg(0.08,0.55,bedL),'body', sx,bedY+0.32,(bedZ0+bedZ1)/2); // walls
   });
-  var tail=new THREE.Mesh(_vbg(1.9,0.55,0.08), bedM);
-  tail.position.set(0,bedY+0.32,bedZ0); g.add(tail);
-  var cabBack=new THREE.Mesh(_vbg(1.9,0.55,0.08), bedM);
-  cabBack.position.set(0,bedY+0.32,bedZ1); g.add(cabBack);
-  // taillights + rear bumper
+  B.add(_vbg(1.9,0.55,0.08),'body', 0,bedY+0.32,bedZ0);     // tailgate
+  B.add(_vbg(1.9,0.55,0.08),'body', 0,bedY+0.32,bedZ1);     // cab back
   [-0.8,0.8].forEach(function(tx){
-    var tl=new THREE.Mesh(_vbg(0.2,0.4,0.08),
-      _taillightMat());
-    tl.position.set(tx,0.95+lift,-2.58); g.add(tl);
+    B.add(_vbg(0.2,0.4,0.08),'tail', tx,0.95+lift,-2.58);   // taillights
   });
-  var rb=new THREE.Mesh(_vbg(2.05,0.24,0.2), chromeTrimMat());
-  rb.position.set(0,0.6+lift,-2.6); g.add(rb);
-  if (paint.stripe) paintStripe(g, 1.24+lift, 0.4, 3.1, 0.45, paint.stripe);
-  addCarInterior(g, {width:W, floorY:0.55+lift, seatZ:1.0, dashZ:1.95, seatColor:0x3a3f4a});
+  B.add(_vbg(2.05,0.24,0.2),'chrome', 0,0.6+lift,-2.6);      // rear bumper
+  if (paint.stripe) B.add(_vbg(0.45,0.03,2.7),'stripe', 0,1.24+lift,1.75);
+  var swSpec=_vinterior(B,{width:W, floorY:0.55+lift, seatZ:1.0, dashZ:1.95});
+  var refs=B.flush(g,'pickup'+(paint.stripe?'S':''),
+    {body:bodyM, roof:roofM, glass:glass, dark:dark, chrome:chrome,
+     head:_headlightMat(), tail:_taillightMat(),
+     stripe:vehMat(paint.stripe||0xffffff), seat:vehMat(0x3a3f4a)});
+  g.userData.body=refs.body; g.userData.cab=refs.glass; g.userData.hood=refs.body;
+  var swheel=new THREE.Mesh(swSpec.geo, vehMat(0x1a1a1a));
+  swheel.position.set(swSpec.x,swSpec.y,swSpec.z); swheel.rotation.x=swSpec.rx;
+  g.add(swheel); g.userData.steerWheel=swheel;
   addCarDoor(g, W/2, 1.7, 1.15, 0.6, 1.05+lift, bodyM);
   addCarDoor(g, -W/2, 1.7, 1.15, 0.6, 1.05+lift, bodyM);
   var R=0.40;
@@ -724,51 +711,44 @@ function pickupMesh(paint, rimStyle){
 // suvMesh(paint, rimStyle) — stylized family SUV: tall wagon body, roof
 // rails, interior + doors, donk wheels (R=0.42).
 function suvMesh(paint, rimStyle){
+  // v1.49: static exterior + interior merged per material. Doors hinge,
+  // wheels spin — stay separate.
   var g=new THREE.Group();
   var bodyM=vehMat(paint.body);
   var roofM=vehMat(paint.roof||paint.body);
   var glass=glassMat(), dark=vehMat(0x1c1c1e);
   var W=2.0, lift=0.22;
-  // tall wagon body
-  var lower=new THREE.Mesh(_vbg(W,0.85,4.7), bodyM);
-  lower.position.y=0.85+lift; g.add(lower); g.userData.body=lower;
-  // glasshouse
-  var cab=new THREE.Mesh(_vbg(1.8,0.68,3.4), glass);
-  cab.position.set(0,1.6+lift,-0.3); g.add(cab); g.userData.cab=cab;
-  var roof=new THREE.Mesh(_vbg(1.86,0.1,3.5), roofM);
-  roof.position.set(0,1.99+lift,-0.3); g.add(roof);
-  // pillars
+  var B=_vbatch();
+  B.add(_vbg(W,0.85,4.7),'body', 0,0.85+lift,0);               // wagon body
+  B.add(_vbg(1.8,0.68,3.4),'glass', 0,1.6+lift,-0.3);          // glasshouse
+  B.add(_vbg(1.86,0.1,3.5),'roof', 0,1.99+lift,-0.3);          // roof
   [[0.92,1.25],[-0.92,1.25],[0.92,-1.85],[-0.92,-1.85]].forEach(function(p){
-    var pil=new THREE.Mesh(_vbg(0.1,0.72,0.16), bodyM);
-    pil.position.set(p[0],1.6+lift,p[1]); g.add(pil);
+    B.add(_vbg(0.1,0.72,0.16),'body', p[0],1.6+lift,p[1]);     // pillars
   });
-  // hood + grille
-  var hood=new THREE.Mesh(_vbg(1.9,0.14,1.0), bodyM);
-  hood.position.set(0,1.32+lift,2.0); g.add(hood); g.userData.hood=hood;
-  var grille=new THREE.Mesh(_vbg(1.3,0.32,0.1), dark);
-  grille.position.set(0,1.05+lift,2.42); g.add(grille);
+  B.add(_vbg(1.9,0.14,1.0),'body', 0,1.32+lift,2.0);           // hood
+  B.add(_vbg(1.3,0.32,0.1),'dark', 0,1.05+lift,2.42);          // grille
   [-0.65,0.65].forEach(function(hx){
-    var hl=new THREE.Mesh(_vbg(0.34,0.26,0.08),
-      _headlightMat());
-    hl.position.set(hx,1.08+lift,2.42); g.add(hl);
+    B.add(_vbg(0.34,0.26,0.08),'head', hx,1.08+lift,2.42);    // headlights
   });
-  // roof rails
   [-0.7,0.7].forEach(function(rx){
-    var rail=new THREE.Mesh(_vbg(0.08,0.08,3.2), dark);
-    rail.position.set(rx,2.08+lift,-0.3); g.add(rail);
+    B.add(_vbg(0.08,0.08,3.2),'dark', rx,2.08+lift,-0.3);      // roof rails
   });
-  // bumpers + taillights
   [2.44,-2.4].forEach(function(zz){
-    var b=new THREE.Mesh(_vbg(2.04,0.26,0.2), dark);
-    b.position.set(0,0.68+lift,zz); g.add(b);
+    B.add(_vbg(2.04,0.26,0.2),'dark', 0,0.68+lift,zz);         // bumpers
   });
   [-0.8,0.8].forEach(function(tx){
-    var tl=new THREE.Mesh(_vbg(0.22,0.5,0.08),
-      _taillightMat());
-    tl.position.set(tx,1.1+lift,-2.42); g.add(tl);
+    B.add(_vbg(0.22,0.5,0.08),'tail', tx,1.1+lift,-2.42);      // taillights
   });
-  if (paint.stripe) paintStripe(g, 1.40+lift, -2.3, 2.5, 0.45, paint.stripe);
-  addCarInterior(g, {width:W, floorY:0.62+lift, seatZ:0.6, dashZ:1.6, seatColor:0x424750});
+  if (paint.stripe) B.add(_vbg(0.45,0.03,4.8),'stripe', 0,1.40+lift,0.1);
+  var swSpec=_vinterior(B,{width:W, floorY:0.62+lift, seatZ:0.6, dashZ:1.6});
+  var refs=B.flush(g,'suv'+(paint.stripe?'S':''),
+    {body:bodyM, roof:roofM, glass:glass, dark:dark,
+     head:_headlightMat(), tail:_taillightMat(),
+     stripe:vehMat(paint.stripe||0xffffff), seat:vehMat(0x424750)});
+  g.userData.body=refs.body; g.userData.cab=refs.glass; g.userData.hood=refs.body;
+  var swheel=new THREE.Mesh(swSpec.geo, vehMat(0x1a1a1a));
+  swheel.position.set(swSpec.x,swSpec.y,swSpec.z); swheel.rotation.x=swSpec.rx;
+  g.add(swheel); g.userData.steerWheel=swheel;
   addCarDoor(g, W/2, 1.35, 1.25, 0.66, 1.2+lift, bodyM);
   addCarDoor(g, -W/2, 1.35, 1.25, 0.66, 1.2+lift, bodyM);
   var R=0.42;
@@ -797,27 +777,30 @@ function semiMesh(){
   var cabC=[0xa33327,0x2e5aa3,0x2e7a4c,0xd8a13c,0x5a4fa3,0xb8b8b8];
   var cabM=vehMat(cabC[(Math.random()*cabC.length)|0]);
   var trM=vehMat(TRAILER_COLORS[(Math.random()*TRAILER_COLORS.length)|0]);
-  function box(w,h,d,m,x,y,z){
-    var ms=new THREE.Mesh(_vbg(w,h,d),m);
-    ms.position.set(x,y,z); g.add(ms); return ms;
-  }
-  box(2.5,1.6,2.2,cabM, 0,1.5,7.6);
-  box(2.4,1.1,2.0,glass, 0,2.75,7.7);
-  box(2.5,0.35,2.2,cabM, 0,3.45,7.6);
-  box(2.5,0.5,0.3,chrome, 0,1.1,8.75);
-  box(2.2,0.5,0.15,dark, 0,2.2,8.72);
-  box(2.5,2.2,1.6,cabM, 0,1.8,5.9);
-  box(0.18,2.6,0.18,chrome, 1.15,2.6,6.6);
-  box(0.18,2.6,0.18,chrome, -1.15,2.6,6.6);
-  var sw=new THREE.Mesh(_vtg(0.28,0.06,6,12), dark);
-  sw.position.set(0.62,2.5,7.9); sw.rotation.x=-0.5; g.add(sw);
-  box(0.55,0.7,0.55,dark, 0.62,2.1,7.0);
-  box(2.0,0.3,1.2,dark, 0,1.35,4.6);
-  box(2.6,2.8,11.5,trM, 0,2.5,-1.5);
-  box(2.62,0.5,11.5,chrome, 0,1.15,-1.5);
-  box(2.62,2.82,0.2,dark, 0,2.5,-7.3);
-  box(0.25,1.2,0.25,dark, 0.9,0.6,2.6);
-  box(0.25,1.2,0.25,dark, -0.9,0.6,2.6);
+  // v1.49: static boxes merged per material (16 meshes -> 6 merged).
+  // Wheels spin — stay separate single meshes.
+  var B=_vbatch();
+  B.add(_vbg(2.5,1.6,2.2),'cab', 0,1.5,7.6);            // cab
+  B.add(_vbg(2.4,1.1,2.0),'glass', 0,2.75,7.7);        // glass upper
+  B.add(_vbg(2.5,0.35,2.2),'cab', 0,3.45,7.6);         // cab roof
+  B.add(_vbg(2.5,0.5,0.3),'chrome', 0,1.1,8.75);      // bumper
+  B.add(_vbg(2.2,0.5,0.15),'dark', 0,2.2,8.72);        // grille area
+  B.add(_vbg(2.5,2.2,1.6),'cab', 0,1.8,5.9);           // sleeper
+  B.add(_vbg(0.18,2.6,0.18),'chrome', 1.15,2.6,6.6);   // exhaust stacks
+  B.add(_vbg(0.18,2.6,0.18),'chrome', -1.15,2.6,6.6);
+  B.add(_vtg(0.28,0.06,6,12),'dark', 0.62,2.5,7.9, -0.5,0,0); // steering wheel
+  B.add(_vbg(0.55,0.7,0.55),'dark', 0.62,2.1,7.0);     // column/dash
+  B.add(_vbg(2.0,0.3,1.2),'dark', 0,1.35,4.6);         // chassis
+  B.add(_vbg(2.6,2.8,11.5),'trailer', 0,2.5,-1.5);     // trailer
+  B.add(_vbg(2.62,0.5,11.5),'chrome', 0,1.15,-1.5);    // trailer skirt
+  B.add(_vbg(2.62,2.82,0.2),'dark', 0,2.5,-7.3);       // trailer rear
+  B.add(_vbg(0.25,1.2,0.25),'dark', 0.9,0.6,2.6);      // landing gear
+  B.add(_vbg(0.25,1.2,0.25),'dark', -0.9,0.6,2.6);
+  var hlM=_semiHeadMat();
+  B.add(_vbg(0.4,0.3,0.1),'head', 0.8,1.35,8.78);      // headlights
+  B.add(_vbg(0.4,0.3,0.1),'head', -0.8,1.35,8.78);
+  B.flush(g,'semi',{cab:cabM, glass:glass, chrome:chrome, dark:dark,
+    trailer:trM, head:hlM});
   var wheels=[];
   function wheel(x,y,z,r){
     // v1.46: geometry is shared fleet-wide — rotate the mesh, never the geometry.
@@ -831,9 +814,6 @@ function semiMesh(){
   wheel(1.15,0.55,-4.5,0.5); wheel(-1.15,0.55,-4.5,0.5);
   wheel(1.15,0.55,-5.8,0.5); wheel(-1.15,0.55,-5.8,0.5);
   g.userData.wheels=wheels;
-  var hlM=_semiHeadMat();
-  box(0.4,0.3,0.1,hlM, 0.8,1.35,8.78);
-  box(0.4,0.3,0.1,hlM, -0.8,1.35,8.78);
   return g;
 }
 
@@ -859,44 +839,31 @@ function groundY(x,z){
    g.userData.len = body length. Used by marta_bus_system.js for all 40
    route buses. */
 function martaBusMesh(){
+  // v1.49: static body merged per material (11 meshes -> 7 merged).
+  // Wheels spin — stay separate.
   var g=new THREE.Group();
   var white=vehMat(0xe8eaec), blue=vehMat(0x1a5fb4), green=vehMat(0x2a9d4b),
       dark=vehMat(0x22262b),
       glassM=vehMat(0x1c2733);
   var L=12, W=2.8, H=2.6;
-  // body
-  var body=new THREE.Mesh(_vbg(W,H,L), white);
-  body.position.set(0,1.9,0); g.add(body);
-  // blue stripe
-  var stripe=new THREE.Mesh(_vbg(W+0.06,0.4,L+0.06), blue);
-  stripe.position.set(0,2.3,0); g.add(stripe);
-  // green accent stripe (MARTA livery)
-  var accent=new THREE.Mesh(_vbg(W+0.06,0.18,L+0.06), green);
-  accent.position.set(0,1.5,0); g.add(accent);
-  // window band
-  var win=new THREE.Mesh(_vbg(W+0.06,0.8,L-2), glassM);
-  win.position.set(0,2.75,0); g.add(win);
-  // windshield
-  var shield=new THREE.Mesh(_vbg(W-0.4,1.0,0.1), glassM);
-  shield.position.set(0,2.6,L/2+0.02); g.add(shield);
-  // roof
-  var roof=new THREE.Mesh(_vbg(W-0.2,0.2,L-0.3), vehMat(0xb9bec5));
-  roof.position.set(0,3.3,0); g.add(roof);
-  // front destination sign (v1.46: identical on every bus — shared cached texture)
-  try{
-  var dest=new THREE.Mesh(_vpg(1.8,0.35), _martaDestMatGet());
-  dest.position.set(0,3.0,L/2+0.06); g.add(dest);
-  }catch(e){}
+  var B=_vbatch();
+  B.add(_vbg(W,H,L),'white', 0,1.9,0);                    // body
+  B.add(_vbg(W+0.06,0.4,L+0.06),'blue', 0,2.3,0);         // blue stripe
+  B.add(_vbg(W+0.06,0.18,L+0.06),'green', 0,1.5,0);      // green accent
+  B.add(_vbg(W+0.06,0.8,L-2),'glass', 0,2.75,0);          // window band
+  B.add(_vbg(W-0.4,1.0,0.1),'glass', 0,2.6,L/2+0.02);    // windshield
+  B.add(_vbg(W-0.2,0.2,L-0.3),'roof', 0,3.3,0);          // roof
+  try{ B.add(_vpg(1.8,0.35),'dest', 0,3.0,L/2+0.06); }catch(e){} // dest sign
+  [-1,1].forEach(function(s){
+    B.add(_vbg(0.15,0.4,0.25),'dark', s*(W/2+0.15),2.9,L/2-0.3); // mirrors
+  });
+  B.flush(g,'martaBus',{white:white, blue:blue, green:green, glass:glassM,
+    roof:vehMat(0xb9bec5), dest:_martaDestMatGet(), dark:dark});
   // wheels
   [[-W/2+0.3,3.5],[W/2-0.3,3.5],[-W/2+0.3,-3.5],[W/2-0.3,-3.5]].forEach(function(p){
     var wheel=new THREE.Mesh(_vcg(0.55,0.55,0.4,10), dark);
     wheel.rotation.z=Math.PI/2;
     wheel.position.set(p[0],0.55,p[1]); g.add(wheel);
-  });
-  // side mirrors
-  [-1,1].forEach(function(s){
-    var mir=new THREE.Mesh(_vbg(0.15,0.4,0.25), dark);
-    mir.position.set(s*(W/2+0.15),2.9,L/2-0.3); g.add(mir);
   });
   g.userData.len=L;
   return g;
@@ -907,34 +874,45 @@ function vehLam(c){ return vehMat(c); }
 // window band, hood, fold-out stop sign (left side), roof warning lights,
 // 6 wheels on g.userData.wheels.
 function schoolBusMesh(){
+  // v1.49: static body merged per material (wheel hubs merge into the
+  // 'chrome' slot — they don't spin). Stop sign swings out, warning
+  // lights flash, tires spin — all stay separate.
   var g=new THREE.Group();
   var yellow=vehLam(0xe8a913), black=vehLam(0x1a1a1a), glass=vehLam(0x1c2733),
       chrome=vehLam(0xd8d8d8), tireM=vehLam(0x222222);
-  function box(w,h,d,mat,x,y,z){ var m=new THREE.Mesh(_vbg(w,h,d),mat);
-    m.position.set(x,y,z); g.add(m); return m; }
-  box(2.6,1.9,9.6,yellow,0,1.85,0);                 // body
-  box(2.62,0.28,9.62,black,0,1.05,0);               // rub stripe
-  box(2.62,0.5,9.0,glass,0,2.35,0);                 // window band
-  box(2.4,1.0,0.15,glass,0,2.2,4.85);               // windshield
-  box(2.6,0.9,1.6,yellow,0,1.35,5.4);               // hood
-  box(2.62,0.18,9.62,black,0,2.86,0);               // roof edge
+  var B=_vbatch();
+  B.add(_vbg(2.6,1.9,9.6),'yellow', 0,1.85,0);        // body
+  B.add(_vbg(2.62,0.28,9.62),'black', 0,1.05,0);     // rub stripe
+  B.add(_vbg(2.62,0.5,9.0),'glass', 0,2.35,0);       // window band
+  B.add(_vbg(2.4,1.0,0.15),'glass', 0,2.2,4.85);     // windshield
+  B.add(_vbg(2.6,0.9,1.6),'yellow', 0,1.35,5.4);     // hood
+  B.add(_vbg(2.62,0.18,9.62),'black', 0,2.86,0);     // roof edge
+  // wheel hubs are static (don't spin) — merge them now, tires below
+  var _hubSpots=[[-1.25,3.4],[1.25,3.4],[-1.25,-2.6],[1.25,-2.6],
+                 [-1.25,-3.6],[1.25,-3.6]];
+  _hubSpots.forEach(function(p){
+    B.add(_vcg(0.2,0.2,0.42,8),'chrome', p[0],0.5,p[1], 0,0,Math.PI/2);
+  });
+  B.flush(g,'schoolBus',{yellow:yellow, black:black, glass:glass,
+    chrome:chrome});
   // stop sign (driver's/left side) — v1.17: animated. Retracted flush
   // against the body (x=1.32); schoolbus_system.js eases userData.signT
   // 0->1 to swing it out to x=2.12 when children board, then retracts.
   // Joshua's rule: the sign lives on the LEFT (driver's) side.
   var sign=new THREE.Mesh(_vcg(0.45,0.45,0.06,8),vehLam(0xc23b2e));
   sign.rotation.z=Math.PI/2; sign.position.set(1.32,2.0,3.2); g.add(sign);
-  // wheels
+  // wheels (tires spin — stay separate; hubs already merged above)
   function wheel(x,z){ var w=new THREE.Mesh(_vcg(0.5,0.5,0.4,12),tireM);
-    w.rotation.z=Math.PI/2; w.position.set(x,0.5,z); g.add(w);
-    var hub=new THREE.Mesh(_vcg(0.2,0.2,0.42,8),chrome);
-    hub.rotation.z=Math.PI/2; hub.position.set(x,0.5,z); g.add(hub); return w; }
+    w.rotation.z=Math.PI/2; w.position.set(x,0.5,z); g.add(w); return w; }
   var wheels=[wheel(-1.25,3.4),wheel(1.25,3.4),wheel(-1.25,-2.6),wheel(1.25,-2.6),
               wheel(-1.25,-3.6),wheel(1.25,-3.6)];
   // roof warning lights — v1.17: refs stored so schoolbus_system.js can
   // flash them red while the stop sign is out (real school bus behavior).
-  var warnL=box(0.3,0.15,0.15,vehLam(0xff3300),-0.5,2.95,4.7);
-  var warnR=box(0.3,0.15,0.15,vehLam(0xff3300),0.5,2.95,4.7);
+  // They flash — stay separate meshes.
+  function warnBox(x){ var m=new THREE.Mesh(_vbg(0.3,0.15,0.15),vehLam(0xff3300));
+    m.position.set(x,2.95,4.7); g.add(m); return m; }
+  var warnL=warnBox(-0.5);
+  var warnR=warnBox(0.5);
   g.userData.wheels=wheels;
   g.userData.stopSign=sign;        // animated stop-sign mesh
   g.userData.signT=0;              // 0=retracted, 1=fully out
@@ -958,39 +936,25 @@ function schoolBusMesh(){
 // never drivable), userData carries body + light refs. Callers add to scene.
 /* eslint-disable no-unused-vars */
 function policeCruiserMesh(){
+  // v1.49: static body merged per material (11 meshes -> 4 merged).
+  // Red/blue beacons + takedown light flash via .visible — stay separate.
   var g=new THREE.Group();
   var white=0xf2f4f6, blue=0x1a3a8f, glassC=0x1c2733, trimC=0x14161a;
-  // lower body (white)
-  var body=new THREE.Mesh(_vbg(2.0,0.62,4.6),
-    vehMat(white));
-  body.position.y=0.55; g.add(body); g.userData.body=body;
-  // dark-blue door band (APD-style markings, both flanks)
+  var B=_vbatch();
+  B.add(_vbg(2.0,0.62,4.6),'white', 0,0.55,0);              // lower body
   [-1,1].forEach(function(s){
-    var band=new THREE.Mesh(_vbg(0.06,0.34,2.6),
-      vehMat(blue));
-    band.position.set(s*1.0,0.62,-0.1); g.add(band);
+    B.add(_vbg(0.06,0.34,2.6),'blue', s*1.0,0.62,-0.1);    // door bands
   });
-  // glasshouse
-  var cab=new THREE.Mesh(_vbg(1.75,0.5,2.4),
-    vehMat(glassC));
-  cab.position.set(0,1.12,-0.2); g.add(cab);
-  // hood (white) + trunk lid hint
-  var hood=new THREE.Mesh(_vbg(1.9,0.14,1.1),
-    vehMat(white));
-  hood.position.set(0,0.92,1.7); g.add(hood);
-  // push bar on the nose (black, stylized as two verticals + crossbar)
-  var pbm=vehMat(trimC);
+  B.add(_vbg(1.75,0.5,2.4),'glass', 0,1.12,-0.2);          // glasshouse
+  B.add(_vbg(1.9,0.14,1.1),'white', 0,0.92,1.7);           // hood
   [-0.55,0.55].forEach(function(x){
-    var post=new THREE.Mesh(_vbg(0.12,0.5,0.12),pbm);
-    post.position.set(x,0.55,2.36); g.add(post);
+    B.add(_vbg(0.12,0.5,0.12),'trim', x,0.55,2.36);        // push-bar posts
   });
-  var cross=new THREE.Mesh(_vbg(1.3,0.12,0.12),pbm);
-  cross.position.set(0,0.72,2.36); g.add(cross);
-  // roof light bar: red beacon (driver/left) + blue beacon (right) as
-  // SEPARATE meshes so police_system.js can alternate-flash them.
-  var barBase=new THREE.Mesh(_vbg(1.5,0.1,0.3),
-    vehMat(trimC));
-  barBase.position.set(0,1.42,0.1); g.add(barBase);
+  B.add(_vbg(1.3,0.12,0.12),'trim', 0,0.72,2.36);          // push-bar crossbar
+  B.add(_vbg(1.5,0.1,0.3),'trim', 0,1.42,0.1);             // light-bar base
+  var refs=B.flush(g,'policeCruiser',{white:vehMat(white), blue:vehMat(blue),
+    glass:vehMat(glassC), trim:vehMat(trimC)});
+  g.userData.body=refs.white;
   var redB=new THREE.Mesh(_vbg(0.55,0.22,0.26),
     vehMat(0xff2222));
   redB.position.set(-0.42,1.58,0.1); g.add(redB);
