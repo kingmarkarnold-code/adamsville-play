@@ -831,12 +831,13 @@ function initInfraCrew(){
   };
   /* hook into the frame loop — chains with other module wraps */
   try{
-    if (typeof animate==='function' && !animate.__infracrewWrap){
-      var orig=animate;
+    /* v1.51 TICK REGISTRY (expert report #14, James Park, Joshua approved):
+       was an animate() monkey-patch — now registers on the central Sim tick
+       registry. Same once-per-frame timing, deterministic priority order. */
+    if(window.Sim && typeof Sim.onTick==='function' && !window.__infracrewTickReg){
+      window.__infracrewTickReg=true;
       /* v1.22 LAUNCHER (Joshua 2026-10-10): skip when infra crew disabled in launch options. */
-      var wrapped=function(){ orig(); if(!window.__npcPaused && (!window.__launchOpts || window.__launchOpts.infraCrew!==false)) updateInfraCrew(0.016); };
-      wrapped.__infracrewWrap=true;
-      animate=wrapped;
+      Sim.onTick('render', 61, function(dt){ if(!window.__npcPaused && (!window.__launchOpts || window.__launchOpts.infraCrew!==false)) updateInfraCrew(0.016); });
     }
   }catch(e){}
 }
