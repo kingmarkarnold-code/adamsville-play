@@ -51,10 +51,10 @@
   },
   {
    "name": "github-config.js",
-   "size": 3468,
-   "sha256": "668e9fd896b2f7b1255b102554e45d4d82347441b6ad274eb608b32851c2a037",
-   "hash": "668e9fd896b2f7b1",
-   "md5": "bc910c3337a23a0f354798247c4b9717"
+   "size": 3695,
+   "sha256": "3468bac6c2bd9bc89ff4a7b777d4ba3c6767334328accffc10a6bfc63541ea95",
+   "hash": "3468bac6c2bd9bc8",
+   "md5": "d08f513d201195a0354428aa827314e5"
   },
   {
    "name": "github_reports.js",
@@ -318,6 +318,6 @@
    "hash": "f4937cb7a32d5e12"
   }
  ],
- "ui_version": "2026.10.10.130",
+ "ui_version": "2026.10.10.131",
  "version": "2026.10.10.130"
 }
