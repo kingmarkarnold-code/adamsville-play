@@ -1,0 +1,8 @@
+# Backup files — never commit these (expert report #10, 2026-10-11)
+# 42 .bak files (16MB) were bloating the deployed game; players downloaded them all.
+*.bak
+*.bak-*
+*.bak.*
+*~
+*.orig
+*.rej
