@@ -880,11 +880,12 @@ function partMat(wx,wy,wz,yaw,scl, px,py,pz, swing,drop, sx,sy,sz){
 }
 /* renderNPCs(dt,px,pz) — writes body-part matrices for every slotted NPC.
    walkAmt eases toward 1 (walking) / 0 (idle) so limbs don't snap; the walk
-   phase advances at 3.2+speed*2.6 rad/s; legs swing opposed (sw / -sw),
-   arms counter-swing (asw / -asw); distant NPCs get a static pose
-   (ANIM_R=80u LOD — animation only near the camera). A non-finite terrain
-   height is reported as a "fell through world" glitch and clamped to the
-   last good height. */
+   phase advances by DISTANCE TRAVELED (v1.47 foot-skate fix, expert #22) via
+   the shared phaseAdvance() helper — feet plant instead of sliding; legs
+   swing opposed (sw / -sw), arms counter-swing (asw / -asw); distant NPCs
+   get a static pose (ANIM_R=80u LOD — animation only near the camera). A
+   non-finite terrain height is reported as a "fell through world" glitch
+   and clamped to the last good height. */
 function renderNPCs(dt,px,pz){
   var s, n, vis=0, AR2=ANIM_R*ANIM_R;
   for (s=0;s<MAX_VISIBLE;s++){
@@ -902,7 +903,20 @@ function renderNPCs(dt,px,pz){
     n.y=y;
     var target=(n.state===ST_WALK)?1:0;
     n.walkAmt+=(target-n.walkAmt)*Math.min(1,6*dt);
-    if (near && n.walkAmt>0.02) n.phase+=dt*(3.2+n.speed*2.6)*n.walkAmt;
+    /* v1.47 foot-skate fix (expert #22, Katherine Brooks): walk phase advances
+       by DISTANCE TRAVELED via the shared phaseAdvance() helper — not
+       dt*(3.2+speed*2.6) — so feet plant instead of sliding ~3.5x. n.rx/n.rz
+       hold the last rendered position (separate from n.lx/n.lz, which the
+       stuck detector owns). Works naturally with the #9 AI LOD tiers: 4Hz
+       NPCs just advance a bigger step on their AI frames. Standing still
+       yields 0 advance, so legs go still. Falls back to 0 if the helper
+       hasn't loaded (phase simply freezes — never NaN). */
+    if (near && n.walkAmt>0.02){
+      if(n.rx===undefined){ n.rx=n.x; n.rz=n.z; }
+      var __pa=(typeof phaseAdvance==='function')?phaseAdvance(n.rx,n.rz,n.x,n.z,dt):0;
+      n.phase+=__pa*n.walkAmt;
+      n.rx=n.x; n.rz=n.z;
+    }
     var sw=Math.sin(n.phase)*0.55*n.walkAmt;       // legs oppose...
     var asw=Math.sin(n.phase)*0.45*n.walkAmt;      // ...arms counter-swing
     if (!near){ sw=0; asw=0; }                    // distant: static pose
