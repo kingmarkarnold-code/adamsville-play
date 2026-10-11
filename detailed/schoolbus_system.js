@@ -234,6 +234,17 @@ function updateBus(b, dt){
       b.s=Math.max(1,Math.min(b.path.length-1,b.s));
       if (b.state!=='boarding') b.dir*=-1;
     }
+    /* v1.31 — JOSHUA'S NO-DRIVE-THROUGH-VEHICLES RULE (2026-10-10): school buses
+       always wait for vehicles ahead — no overtaking with kids aboard. The
+       wait releases on its own when the path clears. */
+    try{
+      if (window.VehicleAvoid && b.state!=='boarding'){
+        var _sd=b.path.dirAt(b.s); if (b.dir<0) _sd=[-_sd[0],-_sd[1]];
+        var _syaw=Math.atan2(_sd[0],_sd[1]);
+        if (VehicleAvoid.blockedAhead(b.x,b.z,Math.sin(_syaw),Math.cos(_syaw),b,18,1.25,true))
+          target=0;
+      }
+    }catch(e){}
     b.speed+=(target-b.speed)*Math.min(1,dt*1.8);
     b.s+=b.dir*b.speed*dt;
     b.s=Math.max(0,Math.min(b.path.length,b.s));
