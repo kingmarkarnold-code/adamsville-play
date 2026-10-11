@@ -467,6 +467,16 @@ try{
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate=true;
     try{ mesh.frustumCulled=false; }catch(e){}
     scene.add(mesh);
+    /* v1.35 SIDEWALK COLLISION (2026-10-11, Joshua: "I can run through sidewalks"):
+       register every sidewalk strip as a solid walkable surface in the global
+       sidewalkSurfGrid (mirrors the road roadSurfGrid pattern). Box geometry
+       has its base at y=0 (geo.translate(0,0.5,0)), so top = o.y + o.sy. */
+    if (spec[1]==='walks' && typeof __regSidewalk==='function'){
+      for (var wi=0;wi<list.length;wi++){
+        var wo=list[wi];
+        __regSidewalk(wo.x,wo.z,wo.yaw||0,wo.sx,wo.sy,wo.sz,wo.y);
+      }
+    }
   });
 
   /* ---------- post-placement audit: nothing new on a road ---------- */
