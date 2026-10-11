@@ -3011,11 +3011,14 @@ try{ __parseSet('Building roads',
 function box(w,h,d,color,x,z,yBase,ry){
   var m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d),
     new THREE.MeshLambertMaterial({ color:color }));
-  m.position.set(x, (yBase||heightAt(x,z)) + h/2, z);
+  /* v1.35 SNAP-TO-FACE: default base snaps to rendered terrain. */
+  var _bgy=yBase; try{ if(!_bgy) _bgy=(typeof snapToGround==='function'?snapToGround(x,z,w,d,ry):heightAt(x,z)); }catch(e){ try{ if(!_bgy) _bgy=heightAt(x,z); }catch(e2){} }
+  m.position.set(x, _bgy + h/2, z);
   if (ry) m.rotation.y = ry;
   scene.add(m); return m;
 }
-function groundY(x, z){ return heightAt(x, z); }
+/* v1.35 SNAP-TO-FACE (Joshua 2026-10-11): global helper now snaps to rendered terrain. */
+function groundY(x, z){ try{ if(typeof snapToGround==='function') return snapToGround(x,z,0,0,0); }catch(e){} return heightAt(x, z); }
 /* v1.1 RENDERED-MESH HEIGHTFIELD: the 40u terrain mesh chords can sit ~2u
    above/below the analytic heightAt. A road draped on heightAt alone gets
    buried under the VISIBLE terrain (the "second layer"). terrainMeshY()
@@ -4966,12 +4969,13 @@ function heroPorchY(x, z){
 /* ---- neighborhood houses: two tiers ----
    Hero = 535 only. Everything else = believable area-accurate shells. */
 function ranchHouse(x, z, style){
-  var gy=heightAt(x,z);
+  /* v1.35 SNAP-TO-FACE (Joshua 2026-10-11). */
+  var gy=(typeof snapToGround==='function'?snapToGround(x,z,12,9,0):heightAt(x,z));
   var w=10+rand()*4, d=8+rand()*2, h=3.1;
   // v0.9 placement protocol: never in the road corridor (nudge or skip)
   var spot=placeStruct(x, z, Math.hypot(w,d)/2, 4, 'ranchHouse');
   if(!spot) return null;
-  x=spot.x; z=spot.z; gy=heightAt(x,z);
+  x=spot.x; z=spot.z; gy=(typeof snapToGround==='function'?snapToGround(x,z,w,d,ry):heightAt(x,z));
   var brickColors=[0x9d5f43,0xa0714f,0x8a5a40,0xb08a5e];
   var c = style&&style.color!==undefined ? style.color : brickColors[Math.floor(rand()*brickColors.length)];
   var ry=(style&&style.ry!==undefined)?style.ry:0;
@@ -5638,7 +5642,8 @@ var PLACES_OF_INTEREST=[];
       if(b && b[5]===0) houses.push(b);
     }
     function churchAt(x,z){
-      var gy=0; try{ gy=heightAt(x,z); }catch(e){}
+      /* v1.35 SNAP-TO-FACE (Joshua 2026-10-11). */
+      var gy=0; try{ gy=(typeof snapToGround==='function'?snapToGround(x,z,14,22,0):heightAt(x,z)); }catch(e){}
       // white chapel with steeple
       var g=new THREE.Group();
       var nave=new THREE.Mesh(new THREE.BoxGeometry(14,8,22),
@@ -5663,7 +5668,8 @@ var PLACES_OF_INTEREST=[];
       PLACES_OF_INTEREST.push({x:x,z:z,kind:'church',name:'Community Church (OSM name pending)'});
     }
     function schoolAt(x,z){
-      var gy=0; try{ gy=heightAt(x,z); }catch(e){}
+      /* v1.35 SNAP-TO-FACE (Joshua 2026-10-11). */
+      var gy=0; try{ gy=(typeof snapToGround==='function'?snapToGround(x,z,36,20,0):heightAt(x,z)); }catch(e){}
       // larger brick campus building
       var g=new THREE.Group();
       var main=new THREE.Mesh(new THREE.BoxGeometry(36,10,20),
@@ -5821,7 +5827,8 @@ try{
     var tail=new THREE.Mesh(new THREE.BoxGeometry(2.6,2.2,0.25),
       new THREE.MeshLambertMaterial({ color:0xc03030 }));
     tail.position.set(-4.2,1.4,0); g.add(tail);
-    g.position.set(x, heightAt(x,z)+1.4, z); g.rotation.y=ry; scene.add(g);
+    /* v1.35 SNAP-TO-FACE (Joshua 2026-10-11). */
+    g.position.set(x, (typeof snapToGround==='function'?snapToGround(x,z,8,8,ry):heightAt(x,z))+1.4, z); g.rotation.y=ry; scene.add(g);
   }
   plane(p.x+40, p.z-60, 0.4); plane(p.x+52, p.z-40, 0.9);
   labelAt('FULTON COUNTY AIRPORT', p.x, p.z, 26, 48, '#7fd4ff');
@@ -8397,7 +8404,9 @@ function makePickupMesh(kind){
 }
 function spawnPickup(name, kind, x, z){
   var mesh=makePickupMesh(kind);
-  mesh.position.set(x, heightAt(x,z), z);
+  /* v1.35 SNAP-TO-FACE (Joshua 2026-10-11). */
+  var _pgy=0; try{ _pgy=(typeof snapToGround==='function'?snapToGround(x,z,1,1,0):heightAt(x,z)); }catch(e){ try{_pgy=heightAt(x,z);}catch(e2){} }
+  mesh.position.set(x, _pgy, z);
   scene.add(mesh);
   var p={id:'pk'+Date.now()+Math.floor(Math.random()*99999), name:name, kind:kind, x:x, z:z, mesh:mesh, bob:Math.random()*6.28};
   pickups.push(p);
