@@ -561,11 +561,12 @@ function boot(){
     setInterval(poll, POLL_MS);
     /* chain into animate() */
     try{
-      if (typeof animate==='function' && !animate.__inspectorWrap){
-        var orig=animate;
-        var wrapped=function(){ orig(); tick(0.016); };
-        wrapped.__inspectorWrap=true;
-        animate=wrapped;
+      /* v1.51 TICK REGISTRY (expert report #14, James Park, Joshua approved):
+         was an animate() monkey-patch — now registers on the central Sim tick
+         registry. Same once-per-frame timing, deterministic priority order. */
+      if(window.Sim && typeof Sim.onTick==='function' && !window.__inspectorTickReg){
+        window.__inspectorTickReg=true;
+        Sim.onTick('render', 63, function(dt){ tick(0.016); });
       }
     }catch(e){}
     try{
