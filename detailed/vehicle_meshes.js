@@ -84,6 +84,22 @@ function _rk(v){ return Math.round(v*10000)/10000; }
 // Cached geometry constructors (same signatures as THREE's):
 function _vbg(w,h,d){ return _vgeo('b:'+_rk(w)+','+_rk(h)+','+_rk(d),
   function(){ return new THREE.BoxGeometry(w,h,d); }); }
+/* v1.50 ROUNDED BODY PANELS (expert report #21 — Roberto Silva, 3D Modeler)
+   ----------------------------------------------------------------------------
+   _vrbg(w,h,d) — cached ROUNDED-box geometry for vehicle body panels
+   (Pixar-style soft edges, default radius 0.05u per expert spec 0.03-0.06u).
+   Delegates to the shared roundedBoxGeo() module (rounded_box.js — always
+   loads before this file via data-dsrc, no data-dkey); falls back to sharp
+   _vbg if the module is missing. The module's auto-guard keeps thin parts
+   (<0.09u: glass panes, trim strips) sharp automatically.
+   Joshua's scoping rule (2026-10-11): "Some things are supposed to have 90
+   degree edges." ONLY vehicle body panels use this. Buildings keep their
+   90-degree architectural edges; curbs/props stay sharp unless he names
+   them. When in doubt, callers keep _vbg. */
+function _vrbg(w,h,d){
+  if(typeof roundedBoxGeo==='function'){ return roundedBoxGeo(w,h,d,0.05); }
+  return _vbg(w,h,d);
+}
 function _vcg(rt,rb,h,s){ return _vgeo('c:'+_rk(rt)+','+_rk(rb)+','+_rk(h)+','+s,
   function(){ return new THREE.CylinderGeometry(rt,rb,h,s); }); }
 function _vtg(r,t,rs,ts){ return _vgeo('t:'+_rk(r)+','+_rk(t)+','+rs+','+ts,
@@ -112,6 +128,13 @@ function _safariHeadMat(){ return _vmat('safariHead', function(){
   return new THREE.MeshLambertMaterial({color:0xf5f0d8, emissive:0x555544}); }); }
 function _semiHeadMat(){ return _vmat('semiHead', function(){
   return new THREE.MeshLambertMaterial({color:0xf5f0d8, emissive:0x333322}); }); }
+// _glassDSMat() — v1.50: transparent DOUBLE-SIDED glass for the van's real
+// window openings (VAN_SPEC.md: "transparent glass, double-sided"). Replaces
+// the old opaque windshield plane that blocked the driver's-seat sightline
+// (Joshua 2026-10-11). depthWrite off so layered glass doesn't sort-fight.
+function _glassDSMat(){ return _vmat('glassDS', function(){
+  return new THREE.MeshLambertMaterial({color:0x9fc4dd, transparent:true,
+    opacity:0.42, side:THREE.DoubleSide, depthWrite:false}); }); }
 // _martaDestMatGet() — the MARTA destination sign is identical on every bus
 // ("MARTA" amber on black), so its canvas texture + material are built once.
 var _martaDestMat=null;
@@ -247,9 +270,9 @@ function sedanMesh(color){
   // separate (spin via rotation.x).
   var g=new THREE.Group();
   var B=_vbatch();
-  B.add(_vbg(2.0,0.62,4.6),'paint', 0,0.55,0);
-  B.add(_vbg(1.9,0.14,1.1),'paint', 0,0.92,1.7);
-  B.add(_vbg(1.75,0.5,2.4),'glass', 0,1.12,-0.2);
+  B.add(_vrbg(2.0,0.62,4.6),'paint', 0,0.55,0);
+  B.add(_vrbg(1.9,0.14,1.1),'paint', 0,0.92,1.7);
+  B.add(_vrbg(1.75,0.5,2.4),'glass', 0,1.12,-0.2);
   var refs=B.flush(g,'sedan',{paint:vehMat(color), glass:vehMat(0x1c2733)});
   g.userData.body=refs.paint; g.userData.cab=refs.glass; g.userData.hood=refs.paint;
   var wg=_vcg(0.34,0.34,0.3,10);
@@ -286,53 +309,96 @@ function addCockpit(carGroup, h){
   wheel.position.set(0.5,1.02+h,0.68); wheel.rotation.x=-0.5; carGroup.add(wheel);
   return wheel;
 }
-/* safariMesh() — GMC SAFARI (first-gen 1985-1994): JOSHUA'S VAN, the
-   player's MAIN DRIVING VAN from his group photo. Brown/bronze + cream
-   two-tone 70s/80s conversion-van look (~2.35m tall). LEFT-hand drive:
-   wheel at +X, double doors on the right/passenger side (fixed 2026-10-08 —
-   it was built right-hand drive). Near-van interaction (Joshua's spec):
-   per-door choice — ENTER vehicle OR OPEN door without entering. */
+/* safariMesh() — JOSHUA'S VAN: 70s/80s full-size conversion van from his group
+   photo. VAN_SPEC.md locked two-tone: brown (#6b4426) lower + tan/gold
+   (#d7a821) upper, dark dividing stripe. TRUE SCALE (expert #20, Roberto
+   Silva): ~1.95m roofline (was 2.35m), 2.0m wide, 4.9m long; equal-width
+   tone boxes; wheels tucked flush (were 11cm outboard) with dark fender-arch
+   trim = wheel-well insets; two-part wheels (tire + gold rim, spin + steer
+   via userData.wheels / userData.steerGroups, expert #23 pattern kept).
+   WINDSHIELD SIGHTLINE FIX (Joshua 2026-10-11): the old upper-body box put a
+   solid front face at the driver's eye level — an opaque "piece of plane"
+   blocking the driver's-seat view. Restructured so NO opaque geometry sits
+   ahead of the driver above the hood line: the windshield is a real opening
+   with transparent double-sided glass (VAN_SPEC), raked ~17° (was ~14°);
+   gold A-pillars flank it; a dark interior block sits behind the glass
+   (seen from outside, hidden in driver view).
+   Driver-view hiding: userData.cab is a Group (glass + gold upper + roof +
+   interior). index.html already sets cab.visible=false in driver camMode, so
+   the driver gets a fully clear forward view — no index.html change needed.
+   The brown lower body, hood, and trim stay visible (all below the sightline).
+   LEFT-hand drive: wheel at +X, double doors on the right/passenger side
+   (fixed 2026-10-08 — it was built right-hand drive). Near-van interaction
+   (Joshua's spec): per-door choice — ENTER vehicle OR OPEN door. */
 function safariMesh(){
-  // v1.49: static body merged per material (16 meshes -> 6 merged); the old
-  // cab Group is gone — glass parts merge into the 'glass' slot. Wheels stay
-  // separate (spin via rotation.x).
   var g=new THREE.Group();
-  var bronze=0x8a5a1e, cream=0xe6d3a3, trimC=0x1c1c1e, glassC=0x1c2733;
+  // v1.50: VAN_SPEC locked colors (were bronze 0x8a5a1e / cream 0xe6d3a3).
+  var brown=0x6b4426, gold=0xd7a821, trimC=0x1c1c1e, darkIn=0x232326;
+  /* B: always-visible lower body. Everything here sits below the driver's
+     sightline (eye 1.78m), so the driver's-seat view stays clear. */
   var B=_vbatch();
-  B.add(_vbg(2.0,0.95,4.8),'bronze', 0,0.85,0);            // lower body
-  B.add(_vbg(1.96,0.72,4.5),'cream', 0,1.68,-0.1);         // upper body
-  B.add(_vbg(2.02,0.1,4.82),'trim', 0,1.32,0);            // dividing stripe
-  B.add(_vbg(1.7,0.6,0.08),'glass', 0,1.92,2.02, -0.24,0,0); // windshield
+  B.add(_vrbg(2.0,0.78,4.9),'brown', 0,0.75,0);             // lower body
+  B.add(_vbg(2.02,0.08,4.92),'trim', 0,1.18,0);           // dividing stripe
+  B.add(_vrbg(1.9,0.22,1.0),'brown', 0,1.10,2.0, 0.08,0,0);// hood, nose-down
+  B.add(_vrbg(1.9,0.55,0.55),'brown', 0,0.83,2.22);         // nose / front clip
+  B.add(_vbg(1.2,0.3,0.08),'trim', 0,0.80,2.46);           // grille
+  B.add(_vrbg(2.05,0.24,0.20),'trim', 0,0.42,2.52);         // front bumper
+  B.add(_vrbg(2.05,0.24,0.20),'trim', 0,0.42,-2.52);        // rear bumper
   [-1,1].forEach(function(s){
-    B.add(_vbg(0.06,0.52,3.3),'glass', s*0.99,1.92,-0.2); // side glass
+    B.add(_vbg(0.34,0.22,0.08),'shead', s*0.72,0.82,2.46);// headlights
+    B.add(_vbg(0.22,0.36,0.08),'tail', s*0.85,0.95,-2.46);// taillights
+    // fender-arch trim = wheel-well insets (dark frames around each wheel)
+    B.add(_vbg(0.04,0.10,1.10),'trim', s*1.01,0.80,1.55); // arch top (front)
+    B.add(_vbg(0.04,0.55,0.10),'trim', s*1.01,0.45,2.05); // arch front
+    B.add(_vbg(0.04,0.55,0.10),'trim', s*1.01,0.45,1.05); // arch rear
+    B.add(_vbg(0.04,0.10,1.10),'trim', s*1.01,0.80,-1.55);// arch top (rear)
+    B.add(_vbg(0.04,0.55,0.10),'trim', s*1.01,0.45,-1.05);// arch front (rear)
+    B.add(_vbg(0.04,0.55,0.10),'trim', s*1.01,0.45,-2.05);// arch rear (rear)
+    B.add(_vbg(0.05,0.05,0.12),'trim', s*1.04,1.45,1.85); // mirror stalk
+    B.add(_vbg(0.05,0.18,0.14),'trim', s*1.10,1.52,1.85); // mirror head
+    // gold beltline strips (below side glass) + B/C pillars (gold)
+    B.add(_vbg(0.10,0.18,3.30),'gold', s*0.95,1.23,-0.80);
+    B.add(_vbg(0.10,0.52,0.14),'gold', s*0.95,1.58,-0.75);// B-pillar
+    B.add(_vbg(0.10,0.52,0.14),'gold', s*0.95,1.58,-2.35);// C-pillar
+    // A-pillars (gold, raked with the windshield) — thin, peripheral in view
+    B.add(_vbg(0.12,0.70,0.10),'gold', s*0.94,1.50,2.17, -0.30,0,0);
   });
-  B.add(_vbg(1.7,0.52,0.08),'glass', 0,1.92,-2.32);       // rear glass
-  B.add(_vbg(1.96,0.1,4.5),'cream', 0,2.3,-0.1);          // roof
-  B.add(_vbg(1.9,0.5,0.9),'bronze', 0,1.02,2.35);          // hood / front clip
-  B.add(_vbg(1.2,0.34,0.1),'trim', 0,0.92,2.82);          // grille
+  B.add(_vrbg(2.0,0.62,0.15),'gold', 0,1.53,-2.375);        // rear upper panel
+  var refsB=B.flush(g,'safari20',{brown:vehMat(brown), trim:vehMat(trimC),
+    shead:_safariHeadMat(), tail:_taillightMat(), gold:vehMat(gold)});
+  g.userData.body=refsB.brown; g.userData.hood=refsB.brown;
+  /* cabG: hidden in driver's-seat view (index.html: cab.visible=false).
+     Transparent glass + gold upper + roof + dark interior. From outside the
+     glass reveals the dark interior; in driver view everything hides for a
+     clear sightline — the old opaque windshield "plane" is gone. */
+  var cabG=new THREE.Group(); g.add(cabG);
+  var C=_vbatch();
+  C.add(_vbg(1.7,0.66,0.06),'glass', 0,1.47,2.22, -0.30,0,0); // windshield
+  C.add(_vbg(1.8,0.08,0.35),'gold', 0,1.815,2.28);            // header panel
+  C.add(_vbg(2.0,0.11,4.9),'gold', 0,1.895,0);                // roof (1.95m)
   [-1,1].forEach(function(s){
-    B.add(_vbg(0.34,0.24,0.08),'shead', s*0.78,0.95,2.82);
-    B.add(_vbg(0.24,0.4,0.08),'tail', s*0.85,1.08,-2.42);
+    C.add(_vbg(0.05,0.42,0.85),'glass', s*1.0,1.53,0.35);    // door glass
+    C.add(_vbg(0.05,0.42,1.50),'glass', s*1.0,1.53,-1.55);   // side glass
   });
-  [2.82,-2.42].forEach(function(zz){
-    B.add(_vbg(2.05,0.28,0.25),'trim', 0,0.52,zz);        // bumpers
-  });
-  var refs=B.flush(g,'safari',{bronze:vehMat(bronze), cream:vehMat(cream),
-    trim:vehMat(trimC), glass:vehMat(glassC), shead:_safariHeadMat(),
-    tail:_taillightMat()});
-  g.userData.body=refs.bronze; g.userData.cab=refs.glass; g.userData.hood=refs.bronze;
-  // gold-style wheels
-  var wg=_vcg(0.38,0.38,0.32,10);
-  var wm=vehMat(0x8a6a2a);
-  /* v1.50 WHEEL SPIN + STEER (expert report #23, Katherine Brooks 2026-10-11):
-     wheels register in g.userData.wheels (spun by updateCar via rotation.x —
-     same distance-driven pattern as semi_system.js); front wheels (z>0,
-     forward=+Z) sit in steer groups so updateCar can yaw them with steering. */
+  C.add(_vbg(1.7,0.42,0.06),'glass', 0,1.53,-2.455);          // rear glass
+  // dark interior block: seen through glass from outside; hidden (with the
+  // glass) in driver view so it can never block the sightline.
+  C.add(_vbg(1.8,0.55,4.2),'cabdark', 0,1.45,-0.1);
+  C.flush(cabG,'safari20cab',{glass:_glassDSMat(), gold:vehMat(gold),
+    cabdark:vehMat(darkIn)});
+  g.userData.cab=cabG;
+  /* Two-part wheels (expert #20): tire + gold rim in a spin Group per wheel
+     (expert #23: wheels spin via rotation.x; fronts sit in steer groups).
+     Tire face 5mm proud of the body side — was 11cm outboard. */
+  var tireG=_vcg(0.36,0.36,0.24,12), tireM=vehMat(0x1a1a1a);
+  var rimG=_vcg(0.20,0.20,0.26,10), rimM=vehMat(0x9a7b2d);
   g.userData.wheels=[];
   g.userData.steerGroups=[];
-  [[0.95,1.55],[-0.95,1.55],[0.95,-1.55],[-0.95,-1.55]].forEach(function(p){
-    var w=new THREE.Mesh(wg,wm); w.rotation.z=Math.PI/2;
-    w.position.set(p[0],0.38,p[1]);
+  [[0.885,1.55],[-0.885,1.55],[0.885,-1.55],[-0.885,-1.55]].forEach(function(p){
+    var w=new THREE.Group();
+    var tire=new THREE.Mesh(tireG,tireM); tire.rotation.z=Math.PI/2; w.add(tire);
+    var rim=new THREE.Mesh(rimG,rimM); rim.rotation.z=Math.PI/2; w.add(rim);
+    w.position.set(p[0],0.36,p[1]);
     if (p[1]>0){ var sg=new THREE.Group(); sg.position.copy(w.position);
       w.position.set(0,0,0); sg.add(w); g.add(sg); g.userData.steerGroups.push(sg);
     } else { g.add(w); }
@@ -562,20 +628,20 @@ function boxChevyMesh(paint, rimStyle){
   var chrome=chromeTrimMat(), glass=glassMat(), dark=vehMat(0x1c1c1e);
   var W=2.0, L=5.3, lift=0.42;   // donk lift
   var B=_vbatch();
-  B.add(_vbg(W,0.72,L),'body', 0,0.72+lift,0);                 // lower body
-  B.add(_vbg(1.78,0.62,2.9),'glass', 0,1.42+lift,-0.25);       // greenhouse
+  B.add(_vrbg(W,0.72,L),'body', 0,0.72+lift,0);                 // lower body
+  B.add(_vrbg(1.78,0.62,2.9),'glass', 0,1.42+lift,-0.25);       // greenhouse
   B.add(_vbg(1.84,0.1,3.0),'roof', 0,1.78+lift,-0.25);         // roof
   [[0.92,1.05],[-0.92,1.05],[0.92,-1.55],[-0.92,-1.55]].forEach(function(p){
     B.add(_vbg(0.09,0.66,0.14),'body', p[0],1.42+lift,p[1]);   // pillars
   });
-  B.add(_vbg(1.9,0.14,1.5),'body', 0,1.12+lift,1.85);           // hood
-  B.add(_vbg(1.9,0.5,1.15),'body', 0,1.28+lift,-2.05);         // trunk
+  B.add(_vrbg(1.9,0.14,1.5),'body', 0,1.12+lift,1.85);           // hood
+  B.add(_vrbg(1.9,0.5,1.15),'body', 0,1.28+lift,-2.05);         // trunk
   B.add(_vbg(1.5,0.42,0.1),'chrome', 0,0.95+lift,2.68);        // grille
   [-0.55,-0.19,0.19,0.55].forEach(function(hx){
     B.add(_vbg(0.3,0.24,0.08),'head', hx,0.95+lift,2.70);      // quad headlights
   });
   [2.72,-2.66].forEach(function(zz){
-    B.add(_vbg(2.06,0.26,0.22),'chrome', 0,0.62+lift,zz);      // bumpers
+    B.add(_vrbg(2.06,0.26,0.22),'chrome', 0,0.62+lift,zz);      // bumpers
   });
   B.add(_vbg(1.6,0.22,0.08),'tail', 0,1.15+lift,-2.64);        // taillight bar
   if (paint.stripe) B.add(_vbg(0.5,0.03,5.2),'stripe', 0,1.20+lift,0); // stripe
@@ -617,19 +683,19 @@ function bubbleChevyMesh(paint, rimStyle){
   var chrome=chromeTrimMat(), glass=glassMat(), dark=vehMat(0x1c1c1e);
   var W=2.0, L=5.4, lift=0.42;
   var B=_vbatch();
-  B.add(_vbg(W,0.66,L),'body', 0,0.68+lift,0);                  // lower body
-  B.add(_vbg(1.76,0.55,2.7),'glass', 0,1.32+lift,-0.35);        // greenhouse
+  B.add(_vrbg(W,0.66,L),'body', 0,0.68+lift,0);                  // lower body
+  B.add(_vrbg(1.76,0.55,2.7),'glass', 0,1.32+lift,-0.35);        // greenhouse
   B.add(_vbg(1.7,0.5,0.9),'glass', 0,1.22+lift,-1.85, 0.5,0,0); // rear glass
   B.add(_vbg(1.7,0.5,0.1),'glass', 0,1.30+lift,1.15, -0.42,0,0); // windshield
   B.add(_vbg(1.82,0.1,2.5),'roof', 0,1.64+lift,-0.35);          // roof
-  B.add(_vbg(1.9,0.4,1.2),'body', 0,0.95+lift,2.15, 0.18,0,0);  // aero nose
-  B.add(_vbg(1.85,0.42,0.9),'body', 0,1.05+lift,-2.3, -0.12,0,0); // trunk
+  B.add(_vrbg(1.9,0.4,1.2),'body', 0,0.95+lift,2.15, 0.18,0,0);  // aero nose
+  B.add(_vrbg(1.85,0.42,0.9),'body', 0,1.05+lift,-2.3, -0.12,0,0); // trunk
   [-0.62,0.62].forEach(function(hx){
     B.add(_vbg(0.5,0.2,0.1),'head', hx,0.98+lift,2.72, 0.18,0,0);
   });
   B.add(_vbg(0.9,0.18,0.08),'dark', 0,0.82+lift,2.70);          // slim grille
   [2.72,-2.72].forEach(function(zz){
-    B.add(_vbg(2.02,0.3,0.24),'body', 0,0.60+lift,zz);          // bumpers
+    B.add(_vrbg(2.02,0.3,0.24),'body', 0,0.60+lift,zz);          // bumpers
   });
   B.add(_vbg(1.5,0.2,0.08),'tail', 0,1.02+lift,-2.74);
   if (paint.stripe) B.add(_vbg(0.5,0.03,5.4),'stripe', 0,1.06+lift,0);
@@ -666,15 +732,15 @@ function pickupMesh(paint, rimStyle){
   var glass=glassMat(), dark=vehMat(0x1c1c1e), chrome=chromeTrimMat();
   var W=2.0, lift=0.15;
   var B=_vbatch();
-  B.add(_vbg(W,0.7,2.2),'body', 0,0.75+lift,1.35);          // chassis/cab lower
-  B.add(_vbg(1.8,0.62,1.5),'glass', 0,1.42+lift,1.15);      // greenhouse
+  B.add(_vrbg(W,0.7,2.2),'body', 0,0.75+lift,1.35);          // chassis/cab lower
+  B.add(_vrbg(1.8,0.62,1.5),'glass', 0,1.42+lift,1.15);      // greenhouse
   B.add(_vbg(1.86,0.1,1.6),'roof', 0,1.78+lift,1.15);       // roof
-  B.add(_vbg(1.9,0.16,1.0),'body', 0,1.14+lift,2.6);        // hood
+  B.add(_vrbg(1.9,0.16,1.0),'body', 0,1.14+lift,2.6);        // hood
   B.add(_vbg(1.4,0.35,0.1),'dark', 0,0.95+lift,3.12);       // grille
   [-0.7,0.7].forEach(function(hx){
     B.add(_vbg(0.36,0.26,0.08),'head', hx,0.98+lift,3.12); // headlights
   });
-  B.add(_vbg(2.05,0.24,0.2),'chrome', 0,0.6+lift,3.14);     // front bumper
+  B.add(_vrbg(2.05,0.24,0.2),'chrome', 0,0.6+lift,3.14);     // front bumper
   var bedY=0.78+lift, bedZ0=-2.55, bedZ1=-0.15, bedL=bedZ1-bedZ0;
   B.add(_vbg(1.9,0.1,bedL),'dark', 0,bedY,(bedZ0+bedZ1)/2); // bed floor
   [0.95,-0.95].forEach(function(sx){
@@ -685,7 +751,7 @@ function pickupMesh(paint, rimStyle){
   [-0.8,0.8].forEach(function(tx){
     B.add(_vbg(0.2,0.4,0.08),'tail', tx,0.95+lift,-2.58);   // taillights
   });
-  B.add(_vbg(2.05,0.24,0.2),'chrome', 0,0.6+lift,-2.6);      // rear bumper
+  B.add(_vrbg(2.05,0.24,0.2),'chrome', 0,0.6+lift,-2.6);      // rear bumper
   if (paint.stripe) B.add(_vbg(0.45,0.03,2.7),'stripe', 0,1.24+lift,1.75);
   var swSpec=_vinterior(B,{width:W, floorY:0.55+lift, seatZ:1.0, dashZ:1.95});
   var refs=B.flush(g,'pickup'+(paint.stripe?'S':''),
@@ -719,13 +785,13 @@ function suvMesh(paint, rimStyle){
   var glass=glassMat(), dark=vehMat(0x1c1c1e);
   var W=2.0, lift=0.22;
   var B=_vbatch();
-  B.add(_vbg(W,0.85,4.7),'body', 0,0.85+lift,0);               // wagon body
-  B.add(_vbg(1.8,0.68,3.4),'glass', 0,1.6+lift,-0.3);          // glasshouse
+  B.add(_vrbg(W,0.85,4.7),'body', 0,0.85+lift,0);               // wagon body
+  B.add(_vrbg(1.8,0.68,3.4),'glass', 0,1.6+lift,-0.3);          // glasshouse
   B.add(_vbg(1.86,0.1,3.5),'roof', 0,1.99+lift,-0.3);          // roof
   [[0.92,1.25],[-0.92,1.25],[0.92,-1.85],[-0.92,-1.85]].forEach(function(p){
     B.add(_vbg(0.1,0.72,0.16),'body', p[0],1.6+lift,p[1]);     // pillars
   });
-  B.add(_vbg(1.9,0.14,1.0),'body', 0,1.32+lift,2.0);           // hood
+  B.add(_vrbg(1.9,0.14,1.0),'body', 0,1.32+lift,2.0);           // hood
   B.add(_vbg(1.3,0.32,0.1),'dark', 0,1.05+lift,2.42);          // grille
   [-0.65,0.65].forEach(function(hx){
     B.add(_vbg(0.34,0.26,0.08),'head', hx,1.08+lift,2.42);    // headlights
@@ -734,7 +800,7 @@ function suvMesh(paint, rimStyle){
     B.add(_vbg(0.08,0.08,3.2),'dark', rx,2.08+lift,-0.3);      // roof rails
   });
   [2.44,-2.4].forEach(function(zz){
-    B.add(_vbg(2.04,0.26,0.2),'dark', 0,0.68+lift,zz);         // bumpers
+    B.add(_vrbg(2.04,0.26,0.2),'dark', 0,0.68+lift,zz);         // bumpers
   });
   [-0.8,0.8].forEach(function(tx){
     B.add(_vbg(0.22,0.5,0.08),'tail', tx,1.1+lift,-2.42);      // taillights
@@ -780,19 +846,19 @@ function semiMesh(){
   // v1.49: static boxes merged per material (16 meshes -> 6 merged).
   // Wheels spin — stay separate single meshes.
   var B=_vbatch();
-  B.add(_vbg(2.5,1.6,2.2),'cab', 0,1.5,7.6);            // cab
+  B.add(_vrbg(2.5,1.6,2.2),'cab', 0,1.5,7.6);            // cab
   B.add(_vbg(2.4,1.1,2.0),'glass', 0,2.75,7.7);        // glass upper
-  B.add(_vbg(2.5,0.35,2.2),'cab', 0,3.45,7.6);         // cab roof
-  B.add(_vbg(2.5,0.5,0.3),'chrome', 0,1.1,8.75);      // bumper
+  B.add(_vrbg(2.5,0.35,2.2),'cab', 0,3.45,7.6);         // cab roof
+  B.add(_vrbg(2.5,0.5,0.3),'chrome', 0,1.1,8.75);      // bumper
   B.add(_vbg(2.2,0.5,0.15),'dark', 0,2.2,8.72);        // grille area
-  B.add(_vbg(2.5,2.2,1.6),'cab', 0,1.8,5.9);           // sleeper
+  B.add(_vrbg(2.5,2.2,1.6),'cab', 0,1.8,5.9);           // sleeper
   B.add(_vbg(0.18,2.6,0.18),'chrome', 1.15,2.6,6.6);   // exhaust stacks
   B.add(_vbg(0.18,2.6,0.18),'chrome', -1.15,2.6,6.6);
   B.add(_vtg(0.28,0.06,6,12),'dark', 0.62,2.5,7.9, -0.5,0,0); // steering wheel
   B.add(_vbg(0.55,0.7,0.55),'dark', 0.62,2.1,7.0);     // column/dash
   B.add(_vbg(2.0,0.3,1.2),'dark', 0,1.35,4.6);         // chassis
-  B.add(_vbg(2.6,2.8,11.5),'trailer', 0,2.5,-1.5);     // trailer
-  B.add(_vbg(2.62,0.5,11.5),'chrome', 0,1.15,-1.5);    // trailer skirt
+  B.add(_vrbg(2.6,2.8,11.5),'trailer', 0,2.5,-1.5);     // trailer
+  B.add(_vrbg(2.62,0.5,11.5),'chrome', 0,1.15,-1.5);    // trailer skirt
   B.add(_vbg(2.62,2.82,0.2),'dark', 0,2.5,-7.3);       // trailer rear
   B.add(_vbg(0.25,1.2,0.25),'dark', 0.9,0.6,2.6);      // landing gear
   B.add(_vbg(0.25,1.2,0.25),'dark', -0.9,0.6,2.6);
@@ -847,12 +913,12 @@ function martaBusMesh(){
       glassM=vehMat(0x1c2733);
   var L=12, W=2.8, H=2.6;
   var B=_vbatch();
-  B.add(_vbg(W,H,L),'white', 0,1.9,0);                    // body
-  B.add(_vbg(W+0.06,0.4,L+0.06),'blue', 0,2.3,0);         // blue stripe
-  B.add(_vbg(W+0.06,0.18,L+0.06),'green', 0,1.5,0);      // green accent
-  B.add(_vbg(W+0.06,0.8,L-2),'glass', 0,2.75,0);          // window band
+  B.add(_vrbg(W,H,L),'white', 0,1.9,0);                    // body
+  B.add(_vrbg(W+0.06,0.4,L+0.06),'blue', 0,2.3,0);         // blue stripe
+  B.add(_vrbg(W+0.06,0.18,L+0.06),'green', 0,1.5,0);      // green accent
+  B.add(_vrbg(W+0.06,0.8,L-2),'glass', 0,2.75,0);          // window band
   B.add(_vbg(W-0.4,1.0,0.1),'glass', 0,2.6,L/2+0.02);    // windshield
-  B.add(_vbg(W-0.2,0.2,L-0.3),'roof', 0,3.3,0);          // roof
+  B.add(_vrbg(W-0.2,0.2,L-0.3),'roof', 0,3.3,0);          // roof
   try{ B.add(_vpg(1.8,0.35),'dest', 0,3.0,L/2+0.06); }catch(e){} // dest sign
   [-1,1].forEach(function(s){
     B.add(_vbg(0.15,0.4,0.25),'dark', s*(W/2+0.15),2.9,L/2-0.3); // mirrors
@@ -881,12 +947,12 @@ function schoolBusMesh(){
   var yellow=vehLam(0xe8a913), black=vehLam(0x1a1a1a), glass=vehLam(0x1c2733),
       chrome=vehLam(0xd8d8d8), tireM=vehLam(0x222222);
   var B=_vbatch();
-  B.add(_vbg(2.6,1.9,9.6),'yellow', 0,1.85,0);        // body
-  B.add(_vbg(2.62,0.28,9.62),'black', 0,1.05,0);     // rub stripe
-  B.add(_vbg(2.62,0.5,9.0),'glass', 0,2.35,0);       // window band
+  B.add(_vrbg(2.6,1.9,9.6),'yellow', 0,1.85,0);        // body
+  B.add(_vrbg(2.62,0.28,9.62),'black', 0,1.05,0);     // rub stripe
+  B.add(_vrbg(2.62,0.5,9.0),'glass', 0,2.35,0);       // window band
   B.add(_vbg(2.4,1.0,0.15),'glass', 0,2.2,4.85);     // windshield
-  B.add(_vbg(2.6,0.9,1.6),'yellow', 0,1.35,5.4);     // hood
-  B.add(_vbg(2.62,0.18,9.62),'black', 0,2.86,0);     // roof edge
+  B.add(_vrbg(2.6,0.9,1.6),'yellow', 0,1.35,5.4);     // hood
+  B.add(_vrbg(2.62,0.18,9.62),'black', 0,2.86,0);     // roof edge
   // wheel hubs are static (don't spin) — merge them now, tires below
   var _hubSpots=[[-1.25,3.4],[1.25,3.4],[-1.25,-2.6],[1.25,-2.6],
                  [-1.25,-3.6],[1.25,-3.6]];
@@ -941,12 +1007,12 @@ function policeCruiserMesh(){
   var g=new THREE.Group();
   var white=0xf2f4f6, blue=0x1a3a8f, glassC=0x1c2733, trimC=0x14161a;
   var B=_vbatch();
-  B.add(_vbg(2.0,0.62,4.6),'white', 0,0.55,0);              // lower body
+  B.add(_vrbg(2.0,0.62,4.6),'white', 0,0.55,0);              // lower body
   [-1,1].forEach(function(s){
     B.add(_vbg(0.06,0.34,2.6),'blue', s*1.0,0.62,-0.1);    // door bands
   });
-  B.add(_vbg(1.75,0.5,2.4),'glass', 0,1.12,-0.2);          // glasshouse
-  B.add(_vbg(1.9,0.14,1.1),'white', 0,0.92,1.7);           // hood
+  B.add(_vrbg(1.75,0.5,2.4),'glass', 0,1.12,-0.2);          // glasshouse
+  B.add(_vrbg(1.9,0.14,1.1),'white', 0,0.92,1.7);           // hood
   [-0.55,0.55].forEach(function(x){
     B.add(_vbg(0.12,0.5,0.12),'trim', x,0.55,2.36);        // push-bar posts
   });
