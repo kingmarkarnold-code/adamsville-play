@@ -826,7 +826,9 @@ function wanderNearHome(w, dt){
 
 /* ================= ground helper ================= */
 function groundY(x, z){
+  /* v1.35 SNAP-TO-FACE (Joshua 2026-10-11): snap to rendered terrain. */
   try {
+    if (typeof snapToGround === 'function'){ var sy=snapToGround(x,z,0,0,0); if(isFinite(sy)) return sy; }
     if (typeof heightAt === 'function') return heightAt(x, z);
   } catch(e){}
   return 0;
