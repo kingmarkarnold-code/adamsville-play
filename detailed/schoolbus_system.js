@@ -350,11 +350,12 @@ var _bootTimer=setInterval(function(){
       try{ if (typeof Report!=='undefined') Report.noteError('schoolbus','init failed',String(e&&e.message||e)); }catch(x){}
     }
     try{
-      if (typeof animate==='function' && !animate.__sbWrap){
-        var orig=animate;
-        var wrapped=function(){ orig(); updateSchoolBusSys(); };
-        wrapped.__sbWrap=true;
-        animate=wrapped;
+      /* v1.51 TICK REGISTRY (expert report #14, James Park, Joshua approved):
+         was an animate() monkey-patch — now registers on the central Sim tick
+         registry. Same once-per-frame timing, deterministic priority order. */
+      if(window.Sim && typeof Sim.onTick==='function' && !window.__sbTickReg){
+        window.__sbTickReg=true;
+        Sim.onTick('render', 22, function(dt){ updateSchoolBusSys(); });
       }
     }catch(e){}
   } else if (_bootTries>600){ clearInterval(_bootTimer); }  // give up after 60s, never break the game
