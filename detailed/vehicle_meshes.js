@@ -183,6 +183,9 @@ function _martaDestMatGet(){
    - All builder dims are hardcoded constants, so merged geometry is
      identical for every instance of a builder — only materials vary.
    ========================================================================== */
+// v1.49 COMPLETE 2026-10-11: every vehicle builder now merges its static
+// parts (sedan, safari20, boxChevy, bubbleChevy, pickup, suv, semi,
+// martaBus, schoolBus, policeCruiser, makeDonkWheel internals).
 var _vMergeCache={}; // key 'builder:slot[:variant]' -> merged BufferGeometry
 function _vmergeGeos(list){
   var pos=[], nor=[], uv=[], idx=[], vOff=0, i, j;
