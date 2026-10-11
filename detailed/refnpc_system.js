@@ -383,7 +383,14 @@ function walkStep(k,tx,tz,dt){
   k.heading+=Math.max(-4*dt,Math.min(4*dt,dh));
   var step=Math.min(WALK_SPEED*dt, d);
   k.x+=Math.sin(k.heading)*step; k.z+=Math.cos(k.heading)*step;
-  k.y=groundY(k.x,k.z); k.moving=true; k.phase+=dt*7;
+  k.y=groundY(k.x,k.z); k.moving=true;
+  /* v1.47 foot-skate fix (expert #22, Katherine Brooks): walk phase advances
+     by the DISTANCE actually stepped (step), not dt*7 — feet plant instead
+     of sliding. Cadence clamped to 2.2 strides/sec per the expert spec so
+     legs never pump comically fast. (Self-contained constants here because
+     refnpc loads independently of index.html's shared helper.) */
+  var __kadv=step/1.5*Math.PI*2, __kcap=2.2*Math.PI*2*dt;
+  k.phase+= (__kadv<__kcap?__kadv:__kcap);
 }
 
 /* ---------------- bus ---------------- */
@@ -736,7 +743,10 @@ function updateRefNPCs(dt){
         k.mesh.position.set(k.x,k.y,k.z);
         k.mesh.rotation.y=k.heading;
         var u=k.mesh.userData;
-        if (k.moving){ k.phase+=dt*7;
+        /* v1.47: phase is advanced in walkStep() (distance-based); the old
+           render-side k.phase+=dt*7 double-counted it, so it's removed —
+           the pose below just reads k.phase. */
+        if (k.moving){
           var sw=Math.sin(k.phase)*0.5;
           u.armL.rotation.x=sw; u.armR.rotation.x=-sw;
           u.legL.rotation.x=-sw; u.legR.rotation.x=sw;
