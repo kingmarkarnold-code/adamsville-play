@@ -4,8 +4,10 @@
    PURPOSE: Ambient AI traffic vehicles driving the highway/arterial/local
    road network, plus real-world gas stations with NPC refueling.
    KEY SYSTEMS:
-     - Road index (arc-length tables) + endpoint connection grid — cars hop
-       onto connecting roads at junctions or loop when a road dead-ends.
+     - Road index (arc-length tables) + junction graph (grade/heading-checked
+       endpoint matches + mid-segment crossings) with an intersection
+       reservation protocol — cars hop onto connecting roads at junctions,
+       yield by road-class priority, or loop when a road dead-ends.
      - Car state machine: drive / toGas / refueling / backToRoad / pulling /
        parked / resuming — 35% of cars are "owned" NPC cars that pull over,
        park on the shoulder, and resume.
@@ -142,36 +144,334 @@ function buildRoadIndex(){
   return idx;
 }
 
-/* Endpoint spatial grid — lets a car at a road end find a CONNECTED road
-   (or discover there is none and loop). Built once. */
-function buildEndpointGrid(roads){
+/* ============================================================================
+   v1.47 JUNCTION GRAPH + INTERSECTION PROTOCOL (2026-10-11) —
+   Expert review #7 (David Okafor, AI Programmer).
+   ----------------------------------------------------------------------------
+   The old findConnection() snapped road ends together within 70u with NO
+   grade or heading check, and crossing traffic streams had no protocol —
+   two streams would enter a junction together, block each other, and
+   deadlock until a tow truck cleared it.
+
+   This builds a TRUE junction graph once at init:
+     (1) Endpoint matching with GRADE (<=3u elevation difference) and
+         HEADING (departure direction within ~100 deg of arrival direction)
+         checks. Bad snaps — bridge-vs-underpass, wrong-way carriageway
+         hops and near-U-turns — are rejected; the car loops instead of
+         teleporting. Legal 90-degree intersection turns are allowed.
+     (2) Mid-segment CROSSING detection (spatial-hash segment pairs, grade
+         checked at the crossing point) so overpasses never become fake
+         intersections.
+     (3) A per-junction RESERVATION protocol: approaching cars queue; the
+         highest-priority road class (highway > arterial > local) goes first
+         with first-come order inside a class; everyone else waits at a
+         12u stop line. One stream at a time = no mutual blocking, no
+         deadlocks. Starvation guard: 20s+ waiters get a priority boost.
+         Holders that stall release after 25s so nothing wedges forever.
+   Data (TR.jx): nodes[], endNode{"ri:end"->node}, endMatch{"ri:end"->{ri,end}},
+   crossByRoad[ri]=[{segT,node}] sorted.
+   ============================================================================ */
+var JX_SNAP=70, JX_GRADE=3, JX_HEADING_DOT=-0.15;  // ~99 deg max turn: 90-deg
+                                                  // intersection turns allowed,
+                                                  // wrong-way/U-turn hops rejected
+var JX_APPROACH=35, JX_STOP=12, JX_CLEAR=18;       // reservation geometry (u)
+var JX_HOLD_TIMEOUT=25, JX_STARVE_S=20;            // seconds
+/* roadEndTangent(R,end) — unit vector of travel direction INTO the road end.
+   Used by the heading check: a hop is only legal when the departure
+   direction out of the new road's end roughly continues the arrival
+   direction into the old road's end. */
+function roadEndTangent(R,end){
+  var pts=R.r.pts, n=pts.length, a, b;
+  if (end===1){ a=pts[n-2]; b=pts[n-1]; } else { a=pts[1]; b=pts[0]; }
+  var dx=b[0]-a[0], dz=b[1]-a[1], l=Math.hypot(dx,dz)||1;
+  return [dx/l, dz/l];
+}
+/* roadEndY(R,end) — smoothed road height at the endpoint (grade check). */
+function roadEndY(R,end){
+  var ys=R.r.ys, n=ys.length;
+  return end===1?ys[n-1]:ys[0];
+}
+/* roadRank(cat) — intersection priority: highway > arterial > local. */
+function roadRank(cat){ return cat==='highway'?3:(cat==='arterial'?2:1); }
+/* buildJunctionGraph(roads) — one-time build. Returns the TR.jx structure. */
+function buildJunctionGraph(roads){
+  var t0=Date.now();
+  /* --- 1. endpoint grid + grade/heading-checked matching --- */
   var grid={}, CELL=80;
-  function key(x,z){ return Math.floor(x/CELL)+','+Math.floor(z/CELL); }
+  function gk(x,z){ return Math.floor(x/CELL)+','+Math.floor(z/CELL); }
+  var ends=[];   // {ri,end,x,z,y,tx,tz}
   roads.forEach(function(R,ri){
     for (var e=0;e<2;e++){
       var p=R.r.pts[e===0?0:R.r.pts.length-1];
-      var k=key(p[0],p[1]);
-      (grid[k]=grid[k]||[]).push({ri:ri,end:e,x:p[0],z:p[1]});
+      var t=roadEndTangent(R,e);
+      var rec={ri:ri,end:e,x:p[0],z:p[1],y:roadEndY(R,e),tx:t[0],tz:t[1]};
+      ends.push(rec);
+      var k=gk(p[0],p[1]);
+      (grid[k]=grid[k]||[]).push(rec);
     }
   });
-  return {grid:grid,cell:CELL,key:key};
-}
-function findConnection(ep, selfRi, selfEnd){
-  // Finds a DIFFERENT road whose endpoint is within 70u of this road's end,
-  // so the car can continue onto the connected road instead of looping.
-  // Checks the 3x3 neighboring grid cells; excludes the car's own road end.
-  var CELL=ep.cell, gx=Math.floor(ep.x0/ep.cell), gz=Math.floor(ep.z0/ep.cell);
-  var best=null,bd=70*70;   // 70u snap radius
-  for (var ix=gx-1;ix<=gx+1;ix++) for (var iz=gz-1;iz<=gz+1;iz++){
-    var a=ep.grid[ix+','+iz]; if(!a) continue;
+  var SNAP2=JX_SNAP*JX_SNAP;
+  var endMatch={};   // "ri:end" -> {ri,end} (best legal match) or undefined
+  ends.forEach(function(A){
+    var gx=Math.floor(A.x/CELL), gz=Math.floor(A.z/CELL);
+    var best=null, bd=SNAP2;
+    for (var ix=gx-1;ix<=gx+1;ix++) for (var iz=gz-1;iz<=gz+1;iz++){
+      var a=grid[ix+','+iz]; if(!a) continue;
+      for (var i=0;i<a.length;i++){
+        var B=a[i];
+        if (B.ri===A.ri&&B.end===A.end) continue;
+        var dx=B.x-A.x, dz=B.z-A.z, d2=dx*dx+dz*dz;
+        if (d2>=bd) continue;
+        if (Math.abs(B.y-A.y)>JX_GRADE) continue;        // grade check (3u)
+        // heading check: arrival dir into A vs departure dir out of B must
+        // not oppose (dot>-0.15 ~= within 99 deg). Allows legal 90-degree
+        // intersection turns; rejects wrong-way carriageway hops and
+        // near-U-turn snaps.
+        var dot=A.tx*(-B.tx)+A.tz*(-B.tz);
+        if (dot<JX_HEADING_DOT) continue;
+        bd=d2; best=B;
+      }
+    }
+    if (best) endMatch[A.ri+':'+A.end]={ri:best.ri,end:best.end};
+  });
+  /* --- 2. union-find: matched endpoint pairs -> junction nodes --- */
+  var parent={};
+  function find(k){ while(parent[k]!==k){ parent[k]=parent[parent[k]]; k=parent[k]; } return k; }
+  function union(a,b){ a=find(a); b=find(b); if(a!==b) parent[a]=b; }
+  ends.forEach(function(E){ var k=E.ri+':'+E.end; parent[k]=k; });
+  Object.keys(endMatch).forEach(function(k){
+    var m=endMatch[k]; union(k, m.ri+':'+m.end);
+  });
+  var nodes=[];        // {x,z,y,kind,ends[],cross[],holder,holdT,entered}
+  var endNode={};      // "ri:end" -> nodeIdx
+  var byRoot={};
+  ends.forEach(function(E){
+    var k=E.ri+':'+E.end;
+    if (!endMatch[k]) return;      // unmatched ends are not junctions
+    var r=find(k);
+    (byRoot[r]=byRoot[r]||[]).push(E);
+  });
+  var nEndJx=0;
+  Object.keys(byRoot).forEach(function(r){
+    var list=byRoot[r], sx=0, sz=0, sy=0, ni=nodes.length;
+    list.forEach(function(E){ sx+=E.x; sz+=E.z; sy+=E.y;
+      endNode[E.ri+':'+E.end]=ni; });
+    nodes.push({x:sx/list.length, z:sz/list.length, y:sy/list.length,
+      kind:'end', ends:list.map(function(E){return {ri:E.ri,end:E.end};}),
+      cross:[], holder:-1, holdT:0, entered:false, holderRoad:-1, holderDir:0,
+      waiters:[]});
+    nEndJx++;
+  });
+  /* --- 3. mid-segment crossing detection (spatial hash, grade-checked) --- */
+  var SCELL=100, sgrid={};
+  function sgk(x,z){ return Math.floor(x/SCELL)+','+Math.floor(z/SCELL); }
+  roads.forEach(function(R,ri){
+    var pts=R.r.pts;
+    for (var s=0;s<pts.length-1;s++){
+      var a=pts[s], b=pts[s+1];
+      var x0=Math.floor(Math.min(a[0],b[0])/SCELL),
+          x1=Math.floor(Math.max(a[0],b[0])/SCELL),
+          z0=Math.floor(Math.min(a[1],b[1])/SCELL),
+          z1=Math.floor(Math.max(a[1],b[1])/SCELL);
+      for (var gx=x0;gx<=x1;gx++) for (var gz=z0;gz<=z1;gz++){
+        var k=gx+','+gz;
+        (sgrid[k]=sgrid[k]||[]).push({ri:ri,s:s});
+      }
+    }
+  });
+  function segYat(R,s,t){ var ys=R.r.ys; return ys[s]+(ys[s+1]-ys[s])*t; }
+  function segCross(ax,az,bx,bz,cx,cz,dx,dz){
+    var d=(bx-ax)*(dz-cz)-(bz-az)*(dx-cx);
+    if (Math.abs(d)<1e-9) return null;
+    var t=((cx-ax)*(dz-cz)-(cz-az)*(dx-cx))/d;
+    var u=((cx-ax)*(bz-az)-(cz-az)*(bx-ax))/d;
+    if (t>0.02&&t<0.98&&u>0.02&&u<0.98)
+      return {x:ax+t*(bx-ax), z:az+t*(bz-az), t:t, u:u};
+    return null;
+  }
+  var crossRaw=[];
+  Object.keys(sgrid).forEach(function(k){
+    var arr=sgrid[k];
+    for (var i=0;i<arr.length;i++) for (var j=i+1;j<arr.length;j++){
+      var A=arr[i], B=arr[j];
+      if (A.ri===B.ri) continue;
+      var RA=roads[A.ri], RB=roads[B.ri];
+      var p1=RA.r.pts[A.s], p2=RA.r.pts[A.s+1];
+      var p3=RB.r.pts[B.s], p4=RB.r.pts[B.s+1];
+      var hit=segCross(p1[0],p1[1],p2[0],p2[1],p3[0],p3[1],p4[0],p4[1]);
+      if (!hit) continue;
+      var yA=segYat(RA,A.s,hit.t), yB=segYat(RB,B.s,hit.u);
+      if (Math.abs(yA-yB)>JX_GRADE) continue;   // overpass — not a junction
+      crossRaw.push({x:hit.x,z:hit.z,y:(yA+yB)/2,
+        a:{ri:A.ri,s:A.s,t:hit.t}, b:{ri:B.ri,s:B.s,t:hit.u}});
+    }
+  });
+  // dedupe: same crossing found via several grid cells
+  var seen={}, cross=[];
+  crossRaw.forEach(function(c){
+    var k1=c.a.ri+'_'+c.b.ri+'_'+Math.round(c.x/5)+'_'+Math.round(c.z/5);
+    var k2=c.b.ri+'_'+c.a.ri+'_'+Math.round(c.x/5)+'_'+Math.round(c.z/5);
+    if (seen[k1]||seen[k2]) return;
+    seen[k1]=1; cross.push(c);
+  });
+  /* --- 4. fold crossings into nodes (merge near endpoint nodes first) --- */
+  var crossByRoad=[];
+  roads.forEach(function(){ crossByRoad.push([]); });
+  function roadSegT(R,s,t){ return R.cum[s]+t*((R.cum[s+1]-R.cum[s])||0); }
+  cross.forEach(function(c){
+    var ni=-1, n, dx, dz;
+    for (n=0;n<nodes.length;n++){           // near an endpoint junction?
+      dx=nodes[n].x-c.x; dz=nodes[n].z-c.z;
+      if (dx*dx+dz*dz<35*35){ ni=n; break; }
+    }
+    if (ni<0) for (n=0;n<nodes.length;n++){ // near another crossing node?
+      if (nodes[n].kind!=='cross') continue;
+      dx=nodes[n].x-c.x; dz=nodes[n].z-c.z;
+      if (dx*dx+dz*dz<25*25){ ni=n; break; }
+    }
+    if (ni<0){
+      ni=nodes.length;
+      nodes.push({x:c.x,z:c.z,y:c.y,kind:'cross',ends:[],cross:[],
+        holder:-1,holdT:0,entered:false,holderRoad:-1,holderDir:0,
+        waiters:[]});
+    }
+    var N=nodes[ni];
+    N.cross.push(c);
+    var sA=roadSegT(roads[c.a.ri],c.a.s,c.a.t);
+    var sB=roadSegT(roads[c.b.ri],c.b.s,c.b.t);
+    crossByRoad[c.a.ri].push({segT:sA,node:ni});
+    crossByRoad[c.b.ri].push({segT:sB,node:ni});
+  });
+  crossByRoad.forEach(function(a,ri){
+    a.sort(function(p,q){ return p.segT-q.segT; });
+    var w=[], last=-1;
     for (var i=0;i<a.length;i++){
-      var c=a[i];
-      if (c.ri===selfRi&&c.end===selfEnd) continue;
-      var dx=c.x-ep.x0, dz=c.z-ep.z0, d2=dx*dx+dz*dz;
-      if (d2<bd){ bd=d2; best=c; }
+      if (a[i].node===last) continue;   // same node merged twice on one road
+      w.push(a[i]); last=a[i].node;
+    }
+    crossByRoad[ri]=w;
+  });
+  return {nodes:nodes, endNode:endNode, endMatch:endMatch,
+    crossByRoad:crossByRoad, buildMs:Date.now()-t0,
+    nEndJx:nEndJx, nCross:cross.length};
+}
+/* jxReleaseCar(c) — drop any reservation the car holds (called on road hop
+   and state changes so a reservation never outlives its holder's pass). */
+function jxReleaseCar(c){
+  var JX=TR&&TR.jx; if(!JX) return;
+  for (var n=0;n<JX.nodes.length;n++){
+    var N=JX.nodes[n];
+    if (N.holder===c.id){ N.holder=-1; N.holdT=0; N.entered=false;
+      N.holderRoad=-1; N.holderDir=0; }
+  }
+  c.jxNode=-1; c.jxWait=false;
+}
+/* jxTick(dt) — the reservation protocol, once per frame BEFORE cars step.
+   For every car in 'drive'/'resuming': determine junction candidacy
+   (approaching a road end inside a junction node, or approaching a crossing
+   point on its road), then per node: grant the reservation to the
+   top-priority candidate (highway > arterial > local, first-come inside a
+   class, 20s+ waiters boosted), mark the rest as waiting. Waiting cars get
+   c.jxWait=true; stepCar() zeroes their desired speed at the stop line. */
+function jxTick(dt){
+  var JX=TR.jx; if(!JX) return;
+  TR.jxClock=(TR.jxClock||0)+dt;
+  var clock=TR.jxClock, nodes=JX.nodes, i, c;
+  for (i=0;i<TR.cars.length;i++){
+    c=TR.cars[i]; c.jxWait=false; c.jxNode=-1;
+  }
+  var touched={};   // nodeIdx -> true (nodes with candidates this frame)
+  for (i=0;i<TR.cars.length;i++){
+    c=TR.cars[i];
+    var st=c.state;
+    if (st!=='drive'&&st!=='resuming') continue;
+    var R=TR.roads[c.road], ni=-1, dist=1e18;
+    // (a) endpoint junction: approaching our road's end inside a node
+    var toEnd=c.dir>0 ? R.len-c.segT : c.segT;
+    if (toEnd<JX_APPROACH){
+      var key=c.road+':'+(c.dir>0?1:0);
+      var en=JX.endNode[key];
+      if (en!==undefined){ ni=en; dist=toEnd; }
+    }
+    // (b) crossing junction: approaching a crossing point on our road
+    var cl=JX.crossByRoad[c.road];
+    if (cl&&cl.length){
+      var lo=0, hi=cl.length-1;
+      while (lo<hi){ var mid=(lo+hi)>>1;
+        if (cl[mid].segT<c.segT) lo=mid+1; else hi=mid; }
+      for (var k=Math.max(0,lo-1);k<=Math.min(cl.length-1,lo+1);k++){
+        var e=cl[k], dseg=e.segT-c.segT;
+        if (Math.abs(dseg)<JX_APPROACH && dseg*c.dir>0 && Math.abs(dseg)<dist){
+          ni=e.node; dist=Math.abs(dseg);
+        }
+      }
+    }
+    if (ni<0) continue;
+    c.jxNode=ni; touched[ni]=true;
+    if (c.jxAt===undefined) c.jxAt={};
+    if (c.jxAt[ni]===undefined) c.jxAt[ni]=clock;
+    var N=nodes[ni];
+    // same-road same-direction followers of the holder stream through
+    if (N.holder>=0 && c.road===N.holderRoad && c.dir===N.holderDir) continue;
+    var w=N.waiters, found=false;
+    for (var q=0;q<w.length;q++) if (w[q]===c.id){ found=true; break; }
+    if (!found) w.push(c.id);
+  }
+  // per-node: validate holder, grant, mark waiters
+  for (var nkey in touched){
+    var N=nodes[nkey], nidx=+nkey;
+    // validate current holder
+    var H=N.holder>=0?TR.cars[N.holder]:null;
+    var hOK=H&&(H.state==='drive'||H.state==='resuming')&&H.jxNode===nidx;
+    if (hOK){
+      var hdx=H.x-N.x, hdz=H.z-N.z, hd=Math.hypot(hdx,hdz);
+      N.holdT+=dt;
+      if (hd<JX_STOP) N.entered=true;
+      // release: cleared the box, timed out, or left the protocol
+      if ((N.entered&&hd>JX_CLEAR)||N.holdT>JX_HOLD_TIMEOUT||!hOK){
+        N.holder=-1; N.holdT=0; N.entered=false;
+        N.holderRoad=-1; N.holderDir=0; H.jxNode=-1;
+      }
+    } else if (N.holder>=0){
+      N.holder=-1; N.holdT=0; N.entered=false;
+      N.holderRoad=-1; N.holderDir=0;
+    }
+    // prune waiters that are no longer candidates
+    var w2=[];
+    for (var q2=0;q2<N.waiters.length;q2++){
+      var wc=TR.cars[N.waiters[q2]];
+      if (wc&&wc.jxNode===nidx&&(wc.state==='drive'||wc.state==='resuming'))
+        w2.push(N.waiters[q2]);
+    }
+    N.waiters=w2;
+    // grant to top-priority candidate when free
+    if (N.holder<0&&w2.length){
+      var best=-1, bestScore=null;
+      for (var q3=0;q3<w2.length;q3++){
+        var cc=TR.cars[w2[q3]];
+        var rank=roadRank(TR.roads[cc.road].cat);
+        if (clock-(cc.jxAt[nidx]||0)>JX_STARVE_S) rank+=10;  // anti-starvation
+        var score=[rank, -(cc.jxAt[nidx]||0)];
+        if (!bestScore||score[0]>bestScore[0]||
+            (score[0]===bestScore[0]&&score[1]>bestScore[1])){
+          bestScore=score; best=w2[q3];
+        }
+      }
+      if (best>=0){
+        N.holder=best; N.holdT=0; N.entered=false;
+        var bc=TR.cars[best];
+        N.holderRoad=bc.road; N.holderDir=bc.dir;
+      }
+    }
+    // everyone waiting (not holder, not exempt follower) stops at the line
+    for (var q4=0;q4<N.waiters.length;q4++){
+      var vc=TR.cars[N.waiters[q4]];
+      if (N.waiters[q4]===N.holder) continue;
+      if (vc.road===N.holderRoad&&vc.dir===N.holderDir) continue;
+      var vdx=vc.x-N.x, vdz=vc.z-N.z;
+      if (Math.hypot(vdx,vdz)<JX_STOP) vc.jxWait=true;
     }
   }
-  return best;
 }
 
 /* ---------------- car data ---------------- */
@@ -261,9 +561,13 @@ function roadEnd(c){
   var R=TR.roads[c.road];
   var atEnd = c.dir>0 ? c.segT>=R.len : c.segT<=0;
   if (!atEnd){ c.segT=Math.max(0,Math.min(R.len,c.segT)); return; }
+  /* v1.47 JUNCTION PROTOCOL: release any reservation held at this road end
+     before hopping — a reservation never outlives its holder's pass. */
+  try{ jxReleaseCar(c); }catch(e){}
   var selfEnd = c.dir>0 ? 1 : 0;
-  var p=R.r.pts[selfEnd===1?R.r.pts.length-1:0];
-  var hit=findConnection({x0:p[0],z0:p[1],grid:TR.ep.grid,cell:TR.ep.cell},c.road,selfEnd);
+  /* v1.47: the hop target comes from the precomputed junction match table
+     (grade <=3u and heading-checked at build). No match -> loop the path. */
+  var hit=TR.jx ? TR.jx.endMatch[c.road+':'+selfEnd] : null;
   if (hit){
     var NR=TR.roads[hit.ri];
     c.road=hit.ri;
@@ -596,12 +900,15 @@ function stepCar(c,dt,px,pz){
       c.passing=false; c.laneTarget=c.laneOffBase;   // left drive states mid-pass
     }
   }catch(e){}
+  /* v1.47 JUNCTION PROTOCOL: waiting at a stop line because another
+     stream holds the junction — stop, don't creep into the box. */
+  if (c.jxWait) c.desired=0;
   var dv=c.desired-c.speed, mx=dv>0?ACCEL_US*dt:BRAKE_US*dt;
   c.speed+=Math.max(-mx,Math.min(mx,dv));
   if (c.speed<0) c.speed=0;
   // stuck audit (only when genuinely trying, not when yielding)
   var trying=(st==='drive'||st==='pulling'||st==='resuming')&&c.desired>1;
-  if (trying&&c.speed<0.35&&!c.blockedByPlayer&&!c.blockedByBus&&!c.blockedBySchoolBus){
+  if (trying&&c.speed<0.35&&!c.blockedByPlayer&&!c.blockedByBus&&!c.blockedBySchoolBus&&!c.jxWait){
     c.stuckT+=dt;
     if (c.stuckT>STUCK_AFTER_S){ logStuck(c); c.stuckT=-STUCK_COOLDOWN; }
   } else if (c.stuckT>0) c.stuckT=0;
@@ -924,6 +1231,7 @@ function updateTraffic(dt,px,pz){
     if (px===undefined){ try{ px=player.x; pz=player.z; }catch(e){ px=0;pz=0; } }
     var i;
     refreshDwellBuses();   // v1.16: rebuild the dwelling-MARTA-bus cache once per frame
+    try{ jxTick(dt); }catch(e){}   // v1.47: intersection reservation protocol
     for (i=0;i<TR.cars.length;i++) stepCar(TR.cars[i],dt,px,pz);
     TR.assignT-=dt;
     if (TR.assignT<=0){ assignSlots(px,pz); TR.assignT=0.3; }
@@ -940,7 +1248,7 @@ function updateTraffic(dt,px,pz){
 window.updateTraffic=updateTraffic;
 
 /* ---------------- init + self-install ---------------- */
-/* initTraffic() — builds the road index, endpoint grid, render pool, and
+/* initTraffic() — builds the road index, junction graph, render pool, and
    spawns the car fleet: 44 highway cars (25-31 u/s ≈ 54-67 mph), 28 arterial
    (13-19 u/s ≈ 28-41 mph), 24 local (8-14 u/s ≈ 17-30 mph neighborhood
    pace). A guaranteed cluster of up to 12 local cars spawns within 1200u of
@@ -954,7 +1262,10 @@ function initTraffic(){
   makeTemps();
   TR.roads=buildRoadIndex();
   if (!TR.roads.length) throw new Error('no traffic roads');
-  TR.ep=buildEndpointGrid(TR.roads);
+  /* v1.47 JUNCTION GRAPH: true junction nodes (grade+heading-checked
+     endpoint matches + mid-segment crossings) with the intersection
+     reservation protocol. */
+  TR.jx=buildJunctionGraph(TR.roads); TR.jxClock=0;
   buildRenderPool();
   var hw=TR.roads.filter(function(R){return R.cat==='highway';});
   var ar=TR.roads.filter(function(R){return R.cat==='arterial';});
@@ -992,11 +1303,13 @@ function initTraffic(){
     }
   }catch(e){}
   try{
+    var _jx=TR.jx?{nodes:TR.jx.nodes.length,endJx:TR.jx.nEndJx,
+      crossings:TR.jx.nCross,buildMs:TR.jx.buildMs}:null;
     Report.setSys('traffic',{status:'ok',version:'1.9',
       cars:TR.cars.length, rendered:0, gasStations:TR.gas.length,
       stuckSpots:TR.stuckSpots,
-      roads:TR.roads.length,
-      note:'highway+arterial traffic; stuck-spot road audit live'});
+      roads:TR.roads.length, junctions:_jx,
+      note:'highway+arterial traffic; junction protocol v1.47; stuck-spot road audit live'});
   }catch(e){}
   window.TRAFFIC=TR;   // expose only after a clean init
 }
