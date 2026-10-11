@@ -35,7 +35,8 @@
   var cx = 3554, cz = 3185;
   /* v2.0 auto-check: nudge clear of roads if needed (never on road) */
   try{ var _sp=placeStruct(cx,cz,26,4,'AdamsvilleElem'); if(_sp){cx=_sp.x;cz=_sp.z;} }catch(e){}
-  var gy = heightAt(cx, cz);
+  /* v1.35 SNAP-TO-FACE (Joshua 2026-10-11). */
+  var gy = (typeof snapToGround==='function'?snapToGround(cx,cz,44,20,0):heightAt(cx,cz));
   var x0 = cx - 22, x1 = cx + 22, z0 = cz - 10, z1 = cz + 10;
 
   /* main building (44 x 20 — clear of Oakside Dr SW to the east) */
@@ -65,7 +66,7 @@
   spSignBoard('ADAMSVILLE ELEMENTARY SCHOOL', cx, gy + 4.4, z1 + 0.35, 34, '#1a6b3a', false);
 
   /* playground (south of main): rubber surface + play structures */
-  var pgx = 3558, pgz = 3150, pggy = heightAt(pgx, pgz);
+  var pgx = 3558, pgz = 3150, pggy = (typeof snapToGround==='function'?snapToGround(pgx,pgz,36,20,0):heightAt(pgx,pgz)); /* v1.35 snap */
   spSlab(pgx, pgz, 36, 20, 0x4a7a4a, pggy, 0.08);
   var eqC = [0xcc3333, 0x3366cc, 0xddaa22];
   for (var pi = 0; pi < 3; pi++) {
@@ -86,10 +87,10 @@
   bar.position.set(pgx, pggy + 3, pgz + 6); scene.add(bar);
 
   /* parking lot (north of Unnamed St) */
-  spParkingLot(3550, 3230, 30, 20, heightAt(3550, 3230), 2);
+  spParkingLot(3550, 3230, 30, 20, (typeof snapToGround==='function'?snapToGround(3550,3230,30,20,0):heightAt(3550,3230)), 2);
 
   /* monument sign near Wilson Mill Rd */
-  var sgx = 3530, sgz = 3190, sggy = heightAt(sgx, sgz);
+  var sgx = 3530, sgz = 3190, sggy = (typeof snapToGround==='function'?snapToGround(sgx,sgz,2,2,0):heightAt(sgx,sgz)); /* v1.35 snap */
   var sp1 = new THREE.Mesh(new THREE.BoxGeometry(0.5, 2.5, 0.5),
     new THREE.MeshLambertMaterial({ color: 0x6a4a2a }));
   sp1.position.set(sgx, sggy + 1.25, sgz); scene.add(sp1);
@@ -97,10 +98,10 @@
   addCollider(sgx, sgz, 1);
 
   /* sidewalk: road -> entrance */
-  spSlab(3544, 3185, 16, 3, 0x9a9a9a, heightAt(3544, 3185), 0.12);
+  spSlab(3544, 3185, 16, 3, 0x9a9a9a, (typeof snapToGround==='function'?snapToGround(3544,3185,16,3,0):heightAt(3544,3185)), 0.12);
   /* v1.35 SIDEWALK COLLISION (2026-10-11, Joshua: "I can run through sidewalks"):
      register this named sidewalk slab as a solid walkable surface. */
-  try{ if(typeof __regSidewalk==='function') __regSidewalk(3544, 3185, 0, 16, 0.3, 3, heightAt(3544,3185)+0.12-0.15); }catch(e){}
+  try{ if(typeof __regSidewalk==='function') __regSidewalk(3544, 3185, 0, 16, 0.3, 3, (typeof snapToGround==='function'?snapToGround(3544,3185,16,3,0):heightAt(3544,3185))+0.12-0.15); }catch(e){}
 
   labelAt('ADAMSVILLE ELEMENTARY', cx, cz, 18, 46, '#ffd75e');
   addCollider(cx, cz, 28);
@@ -115,7 +116,8 @@
   var cx = 4220, cz = 2525;
   /* v2.0 auto-check: nudge clear of roads if needed (never on road) */
   try{ var _sp2=placeStruct(cx,cz,35,4,'UsherMiddle'); if(_sp2){cx=_sp2.x;cz=_sp2.z;} }catch(e){}
-  var gy = heightAt(cx, cz);
+  /* v1.35 SNAP-TO-FACE (Joshua 2026-10-11). */
+  var gy = (typeof snapToGround==='function'?snapToGround(cx,cz,64,26,0):heightAt(cx,cz));
   var x0 = cx - 32, x1 = cx + 32, z0 = cz - 13, z1 = cz + 13;
 
   /* main building (2 stories) */
@@ -144,7 +146,7 @@
   spSignBoard('USHER MIDDLE SCHOOL', cx, gy + 7.2, z1 + 0.35, 36, '#6b1a2a', false);
 
   /* gym (east of main) */
-  var gx = 4275, gz = 2525, ggy = heightAt(gx, gz);
+  var gx = 4275, gz = 2525, ggy = (typeof snapToGround==='function'?snapToGround(gx,gz,10,10,0):heightAt(gx,gz)); /* v1.35 snap */
   var ggx0 = gx - 15, ggx1 = gx + 15, ggz0 = gz - 12, ggz1 = gz + 12;
   spWall(ggx0, ggz1, ggx1, ggz1, 7, brick, ggy, []);
   spWall(ggx0, ggz0, ggx1, ggz0, 7, brick, ggy, []);
@@ -156,7 +158,7 @@
   addCollider(gx, gz, 17);
 
   /* athletic field (east): grass + track oval + goals */
-  var fx = 4285, fz = 2510, fgy = heightAt(fx, fz);
+  var fx = 4285, fz = 2510, fgy = (typeof snapToGround==='function'?snapToGround(fx,fz,10,10,0):heightAt(fx,fz)); /* v1.35 snap */
   spSlab(fx, fz, 44, 36, 0x3d7a3d, fgy, 0.08);
   var trM = new THREE.MeshLambertMaterial({ color: 0x9a5a3a });
   var track = new THREE.Mesh(new THREE.BoxGeometry(40, 0.1, 32), trM);
@@ -171,13 +173,13 @@
   });
 
   /* parking lot (south of main) */
-  spParkingLot(4220, 2560, 44, 20, heightAt(4220, 2560), 2);
+  spParkingLot(4220, 2560, 44, 20, (typeof snapToGround==='function'?snapToGround(4220,2560,44,20,0):heightAt(4220,2560)), 2);
 
   /* driveway: Harwell Rd -> campus */
-  spSlab(4172, 2525, 50, 8, 0x3a3a3e, heightAt(4172, 2525), 0.1);
+  spSlab(4172, 2525, 50, 8, 0x3a3a3e, (typeof snapToGround==='function'?snapToGround(4172,2525,50,8,0):heightAt(4172,2525)), 0.1);
 
   /* monument sign near Harwell Rd */
-  var sgx = 4158, sgz = 2525, sggy = heightAt(sgx, sgz);
+  var sgx = 4158, sgz = 2525, sggy = (typeof snapToGround==='function'?snapToGround(sgx,sgz,2,2,0):heightAt(sgx,sgz)); /* v1.35 snap */
   var sp1 = new THREE.Mesh(new THREE.BoxGeometry(0.5, 2.5, 0.5),
     new THREE.MeshLambertMaterial({ color: 0x6a4a2a }));
   sp1.position.set(sgx, sggy + 1.25, sgz); scene.add(sp1);
@@ -205,7 +207,8 @@
   var cx = 3875, cz = 3952;
   /* v2.0 auto-check: nudge clear of roads if needed (never on road) */
   try{ var _sp3=placeStruct(cx,cz,36,4,'MaysHigh'); if(_sp3){cx=_sp3.x;cz=_sp3.z;} }catch(e){}
-  var gy = heightAt(cx, cz);
+  /* v1.35 SNAP-TO-FACE (Joshua 2026-10-11). */
+  var gy = (typeof snapToGround==='function'?snapToGround(cx,cz,70,20,0):heightAt(cx,cz));
   var x0 = cx - 35, x1 = cx + 35, z0 = cz - 10, z1 = cz + 10;
 
   /* main building (modern, 2 stories — clear of Unnamed St W and I-285 E) */
@@ -239,7 +242,7 @@
   ra.position.set(cx, gy + 10.4, z0 - 0.2); scene.add(ra);
 
   /* gym (north-east of main) */
-  var gx = 3855, gz = 3912, ggy = heightAt(gx, gz);
+  var gx = 3855, gz = 3912, ggy = (typeof snapToGround==='function'?snapToGround(gx,gz,10,10,0):heightAt(gx,gz)); /* v1.35 snap */
   var ggx0 = gx - 15, ggx1 = gx + 15, ggz0 = gz - 12, ggz1 = gz + 12;
   spWall(ggx0, ggz1, ggx1, ggz1, 8, conc, ggy, []);
   spWall(ggx0, ggz0, ggx1, ggz0, 8, conc, ggy, []);
@@ -254,7 +257,7 @@
   addCollider(gx, gz, 17);
 
   /* practice field (west of campus) */
-  var fx = 3740, fz = 3960, fgy = heightAt(fx, fz);
+  var fx = 3740, fz = 3960, fgy = (typeof snapToGround==='function'?snapToGround(fx,fz,10,10,0):heightAt(fx,fz)); /* v1.35 snap */
   spSlab(fx, fz, 80, 48, 0x3d7a3d, fgy, 0.08);
   var wlM = new THREE.MeshBasicMaterial({ color: 0xeeeeee });
   for (var yl = -20; yl <= 20; yl += 10) {
@@ -271,13 +274,13 @@
   });
 
   /* main parking lot (south of main, toward road) */
-  spParkingLot(3875, 3900, 60, 30, heightAt(3875, 3900), 2);
+  spParkingLot(3875, 3900, 60, 30, (typeof snapToGround==='function'?snapToGround(3875,3900,60,30,0):heightAt(3875,3900)), 2);
 
   /* driveway: Benjamin E Mays Dr -> parking */
-  spSlab(3870, 3848, 10, 74, 0x3a3a3e, heightAt(3870, 3848), 0.1);
+  spSlab(3870, 3848, 10, 74, 0x3a3a3e, (typeof snapToGround==='function'?snapToGround(3870,3848,10,74,0):heightAt(3870,3848)), 0.1);
 
   /* monument sign near Benjamin E Mays Dr */
-  var sgx = 3880, sgz = 3820, sggy = heightAt(sgx, sgz);
+  var sgx = 3880, sgz = 3820, sggy = (typeof snapToGround==='function'?snapToGround(sgx,sgz,2,2,0):heightAt(sgx,sgz)); /* v1.35 snap */
   var sp1 = new THREE.Mesh(new THREE.BoxGeometry(0.6, 3, 0.6),
     new THREE.MeshLambertMaterial({ color: 0x6a4a2a }));
   sp1.position.set(sgx - 8, sggy + 1.5, sgz); scene.add(sp1);
