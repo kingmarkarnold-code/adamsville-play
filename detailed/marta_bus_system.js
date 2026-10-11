@@ -82,7 +82,10 @@ var BUS_SPEED     = 22;    // units/sec cruising (slower than trains)
 var DWELL_TIME    = 6;     // seconds stopped at each bus stop
 var BUSES_PER_ROUTE = 2;
 var BRAKE_DIST    = 60;    // start slowing this far from a stop
-var BOARD_RANGE   = 25;    // how close player must be to board
+/* v1.30 BUS BOARDING RULE (Joshua 2026-10-10): player must be AT a bus stop
+   to board — within BOARD_RANGE=10u of the stop (generous: in the vicinity,
+   not standing on the exact sign). Was 25u; tightened per Joshua's spec. */
+var BOARD_RANGE   = 10;    // how close player must be to a bus stop to board
 /* v1.18 SMART STOPS (Joshua 2026-10-09): buses only stop where passengers
    wait — everywhere else they drive through (with a slight "check" slowdown).
    CHECK_DIST = how far out a bus eases off to glance at a stop it will skip.
@@ -240,8 +243,12 @@ function updateBus(b, dt){
          wait — or at a terminus (the bus must still reverse there). Everywhere
          else the bus eases to a "check" crawl inside CHECK_DIST, then drives
          straight through. Boarding stays dwell-only, so riders can only board
-         at serviced stops — real-bus behavior. */
-      var serve=st.waiting||isTerminusStop(b,ni);
+         at serviced stops — real-bus behavior.
+         v1.30 REQUEST-STOP (Joshua 2026-10-10): if the riding player pressed
+         the stop button, the bus serves the NEXT stop even with no waiting
+         riders — otherwise the player could never get off. */
+      var stopReq=(typeof player!=='undefined'&&player.ridingBus===b&&player.busStopRequested);
+      var serve=st.waiting||isTerminusStop(b,ni)||stopReq;
       if (serve){
         if (ds<BRAKE_DIST) target=BUS_SPEED*Math.max(0,(ds-3)/BRAKE_DIST);
         if (ds<5){
@@ -249,7 +256,13 @@ function updateBus(b, dt){
           b.stopIdx=ni; b.speed=0;
           serveStop(st);  // riders boarded: clear the stop's demand + figures
           if (player.ridingBus===b){
-            showToast('Bus '+route.num+' — '+st.name, 2500);
+            /* v1.30: a requested stop means the player gets off here
+               automatically — no toast needed, the exit toast covers it. */
+            if (player.busStopRequested){
+              doExitBusAtStop(b, st);
+            } else {
+              showToast('Bus '+route.num+' — '+st.name, 2500);
+            }
           }
         }
       } else if (ds<CHECK_DIST){
@@ -376,7 +389,9 @@ function updateDemand(){
 
 /* ---------------- boarding / riding ---------------- */
 /* nearestDwellingBus() — closest DWELLING bus (doors open, stopIdx>=0)
-   within BOARD_RANGE=25u of the player. Boarding only at a stopped bus. */
+   whose stop is within BOARD_RANGE=10u of the player. v1.30 (Joshua
+   2026-10-10): boarding only AT a bus stop — the player must be in the
+   stop's vicinity, not just near a bus anywhere on the road. */
 function nearestDwellingBus(){
   if (typeof player==='undefined') return null;
   var best=null, bd=1e18;
@@ -420,28 +435,43 @@ function doBoardBus(b){
   showToast('Riding Bus '+b.route.num+' — '+b.route.name, 2200);
   try{ Report.note('bus-board',{route:b.route.num}); }catch(e){}
 }
-/* busDoExit() — action-button handler: drops the player at the nearest stop
-   on the current route (+4u offset, terrain height), restores the player
-   mesh. Falls back to beside the bus if no stop record exists. */
-window.busDoExit=function(){
-  var b=player.ridingBus;
-  if (!b) return;
-  var best=null, bd=1e18, i, st;
-  for (i=0;i<b.route.stops.length;i++){
-    st=b.route.stops[i];
-    var d=Math.abs(st.s-b.s);
-    if (d<bd){ bd=d; best=st; }
-  }
-  if (best){
-    player.x=best.x+4; player.z=best.z+4;
-    try{ player.mesh.position.y=(best.gy||groundY(best.x,best.z)); }catch(e){}
+/* doExitBusAtStop(b, st) — v1.30: places the player at stop st (+4u offset,
+   terrain height), clears riding state, restores the player mesh. Shared by
+   the immediate exit (bus already dwelling when the button is pressed) and
+   the automatic exit when a requested stop is reached. */
+function doExitBusAtStop(b, st){
+  if (st){
+    player.x=st.x+4; player.z=st.z+4;
+    try{ player.mesh.position.y=(st.gy||groundY(st.x,st.z)); }catch(e){}
   } else {
     player.x=b.x+5; player.z=b.z+5;
   }
   player.ridingBus=null;
+  player.busStopRequested=false;  // v1.30: clear any pending stop request
   try{ player.mesh.visible=true; }catch(e){}
-  showToast(best?best.name:'', 2000);
-  try{ Report.note('bus-exit',{stop:best?best.name:'?'}); }catch(e){}
+  showToast(st?st.name:'', 2000);
+  try{ Report.note('bus-exit',{stop:st?st.name:'?'}); }catch(e){}
+}
+/* busDoExit() — v1.30 REQUEST-STOP (Joshua 2026-10-10): pressing the button
+   while riding no longer drops the player mid-route. If the bus is already
+   dwelling at a stop, the player gets off right there. Otherwise this sets
+   player.busStopRequested — the bus will dwell at the NEXT stop (even with
+   no waiting riders, see updateBus) and the player exits automatically on
+   arrival. */
+window.busDoExit=function(){
+  var b=player.ridingBus;
+  if (!b) return;
+  /* Already dwelling at a stop? Get off now. */
+  if (b.state==='dwell'&&b.stopIdx>=0&&b.route.stops[b.stopIdx]){
+    doExitBusAtStop(b, b.route.stops[b.stopIdx]);
+    return;
+  }
+  /* Bus is moving: request a stop at the next station. */
+  if (!player.busStopRequested){
+    player.busStopRequested=true;
+    showToast('Stopping at next bus stop...', 2500);
+    try{ Report.note('bus-stop-requested',{route:b.route.num}); }catch(e){}
+  }
 };
 /* updateRiding(dt) — while the player rides: position follows the bus
    (+1.0u up on the bus mesh); HUD mode tag shows "BUS <num> — Next: <stop>"
@@ -454,7 +484,9 @@ function updateRiding(dt){
   var nx='END OF LINE';
   if (b.nextStop>=0&&b.route.stops[b.nextStop]) nx=b.route.stops[b.nextStop].name;
   else if (b.state==='dwell'&&b.stopIdx>=0) nx=b.route.stops[b.stopIdx].name+' (doors open)';
-  var want='BUS '+b.route.num+' — Next: '+nx;
+  /* v1.30 (Joshua 2026-10-10): show the pending stop request in the HUD so
+     the player knows the bus will stop at the next station. */
+  var want='BUS '+b.route.num+(player.busStopRequested?' — STOP REQUESTED':'')+' — Next: '+nx;
   try{
     var mt=document.getElementById('mode-tag');
     if (mt&&mt.textContent!==want) mt.textContent=want;
