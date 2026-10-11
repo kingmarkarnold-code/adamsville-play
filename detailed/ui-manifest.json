@@ -88,8 +88,8 @@
     },
     {
       "name": "index.html",
-      "size": 806239,
-      "sha256": "41a4e5e22a5d7c057df3246114de6cd29903d31b2197857d2ced7bfabfa8c6e1"
+      "size": 807340,
+      "sha256": "b7dfd59cbc2870e86aed81656096ba5f2feb5e806d48be50957012914eae0c4f"
     },
     {
       "name": "infracrew_system.js",
@@ -142,9 +142,9 @@
     },
     {
       "name": "npc_system.js",
-      "size": 80793,
-      "sha256": "a69da1422b903dbb18e8d605b2d0e4c3d2a4b0199fe08fd8fed4b12fd1034b47",
-      "hash": "a69da1422b903dbb18e8d605b2d0e4c3d2a4b0199fe08fd8fed4b12fd1034b47",
+      "size": 81103,
+      "sha256": "68ef114ac0a1e6cac0e3424bcd479aa2386f7f14e7de855aa0a9f0231550396a",
+      "hash": "68ef114ac0a1e6cac0e3424bcd479aa2386f7f14e7de855aa0a9f0231550396a",
       "md5": "878bc88ab4f710eab8731b2ea4d4f360"
     },
     {
@@ -329,6 +329,6 @@
       "sha256": "c2ba76e594c5e834eda2c27ffc2d4f156359d11770683b1348c28f086afaeb84"
     }
   ],
-  "ui_version": "2026.10.11.150",
+  "ui_version": "2026.10.11.151",
   "version": "2026.10.11.137"
 }
