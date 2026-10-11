@@ -94,9 +94,9 @@
     },
     {
       "name": "index.html",
-      "size": 844332,
-      "sha256": "2e80b1c03e87416fd649962fdd8bf627952a321a5c1d257eebb8e56dfc6fc02e",
-      "hash": "2e80b1c03e87416fd649962fdd8bf627952a321a5c1d257eebb8e56dfc6fc02e"
+      "size": 847546,
+      "sha256": "18d7448dcc6c2a39381510a10e281f87a5ae3d022ffa1b242a08ec286b725d38",
+      "hash": "18d7448dcc6c2a39381510a10e281f87a5ae3d022ffa1b242a08ec286b725d38"
     },
     {
       "name": "infracrew_system.js",
@@ -372,8 +372,9 @@
     },
     {
       "name": "ui_sounds.js",
-      "size": 7629,
-      "sha256": "abae6f2c81f7aab05f64c5621eb6573671fa0a986cc658dd91fe2a8f011ce7d2"
+      "size": 8332,
+      "sha256": "898fd4b082314cf1670fd8980a33dbd44064fcbae3a6123c002329b8ca49eb08",
+      "hash": "898fd4b082314cf1670fd8980a33dbd44064fcbae3a6123c002329b8ca49eb08"
     },
     {
       "name": "perf_budget.js",
@@ -382,6 +383,6 @@
       "size": 11610
     }
   ],
-  "ui_version": "2026.10.11.177",
+  "ui_version": "2026.10.11.178",
   "version": "2026.10.11.166"
 }

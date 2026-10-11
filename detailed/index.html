@@ -917,10 +917,15 @@ window.Sim=(function(){
     ticks[phase].sort(function(a,b){ return a.p-b.p; });
   }
   /* Run every handler in a phase, in priority order. One bad handler can't
-     stop the rest. */
+     stop the rest.
+     BUG FIX #3 (Team 3 audit 2026-10-11, Joshua approved): iterate a COPY.
+     If any handler calls Sim.onTick() mid-tick, onTick() pushes to the live
+     array and re-sorts it — mutating the array we're iterating causes
+     skipped or double-executed handlers. .slice() snapshots the list. */
   function run(phase, dt){
     var list=ticks[phase], i, t;
     if(!list) return;
+    list=list.slice();
     for(i=0;i<list.length;i++){
       t=list[i];
       try{ t.fn(dt); }
@@ -1777,6 +1782,14 @@ window.__applyCrewMaster = function(on){
      thread. Blue (downloading) -> Green (parsing). The CSS dots animate during
      the freeze (pure @keyframes, no JS needed). Counts from actual data. -->
 <script type="text/x-deferred">
+/* ============================================================================
+   LOADER PROGRESS — honest loading labels (deferred snippet).
+   Runs during the deferred-load phase: stamps boot start (window.__wbT0),
+   counts loaded road segments + buildings for a truthful "Parsing game world:
+   N road segments • M buildings" label, and appends a slow-connection note
+   to the load detail line when downloads took >30s. Every failure is swallowed
+   on purpose — progress reporting must never break the boot.
+   ============================================================================ */
 try{
   window.__wbT0=Date.now();
   /* Count data items for honest labels */
@@ -1840,6 +1853,15 @@ try{
      forceRedownload/autoApplyBootUpdates, removeCollider, resolveCollision,
      __tryStartGame, __autoStart. -->
 <script type="text/x-deferred">
+/* ============================================================================
+   BOOT / VERSION / REPORT BRIDGE (deferred block).
+   - APP_VERSION: single source of truth for the HUD version string (v1.4) —
+     the visible tags below are stamped from here so they can never go stale.
+   - isMobileUI / toast helpers shared by boot and HUD code.
+   - sendReportsToMollie: "Send Reports to Mollie" bridge (Settings ->
+     Administrator) — uploads inspector/crew reports to the repo's reports/.
+   "use strict" is scoped to this block only.
+   ============================================================================ */
 "use strict";
 /* v1.4: single source of truth for the HUD version — bump ONCE per release.
    The tags below are stamped from here so they can never go stale again. */
@@ -3063,6 +3085,14 @@ function heightAt(x, z){
   }catch(e){}
   // fine detail
   h += 0.5*Math.sin(x*0.011)*Math.cos(z*0.009) + 0.25*Math.sin(x*0.031+1.7)*Math.sin(z*0.027+0.6);
+  /* BUG FIX #1 (Team 3 audit 2026-10-11, Joshua approved): NaN guard.
+     heightAt() does complex math (elevation lookup, Gaussian bumps,
+     lift-grid interpolation). One bad input (bad pin, corrupt lift,
+     out-of-range coord) produces NaN/Infinity, which cascades to building
+     placement, player ground snap, vehicle positioning — floating buildings,
+     falling through the world, invisible van (NaN position = invisible mesh).
+     Clamp non-finite results to 0 (sea level baseline). */
+  if (!isFinite(h)) h = 0;
   return h;
 }
 /* v1.12 GROUND CLAMP (no gravity in this game): every vehicle is placed purely
@@ -3146,6 +3176,29 @@ window.__setNpcPaused = function(paused){
       if (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2) {
         window.__weakHardware = true;
         if (window.__perfMode === 'full') window.__perfMode = 'low';
+      }
+    } catch(e){}
+    /* BUG FIX #2 (Team 3 audit 2026-10-11, Joshua approved): user-agent
+       detection for known weak devices. The TCL T513V (Joshua's phone)
+       may not be caught by deviceMemory (not exposed in all WebViews) or
+       hardwareConcurrency (>2 cores). Check the UA string directly for
+       known low-end devices so they boot at HIGH quality instead of FULL,
+       avoiding the ~3s stutter before the auto-stepper kicks in. */
+    try {
+      var _ua = (navigator.userAgent || '').toLowerCase();
+      var _weakPatterns = [
+        'tcl',           // TCL phones (T513V, etc.)
+        'moto e', 'moto g play',  // low-end Motorola
+        'sm-a0', 'sm-a1',          // low-end Samsung A-series (A01, A10, etc.)
+        'redmi 9', 'redmi 10',    // low-end Xiaomi
+        'android 10',             // older Android often = weaker hardware
+      ];
+      for (var _wi = 0; _wi < _weakPatterns.length; _wi++) {
+        if (_ua.indexOf(_weakPatterns[_wi]) >= 0) {
+          window.__weakHardware = true;
+          if (window.__perfMode === 'full') window.__perfMode = 'low';
+          break;
+        }
       }
     } catch(e){}
   } catch(e) {}

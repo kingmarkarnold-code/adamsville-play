@@ -8,8 +8,10 @@
    DESIGN (Joshua's rules honored):
      - 100% PROCEDURAL via the Web Audio API. Zero audio files, zero
        downloads — nothing to cache-bust, nothing to weigh down the TCL.
-     - Own lazy AudioContext (separate from engine_sounds.js — this module
-       must work even if engine sounds are disabled or that file is missing).
+     - SHARED AudioContext (window.__audioCtx) — adopts the context from
+       engine_sounds.js/ambient_audio.js if present, creates and publishes
+       it otherwise. One context for all game audio (BUG FIX #4, 2026-10-11:
+       was a separate third context — wasteful on mobile).
        Created on first user gesture (browser autoplay policy).
      - All sounds are short synthesized blips: oscillator + gain envelope.
        Total CPU per sound: ~50ms of one oscillator. Negligible.
@@ -38,7 +40,13 @@ try{ uiMuted = localStorage.getItem('sa_ui_muted') === '1'; }catch(e){}
 
 /* ---------------- context ---------------- */
 /* ensureCtx() — build the AudioContext on first user gesture.
-   Browsers block AudioContext before a gesture. Safe to call repeatedly. */
+   Browsers block AudioContext before a gesture. Safe to call repeatedly.
+   BUG FIX #4 (Team 3 audit 2026-10-11, Joshua approved): use the SHARED
+   AudioContext (window.__audioCtx) instead of creating a third one.
+   engine_sounds.js and ambient_audio.js already share one context — three
+   live contexts on mobile = memory/GC pressure + browser context caps.
+   Adopt-or-create pattern: use the shared one if it exists and isn't
+   closed, otherwise create it and publish it for others. */
 function ensureCtx(){
   if (ctx){
     try{ if (ctx.state === 'suspended') ctx.resume(); }catch(e){}
@@ -47,7 +55,12 @@ function ensureCtx(){
   try{
     var AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return false;
-    ctx = new AC();
+    if (window.__audioCtx && window.__audioCtx.state !== 'closed'){
+      ctx = window.__audioCtx;
+    } else {
+      ctx = new AC();
+      window.__audioCtx = ctx;
+    }
     hookGestures();
     return true;
   }catch(e){ return false; }
