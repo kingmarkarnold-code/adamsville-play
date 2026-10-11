@@ -41,6 +41,9 @@
    - Game: loaded by play/detailed/index.html (and mirrored to project/www/)
    - Watcher: loaded directly from the published game URL
              (https://kingmarkarnold-code.github.io/adamsville-play/detailed/vehicle_meshes.js)
+             — if the game's download source ever moves to Joshua's own server
+             (see the DOWNLOAD SOURCE ARCHITECTURE comment at the ASSETVER
+             BASE constant in index.html), this watcher URL moves with it.
    Builders take no scene argument and return a THREE.Group — callers add it to
    their own scene. Depends only on global THREE.
    Extracted 2026-10-09: sedan/safari/chevys/pickup/suv from index.html,
@@ -759,3 +762,76 @@ function schoolBusMesh(){
 }
 
 /* ---------------- helpers ---------------- */
+// policeCruiserMesh() — "Surviving Adamsville" APD-STYLE PATROL CRUISER
+// (added 2026-10-10 for the police staffing expansion — Joshua's directive:
+// the force must clear 2-3 simultaneous traffic jams in parallel, so the
+// game fields 8 on-duty cruisers: 4 patrol beats + 3 traffic-assist
+// responders + 1 supervisor).
+//   Stylized sedan-scale cruiser (~1.45m roofline, true scale like
+// sedanMesh): white body, dark-blue door band (APD-style markings), black
+// push bar on the nose, roof light bar with SEPARATE red/blue beacons so
+// police_system.js can alternate-flash them, plus a steady white "takedown"
+// light used while directing traffic at a jam scene.
+//   Conventions (match this file): THREE.Group, BoxGeometry +
+// MeshLambertMaterial, LEFT-hand drive (no interior needed — cruisers are
+// never drivable), userData carries body + light refs. Callers add to scene.
+/* eslint-disable no-unused-vars */
+function policeCruiserMesh(){
+  var g=new THREE.Group();
+  var white=0xf2f4f6, blue=0x1a3a8f, glassC=0x1c2733, trimC=0x14161a;
+  // lower body (white)
+  var body=new THREE.Mesh(new THREE.BoxGeometry(2.0,0.62,4.6),
+    new THREE.MeshLambertMaterial({ color:white }));
+  body.position.y=0.55; g.add(body); g.userData.body=body;
+  // dark-blue door band (APD-style markings, both flanks)
+  [-1,1].forEach(function(s){
+    var band=new THREE.Mesh(new THREE.BoxGeometry(0.06,0.34,2.6),
+      new THREE.MeshLambertMaterial({ color:blue }));
+    band.position.set(s*1.0,0.62,-0.1); g.add(band);
+  });
+  // glasshouse
+  var cab=new THREE.Mesh(new THREE.BoxGeometry(1.75,0.5,2.4),
+    new THREE.MeshLambertMaterial({ color:glassC }));
+  cab.position.set(0,1.12,-0.2); g.add(cab);
+  // hood (white) + trunk lid hint
+  var hood=new THREE.Mesh(new THREE.BoxGeometry(1.9,0.14,1.1),
+    new THREE.MeshLambertMaterial({ color:white }));
+  hood.position.set(0,0.92,1.7); g.add(hood);
+  // push bar on the nose (black, stylized as two verticals + crossbar)
+  var pbm=new THREE.MeshLambertMaterial({ color:trimC });
+  [-0.55,0.55].forEach(function(x){
+    var post=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.5,0.12),pbm);
+    post.position.set(x,0.55,2.36); g.add(post);
+  });
+  var cross=new THREE.Mesh(new THREE.BoxGeometry(1.3,0.12,0.12),pbm);
+  cross.position.set(0,0.72,2.36); g.add(cross);
+  // roof light bar: red beacon (driver/left) + blue beacon (right) as
+  // SEPARATE meshes so police_system.js can alternate-flash them.
+  var barBase=new THREE.Mesh(new THREE.BoxGeometry(1.5,0.1,0.3),
+    new THREE.MeshLambertMaterial({ color:trimC }));
+  barBase.position.set(0,1.42,0.1); g.add(barBase);
+  var redB=new THREE.Mesh(new THREE.BoxGeometry(0.55,0.22,0.26),
+    new THREE.MeshLambertMaterial({ color:0xff2222 }));
+  redB.position.set(-0.42,1.58,0.1); g.add(redB);
+  var blueB=new THREE.Mesh(new THREE.BoxGeometry(0.55,0.22,0.26),
+    new THREE.MeshLambertMaterial({ color:0x2244ff }));
+  blueB.position.set(0.42,1.58,0.1); g.add(blueB);
+  // takedown light (steady white, on while directing traffic at a scene)
+  var take=new THREE.Mesh(new THREE.BoxGeometry(1.1,0.1,0.12),
+    new THREE.MeshLambertMaterial({ color:0xffffff }));
+  take.position.set(0,1.5,0.32); take.visible=false; g.add(take);
+  // wheels
+  var wg=new THREE.CylinderGeometry(0.34,0.34,0.3,10);
+  var wm=new THREE.MeshLambertMaterial({ color:0x181818 });
+  [[0.95,1.5],[-0.95,1.5],[0.95,-1.5],[-0.95,-1.5]].forEach(function(p){
+    var w=new THREE.Mesh(wg,wm); w.rotation.z=Math.PI/2;
+    w.position.set(p[0],0.34,p[1]); g.add(w);
+  });
+  // refs for police_system.js
+  g.userData.redBeacon=redB;    // flash while responding / directing
+  g.userData.blueBeacon=blueB;  // alternate with redBeacon
+  g.userData.takedown=take;     // steady-on while directing at a scene
+  g.userData.lightBar={ visible:true };  // compat flag (some systems probe it)
+  return g;
+}
+/* eslint-enable no-unused-vars */
