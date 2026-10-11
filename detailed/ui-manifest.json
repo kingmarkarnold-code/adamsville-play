@@ -94,9 +94,9 @@
     },
     {
       "name": "index.html",
-      "size": 839604,
-      "sha256": "3726a0ada641f0f3f7f74165da5f321fdb7f53186b4c86c15eda96129ee4cf33",
-      "hash": "3726a0ada641f0f3f7f74165da5f321fdb7f53186b4c86c15eda96129ee4cf33"
+      "size": 842820,
+      "sha256": "10d25914c10fd0d3288c8c78f5b369a9d0508ccfd8ae8fc9ccb81e47aeea6763",
+      "hash": "10d25914c10fd0d3288c8c78f5b369a9d0508ccfd8ae8fc9ccb81e47aeea6763"
     },
     {
       "name": "infracrew_system.js",
@@ -363,8 +363,14 @@
       "size": 22821,
       "sha256": "8058d96d5ed000d73f16fe03f53bee161f5fec1765bbea4dedd5e85ec990e7e8",
       "hash": "8058d96d5ed000d73f16fe03f53bee161f5fec1765bbea4dedd5e85ec990e7e8"
+    },
+    {
+      "name": "ambient_audio.js",
+      "size": 14143,
+      "sha256": "7885e8a6a851d9dd1bf11a01b676b1a71fd37d121fcd938af00f570b0704814e",
+      "hash": "7885e8a6a851d9dd1bf11a01b676b1a71fd37d121fcd938af00f570b0704814e"
     }
   ],
-  "ui_version": "2026.10.11.172",
+  "ui_version": "2026.10.11.174",
   "version": "2026.10.11.166"
 }

@@ -558,6 +558,8 @@
   <button class="row" id="set-help">How to play</button>
   <button class="row" id="set-music">Music: ON</button>
   <button class="row" id="set-engine">Engine sounds: ON</button>
+  <!-- EXPERT #39 (2026-10-11): UI sounds toggle. -->
+  <button class="row" id="set-uisounds">UI sounds: ON</button>
   <!-- v1.12.10: "View report" button removed per Joshua — reports go to GitHub now. -->
   <button class="row" id="set-record">Record: OFF</button>
   <button class="row" id="set-gameplay">Gameplay &#9654;</button>
@@ -7634,16 +7636,68 @@ var XFADE_MS = 2500;   /* crossfade duration: 2.5 seconds */
     }
   });
 })();
-musicAudio.volume=0.35;   // modest — sits under the game
-musicAudio.preload='auto';
+/* EXPERT #39: Apply volume + preload to both crossfade elements. */
+musicAudioA.volume=MUSIC_VOL;
+musicAudioB.volume=0;  /* inactive starts silent */
+musicAudioA.preload='auto';
+musicAudioB.preload='auto';
+/* musicAudio.volume=0.35; — REPLACED by dual-element setup above */
+/* musicAudio.preload='auto'; — REPLACED by dual-element setup above */
 var musicMode='walk', radioIdx=0, musicStarted=false, musicMuted=false;
 try{ musicMuted=localStorage.getItem('sa_music_muted')==='1'; }catch(e){}
 try{ radioIdx=parseInt(localStorage.getItem('sa_radio_idx')||'0',10)||0; }catch(e){}
 if(radioIdx<0||radioIdx>=RADIO_TRACKS.length) radioIdx=0;
+/* ============================================================================
+   EXPERT #39 CROSSFADE playSrc (2026-10-11):
+   Instead of hard-cutting (old code: musicAudio.src=src), this crossfades:
+   the new track loads into the inactive element, fades in over 2.5s while
+   the old track fades out. Same src = no-op (avoids restart churn).
+   ============================================================================ */
+function playSrc(src){
+  /* Same track already playing — don't restart. */
+  try{
+    if (musicAudio.src && musicAudio.src.indexOf(src) !== -1 && !musicAudio.paused)
+      return;
+  }catch(e){}
+  var outgoing = musicAudio;       /* currently audible */
+  var incoming = _musicInactive;   /* will fade in */
+  /* Swap so musicAudio always points to the audible element. */
+  musicAudio = incoming;
+  _musicInactive = outgoing;
+  /* Load and play the new track on the incoming element. */
+  try{ incoming.pause(); }catch(e){}
+  incoming.volume = 0;
+  incoming.src = src;
+  /* Attach ended/error to the incoming element (each element needs its own). */
+  /* (Listeners are attached once at setup below — both elements covered.) */
+  if(!musicMuted){
+    try{
+      var p = incoming.play();
+      if(p && p.catch) p.catch(function(){});
+    }catch(e){}
+  }
+  /* Crossfade: incoming fades 0→MUSIC_VOL, outgoing fades →0 then pauses. */
+  var steps = 25;  /* 25 steps × 100ms = 2.5s */
+  var step = 0;
+  var fadeTimer = setInterval(function(){
+    step++;
+    var k = step / steps;  /* 0→1 */
+    try{ incoming.volume = Math.min(MUSIC_VOL, MUSIC_VOL * k); }catch(e){}
+    try{ outgoing.volume = Math.max(0, MUSIC_VOL * (1 - k)); }catch(e){}
+    if (step >= steps){
+      clearInterval(fadeTimer);
+      try{ outgoing.pause(); }catch(e){}
+      try{ outgoing.volume = 0; }catch(e){}
+      try{ incoming.volume = musicMuted ? 0 : MUSIC_VOL; }catch(e){}
+    }
+  }, 100);
+}
+/* OLD playSrc (hard cut) — REPLACED by crossfade above:
 function playSrc(src){
   musicAudio.src=src;
   if(!musicMuted){ try{ var p=musicAudio.play(); if(p&&p.catch) p.catch(function(){}); }catch(e){} }
 }
+*/
 function updateRadioUI(){
   var r=document.getElementById('radio');
   if(!r) return;
@@ -7674,14 +7728,31 @@ function radioNext(d){
   updateRadioUI();
   try{ Report.note('music',{mode:'radio',track:radioIdx}); }catch(e){}
 }
-musicAudio.addEventListener('ended', function(){
+/* EXPERT #39: Attach ended/error to BOTH crossfade elements.
+   Whichever element is audible when a track ends fires the handler. */
+[musicAudioA, musicAudioB].forEach(function(el){
+el.addEventListener('ended', function(){
+  /* Only respond if this was the active (audible) element. */
+  if (el !== musicAudio) return;
   if(musicMode==='walk') playSrc(WALK_TRACK);  // walking song loops forever
   else radioNext(1);                          // radio auto-advances
+});
+el.addEventListener('error', function(){
+  if (el !== musicAudio) return;
+  try{Report.noteError('music','track failed, skipping',musicMode+':'+radioIdx);}catch(e){}
+  if(musicMode==='walk') playSrc(WALK_TRACK); else radioNext(1);
+});
+});
+/* OLD single-element listeners — REPLACED by dual-element loop above.
+musicAudio.addEventListener('ended', function(){
+  if(musicMode==='walk') playSrc(WALK_TRACK);
+  else radioNext(1);
 });
 musicAudio.addEventListener('error', function(){
   try{Report.noteError('music','track failed, skipping',musicMode+':'+radioIdx);}catch(e){}
   if(musicMode==='walk') playSrc(WALK_TRACK); else radioNext(1);
 });
+*/
 function musicStartOnce(){
   if(musicStarted) return; musicStarted=true;
   if(car&&car.driving) musicToRadio(); else musicToWalk();
@@ -7699,7 +7770,11 @@ function updateMusicBtn(){
 function setMusicMuted(m){
   musicMuted=m;
   try{ localStorage.setItem('sa_music_muted', m?'1':'0'); }catch(e){}
-  if(m){ try{ musicAudio.pause(); }catch(e){} }
+  /* EXPERT #39: Mute/unmute BOTH crossfade elements. */
+  if(m){
+    try{ musicAudioA.pause(); }catch(e){}
+    try{ musicAudioB.pause(); }catch(e){}
+  }
   else if(musicStarted){
     // resume whichever context is live
     try{ var p=musicAudio.play(); if(p&&p.catch) p.catch(function(){}); }catch(e){}
@@ -10309,6 +10384,7 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <script data-dsrc="gps_system.js" data-dkey=""></script>
 <!-- v1.54 #37 ENGINE SOUNDS (Michael Torres, Audio - Joshua approved fix, expanded: all drivable vehicles + buses/trains/trucks/crews) -->
 <script data-dsrc="engine_sounds.js" data-dkey=""></script>
+<script data-dsrc="ui_sounds.js" data-dkey=""></script>
 <script data-dsrc="traffic_assist.js" data-dkey="trafficassist"></script>
 <script data-dsrc="residential_detail.js" data-dkey=""></script>
 <script data-dsrc="semi_system.js" data-dkey="semis"></script>
