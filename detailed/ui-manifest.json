@@ -69,10 +69,10 @@
     },
     {
       "name": "index.html",
-      "size": 764960,
-      "sha256": "7390217267473badbae5fce36d78ece133cec4b91dbcfe5763f5409b657de5ec",
-      "hash": "7390217267473bad",
-      "md5": "1bde648123f4ff8e12db651ecb78de3f"
+      "size": 765043,
+      "sha256": "0fd993303416276e3b0729235caf7ebe5ed0607250876fa18382d70c70faf878",
+      "hash": "0fd993303416276e",
+      "md5": "16a54e41c78e70aa0bdbf6c201f62a70"
     },
     {
       "name": "infracrew_system.js",
@@ -289,8 +289,22 @@
       "size": 7840,
       "sha256": "682c3ff82dccfd4e6b914e41068dab46fff4dc8cab2461325c58e91fe1f7eec8",
       "hash": "682c3ff82dccfd4e"
+    },
+    {
+      "name": "github-config.js",
+      "size": 3468,
+      "sha256": "668e9fd896b2f7b1255b102554e45d4d82347441b6ad274eb608b32851c2a037",
+      "hash": "668e9fd896b2f7b1",
+      "md5": "bc910c3337a23a0f354798247c4b9717"
+    },
+    {
+      "name": "github_reports.js",
+      "size": 14104,
+      "sha256": "91806c24b2f1beddd3bd859fb2960ef60b03f42647cd0966bb0ea52f82011c87",
+      "hash": "91806c24b2f1bedd",
+      "md5": "2c2b3a3eb8844da4922af709f35628e5"
     }
   ],
-  "ui_version": "2026.10.10.125",
-  "version": "2026.10.10.125"
+  "ui_version": "2026.10.10.126",
+  "version": "2026.10.10.126"
 }
