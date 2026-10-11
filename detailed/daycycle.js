@@ -160,15 +160,36 @@ function init(){
   scene.add(rain);
   DC.rain=rain; DC.rainPos=rPos;
 
-  /* --- HUD clock: DAY 1 MON 07:08 + weather + season --- */
+  /* --- HUD clock: DAY 1 MON 07:08 + weather + season ---
+     EXPERT REPORT #29 (Maya Patel, UI/UX): the old narrow-screen position
+     (top:64px, centered) visually covered the contextual action button
+     (#action-btn at top:60px right:8px) on phones — the HUD pill is ~270px
+     wide centered, the action button sits under its right half (z-index 50
+     renders above the button's z-index 11). Taps passed through
+     (pointer-events:none) but the button was obscured.
+     FIX: on narrow screens the HUD now sits at top:144px — below the whole
+     top control cluster (action button ends ~116px, ce-btn/rc-btn end
+     ~136px in portrait). Desktop keeps top:8px. A resize listener keeps
+     the position correct across rotation (it was previously evaluated
+     once at load). Joshua's rule: documentation comments on all changes. */
   var hud=document.createElement('div');
   hud.id='daycycle-hud';
-  var _narrow=(typeof window!=='undefined'&&window.innerWidth<600);
-  hud.style.cssText='position:fixed;'+(_narrow?'top:64px;':'top:8px;')+
-    'left:50%;transform:translateX(-50%);'+
-    'background:rgba(20,24,32,0.72);color:#fff;font:600 15px system-ui,sans-serif;'+
-    'padding:6px 16px;border-radius:14px;z-index:50;pointer-events:none;'+
-    'letter-spacing:1px;white-space:nowrap;';
+  /* v1.50 EXPERT #29: position function so rotation/resize re-evaluates. */
+  function placeDayHud(){
+    var _narrow=(typeof window!=='undefined'&&window.innerWidth<600);
+    hud.style.cssText='position:fixed;'+(_narrow?'top:144px;':'top:8px;')+
+      'left:50%;transform:translateX(-50%);'+
+      'background:rgba(20,24,32,0.72);color:#fff;font:600 15px system-ui,sans-serif;'+
+      'padding:6px 16px;border-radius:14px;z-index:50;pointer-events:none;'+
+      'letter-spacing:1px;white-space:nowrap;';
+  }
+  placeDayHud();
+  try{
+    if(typeof window!=='undefined'){
+      window.addEventListener('resize',placeDayHud);
+      window.addEventListener('orientationchange',placeDayHud);
+    }
+  }catch(e){}
   document.body.appendChild(hud);
   DC.hud=hud;
 
