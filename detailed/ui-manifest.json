@@ -94,9 +94,9 @@
     },
     {
       "name": "index.html",
-      "size": 838670,
-      "sha256": "b8bbc19aeb817fdfd70725b70e8f367f83c12cabacd935138c1082edd776ad38",
-      "hash": "b8bbc19aeb817fdfd70725b70e8f367f83c12cabacd935138c1082edd776ad38"
+      "size": 839604,
+      "sha256": "3726a0ada641f0f3f7f74165da5f321fdb7f53186b4c86c15eda96129ee4cf33",
+      "hash": "3726a0ada641f0f3f7f74165da5f321fdb7f53186b4c86c15eda96129ee4cf33"
     },
     {
       "name": "infracrew_system.js",
@@ -357,8 +357,14 @@
       "size": 19868,
       "sha256": "8afaf325fe2488f72f91c633fe2403ce046b012c6ddee1925f3e925ba5dd3bf0",
       "hash": "8afaf325fe2488f72f91c633fe2403ce046b012c6ddee1925f3e925ba5dd3bf0"
+    },
+    {
+      "name": "engine_sounds.js",
+      "size": 22821,
+      "sha256": "8058d96d5ed000d73f16fe03f53bee161f5fec1765bbea4dedd5e85ec990e7e8",
+      "hash": "8058d96d5ed000d73f16fe03f53bee161f5fec1765bbea4dedd5e85ec990e7e8"
     }
   ],
-  "ui_version": "2026.10.11.170",
+  "ui_version": "2026.10.11.172",
   "version": "2026.10.11.166"
 }

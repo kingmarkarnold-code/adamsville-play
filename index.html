@@ -7591,7 +7591,20 @@ var RADIO_TRACKS=[
   {src:'music/vaitsez-aggressive-bass-beat-565491_011939_10_1zrr.mp3',name:'Aggressive Bass'},
   {src:'music/tunetank-inspiring-cinematic-music-409347_012013_11_i25z.mp3',name:'Inspiring Cinematic'}
 ];
-var musicAudio=new Audio();
+/* ============================================================================
+   EXPERT #39 CROSSFADE (2026-10-11, Michael Torres — Joshua approved "Fix 39"):
+   Dual Audio elements with 2.5-second crossfade. When switching tracks, the
+   old track fades out while the new one fades in — no more hard cuts.
+   `musicAudio` always points to the CURRENTLY AUDIBLE element for backward
+   compatibility with existing code (volume, pause, ended/error listeners).
+   ============================================================================ */
+var musicAudioA = new Audio();
+var musicAudioB = new Audio();
+var musicAudio = musicAudioA;  /* active element — always the audible one */
+var _musicInactive = musicAudioB;  /* the other one, used for fade-in */
+var MUSIC_VOL = 0.35;  /* modest — sits under the game */
+var XFADE_MS = 2500;   /* crossfade duration: 2.5 seconds */
+/* var musicAudio=new Audio(); — REPLACED by dual-element crossfade above */
 /* v1.20 PERFORMANCE (Joshua 2026-10-10): Browser autoplay policy blocks audio
    until user interacts. Unlock on first click/keydown/touch so music starts. */
 (function unlockAudio(){
