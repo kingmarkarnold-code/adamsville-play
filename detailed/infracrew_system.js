@@ -474,7 +474,7 @@ function dispatchCrew(d){
   var px=hz, pz=-hx;
   var grp=new THREE.Group();
   /* v1.30: job sites start hidden — updateJobs() shows them only when
-     the player is within 300u (Joshua's crew render rule). */
+     the player is within 200u (Joshua's crew render rule). */
   grp.visible=false;
   scene.add(grp);
   /* truck parked to the side */
@@ -636,14 +636,15 @@ function icFixTick(j, dt){
    the legacy timing. */
 function updateJobs(dt){
   /* v1.30 CREW RENDER RULE (Joshua 2026-10-10): job sites render ONLY when
-     the player is nearby (within 300u). Otherwise pure data — no graphics.
+     the player is nearby (within 200u — ~2 football fields, per Joshua's
+     visibility rule 2026-10-10). Otherwise pure data — no graphics.
      Throttled to ~2Hz; the repair logic itself runs every frame. */
   IC._jobVisT=(IC._jobVisT||0)+dt;
   var _doJobVis=IC._jobVisT>0.5;
   if (_doJobVis) IC._jobVisT=0;
   var _px=0,_pz=0;
   try{ _px=player.x; _pz=player.z; }catch(e){}
-  var _show2=300*300;
+  var _show2=200*200;
   for (var i=IC.jobs.length-1;i>=0;i--){
     var j=IC.jobs[i];
     if (_doJobVis && j && j.group && j.issue){
