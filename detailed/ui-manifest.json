@@ -8,8 +8,8 @@
     },
     {
       "name": "bird_drones.js",
-      "sha256": "76cf92e432f7dc88522e9f6d548b21d3a6f19c6338699fbad062589085d4e22e",
-      "size": 13476
+      "size": 13476,
+      "sha256": "76cf92e432f7dc88522e9f6d548b21d3a6f19c6338699fbad062589085d4e22e"
     },
     {
       "name": "cityworkforce.js",
@@ -28,7 +28,7 @@
       "size": 67742,
       "sha256": "63344fb7827e627e4cb97dbd40700c06ddcf2e5f81577f0bfd41ad7f894aa163",
       "hash": "63344fb7827e627e4cb97dbd40700c06ddcf2e5f81577f0bfd41ad7f894aa163",
-      "md5": "4aa5386be2b850020c2206949d27b14d"
+      "md5": "00fb519414f69337eb25e73da2e2e9c6"
     },
     {
       "name": "daycycle.js",
@@ -88,20 +88,20 @@
     },
     {
       "name": "index.html",
-      "sha256": "dde367eadb83f74613aee0ce491866a210ebe36ce6e7da3a9e8b6565a64f21c5",
-      "size": 803166
+      "size": 806239,
+      "sha256": "41a4e5e22a5d7c057df3246114de6cd29903d31b2197857d2ced7bfabfa8c6e1"
     },
     {
       "name": "infracrew_system.js",
       "size": 39943,
       "sha256": "e8fa85d383cf14549c78e8569ddf2b26dae46b59a12822858391e09025840af6",
       "hash": "e8fa85d383cf14549c78e8569ddf2b26dae46b59a12822858391e09025840af6",
-      "md5": "27bdf303edc6ada9a08d45bd23cfdb8d"
+      "md5": "c51f937b485f9664e21206168930136c"
     },
     {
       "name": "inspector_crew.js",
-      "sha256": "0b4a5be7491d8a194d47f6a8098756928f4b3ba575a4509da2b075eff2db69cb",
-      "size": 22784
+      "size": 22784,
+      "sha256": "0b4a5be7491d8a194d47f6a8098756928f4b3ba575a4509da2b075eff2db69cb"
     },
     {
       "name": "marriott.js",
@@ -132,7 +132,7 @@
       "size": 36066,
       "sha256": "5cb7fef392284a468d529d0415272ddb804e6b722c714861d35f4e7a1b082059",
       "hash": "5cb7fef392284a468d529d0415272ddb804e6b722c714861d35f4e7a1b082059",
-      "md5": "1bbd69a3c667816e2f725791b2abf207"
+      "md5": "ffaf377120eee165b605225e4649621b"
     },
     {
       "name": "mlk_fairburn.js",
@@ -145,7 +145,7 @@
       "size": 73667,
       "sha256": "de26025c7d7c4bfb6cbe59d1a7a40ce975a2740d584d500dcb65173cb9aa8c33",
       "hash": "de26025c7d7c4bfb6cbe59d1a7a40ce975a2740d584d500dcb65173cb9aa8c33",
-      "md5": "74c61bcf80b5d3049cd7fd8a533d86d9"
+      "md5": "878bc88ab4f710eab8731b2ea4d4f360"
     },
     {
       "name": "poi_map.js",
@@ -182,7 +182,7 @@
       "size": 59813,
       "sha256": "573361f4b2d9cc31902e69ba662b4f84df7439dce0763bd4a44aa3ff0fa56791",
       "hash": "573361f4b2d9cc31902e69ba662b4f84df7439dce0763bd4a44aa3ff0fa56791",
-      "md5": "b87502f75fe77712be16159d42fd85c6"
+      "md5": "55e06b2a8ddafd32eab5ba19967aabfe"
     },
     {
       "name": "roadfix.js",
@@ -255,7 +255,7 @@
       "size": 60919,
       "sha256": "3e0621b4cbb69469e6d3f936c4bd4a90747e5fc4745654d0df965649de66c650",
       "hash": "3e0621b4cbb69469e6d3f936c4bd4a90747e5fc4745654d0df965649de66c650",
-      "md5": "f8a23069df5031490b569bdfb6849544"
+      "md5": "c66f040994fa70662edc11de95a18f90"
     },
     {
       "name": "terrainfix.js",
@@ -277,16 +277,16 @@
     },
     {
       "name": "traffic_system.js",
-      "size": 50025,
-      "sha256": "00b6ef149f73bde192d14a96b7e1d2330f9f92c0af13bd531c9c862a2ee5b257",
-      "hash": "00b6ef149f73bde192d14a96b7e1d2330f9f92c0af13bd531c9c862a2ee5b257",
-      "md5": "0052cc7f86f52f31c79b798bf8a31af0"
+      "size": 63827,
+      "sha256": "ae002846242790b8b18f4aa0a908b610a37976f5d68239dd62a9005d94ca7c79",
+      "hash": "ae002846242790b8b18f4aa0a908b610a37976f5d68239dd62a9005d94ca7c79",
+      "md5": "0be38ba630fbabd3f1b9c2ecd7883b8d"
     },
     {
       "name": "vehicle_avoid.js",
-      "size": 9079,
-      "sha256": "f34d8c33cf857ce5800bfcfb67bc8fba1e4359aff6a76aca39ec98cbfb49134c",
-      "hash": "f34d8c33cf857ce5800bfcfb67bc8fba1e4359aff6a76aca39ec98cbfb49134c"
+      "size": 15488,
+      "sha256": "57a3efa459bd20d004da4231f40cea1248dd1b5e0175ada9c6ef125983053c2b",
+      "hash": "57a3efa459bd20d004da4231f40cea1248dd1b5e0175ada9c6ef125983053c2b"
     },
     {
       "name": "veteran_crew.js",
@@ -302,9 +302,8 @@
     },
     {
       "name": "zoneloader.js",
-      "sha256": "36cabfe3ffd317188f31d3ade0f4bb3aba7aff7a81ae0f9b231fdb6334e50ebe",
       "size": 8521,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zoneloader.js",
+      "sha256": "36cabfe3ffd317188f31d3ade0f4bb3aba7aff7a81ae0f9b231fdb6334e50ebe",
       "hash": "36cabfe3ffd317188f31d3ade0f4bb3aba7aff7a81ae0f9b231fdb6334e50ebe"
     },
     {
@@ -321,10 +320,15 @@
     },
     {
       "name": "visual_inspect.js",
-      "sha256": "ac7b7c70a23514d7e55bf996ed8f5ab549cbfab36db5969b74475d911b5ae8e4",
-      "size": 13217
+      "size": 13217,
+      "sha256": "ac7b7c70a23514d7e55bf996ed8f5ab549cbfab36db5969b74475d911b5ae8e4"
+    },
+    {
+      "name": "terrain_heights_adamsville_600x800.bin",
+      "size": 1925604,
+      "sha256": "c2ba76e594c5e834eda2c27ffc2d4f156359d11770683b1348c28f086afaeb84"
     }
   ],
-  "ui_version": "2026.10.11.147",
+  "ui_version": "2026.10.11.148",
   "version": "2026.10.11.137"
 }
