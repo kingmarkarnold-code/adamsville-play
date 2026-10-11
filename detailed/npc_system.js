@@ -1471,7 +1471,11 @@ function updateNPCs(dt, playerPos){
     var i;
     try{ npcFaceTick(dt,px,pz); }catch(e){}   // v1.14: NPCs turn to face a nearby player
     if ((npcTick%15)===0){ try{ transitTick(); }catch(e){} }  // v1.17: transit commuters (staggered)
-    rebuildNpcHash();   // v1.20: NPC-NPC collision spatial hash (persistent arrays, zero garbage)
+    /* v1.28 PERF (FIX 4): rebuildNpcHash() every 4th frame instead of every
+       frame. NPCs move slowly (walk speed ~1.4u/s = ~0.02u/frame), so a hash
+       that's 3 frames stale is still accurate to <0.1u — far below the 4u
+       cell size. Cuts 1,000 rehashes/sec to 250 on 60fps. */
+    if ((npcTick%4)===0){ rebuildNpcHash(); }   // v1.20: NPC-NPC collision spatial hash (persistent arrays, zero garbage)
     // v1.15 DISTANCE CULLING (Joshua 2026-10-10): skip AI for NPCs beyond
     // cull distance — massive perf win on low-end phones. Culled NPCs freeze
     // in place (no AI, no movement) until player gets closer.
