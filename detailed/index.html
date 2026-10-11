@@ -8232,9 +8232,11 @@ function initProximityTrackers(){
     filter:function(t){ return t.state==='dwell'&&t.stopIdx>=0&&t.line&&t.line.stops; },
     posOf:function(t){ var st=t.line.stops[t.stopIdx]; return {x:st.x, z:st.z}; }
   });
-  /* MARTA buses: 25u BOARD_RANGE to the DWELLING bus's stop. */
+  /* MARTA buses: 10u BOARD_RANGE to the DWELLING bus's stop.
+     v1.30 (Joshua 2026-10-10): player must be AT a bus stop to board —
+     within 10u of the stop (in the vicinity, not on the exact sign). */
   proxBuses=new ProximityTracker({
-    radius:25,
+    radius:10,
     list:function(){ return (typeof MB!=='undefined'&&MB&&MB.buses)?MB.buses:[]; },
     filter:function(b){ return b.state==='dwell'&&b.stopIdx>=0&&b.route&&b.route.stops; },
     posOf:function(b){ var st=b.route.stops[b.stopIdx]; return {x:st.x, z:st.z}; }
@@ -8314,7 +8316,13 @@ function updateActionButton(){
       /* v1.29: riding states are direct flags — no scan needed. (Old code
          reached these via martaCheckBoard()/busCheckBoard(); same result.) */
       if (player.ridingTrain){ act='exit-train'; label='EXIT TRAIN'; }
-      else if (player.ridingBus){ act='exit-bus'; label='EXIT BUS'; }
+      /* v1.30 REQUEST-STOP (Joshua 2026-10-10): the bus button is now a
+         stop request, not an instant exit. Shows the pending state so the
+         player knows the bus will stop at the next station. */
+      else if (player.ridingBus){
+        if (player.busStopRequested){ act='exit-bus'; label='STOP REQUESTED'; }
+        else { act='exit-bus'; label='REQUEST STOP'; }
+      }
       if (!act){
         /* v1.29: nearest usable car comes from the tracker (4.5u radius,
            wrecks/sunk/driven filtered at track time). */
