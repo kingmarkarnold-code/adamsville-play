@@ -279,8 +279,18 @@ function stepSemi(s,dt){
       if (window.VehicleAvoid &&
           VehicleAvoid.blockedAhead(s.x,s.z,Math.sin(s.heading),Math.cos(s.heading),s,26,1.5,false)){
         s.speed=Math.max(0,s.speed-40*dt);   // firm brake toward a hold
-        if (s.speed<0.5) s.vehWait=true;
-      }
+        if (s.speed<0.5){
+          s.vehWait=true;
+          /* v1.32 WAIT TIMEOUT (Joshua 2026-10-10): semis wait, but not
+             forever. After WAIT_S at a hold, radio traffic assistance for
+             the queue behind. Semis never overtake — 40 tons. */
+          s.waitVehT=(s.waitVehT||0)+dt;
+          if (window.TrafficAssist && s.waitVehT>TrafficAssist.WAIT_S && !s.assistReq){
+            s.assistReq=true;
+            TrafficAssist.request({x:s.x, z:s.z, yaw:s.heading, ref:s, kind:'semi'});
+          }
+        }
+      } else { s.waitVehT=0; s.assistReq=false; }
     }catch(e){}
   }
   if (!done && (s.state==='i20_in'||s.state==='fib_out'||s.state==='fib_back'||s.state==='i20_out')){
