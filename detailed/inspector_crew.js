@@ -110,6 +110,8 @@ function _gY(x,z){
   }catch(e){}
   try{
     if (typeof heightAt==='function'){
+      /* v1.35 SNAP-TO-FACE (Joshua 2026-10-11). */
+      try{ if(typeof snapToGround==='function'){ var sh=snapToGround(x,z,0,0,0); if(isFinite(sh)) return sh; } }catch(_){}
       var h=heightAt(x,z); if (isFinite(h)) return h;
     }
   }catch(e){}
@@ -457,6 +459,23 @@ function runScan(rec){
           Math.round(zc.x||0)+','+Math.round(zc.z||0)+')',
           zc.x||0, zc.z||0);
         break;
+      }
+    }
+  }catch(e){}
+  /* --- 6. VISUAL/MATERIAL DEFECTS (Joshua 2026-10-11):
+         "That's what the inspectors and the drones are to look for.
+         Mistakes in material, textures, and the whole visual."
+         Ground-level detailed scan via window.VisualInspect. */
+  try{
+    if (window.VisualInspect && typeof window.VisualInspect.scanGround==='function'){
+      var vdefs=window.VisualInspect.scanGround(sx, sz, SCAN_R)||[];
+      /* Cap visual findings per scan so one bad area doesn't spam. */
+      var vmax=Math.min(vdefs.length, 4);
+      for (var v=0;v<vmax;v++){
+        var vd=vdefs[v];
+        if (!vd) continue;
+        addFinding(rec, 'visual-'+(vd.type||'defect'),
+          '[visual] '+(vd.msg||'visual defect'), vd.x, vd.z);
       }
     }
   }catch(e){}
