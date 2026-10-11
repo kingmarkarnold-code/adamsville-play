@@ -1007,8 +1007,10 @@ window.__launcherConfirmed = false;  // set true when user hits START GAME
    player to confirm. __whenConfirmed(fn) runs fn immediately if the player
    already confirmed, otherwise queues it. __flushConfirmQueue() runs the
    queue — called from both confirm paths (START GAME click and the 30s
-   auto-confirm fallback). The <script src> downloads are exempt: the page
-   cannot render the options UI without its own code. */
+   auto-confirm fallback).
+   v1.29 (Joshua 2026-10-11): <script src> tags are NO LONGER exempt. All
+   game/data scripts use data-dsrc and load via __loadDeferredQueue() only
+   after confirmation. The options screen needs only this inline block. */
 window.__confirmQueue = [];
 window.__whenConfirmed = function(fn){
   try{
@@ -9147,24 +9149,25 @@ setTimeout(function(){
    __tryStartGame() call silently returns false at the __launcherConfirmed
    gate. The auto-confirm only fires when assets are fully loaded, so it
    can never start a half-built world. */
+/* v1.29 DEFERRED (Joshua 2026-10-11): auto-confirm no longer waits for load
+   steps — with deferred loading, NO steps complete until AFTER confirmation.
+   Waiting would deadlock. Instead, auto-confirm triggers the deferred queue
+   via __flushConfirmQueue, and __loadDeferredQueue calls __tryStartGame when
+   all scripts are ready. */
 setTimeout(function(){
   try{
     if (window.__launcherConfirmed || window.__gameStarted) return;
-    if (typeof window.__loadOrder === 'undefined' || typeof window.__loadDone === 'undefined') return;
-    var pending=0, i;
-    for(i=0;i<window.__loadOrder.length;i++){
-      if(!window.__loadDone[window.__loadOrder[i]]) pending++;
-    }
-    if(pending>0) return;  // assets still arriving — don't auto-confirm yet
     window.__launcherConfirmed = true;
-    /* v1.28: auto-confirmed — release any deferred network fetches. */
+    /* v1.28: auto-confirmed — release deferred fetches AND deferred scripts. */
     try{ if(typeof window.__flushConfirmQueue==='function') window.__flushConfirmQueue(); }catch(e){}
     try { if (typeof window.__saveLaunchOpts === 'function') window.__saveLaunchOpts(); } catch(e){}
     var launcher=document.getElementById('launcher');
     if(launcher) launcher.classList.add('hidden');
     var st=document.getElementById('load-status');
     if(st){ st.textContent='Starting…'; st.style.opacity='1'; }
-    if(typeof __tryStartGame==='function'){ try{ __tryStartGame(); }catch(e){} }
+    /* v1.29: don't call __tryStartGame directly — game scripts are deferred.
+       Set the flag; __loadDeferredQueue() calls it when ready. */
+    window.__startGameAfterLoad = true;
   }catch(e){}
 },30000);
 /* __autoStart() - Joshua's NO-SKIP rule: the game starts ITSELF ~3s after the
