@@ -268,10 +268,25 @@ function stepSemi(s,dt){
       s.x=p4.x;s.z=p4.z;s.y=p4.y;s.heading=p4.heading+Math.PI; }
   }
   // stuck watchdog (only for road states)
+  /* v1.31 — JOSHUA'S NO-DRIVE-THROUGH-VEHICLES RULE (2026-10-10): a 40-ton
+     semi never pushes through another vehicle. On road states, brake to a
+     hold while anything blocks the lane ahead — eased, not slammed. Semis are
+     too wide to verify a passing lane, so they always wait. Waiting is NOT
+     stuck: the watchdog below is paused while yielding. */
+  s.vehWait=false;
+  if (!done && (s.state==='i20_in'||s.state==='fib_out'||s.state==='fib_back'||s.state==='i20_out')){
+    try{
+      if (window.VehicleAvoid &&
+          VehicleAvoid.blockedAhead(s.x,s.z,Math.sin(s.heading),Math.cos(s.heading),s,26,1.5,false)){
+        s.speed=Math.max(0,s.speed-40*dt);   // firm brake toward a hold
+        if (s.speed<0.5) s.vehWait=true;
+      }
+    }catch(e){}
+  }
   if (!done && (s.state==='i20_in'||s.state==='fib_out'||s.state==='fib_back'||s.state==='i20_out')){
     s.stuckT+=dt;
     if (s.stuckT>STUCK_AFTER) done=true;
-    else if (s.speed>3) s.stuckT=0;
+    else if (s.speed>3||s.vehWait) s.stuckT=0;
   } else if (!done){ s.stuckT=0; }
   return done;
 }
