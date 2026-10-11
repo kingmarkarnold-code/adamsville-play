@@ -5447,14 +5447,55 @@ function runOsmBuildings(){
     }catch(e){}
     var bodyGeo=new THREE.BoxGeometry(1,1,1);
     bodyGeo.translate(0,0.5,0);
-    var bodies=new THREE.InstancedMesh(bodyGeo,
-      new THREE.MeshLambertMaterial({color:0xffffff}), kept.length);
-    bodies.frustumCulled=false; // v1.17 FIX: InstancedMesh spans the map — r128 culls it as a tiny sphere at origin, making meshes invisible
     var roofGeo=new THREE.ConeGeometry(0.72,1,4);
     roofGeo.rotateY(Math.PI/4); roofGeo.translate(0,0.5,0);
-    var roofs=new THREE.InstancedMesh(roofGeo,
-      new THREE.MeshLambertMaterial({color:0xffffff}), kept.length);
-    roofs.frustumCulled=false; // v1.17 FIX: InstancedMesh spans the map — r128 culls it as a tiny sphere at origin, making meshes invisible
+    /* v1.46 BUILDING CHUNKING (expert report #4 — Dr. Elena Vasquez, Engine
+       Programmer, 2026-10-11):
+       Was: 2 global InstancedMeshes with frustumCulled=false — every building
+       vertex-shaded every frame (~800k wasted vertices/frame on buildings the
+       player cannot see).
+       Now: buildings are bucketed into a 4x6 spatial grid (2000u chunks — the
+       SAME grid as the v1.30 tree chunking). Each chunk gets its own
+       body+roof InstancedMeshes with a manually computed bounding sphere, so
+       Three.js frustum-culls off-screen chunks automatically. Buildings ARE
+       visible at distance (unlike NPCs/vehicles), so culling — not hiding —
+       is the correct optimization, per Joshua's LOD directive.
+       COMPAT: window.__bldgMeshes still publishes {bodies, roofs, kept}, but
+       bodies/roofs are now FACADE objects routing setMatrixAt/setColorAt by
+       GLOBAL kept index to the right chunk mesh (marriott.js mqHideExterior
+       and codeenforce setInstanceTransform depend on this contract). kept
+       stays a flat placement array — residential_detail.js, visual_inspect.js,
+       bldgGrid colliders, and snap-to-face/snap-to-wall are unaffected. */
+    /* v1.46: drop previous run's chunk meshes if runOsmBuildings re-runs
+       (e.g. after a map-data update) — the old code leaked InstancedMeshes. */
+    try{
+      if(window.__bldgChunkMeshes){
+        for(var _ok in window.__bldgChunkMeshes){
+          if(!window.__bldgChunkMeshes.hasOwnProperty(_ok)) continue;
+          var _om=window.__bldgChunkMeshes[_ok];
+          if(_om.bodies) scene.remove(_om.bodies);
+          if(_om.roofs) scene.remove(_om.roofs);
+        }
+      }
+    }catch(e){}
+    var BLDG_CHUNK=2000, BLDG_COLS=4, BLDG_ROWS=6;
+    function bldgChunkKey(x,z){
+      var cx=Math.max(0,Math.min(BLDG_COLS-1,Math.floor(x/BLDG_CHUNK)));
+      var cz=Math.max(0,Math.min(BLDG_ROWS-1,Math.floor(z/BLDG_CHUNK)));
+      return cx+'_'+cz;
+    }
+    // per-chunk records: bodies/roofs:[{m:Matrix4,col:hex}], plus extents
+    // for the bounding sphere (minBase/maxTop/maxFoot over placed buildings)
+    var bldgChunks={};
+    var bldgChunkIndex=[];   // global kept idx -> [chunkKey, localIdx]
+    function bldgGetChunk(x,z){
+      var k=bldgChunkKey(x,z);
+      var c=bldgChunks[k];
+      if(!c){ c={bodies:[],roofs:[],minBase:1e9,maxTop:-1e9,maxFoot:0}; bldgChunks[k]=c; }
+      return c;
+    }
+    var bodyMat=new THREE.MeshLambertMaterial({color:0xffffff});
+    var roofMat=new THREE.MeshLambertMaterial({color:0xffffff});
     var m4=new THREE.Matrix4(), qt=new THREE.Quaternion(),
         sv=new THREE.Vector3(), pv=new THREE.Vector3(), col=new THREE.Color();
     /* v1.14: Y-axis for yaw rotation (building front faces street/lot). */
@@ -5481,26 +5522,110 @@ function runOsmBuildings(){
          doors floating off the unrotated box. */
       var byaw=(k2.length>=7 && typeof k2[6]==='number')?k2[6]:0;
       qt.setFromAxisAngle(YAX,byaw);
+      /* v1.46: bucket into the chunk containing the building CENTER. */
+      var ch=bldgGetChunk(k2[0],k2[1]), ck=bldgChunkKey(k2[0],k2[1]);
+      var li=ch.bodies.length;
       pv.set(k2[0],gy-0.6,k2[1]); sv.set(bw,bh,bd);
-      m4.compose(pv,qt,sv); bodies.setMatrixAt(placed,m4);
+      m4.compose(pv,qt,sv);
       // type colors: 0 house, 1 commercial, 2 apartment/large, 3 other
       col.set(tp===1?0x9aa0a8:(tp===2?0x8a7f72:0xb5a88f));
-      try{ bodies.setColorAt(placed,col); }catch(e){}
+      ch.bodies.push({m:m4.clone(), col:col.getHex()});
       var rh=Math.min(5,Math.max(1.2,bw*0.18));
       pv.set(k2[0],gy-0.6+bh,k2[1]); sv.set(bw*1.06,rh,bd*1.06);
-      m4.compose(pv,qt,sv); roofs.setMatrixAt(placed,m4);
+      m4.compose(pv,qt,sv);
       col.set(tp===1?0x5a6068:0x6b4a3a);
-      try{ roofs.setColorAt(placed,col); }catch(e){}
+      ch.roofs.push({m:m4.clone(), col:col.getHex()});
+      bldgChunkIndex[placed]=[ck,li];
+      /* v1.46: track this chunk's vertical/footprint extents so the bounding
+         sphere provably contains every placed building (tall towers included). */
+      var _base=gy-0.6, _top=gy-0.6+bh+rh;
+      if(_base<ch.minBase) ch.minBase=_base;
+      if(_top>ch.maxTop) ch.maxTop=_top;
+      var _fd=Math.sqrt(bw*bw+bd*bd)/2;
+      if(_fd>ch.maxFoot) ch.maxFoot=_fd;
       addBldgCollider(k2[0],k2[1],Math.max(bw,bd)/2+0.5,bh);  // v1.37: pass height for camera raycast
       placed++;
     }
-    bodies.count=placed; roofs.count=placed;
-    bodies.instanceMatrix.needsUpdate=true;
-    roofs.instanceMatrix.needsUpdate=true;
-    if (bodies.instanceColor) bodies.instanceColor.needsUpdate=true;
-    if (roofs.instanceColor) roofs.instanceColor.needsUpdate=true;
+    /* v1.46: build per-chunk InstancedMeshes. Each gets frustumCulled=true
+       with an explicit bounding sphere: chunk center, vertical center from
+       actual placed extents, radius covering the chunk half-diagonal plus the
+       largest footprint half-diagonal in the chunk (+5u safety). */
+    var bldgChunkMeshes={};  // chunkKey -> {bodies, roofs}
+    var _bHalf=Math.sqrt(2)*BLDG_CHUNK/2;
+    for (var _bck in bldgChunks){
+      if(!bldgChunks.hasOwnProperty(_bck)) continue;
+      var _bc=bldgChunks[_bck];
+      if(!_bc.bodies.length) continue;
+      var _bp=_bck.split('_');
+      var _bcx=(parseInt(_bp[0],10)+0.5)*BLDG_CHUNK;
+      var _bcz=(parseInt(_bp[1],10)+0.5)*BLDG_CHUNK;
+      var _bcy=(_bc.minBase+_bc.maxTop)/2;
+      var _bhr=Math.sqrt(_bHalf*_bHalf+((_bc.maxTop-_bc.minBase)/2)*((_bc.maxTop-_bc.minBase)/2))+_bc.maxFoot+5;
+      var _bbs=new THREE.Sphere(new THREE.Vector3(_bcx,_bcy,_bcz), _bhr);
+      var _bcm={};
+      var _bbm=new THREE.InstancedMesh(bodyGeo, bodyMat, _bc.bodies.length);
+      for (var _bi=0;_bi<_bc.bodies.length;_bi++){
+        _bbm.setMatrixAt(_bi,_bc.bodies[_bi].m);
+        col.setHex(_bc.bodies[_bi].col);
+        _bbm.setColorAt(_bi,col);
+      }
+      _bbm.instanceMatrix.needsUpdate=true;
+      if(_bbm.instanceColor) _bbm.instanceColor.needsUpdate=true;
+      _bbm.boundingSphere=_bbs.clone();
+      _bbm.frustumCulled=true;
+      scene.add(_bbm); _bcm.bodies=_bbm;
+      var _brm=new THREE.InstancedMesh(roofGeo, roofMat, _bc.roofs.length);
+      for (var _ri=0;_ri<_bc.roofs.length;_ri++){
+        _brm.setMatrixAt(_ri,_bc.roofs[_ri].m);
+        col.setHex(_bc.roofs[_ri].col);
+        _brm.setColorAt(_ri,col);
+      }
+      _brm.instanceMatrix.needsUpdate=true;
+      if(_brm.instanceColor) _brm.instanceColor.needsUpdate=true;
+      _brm.boundingSphere=_bbs.clone();
+      _brm.frustumCulled=true;
+      scene.add(_brm); _bcm.roofs=_brm;
+      bldgChunkMeshes[_bck]=_bcm;
+    }
+    try{ window.__bldgChunkMeshes=bldgChunkMeshes; }catch(e){}
+    /* v1.46 FACADE: preserves the window.__bldgMeshes.{bodies,roofs} contract
+       used by marriott.js (mqHideExterior) and codeenforce (setInstanceTransform):
+       setMatrixAt/setColorAt take a GLOBAL kept index and route to the owning
+       chunk mesh; instanceMatrix/instanceColor.needsUpdate fans out to every
+       chunk mesh. count = total placed buildings. */
+    function _bldgFacade(kind){
+      function _each(fn){
+        for(var k in bldgChunkMeshes){
+          if(!bldgChunkMeshes.hasOwnProperty(k)) continue;
+          var mm=bldgChunkMeshes[k][kind]; if(mm) fn(mm);
+        }
+      }
+      function _at(gi){
+        var r=bldgChunkIndex[gi]; if(!r) return null;
+        var cm=bldgChunkMeshes[r[0]]; if(!cm) return null;
+        return {m:cm[kind], li:r[1]};
+      }
+      var f={
+        count: placed,
+        setMatrixAt: function(gi,mat4){
+          var t=_at(gi); if(!t) return;
+          t.m.setMatrixAt(t.li,mat4); t.m.instanceMatrix.needsUpdate=true;
+        },
+        setColorAt: function(gi,c){
+          var t=_at(gi); if(!t) return;
+          try{ t.m.setColorAt(t.li,c); if(t.m.instanceColor) t.m.instanceColor.needsUpdate=true; }catch(e){}
+        }
+      };
+      Object.defineProperty(f,'instanceMatrix',{get:function(){
+        return { set needsUpdate(v){ if(v) _each(function(m){ m.instanceMatrix.needsUpdate=true; }); } };
+      }});
+      Object.defineProperty(f,'instanceColor',{get:function(){
+        return { set needsUpdate(v){ if(v) _each(function(m){ if(m.instanceColor) m.instanceColor.needsUpdate=true; }); } };
+      }});
+      return f;
+    }
+    var bodies=_bldgFacade('bodies'), roofs=_bldgFacade('roofs');
     try{ window.__bldgMeshes={bodies:bodies, roofs:roofs, kept:kept}; }catch(e){}
-    scene.add(bodies); scene.add(roofs);
     /* v1.19: Report building-fix persistence status for QA/admin visibility. */
     var _fixInfo={savedApplied:0,totalSaved:0,savedStale:0};
     try{
