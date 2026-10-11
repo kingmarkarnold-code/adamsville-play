@@ -1045,11 +1045,12 @@ window.updateWorkerHousing = function(dt){ updateWorkerHousing(dt || 0.016); };
 /* ================= boot ================= */
 function wrapAnimate(){
   try {
-    if (typeof animate === 'function' && !animate.__workerhousingWrap){
-      var orig = animate;
-      var wrapped = function(){ orig(); updateWorkerHousing(0.016); };
-      wrapped.__workerhousingWrap = true;
-      animate = wrapped;
+    /* v1.51 TICK REGISTRY (expert report #14, James Park, Joshua approved):
+       was an animate() monkey-patch — now registers on the central Sim tick
+       registry. Same once-per-frame timing, deterministic priority order. */
+    if(window.Sim && typeof Sim.onTick==='function' && !window.__workerhousingTickReg){
+      window.__workerhousingTickReg=true;
+      Sim.onTick('render', 65, function(dt){ updateWorkerHousing(0.016); });
     }
   } catch(e){}
 }
