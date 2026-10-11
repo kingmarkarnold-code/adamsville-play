@@ -6797,7 +6797,7 @@ function makeCar(x,z,yaw,color,drivable,kind){
   try{ _cy=snapToGround(x,z,4,2,yaw); }catch(e){ try{_cy=heightAt(x,z);}catch(e2){} }
   mesh.position.set(x, _cy, z); mesh.rotation.y=yaw;
   scene.add(mesh);
-  var st={ x:x, z:z, yaw:yaw, speed:0, mesh:mesh, driving:false,
+  var st={ x:x, z:z, yaw:yaw, speed:0, wheelA:0, mesh:mesh, driving:false,
     damage:0, dead:false, sunk:false, sinking:false, sinkT:0, lastHit:0,
     fuel:100, _refuelT:0, _lowFuelWarned:false, _vLowFuelWarned:false, _outOfGasWarned:false, _repairT:0,
     dented:false, smoke:[], steerWheel:null, camMode:'chase',
@@ -8494,6 +8494,24 @@ function updateCar(dt){
   // lean into turns slightly + spin the steering wheel visual
   car.mesh.rotation.z = -steerIn*Math.min(1,spd/20)*0.06;
   if (car.steerWheel) car.steerWheel.rotation.z = -steerIn*0.9;
+  /* v1.50 WHEEL SPIN + FRONT STEER (expert report #23, Katherine Brooks,
+     2026-10-11): the van's wheels were frozen while driving. Spin is
+     distance-driven (wheelA += speed*dt/wheelRadius, same pattern as
+     semi_system.js — wheels rotate around their axle via rotation.x, which
+     composes correctly with the build-time rotation.z axle flip). Front
+     wheels yaw with the steering input through the steer groups registered
+     by safariMesh()/sedanMesh(). Works for any mesh with userData.wheels. */
+  try{
+    var _ud=car.mesh.userData;
+    car.wheelA=((car.wheelA||0)+car.speed*dt/0.38)%(Math.PI*2); // 0.38 = van wheel radius
+    if (_ud && _ud.wheels){
+      for (var _wi=0;_wi<_ud.wheels.length;_wi++) _ud.wheels[_wi].rotation.x=car.wheelA;
+    }
+    if (_ud && _ud.steerGroups){
+      var _sa=steerIn*0.45; // max front-wheel steer angle (~26 deg); +steerIn = left
+      for (var _si=0;_si<_ud.steerGroups.length;_si++) _ud.steerGroups[_si].rotation.y=_sa;
+    }
+  }catch(e){}
 }
 
 /* v1.37 CAMERA COLLISION (expert review #2 — Marcus Chen): pull-in-only chase
