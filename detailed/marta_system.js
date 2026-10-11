@@ -704,6 +704,30 @@ function updateMarta(){
   for (i=MT.trains.length-1;i>=0;i--){
     if (updateTrain(MT.trains[i], dt)) despawnTrain(i);
   }
+  /* v1.30 TRAIN DISTANCE CULLING (Joshua's directive 2026-10-10):
+     Trains outside view distance don't render — tracked as data only
+     (position on route, schedule, state). Mesh visibility toggles with
+     hysteresis: visible < 400u, hidden > 500u. Throttled to ~2Hz.
+     EXCEPTION: a train the player is riding is always visible. */
+  try{
+    MT._visT=(MT._visT||0)+dt;
+    if (MT._visT>0.5){
+      MT._visT=0;
+      var _px=0,_pz=0;
+      try{ _px=player.x; _pz=player.z; }catch(e){}
+      var _show2=400*400, _hide2=500*500;
+      for (var _vi=0;_vi<MT.trains.length;_vi++){
+        var _t=MT.trains[_vi];
+        if (!_t||!_t.mesh) continue;
+        var _riding=false;
+        try{ _riding=(player.ridingTrain===_t); }catch(e){}
+        if (_riding){ if (!_t.mesh.visible) _t.mesh.visible=true; continue; }
+        var _dx=_t.x-_px, _dz=_t.z-_pz, _d2=_dx*_dx+_dz*_dz;
+        if (_d2>_hide2){ if (_t.mesh.visible) _t.mesh.visible=false; }
+        else if (_d2<_show2){ if (!_t.mesh.visible) _t.mesh.visible=true; }
+      }
+    }
+  }catch(e){}
   // spawn timer (semi pattern): keep each line at its ln.trainTarget (v1.3:
   // per-line count from game-minute headways), new ones appear at alternating
   // map-edge ends "from out of town"
