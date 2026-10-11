@@ -1366,11 +1366,12 @@ function initCodeEnforce(){
                             so the municipal workforce roster can assign named
                             officer identities. */};
   try{
-    if (typeof animate==='function' && !animate.__codeenforceWrap){
-      var orig=animate;
-      var wrapped=function(){ orig(); updateCodeEnforce(0.016); };
-      wrapped.__codeenforceWrap=true;
-      animate=wrapped;
+    /* v1.51 TICK REGISTRY (expert report #14, James Park, Joshua approved):
+       was an animate() monkey-patch — now registers on the central Sim tick
+       registry. Same once-per-frame timing, deterministic priority order. */
+    if(window.Sim && typeof Sim.onTick==='function' && !window.__codeenforceTickReg){
+      window.__codeenforceTickReg=true;
+      Sim.onTick('render', 66, function(dt){ updateCodeEnforce(0.016); });
     }
   }catch(e){}
 }
