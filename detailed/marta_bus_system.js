@@ -291,7 +291,16 @@ function updateBus(b, dt){
           var _bspd=_bv.o.speed||0;
           target=Math.min(target,Math.max(0,_bspd));
           b.vehYield=true;
-        }
+          /* v1.32 WAIT TIMEOUT (Joshua 2026-10-10): buses wait, but not
+             forever. After WAIT_S, radio traffic assistance — the assist
+             unit directs the queue backed up behind the bus around the jam.
+             Buses themselves never overtake. */
+          b.waitVehT=(b.waitVehT||0)+dt;
+          if (window.TrafficAssist && b.waitVehT>TrafficAssist.WAIT_S && !b.assistReq){
+            b.assistReq=true;
+            TrafficAssist.request({x:b.x, z:b.z, yaw:_byaw, ref:b, kind:'bus'});
+          }
+        } else { b.waitVehT=0; b.assistReq=false; }
       }
     }catch(e){}
     b.speed+=(target-b.speed)*Math.min(1,dt*1.8);
