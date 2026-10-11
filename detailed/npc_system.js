@@ -1528,12 +1528,16 @@ function npcStartTalk(n){
     var isNew=(talkNPC!==n);
     talkNPC=n; n.focus=true;
     var line=npcTalkLine(n);
+    /* v1.61 (#33): capture the display name BEFORE the bump below — the
+       tag must reflect the relationship going INTO this talk (1st talk =
+       stranger, 2nd = acquaintance, 4th = friend), not after counting it. */
+    var disp=npcDisplayName(n);
     if (isNew){
       var lv=npcRelLevel(n);            // level BEFORE this talk counts
       line=npcRelGreeting(n,lv)+line;
       npcBumpRel(n);
     }
-    if (typeof showNpcDialog==='function') showNpcDialog(npcDisplayName(n), line);
+    if (typeof showNpcDialog==='function') showNpcDialog(disp, line);
   }catch(e){}
 }
 /* npcEndTalk() — closes the conversation from the NPC side (panel close
