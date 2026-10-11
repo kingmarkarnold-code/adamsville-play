@@ -136,7 +136,8 @@ var HS = null; // runtime state
 /* ---------------- helpers ---------------- */
 /* groundY — safe terrain height lookup, never NaN. */
 function groundY(x, z){
-  try { var y = heightAt(x, z); return isFinite(y) ? y : 0; }
+  /* v1.35 SNAP-TO-FACE (Joshua 2026-10-11). */
+  try { if(typeof snapToGround==='function'){ var sy=snapToGround(x,z,0,0,0); if(isFinite(sy)) return sy; } var y = heightAt(x, z); return isFinite(y) ? y : 0; }
   catch(e){ return 0; }
 }
 /* Seeded random for deterministic staff generation. */
