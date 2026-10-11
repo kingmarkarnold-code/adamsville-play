@@ -841,6 +841,48 @@
      It does NOT start the game - that is __tryStartGame/__autoStart at the
      end of script block 2. -->
 <script>
+/* v1.51 TICK REGISTRY (expert report #14, James Park, Joshua approved):
+   Central game-loop registry. REPLACES the old pattern where ~20 modules each
+   boot-polled for the global animate() and monkey-patched it
+   (var wrapped=function(){ orig(); updateX(); }) — whoever loaded fastest ran
+   first, a load-order RACE with no phase ordering and no priorities.
+   New pattern: Sim.onTick(phase, priority, fn).
+   Phases run in order: 'input' (controls, once/frame before sim) ->
+   'sim' (fixed 30Hz, inside simTick) -> 'render' (once/frame after render).
+   Within a phase, lower priority numbers run first. Every handler is
+   try/catch-isolated so one failing system can never kill the loop.
+   Direct reassignment of animate() is banned (defineProperty trap below) —
+   all new per-frame work MUST register here. */
+window.Sim=(function(){
+  var PHASES=['input','sim','render'];
+  var ticks={input:[],sim:[],render:[]};
+  /* Register a per-frame callback. phase: 'input'|'sim'|'render'.
+     priority: lower runs first (default 100). fn(dt) receives the phase dt. */
+  function onTick(phase, priority, fn){
+    if(PHASES.indexOf(phase)<0){
+      try{ console.error('[Sim] bad phase "'+phase+'" — use input/sim/render'); }catch(e){}
+      return;
+    }
+    if(typeof fn!=='function') return;
+    var p=(typeof priority==='number')?priority:100;
+    ticks[phase].push({p:p,fn:fn});
+    /* keep sorted so run() is a straight pass — registration order never matters */
+    ticks[phase].sort(function(a,b){ return a.p-b.p; });
+  }
+  /* Run every handler in a phase, in priority order. One bad handler can't
+     stop the rest. */
+  function run(phase, dt){
+    var list=ticks[phase], i, t;
+    if(!list) return;
+    for(i=0;i<list.length;i++){
+      t=list[i];
+      try{ t.fn(dt); }
+      catch(e){ try{ console.error('[Sim] '+phase+' tick failed:', e&&e.message||e); }catch(e2){} }
+    }
+  }
+  function count(phase){ return ticks[phase]?ticks[phase].length:0; }
+  return {onTick:onTick, run:run, count:count, PHASES:PHASES};
+})();
 /* v1.11 loading-screen bootstrap — runs before the game scripts */
 window.__loadOrder=['engine','elev','roads','signs','lifts','pins','buildings','vehmeshes','world','music','npc','refnpc','gasdata','traffic','semis','roadcrew','marta','busdata','bus'];
 window.__loadNames={engine:'3D engine',elev:'Elevation data',roads:'Roads',signs:'Exit signs',
@@ -8071,8 +8113,12 @@ function updatePlayer(dt){
     mvx=joy.dx; mvz=joy.dy;
   }
   // keyboard (debug)
-  if (keys['w']) mvz-=1; if (keys['s']) mvz+=1;
-  if (keys['a']) mvx-=1; if (keys['d']) mvx+=1;
+  /* v1.47 SIM/RENDER SEPARATION (expert report #15, James Park): read the
+     per-tick Input snapshot, not the live event-driven keys object. Falls
+     back to live keys if sim_core.js failed to load. */
+  var _ik=(window.Input && Input.sampled) ? Input.keys : keys;
+  if (_ik['w']) mvz-=1; if (_ik['s']) mvz+=1;
+  if (_ik['a']) mvx-=1; if (_ik['d']) mvx+=1;
   var mag=Math.hypot(mvx,mvz);
   if (mag>0.08){
     /* v0.8 INDUSTRY-STANDARD third-person movement (orbit camera owns the yaw).
@@ -8186,6 +8232,10 @@ var SPD_SCALE = VAN_TOP_MPH / 65;            // ~2.54 — accel/brake scale fact
 var SPEED_LIMIT_MPH = { highway:125, arterial:45, local:25, offroad:25 };
 
 function updateCar(dt){
+  /* v1.47 SIM/RENDER SEPARATION (expert report #15, James Park): read drive
+     input from the per-tick Input snapshot. Falls back to the live drive
+     object if sim_core.js failed to load. */
+  var _drv=(window.Input && Input.sampled) ? Input.drive : drive;
   // sinking: car drove into DEEP water — submerge over ~2s, then auto-eject (v0.3).
   // v1.2: depth-based — shallow water is fordable, only depth > WADE_LIMIT sinks.
   if (!car.sunk && !car.sinking && waterDepthAt(car.x, car.z) > WADE_LIMIT){ car.sinking=true; car.sinkT=0; }
@@ -8204,10 +8254,10 @@ function updateCar(dt){
   var canDrive=!car.dead && car.fuel>0;  // v1.31: engine dead at 100 damage OR empty tank: no throttle, no reverse
   var accel=0;
   if (canDrive){
-    if (drive.gas) accel+=22*SPD_SCALE;
-    if (drive.brake) accel-= car.speed>1?30*SPD_SCALE:12*SPD_SCALE;  // brake or reverse
+    if (_drv.gas) accel+=22*SPD_SCALE;
+    if (_drv.brake) accel-= car.speed>1?30*SPD_SCALE:12*SPD_SCALE;  // brake or reverse
   }
-  if (drive.hb) accel-= car.speed*4;
+  if (_drv.hb) accel-= car.speed*4;
   /* v1.17 SCHOOL BUS STOP LAW (Joshua): when a school bus has its stop sign
      out (window.__sbActive, published by schoolbus_system.js), ALL approaching
      vehicles must stop and wait — including the player's van. The van is
@@ -8248,7 +8298,7 @@ function updateCar(dt){
   car.speed += accel*dt*grassSlow;
   // drag + rolling resistance
   car.speed -= car.speed*0.6*dt;
-  if (!drive.gas && !drive.brake) car.speed -= Math.sign(car.speed)*4*SPD_SCALE*dt;
+  if (!_drv.gas && !_drv.brake) car.speed -= Math.sign(car.speed)*4*SPD_SCALE*dt;
   /* v1.31 DAMAGE PERF (Joshua): a beat-up van loses a little top speed - fair, not punishing. */
   var _dmgScale=1-0.3*((car.damage||0)/100);
   car.speed=Math.max(-VAN_TOP_US/3, Math.min(VAN_TOP_US*_dmgScale, car.speed));  // v1.8: 165mph top
@@ -8294,8 +8344,8 @@ function updateCar(dt){
   // SPEED-DEPENDENT STEERING: none when stationary, wider at speed
   // v0.3: un-inverted — left input = turn left, right input = turn right
   var steerIn=0;
-  if (drive.left) steerIn+=1;
-  if (drive.right) steerIn-=1;
+  if (_drv.left) steerIn+=1;
+  if (_drv.right) steerIn-=1;
   var spd=Math.abs(car.speed);
   var turnRate = spd<0.5 ? 0 : (2.6/(1+spd*0.09));  // rad/s, tighter at low speed
   car.yaw += steerIn*turnRate*dt*Math.sign(car.speed||1);
@@ -9262,6 +9312,14 @@ function resolveNPCVehicleCollisions(){
 var SIM_STEP=1/30, __simAcc=0, SIM_MAX_STEPS=4;
 /* simTick(dt) - one fixed-size simulation step. dt is ALWAYS 1/30 here. */
 function simTick(dt){
+  /* v1.47 SIM/RENDER SEPARATION (expert report #15, James Park, Joshua approved):
+     Sample input and advance the tick-driven world clock FIRST, before any
+     game logic runs. Input.sample() snapshots keys[]/drive{} into plain data;
+     WorldClock.tick(dt) advances game time per sim tick (not wall-clock);
+     Sim.tickCount tracks total ticks for headless/diagnostic use. */
+  try{ if(window.Input && Input.sample) Input.sample(); }catch(e){}
+  try{ if(window.WorldClock && WorldClock.tick) WorldClock.tick(dt); }catch(e){}
+  try{ if(window.Sim) Sim.tickCount++; }catch(e){}
   /* v1.39 PERF (expert report #8): rebuild the shared vehicle-avoidance
      snapshot + spatial hash ONCE per frame. Without this, every vehicle
      re-gathers the whole world per query = O(V^2) garbage per frame. */
@@ -9341,6 +9399,10 @@ function simTick(dt){
       resolveNPCVehicleCollisions();
     }
   }catch(e){}   // v1.18: no vehicle passes through another — Period (Joshua)
+  /* v1.51 TICK REGISTRY (expert #14): sim-phase ticks run inside the fixed
+     30Hz step. Nothing registers here yet — reserved for future migration
+     of module updates that want deterministic fixed-timestep behavior. */
+  try{ if(window.Sim) Sim.run('sim', dt); }catch(e){}
 } /* end simTick - fixed 30Hz simulation step */
 
 /* animate() - render loop. Steps the fixed-timestep sim, then renders. */
@@ -9348,6 +9410,10 @@ function animate(){
   requestAnimationFrame(animate);
   /* v1.46 FIXED TIMESTEP: bank real elapsed time, spend it in 1/30s sim steps. */
   var realDt=Math.min(0.25, clock.getDelta());
+  /* v1.51 TICK REGISTRY (expert #14): input-phase ticks run once per frame,
+     before the fixed-step sim. Nothing registers here yet — reserved for
+     control/input sampling that must precede simulation. */
+  try{ if(window.Sim) Sim.run('input', realDt); }catch(e){}
   __simAcc+=realDt;
   var _n=0;
   while(__simAcc>=SIM_STEP && _n<SIM_MAX_STEPS){ simTick(SIM_STEP); __simAcc-=SIM_STEP; _n++; }
@@ -9374,7 +9440,34 @@ function animate(){
     try { if (typeof ReportBridge !== "undefined" && ReportBridge.gameReady) ReportBridge.gameReady(); } catch(e){}
     try { Report.note("lifecycle", {event:"first-frame"}); } catch(e){}
   }
+  /* v1.51 TICK REGISTRY (expert #14): render-phase ticks run once per frame
+     after render — this is where the ~20 migrated module updates now live,
+     in deterministic priority order instead of the old load-order race.
+     Same timing as the old wrappers (which ran after the base animate()
+     completed), so behavior is preserved. */
+  try{ if(window.Sim) Sim.run('render', realDt); }catch(e){}
 }
+
+/* v1.51 TICK REGISTRY BAN (expert report #14, James Park, Joshua approved):
+   Direct reassignment of the global animate() is now BANNED. ~20 modules used
+   to monkey-patch it (var wrapped=function(){ orig(); updateX(); }), which made
+   frame order a load-order race. All per-frame work must use
+   Sim.onTick(phase, priority, fn). Any legacy/future code that still tries to
+   wrap animate gets a loud console error + Report note, and the write is
+   IGNORED so the loop can never be silently re-chained. */
+try{
+  (function(){
+    var _animateFn=animate;
+    Object.defineProperty(window,'animate',{
+      configurable:true, enumerable:true,
+      get:function(){ return _animateFn; },
+      set:function(v){
+        try{ console.error('[Sim] BLOCKED animate() reassignment — use Sim.onTick(phase, priority, fn) instead.'); }catch(e){}
+        try{ if(window.Report&&Report.note) Report.note('sim-registry',{event:'animate-reassign-blocked'}); }catch(e){}
+      }
+    });
+  })();
+}catch(e){ /* some embedders disallow redefining — registry still works */ }
 
 window.addEventListener('resize', function(){
   camera.aspect=window.innerWidth/window.innerHeight;
@@ -9734,6 +9827,7 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <script data-dsrc="gas_stations_real.js" data-dkey="gasdata"></script>
 <!-- v1.31 shared vehicle-avoidance (Joshua's no-drive-through rule) -->
 <script data-dsrc="vehicle_avoid.js" data-dkey=""></script>
+<script data-dsrc="sim_core.js" data-dkey=""></script>
 <script data-dsrc="traffic_system.js" data-dkey="traffic"></script>
 <script data-dsrc="traffic_assist.js" data-dkey="trafficassist"></script>
 <script data-dsrc="residential_detail.js" data-dkey=""></script>
@@ -9770,6 +9864,7 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <script data-dsrc="dialogue_director_npc.js" data-dkey=""></script>
 <script data-dsrc="workerhousing.js" data-dkey=""></script>
 <script data-dsrc="daycycle.js" data-dkey=""></script>
+<script data-dsrc="blob_shadows.js" data-dkey=""></script>
 <script data-dsrc="helicopter_system.js" data-dkey=""></script>
 <script data-dsrc="priority_dispatch.js" data-dkey=""></script>
 <script data-dsrc="stayawake.js" data-dkey=""></script>
