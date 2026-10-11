@@ -74,7 +74,9 @@ var PHASE_DUR={arriving:3, assessing:8, reporting:4, setup:6, verifying:5};
 var WALK_SPEED=5.5;   // foreman/worker walk speed (u/s)
 
 /* ---------------- tiny helpers (module-local, guarded) ---------------- */
-function _gY(x,z){ try{ var y=heightAt(x,z); return isFinite(y)?y:0; }catch(e){ return 0; } }
+/* v1.35 SNAP-TO-FACE (Joshua 2026-10-11): crew equipment/workers snap to the
+   rendered terrain via snapToGround — one ground-snapping path game-wide. */
+function _gY(x,z){ try{ if(typeof snapToGround==='function'){ var y=snapToGround(x,z,0,0,0); return isFinite(y)?y:0; } var y2=heightAt(x,z); return isFinite(y2)?y2:0; }catch(e){ return 0; } }
 function _nowT(){ var d=new Date(); function p(n){return (n<10?'0':'')+n;} return p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds()); }
 function _pick(a,i){ if(!a||!a.length) return ''; i=Math.abs(i|0); return a[i%a.length]; }
 function _short(s,n){ s=String(s||''); return s.length>n ? s.slice(0,n-3)+'...' : s; }
