@@ -676,6 +676,13 @@
   letter-spacing:2px;border-radius:14px;border:none;background:#39ff6a;color:#062b0f;cursor:pointer;
   box-shadow:0 0 20px rgba(57,255,106,.4);}
 #launch-start:active{background:#2bd95a;}
+/* v1.33 START ANYWAY (Joshua 2026-10-11): secondary button beside START GAME.
+   Ghost style so the primary action stays visually dominant. */
+#launch-actions{display:flex;gap:10px;width:100%;max-width:440px;align-items:stretch;}
+#launch-actions #launch-start{width:auto;max-width:none;flex:1;}
+#launch-anyway{padding:16px 14px;font-size:14px;font-weight:bold;border-radius:14px;
+  border:2px solid #555;background:#222836;color:#bbb;cursor:pointer;white-space:nowrap;}
+#launch-anyway:active{background:#333a4e;color:#fff;}
 #launch-note{font-size:12px;color:#777;margin-top:10px;text-align:center;max-width:440px;line-height:1.5;}
 @media (max-width:480px){
   #launch-title{font-size:21px;}
@@ -791,7 +798,10 @@
     <button id="launch-weak">WEAK HARDWARE</button>
   </div>
 
-  <button id="launch-start">▶ START GAME</button>
+  <div id="launch-actions">
+    <button id="launch-start">▶ START GAME</button>
+    <button id="launch-anyway" title="Skip the options and start with defaults">Start Anyway</button>
+  </div>
   <div id="launch-note">Your choices are saved on this device.<br>
   Graphics changes (antialiasing) need a reload to take effect.</div>
 </div>
@@ -834,7 +844,8 @@
 window.__loadOrder=['engine','elev','roads','signs','lifts','pins','buildings','vehmeshes','world','music','npc','refnpc','gasdata','traffic','semis','roadcrew','marta','busdata','bus'];
 window.__loadNames={engine:'3D engine',elev:'Elevation data',roads:'Roads',signs:'Exit signs',
   lifts:'Terrain lifts',pins:'Junction pins',buildings:'Buildings',vehmeshes:'Vehicle models',world:'Game world',music:'Music',
-  npc:'NPC system',refnpc:'Photo NPCs',gasdata:'Gas station data',traffic:'Traffic system',semis:'Delivery trucks',roadcrew:'Road crew',marta:'MARTA rail',busdata:'MARTA bus data',bus:'MARTA buses'};
+  npc:'NPC system',refnpc:'Photo NPCs',gasdata:'Gas station data',traffic:'Traffic system',semis:'Delivery trucks',roadcrew:'Road crew',marta:'MARTA rail',busdata:'MARTA bus data',bus:'MARTA buses',
+  martadata:'MARTA rail data',trafficassist:'Traffic assist',drones:'Drones',survey:'Survey fleet',infra:'Infra crew',hq:'HQ staff',inspector:'Crew inspectors'};
 /* v1.15: REAL file sizes in bytes (measured 2026-10-10). The progress bar is
    weighted by these so a 2.8MB file moves the bar proportionally more than
    a 4KB file. Steps without a listed size default to 40KB. */
@@ -1006,8 +1017,9 @@ window.__launcherConfirmed = false;  // set true when user hits START GAME
    is not required to render the options screen itself must wait for the
    player to confirm. __whenConfirmed(fn) runs fn immediately if the player
    already confirmed, otherwise queues it. __flushConfirmQueue() runs the
-   queue — called from both confirm paths (START GAME click and the 30s
-   auto-confirm fallback).
+   queue — called from the confirm path (START GAME or Start Anyway click).
+   v1.33: the 30s auto-confirm fallback was removed per Joshua — the launcher
+   waits for an explicit choice.
    v1.29 (Joshua 2026-10-11): <script src> tags are NO LONGER exempt. All
    game/data scripts use data-dsrc and load via __loadDeferredQueue() only
    after confirmation. The options screen needs only this inline block. */
@@ -1040,13 +1052,46 @@ window.__deferredQueue = null;
 window.__deferredLoading = false;
 window.__deferredDone = false;
 window.__startGameAfterLoad = false;
+/* v1.34 LAUNCHER SKIP (Joshua 2026-10-11: "if a person clicks to not have
+   something load, when the next process starts it will skip"). data-dkey ->
+   launch-option map. When the player unchecks a system, its script is NOT
+   downloaded at all, and its load step (if tracked in __loadOrder) is marked
+   done immediately so __tryStartGame never waits on a script that will never
+   arrive. 'inspector' is special: crew inspectors only make sense when at
+   least one crew runs, so they skip only if BOTH roadCrew and infraCrew are
+   off. */
+var __scriptOptSkip={
+  bus:'martaBuses', busdata:'martaBuses',
+  marta:'martaTrains', martadata:'martaTrains',
+  npc:'npcs', refnpc:'npcs',
+  traffic:'traffic', trafficassist:'traffic',
+  drones:'drones',
+  roadcrew:'roadCrew', survey:'surveyFleet', infra:'infraCrew', hq:'hqStaff',
+  inspector:'$crews'
+};
+function __scriptSkippedByOption(key){
+  var opt=__scriptOptSkip[key];
+  if(!opt) return false;
+  try{
+    var o=window.__launchOpts||{};
+    if(opt==='$crews') return o.roadCrew===false && o.infraCrew===false;
+    return o[opt]===false;
+  }catch(e){ return false; }
+}
 function __collectDeferredScripts(){
   var queue = [];
   var scripts = document.querySelectorAll('script[data-dsrc], script[type="text/x-deferred"]');
   for (var i = 0; i < scripts.length; i++){
     var s = scripts[i];
     if (s.hasAttribute('data-dsrc')){
-      queue.push({type:'external', src:s.getAttribute('data-dsrc'), key:s.getAttribute('data-dkey')||''});
+      var _key=s.getAttribute('data-dkey')||'';
+      if (__scriptSkippedByOption(_key)){
+        /* Player opted out: don't download. Mark the step done (if tracked)
+           so the start gate never hangs waiting for it. */
+        try{ if(_key) __loadStep(_key, false); }catch(e){}
+        continue;
+      }
+      queue.push({type:'external', src:s.getAttribute('data-dsrc'), key:_key});
     } else {
       queue.push({type:'inline', code:s.textContent});
     }
@@ -1223,9 +1268,12 @@ window.__applyCrewMaster = function(on){
       window.__launchOpts.drawDist = 'short';  // v1.25: shortest view = least to render
       syncBoxes();
     });
-    // START GAME: save, hide launcher, reveal loader
-    var bStart = document.getElementById('launch-start');
-    if (bStart) bStart.addEventListener('click', function(){
+    /* v1.33 CONFIRM PATH (Joshua 2026-10-11): extracted the START GAME body
+       into __confirmLaunch so the Start Anyway button shares one path.
+       saveOpts=false (Start Anyway) applies defaults for THIS SESSION ONLY
+       and does not overwrite the player's saved prefs. */
+    function __confirmLaunch(saveOpts){
+      var doSave = (saveOpts !== false);
       // v1.22: if NPCs are unchecked, engage the v1.21 kill switch too so
       // the NPC meshes are hidden (not just frozen).
       try {
@@ -1250,7 +1298,7 @@ window.__applyCrewMaster = function(on){
       if (window.__weakHardware && window.__launchOpts.antialias !== false) {
         window.__launchOpts.antialias = false;  // match the forced-off renderer; no reload needed
       }
-      window.__saveLaunchOpts();
+      if (doSave) window.__saveLaunchOpts();
       window.__launcherConfirmed = true;
       /* v1.28: options confirmed — release any deferred network fetches. */
       try{ if(typeof window.__flushConfirmQueue==='function') window.__flushConfirmQueue(); }catch(e){}
@@ -1263,6 +1311,31 @@ window.__applyCrewMaster = function(on){
       /* v1.29: __tryStartGame is deferred — game scripts load after confirmation.
          __loadDeferredQueue() calls it when all scripts are ready. */
       window.__startGameAfterLoad = true;
+    }
+    // START GAME: save prefs, hide launcher, reveal loader
+    var bStart = document.getElementById('launch-start');
+    if (bStart) bStart.addEventListener('click', function(){ __confirmLaunch(true); });
+    /* v1.33 START ANYWAY (Joshua 2026-10-11): secondary button, off to the
+       side, for players who don't want to bother with options. Resets to
+       defaults for this session (web: everything off, APK: everything on —
+       the same rule as __setLaunchDefaults) WITHOUT overwriting saved prefs,
+       then runs the normal confirm path. No timers, no auto-confirm: the
+       launcher waits for an explicit choice. (Also covers the old v1.27
+       single-point-of-failure worry: if START GAME ever broke, this is the
+       backup way in.) */
+    var bAnyway = document.getElementById('launch-anyway');
+    if (bAnyway) bAnyway.addEventListener('click', function(){
+      try{
+        var isAPK=false;
+        try{isAPK=/SurvivingAdamsville|wv/i.test(navigator.userAgent||'');}catch(e){}
+        var dflt=isAPK;
+        for (var k in window.__launchOpts){
+          if (typeof window.__launchOpts[k]==='boolean') window.__launchOpts[k]=dflt;
+        }
+        window.__launchOpts.drawDist='medium';
+        syncBoxes();
+      }catch(e){}
+      __confirmLaunch(false);
     });
   } catch(e){}
 })();
@@ -8551,7 +8624,7 @@ function initProximityTrackers(){
      train, because you board from the platform. */
   proxTrains=new ProximityTracker({
     radius:30,
-    list:function(){ return (typeof MT!=='undefined'&&MT&&MT.trains)?MT.trains:[]; },
+    list:function(){ if(window.__launchOpts&&window.__launchOpts.martaTrains===false) return []; return (typeof MT!=='undefined'&&MT&&MT.trains)?MT.trains:[]; },
     filter:function(t){ return t.state==='dwell'&&t.stopIdx>=0&&t.line&&t.line.stops; },
     posOf:function(t){ var st=t.line.stops[t.stopIdx]; return {x:st.x, z:st.z}; },
     gate:function(px,pz){ return nearStation(px,pz); }   // v1.30: skip scan unless near a platform
@@ -8561,7 +8634,7 @@ function initProximityTrackers(){
      within 10u of the stop (in the vicinity, not on the exact sign). */
   proxBuses=new ProximityTracker({
     radius:10,
-    list:function(){ return (typeof MB!=='undefined'&&MB&&MB.buses)?MB.buses:[]; },
+    list:function(){ if(window.__launchOpts&&window.__launchOpts.martaBuses===false) return []; return (typeof MB!=='undefined'&&MB&&MB.buses)?MB.buses:[]; },
     filter:function(b){ return b.state==='dwell'&&b.stopIdx>=0&&b.route&&b.route.stops; },
     posOf:function(b){ var st=b.route.stops[b.stopIdx]; return {x:st.x, z:st.z}; },
     gate:function(px,pz){ return nearBusStop(px,pz); }   // v1.30: skip scan unless AT a bus stop
@@ -9066,7 +9139,7 @@ function __tryStartGame(){
        is indistinguishable from a freeze. */
     if (!window.__launcherConfirmed){
       var _ls=document.getElementById('load-status');
-      if(_ls){ _ls.textContent='Pick your options above, then tap START GAME'; _ls.style.opacity='1'; }
+      if(_ls){ _ls.textContent='Pick your options above, then tap START GAME (or Start Anyway)'; _ls.style.opacity='1'; }
       return false;
     }
     var l=document.getElementById('loader');
@@ -9140,36 +9213,11 @@ setTimeout(function(){
     }
   }catch(e){}
 },45000);
-/* v1.27 FIX 2 (Joshua 2026-10-10: launcher is a single point of failure):
-   If the launcher screen was never confirmed (user didn't see it, tapped
-   START GAME but something swallowed the click, WebView quirk, etc.) AND
-   every load step has genuinely completed, auto-confirm after ~30s so the
-   old click-anywhere path works as a backup. Without this, a broken or
-   invisible launcher means the game can NEVER start — every
-   __tryStartGame() call silently returns false at the __launcherConfirmed
-   gate. The auto-confirm only fires when assets are fully loaded, so it
-   can never start a half-built world. */
-/* v1.29 DEFERRED (Joshua 2026-10-11): auto-confirm no longer waits for load
-   steps — with deferred loading, NO steps complete until AFTER confirmation.
-   Waiting would deadlock. Instead, auto-confirm triggers the deferred queue
-   via __flushConfirmQueue, and __loadDeferredQueue calls __tryStartGame when
-   all scripts are ready. */
-setTimeout(function(){
-  try{
-    if (window.__launcherConfirmed || window.__gameStarted) return;
-    window.__launcherConfirmed = true;
-    /* v1.28: auto-confirmed — release deferred fetches AND deferred scripts. */
-    try{ if(typeof window.__flushConfirmQueue==='function') window.__flushConfirmQueue(); }catch(e){}
-    try { if (typeof window.__saveLaunchOpts === 'function') window.__saveLaunchOpts(); } catch(e){}
-    var launcher=document.getElementById('launcher');
-    if(launcher) launcher.classList.add('hidden');
-    var st=document.getElementById('load-status');
-    if(st){ st.textContent='Starting…'; st.style.opacity='1'; }
-    /* v1.29: don't call __tryStartGame directly — game scripts are deferred.
-       Set the flag; __loadDeferredQueue() calls it when ready. */
-    window.__startGameAfterLoad = true;
-  }catch(e){}
-},30000);
+/* v1.33 REMOVED (Joshua 2026-10-11): the 30s auto-confirm fallback is gone.
+   The launcher now waits for an explicit choice — START GAME or the new
+   "Start Anyway" button. No timers, no auto-proceed. (__autoStart below only
+   *attempts* a start via __tryStartGame, which still gates on
+   __launcherConfirmed and just shows the "pick your options" prompt.) */
 /* __autoStart() - Joshua's NO-SKIP rule: the game starts ITSELF ~3s after the
    loader reports Ready - no manual "press start" step, no update-download
    gate. The document-level click handler, the #load-start button, and the
@@ -9208,7 +9256,7 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <!-- v1.31 shared vehicle-avoidance (Joshua's no-drive-through rule) -->
 <script data-dsrc="vehicle_avoid.js" data-dkey=""></script>
 <script data-dsrc="traffic_system.js" data-dkey="traffic"></script>
-<script data-dsrc="traffic_assist.js" data-dkey=""></script>
+<script data-dsrc="traffic_assist.js" data-dkey="trafficassist"></script>
 <script data-dsrc="residential_detail.js" data-dkey=""></script>
 <script data-dsrc="semi_system.js" data-dkey="semis">
 <script data-dsrc="school_plaza.js" data-dkey=""></script>
@@ -9223,21 +9271,21 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <script data-dsrc="codeenforce_system.js" data-dkey=""></script>
 <script data-dsrc="roadcrew_system.js" data-dkey="roadcrew"></script>
 <script data-dsrc="roadfix.js" data-dkey=""></script>
-<script data-dsrc="marta_data.js" data-dkey=""></script>
+<script data-dsrc="marta_data.js" data-dkey="martadata"></script>
 <script data-dsrc="marta_system.js" data-dkey="marta"></script>
 <script data-dsrc="marta_bus_data.js" data-dkey="busdata"></script>
 <script data-dsrc="marta_bus_system.js" data-dkey="bus"></script>
-<script data-dsrc="bird_drones.js" data-dkey=""></script>
+<script data-dsrc="bird_drones.js" data-dkey="drones"></script>
 <script data-dsrc="schoolbus_system.js" data-dkey=""></script>
-<script data-dsrc="infracrew_system.js" data-dkey=""></script>
-<script data-dsrc="surveyfleet_system.js" data-dkey=""></script>
+<script data-dsrc="infracrew_system.js" data-dkey="infra"></script>
+<script data-dsrc="surveyfleet_system.js" data-dkey="survey"></script>
 <script data-dsrc="cityworkforce.js" data-dkey="">
-<script data-dsrc="inspector_crew.js" data-dkey=""></script>
+<script data-dsrc="inspector_crew.js" data-dkey="inspector"></script>
 <script data-dsrc="police_system.js" data-dkey=""></script>
 <script data-dsrc="github-config.js" data-dkey=""></script>
 <script data-dsrc="github_reports.js" data-dkey=""></script>
 <script data-dsrc="worldfix_sync.js" data-dkey=""></script>
-<script data-dsrc="hq_staff_system.js" data-dkey=""></script>
+<script data-dsrc="hq_staff_system.js" data-dkey="hq"></script>
 <script data-dsrc="dialogue_director_npc.js" data-dkey=""></script>
 <script data-dsrc="workerhousing.js" data-dkey=""></script>
 <script data-dsrc="daycycle.js" data-dkey=""></script>
