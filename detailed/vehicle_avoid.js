@@ -21,6 +21,7 @@
      - schoolbus_system.js (updateBus)   — school buses always wait (kids!)
      - semi_system.js     (stepSemi)     — 40-ton semis always wait on road
        states; the wait is excluded from the anti-stuck watchdog
+     - traffic_assist.js (request)      — jam-response incidents
      - (MARTA trains are registered as blockers only — they run on dedicated
        tracks with no grade crossings, and a train cannot stop for road
        traffic anyway.)
@@ -29,9 +30,20 @@
    (v1.6/v1.18 push-out in updateCar), and NPC vehicles now ALSO stop for the
    van — respect runs both directions.
 
-   PERFORMANCE: gather() builds a small array of vehicle records each call.
-   Callers invoke blockedAhead() once per vehicle per frame; the inner loop is
-   a few dozen cheap arithmetic ops — far below the collision work it replaces.
+   v1.39 PERF — SHARED PER-FRAME SNAPSHOT + SPATIAL HASH (expert report #8,
+   David Okafor, 2026-10-11):
+   The old gather() built a fresh V-record array PER CALLER, and every vehicle
+   called blockedAhead()/corridorClear() once per frame → V callers × V
+   records = O(V²) allocations per frame (~17K objects/frame of garbage with
+   heavy traffic), stalling the garbage collector on Joshua's TCL.
+
+   Now: the main animate() loop calls VehicleAvoid.beginFrame() ONCE per
+   frame. beginFrame() builds ONE shared snapshot (pooled record objects —
+   zero allocation on rebuild) and indexes it into a 40u spatial hash grid.
+   blockedAhead()/corridorClear() query only the hash cells overlapping their
+   search shape, then run the EXACT same acceptance math as before.
+   Result: O(V) amortized, identical avoidance behavior — no new collisions,
+   no new deadlocks, just faster.
    ========================================================================== */
 (function(){
   'use strict';
@@ -48,6 +60,25 @@
     train:  [25.0, 1.5],  // MARTA train (blocker only — never yields)
     car:    [2.5, 1.1]    // parked NPC car / fallback
   };
+
+  /* Widest half-width in DIM (train = 1.5). Used as the conservative lateral
+     bound when computing which spatial-hash cells a query must cover. */
+  var MAX_HALF_W = 1.5;
+
+  /* Spatial hash cell size in world units (expert #8 spec: 40u). */
+  var CELL = 40;
+
+  /* ---- shared per-frame snapshot state ---- */
+  var snap = [];        // flat array of pooled vehicle records (this frame)
+  var pool = [];        // reusable record objects — rebuild allocates nothing
+  var grid = {};        // "cx:cz" -> array of snapshot indices in that cell
+  var snapReady = false;// true once beginFrame() has run at least once
+
+  function newRec(){
+    return { x:0, z:0, hx:0, hz:0, halfL:0, halfW:0, speed:0, kind:'', ref:null };
+  }
+
+  function cellKey(cx, cz){ return cx + ':' + cz; }
 
   /* gather(selfRef) — snapshot every vehicle in the world as a flat record:
        {x, z, hx, hz, halfL, halfW, speed, kind, ref}
@@ -71,7 +102,9 @@
      Road-crew / code-enforcement patrols are INTENTIONALLY not gathered:
      per Joshua's v1.30 crew render rule their meshes are visible=false
      (pure data scouts) — registering invisible trucks would make traffic
-     stop for no visible reason. */
+     stop for no visible reason.
+     v1.39: kept as the standalone fallback for queries issued before the
+     first beginFrame() (e.g. during boot). Same behavior as the old code. */
   function gather(selfRef){
     var out = [], i, o, d, S;
     function push(x, z, yaw, kind, speed, ref){
@@ -83,6 +116,16 @@
                  halfL:d[0], halfW:d[1],
                  speed:speed || 0, kind:kind, ref:ref || null });
     }
+    collectInto(push);
+    return out;
+  }
+
+  /* collectInto(push) — the subsystem-walking core shared by gather() and
+     the per-frame snapshot builder. Calls push(x, z, yaw, kind, speed, ref)
+     for every known vehicle. v1.39: factored out so both paths enumerate
+     the world identically (no drift between the snapshot and fallback). */
+  function collectInto(push){
+    var i, o, S;
     try{ S=null; try{ S=window.TRAFFIC; }catch(e){}
       if (S && S.cars)
       for (i=0;i<S.cars.length;i++){ o=S.cars[i]; push(o.x,o.z,o.heading,'traf',o.speed,o); } }catch(e){}
@@ -114,7 +157,46 @@
        distinguishes "traffic participant" from "parked obstacle". */
     try{ if (typeof car!=='undefined' && car && car.driving && !car.sunk && !car.sinking)
       push(car.x, car.z, car.yaw, 'traf', Math.abs(car.speed||0), car); }catch(e){}
-    return out;
+  }
+
+  /* rebuildSnapshot() — v1.39: enumerate the world ONCE into pooled records,
+     then index them into the 40u spatial hash. Called by beginFrame(). */
+  function rebuildSnapshot(){
+    var n = 0, i, d;
+    function push(x, z, yaw, kind, speed, ref){
+      /* NOTE: no selfRef exclusion here — the shared snapshot holds EVERY
+         vehicle; each query skips its own caller via o.ref === selfRef. */
+      if (!isFinite(x) || !isFinite(z)) return;
+      d = DIM[kind] || DIM.car;
+      var r = pool[n] || (pool[n] = newRec());
+      r.x = x; r.z = z;
+      r.hx = Math.sin(yaw); r.hz = Math.cos(yaw);
+      r.halfL = d[0]; r.halfW = d[1];
+      r.speed = speed || 0; r.kind = kind; r.ref = ref || null;
+      snap[n++] = r;
+    }
+    collectInto(push);
+    snap.length = n;
+    /* spatial hash: each record lives in exactly one cell, so queries never
+       see duplicates and never need a "visited" set. */
+    grid = {};
+    for (i=0;i<n;i++){
+      var r = snap[i];
+      var k = cellKey(Math.floor(r.x / CELL), Math.floor(r.z / CELL));
+      var a = grid[k];
+      if (!a){ a = []; grid[k] = a; }
+      a.push(i);
+    }
+    snapReady = true;
+  }
+
+  /* beginFrame() — v1.39: call ONCE per animation frame (from the main
+     animate() loop in index.html) BEFORE any vehicle update runs. Rebuilds
+     the shared snapshot + spatial hash so the frame's V avoidance queries
+     share one O(V) enumeration instead of each doing their own. */
+  function beginFrame(){
+    try{ rebuildSnapshot(); }
+    catch(e){ snapReady = false; }
   }
 
   /* blockedAhead(x, z, hx, hz, selfRef, maxDist, ownHalfW, tight)
@@ -125,19 +207,56 @@
        |lat| <= ownHalfW + o.halfW + margin
      tight=true shrinks the lateral margin (buses: oncoming traffic in the
      adjacent lane must NOT trigger a stop — only something actually in the
-     bus's path does). */
+     bus's path does).
+     v1.39: queries the spatial hash when a snapshot is ready (only cells
+     overlapping the search rectangle's AABB), otherwise falls back to a
+     one-off gather() with identical math. */
   function blockedAhead(x, z, hx, hz, selfRef, maxDist, ownHalfW, tight){
-    var list = gather(selfRef), best = null, i, o, dx, dz, fwd, lat, need;
+    var best = null, i, o, dx, dz, fwd, lat, need;
     var margin = tight ? 0.35 : 0.7;
-    for (i=0;i<list.length;i++){
-      o = list[i];
-      dx = o.x - x; dz = o.z - z;
-      fwd = dx*hx + dz*hz;
-      if (fwd < 2 || fwd > maxDist) continue;
-      lat = dx*hz - dz*hx;                 // signed lateral (+ = right of heading)
-      need = ownHalfW + o.halfW + margin;
-      if (lat > need || lat < -need) continue;
-      if (!best || fwd < best.dist) best = { dist:fwd, lat:lat, o:o };
+    if (snapReady){
+      /* Conservative lateral bound: no record can pass the filter with
+         |lat| larger than this, so cells outside it hold no candidates. */
+      var latBound = ownHalfW + MAX_HALF_W + margin;
+      /* AABB of the rotated search rectangle (fwd in [0,maxDist],
+         |lat| <= latBound): center at fwd = maxDist/2. */
+      var half = maxDist / 2;
+      var cx = x + hx * half, cz = z + hz * half;
+      var ex = Math.abs(hx) * half + Math.abs(hz) * latBound;
+      var ez = Math.abs(hz) * half + Math.abs(hx) * latBound;
+      var minCX = Math.floor((cx - ex) / CELL), maxCX = Math.floor((cx + ex) / CELL);
+      var minCZ = Math.floor((cz - ez) / CELL), maxCZ = Math.floor((cz + ez) / CELL);
+      var gx, gz, a, k;
+      for (gx = minCX; gx <= maxCX; gx++){
+        for (gz = minCZ; gz <= maxCZ; gz++){
+          a = grid[cellKey(gx, gz)];
+          if (!a) continue;
+          for (k = 0; k < a.length; k++){
+            o = snap[a[k]];
+            if (o.ref === selfRef) continue;
+            dx = o.x - x; dz = o.z - z;
+            fwd = dx*hx + dz*hz;
+            if (fwd < 2 || fwd > maxDist) continue;
+            lat = dx*hz - dz*hx;                 // signed lateral (+ = right of heading)
+            need = ownHalfW + o.halfW + margin;
+            if (lat > need || lat < -need) continue;
+            if (!best || fwd < best.dist) best = { dist:fwd, lat:lat, o:o };
+          }
+        }
+      }
+    } else {
+      /* Pre-first-frame fallback: identical to the old per-caller gather. */
+      var list = gather(selfRef);
+      for (i=0;i<list.length;i++){
+        o = list[i];
+        dx = o.x - x; dz = o.z - z;
+        fwd = dx*hx + dz*hz;
+        if (fwd < 2 || fwd > maxDist) continue;
+        lat = dx*hz - dz*hx;
+        need = ownHalfW + o.halfW + margin;
+        if (lat > need || lat < -need) continue;
+        if (!best || fwd < best.dist) best = { dist:fwd, lat:lat, o:o };
+      }
     }
     return best;
   }
@@ -147,16 +266,44 @@
      from the current heading is free of vehicles for `dist` ahead. Used by
      traffic cars to verify a passing lane BEFORE committing to it. Samples
      three points along the offset path; each must be clear within
-     (3.2 + ownHalfW) so the full car body fits, not just its center. */
+     (3.2 + ownHalfW) so the full car body fits, not just its center.
+     v1.39: spatial-hash version checks only cells overlapping each sample
+     circle; fallback path is the old gather() math, unchanged. */
   function corridorClear(x, z, hx, hz, latOff, dist, selfRef, ownHalfW){
     var rx = -hz, rz = hx;                // anatomical right of heading
-    var list = gather(selfRef), i, o, k, px, pz, dx, dz, rr;
-    rr = 3.2 + (ownHalfW || 1.1); rr *= rr;
+    var rr = 3.2 + (ownHalfW || 1.1); rr *= rr;
     var steps = [0.3, 0.6, 1.0];
+    var i, o, k, px, pz, dx, dz;
+    if (snapReady){
+      var r = Math.sqrt(rr);
+      var gx, gz, a, q;
+      for (k=0;k<steps.length;k++){
+        var f = dist * steps[k];
+        px = x + hx*f + rx*latOff;
+        pz = z + hz*f + rz*latOff;
+        var minCX = Math.floor((px - r) / CELL), maxCX = Math.floor((px + r) / CELL);
+        var minCZ = Math.floor((pz - r) / CELL), maxCZ = Math.floor((pz + r) / CELL);
+        for (gx = minCX; gx <= maxCX; gx++){
+          for (gz = minCZ; gz <= maxCZ; gz++){
+            a = grid[cellKey(gx, gz)];
+            if (!a) continue;
+            for (q = 0; q < a.length; q++){
+              o = snap[a[q]];
+              if (o.ref === selfRef) continue;
+              dx = o.x - px; dz = o.z - pz;
+              if (dx*dx + dz*dz < rr) return false;
+            }
+          }
+        }
+      }
+      return true;
+    }
+    /* Pre-first-frame fallback: identical to the old per-caller gather. */
+    var list = gather(selfRef);
     for (k=0;k<steps.length;k++){
-      var f = dist * steps[k];
-      px = x + hx*f + rx*latOff;
-      pz = z + hz*f + rz*latOff;
+      var f2 = dist * steps[k];
+      px = x + hx*f2 + rx*latOff;
+      pz = z + hz*f2 + rz*latOff;
       for (i=0;i<list.length;i++){
         o = list[i];
         dx = o.x - px; dz = o.z - pz;
@@ -169,6 +316,7 @@
   window.VehicleAvoid = {
     gather: gather,
     blockedAhead: blockedAhead,
-    corridorClear: corridorClear
+    corridorClear: corridorClear,
+    beginFrame: beginFrame   /* v1.39: call once per animation frame */
   };
 })();
