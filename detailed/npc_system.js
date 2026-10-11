@@ -855,6 +855,10 @@ function initNPCs(){
    that the NPC system stays off and the game is unaffected. */
 var initTries=0;
 function tryInit(){
+  /* v1.34 LAUNCHER SKIP (Joshua 2026-10-11): player unchecked NPCs in launch
+     options — do not initialize at all. The deferred loader normally skips
+     this script entirely; this is the backstop. */
+  if (window.__launchOpts && window.__launchOpts.npcs===false) return;
   try{
     if (typeof THREE==='undefined' || typeof scene==='undefined' ||
         typeof roadDrawData==='undefined' || !roadDrawData || !roadDrawData.length){
