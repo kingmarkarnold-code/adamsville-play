@@ -8121,6 +8121,12 @@ document.getElementById('npc-dialog-bye').addEventListener('click', function(){ 
    Trackers run on the same ~8Hz throttle tick as the action button
    (see animate()), so prompts still feel instant.
 
+   v1.30 STOP GATE (Joshua 2026-10-10): the bus and train trackers take a
+   `gate` function. Before scanning, the gate asks "is the player within
+   board range of ANY stop/platform?" via a static spatial grid. If not, the
+   scan is skipped and exits are drained — you can't board a bus when you're
+   not at a stop, so there's nothing to check.
+
    Usage:
      var t = new ProximityTracker({
        radius: 4.5,                       // trigger radius in world units
@@ -8144,12 +8150,28 @@ function ProximityTracker(opts){
   this.idOf=opts.idOf||function(e){ return e; };
   this.onEnter=opts.onEnter||null;
   this.onExit=opts.onExit||null;
+  /* v1.30 STOP GATE (Joshua 2026-10-10): optional fn(px,pz)->bool. When the
+     gate returns false the scan is skipped for this tick and any lingering
+     in-range entries are drained WITH exit events, so the action button
+     never shows a stale action. Buses: only scan when the player is AT a
+     bus stop (you can't board elsewhere). Trains: only near a platform. */
+  this.gate=opts.gate||null;
   this.near=new Map();   // id -> entity: currently inside the radius
   this.nearest=null;     // closest in-range entity, refreshed each update
 }
 /* update(px,pz) — recompute who's in range, fire enter/exit events for
    changes only, refresh this.nearest. Safe to call before sources exist. */
 ProximityTracker.prototype.update=function(px,pz){
+  /* v1.30 STOP GATE: cheap pre-check before the full scan. Gate failure
+     drains exits (fires onExit) and skips the scan — in the common case
+     (player nowhere near a stop/platform) this replaces the whole vehicle
+     scan with a 3x3 grid lookup. Gate errors FAIL OPEN: a gate must never
+     hide a legitimate board prompt, so on error we run the scan anyway. */
+  if (this.gate){
+    var _gok=false;
+    try{ _gok=!!this.gate(px,pz); }catch(_ge){ _gok=true; }
+    if (!_gok){ this._drainExits(); return this; }
+  }
   var list=[];
   try{ list=this.getList()||[]; }catch(e){ list=[]; }
   var seen=new Set(), i, e, id;
@@ -8189,6 +8211,95 @@ ProximityTracker.prototype.hasAny=function(){ return this.near.size>0; };
 /* clear() — forget all tracked entities (e.g. on zone change or teleport).
    Next update re-fires onEnter for anything still in range. */
 ProximityTracker.prototype.clear=function(){ this.near.clear(); this.nearest=null; };
+/* _drainExits() — v1.30 STOP GATE helper: forget all tracked entities but
+   fire onExit for each, exactly as if they all walked out of range. Used
+   when the gate fails so the action button clears instead of going stale. */
+ProximityTracker.prototype._drainExits=function(){
+  var self=this, exits=[];
+  this.near.forEach(function(ent,key){ exits.push([key,ent]); });
+  for (var i=0;i<exits.length;i++){
+    this.near.delete(exits[i][0]);
+    if (self.onExit){ try{ self.onExit(exits[i][1]); }catch(e){} }
+  }
+  this.nearest=null;
+};
+
+/* ----------------------------------------------------------------------------
+   v1.30 STOP/STATION GATE GRIDS (Joshua 2026-10-10: "the only time you need
+   to know the bus showed up is if you're AT a bus stop — if you're not at
+   a stop you can't board it anyway").
+
+   The bus/train trackers scan every vehicle each tick, but boarding is only
+   possible at a stop/platform. These STATIC spatial grids let each tracker
+   GATE itself: first ask "is the player within board range of ANY stop?" via
+   a cheap 3x3-cell lookup (a handful of distance checks). If not, the whole
+   vehicle scan is skipped for that tick. In the common case — player walking
+   around nowhere near a stop — this is the entire bus/train proximity cost.
+
+   Grids use the EXACT same coordinates the trackers' posOf() reads, so a
+   gate can NEVER reject something the tracker would have caught:
+     buses : MB.stops (the same stop objects as route.stops — buildStops()
+             repositions the sign in place, buses dwell by arc position)
+     trains: MT.lines[].stops[].{x,z} (track coordinates, same as posOf)
+   Gate radii match the tracker radii exactly (buses 10u, trains 30u).
+   Grids build lazily on first gate use (MB/MT may init after the trackers);
+   a missing grid FAILS OPEN (gate returns true, scan runs) so prompts never
+   go missing.
+   ---------------------------------------------------------------------------- */
+var busStopGrid=null, stationGrid=null;
+function buildStopGrid(stops){
+  /* file {x,z} entries into 40u cells (same size as bldgGrid/propGrid) */
+  var g={}, i, s, k;
+  for (i=0;i<stops.length;i++){
+    s=stops[i]; if (!s||typeof s.x!=='number') continue;
+    k=Math.floor(s.x/40)+','+Math.floor(s.z/40);
+    (g[k]=g[k]||[]).push(s);
+  }
+  return g;
+}
+function gridHasNear(g, px, pz, r){
+  /* true if any grid entry is within r of (px,pz). 3x3 cells of 40u cover
+     >=40u in every direction even at a cell edge, so this is exact for
+     r<=40 (board ranges are 10/30). Missing grid fails open. */
+  if (!g) return true;
+  var r2=r*r, cx=Math.floor(px/40), cz=Math.floor(pz/40);
+  for (var gx=cx-1; gx<=cx+1; gx++) for (var gz=cz-1; gz<=cz+1; gz++){
+    var cell=g[gx+','+gz]; if (!cell) continue;
+    for (var i=0;i<cell.length;i++){
+      var s=cell[i], dx=px-s.x, dz=pz-s.z;
+      if (dx*dx+dz*dz<=r2) return true;
+    }
+  }
+  return false;
+}
+/* nearBusStop(px,pz) — v1.30 gate: player within 10u of ANY MARTA bus stop? */
+function nearBusStop(px,pz){
+  if (!busStopGrid){
+    try{
+      if (typeof MB!=='undefined'&&MB&&MB.stops&&MB.stops.length)
+        busStopGrid=buildStopGrid(MB.stops);
+    }catch(e){}
+    if (!busStopGrid) return true;   // MB not ready: fail open
+  }
+  return gridHasNear(busStopGrid, px, pz, 10);
+}
+/* nearStation(px,pz) — v1.30 gate: player within 30u of ANY rail stop? */
+function nearStation(px,pz){
+  if (!stationGrid){
+    try{
+      if (typeof MT!=='undefined'&&MT&&MT.lines&&MT.lines.length){
+        var all=[], li, si;
+        for (li=0;li<MT.lines.length;li++){
+          var L=MT.lines[li];
+          if (L&&L.stops) for (si=0;si<L.stops.length;si++) all.push(L.stops[si]);
+        }
+        if (all.length) stationGrid=buildStopGrid(all);
+      }
+    }catch(e){}
+    if (!stationGrid) return true;   // MT not ready: fail open
+  }
+  return gridHasNear(stationGrid, px, pz, 30);
+}
 
 /* ----------------------------------------------------------------------------
    Tracker instances — one per proximity category the action button cares
@@ -8230,7 +8341,8 @@ function initProximityTrackers(){
     radius:30,
     list:function(){ return (typeof MT!=='undefined'&&MT&&MT.trains)?MT.trains:[]; },
     filter:function(t){ return t.state==='dwell'&&t.stopIdx>=0&&t.line&&t.line.stops; },
-    posOf:function(t){ var st=t.line.stops[t.stopIdx]; return {x:st.x, z:st.z}; }
+    posOf:function(t){ var st=t.line.stops[t.stopIdx]; return {x:st.x, z:st.z}; },
+    gate:function(px,pz){ return nearStation(px,pz); }   // v1.30: skip scan unless near a platform
   });
   /* MARTA buses: 10u BOARD_RANGE to the DWELLING bus's stop.
      v1.30 (Joshua 2026-10-10): player must be AT a bus stop to board —
@@ -8239,7 +8351,8 @@ function initProximityTrackers(){
     radius:10,
     list:function(){ return (typeof MB!=='undefined'&&MB&&MB.buses)?MB.buses:[]; },
     filter:function(b){ return b.state==='dwell'&&b.stopIdx>=0&&b.route&&b.route.stops; },
-    posOf:function(b){ var st=b.route.stops[b.stopIdx]; return {x:st.x, z:st.z}; }
+    posOf:function(b){ var st=b.route.stops[b.stopIdx]; return {x:st.x, z:st.z}; },
+    gate:function(px,pz){ return nearBusStop(px,pz); }   // v1.30: skip scan unless AT a bus stop
   });
   /* Enterable buildings: 5u to the door (same as old spCheckEnterables).
      The tracker stores the ENTERABLES record; the button resolves its index
