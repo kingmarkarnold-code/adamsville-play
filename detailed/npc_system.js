@@ -951,9 +951,12 @@ function initNPCs(){
   for (var i=0;i<NPC_COUNT;i++) npcs.push(spawnNPC(i));
   for (var s=0;s<MAX_VISIBLE;s++) slots.push(null);
   var unitBox=new THREE.BoxGeometry(1,1,1);
+  /* v1.48 (#18, Aria Nakamura): NPC body parts use the shared toon palette
+     (MeshToonMaterial) — Pixar-style stepped shading. Falls back to Lambert
+     if toon_mats.js is unavailable. */
   function im(){
     var m=new THREE.InstancedMesh(unitBox,
-      new THREE.MeshLambertMaterial({color:0xffffff}), MAX_VISIBLE);
+      (typeof toonMat==='function'?toonMat(0xffffff):new THREE.MeshLambertMaterial({color:0xffffff})), MAX_VISIBLE);
     m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     m.frustumCulled=false;      // positions update every frame; never cull the batch
     m.castShadow=false; m.receiveShadow=false;
@@ -964,6 +967,7 @@ function initNPCs(){
      hide/show them instantly without touching the NPC data. */
   try {
     window.__npcMeshes=[_mesh.torso,_mesh.head,_mesh.armL,_mesh.armR,_mesh.legL,_mesh.legR];
+  window.__npcSlots=slots; /* v1.52 BLOB SHADOWS (expert #16): expose render slots so blob_shadows.js can read NPC positions without touching this render loop */
     if (window.__npcPaused) for (var _hi=0; _hi<window.__npcMeshes.length; _hi++) window.__npcMeshes[_hi].visible=false;
   } catch(e){}
   npcReady=true;
