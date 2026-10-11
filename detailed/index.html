@@ -8003,12 +8003,177 @@ function hideNpcDialog(){
   }catch(e){}
 }
 document.getElementById('npc-dialog-bye').addEventListener('click', function(){ hideNpcDialog(); });
+/* ============================================================================
+   v1.29 PROXIMITY ALERT SYSTEM (Joshua's idea) — event-driven proximity.
+
+   BEFORE: updateActionButton() scanned EVERY car, pickup, train, bus, NPC,
+   and enterable building on every tick to find what's near the player —
+   thousands of distance checks for a button that changes a few times a
+   minute.
+
+   AFTER: each ProximityTracker keeps the SET of entities currently inside
+   its radius. On each tick it diffs the new set against the old set and
+   fires onEnter (arrived) / onExit (left) only for what changed — like a
+   doorbell that rings when someone arrives instead of checking the porch
+   every second. The action button reads tracker.nearest instead of
+   scanning.
+
+   Trackers run on the same ~8Hz throttle tick as the action button
+   (see animate()), so prompts still feel instant.
+
+   Usage:
+     var t = new ProximityTracker({
+       radius: 4.5,                       // trigger radius in world units
+       list:   function(){ return cars; }, // fn returning the entity array
+       posOf:  function(e){ return e; },   // fn returning {x,z} for an entity
+       filter: function(e){ return true; },// optional: skip ineligible entities
+       idOf:   function(e){ return e; },   // optional: unique key per entity
+       onEnter:function(e){},              // optional: fired when e enters
+       onExit: function(e){}               // optional: fired when e leaves
+     });
+     t.update(player.x, player.z);         // diff + fire events
+     t.nearest;                            // closest in-range entity (or null)
+     t.hasAny();                           // true if anything is in range
+   ============================================================================ */
+function ProximityTracker(opts){
+  this.radius=opts.radius;
+  this.r2=opts.radius*opts.radius;   // compare squared distances (no sqrt)
+  this.getList=opts.list;
+  this.posOf=opts.posOf||function(e){ return e; };
+  this.filter=opts.filter||function(){ return true; };
+  this.idOf=opts.idOf||function(e){ return e; };
+  this.onEnter=opts.onEnter||null;
+  this.onExit=opts.onExit||null;
+  this.near=new Map();   // id -> entity: currently inside the radius
+  this.nearest=null;     // closest in-range entity, refreshed each update
+}
+/* update(px,pz) — recompute who's in range, fire enter/exit events for
+   changes only, refresh this.nearest. Safe to call before sources exist. */
+ProximityTracker.prototype.update=function(px,pz){
+  var list=[];
+  try{ list=this.getList()||[]; }catch(e){ list=[]; }
+  var seen=new Set(), i, e, id;
+  var best=null, bd=this.r2;
+  for (i=0;i<list.length;i++){
+    e=list[i];
+    if (!e) continue;
+    try{ if (!this.filter(e)) continue; }catch(fe){ continue; }
+    var p;
+    try{ p=this.posOf(e); }catch(pe){ continue; }
+    if (!p) continue;
+    var dx=px-p.x, dz=pz-p.z, d2=dx*dx+dz*dz;
+    if (d2<=this.r2){
+      try{ id=this.idOf(e); }catch(ie){ id=e; }
+      seen.add(id);
+      if (!this.near.has(id)){
+        this.near.set(id,e);
+        if (this.onEnter){ try{ this.onEnter(e); }catch(ee){} }
+      } else {
+        this.near.set(id,e);   // refresh the stored reference
+      }
+      if (d2<bd){ bd=d2; best=e; }
+    }
+  }
+  /* exits: anything in the old set but not the new set has left */
+  var self=this, exits=[];
+  this.near.forEach(function(ent,key){ if (!seen.has(key)) exits.push([key,ent]); });
+  for (i=0;i<exits.length;i++){
+    this.near.delete(exits[i][0]);
+    if (this.onExit){ try{ this.onExit(exits[i][1]); }catch(ee){} }
+  }
+  this.nearest=best;
+  return this;
+};
+/* hasAny() — true when at least one entity is inside the radius. */
+ProximityTracker.prototype.hasAny=function(){ return this.near.size>0; };
+/* clear() — forget all tracked entities (e.g. on zone change or teleport).
+   Next update re-fires onEnter for anything still in range. */
+ProximityTracker.prototype.clear=function(){ this.near.clear(); this.nearest=null; };
+
+/* ----------------------------------------------------------------------------
+   Tracker instances — one per proximity category the action button cares
+   about. Radii match the old scan thresholds exactly so behavior is
+   identical; only the mechanism changed (events instead of polling).
+   Created lazily by initProximityTrackers() so all source arrays exist.
+   ---------------------------------------------------------------------------- */
+var proxCars=null, proxPickups=null, proxNPCs=null,
+    proxTrains=null, proxBuses=null, proxEnterables=null;
+
+function initProximityTrackers(){
+  if (proxCars) return;   // already initialized
+  /* Cars: 4.5u radius (matches old nearestUsableCar threshold). Skips
+     wrecks, sunk/sinking cars, and the currently-driven car. */
+  proxCars=new ProximityTracker({
+    radius:4.5,
+    list:function(){ return (typeof cars!=='undefined')?cars:[]; },
+    filter:function(c){ return !(c.dead||c.sunk||c.sinking||c.driving); }
+  });
+  /* Pickups: 3.5u radius (matches old nearestPickup threshold). */
+  proxPickups=new ProximityTracker({
+    radius:3.5,
+    list:function(){ return (typeof pickups!=='undefined')?pickups:[]; }
+  });
+  /* NPCs: 4.5u TALK radius over the visible slots (same source as the old
+     npcTalkNearest). Eligibility (on foot, outside, not riding) is checked
+     once per update instead of per NPC. */
+  proxNPCs=new ProximityTracker({
+    radius:4.5,
+    list:function(){
+      try{ if (typeof npcTalkEligible==='function' && !npcTalkEligible()) return []; }catch(e){ return []; }
+      return (typeof slots!=='undefined')?slots:[];
+    }
+  });
+  /* MARTA trains: 30u BOARD_RANGE to the DWELLING train's platform stop
+     (same rule as old nearestDwellingTrain). Position is the stop, not the
+     train, because you board from the platform. */
+  proxTrains=new ProximityTracker({
+    radius:30,
+    list:function(){ return (typeof MT!=='undefined'&&MT&&MT.trains)?MT.trains:[]; },
+    filter:function(t){ return t.state==='dwell'&&t.stopIdx>=0&&t.line&&t.line.stops; },
+    posOf:function(t){ var st=t.line.stops[t.stopIdx]; return {x:st.x, z:st.z}; }
+  });
+  /* MARTA buses: 25u BOARD_RANGE to the DWELLING bus's stop. */
+  proxBuses=new ProximityTracker({
+    radius:25,
+    list:function(){ return (typeof MB!=='undefined'&&MB&&MB.buses)?MB.buses:[]; },
+    filter:function(b){ return b.state==='dwell'&&b.stopIdx>=0&&b.route&&b.route.stops; },
+    posOf:function(b){ var st=b.route.stops[b.stopIdx]; return {x:st.x, z:st.z}; }
+  });
+  /* Enterable buildings: 5u to the door (same as old spCheckEnterables).
+     The tracker stores the ENTERABLES record; the button resolves its index
+     for the 'enter-loc:N' action. */
+  proxEnterables=new ProximityTracker({
+    radius:5,
+    list:function(){ return (typeof ENTERABLES!=='undefined')?ENTERABLES:[]; },
+    posOf:function(e){ return {x:e.doorX, z:e.doorZ}; }
+  });
+}
+/* updateProximity() — diff all trackers against the player's position.
+   Called on the ~8Hz throttle tick right before updateActionButton() reads
+   the results. Guards: no-ops until the player object exists. */
+function updateProximity(){
+  initProximityTrackers();
+  if (typeof player==='undefined'||!player) return;
+  var px=player.x, pz=player.z;
+  try{ proxCars.update(px,pz); }catch(e){}
+  try{ proxPickups.update(px,pz); }catch(e){}
+  try{ proxNPCs.update(px,pz); }catch(e){}
+  try{ proxTrains.update(px,pz); }catch(e){}
+  try{ proxBuses.update(px,pz); }catch(e){}
+  try{ proxEnterables.update(px,pz); }catch(e){}
+}
 function updateActionButton(){
-  /* v1.28 PERF (FIX 2): all distance checks in this function use the fast
-     sqrt form instead of Math.hypot. This function runs every frame (see
-     FIX 3 throttle in animate()), so every hypot saved matters. */
+  /* v1.29 PROXIMITY ALERTS (Joshua's idea): this function no longer scans
+     for nearby cars/pickups/trains/buses/NPCs/enterables itself. The
+     ProximityTracker set (updated by updateProximity() on this same tick)
+     already knows who's in range via enter/exit events — we just read
+     tracker.nearest. Priority order is UNCHANGED from v1.28, so the button
+     offers exactly the same actions in the same situations.
+     Cheap single-distance checks (house doors, director, Marriott
+     elevator, inside-location exit) stay inline — they were never the
+     problem. */
   var act=null, label='';
-  pendingPickup=null;   // v1.12: reset each frame; set fresh below when in range
+  pendingPickup=null;   // v1.12: reset each tick; set fresh below when in range
   if (car.driving){
     act='exit-car'; label='EXIT CAR';
   } else {
@@ -8039,52 +8204,67 @@ function updateActionButton(){
         var dsbi=heroHouse.bsmtDoor ?
           (function(){ var _x=player.x-heroHouse.bsmtDoor.x, _z=player.z-heroHouse.bsmtDoor.z; return Math.sqrt(_x*_x+_z*_z); })() : 1e9;
         if (dfi<5||dbi<5||dsbi<5){ act='exit-house'; label='EXIT HOUSE'; }
-        else { pendingPickup=nearestPickup(); if (pendingPickup){ act='pickup'; label='PICK UP'; } }
+        else {
+          /* v1.29: pickup from the proximity tracker instead of scanning. */
+          var _pk=proxPickups?proxPickups.nearest:null;
+          if (_pk){ pendingPickup=_pk; act='pickup'; label='PICK UP'; }
+        }
       }
     } else {
-      if (typeof martaCheckBoard==='function'){
-        var martaRide=martaCheckBoard();
-        if (martaRide && player.ridingTrain){ act=martaRide.act; label=martaRide.label; }
-      }
-      if (typeof busCheckBoard==='function'){
-        var busRide=busCheckBoard();
-        if (busRide && player.ridingBus){ act=busRide.act; label=busRide.label; }
-      }
+      /* v1.29: riding states are direct flags — no scan needed. (Old code
+         reached these via martaCheckBoard()/busCheckBoard(); same result.) */
+      if (player.ridingTrain){ act='exit-train'; label='EXIT TRAIN'; }
+      else if (player.ridingBus){ act='exit-bus'; label='EXIT BUS'; }
       if (!act){
-      pendingCar=nearestUsableCar();   // nearest drivable, non-wrecked, non-sunk car
-      if (pendingCar){ act='enter-car'; label='ENTER CAR'; }
-      else if (df<5){ act='enter-front'; label='ENTER HOUSE'; }
-      else if (db<5){ act='enter-back'; label='ENTER HOUSE'; }
-      /* v3.3 HILL: basement walkout door (north face) — same ENTER HOUSE
-         label, drops the player on the basement level (heroFloor=0). */
-      else if (dbs<5){ act='enter-basement'; label='ENTER HOUSE'; }
-      else { pendingPickup=nearestPickup(); if (pendingPickup){ act='pickup'; label='PICK UP'; } }
-      if (!act && typeof martaCheckBoard==='function'){
-        var martaAct=martaCheckBoard(); if (martaAct){ act=martaAct.act; label=martaAct.label; if(martaAct.train) window.__martaBoardTrain=martaAct.train; }
-      }
-      if (!act && typeof busCheckBoard==='function'){
-        var busAct=busCheckBoard(); if (busAct){ act=busAct.act; label=busAct.label; if(busAct.bus) window.__busBoardBus=busAct.bus; }
-      }
-      if (!act && typeof spCheckEnterables==='function'){
-        var spOut=spCheckEnterables(); if (spOut){ act=spOut.act; label=spOut.label; }
-      }
-      /* v1.14 NPC talk (Joshua) / v1.14.1 Dialogue Director: nearest visible
-         pedestrian in range gets a TALK prompt on the universal action button —
-         same pattern as ENTER CAR. npcTalkNearest() already excludes
-         driving/inside/riding states. Lines come from personality pools
-         (man/woman/boy16 + shared Atlanta pool) via npcTalkLine(n). */
-      /* v1.21 Dialogue Director NPC (Joshua): the in-world writer behind
-         the city's dialogue, now a living character. If the Director is near
-         and visible, offer TALK with their own line pool — same universal
-         action button pattern. Guarded: no-ops if the module is missing. */
-      if (!act && typeof directorTalkNearest==='function'){
-        var ddn=directorTalkNearest(player.x,player.z);
-        if (ddn){ act='talk-director'; label='TALK'; window.__talkDirector=ddn; }
-      }
-      if (!act && typeof npcTalkNearest==='function'){
-        var tn=npcTalkNearest(player.x,player.z);
-        if (tn){ act='talk-npc'; label='TALK'; window.__talkNPC=tn; }
-      }
+        /* v1.29: nearest usable car comes from the tracker (4.5u radius,
+           wrecks/sunk/driven filtered at track time). */
+        pendingCar=proxCars?proxCars.nearest:null;
+        if (pendingCar){ act='enter-car'; label='ENTER CAR'; }
+        else if (df<5){ act='enter-front'; label='ENTER HOUSE'; }
+        else if (db<5){ act='enter-back'; label='ENTER HOUSE'; }
+        /* v3.3 HILL: basement walkout door (north face) — same ENTER HOUSE
+           label, drops the player on the basement level (heroFloor=0). */
+        else if (dbs<5){ act='enter-basement'; label='ENTER HOUSE'; }
+        else {
+          var _pk2=proxPickups?proxPickups.nearest:null;
+          if (_pk2){ pendingPickup=_pk2; act='pickup'; label='PICK UP'; }
+        }
+        /* v1.29: dwelling train/bus from trackers (30u/25u to the platform
+           stop). Labels match the old martaCheckBoard/busCheckBoard text. */
+        if (!act && proxTrains && proxTrains.nearest){
+          var _t=proxTrains.nearest;
+          act='board-train'; label='BOARD '+_t.line.name+' TRAIN';
+          window.__martaBoardTrain=_t;
+        }
+        if (!act && proxBuses && proxBuses.nearest){
+          var _b=proxBuses.nearest;
+          act='board-bus'; label='BOARD BUS '+_b.route.num;
+          window.__busBoardBus=_b;
+        }
+        /* v1.29: enterable building from the tracker (5u to the door).
+           Index is resolved for the 'enter-loc:N' action. */
+        if (!act && proxEnterables && proxEnterables.nearest){
+          var _e=proxEnterables.nearest;
+          var _ei=(typeof ENTERABLES!=='undefined')?ENTERABLES.indexOf(_e):-1;
+          if (_ei>=0){ act='enter-loc:'+_ei; label='ENTER '+_e.name; }
+        }
+        /* v1.14 NPC talk (Joshua) / v1.14.1 Dialogue Director: nearest visible
+           pedestrian in range gets a TALK prompt on the universal action button.
+           v1.29: NPC comes from the tracker; the Director is a single cheap
+           distance check (was never a scan) so it stays inline. */
+        if (!act && typeof directorTalkNearest==='function'){
+          var ddn=directorTalkNearest(player.x,player.z);
+          if (ddn){ act='talk-director'; label='TALK'; window.__talkDirector=ddn; }
+        }
+        if (!act){
+          var _tn=proxNPCs?proxNPCs.nearest:null;
+          /* v1.29: keep the old scan as a fallback if the tracker missed
+             (e.g. tracker not yet initialized on the very first tick). */
+          if (!_tn && typeof npcTalkNearest==='function'){
+            try{ _tn=npcTalkNearest(player.x,player.z); }catch(e){}
+          }
+          if (_tn){ act='talk-npc'; label='TALK'; window.__talkNPC=_tn; }
+        }
       }
     }
   }
@@ -8196,10 +8376,14 @@ function animate(){
      every frame. Its proximity scans (nearest car/train/bus/NPC/pickup,
      door distances) don't need 60Hz precision — 8Hz is imperceptible for
      button prompts and saves thousands of distance checks per second. */
+  /* v1.29 PROXIMITY ALERTS (Joshua's idea): on each ~8Hz tick, first
+     diff the proximity trackers (enter/exit events), then let the action
+     button read the fresh tracker state. Same tick, same feel — but the
+     button no longer scans the world itself. */
   try{
     window.__uabT=(window.__uabT||0)+dt;
-    if (window.__uabT>0.12){ window.__uabT=0; updateActionButton(); }
-  }catch(e){ try{ updateActionButton(); }catch(e2){} }
+    if (window.__uabT>0.12){ window.__uabT=0; updateProximity(); updateActionButton(); }
+  }catch(e){ try{ updateProximity(); updateActionButton(); }catch(e2){} }
   try{ updatePickups(dt); }catch(e){}
   try{ if(typeof mqUpdate!=='undefined') mqUpdate(dt); }catch(e){}
   updateSmoke(dt);
