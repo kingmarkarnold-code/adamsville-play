@@ -762,6 +762,11 @@ window.updateRefNPCs=function(dt){ updateRefNPCs(dt||0.016); };
    window.__refnpcV1. */
 var bootTries=0;
 var bootTimer=setInterval(function(){
+
+  /* v1.34 LAUNCHER SKIP (Joshua 2026-10-11): player unchecked NPCs in launch
+     options — do not initialize at all. The deferred loader normally skips
+     this script entirely; this is the backstop. */
+  if (window.__launchOpts && window.__launchOpts.npcs===false){ try{clearInterval(bootTimer);}catch(e){} return; }
   bootTries++;
   var ready=false;
   try{
