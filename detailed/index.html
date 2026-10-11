@@ -547,6 +547,11 @@
   <div id="adm-hrlog"></div>
   <button class="row" id="adm-dispatch">&#128679; Road Dispatch Log</button>
   <button class="row" id="adm-testconn">&#128268; Test Connection</button>
+  <!-- v1.12.11: "Send Reports to Mollie" — Joshua's spec (2026-10-11).
+       One-tap export: collects the local Report data and uploads it to
+       the GitHub reports/ folder via GitHubReports, so Mollie can see
+       it without the player copy-pasting from the console. -->
+  <button class="row" id="adm-sendreports">&#128228; Send Reports to Mollie</button>
   <div id="adm-status"></div>
   <div id="adm-diag" style="font-size:11px;color:#9fb3c8;white-space:pre-wrap;word-break:break-all;max-height:200px;overflow-y:auto;margin:4px 0;"></div>
   <button id="set-close">Close</button>
@@ -1264,6 +1269,57 @@ function isMobileUI(){
 }
 /* v1.11: fading toast (track names, error messages) */
 var _toastT=null;
+/* ============================================================
+   v1.12.11 — "SEND REPORTS TO MOLLIE" (Joshua's spec, 2026-10-11).
+   One-tap export of the local diagnostic reports: collects the
+   in-memory Report data (the same events the old report panel used
+   to show) plus anything still queued in GitHubReports, uploads it
+   to the GitHub reports/ folder via the existing GitHubReports
+   uploader, and toasts the result. Mollie monitors that folder, so
+   this is how the player hands her the logs without copy-pasting
+   from the console. Manual action only — nothing automatic here.
+   Documentation comments are required on all game code (Joshua's
+   standing rule); this block follows it.
+   ============================================================ */
+function sendReportsToMollie(){
+  try{
+    /* GitHubReports is defined in github_reports.js. If the script
+       failed to load, there is nothing to send with. */
+    if(typeof window.GitHubReports==='undefined' || !window.GitHubReports){
+      try{ showToast('Report uploader not ready — try again in a moment', 3000); }catch(e){}
+      return;
+    }
+    var st = null;
+    try{ st = window.GitHubReports.status(); }catch(e){}
+    if(!st || !st.hasToken){
+      /* No token configured: the uploader would silently no-op, so
+         tell the player why instead of pretending it worked. */
+      try{ showToast('No GitHub token set — reports cannot be sent yet', 3500); }catch(e){}
+      return;
+    }
+    /* Collect the local report payload. Report.shareJson() is the
+       compact form: meta + systems + newest 300 events. */
+    var payload = null;
+    try{
+      if(typeof Report!=='undefined' && Report && typeof Report.shareJson==='function')
+        payload = JSON.parse(Report.shareJson());
+    }catch(e){ payload = null; }
+    if(!payload) payload = { note:'no local Report data available' };
+    payload._exportKind = 'manual-send-to-mollie';
+    try{ window.GitHubReports.queue('manual-export', payload); }catch(e){}
+    try{ showToast('Sending reports to Mollie…', 2000); }catch(e){}
+    /* Flush now instead of waiting for the 5-minute timer. */
+    window.GitHubReports.flush().then(function(ok){
+      try{
+        if(ok) showToast('Reports sent to Mollie!', 3000);
+        else showToast('Send failed — will retry automatically', 3500);
+      }catch(e){}
+    });
+  }catch(e){
+    /* Diagnostics must never break the game — Joshua's standing rule. */
+    try{ showToast('Could not send reports', 2500); }catch(e2){}
+  }
+}
 function showToast(msg,ms){
   var t=document.getElementById('toast'); if(!t) return;
   t.textContent=msg; t.classList.add('show');
@@ -2062,6 +2118,8 @@ var ASSETVER=(function(){
         try{ if(typeof window.toggleDispatchLog==='function') window.toggleDispatchLog(true); }catch(e){}
       });
       document.getElementById('adm-testconn').addEventListener('click',function(){ testConnection(); });
+      /* v1.12.11: "Send Reports to Mollie" button — Joshua's spec. */
+      document.getElementById('adm-sendreports').addEventListener('click',function(){ sendReportsToMollie(); });
       confirmWire();
       // Refresh the per-type tags whenever settings opens.
       document.getElementById('help-btn').addEventListener('click',function(){
