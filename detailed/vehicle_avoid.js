@@ -44,6 +44,7 @@
     school: [6.0, 1.25],  // school bus
     semi:   [9.5, 1.5],   // semi tractor-trailer
     patrol: [3.0, 1.3],   // work-crew / inspector patrol vehicle
+    cop:    [2.5, 1.1],   // APD police cruiser (police_system.js, 2026-10-10)
     train:  [25.0, 1.5],  // MARTA train (blocker only — never yields)
     car:    [2.5, 1.1]    // parked NPC car / fallback
   };
@@ -53,9 +54,26 @@
      hx,hz = heading unit vector (forward = (sin yaw, cos yaw) convention).
      selfRef (the caller's own record object) is excluded so a vehicle never
      blocks itself. Everything is wrapped in try/catch: any subsystem that
-     hasn't initialized yet is simply skipped. */
+     hasn't initialized yet is simply skipped.
+     v1.32 FIX (2026-10-10, police staffing task): the subsystem records
+     (TR, MB, SE, SB, MT, RC, CE) are `var`s inside their own files' IIFEs —
+     bare references here ALWAYS resolved to undefined, so those blocks were
+     SILENTLY SKIPPED and most vehicle types never saw each other through
+     this system. Every block now resolves through the window.* handle its
+     system actually publishes (verified in each file):
+       traffic_system.js  -> window.TRAFFIC.cars
+       marta_bus_system.js -> window.MARTA_BUS.buses
+       semi_system.js     -> window.SEMIS.semis
+       schoolbus_system.js -> window.__sbActive (stop-arm buses; stopped,
+                              so speed 0 is correct)
+       marta_system.js    -> window.MARTA.trains
+       police_system.js   -> window.POLICE.patrols
+     Road-crew / code-enforcement patrols are INTENTIONALLY not gathered:
+     per Joshua's v1.30 crew render rule their meshes are visible=false
+     (pure data scouts) — registering invisible trucks would make traffic
+     stop for no visible reason. */
   function gather(selfRef){
-    var out = [], i, o, d;
+    var out = [], i, o, d, S;
     function push(x, z, yaw, kind, speed, ref){
       if (ref === selfRef) return;
       if (!isFinite(x) || !isFinite(z)) return;
@@ -65,20 +83,28 @@
                  halfL:d[0], halfW:d[1],
                  speed:speed || 0, kind:kind, ref:ref || null });
     }
-    try{ if (typeof TR!=='undefined' && TR && TR.cars)
-      for (i=0;i<TR.cars.length;i++){ o=TR.cars[i]; push(o.x,o.z,o.heading,'traf',o.speed,o); } }catch(e){}
-    try{ if (typeof MB!=='undefined' && MB && MB.buses)
-      for (i=0;i<MB.buses.length;i++){ o=MB.buses[i]; push(o.x,o.z,o.yaw,'bus',o.speed,o); } }catch(e){}
-    try{ if (typeof SE!=='undefined' && SE && SE.semis)
-      for (i=0;i<SE.semis.length;i++){ o=SE.semis[i]; push(o.x,o.z,o.heading,'semi',o.speed,o); } }catch(e){}
-    try{ if (typeof SB!=='undefined' && SB && SB.buses)
-      for (i=0;i<SB.buses.length;i++){ o=SB.buses[i]; push(o.x,o.z,o.yaw,'school',o.speed,o); } }catch(e){}
-    try{ if (typeof MT!=='undefined' && MT && MT.trains)
-      for (i=0;i<MT.trains.length;i++){ o=MT.trains[i]; push(o.x,o.z,o.yaw,'train',o.speed,o); } }catch(e){}
-    try{ if (typeof RC!=='undefined' && RC && RC.patrols)
-      for (i=0;i<RC.patrols.length;i++){ o=RC.patrols[i]; if(o.mesh) push(o.mesh.position.x,o.mesh.position.z,o.mesh.rotation.y,'patrol',o.speed,o); } }catch(e){}
-    try{ if (typeof CE!=='undefined' && CE && CE.patrols)
-      for (i=0;i<CE.patrols.length;i++){ o=CE.patrols[i]; if(o.mesh) push(o.mesh.position.x,o.mesh.position.z,o.mesh.rotation.y,'patrol',o.speed,o); } }catch(e){}
+    try{ S=null; try{ S=window.TRAFFIC; }catch(e){}
+      if (S && S.cars)
+      for (i=0;i<S.cars.length;i++){ o=S.cars[i]; push(o.x,o.z,o.heading,'traf',o.speed,o); } }catch(e){}
+    try{ S=null; try{ S=window.MARTA_BUS; }catch(e){}
+      if (S && S.buses)
+      for (i=0;i<S.buses.length;i++){ o=S.buses[i]; push(o.x,o.z,o.yaw,'bus',o.speed,o); } }catch(e){}
+    try{ S=null; try{ S=window.SEMIS; }catch(e){}
+      if (S && S.semis)
+      for (i=0;i<S.semis.length;i++){ o=S.semis[i]; push(o.x,o.z,o.heading,'semi',o.speed,o); } }catch(e){}
+    try{ S=null; try{ S=window.__sbActive; }catch(e){}
+      if (S && S.length)
+      for (i=0;i<S.length;i++){ o=S[i]; push(o.x,o.z,o.yaw||0,'school',0,o); } }catch(e){}
+    try{ S=null; try{ S=window.MARTA; }catch(e){}
+      if (S && S.trains)
+      for (i=0;i<S.trains.length;i++){ o=S.trains[i]; push(o.x,o.z,o.yaw,'train',o.speed,o); } }catch(e){}
+    /* APD police cruisers (police_system.js, 2026-10-10) — registered as
+       'cop' so civilian traffic, buses, and semis yield to THEM too.
+       Units expose x/z/heading/speed; selfRef exclusion works because the
+       unit record itself is passed as ref. */
+    try{ S=null; try{ S=window.POLICE; }catch(e){}
+      if (S && S.patrols)
+      for (i=0;i<S.patrols.length;i++){ o=S.patrols[i]; push(o.x,o.z,o.heading,'cop',o.speed,o); } }catch(e){}
     /* parked NPC cars (driveways etc.) — static obstacles, still block */
     try{ if (typeof cars!=='undefined' && cars)
       for (i=0;i<cars.length;i++){ o=cars[i]; if(o.sunk||o.sinking) continue;
