@@ -691,11 +691,13 @@ function initRefNPC(){
      undefined; the update loop guards on it. */
   // hook animate
   try{
-    if (typeof animate==='function' && !animate.__refnpcWrap){
-      var orig=animate;
+    /* v1.51 TICK REGISTRY (expert report #14, James Park, Joshua approved):
+       was an animate() monkey-patch — now registers on the central Sim tick
+       registry. Same once-per-frame timing, deterministic priority order. */
+    if(window.Sim && typeof Sim.onTick==='function' && !window.__refnpcTickReg){
+      window.__refnpcTickReg=true;
       /* v1.22 LAUNCHER (Joshua 2026-10-10): photo NPCs follow the NPCs launch option. */
-      var wrapped=function(){ orig(); if(!window.__npcPaused && (!window.__launchOpts || window.__launchOpts.npcs!==false)) updateRefNPCs(); };
-      wrapped.__refnpcWrap=true; animate=wrapped;
+      Sim.onTick('render', 70, function(dt){ if(!window.__npcPaused && (!window.__launchOpts || window.__launchOpts.npcs!==false)) updateRefNPCs(); });
     }
   }catch(e){}
   try{ if (typeof Report!=='undefined' && Report.setSys)
