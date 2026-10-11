@@ -273,6 +273,27 @@ function updateBus(b, dt){
       b.s=Math.max(1,Math.min(route.path.length-1,b.s));
       if (b.state!=='dwell') b.dir*=-1;
     }
+    /* v1.31 — JOSHUA'S NO-DRIVE-THROUGH-VEHICLES RULE (2026-10-10): this is the
+       exact bug Joshua reported — a bus drove straight through his van. A bus
+       is a full-width vehicle on a fixed path; it cannot verify a safe passing
+       lane, so it NEVER goes around — it waits. follow-don't-ram: match a slow
+       blocker's speed, stop fully for a stopped one. The tight lateral cone
+       keeps oncoming traffic in the adjacent lane from triggering a stop —
+       only something actually in the bus's path does. The wait releases on its
+       own the moment the path clears. */
+    b.vehYield=false;
+    try{
+      if (window.VehicleAvoid && b.state==='run'){
+        var _bd=route.path.dirAt(b.s); if (b.dir<0) _bd=[-_bd[0],-_bd[1]];
+        var _byaw=Math.atan2(_bd[0],_bd[1]);
+        var _bv=VehicleAvoid.blockedAhead(b.x,b.z,Math.sin(_byaw),Math.cos(_byaw),b,20,1.25,true);
+        if (_bv){
+          var _bspd=_bv.o.speed||0;
+          target=Math.min(target,Math.max(0,_bspd));
+          b.vehYield=true;
+        }
+      }
+    }catch(e){}
     b.speed+=(target-b.speed)*Math.min(1,dt*1.8);
     b.s+=b.dir*b.speed*dt;
     b.s=Math.max(0,Math.min(route.path.length,b.s));
