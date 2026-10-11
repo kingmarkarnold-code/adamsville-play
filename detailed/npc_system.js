@@ -138,7 +138,7 @@ var _col=null, _free=[], _mesh=null;   // _mesh: {torso,head,armL,armR,legL,legR
 var walkRoads=[], comSpots=[], resSpots=[];
 var borderOK=null;      // null = no constraint; else {px,py...} half-planes
 
-/* Deterministic RNG for PLACEMENT ONLY (stable spawns). AI uses Math.random. */
+/* Deterministic RNG for PLACEMENT ONLY (stable spawns). AI uses aiRand (v1.46 seeded). */
 function mulberry32(a){
   return function(){
     a|=0; a=a+0x6D2B79F5|0;
@@ -148,6 +148,11 @@ function mulberry32(a){
   };
 }
 var srand=mulberry32(19951013);
+/* v1.46 SEEDED AI RNG (expert report #13, James Park, Joshua approved):
+   Per-frame NPC AI decisions use aiRand instead of Math.random, so NPC
+   behavior is deterministic per session and identical across devices now
+   that the sim runs on a fixed 30Hz timestep. srand stays placement-only. */
+var aiRand=mulberry32(20261011);
 
 /* ---------------- border containment ----------------
    BORDER is a convex quad [{x,z}x4]. Precompute inward half-planes so NPCs
@@ -531,7 +536,7 @@ function nearSpot(list, isOSM){
    under 16, nobody over 65), walk speed by type (boys fastest: 1.6-2.1 u/s),
    0.85 body scale for boys, 3 random body-width variants, and randomized
    skin (brown tones per spec)/shirt/pants. Speeds use srand (stable) at
-   spawn; AI uses Math.random per frame. */
+   spawn; AI uses aiRand (v1.46 seeded) per frame. */
 function spawnNPC(id){
   var pt=null, tries=0, roll=srand();
   // 55% roadside / 20% commercial / 25% residential (fall back to roadside)
@@ -619,7 +624,7 @@ function wfEnter(n){
     lb=npcBlocked(n.x+Math.sin(la)*WF_PROBE, n.z+Math.cos(la)*WF_PROBE, n);
     rb=npcBlocked(n.x+Math.sin(ra)*WF_PROBE, n.z+Math.cos(ra)*WF_PROBE, n);
   }catch(e){}
-  n.wfDir=(!lb&&rb)?1:((!rb&&lb)?-1:(Math.random()<0.5?1:-1));
+  n.wfDir=(!lb&&rb)?1:((!rb&&lb)?-1:(aiRand()<0.5?1:-1));
 }
 function wfTick(n, dt){
   n.wfT+=dt;
@@ -653,7 +658,7 @@ function wfTick(n, dt){
   if (oclr){
     if (++n.wfClear>=3){   // original heading clear 3 ticks running: resume it
       n.wf=false; n.heading=n.wfOrig;
-      setState(n,ST_WALK,2.5+Math.random()*3.5);
+      setState(n,ST_WALK,2.5+aiRand()*3.5);
       return false;
     }
   } else n.wfClear=0;
@@ -782,7 +787,7 @@ function aiNPC(n, dt){
       }catch(e){}
     }
     if (n.stateT<=0){
-      if (Math.random()<0.35) setState(n,ST_IDLE,1+Math.random()*2);  // pause, look around
+      if (aiRand()<0.35) setState(n,ST_IDLE,1+aiRand()*2);  // pause, look around
       else setState(n,ST_TURN,0);
     }
     }
@@ -793,10 +798,10 @@ function aiNPC(n, dt){
     if (n.stateT<=0) setState(n,ST_TURN,0);
   }
   else { // ST_TURN: pick a heading, verify it, walk it — or try another
-    n.heading+=(Math.random()*2-1)*2.4;
+    n.heading+=(aiRand()*2-1)*2.4;
     var tx=n.x+Math.sin(n.heading)*3.2, tz=n.z+Math.cos(n.heading)*3.2;
     if (!npcBlocked(tx,tz,n) && !npcNearOther(tx,tz,1.6)){
-      n.fails=0; setState(n,ST_WALK,2.5+Math.random()*3.5);
+      n.fails=0; setState(n,ST_WALK,2.5+aiRand()*3.5);
     } else {
       n.fails++;
       if (n.fails>10){
@@ -1473,7 +1478,7 @@ function settleAtStation(n){
   try{
     var st=n.transit&&n.transit.station; if(!st) return;
     var ax=-(st.pz||0), az=(st.px||0);   // along-track unit (perp of perp)
-    var al=(Math.random()*2-1)*8, pp=(Math.random()*2-1)*2;
+    var al=(aiRand()*2-1)*8, pp=(aiRand()*2-1)*2;
     n.x=st.x+ax*al+(st.px||0)*pp;
     n.z=st.z+az*al+(st.pz||0)*pp;
     n.y=st.platY||n.y; n.lockY=true;
