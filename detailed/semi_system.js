@@ -369,11 +369,12 @@ function initSemis(){
     if (i===2){ s.state='i20_in'; s.t=(I20_PORTAL_T+I20_X_T)/2; }
   }
   try{
-    if (typeof animate==='function'&&!animate.__semiWrap){
-      var orig=animate;
-      var wrapped=function(){ orig(); updateSemis(); };
-      wrapped.__semiWrap=true;
-      animate=wrapped;
+    /* v1.51 TICK REGISTRY (expert report #14, James Park, Joshua approved):
+       was an animate() monkey-patch — now registers on the central Sim tick
+       registry. Same once-per-frame timing, deterministic priority order. */
+    if(window.Sim && typeof Sim.onTick==='function' && !window.__semiTickReg){
+      window.__semiTickReg=true;
+      Sim.onTick('render', 23, function(dt){ updateSemis(); });
     }
   }catch(e){}
   try{ Report.setSys('semis',{status:'ok',version:'1.1',
