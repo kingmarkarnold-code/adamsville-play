@@ -557,6 +557,7 @@
   <h3>Settings</h3>
   <button class="row" id="set-help">How to play</button>
   <button class="row" id="set-music">Music: ON</button>
+  <button class="row" id="set-engine">Engine sounds: ON</button>
   <!-- v1.12.10: "View report" button removed per Joshua — reports go to GitHub now. -->
   <button class="row" id="set-record">Record: OFF</button>
   <button class="row" id="set-gameplay">Gameplay &#9654;</button>
@@ -10293,6 +10294,8 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <script data-dsrc="sim_core.js" data-dkey=""></script>
 <script data-dsrc="traffic_system.js" data-dkey="traffic"></script>
 <script data-dsrc="gps_system.js" data-dkey=""></script>
+<!-- v1.54 #37 ENGINE SOUNDS (Michael Torres, Audio - Joshua approved fix, expanded: all drivable vehicles + buses/trains/trucks/crews) -->
+<script data-dsrc="engine_sounds.js" data-dkey=""></script>
 <script data-dsrc="traffic_assist.js" data-dkey="trafficassist"></script>
 <script data-dsrc="residential_detail.js" data-dkey=""></script>
 <script data-dsrc="semi_system.js" data-dkey="semis"></script>
@@ -10318,7 +10321,7 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <script data-dsrc="schoolbus_system.js" data-dkey=""></script>
 <script data-dsrc="infracrew_system.js" data-dkey="infra"></script>
 <script data-dsrc="surveyfleet_system.js" data-dkey="survey"></script>
-<script data-dsrc="cityworkforce.js" data-dkey="">
+<script data-dsrc="cityworkforce.js" data-dkey=""></script>
 <script data-dsrc="inspector_crew.js" data-dkey="inspector"></script>
 <script data-dsrc="police_system.js" data-dkey=""></script>
 <script data-dsrc="github-config.js" data-dkey=""></script>
@@ -10329,6 +10332,7 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <script data-dsrc="workerhousing.js" data-dkey=""></script>
 <script data-dsrc="daycycle.js" data-dkey=""></script>
 <script data-dsrc="blob_shadows.js" data-dkey=""></script>
+<script data-dsrc="ambient_audio.js" data-dkey=""></script>
 <script data-dsrc="helicopter_system.js" data-dkey=""></script>
 <script data-dsrc="priority_dispatch.js" data-dkey=""></script>
 <script data-dsrc="stayawake.js" data-dkey=""></script>
