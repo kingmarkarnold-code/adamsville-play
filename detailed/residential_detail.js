@@ -131,6 +131,25 @@ try{
     return [bx+lx*c+lz*s, bz-lx*s+lz*c];
   }
 
+  /* v1.34 DETAIL-BODY GROUND MATCH (Joshua 2026-10-11: windows detached from
+     buildings): the detail pass used heightAt() (analytic terrain, center
+     point only) for door/window/porch base Y, but the building BODIES use
+     bldgGroundY() (rendered terrain mesh, MINIMUM of center + 4 yaw-rotated
+     footprint corners). On slopes the two differ by ~2u or more, so windows
+     floated above (or sank into) the body they belong to.
+     This helper computes the base Y with the EXACT same function and inputs
+     the bodies use — bldgGroundY(bx,bz,bw,bd,yaw) minus the same 0.6 embed —
+     so every detail sits on the same ground plane as its body. Falls back to
+     the old heightAt behavior if bldgGroundY isn't defined yet. */
+  function detailBaseY(bx,bz,bw,bd,yaw){
+    try{
+      if (typeof bldgGroundY==='function')
+        return bldgGroundY(bx,bz,bw,bd,(typeof yaw==='number')?yaw:0)-0.6;
+    }catch(e){}
+    try{ return heightAt(bx,bz)-0.6; }catch(e){}
+    return -0.6;
+  }
+
   var DOOR_COLS=[0x6b4a2f,0x4a5d3a,0x7a2e2e,0x3a4a5d,0x8a6d3b];
   var GAR_COLS=[0xd8d2c4,0xc9bfae,0xb5a88f,0xc4c0b4];
   var WIN_COL=0x2b3a4a;
@@ -147,8 +166,9 @@ try{
        runOsmBuildings) so the door/porch/garage align exactly with the
        rotated body. Falls back to road direction when unavailable. */
     var yaw=(kb.length>=7 && typeof kb[6]==='number')?kb[6]:Math.atan2(ri.dx,ri.dz);
-    var gy=0; try{ gy=heightAt(bx,bz); }catch(e){}
-    var base=gy-0.6;
+    /* v1.34: base Y now matches the body exactly (see detailBaseY) — was
+       heightAt(center)-0.6, which detached windows on slopes. */
+    var base=detailBaseY(bx,bz,bw,bd,yaw);
     var hsh=hash01(k);
     stats.houses++;
 
@@ -257,8 +277,9 @@ try{
        street) — the flow is street -> lot -> (walk) -> door. You do NOT
        reach an apartment directly from the street. */
     var yaw2=(ab.length>=7 && typeof ab[6]==='number')?ab[6]:Math.atan2(ri2.dx,ri2.dz);
-    var gy2=0; try{ gy2=heightAt(ax,az); }catch(e){}
-    var base2=gy2-0.6;
+    /* v1.34: base Y now matches the body exactly (see detailBaseY) — was
+       heightAt(center)-0.6, which detached windows on slopes. */
+    var base2=detailBaseY(ax,az,aw,ad,yaw2);
     var hsh2=hash01(k2+7919);
     stats.apts++;
 
