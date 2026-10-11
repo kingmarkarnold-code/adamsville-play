@@ -9454,7 +9454,16 @@ function updateActionButton(){
           if (!_tn && typeof npcTalkNearest==='function'){
             try{ _tn=npcTalkNearest(player.x,player.z); }catch(e){}
           }
-          if (_tn){ act='talk-npc'; label='TALK'; window.__talkNPC=_tn; }
+          if (_tn){
+            act='talk-npc'; label='TALK'; window.__talkNPC=_tn;
+            /* v1.61 (#33, Robert Hayes): show who you're talking to — "TALK TO MARCUS". */
+            try{
+              if (typeof npcNameOf==='function'){
+                var _nm=npcNameOf(_tn);
+                if (_nm && _nm.indexOf(' ')>0) label='TALK TO '+_nm.split(' ')[0].toUpperCase();
+              }
+            }catch(e){}
+          }
         }
       }
     }

@@ -1350,10 +1350,112 @@ function talkPickFresh(poolName, lines){
   talkLastKey=key;
   return lines[i];
 }
+/* ============ v1.61 NAMED NPC RELATIONSHIPS (expert report #33, Robert Hayes,
+   Joshua approved) ============
+   Every NPC gets a persistent name and a relationship level with the player:
+     0 = stranger (never talked), 1 = acquaintance (1-2 talks), 2 = friend (3+ talks)
+   DESIGN NOTES:
+   - Names are derived DETERMINISTICALLY from n.id via an independent seeded
+     RNG (never from the shared srand() stream — consuming srand would shift
+     every NPC's placement). Same id = same name, every session, every device.
+   - Names are computed LAZILY (first talk only) and cached on n.name — zero
+     startup cost for the 1000-NPC population, zero per-frame cost, and the
+     #9 AI LOD tiers are untouched.
+   - Relationships persist in localStorage ('sa_npc_rel_v1') as a sparse
+     {id: talkCount} map — only NPCs the player actually talked to are stored.
+   - npcRespawn() keeps n.id, so the cached name survives a respawn: the same
+     id is treated as the same person across sessions. */
+/* First-name pools, Atlanta-appropriate and diverse. type 0=man, 1=woman,
+   2=boy16 (16-year-old boys get teen names). */
+var NPC_MALE_FIRST=["Marcus","Darnell","Terrence","Jamal","DeAndre","Malik","Chris","Anthony","Darius","Tyrone","Kelvin","Andre","Jerome","Lamar","Reggie","Tony","James","Michael","David","Robert","Kevin","Brian","Eric","Jason","Carlos","Miguel","Jose","Luis","Devon","Jalen","Kaleb","Trevor","Brandon","Curtis","Eddie","Frank","George","Henry","Isaac","Nathan","Peter","Samuel","Victor","Willie"];
+var NPC_FEMALE_FIRST=["Keisha","Latoya","Monique","Tamika","Ebony","Shanice","Denise","Renee","Angela","Michelle","Lisa","Karen","Sandra","Patricia","Dorothy","Gloria","Brenda","Pamela","Debra","Rita","Tina","Felicia","Vanessa","Yolanda","Crystal","Diamond","Jasmine","Alexis","Brittany","Ashley","Megan","Lauren","Hannah","Emily","Sarah","Jessica","Maria","Rosa","Elena","Carmen","Lucia","Sofia","Nina","Grace"];
+var NPC_BOY_FIRST=["Jaylen","Tyreek","DeShawn","Marquis","Tavon","Dre","KJ","Tre","Zay","Cam","Dev","Antwon","Korey","Malachi","Elijah","Josiah","Caleb","Jordan","Tyler","Justin","Aaron","Noah","Ethan","Isaiah","Chris","Jay","Mike","Ant","Lil","Cam","Dev","Zay"];
+var NPC_LAST=["Thompson","Johnson","Williams","Brown","Jones","Davis","Miller","Wilson","Moore","Taylor","Anderson","Thomas","Jackson","White","Harris","Martin","Garcia","Martinez","Robinson","Clark","Lewis","Lee","Walker","Hall","Allen","Young","King","Wright","Scott","Green","Baker","Adams","Nelson","Carter","Mitchell","Perez","Roberts","Turner","Phillips","Campbell","Parker","Evans","Edwards","Collins","Stewart","Morris","Rogers","Reed","Cook","Morgan","Bell","Murphy","Bailey","Rivera","Cooper","Richardson"];
+/* npcSeedPick(id, salt) — deterministic 0..1 from an NPC id. Independent of
+   srand/aiRand/Math.random: stable across sessions and devices, and it never
+   perturbs any other RNG stream. */
+function npcSeedPick(id, salt){
+  try{
+    var r=mulberry32(((id|0)*2654435761)^((salt|0)*40503)^0x33);
+    return r();
+  }catch(e){ return 0.5; }
+}
+/* npcName(n) — the NPC's persistent full name, e.g. "Marcus Thompson".
+   Lazy: computed once on first access, cached on n.name. */
+function npcName(n){
+  try{
+    if (n && n.name) return n.name;
+    var id=(n && typeof n.id==='number')?n.id:0;
+    var pool=(n && n.type===1)?NPC_FEMALE_FIRST:((n && n.type===2)?NPC_BOY_FIRST:NPC_MALE_FIRST);
+    var first=pool[Math.floor(npcSeedPick(id,7)*pool.length)%pool.length];
+    var last=NPC_LAST[Math.floor(npcSeedPick(id,21)*NPC_LAST.length)%NPC_LAST.length];
+    var full=first+' '+last;
+    if (n) n.name=full;
+    return full;
+  }catch(e){ return 'ATLANTA LOCAL'; }
+}
+/* ---- relationship store ---- */
+var NPC_REL_KEY='sa_npc_rel_v1';   // localStorage key for talk counts
+var npcRelStore={};                // sparse map: npcId -> talk count
+(function npcRelLoad(){
+  try{
+    var raw=null;
+    if (typeof localStorage!=='undefined') raw=localStorage.getItem(NPC_REL_KEY);
+    if (raw){ var o=JSON.parse(raw); if (o && typeof o==='object') npcRelStore=o; }
+  }catch(e){ npcRelStore={}; }
+})();
+function npcRelSave(){
+  try{
+    if (typeof localStorage!=='undefined')
+      localStorage.setItem(NPC_REL_KEY, JSON.stringify(npcRelStore));
+  }catch(e){}
+}
+/* npcTalkCount(n) — how many conversations the player has had with this NPC. */
+function npcTalkCount(n){
+  try{
+    var id=n?n.id:-1;
+    var c=npcRelStore[id];
+    return (typeof c==='number' && c>0)?c:0;
+  }catch(e){ return 0; }
+}
+/* npcRelLevel(n) — 0 stranger, 1 acquaintance (1-2 talks), 2 friend (3+ talks). */
+function npcRelLevel(n){
+  var t=npcTalkCount(n);
+  return t<=0?0:(t<3?1:2);
+}
+var NPC_REL_TAG=['','Acquaintance','Friend'];
+/* npcBumpRel(n) — records one conversation. Called once per NEW conversation
+   (not on mid-chat TALK taps). Writes to localStorage immediately; talks are
+   button-tap frequency, never per-frame, so this is cheap. */
+function npcBumpRel(n){
+  try{
+    var id=n?n.id:-1; if (id<0) return;
+    npcRelStore[id]=npcTalkCount(n)+1;
+    npcRelSave();
+  }catch(e){}
+}
+/* Relationship-aware greeting prefixes. Strangers get none (the talk line
+   stands alone); acquaintances and friends get a recognition line ~65% of
+   the time so it doesn't feel scripted on every tap. */
+var REL_HELLO1=["Hey, good to see you again. ","Oh hey — we talked before, right? ","Back again? ","Hey there. "];
+var REL_HELLO2=["My friend! ","Good to see you! ","Hey hey, look who it is. "];
+function npcRelGreeting(n, level){
+  try{
+    if (level<=0) return '';
+    if (Math.random()<0.35) return '';   // sometimes just the line — less robotic
+    var pool=level>=2?REL_HELLO2:REL_HELLO1;
+    return pool[(Math.random()*pool.length)|0];
+  }catch(e){ return ''; }
+}
 /* npcDisplayName(n) — the speaker label shown in the dialogue panel.
-   Kept generic per Joshua's spec (no named characters yet). */
+   v1.61 (#33): real persistent names now, with a relationship tag once the
+   player knows them. (Was generic "ATLANTA LOCAL" before named NPCs.) */
 function npcDisplayName(n){
-  try{ return n.type===2 ? 'LOCAL TEEN' : 'ATLANTA LOCAL'; }catch(e){ return 'ATLANTA LOCAL'; }
+  try{
+    var nm=npcName(n);
+    var lv=npcRelLevel(n);
+    return lv>0 ? nm+' · '+NPC_REL_TAG[lv] : nm;
+  }catch(e){ return 'ATLANTA LOCAL'; }
 }
 /* npcTalkEligible() — true only when the player is on foot and outside.
    No TALK prompt while driving, inside a building, or riding transit.
@@ -1416,12 +1518,21 @@ function npcFaceTick(dt,px,pz){
 }
 /* npcStartTalk(n) — begins (or continues) a conversation with NPC n.
    Locks focus so the NPC keeps facing the player while the panel is open.
-   Tapping TALK again mid-conversation just serves a fresh line. */
+   Tapping TALK again mid-conversation just serves a fresh line.
+   v1.61 (#33): on a NEW conversation (talkNPC!==n) the NPC greets the player
+   according to relationship level, and the talk is recorded (stranger ->
+   acquaintance -> friend). Continuation taps don't re-greet or double-count. */
 function npcStartTalk(n){
   if (!n) return;
   try{
+    var isNew=(talkNPC!==n);
     talkNPC=n; n.focus=true;
     var line=npcTalkLine(n);
+    if (isNew){
+      var lv=npcRelLevel(n);            // level BEFORE this talk counts
+      line=npcRelGreeting(n,lv)+line;
+      npcBumpRel(n);
+    }
     if (typeof showNpcDialog==='function') showNpcDialog(npcDisplayName(n), line);
   }catch(e){}
 }
@@ -1434,6 +1545,7 @@ function npcEndTalk(){
 window.npcTalkNearest=npcTalkNearest;
 window.npcStartTalk=npcStartTalk;
 window.npcEndTalk=npcEndTalk;
+window.npcNameOf=npcName;   /* v1.61 (#33): lets the action button show "TALK TO MARCUS" */
 window.NPC_TALK_LINES=TALK_LINES;   // inspector/debug visibility
 
 /* ---------------- NPC transit commuters (v1.17) ----------------

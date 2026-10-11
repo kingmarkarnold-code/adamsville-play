@@ -12,6 +12,10 @@
      4. Nearby 16-year-old NPCs (Joshua's age rule: nobody under 16) walk to
         the bus door and board; they ride until the route terminus, then get
         off and resume wandering.
+     5. #32 (Joshua approved): the PLAYER can board a dwelling bus at a stop
+        via the universal action button, ride the route, and request a stop
+        to get off — same pattern as marta_bus_system.js (sbCheckBoard /
+        sbDoBoard / sbDoExit, player.ridingSchoolBus).
 
    STANDALONE MODULE. Include AFTER the main game script and AFTER
    marta_bus_system.js (it copies that file's proven route/shuttle pattern):
@@ -47,6 +51,8 @@ var MAX_KIDS    = 3;      // kids picked up per stop
 var KID_SPEED   = 3.6;    // teen walk speed toward the bus door
 
 var SB = { buses: [], ready: false };
+window.__SB = SB;   // public handle (mirrors window.MARTA_BUS); set here so it
+                    // exists even before initSB() runs
 
 /* ---------------- arc-length path (same proven pattern as marta_bus_system) */
 function makePath(pts, ys){
@@ -182,6 +188,135 @@ function stepKids(b, dt){
     try{ n.x=b.x; n.z=b.z; n.y=b.y||n.y; }catch(e){}
   }
 }
+
+/* ---------------- player boarding (expert report #32, Joshua approved) --------
+   Same universal-action-button pattern as marta_bus_system.js:
+     sbCheckBoard() -> {act:'board-schoolbus'|'exit-schoolbus',label,bus}|null
+       (called from updateActionButton() in index.html)
+     sbDoBoard()  — stages the nearest dwelling bus; the frame tick boards
+       it next tick, but ONLY while it is still dwelling (a bus that left
+       during the click is ignored).
+     sbDoExit()   — if the bus is dwelling, the player gets off right there;
+       otherwise a stop is REQUESTED and the player exits automatically when
+       the bus dwells at the next stop.
+   player.ridingSchoolBus — the bus the player is riding (null on foot).
+   The bus AI is untouched: it keeps its route, stops, and reversals whether
+   or not the player is aboard. */
+var SB_BOARD_RANGE = 25;   // player must be this close to the stop to board
+
+/* sbStopPos(b, idx) — world [x,z] of stop idx (stops are arc-length numbers). */
+function sbStopPos(b, idx){
+  try{ return b.path.posAt(b.stops[idx]); }catch(e){ return [b.x, b.z]; }
+}
+
+/* nearestDwellingSchoolBus() — closest bus currently DWELLING (state
+   'boarding', stopIdx>=0) whose stop is within SB_BOARD_RANGE of the player.
+   Boarding only happens AT a stop, never by chasing a moving bus. */
+function nearestDwellingSchoolBus(){
+  if (typeof player==='undefined') return null;
+  var best=null, bd=1e18, i, b, p, d;
+  for (i=0;i<SB.buses.length;i++){
+    b=SB.buses[i];
+    if (b.state!=='boarding' || b.stopIdx<0) continue;
+    p=sbStopPos(b, b.stopIdx);
+    d=Math.hypot(player.x-p[0], player.z-p[1]);
+    if (d<SB_BOARD_RANGE && d<bd){ bd=d; best=b; }
+  }
+  return best;
+}
+
+/* sbCheckBoard() — universal action-button hook. Guarded: no boarding while
+   driving the van, inside a building, or already riding a train/MARTA bus
+   (one ride at a time). */
+window.sbCheckBoard=function(){
+  if (typeof player==='undefined') return null;
+  try{ if (car.driving) return null; }catch(e){}
+  if (player.ridingSchoolBus) return { act:'exit-schoolbus', label:'EXIT SCHOOL BUS' };
+  if (player.inside || player.ridingTrain || player.ridingBus) return null;
+  var b=nearestDwellingSchoolBus();
+  if (b) return { act:'board-schoolbus', label:'BOARD SCHOOL BUS', bus:b };
+  return null;
+};
+
+/* sbDoBoard() — action-button handler: stages the bus; the tick boards it. */
+window.sbDoBoard=function(){
+  var b=nearestDwellingSchoolBus();
+  if (b) window.__sbPendingBus=b;
+};
+
+/* sbDoBoardBus(b) — boards: sets player.ridingSchoolBus, hides the player
+   mesh (the camera chase-follows player.x/z, which the riding tick keeps
+   glued to the bus). */
+function sbDoBoardBus(b){
+  player.ridingSchoolBus=b;
+  player.sbStopRequested=false;
+  try{ player.mesh.visible=false; }catch(e){}
+  try{ if (typeof showToast==='function') showToast('Riding the school bus', 2200); }catch(e){}
+  try{ if (typeof Report!=='undefined') Report.note('sb-board',{}); }catch(e){}
+}
+
+/* sbExitAtDoor(b) — places the player at the bus door (terrain height),
+   clears riding state, restores the player mesh. */
+function sbExitAtDoor(b){
+  var dp=doorPos(b);
+  player.x=dp[0]; player.z=dp[1];
+  try{ player.y=heightAt(player.x,player.z); }catch(e){}
+  player.ridingSchoolBus=null; player.sbStopRequested=false;
+  try{ player.mesh.visible=true; }catch(e){}
+  try{ if (typeof showToast==='function') showToast('Off the school bus', 1800); }catch(e){}
+  try{ if (typeof Report!=='undefined') Report.note('sb-exit',{}); }catch(e){}
+}
+
+/* sbDoExit() — REQUEST-STOP: dwelling at a stop -> get off now. Moving ->
+   request a stop; the tick exits the player when the bus next dwells. */
+window.sbDoExit=function(){
+  var b=player.ridingSchoolBus;
+  if (!b) return;
+  if (b.state==='boarding' && b.stopIdx>=0){ sbExitAtDoor(b); return; }
+  if (!player.sbStopRequested){
+    player.sbStopRequested=true;
+    try{ if (typeof showToast==='function') showToast('Getting off at the next stop...', 2200); }catch(e){}
+    try{ if (typeof Report!=='undefined') Report.note('sb-stop-requested',{}); }catch(e){}
+  }
+};
+
+/* updateSbRiding() — while the player rides: position follows the bus;
+   HUD mode tag shows "SCHOOL BUS — Next: Stop N" (or "doors open", or the
+   pending STOP REQUESTED state). Safety: if the bus is gone (system reset),
+   restore the player instead of stranding them. */
+function updateSbRiding(){
+  var b=null;
+  try{ b=player.ridingSchoolBus; }catch(e){}
+  if (!b) return;
+  if (SB.buses.indexOf(b)<0){
+    player.ridingSchoolBus=null;
+    try{ player.mesh.visible=true; }catch(e){}
+    return;
+  }
+  player.x=b.x; player.z=b.z;
+  try{ player.y=(b.y||0)+1.0; }catch(e){}
+  try{
+    if (player.mesh){ player.mesh.position.set(b.x,(b.y||0)+1.0,b.z); player.mesh.visible=false; }
+  }catch(e){}
+  var nx='END OF LINE';
+  try{
+    if (b.state==='boarding' && b.stopIdx>=0) nx='Stop '+(b.stopIdx+1)+' (doors open)';
+    else { var ni=nextStopIdx(b); if (ni>=0) nx='Stop '+(ni+1); }
+  }catch(e){}
+  var want='SCHOOL BUS'+(player.sbStopRequested?' — STOP REQUESTED':'')+' — Next: '+nx;
+  try{
+    var mt=document.getElementById('mode-tag');
+    if (mt && mt.textContent!==want) mt.textContent=want;
+  }catch(e){}
+}
+
+/* window.__sbTest — debug/test handle (mirrors NPC_DEBUG): exposes the
+   boarding internals so automated tests and the watcher can drive the
+   board/ride/exit flow without a full game boot. */
+window.__sbTest={
+  board: sbDoBoardBus, exitAtDoor: sbExitAtDoor, riding: updateSbRiding,
+  stopPos: sbStopPos, nearest: nearestDwellingSchoolBus, state: SB
+};
 
 /* dropRiders(b) — at the route terminus, kids get off and resume wandering. */
 function dropRiders(b){
@@ -333,6 +468,20 @@ function updateSchoolBusSys(){
     try{ if (SB.buses[i].signT>0.5) act.push({x:SB.buses[i].x, z:SB.buses[i].z}); }catch(e){}
   }
   window.__sbActive=act;   // traffic_system + player driving read this
+  /* #32 player boarding: board a staged bus while it is still dwelling;
+     auto-exit a stop-requested rider when the bus dwells at the next stop;
+     keep a riding player glued to the bus. */
+  try{
+    if (window.__sbPendingBus){
+      var _pb=window.__sbPendingBus; window.__sbPendingBus=null;
+      if (_pb.state==='boarding') sbDoBoardBus(_pb);
+    }
+    if (typeof player!=='undefined' && player.ridingSchoolBus && player.sbStopRequested){
+      var _rb=player.ridingSchoolBus;
+      if (_rb.state==='boarding') sbExitAtDoor(_rb);
+    }
+    updateSbRiding();
+  }catch(e){}
 }
 var _bootTries=0;
 var _bootTimer=setInterval(function(){
