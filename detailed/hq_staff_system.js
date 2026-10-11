@@ -723,12 +723,13 @@ window.updateHQStaff = function(dt){ updateHQStaff(dt || 0.016); };
 /* Wrap animate() to call updateHQStaff each frame. */
 function wrapAnimate(){
   try {
-    if (typeof animate === 'function' && !animate.__hqstaffWrap){
-      var orig = animate;
+    /* v1.51 TICK REGISTRY (expert report #14, James Park, Joshua approved):
+       was an animate() monkey-patch — now registers on the central Sim tick
+       registry. Same once-per-frame timing, deterministic priority order. */
+    if(window.Sim && typeof Sim.onTick==='function' && !window.__hqstaffTickReg){
+      window.__hqstaffTickReg=true;
       /* v1.22 LAUNCHER (Joshua 2026-10-10): skip when HQ staff disabled in launch options. */
-      var wrapped = function(){ orig(); if(!window.__npcPaused && (!window.__launchOpts || window.__launchOpts.hqStaff!==false)) updateHQStaff(0.016); };
-      wrapped.__hqstaffWrap = true;
-      animate = wrapped;
+      Sim.onTick('render', 67, function(dt){ if(!window.__npcPaused && (!window.__launchOpts || window.__launchOpts.hqStaff!==false)) updateHQStaff(0.016); });
     }
   } catch(e){}
 }
