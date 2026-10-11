@@ -90,6 +90,9 @@
 
   /* ---- sidewalk along storefronts ---- */
   spSlab(px0 - 3, cz, 5, 48, 0x9a9a9a, heightAt(px0 - 3, cz), 0.12);
+  /* v1.35 SIDEWALK COLLISION (2026-10-11, Joshua: "I can run through sidewalks"):
+     register this named sidewalk slab as a solid walkable surface. */
+  try{ if(typeof __regSidewalk==='function') __regSidewalk(px0-3, cz, 0, 5, 0.3, 48, heightAt(px0-3,cz)+0.12-0.15); }catch(e){}
 
   /* ---- pylon sign near the corner ---- */
   var pyX = cx - 32, pyZ = cz - 10, pyGy = heightAt(pyX, pyZ);
