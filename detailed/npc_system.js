@@ -110,6 +110,27 @@ var glitchLog=[];       // newest 50 dispatch calls
 var glitchTotal=0;
 var npcReady=false, npcTick=0, visCount=0;
 var streamT=0, repT=0;
+/* v1.44 AI LOD + WALL-FOLLOW (expert report #9, David Okafor — 2026-10-11):
+   Three AI distance tiers so 1,000 NPCs don't all think at 60Hz:
+     tier 0 (< AI_LOD_MID u): full 60Hz AI, every frame — behavior identical
+       to before, no visible change near the player.
+     tier 1 (AI_LOD_MID–AI_LOD_FAR u): 4Hz AI — each NPC accumulates frame dt
+       in n.lodT and runs one aiNPC() tick per AI_LOD_MID_DT seconds with the
+       accumulated dt, so movement distance is preserved (speed*dt) while the
+       decision rate drops. A per-tick lookahead probe (midTierTick) keeps
+       low-rate movement collision-safe.
+     tier 2 (> AI_LOD_FAR u): frozen — no AI, no movement, until the player
+       closes in. Zone-unlock culling still applies on top of this.
+   Wall-follow escape (part 2 of #9): random-walk + probe-and-turn guarantees
+   stuck NPCs. When the stuck detector fires (3 consecutive ~1s checks with
+   <0.6u displacement), the NPC enters wall-follow mode (n.wf): it hugs the
+   obstacle edge (right- or left-hand rule, freer side chosen) until its
+   original heading probes clear for 3 consecutive ticks, then resumes. After
+   WF_MAXT seconds it gives up and falls back to the old random TURN. */
+var AI_LOD_MID=150, AI_LOD_FAR=1500;   // distance bands (u) — squared at use
+var AI_LOD_MID_DT=0.25;               // tier-1 tick period (4Hz)
+var WF_PROBE=3.2;                     // wall-follow lookahead (u, matches AI probe)
+var WF_MAXT=14;                       // max seconds wall-following before fallback
 
 /* scratch / temps — allocated once, never in the hot loop */
 var _m1=null,_m2=null,_m3=null,_m4=null,_m5=null,_m6=null,_m7=null,_out=null;
@@ -557,20 +578,104 @@ function spawnNPC(id){
 /* ---------------- free-think AI ----------------
    No waypoints, no pathfinding. WALK a heading for a few seconds, IDLE and
    look around, TURN to a new heading. Sample ahead; if blocked, TURN.
-   PERF trick: the lookahead probe and stuck check are staggered per NPC
-   ((npcTick+n.id)%18 and %60) so only ~1/18th of the population probes per
-   frame — 1000 NPCs × probes every frame would be too slow on the TCL. */
+   PERF trick: the lookahead probe is staggered per NPC ((npcTick+n.id)%18)
+   so only ~1/18th of the population probes per frame — 1000 NPCs × probes
+   every frame would be too slow on the TCL. The stuck check runs on a
+   per-NPC ~1s accumulator (v1.44) so tier-1 4Hz NPCs measure a true 1s
+   window; at 3 consecutive stuck checks the NPC enters wall-follow escape. */
 /* aiNPC(n, dt) — one AI tick:
      WALK: advance along heading; every ~0.3s probe 3.2u ahead and TURN if
        blocked; every ~1s check displacement (moved <0.6u while walking =
-       stuck): after 5s file a glitch and TURN; unexpected deep water also
-       files a glitch. Timer end → 35% IDLE, else TURN.
+       stuck): at 3s enter wall-follow escape (v1.44 — hug the obstacle edge
+       until the original heading is clear), after 5s file a glitch and TURN;
+       unexpected deep water also files a glitch. Timer end → 35% IDLE, else
+       TURN. Wall-following NPCs (n.wf) are driven by wfTick() instead.
      IDLE: gentle sinusoidal heading wander (look around), no position drift.
      TURN: pick a random new heading, probe it; walk it if clear, else retry —
        after 10 failed turns file a glitch and walk anyway (the stuck
        detector watches; better to keep moving than spin forever). */
 /* setState(n, st, t) — sets the NPC's AI state and its countdown timer. */
 function setState(n, st, t){ n.state=st; n.stateT=t; }
+/* ---------------- v1.44 wall-follow escape (expert report #9) ----------------
+   wfEnter(n) — puts NPC n into wall-follow mode after the stuck detector
+     fires. Records the original heading; picks the follow side (wfDir +1 =
+     keep obstacle on the right, -1 = on the left) by probing 0.9 rad to each
+     side and choosing the clearer one (random on a tie).
+   wfTick(n, dt) — one wall-follow step. Returns true while still following:
+     1. rotate the heading toward the follow side until the WF_PROBE lookahead
+        is clear (up to 8 tries); boxed in → drop to random TURN.
+     2. hug the wall: try rotating slightly back toward the obstacle side; if
+        that probe is clear, adopt it (stays glued to the edge).
+     3. step forward (collision-checked), separate from NPCs/player, snap Y.
+     4. exit: original heading probes clear 3 ticks in a row → resume WALK on
+        the original heading. WF_MAXT timeout → random TURN fallback.
+   All probes reuse npcBlocked()/npcNearOther() — no new data structures. */
+function wfEnter(n){
+  n.wf=true; n.wfT=0; n.wfClear=0;
+  n.wfOrig=n.heading;
+  var la=n.heading+0.9, ra=n.heading-0.9;
+  var lb=false, rb=false;
+  try{
+    lb=npcBlocked(n.x+Math.sin(la)*WF_PROBE, n.z+Math.cos(la)*WF_PROBE, n);
+    rb=npcBlocked(n.x+Math.sin(ra)*WF_PROBE, n.z+Math.cos(ra)*WF_PROBE, n);
+  }catch(e){}
+  n.wfDir=(!lb&&rb)?1:((!rb&&lb)?-1:(Math.random()<0.5?1:-1));
+}
+function wfTick(n, dt){
+  n.wfT+=dt;
+  var h=n.heading, ok=false, i;
+  for (i=0;i<8;i++){   // find a clear forward heading toward the follow side
+    var px=n.x+Math.sin(h)*WF_PROBE, pz=n.z+Math.cos(h)*WF_PROBE;
+    var blk=false;
+    try{ blk=npcBlocked(px,pz,n)||npcNearOther(px,pz,1.6); }catch(e){}
+    if (!blk){ ok=true; break; }
+    h+=n.wfDir*0.45;
+  }
+  if (!ok){ n.wf=false; setState(n,ST_TURN,0); return false; }  // boxed in
+  var h2=h-n.wfDir*0.18;   // hug: ease back toward the obstacle edge
+  try{
+    var qx=n.x+Math.sin(h2)*WF_PROBE, qz=n.z+Math.cos(h2)*WF_PROBE;
+    if (!npcBlocked(qx,qz,n)) h=h2;
+  }catch(e){}
+  n.heading=h; n.state=ST_WALK; n.stateT=Math.max(n.stateT,1.5);
+  var step=n.speed*dt;
+  var nx=n.x+Math.sin(h)*step, nz=n.z+Math.cos(h)*step;
+  try{
+    if (!npcBlocked(nx,nz,n)){
+      n.x=nx; n.z=nz;
+      separateNPC(n); separateFromPlayer(n);
+      if (!n.lockY){ try{ n.y=groundRefY(n.x,n.z); }catch(e){} }
+    }
+  }catch(e){}
+  var ox=n.x+Math.sin(n.wfOrig)*WF_PROBE, oz=n.z+Math.cos(n.wfOrig)*WF_PROBE;  // exit check
+  var oclr=true;
+  try{ oclr=!npcBlocked(ox,oz,n); }catch(e){}
+  if (oclr){
+    if (++n.wfClear>=3){   // original heading clear 3 ticks running: resume it
+      n.wf=false; n.heading=n.wfOrig;
+      setState(n,ST_WALK,2.5+Math.random()*3.5);
+      return false;
+    }
+  } else n.wfClear=0;
+  if (n.wfT>WF_MAXT){ n.wf=false; setState(n,ST_TURN,0); return false; }  // give up
+  return true;
+}
+/* midTierTick(n, dt) — v1.44: one 4Hz AI tick for tier-1 (150–1500u) NPCs.
+   Same aiNPC() brain, bigger dt (movement distance preserved via speed*dt).
+   Because the internal staggered probe (~every 0.3s at 60fps) rarely fires at
+   4Hz, a per-tick lookahead probe runs first so low-rate movement stays
+   collision-safe: blocked ahead → TURN. Wall-follow NPCs skip the pre-probe
+   (wfTick owns their heading). Plain wanderers only — transit/focus/waiting
+   NPCs are handled entirely inside aiNPC. */
+function midTierTick(n, dt){
+  if (!n.wf && n.state===ST_WALK && !n.focus && !n.boarding && !n.goto && !n.waiting){
+    var hx=n.x+Math.sin(n.heading)*WF_PROBE, hz=n.z+Math.cos(n.heading)*WF_PROBE;
+    var hblk=false;
+    try{ hblk=npcBlocked(hx,hz,n)||npcNearOther(hx,hz,1.6); }catch(e){}
+    if (hblk){ n.fails=(n.fails||0)+1; setState(n,ST_TURN,0); }
+  }
+  aiNPC(n, dt);
+}
 function aiNPC(n, dt){
   /* v1.14: conversation focus — the NPC is facing the player for a chat.
      Pause the wander AI (no walking off, no state-timer expiry) while
@@ -641,6 +746,8 @@ function aiNPC(n, dt){
   }
   n.stateT-=dt;
   if (n.state===ST_WALK){
+    if (n.wf){ wfTick(n,dt); }   // v1.44: wall-follow owns movement while active
+    else {
     var step=n.speed*dt;
     n.x+=Math.sin(n.heading)*step;
     n.z+=Math.cos(n.heading)*step;
@@ -650,14 +757,21 @@ function aiNPC(n, dt){
       var px=n.x+Math.sin(n.heading)*3.2, pz=n.z+Math.cos(n.heading)*3.2;
       if (npcBlocked(px,pz,n) || npcNearOther(px,pz,1.6)){ n.fails++; setState(n,ST_TURN,0); }
     }
-    // staggered stuck check (~every 1s): moved <0.6u while walking = stuck
-    if ( ((npcTick+n.id)%60)===0 ){
+    // v1.44 stuck check (~every 1s of AI time): moved <0.6u while walking =
+    // stuck. Per-NPC accumulator (not npcTick-staggered) so tier-1 4Hz NPCs
+    // measure a true ~1s window as well. At 3 consecutive stuck checks the
+    // NPC enters wall-follow escape instead of standing still; the glitch
+    // still files at 5s for genuinely trapped NPCs (Joshua's geometry audit).
+    n.stuckAcc=(n.stuckAcc||0)+dt;
+    if (n.stuckAcc>=1){
+      n.stuckAcc=0;
       var dx=n.x-n.lx, dz=n.z-n.lz;
       if (dx*dx+dz*dz < 0.36){ n.stuckT++; } else { n.stuckT=0; }
       n.lx=n.x; n.lz=n.z;
+      if (n.stuckT===3 && !n.wf){ wfEnter(n); }   // v1.44: escape before giving up
       if (n.stuckT>=5){
         npcGlitch(n,'stuck on geometry for >5s','WALK','heading somewhere');
-        n.stuckT=0; n.fails=0; setState(n,ST_TURN,0);
+        n.stuckT=0; n.fails=0; n.wf=false; setState(n,ST_TURN,0);
       }
       // deep water should never happen (probes avoid it) — report if it does
       try{
@@ -670,6 +784,7 @@ function aiNPC(n, dt){
     if (n.stateT<=0){
       if (Math.random()<0.35) setState(n,ST_IDLE,1+Math.random()*2);  // pause, look around
       else setState(n,ST_TURN,0);
+    }
     }
   }
   else if (n.state===ST_IDLE){
@@ -1372,6 +1487,7 @@ function npcRespawn(n){
   try{
     var fresh=spawnNPC(n.id);
     for (var k in fresh) n[k]=fresh[k];
+    n.wf=false; n.lodT=0; n.stuckAcc=0;   // v1.44: clear AI-LOD + wall-follow state
   }catch(e){}
 }
 /* transitTick() — staggered (every 15 frames) from updateNPCs:
@@ -1483,11 +1599,24 @@ function updateNPCs(dt, playerPos){
     // v1.15 DISTANCE CULLING (Joshua 2026-10-10): skip AI for NPCs beyond
     // cull distance — massive perf win on low-end phones. Culled NPCs freeze
     // in place (no AI, no movement) until player gets closer.
+    /* v1.44 AI LOD (expert report #9, David Okafor): three distance tiers so
+       1,000 NPCs don't all think at 60Hz. Zone-unlock culling still applies.
+       <150u: full 60Hz AI every frame (unchanged near-player behavior).
+       150–1500u: 4Hz AI — per-NPC dt accumulator, one aiNPC tick per 0.25s
+       with accumulated dt (movement distance preserved). >1500u: frozen. */
     var _zu = window.ZONEUNLOCK;
+    var _MID2=AI_LOD_MID*AI_LOD_MID, _FAR2=AI_LOD_FAR*AI_LOD_FAR;
     for (i=0;i<npcs.length;i++){
       var _n=npcs[i];
       if(_zu && _n && _zu.shouldCull(_n.x,_n.z)) continue;
-      aiNPC(_n,dt);
+      var _dx=_n.x-px, _dz=_n.z-pz, _d2=_dx*_dx+_dz*_dz;
+      if (_d2>_FAR2) continue;                       // tier 2: frozen
+      if (_d2>_MID2){                                 // tier 1: 4Hz
+        _n.lodT=(_n.lodT||0)+dt;
+        if (_n.lodT>=AI_LOD_MID_DT){ var _ldt=_n.lodT; _n.lodT=0; midTierTick(_n,_ldt); }
+        continue;
+      }
+      aiNPC(_n,dt);                                    // tier 0: full 60Hz
     }
     streamT-=dt;
     if (streamT<=0){ streamT=0.5; refreshSlots(px,pz); }
