@@ -282,7 +282,8 @@ function detachTag(worker){
    Built once at boot, fully guarded. */
 var hqGroup=null, hqStaff=[];
 function _gY(x,z){
-  try{ var y=heightAt(x,z); return isFinite(y)?y:0; }catch(e){ return 0; }
+  /* v1.35 SNAP-TO-FACE (Joshua 2026-10-11). */
+  try{ if(typeof snapToGround==='function'){ var sy=snapToGround(x,z,0,0,0); return isFinite(sy)?sy:0; } var y=heightAt(x,z); return isFinite(y)?y:0; }catch(e){ return 0; }
 }
 function makeTextPanel(lines, w, h, opts){
   /* Canvas-texture sign panel. lines: array of {text, size, color, bold}. */
