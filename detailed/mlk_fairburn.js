@@ -20,7 +20,8 @@
   var cx = 3910, cz = 3020;
   /* v2.0 auto-check: nudge clear of roads if needed (never on road) */
   try { var _mf = placeStruct(cx, cz, 24, 3, 'FairburnPlaza'); if (_mf) { cx = _mf.x; cz = _mf.z; } } catch (e) {}
-  var gy = heightAt(cx, cz);
+  /* v1.35 SNAP-TO-FACE (Joshua 2026-10-11). */
+  var gy = (typeof snapToGround==='function'?snapToGround(cx,cz,18,44,0):heightAt(cx,cz));
   var wallC = 0xa89878, roofC = 0x3a3a3e, H = 6;
   var px0 = cx - 9, px1 = cx + 9;      // west (storefront) / east (back)
   var pz0 = cz - 22, pz1 = cz + 22;    // 44 deep
@@ -86,16 +87,16 @@
   });
 
   /* ---- parking lot (west of building, toward Fairburn Rd) ---- */
-  spParkingLot(cx - 25, cz + 2, 22, 36, heightAt(cx - 25, cz + 2), 2);
+  spParkingLot(cx - 25, cz + 2, 22, 36, (typeof snapToGround==='function'?snapToGround(cx - 25,cz + 2,22,36,0):heightAt(cx - 25,cz + 2)), 2);
 
   /* ---- sidewalk along storefronts ---- */
-  spSlab(px0 - 3, cz, 5, 48, 0x9a9a9a, heightAt(px0 - 3, cz), 0.12);
+  spSlab(px0 - 3, cz, 5, 48, 0x9a9a9a, (typeof snapToGround==='function'?snapToGround(px0 - 3,cz,5,48,0):heightAt(px0 - 3,cz)), 0.12);
   /* v1.35 SIDEWALK COLLISION (2026-10-11, Joshua: "I can run through sidewalks"):
      register this named sidewalk slab as a solid walkable surface. */
-  try{ if(typeof __regSidewalk==='function') __regSidewalk(px0-3, cz, 0, 5, 0.3, 48, heightAt(px0-3,cz)+0.12-0.15); }catch(e){}
+  try{ if(typeof __regSidewalk==='function') __regSidewalk(px0-3, cz, 0, 5, 0.3, 48, (typeof snapToGround==='function'?snapToGround(px0-3,cz,5,48,0):heightAt(px0-3,cz))+0.12-0.15); }catch(e){}
 
   /* ---- pylon sign near the corner ---- */
-  var pyX = cx - 32, pyZ = cz - 10, pyGy = heightAt(pyX, pyZ);
+  var pyX = cx - 32, pyZ = cz - 10, pyGy = (typeof snapToGround==='function'?snapToGround(pyX,pyZ,10,10,0):heightAt(pyX,pyZ)); /* v1.35 snap */
   var pole = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 10, 8),
     new THREE.MeshLambertMaterial({ color: 0x666666 }));
   pole.position.set(pyX, pyGy + 5, pyZ); scene.add(pole);
