@@ -50,6 +50,82 @@
    semiMesh from semi_system.js, martaBusMesh from marta_bus_system.js,
    schoolBusMesh from refnpc_system.js.
    ========================================================================== */
+/* ============================================================================
+   v1.46 VEHICLE GEOMETRY/MATERIAL CACHE (expert report #5 — Dr. Elena Vasquez)
+   ----------------------------------------------------------------------------
+   BEFORE: every builder minted fresh GPU geometry + materials per spawn
+   (~112 constructions across this file; ~35 meshes for one box Chevy, each
+   with fresh materials) -> GPU upload stalls / stutter when traffic appears.
+   AFTER: one module-level registry. Each unique geometry is built ONCE and
+   shared by every mesh; each unique material is built ONCE and shared.
+   Spawning a vehicle now only allocates Mesh objects + Groups (cheap CPU
+   wrappers) — zero new GPU buffers after warmup.
+   RULES (do not break):
+   - Cached geometry is NEVER mutated (no rotateZ on a cached geometry —
+     rotate the MESH instead, as sedanMesh already does with w.rotation.z).
+   - Per-instance paint still works: vehMat(color) caches one material per
+     unique color, so unique donk paints each get their own shared entry.
+   - Meshes stay separate objects (wheels spin, doors hinge, damage pops —
+     those need individual objects, just not individual GPU buffers).
+   - Callers must NEVER dispose() a cached asset (cached items carry
+     userData.vcached=true). The old traffic_assist retire-dispose path
+     targeted its own self-built assist car, not these builders.
+   ========================================================================== */
+var _vGeoCache={};   // key -> THREE.BufferGeometry (shared, never disposed)
+var _vMatCache={};   // key -> THREE.Material (shared, never disposed)
+// _vgeo(key, maker) — return cached geometry, building it once on first use.
+function _vgeo(key, maker){
+  var g=_vGeoCache[key];
+  if(!g){ g=maker(); g.userData.vcached=true; _vGeoCache[key]=g; }
+  return g;
+}
+// _rk(v) — round floats for stable cache keys (computed dims like rr*1.7).
+function _rk(v){ return Math.round(v*10000)/10000; }
+// Cached geometry constructors (same signatures as THREE's):
+function _vbg(w,h,d){ return _vgeo('b:'+_rk(w)+','+_rk(h)+','+_rk(d),
+  function(){ return new THREE.BoxGeometry(w,h,d); }); }
+function _vcg(rt,rb,h,s){ return _vgeo('c:'+_rk(rt)+','+_rk(rb)+','+_rk(h)+','+s,
+  function(){ return new THREE.CylinderGeometry(rt,rb,h,s); }); }
+function _vtg(r,t,rs,ts){ return _vgeo('t:'+_rk(r)+','+_rk(t)+','+rs+','+ts,
+  function(){ return new THREE.TorusGeometry(r,t,rs,ts); }); }
+function _vpg(w,h){ return _vgeo('p:'+_rk(w)+','+_rk(h),
+  function(){ return new THREE.PlaneGeometry(w,h); }); }
+function _vcog(r,h,s){ return _vgeo('o:'+_rk(r)+','+_rk(h)+','+s,
+  function(){ return new THREE.ConeGeometry(r,h,s); }); }
+// _vmat(key, maker) — return cached material, building it once on first use.
+function _vmat(key, maker){
+  var m=_vMatCache[key];
+  if(!m){ m=maker(); m.userData.vcached=true; _vMatCache[key]=m; }
+  return m;
+}
+// Shared special materials (emissive / transparent variants):
+function _glassTMat(){ return _vmat('glassT', function(){
+  return new THREE.MeshLambertMaterial({color:0x8fb4cc, transparent:true, opacity:0.45}); }); }
+function _headlightMat(){ return _vmat('headlight', function(){
+  return new THREE.MeshLambertMaterial({color:0xf5f0d8, emissive:0x444433}); }); }
+function _taillightMat(){ return _vmat('taillight', function(){
+  return new THREE.MeshLambertMaterial({color:0xa02020, emissive:0x330000}); }); }
+function _safariHeadMat(){ return _vmat('safariHead', function(){
+  return new THREE.MeshLambertMaterial({color:0xf5f0d8, emissive:0x555544}); }); }
+function _semiHeadMat(){ return _vmat('semiHead', function(){
+  return new THREE.MeshLambertMaterial({color:0xf5f0d8, emissive:0x333322}); }); }
+// _martaDestMatGet() — the MARTA destination sign is identical on every bus
+// ("MARTA" amber on black), so its canvas texture + material are built once.
+var _martaDestMat=null;
+function _martaDestMatGet(){
+  if(_martaDestMat) return _martaDestMat;
+  var cv=document.createElement('canvas'); cv.width=256; cv.height=48;
+  var c=cv.getContext('2d');
+  c.fillStyle='#1a1a1a'; c.fillRect(0,0,256,48);
+  c.fillStyle='#ffb400'; c.font='bold 28px Arial';
+  c.textAlign='center'; c.textBaseline='middle';
+  c.fillText('MARTA',128,26);
+  var tex=new THREE.CanvasTexture(cv);
+  _martaDestMat=new THREE.MeshBasicMaterial({map:tex});
+  _martaDestMat.userData.vcached=true;
+  return _martaDestMat;
+}
+/* ================= end v1.46 cache block ================= */
 /* ----------------------------------------------------------------------------
    CANONICAL BUILDERS — conventions: forward = local +Z; left = +X = driver
    side (US left-hand drive); return a THREE.Group; callers add to scene.
@@ -60,17 +136,17 @@
 function sedanMesh(color){
   // TRUE SCALE: overall height ~1.42m (roofline below the 1.85m character's eyeline)
   var g=new THREE.Group();
-  var body=new THREE.Mesh(new THREE.BoxGeometry(2.0,0.62,4.6),
-    new THREE.MeshLambertMaterial({ color:color }));
+  var body=new THREE.Mesh(_vbg(2.0,0.62,4.6),
+    vehMat(color));
   body.position.y=0.55; g.add(body); g.userData.body=body;
-  var cab=new THREE.Mesh(new THREE.BoxGeometry(1.75,0.5,2.4),
-    new THREE.MeshLambertMaterial({ color:0x1c2733 }));
+  var cab=new THREE.Mesh(_vbg(1.75,0.5,2.4),
+    vehMat(0x1c2733));
   cab.position.set(0,1.12,-0.2); g.add(cab); g.userData.cab=cab;
-  var hood=new THREE.Mesh(new THREE.BoxGeometry(1.9,0.14,1.1),
-    new THREE.MeshLambertMaterial({ color:color }));
+  var hood=new THREE.Mesh(_vbg(1.9,0.14,1.1),
+    vehMat(color));
   hood.position.set(0,0.92,1.7); g.add(hood); g.userData.hood=hood;
-  var wg=new THREE.CylinderGeometry(0.34,0.34,0.3,10);
-  var wm=new THREE.MeshLambertMaterial({ color:0x181818 });
+  var wg=_vcg(0.34,0.34,0.3,10);
+  var wm=vehMat(0x181818);
   [[0.95,1.5],[-0.95,1.5],[0.95,-1.5],[-0.95,-1.5]].forEach(function(p){
     var w=new THREE.Mesh(wg,wm); w.rotation.z=Math.PI/2;
     w.position.set(p[0],0.34,p[1]); g.add(w);
@@ -82,14 +158,14 @@ function sedanMesh(color){
 // (Safari van). Returns the steering wheel mesh.
 function addCockpit(carGroup, h){
   h=h||0;
-  var dash=new THREE.Mesh(new THREE.BoxGeometry(1.7,0.28,0.45),
-    new THREE.MeshLambertMaterial({ color:0x2a2a30 }));
+  var dash=new THREE.Mesh(_vbg(1.7,0.28,0.45),
+    vehMat(0x2a2a30));
   dash.position.set(0,0.98+h,0.95); carGroup.add(dash);
-  var col=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,0.5,8),
-    new THREE.MeshLambertMaterial({ color:0x222222 }));
+  var col=new THREE.Mesh(_vcg(0.05,0.05,0.5,8),
+    vehMat(0x222222));
   col.position.set(0.5,0.9+h,0.75); col.rotation.x=0.5; carGroup.add(col);
-  var wheel=new THREE.Mesh(new THREE.TorusGeometry(0.26,0.05,8,18),
-    new THREE.MeshLambertMaterial({ color:0x1a1a1a }));
+  var wheel=new THREE.Mesh(_vtg(0.26,0.05,8,18),
+    vehMat(0x1a1a1a));
   wheel.position.set(0.5,1.02+h,0.68); wheel.rotation.x=-0.5; carGroup.add(wheel);
   return wheel;
 }
@@ -103,59 +179,59 @@ function safariMesh(){
   var g=new THREE.Group();
   var bronze=0x8a5a1e, cream=0xe6d3a3, trimC=0x1c1c1e, glassC=0x1c2733;
   // lower body (bronze)
-  var lower=new THREE.Mesh(new THREE.BoxGeometry(2.0,0.95,4.8),
-    new THREE.MeshLambertMaterial({ color:bronze }));
+  var lower=new THREE.Mesh(_vbg(2.0,0.95,4.8),
+    vehMat(bronze));
   lower.position.y=0.85; g.add(lower); g.userData.body=lower;
   // upper body (cream)
-  var upper=new THREE.Mesh(new THREE.BoxGeometry(1.96,0.72,4.5),
-    new THREE.MeshLambertMaterial({ color:cream }));
+  var upper=new THREE.Mesh(_vbg(1.96,0.72,4.5),
+    vehMat(cream));
   upper.position.set(0,1.68,-0.1); g.add(upper);
   // dark dividing stripe
-  var stripe=new THREE.Mesh(new THREE.BoxGeometry(2.02,0.1,4.82),
-    new THREE.MeshLambertMaterial({ color:trimC }));
+  var stripe=new THREE.Mesh(_vbg(2.02,0.1,4.82),
+    vehMat(trimC));
   stripe.position.y=1.32; g.add(stripe);
   // glasshouse (hidden in driver's-seat view)
   var cab=new THREE.Group();
-  var shield=new THREE.Mesh(new THREE.BoxGeometry(1.7,0.6,0.08),
-    new THREE.MeshLambertMaterial({ color:glassC }));
+  var shield=new THREE.Mesh(_vbg(1.7,0.6,0.08),
+    vehMat(glassC));
   shield.position.set(0,1.92,2.02); shield.rotation.x=-0.24; cab.add(shield);
   [-1,1].forEach(function(s){
-    var win=new THREE.Mesh(new THREE.BoxGeometry(0.06,0.52,3.3),
-      new THREE.MeshLambertMaterial({ color:glassC }));
+    var win=new THREE.Mesh(_vbg(0.06,0.52,3.3),
+      vehMat(glassC));
     win.position.set(s*0.99,1.92,-0.2); cab.add(win);
   });
-  var rear=new THREE.Mesh(new THREE.BoxGeometry(1.7,0.52,0.08),
-    new THREE.MeshLambertMaterial({ color:glassC }));
+  var rear=new THREE.Mesh(_vbg(1.7,0.52,0.08),
+    vehMat(glassC));
   rear.position.set(0,1.92,-2.32); cab.add(rear);
-  var roof=new THREE.Mesh(new THREE.BoxGeometry(1.96,0.1,4.5),
-    new THREE.MeshLambertMaterial({ color:cream }));
+  var roof=new THREE.Mesh(_vbg(1.96,0.1,4.5),
+    vehMat(cream));
   roof.position.set(0,2.3,-0.1); cab.add(roof);
   g.add(cab); g.userData.cab=cab;
   // hood / front clip (pops on damage)
-  var hood=new THREE.Mesh(new THREE.BoxGeometry(1.9,0.5,0.9),
-    new THREE.MeshLambertMaterial({ color:bronze }));
+  var hood=new THREE.Mesh(_vbg(1.9,0.5,0.9),
+    vehMat(bronze));
   hood.position.set(0,1.02,2.35); g.add(hood); g.userData.hood=hood;
   // grille + headlights + taillights
-  var grille=new THREE.Mesh(new THREE.BoxGeometry(1.2,0.34,0.1),
-    new THREE.MeshLambertMaterial({ color:trimC }));
+  var grille=new THREE.Mesh(_vbg(1.2,0.34,0.1),
+    vehMat(trimC));
   grille.position.set(0,0.92,2.82); g.add(grille);
   [-1,1].forEach(function(s){
-    var hl=new THREE.Mesh(new THREE.BoxGeometry(0.34,0.24,0.08),
-      new THREE.MeshLambertMaterial({ color:0xf5f0d8, emissive:0x555544 }));
+    var hl=new THREE.Mesh(_vbg(0.34,0.24,0.08),
+      _safariHeadMat());
     hl.position.set(s*0.78,0.95,2.82); g.add(hl);
-    var tl=new THREE.Mesh(new THREE.BoxGeometry(0.24,0.4,0.08),
-      new THREE.MeshLambertMaterial({ color:0xa02020, emissive:0x330000 }));
+    var tl=new THREE.Mesh(_vbg(0.24,0.4,0.08),
+      _taillightMat());
     tl.position.set(s*0.85,1.08,-2.42); g.add(tl);
   });
   // bumpers
   [2.82,-2.42].forEach(function(zz){
-    var b=new THREE.Mesh(new THREE.BoxGeometry(2.05,0.28,0.25),
-      new THREE.MeshLambertMaterial({ color:trimC }));
+    var b=new THREE.Mesh(_vbg(2.05,0.28,0.25),
+      vehMat(trimC));
     b.position.set(0,0.52,zz); g.add(b);
   });
   // gold-style wheels
-  var wg=new THREE.CylinderGeometry(0.38,0.38,0.32,10);
-  var wm=new THREE.MeshLambertMaterial({ color:0x8a6a2a });
+  var wg=_vcg(0.38,0.38,0.32,10);
+  var wm=vehMat(0x8a6a2a);
   [[0.95,1.55],[-0.95,1.55],[0.95,-1.55],[-0.95,-1.55]].forEach(function(p){
     var w=new THREE.Mesh(wg,wm); w.rotation.z=Math.PI/2;
     w.position.set(p[0],0.38,p[1]); g.add(w);
@@ -205,12 +281,12 @@ function pickRimStyle(kind){
   // Chevys: full rotation incl spinner & blade. Regular cars: any style, clones fine.
   return RIM_STYLES[(Math.random()*RIM_STYLES.length)|0];
 }
-function _chromeMat(){ return new THREE.MeshLambertMaterial({color:0xdcdce4}); }
-function _darkTireMat(){ return new THREE.MeshLambertMaterial({color:0x141414}); }
+function _chromeMat(){ return vehMat(0xdcdce4); }
+function _darkTireMat(){ return vehMat(0x141414); }
 function _addSpokes(face, n, len, w, mat, xOff){
   for(var i=0;i<n;i++){
     var piv=new THREE.Group();
-    var s=new THREE.Mesh(new THREE.BoxGeometry(xOff, w, len), mat);
+    var s=new THREE.Mesh(_vbg(xOff, w, len), mat);
     s.position.z=len*0.30;
     piv.add(s); piv.rotation.x=i/n*Math.PI*2; face.add(piv);
   }
@@ -223,10 +299,10 @@ function _addSpokes(face, n, len, w, mat, xOff){
 function makeDonkWheel(style, R){
   var g=new THREE.Group();
   var W=R*0.62, chrome=_chromeMat(), darkT=_darkTireMat(),
-      black=new THREE.MeshLambertMaterial({color:0x1c1c20});
-  var tire=new THREE.Mesh(new THREE.CylinderGeometry(R,R,W,14), darkT);
+      black=vehMat(0x1c1c20);
+  var tire=new THREE.Mesh(_vcg(R,R,W,14), darkT);
   tire.rotation.z=Math.PI/2; g.add(tire);
-  var barrel=new THREE.Mesh(new THREE.CylinderGeometry(R*0.70,R*0.70,W*1.02,14), chrome);
+  var barrel=new THREE.Mesh(_vcg(R*0.70,R*0.70,W*1.02,14), chrome);
   barrel.rotation.z=Math.PI/2; g.add(barrel);
   var face=new THREE.Group(); g.add(face);
   var rr=R*0.68;
@@ -234,7 +310,7 @@ function makeDonkWheel(style, R){
   else if (style==='chrome5'){ _addSpokes(face, 5, rr*1.7, rr*0.42, chrome, W*1.06); }
   else if (style==='mesh'){ _addSpokes(face, 12, rr*1.7, rr*0.10, chrome, W*1.06); }
   else if (style==='deepdish'){
-    var lip=new THREE.Mesh(new THREE.TorusGeometry(rr*0.95, rr*0.12, 8, 20), chrome);
+    var lip=new THREE.Mesh(_vtg(rr*0.95, rr*0.12, 8, 20), chrome);
     lip.rotation.y=Math.PI/2; lip.position.x=W*0.5; face.add(lip);
     var lip2=lip.clone(); lip2.position.x=-W*0.5; face.add(lip2);
     _addSpokes(face, 5, rr*1.5, rr*0.24, chrome, W*0.9);
@@ -244,27 +320,27 @@ function makeDonkWheel(style, R){
     for(var b=0;b<5;b++){
       var piv=new THREE.Group();
       [-0.22,0.22].forEach(function(off){
-        var s=new THREE.Mesh(new THREE.BoxGeometry(W*1.06, rr*0.16, rr*1.6), black);
+        var s=new THREE.Mesh(_vbg(W*1.06, rr*0.16, rr*1.6), black);
         s.position.z=rr*0.5; s.rotation.x=off; piv.add(s);
-        var e=new THREE.Mesh(new THREE.BoxGeometry(W*1.08, rr*0.05, rr*1.6), chrome);
+        var e=new THREE.Mesh(_vbg(W*1.08, rr*0.05, rr*1.6), chrome);
         e.position.z=rr*0.5; e.position.y=rr*0.10; e.rotation.x=off; piv.add(e);
       });
       piv.rotation.x=b/5*Math.PI*2; face.add(piv);
     }
-    var lipB=new THREE.Mesh(new THREE.TorusGeometry(rr*0.98, rr*0.07, 8, 20), chrome);
+    var lipB=new THREE.Mesh(_vtg(rr*0.98, rr*0.07, 8, 20), chrome);
     lipB.rotation.y=Math.PI/2; face.add(lipB);
   }
   else if (style==='spinner'){
     // wire-spoke base + 3-blade spinner cap (spins independently)
     _addSpokes(face, 18, rr*1.7, rr*0.055, chrome, W*1.04);
     var spinG=new THREE.Group();
-    var hub=new THREE.Mesh(new THREE.CylinderGeometry(rr*0.22,rr*0.28,W*0.5,10), chrome);
+    var hub=new THREE.Mesh(_vcg(rr*0.22,rr*0.28,W*0.5,10), chrome);
     hub.rotation.z=Math.PI/2; spinG.add(hub);
     for(var k=0;k<3;k++){
       var piv=new THREE.Group();
-      var bl=new THREE.Mesh(new THREE.BoxGeometry(W*0.9, rr*0.20, rr*1.1), chrome);
+      var bl=new THREE.Mesh(_vbg(W*0.9, rr*0.20, rr*1.1), chrome);
       bl.position.z=rr*0.55; piv.add(bl);
-      var tip=new THREE.Mesh(new THREE.ConeGeometry(rr*0.14, rr*0.5, 6), chrome);
+      var tip=new THREE.Mesh(_vcog(rr*0.14, rr*0.5, 6), chrome);
       tip.rotation.x=Math.PI/2; tip.position.z=rr*1.15; piv.add(tip);
       piv.rotation.x=k/3*Math.PI*2;
       spinG.add(piv);
@@ -275,7 +351,7 @@ function makeDonkWheel(style, R){
     g.userData.spinnerParts=[spinG, spinG2];
   }
   // center cap
-  var cap=new THREE.Mesh(new THREE.CylinderGeometry(rr*0.16,rr*0.16,W*1.1,8), chrome);
+  var cap=new THREE.Mesh(_vcg(rr*0.16,rr*0.16,W*1.1,8), chrome);
   cap.rotation.z=Math.PI/2; face.add(cap);
   return g;
 }
@@ -288,13 +364,13 @@ function makeDonkWheel(style, R){
 function addCarDoor(g, xPos, frontZ, doorLen, doorH, doorY, bodyMat){
   var piv=new THREE.Group();
   piv.position.set(xPos, doorY, frontZ);
-  var panel=new THREE.Mesh(new THREE.BoxGeometry(0.09, doorH, doorLen), bodyMat);
+  var panel=new THREE.Mesh(_vbg(0.09, doorH, doorLen), bodyMat);
   panel.position.set(0, 0, -doorLen/2+0.06); piv.add(panel);
-  var glassM=new THREE.MeshLambertMaterial({color:0x8fb4cc, transparent:true, opacity:0.45});
-  var win=new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.42, doorLen*0.78), glassM);
+  var glassM=_glassTMat();
+  var win=new THREE.Mesh(_vbg(0.07, 0.42, doorLen*0.78), glassM);
   win.position.set(0, doorH/2+0.21, -doorLen/2+0.06); piv.add(win);
-  var handle=new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.06, 0.22),
-    new THREE.MeshLambertMaterial({color:0xd8d8dc}));
+  var handle=new THREE.Mesh(_vbg(0.04, 0.06, 0.22),
+    vehMat(0xd8d8dc));
   handle.position.set(xPos>0?0.07:-0.07, 0.12, -doorLen+0.35); piv.add(handle);
   g.add(piv);
   var d={pivot:piv, open:false, openRot:xPos>0?-1.15:1.15};
@@ -313,35 +389,35 @@ function setCarDoors(car, open){
 // always verify +X = driver). o = {width, floorY, seatZ, dashZ, seatColor}.
 // Exposes g.userData.steerWheel.
 function addCarInterior(g, o){
-  var dark=new THREE.MeshLambertMaterial({color:0x232326});
-  var seatM=new THREE.MeshLambertMaterial({color:o.seatColor||0x3a3a40});
-  var glassM=new THREE.MeshLambertMaterial({color:0x8fb4cc, transparent:true, opacity:0.45});
-  var fl=new THREE.Mesh(new THREE.BoxGeometry(o.width*0.92,0.08,2.7),dark);
+  var dark=vehMat(0x232326);
+  var seatM=vehMat(o.seatColor||0x3a3a40);
+  var glassM=_glassTMat();
+  var fl=new THREE.Mesh(_vbg(o.width*0.92,0.08,2.7),dark);
   fl.position.set(0,o.floorY,0.05); g.add(fl);
   [-0.52,0.52].forEach(function(sx){
-    var st=new THREE.Mesh(new THREE.BoxGeometry(0.58,0.5,0.58),seatM);
+    var st=new THREE.Mesh(_vbg(0.58,0.5,0.58),seatM);
     st.position.set(sx,o.floorY+0.32,o.seatZ); g.add(st);
-    var bk=new THREE.Mesh(new THREE.BoxGeometry(0.58,0.62,0.18),seatM);
+    var bk=new THREE.Mesh(_vbg(0.58,0.62,0.18),seatM);
     bk.position.set(sx,o.floorY+0.62,o.seatZ-0.34); g.add(bk);
   });
-  var bn=new THREE.Mesh(new THREE.BoxGeometry(1.55,0.45,0.62),seatM);
+  var bn=new THREE.Mesh(_vbg(1.55,0.45,0.62),seatM);
   bn.position.set(0,o.floorY+0.28,o.seatZ-1.15); g.add(bn);
-  var dash=new THREE.Mesh(new THREE.BoxGeometry(o.width*0.88,0.3,0.5),dark);
+  var dash=new THREE.Mesh(_vbg(o.width*0.88,0.3,0.5),dark);
   dash.position.set(0,o.floorY+0.78,o.dashZ); g.add(dash);
   // steering wheel — LEFT HAND DRIVE (+X), per VAN_SPEC.md
-  var col=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,0.5,8),dark);
+  var col=new THREE.Mesh(_vcg(0.05,0.05,0.5,8),dark);
   col.position.set(0.52,o.floorY+0.70,o.dashZ-0.28); col.rotation.x=0.5; g.add(col);
-  var wheel=new THREE.Mesh(new THREE.TorusGeometry(0.24,0.045,8,18),
-    new THREE.MeshLambertMaterial({color:0x1a1a1a}));
+  var wheel=new THREE.Mesh(_vtg(0.24,0.045,8,18),
+    vehMat(0x1a1a1a));
   wheel.position.set(0.52,o.floorY+0.82,o.dashZ-0.36); wheel.rotation.x=-0.5; g.add(wheel);
   g.userData.steerWheel=wheel;
   return wheel;
 }
-function glassMat(){ return new THREE.MeshLambertMaterial({color:0x8fb4cc, transparent:true, opacity:0.45}); }
-function chromeTrimMat(){ return new THREE.MeshLambertMaterial({color:0xd8d8dc}); }
+function glassMat(){ return _glassTMat(); }
+function chromeTrimMat(){ return vehMat(0xd8d8dc); }
 function paintStripe(g, y, z0, z1, width, color){
-  var s=new THREE.Mesh(new THREE.BoxGeometry(width,0.03,z1-z0),
-    new THREE.MeshLambertMaterial({color:color}));
+  var s=new THREE.Mesh(_vbg(width,0.03,z1-z0),
+    vehMat(color));
   s.position.set(0,y,(z0+z1)/2); g.add(s);
 }
 
@@ -354,46 +430,46 @@ function paintStripe(g, y, z0, z1, width, color){
 // (R=0.48), full interior + hinged doors. paint = pickPaint output.
 function boxChevyMesh(paint, rimStyle){
   var g=new THREE.Group();
-  var bodyM=new THREE.MeshLambertMaterial({color:paint.body});
-  var roofM=new THREE.MeshLambertMaterial({color:paint.roof||paint.body});
-  var chrome=chromeTrimMat(), glass=glassMat(), dark=new THREE.MeshLambertMaterial({color:0x1c1c1e});
+  var bodyM=vehMat(paint.body);
+  var roofM=vehMat(paint.roof||paint.body);
+  var chrome=chromeTrimMat(), glass=glassMat(), dark=vehMat(0x1c1c1e);
   var W=2.0, L=5.3, lift=0.42;   // donk lift
   // lower body
-  var lower=new THREE.Mesh(new THREE.BoxGeometry(W,0.72,L), bodyM);
+  var lower=new THREE.Mesh(_vbg(W,0.72,L), bodyM);
   lower.position.y=0.72+lift; g.add(lower); g.userData.body=lower;
   // upright greenhouse (formal, near-vertical glass)
-  var cab=new THREE.Mesh(new THREE.BoxGeometry(1.78,0.62,2.9), glass);
+  var cab=new THREE.Mesh(_vbg(1.78,0.62,2.9), glass);
   cab.position.set(0,1.42+lift,-0.25); g.add(cab); g.userData.cab=cab;
   // roof (two-tone capable)
-  var roof=new THREE.Mesh(new THREE.BoxGeometry(1.84,0.1,3.0), roofM);
+  var roof=new THREE.Mesh(_vbg(1.84,0.1,3.0), roofM);
   roof.position.set(0,1.78+lift,-0.25); g.add(roof);
   // pillars (body color, chunky 80s)
   [[0.92,1.05],[-0.92,1.05],[0.92,-1.55],[-0.92,-1.55]].forEach(function(p){
-    var pil=new THREE.Mesh(new THREE.BoxGeometry(0.09,0.66,0.14), bodyM);
+    var pil=new THREE.Mesh(_vbg(0.09,0.66,0.14), bodyM);
     pil.position.set(p[0],1.42+lift,p[1]); g.add(pil);
   });
   // long flat hood
-  var hood=new THREE.Mesh(new THREE.BoxGeometry(1.9,0.14,1.5), bodyM);
+  var hood=new THREE.Mesh(_vbg(1.9,0.14,1.5), bodyM);
   hood.position.set(0,1.12+lift,1.85); g.add(hood); g.userData.hood=hood;
   // upright trunk
-  var trunk=new THREE.Mesh(new THREE.BoxGeometry(1.9,0.5,1.15), bodyM);
+  var trunk=new THREE.Mesh(_vbg(1.9,0.5,1.15), bodyM);
   trunk.position.set(0,1.28+lift,-2.05); g.add(trunk);
   // vertical chrome grille + quad headlights (signature box-Chevy face)
-  var grille=new THREE.Mesh(new THREE.BoxGeometry(1.5,0.42,0.1), chrome);
+  var grille=new THREE.Mesh(_vbg(1.5,0.42,0.1), chrome);
   grille.position.set(0,0.95+lift,2.68); g.add(grille);
   [-0.55,-0.19,0.19,0.55].forEach(function(hx){
-    var hl=new THREE.Mesh(new THREE.BoxGeometry(0.3,0.24,0.08),
-      new THREE.MeshLambertMaterial({color:0xf5f0d8, emissive:0x444433}));
+    var hl=new THREE.Mesh(_vbg(0.3,0.24,0.08),
+      _headlightMat());
     hl.position.set(hx,0.95+lift,2.70); g.add(hl);
   });
   // chrome bumpers
   [2.72,-2.66].forEach(function(zz){
-    var b=new THREE.Mesh(new THREE.BoxGeometry(2.06,0.26,0.22), chrome);
+    var b=new THREE.Mesh(_vbg(2.06,0.26,0.22), chrome);
     b.position.set(0,0.62+lift,zz); g.add(b);
   });
   // taillights (full-width 80s bar)
-  var tl=new THREE.Mesh(new THREE.BoxGeometry(1.6,0.22,0.08),
-    new THREE.MeshLambertMaterial({color:0xa02020, emissive:0x330000}));
+  var tl=new THREE.Mesh(_vbg(1.6,0.22,0.08),
+    _taillightMat());
   tl.position.set(0,1.15+lift,-2.64); g.add(tl);
   // racing stripes
   if (paint.stripe) paintStripe(g, 1.20+lift, -2.6, 2.6, 0.5, paint.stripe);
@@ -420,44 +496,44 @@ function boxChevyMesh(paint, rimStyle){
 // flush rounded styling; same donk treatment as the box Chevy.
 function bubbleChevyMesh(paint, rimStyle){
   var g=new THREE.Group();
-  var bodyM=new THREE.MeshLambertMaterial({color:paint.body});
-  var roofM=new THREE.MeshLambertMaterial({color:paint.roof||paint.body});
-  var chrome=chromeTrimMat(), glass=glassMat(), dark=new THREE.MeshLambertMaterial({color:0x1c1c1e});
+  var bodyM=vehMat(paint.body);
+  var roofM=vehMat(paint.roof||paint.body);
+  var chrome=chromeTrimMat(), glass=glassMat(), dark=vehMat(0x1c1c1e);
   var W=2.0, L=5.4, lift=0.42;
   // sleek lower body
-  var lower=new THREE.Mesh(new THREE.BoxGeometry(W,0.66,L), bodyM);
+  var lower=new THREE.Mesh(_vbg(W,0.66,L), bodyM);
   lower.position.y=0.68+lift; g.add(lower); g.userData.body=lower;
   // flowing greenhouse: curved rear glass (rotated) + sloped windshield
-  var cab=new THREE.Mesh(new THREE.BoxGeometry(1.76,0.55,2.7), glass);
+  var cab=new THREE.Mesh(_vbg(1.76,0.55,2.7), glass);
   cab.position.set(0,1.32+lift,-0.35); g.add(cab); g.userData.cab=cab;
-  var rearGlass=new THREE.Mesh(new THREE.BoxGeometry(1.7,0.5,0.9), glass);
+  var rearGlass=new THREE.Mesh(_vbg(1.7,0.5,0.9), glass);
   rearGlass.position.set(0,1.22+lift,-1.85); rearGlass.rotation.x=0.5; g.add(rearGlass);
-  var shield=new THREE.Mesh(new THREE.BoxGeometry(1.7,0.5,0.1), glass);
+  var shield=new THREE.Mesh(_vbg(1.7,0.5,0.1), glass);
   shield.position.set(0,1.30+lift,1.15); shield.rotation.x=-0.42; g.add(shield);
   // rounded roof
-  var roof=new THREE.Mesh(new THREE.BoxGeometry(1.82,0.1,2.5), roofM);
+  var roof=new THREE.Mesh(_vbg(1.82,0.1,2.5), roofM);
   roof.position.set(0,1.64+lift,-0.35); g.add(roof);
   // sloped aero nose
-  var nose=new THREE.Mesh(new THREE.BoxGeometry(1.9,0.4,1.2), bodyM);
+  var nose=new THREE.Mesh(_vbg(1.9,0.4,1.2), bodyM);
   nose.position.set(0,0.95+lift,2.15); nose.rotation.x=0.18; g.add(nose); g.userData.hood=nose;
   // rounded trunk (short, tapered)
-  var trunk=new THREE.Mesh(new THREE.BoxGeometry(1.85,0.42,0.9), bodyM);
+  var trunk=new THREE.Mesh(_vbg(1.85,0.42,0.9), bodyM);
   trunk.position.set(0,1.05+lift,-2.3); trunk.rotation.x=-0.12; g.add(trunk);
   // flush rounded headlights + slim grille
   [-0.62,0.62].forEach(function(hx){
-    var hl=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.2,0.1),
-      new THREE.MeshLambertMaterial({color:0xf5f0d8, emissive:0x444433}));
+    var hl=new THREE.Mesh(_vbg(0.5,0.2,0.1),
+      _headlightMat());
     hl.position.set(hx,0.98+lift,2.72); hl.rotation.x=0.18; g.add(hl);
   });
-  var grille=new THREE.Mesh(new THREE.BoxGeometry(0.9,0.18,0.08), dark);
+  var grille=new THREE.Mesh(_vbg(0.9,0.18,0.08), dark);
   grille.position.set(0,0.82+lift,2.70); g.add(grille);
   // body-color bumpers (90s aero)
   [2.72,-2.72].forEach(function(zz){
-    var b=new THREE.Mesh(new THREE.BoxGeometry(2.02,0.3,0.24), bodyM);
+    var b=new THREE.Mesh(_vbg(2.02,0.3,0.24), bodyM);
     b.position.set(0,0.60+lift,zz); g.add(b);
   });
-  var tl=new THREE.Mesh(new THREE.BoxGeometry(1.5,0.2,0.08),
-    new THREE.MeshLambertMaterial({color:0xa02020, emissive:0x330000}));
+  var tl=new THREE.Mesh(_vbg(1.5,0.2,0.08),
+    _taillightMat());
   tl.position.set(0,1.02+lift,-2.74); g.add(tl);
   if (paint.stripe) paintStripe(g, 1.06+lift, -2.7, 2.7, 0.5, paint.stripe);
   addCarInterior(g, {width:W, floorY:0.52+lift, seatZ:0.05, dashZ:1.05, seatColor:0x2a2a32});
@@ -478,50 +554,50 @@ function bubbleChevyMesh(paint, rimStyle){
 // donk wheels (R=0.40).
 function pickupMesh(paint, rimStyle){
   var g=new THREE.Group();
-  var bodyM=new THREE.MeshLambertMaterial({color:paint.body});
-  var roofM=new THREE.MeshLambertMaterial({color:paint.roof||paint.body});
-  var glass=glassMat(), dark=new THREE.MeshLambertMaterial({color:0x1c1c1e});
+  var bodyM=vehMat(paint.body);
+  var roofM=vehMat(paint.roof||paint.body);
+  var glass=glassMat(), dark=vehMat(0x1c1c1e);
   var W=2.0, lift=0.15;
   // chassis + cab lower
-  var lower=new THREE.Mesh(new THREE.BoxGeometry(W,0.7,2.2), bodyM);
+  var lower=new THREE.Mesh(_vbg(W,0.7,2.2), bodyM);
   lower.position.set(0,0.75+lift,1.35); g.add(lower); g.userData.body=lower;
   // cab greenhouse
-  var cab=new THREE.Mesh(new THREE.BoxGeometry(1.8,0.62,1.5), glass);
+  var cab=new THREE.Mesh(_vbg(1.8,0.62,1.5), glass);
   cab.position.set(0,1.42+lift,1.15); g.add(cab); g.userData.cab=cab;
-  var roof=new THREE.Mesh(new THREE.BoxGeometry(1.86,0.1,1.6), roofM);
+  var roof=new THREE.Mesh(_vbg(1.86,0.1,1.6), roofM);
   roof.position.set(0,1.78+lift,1.15); g.add(roof);
   // hood
-  var hood=new THREE.Mesh(new THREE.BoxGeometry(1.9,0.16,1.0), bodyM);
+  var hood=new THREE.Mesh(_vbg(1.9,0.16,1.0), bodyM);
   hood.position.set(0,1.14+lift,2.6); g.add(hood); g.userData.hood=hood;
   // grille + square headlights
-  var grille=new THREE.Mesh(new THREE.BoxGeometry(1.4,0.35,0.1), dark);
+  var grille=new THREE.Mesh(_vbg(1.4,0.35,0.1), dark);
   grille.position.set(0,0.95+lift,3.12); g.add(grille);
   [-0.7,0.7].forEach(function(hx){
-    var hl=new THREE.Mesh(new THREE.BoxGeometry(0.36,0.26,0.08),
-      new THREE.MeshLambertMaterial({color:0xf5f0d8, emissive:0x444433}));
+    var hl=new THREE.Mesh(_vbg(0.36,0.26,0.08),
+      _headlightMat());
     hl.position.set(hx,0.98+lift,3.12); g.add(hl);
   });
-  var bumper=new THREE.Mesh(new THREE.BoxGeometry(2.05,0.24,0.2), chromeTrimMat());
+  var bumper=new THREE.Mesh(_vbg(2.05,0.24,0.2), chromeTrimMat());
   bumper.position.set(0,0.6+lift,3.14); g.add(bumper);
   // OPEN BED with walls
   var bedM=bodyM, bedY=0.78+lift, bedZ0=-2.55, bedZ1=-0.15, bedL=bedZ1-bedZ0;
-  var bedFloor=new THREE.Mesh(new THREE.BoxGeometry(1.9,0.1,bedL), dark);
+  var bedFloor=new THREE.Mesh(_vbg(1.9,0.1,bedL), dark);
   bedFloor.position.set(0,bedY,(bedZ0+bedZ1)/2); g.add(bedFloor);
   [[0.95,'x'],[-0.95,'x']].forEach(function(s){
-    var wall=new THREE.Mesh(new THREE.BoxGeometry(0.08,0.55,bedL), bedM);
+    var wall=new THREE.Mesh(_vbg(0.08,0.55,bedL), bedM);
     wall.position.set(s[0],bedY+0.32,(bedZ0+bedZ1)/2); g.add(wall);
   });
-  var tail=new THREE.Mesh(new THREE.BoxGeometry(1.9,0.55,0.08), bedM);
+  var tail=new THREE.Mesh(_vbg(1.9,0.55,0.08), bedM);
   tail.position.set(0,bedY+0.32,bedZ0); g.add(tail);
-  var cabBack=new THREE.Mesh(new THREE.BoxGeometry(1.9,0.55,0.08), bedM);
+  var cabBack=new THREE.Mesh(_vbg(1.9,0.55,0.08), bedM);
   cabBack.position.set(0,bedY+0.32,bedZ1); g.add(cabBack);
   // taillights + rear bumper
   [-0.8,0.8].forEach(function(tx){
-    var tl=new THREE.Mesh(new THREE.BoxGeometry(0.2,0.4,0.08),
-      new THREE.MeshLambertMaterial({color:0xa02020, emissive:0x330000}));
+    var tl=new THREE.Mesh(_vbg(0.2,0.4,0.08),
+      _taillightMat());
     tl.position.set(tx,0.95+lift,-2.58); g.add(tl);
   });
-  var rb=new THREE.Mesh(new THREE.BoxGeometry(2.05,0.24,0.2), chromeTrimMat());
+  var rb=new THREE.Mesh(_vbg(2.05,0.24,0.2), chromeTrimMat());
   rb.position.set(0,0.6+lift,-2.6); g.add(rb);
   if (paint.stripe) paintStripe(g, 1.24+lift, 0.4, 3.1, 0.45, paint.stripe);
   addCarInterior(g, {width:W, floorY:0.55+lift, seatZ:1.0, dashZ:1.95, seatColor:0x3a3f4a});
@@ -541,46 +617,46 @@ function pickupMesh(paint, rimStyle){
 // rails, interior + doors, donk wheels (R=0.42).
 function suvMesh(paint, rimStyle){
   var g=new THREE.Group();
-  var bodyM=new THREE.MeshLambertMaterial({color:paint.body});
-  var roofM=new THREE.MeshLambertMaterial({color:paint.roof||paint.body});
-  var glass=glassMat(), dark=new THREE.MeshLambertMaterial({color:0x1c1c1e});
+  var bodyM=vehMat(paint.body);
+  var roofM=vehMat(paint.roof||paint.body);
+  var glass=glassMat(), dark=vehMat(0x1c1c1e);
   var W=2.0, lift=0.22;
   // tall wagon body
-  var lower=new THREE.Mesh(new THREE.BoxGeometry(W,0.85,4.7), bodyM);
+  var lower=new THREE.Mesh(_vbg(W,0.85,4.7), bodyM);
   lower.position.y=0.85+lift; g.add(lower); g.userData.body=lower;
   // glasshouse
-  var cab=new THREE.Mesh(new THREE.BoxGeometry(1.8,0.68,3.4), glass);
+  var cab=new THREE.Mesh(_vbg(1.8,0.68,3.4), glass);
   cab.position.set(0,1.6+lift,-0.3); g.add(cab); g.userData.cab=cab;
-  var roof=new THREE.Mesh(new THREE.BoxGeometry(1.86,0.1,3.5), roofM);
+  var roof=new THREE.Mesh(_vbg(1.86,0.1,3.5), roofM);
   roof.position.set(0,1.99+lift,-0.3); g.add(roof);
   // pillars
   [[0.92,1.25],[-0.92,1.25],[0.92,-1.85],[-0.92,-1.85]].forEach(function(p){
-    var pil=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.72,0.16), bodyM);
+    var pil=new THREE.Mesh(_vbg(0.1,0.72,0.16), bodyM);
     pil.position.set(p[0],1.6+lift,p[1]); g.add(pil);
   });
   // hood + grille
-  var hood=new THREE.Mesh(new THREE.BoxGeometry(1.9,0.14,1.0), bodyM);
+  var hood=new THREE.Mesh(_vbg(1.9,0.14,1.0), bodyM);
   hood.position.set(0,1.32+lift,2.0); g.add(hood); g.userData.hood=hood;
-  var grille=new THREE.Mesh(new THREE.BoxGeometry(1.3,0.32,0.1), dark);
+  var grille=new THREE.Mesh(_vbg(1.3,0.32,0.1), dark);
   grille.position.set(0,1.05+lift,2.42); g.add(grille);
   [-0.65,0.65].forEach(function(hx){
-    var hl=new THREE.Mesh(new THREE.BoxGeometry(0.34,0.26,0.08),
-      new THREE.MeshLambertMaterial({color:0xf5f0d8, emissive:0x444433}));
+    var hl=new THREE.Mesh(_vbg(0.34,0.26,0.08),
+      _headlightMat());
     hl.position.set(hx,1.08+lift,2.42); g.add(hl);
   });
   // roof rails
   [-0.7,0.7].forEach(function(rx){
-    var rail=new THREE.Mesh(new THREE.BoxGeometry(0.08,0.08,3.2), dark);
+    var rail=new THREE.Mesh(_vbg(0.08,0.08,3.2), dark);
     rail.position.set(rx,2.08+lift,-0.3); g.add(rail);
   });
   // bumpers + taillights
   [2.44,-2.4].forEach(function(zz){
-    var b=new THREE.Mesh(new THREE.BoxGeometry(2.04,0.26,0.2), dark);
+    var b=new THREE.Mesh(_vbg(2.04,0.26,0.2), dark);
     b.position.set(0,0.68+lift,zz); g.add(b);
   });
   [-0.8,0.8].forEach(function(tx){
-    var tl=new THREE.Mesh(new THREE.BoxGeometry(0.22,0.5,0.08),
-      new THREE.MeshLambertMaterial({color:0xa02020, emissive:0x330000}));
+    var tl=new THREE.Mesh(_vbg(0.22,0.5,0.08),
+      _taillightMat());
     tl.position.set(tx,1.1+lift,-2.42); g.add(tl);
   });
   if (paint.stripe) paintStripe(g, 1.40+lift, -2.3, 2.5, 0.45, paint.stripe);
@@ -606,15 +682,15 @@ function semiMesh(){
   var g=new THREE.Group();
   var chrome=null, glass=null, dark=null, tireM=null;
   try{ chrome=chromeTrimMat(); glass=glassMat(); }catch(e){}
-  if (!chrome) chrome=new THREE.MeshLambertMaterial({color:0xd8d8d8});
-  if (!glass)  glass=new THREE.MeshLambertMaterial({color:0x1c2733});
-  dark=new THREE.MeshLambertMaterial({color:0x2a2d33});
-  tireM=new THREE.MeshLambertMaterial({color:0x181818});
+  if (!chrome) chrome=vehMat(0xd8d8d8);
+  if (!glass)  glass=vehMat(0x1c2733);
+  dark=vehMat(0x2a2d33);
+  tireM=vehMat(0x181818);
   var cabC=[0xa33327,0x2e5aa3,0x2e7a4c,0xd8a13c,0x5a4fa3,0xb8b8b8];
-  var cabM=new THREE.MeshLambertMaterial({color:cabC[(Math.random()*cabC.length)|0]});
-  var trM=new THREE.MeshLambertMaterial({color:TRAILER_COLORS[(Math.random()*TRAILER_COLORS.length)|0]});
+  var cabM=vehMat(cabC[(Math.random()*cabC.length)|0]);
+  var trM=vehMat(TRAILER_COLORS[(Math.random()*TRAILER_COLORS.length)|0]);
   function box(w,h,d,m,x,y,z){
-    var ms=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);
+    var ms=new THREE.Mesh(_vbg(w,h,d),m);
     ms.position.set(x,y,z); g.add(ms); return ms;
   }
   box(2.5,1.6,2.2,cabM, 0,1.5,7.6);
@@ -625,7 +701,7 @@ function semiMesh(){
   box(2.5,2.2,1.6,cabM, 0,1.8,5.9);
   box(0.18,2.6,0.18,chrome, 1.15,2.6,6.6);
   box(0.18,2.6,0.18,chrome, -1.15,2.6,6.6);
-  var sw=new THREE.Mesh(new THREE.TorusGeometry(0.28,0.06,6,12), dark);
+  var sw=new THREE.Mesh(_vtg(0.28,0.06,6,12), dark);
   sw.position.set(0.62,2.5,7.9); sw.rotation.x=-0.5; g.add(sw);
   box(0.55,0.7,0.55,dark, 0.62,2.1,7.0);
   box(2.0,0.3,1.2,dark, 0,1.35,4.6);
@@ -636,9 +712,9 @@ function semiMesh(){
   box(0.25,1.2,0.25,dark, -0.9,0.6,2.6);
   var wheels=[];
   function wheel(x,y,z,r){
-    var wgeo=new THREE.CylinderGeometry(r,r,0.35,10);
-    wgeo.rotateZ(Math.PI/2);
-    var w=new THREE.Mesh(wgeo,tireM);
+    // v1.46: geometry is shared fleet-wide — rotate the mesh, never the geometry.
+    var w=new THREE.Mesh(_vcg(r,r,0.35,10),tireM);
+    w.rotation.z=Math.PI/2;
     w.position.set(x,y,z); g.add(w); wheels.push(w);
   }
   wheel(1.15,0.55,7.9,0.55); wheel(-1.15,0.55,7.9,0.55);
@@ -647,7 +723,7 @@ function semiMesh(){
   wheel(1.15,0.55,-4.5,0.5); wheel(-1.15,0.55,-4.5,0.5);
   wheel(1.15,0.55,-5.8,0.5); wheel(-1.15,0.55,-5.8,0.5);
   g.userData.wheels=wheels;
-  var hlM=new THREE.MeshLambertMaterial({color:0xf5f0d8,emissive:0x333322});
+  var hlM=_semiHeadMat();
   box(0.4,0.3,0.1,hlM, 0.8,1.35,8.78);
   box(0.4,0.3,0.1,hlM, -0.8,1.35,8.78);
   return g;
@@ -657,6 +733,8 @@ var _vehMats={};
 // vehMat(color) — cached Lambert materials (one per color), shared by the
 // builders and by marta_bus_system.js's instanced stop signs.
 function vehMat(color){
+  // v1.46: this is THE single construction site for vehMat — must NOT call
+  // vehMat() itself (infinite recursion). Raw construction is intentional here.
   if (!_vehMats[color]) _vehMats[color]=new THREE.MeshLambertMaterial({color:color});
   return _vehMats[color];
 }
@@ -673,55 +751,47 @@ function martaBusMesh(){
   var g=new THREE.Group();
   var white=vehMat(0xe8eaec), blue=vehMat(0x1a5fb4), green=vehMat(0x2a9d4b),
       dark=vehMat(0x22262b),
-      glassM=new THREE.MeshLambertMaterial({color:0x1c2733});
+      glassM=vehMat(0x1c2733);
   var L=12, W=2.8, H=2.6;
   // body
-  var body=new THREE.Mesh(new THREE.BoxGeometry(W,H,L), white);
+  var body=new THREE.Mesh(_vbg(W,H,L), white);
   body.position.set(0,1.9,0); g.add(body);
   // blue stripe
-  var stripe=new THREE.Mesh(new THREE.BoxGeometry(W+0.06,0.4,L+0.06), blue);
+  var stripe=new THREE.Mesh(_vbg(W+0.06,0.4,L+0.06), blue);
   stripe.position.set(0,2.3,0); g.add(stripe);
   // green accent stripe (MARTA livery)
-  var accent=new THREE.Mesh(new THREE.BoxGeometry(W+0.06,0.18,L+0.06), green);
+  var accent=new THREE.Mesh(_vbg(W+0.06,0.18,L+0.06), green);
   accent.position.set(0,1.5,0); g.add(accent);
   // window band
-  var win=new THREE.Mesh(new THREE.BoxGeometry(W+0.06,0.8,L-2), glassM);
+  var win=new THREE.Mesh(_vbg(W+0.06,0.8,L-2), glassM);
   win.position.set(0,2.75,0); g.add(win);
   // windshield
-  var shield=new THREE.Mesh(new THREE.BoxGeometry(W-0.4,1.0,0.1), glassM);
+  var shield=new THREE.Mesh(_vbg(W-0.4,1.0,0.1), glassM);
   shield.position.set(0,2.6,L/2+0.02); g.add(shield);
   // roof
-  var roof=new THREE.Mesh(new THREE.BoxGeometry(W-0.2,0.2,L-0.3), vehMat(0xb9bec5));
+  var roof=new THREE.Mesh(_vbg(W-0.2,0.2,L-0.3), vehMat(0xb9bec5));
   roof.position.set(0,3.3,0); g.add(roof);
-  // front destination sign
+  // front destination sign (v1.46: identical on every bus — shared cached texture)
   try{
-  var cv=document.createElement('canvas'); cv.width=256; cv.height=48;
-  var c=cv.getContext('2d');
-  c.fillStyle='#1a1a1a'; c.fillRect(0,0,256,48);
-  c.fillStyle='#ffb400'; c.font='bold 28px Arial';
-  c.textAlign='center'; c.textBaseline='middle';
-  c.fillText('MARTA',128,26);
-  var tex=new THREE.CanvasTexture(cv);
-  var dest=new THREE.Mesh(new THREE.PlaneGeometry(1.8,0.35),
-    new THREE.MeshBasicMaterial({map:tex}));
+  var dest=new THREE.Mesh(_vpg(1.8,0.35), _martaDestMatGet());
   dest.position.set(0,3.0,L/2+0.06); g.add(dest);
   }catch(e){}
   // wheels
   [[-W/2+0.3,3.5],[W/2-0.3,3.5],[-W/2+0.3,-3.5],[W/2-0.3,-3.5]].forEach(function(p){
-    var wheel=new THREE.Mesh(new THREE.CylinderGeometry(0.55,0.55,0.4,10), dark);
+    var wheel=new THREE.Mesh(_vcg(0.55,0.55,0.4,10), dark);
     wheel.rotation.z=Math.PI/2;
     wheel.position.set(p[0],0.55,p[1]); g.add(wheel);
   });
   // side mirrors
   [-1,1].forEach(function(s){
-    var mir=new THREE.Mesh(new THREE.BoxGeometry(0.15,0.4,0.25), dark);
+    var mir=new THREE.Mesh(_vbg(0.15,0.4,0.25), dark);
     mir.position.set(s*(W/2+0.15),2.9,L/2-0.3); g.add(mir);
   });
   g.userData.len=L;
   return g;
 }
 
-function vehLam(c){ return new THREE.MeshLambertMaterial({color:c}); }
+function vehLam(c){ return vehMat(c); }
 // schoolBusMesh() — stylized school bus: yellow body, black rub stripe,
 // window band, hood, fold-out stop sign (left side), roof warning lights,
 // 6 wheels on g.userData.wheels.
@@ -729,7 +799,7 @@ function schoolBusMesh(){
   var g=new THREE.Group();
   var yellow=vehLam(0xe8a913), black=vehLam(0x1a1a1a), glass=vehLam(0x1c2733),
       chrome=vehLam(0xd8d8d8), tireM=vehLam(0x222222);
-  function box(w,h,d,mat,x,y,z){ var m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);
+  function box(w,h,d,mat,x,y,z){ var m=new THREE.Mesh(_vbg(w,h,d),mat);
     m.position.set(x,y,z); g.add(m); return m; }
   box(2.6,1.9,9.6,yellow,0,1.85,0);                 // body
   box(2.62,0.28,9.62,black,0,1.05,0);               // rub stripe
@@ -741,12 +811,12 @@ function schoolBusMesh(){
   // against the body (x=1.32); schoolbus_system.js eases userData.signT
   // 0->1 to swing it out to x=2.12 when children board, then retracts.
   // Joshua's rule: the sign lives on the LEFT (driver's) side.
-  var sign=new THREE.Mesh(new THREE.CylinderGeometry(0.45,0.45,0.06,8),vehLam(0xc23b2e));
+  var sign=new THREE.Mesh(_vcg(0.45,0.45,0.06,8),vehLam(0xc23b2e));
   sign.rotation.z=Math.PI/2; sign.position.set(1.32,2.0,3.2); g.add(sign);
   // wheels
-  function wheel(x,z){ var w=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.5,0.4,12),tireM);
+  function wheel(x,z){ var w=new THREE.Mesh(_vcg(0.5,0.5,0.4,12),tireM);
     w.rotation.z=Math.PI/2; w.position.set(x,0.5,z); g.add(w);
-    var hub=new THREE.Mesh(new THREE.CylinderGeometry(0.2,0.2,0.42,8),chrome);
+    var hub=new THREE.Mesh(_vcg(0.2,0.2,0.42,8),chrome);
     hub.rotation.z=Math.PI/2; hub.position.set(x,0.5,z); g.add(hub); return w; }
   var wheels=[wheel(-1.25,3.4),wheel(1.25,3.4),wheel(-1.25,-2.6),wheel(1.25,-2.6),
               wheel(-1.25,-3.6),wheel(1.25,-3.6)];
@@ -780,49 +850,49 @@ function policeCruiserMesh(){
   var g=new THREE.Group();
   var white=0xf2f4f6, blue=0x1a3a8f, glassC=0x1c2733, trimC=0x14161a;
   // lower body (white)
-  var body=new THREE.Mesh(new THREE.BoxGeometry(2.0,0.62,4.6),
-    new THREE.MeshLambertMaterial({ color:white }));
+  var body=new THREE.Mesh(_vbg(2.0,0.62,4.6),
+    vehMat(white));
   body.position.y=0.55; g.add(body); g.userData.body=body;
   // dark-blue door band (APD-style markings, both flanks)
   [-1,1].forEach(function(s){
-    var band=new THREE.Mesh(new THREE.BoxGeometry(0.06,0.34,2.6),
-      new THREE.MeshLambertMaterial({ color:blue }));
+    var band=new THREE.Mesh(_vbg(0.06,0.34,2.6),
+      vehMat(blue));
     band.position.set(s*1.0,0.62,-0.1); g.add(band);
   });
   // glasshouse
-  var cab=new THREE.Mesh(new THREE.BoxGeometry(1.75,0.5,2.4),
-    new THREE.MeshLambertMaterial({ color:glassC }));
+  var cab=new THREE.Mesh(_vbg(1.75,0.5,2.4),
+    vehMat(glassC));
   cab.position.set(0,1.12,-0.2); g.add(cab);
   // hood (white) + trunk lid hint
-  var hood=new THREE.Mesh(new THREE.BoxGeometry(1.9,0.14,1.1),
-    new THREE.MeshLambertMaterial({ color:white }));
+  var hood=new THREE.Mesh(_vbg(1.9,0.14,1.1),
+    vehMat(white));
   hood.position.set(0,0.92,1.7); g.add(hood);
   // push bar on the nose (black, stylized as two verticals + crossbar)
-  var pbm=new THREE.MeshLambertMaterial({ color:trimC });
+  var pbm=vehMat(trimC);
   [-0.55,0.55].forEach(function(x){
-    var post=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.5,0.12),pbm);
+    var post=new THREE.Mesh(_vbg(0.12,0.5,0.12),pbm);
     post.position.set(x,0.55,2.36); g.add(post);
   });
-  var cross=new THREE.Mesh(new THREE.BoxGeometry(1.3,0.12,0.12),pbm);
+  var cross=new THREE.Mesh(_vbg(1.3,0.12,0.12),pbm);
   cross.position.set(0,0.72,2.36); g.add(cross);
   // roof light bar: red beacon (driver/left) + blue beacon (right) as
   // SEPARATE meshes so police_system.js can alternate-flash them.
-  var barBase=new THREE.Mesh(new THREE.BoxGeometry(1.5,0.1,0.3),
-    new THREE.MeshLambertMaterial({ color:trimC }));
+  var barBase=new THREE.Mesh(_vbg(1.5,0.1,0.3),
+    vehMat(trimC));
   barBase.position.set(0,1.42,0.1); g.add(barBase);
-  var redB=new THREE.Mesh(new THREE.BoxGeometry(0.55,0.22,0.26),
-    new THREE.MeshLambertMaterial({ color:0xff2222 }));
+  var redB=new THREE.Mesh(_vbg(0.55,0.22,0.26),
+    vehMat(0xff2222));
   redB.position.set(-0.42,1.58,0.1); g.add(redB);
-  var blueB=new THREE.Mesh(new THREE.BoxGeometry(0.55,0.22,0.26),
-    new THREE.MeshLambertMaterial({ color:0x2244ff }));
+  var blueB=new THREE.Mesh(_vbg(0.55,0.22,0.26),
+    vehMat(0x2244ff));
   blueB.position.set(0.42,1.58,0.1); g.add(blueB);
   // takedown light (steady white, on while directing traffic at a scene)
-  var take=new THREE.Mesh(new THREE.BoxGeometry(1.1,0.1,0.12),
-    new THREE.MeshLambertMaterial({ color:0xffffff }));
+  var take=new THREE.Mesh(_vbg(1.1,0.1,0.12),
+    vehMat(0xffffff));
   take.position.set(0,1.5,0.32); take.visible=false; g.add(take);
   // wheels
-  var wg=new THREE.CylinderGeometry(0.34,0.34,0.3,10);
-  var wm=new THREE.MeshLambertMaterial({ color:0x181818 });
+  var wg=_vcg(0.34,0.34,0.3,10);
+  var wm=vehMat(0x181818);
   [[0.95,1.5],[-0.95,1.5],[0.95,-1.5],[-0.95,-1.5]].forEach(function(p){
     var w=new THREE.Mesh(wg,wm); w.rotation.z=Math.PI/2;
     w.position.set(p[0],0.34,p[1]); g.add(w);
