@@ -2973,7 +2973,17 @@ function xz(lat, lon){
   return { x:x, z:z };
 }
 /* latLon(x, z) -> {lat, lon}: inverse of xz() — world units back to geo. */
+/* v2026.10.11 COORDINATE FIX (Phase 1): xz() applies the 2.8327x Adamsville
+   zone rescale, but latLon() never inverted it — so heightAt() was sampling
+   elevation for the wrong geographic location (up to 22u off). Now inverts
+   the rescale to make latLon() the true inverse of xz(). */
 function latLon(x, z){
+  try{
+    if(typeof ZONELOADER!=='undefined'&&ZONELOADER.currentZone==='adamsville'){
+      x=3772.5+(x-3772.5)/2.8327464788732395;
+      z=2009+(z-2009)/2.8327464788732395;
+    }
+  }catch(e){}
   return { lat: LAT_MAX - z/WZ*LAT_RANGE, lon: LON_MIN + x/WX*LON_RANGE };
 }
 
