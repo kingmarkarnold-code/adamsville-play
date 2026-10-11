@@ -99,7 +99,10 @@ function _vmat(key, maker){
   return m;
 }
 // Shared special materials (emissive / transparent variants):
+/* v1.48 (#18): transparent vehicle glass -> Phong (catches specular
+   highlights) via the shared palette. */
 function _glassTMat(){ return _vmat('glassT', function(){
+  if(typeof vehGlassTMat==='function'){ var m=vehGlassTMat(); if(m) return m; }
   return new THREE.MeshLambertMaterial({color:0x8fb4cc, transparent:true, opacity:0.45}); }); }
 function _headlightMat(){ return _vmat('headlight', function(){
   return new THREE.MeshLambertMaterial({color:0xf5f0d8, emissive:0x444433}); }); }
@@ -126,6 +129,111 @@ function _martaDestMatGet(){
   return _martaDestMat;
 }
 /* ================= end v1.46 cache block ================= */
+/* ============================================================================
+   v1.49 MERGED STATIC GEOMETRY (expert report #19 — Roberto Silva)
+   ----------------------------------------------------------------------------
+   #5 (v1.46) cached GPU buffers, but every vehicle still issued dozens of
+   draw calls (a box Chevy built ~66 separate Meshes). This pass merges all
+   STATIC parts — body panels, glass, trim, lights, interior — into ONE mesh
+   per material, per vehicle.
+   - _vmergeGeos(list): concatenates indexed BufferGeometries (position,
+     normal, uv + index). The bundled three.min.js does NOT ship
+     BufferGeometryUtils, so this is hand-rolled for the primitives used
+     here (Box/Cylinder/Torus/Plane/Cone — all indexed, all carry
+     position+normal+uv).
+   - _vmat4(x,y,z,rx,ry,rz): compose a Matrix4 from position + euler.
+   - _vbatch(): collects (cachedGeometry, slot, matrix) triples.
+     flush(group, key, slotMats) groups parts by material slot, transforms
+     CLONES of the #5-cached primitives (the cache itself is NEVER mutated),
+     merges each slot, and caches the merged geometry under
+     key+':'+slot — shared fleet-wide. Meshes stay per-instance because
+     materials differ per paint job; merged geometries do not.
+     Returns {slot: mergedMesh} so builders can keep userData.body/cab/hood
+     refs (damage-pop API compatibility — they now point at the merged
+     slot mesh containing that part).
+   RULES (do not break):
+   - Only STATIC parts go in the batch. Wheels (spin via rotation.x),
+     doors (hinge via pivot), spinner caps (independent spin), police
+     beacons + takedown light (visibility flash), the school-bus stop sign
+     (swings out), warning lights (flash), and steerWheel (exposed ref)
+     MUST stay separate meshes.
+   - All builder dims are hardcoded constants, so merged geometry is
+     identical for every instance of a builder — only materials vary.
+   ========================================================================== */
+var _vMergeCache={}; // key 'builder:slot[:variant]' -> merged BufferGeometry
+function _vmergeGeos(list){
+  var pos=[], nor=[], uv=[], idx=[], vOff=0, i, j;
+  for(i=0;i<list.length;i++){
+    var g=list[i];
+    var p=g.attributes.position.array, n=g.attributes.normal.array;
+    var u=g.attributes.uv ? g.attributes.uv.array : null;
+    for(j=0;j<p.length;j++) pos.push(p[j]);
+    for(j=0;j<n.length;j++) nor.push(n[j]);
+    var vc=g.attributes.position.count, k;
+    if(u){ for(j=0;j<u.length;j++) uv.push(u[j]); }
+    else { for(k=0;k<vc;k++){ uv.push(0,0); } }
+    if(g.index){ var ix=g.index.array;
+      for(j=0;j<ix.length;j++) idx.push(ix[j]+vOff);
+    } else { for(k=0;k<vc;k++) idx.push(k+vOff); }
+    vOff+=vc;
+  }
+  var out=new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+  out.setAttribute('normal',   new THREE.Float32BufferAttribute(nor,3));
+  out.setAttribute('uv',       new THREE.Float32BufferAttribute(uv,2));
+  out.setIndex(idx);
+  return out;
+}
+// _vmat4(x,y,z,rx,ry,rz) — compose a transform matrix (Euler XYZ order,
+// matching how the builders set mesh.rotation before this pass).
+function _vmat4(x,y,z,rx,ry,rz){
+  var m=new THREE.Matrix4().makeRotationFromEuler(
+    new THREE.Euler(rx||0, ry||0, rz||0));
+  m.setPosition(x||0, y||0, z||0);
+  return m;
+}
+function _vbatch(){
+  var parts=[]; // {g: cachedGeo, s: slot, m: Matrix4}
+  return {
+    // add(geo, slot, x,y,z, rx,ry,rz) — queue one static part.
+    add: function(geo, slot, x, y, z, rx, ry, rz){
+      parts.push({g:geo, s:slot, m:_vmat4(x,y,z,rx,ry,rz)});
+    },
+    // addM(geo, slot, matrix) — queue with a pre-composed matrix
+    // (for nested pivots, e.g. wheel spokes / spinner blades).
+    addM: function(geo, slot, matrix){
+      parts.push({g:geo, s:slot, m:matrix});
+    },
+    // flush(group, key, slotMats) — merge per slot, add meshes, return refs.
+    flush: function(group, key, slotMats){
+      var bySlot={}, order=[], i, j;
+      for(i=0;i<parts.length;i++){ var p=parts[i];
+        if(!bySlot[p.s]){ bySlot[p.s]=[]; order.push(p.s); }
+        bySlot[p.s].push(p);
+      }
+      var refs={};
+      for(i=0;i<order.length;i++){
+        var s=order[i], arr=bySlot[s], ck=key+':'+s, mg=_vMergeCache[ck];
+        if(!mg){
+          var geos=[];
+          for(j=0;j<arr.length;j++){
+            var c=arr[j].g.clone();   // clone: #5 cache is never mutated
+            c.applyMatrix4(arr[j].m);  // normals fixed up by applyMatrix4
+            geos.push(c);
+          }
+          mg=_vmergeGeos(geos);
+          mg.userData.vcached=true;    // like #5: never dispose a cached asset
+          _vMergeCache[ck]=mg;
+        }
+        var mesh=new THREE.Mesh(mg, slotMats[s]);
+        group.add(mesh);
+        refs[s]=mesh;
+      }
+      return refs;
+    }
+  };
+}
+/* ================= end v1.49 merge block ================= */
 /* ----------------------------------------------------------------------------
    CANONICAL BUILDERS — conventions: forward = local +Z; left = +X = driver
    side (US left-hand drive); return a THREE.Group; callers add to scene.
@@ -735,7 +843,10 @@ var _vehMats={};
 function vehMat(color){
   // v1.46: this is THE single construction site for vehMat — must NOT call
   // vehMat() itself (infinite recursion). Raw construction is intentional here.
-  if (!_vehMats[color]) _vehMats[color]=new THREE.MeshLambertMaterial({color:color});
+  /* v1.48 (#18, Aria Nakamura): vehicle paint uses MeshPhongMaterial via the
+     shared palette — specular sheen on bodywork (toon_mats.js). Falls back
+     to Lambert if the palette hasn't loaded. */
+  if (!_vehMats[color]) _vehMats[color]=((typeof vehPaintMat==='function')?vehPaintMat(color):new THREE.MeshLambertMaterial({color:color}));
   return _vehMats[color];
 }
 function groundY(x,z){
