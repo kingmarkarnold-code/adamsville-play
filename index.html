@@ -1329,8 +1329,12 @@ function __injectZoneFiles(files, callback){
     s.onload = function(){ finish(true); };
     s.onerror = function(){ finish(false); };
     setTimeout(function(){ if(!done){ try{ console.warn('[deferred] Zone script timeout: '+f.src); }catch(e){} finish(false); } }, 45000);
-    /* Cache-bust on retry so a stale CDN edge does not serve the same broken bytes. */
-    s.src = attempt > 0 ? f.src + (f.src.indexOf('?')===-1?'?':'&') + 'retry='+Date.now() : f.src;
+    /* v1.35 #35: cache-bust zone files with the live map_version (a map
+       update always changes the URL). Retry also busts so a stale CDN edge
+       cannot serve the same broken bytes twice. */
+    var _mver = window.__MAPVER || '';
+    var _zsrc = f.src + (f.src.indexOf('?')===-1?'?':'&') + 'v=' + encodeURIComponent(_mver);
+    s.src = attempt > 0 ? _zsrc + '&retry='+Date.now() : _zsrc;
     document.head.appendChild(s);
   }
   nextFile();
@@ -1344,9 +1348,93 @@ function __injectZoneFiles(files, callback){
    The ?v= cache-buster MUST match ui_version — the generator stamps it. */
 var TERR_PRE_URL='terrain_heights_adamsville_600x800.bin?v=2026.10.11.147';
 var TERR_PRE_LEN=(600+1)*(800+1);
+/* v1.35 #35: prefer the LIVE ui_version for the terrain binary cache-buster
+   at fetch time. The generator stamps TERR_PRE_URL above (keep that line's
+   format — pipeline/build-terrain-heights.js regex-matches it), but the
+   manifest fetch in __loadDeferredQueue gives us the live version, so a
+   stale stamp can never serve old bytes. Falls back to the stamped URL. */
+function _terrPreLiveUrl(){
+  try{
+    var v = window.__UIVER || '';
+    if (v) return 'terrain_heights_adamsville_600x800.bin?v=' + encodeURIComponent(v);
+  }catch(e){}
+  return TERR_PRE_URL;
+}
+/* ============================================================================
+   v1.35 EXPERT #35 (Jennifer Wu, QA Tester) — CACHE-BUSTING + INTEGRITY.
+   ----------------------------------------------------------------------------
+   PROBLEM: Browsers/CDN edges cache old game files, so players get stale
+   versions after updates. No verification that downloads aren't corrupted.
+
+   FIX (web-only, this file):
+   1. __fetchLoadManifests() pulls ui-manifest.json + map-manifest.json with
+      cache:'no-store' BEFORE any game script downloads. Stores:
+        window.__UIVER  — live ui_version (for ?v= cache-busters)
+        window.__UIHASH  — filename -> sha256 hex (for SRI integrity)
+        window.__MAPVER  — live map_version (for zone-file ?v= cache-busters)
+   2. Every deferred script URL gets ?v=<ui_version> — a version bump always
+      changes the URL, so no cache can ever serve stale bytes.
+   3. First download attempt sets s.integrity='sha256-<base64>' (Subresource
+      Integrity). The browser verifies the hash; on mismatch onerror fires
+      and the existing retry re-downloads WITHOUT integrity (graceful
+      fallback — hash drift from concurrent pushes can never brick the game).
+   4. Zone files get ?v=<map_version>. Terrain binary uses live ui_version
+      at fetch time (was a hardcoded stale stamp).
+   Documentation comments are required on all game code — Joshua's rule.
+   ============================================================================ */
+function __hexToBase64(hex){
+  /* SRI needs base64; manifests store hex. */
+  try{
+    var bytes = new Uint8Array(hex.length / 2);
+    for (var i = 0; i < hex.length; i += 2) bytes[i/2] = parseInt(hex.substr(i, 2), 16);
+    var bin = '';
+    for (var j = 0; j < bytes.length; j++) bin += String.fromCharCode(bytes[j]);
+    return btoa(bin);
+  }catch(e){ return ''; }
+}
+function __fetchLoadManifests(cb){
+  /* Fetch both manifests in parallel with cache:'no-store'. Always calls cb
+     (even on failure — missing versions just mean no cache-buster/integrity,
+     never a blocked load). */
+  var done = 0;
+  function one(){
+    if (++done >= 2){ try{ cb(); }catch(e){} }
+  }
+  try{
+    fetch('ui-manifest.json', {cache:'no-store'}).then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(m){
+      try{
+        if (m){
+          window.__UIVER = m.ui_version || m.version || '';
+          window.__UIHASH = {};
+          var files = m.files || [];
+          for (var i = 0; i < files.length; i++){
+            var fl = files[i];
+            var h = fl.sha256 || fl.hash || '';
+            /* Full 64-hex-char hashes only — truncated ones can't do SRI. */
+            if (fl.name && h && h.length >= 64) window.__UIHASH[fl.name] = h;
+          }
+        }
+      }catch(e){}
+      one();
+    }).catch(function(){ one(); });
+  }catch(e){ one(); }
+  try{
+    fetch('map-manifest.json', {cache:'no-store'}).then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(m){
+      try{ if (m) window.__MAPVER = m.map_version || m.version || ''; }catch(e){}
+      one();
+    }).catch(function(){ one(); });
+  }catch(e){ one(); }
+}
 function __loadDeferredQueue(){
   if (window.__deferredLoading || window.__deferredDone) return;
   window.__deferredLoading = true;
+  /* v1.35 #35: prefetch manifests (versions + SRI hashes) before any game
+     script downloads, then run the queue. */
+  __fetchLoadManifests(function(){ __loadDeferredQueueInner(); });
+}
+function __loadDeferredQueueInner(){
   if (!window.__deferredQueue) window.__deferredQueue = __collectDeferredScripts();
   var queue = window.__deferredQueue;
   var idx = 0;
@@ -1401,7 +1489,23 @@ function __loadDeferredQueue(){
     s.onload = function(){ finish(true); };
     s.onerror = function(){ finish(false); };
     setTimeout(function(){ if(!done){ try{ console.warn('[deferred] Script timeout: '+src); }catch(e){} finish(false); } }, 45000);
-    s.src = attempt > 0 ? src + (src.indexOf('?')===-1?'?':'&') + 'retry='+Date.now() : src;
+    /* v1.35 #35: cache-bust every script with the live ui_version, and set
+       SRI integrity on the first attempt. If the hash mismatches (or the
+       network fails), onerror fires and the retry below re-downloads WITHOUT
+       integrity + a retry= timestamp — hash drift can never brick the game. */
+    var _ver = window.__UIVER || '';
+    var _cbSrc = src + (src.indexOf('?')===-1?'?':'&') + 'v=' + encodeURIComponent(_ver);
+    if (attempt === 0 && _ver){
+      try{
+        var _base = src.split('?')[0].split('/').pop();
+        var _hex = (window.__UIHASH || {})[_base];
+        if (_hex){
+          var _b64 = __hexToBase64(_hex);
+          if (_b64) s.integrity = 'sha256-' + _b64;
+        }
+      }catch(e){}
+    }
+    s.src = attempt > 0 ? _cbSrc + '&retry='+Date.now() : _cbSrc;
     document.head.appendChild(s);
   }
   /* v1.44 TERRAIN-PRECOMPUTE: fetch the precomputed 600x800 heightfield
@@ -1415,7 +1519,7 @@ function __loadDeferredQueue(){
     try{ var _m=/[?&]zone=([a-z]+)/.exec(location.search); if(_m) _zone=_m[1]; }catch(e){}
     if (_zone!=='adamsville' || typeof TERR_PRE_URL==='undefined'){ _go(); return; }
     try{
-      fetch(TERR_PRE_URL).then(function(r){
+      fetch(_terrPreLiveUrl()).then(function(r){
         if(!r.ok) throw new Error('terrain precompute http '+r.status);
         return r.arrayBuffer();
       }).then(function(buf){
