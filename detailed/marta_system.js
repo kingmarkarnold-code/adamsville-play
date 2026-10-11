@@ -772,12 +772,13 @@ var _bootTimer=setInterval(function(){
       try{ if(typeof Report!=='undefined') Report.noteError('marta','init failed',String(e&&e.message||e)); }catch(x){}
     }
     try{
-      if (typeof animate==='function'&&!animate.__martaWrap){
-        var orig=animate;
-        /* v1.22 LAUNCHER (Joshua 2026-10-10): skip when MARTA trains disabled in launch options. */
-        var wrapped=function(){ orig(); if(!window.__launchOpts || window.__launchOpts.martaTrains!==false) updateMarta(); };
-        wrapped.__martaWrap=true;
-        animate=wrapped;
+      /* v1.51 TICK REGISTRY (expert report #14, James Park, Joshua approved):
+         was an animate() monkey-patch — now registers on the central Sim tick
+         registry. Same once-per-frame timing, deterministic priority order. */
+      if(window.Sim && typeof Sim.onTick==='function' && !window.__martaTickReg){
+        window.__martaTickReg=true;
+      /* v1.22 LAUNCHER (Joshua 2026-10-10): skip when MARTA trains disabled in launch options. */
+        Sim.onTick('render', 20, function(dt){ if(!window.__launchOpts || window.__launchOpts.martaTrains!==false) updateMarta(); });
       }
     }catch(e){}
     clearInterval(_bootTimer);
