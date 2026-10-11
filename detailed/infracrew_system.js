@@ -440,9 +440,22 @@ function patrolDiscover(u){
 }
 function updatePatrols(dt){
   // v1.15 DISTANCE CULLING (Joshua 2026-10-10)
+  // v1.30 MESH CULLING (Joshua's directive): hide truck mesh when beyond
+  // 500u — tracked as data only until visible. Throttled to ~2Hz.
   var _zu=window.ZONEUNLOCK;
+  IC._visT=(IC._visT||0)+dt;
+  var _doVis=IC._visT>0.5;
+  if (_doVis) IC._visT=0;
+  var _px=0,_pz=0;
+  try{ _px=player.x; _pz=player.z; }catch(e){}
   for (var i=0;i<IC.patrols.length;i++){
     var u=IC.patrols[i];
+    if (_doVis && u && u.mesh){
+      var _mx=u.mesh.position.x, _mz=u.mesh.position.z;
+      var _mdx=_mx-_px, _mdz=_mz-_pz, _md2=_mdx*_mdx+_mdz*_mdz;
+      if (_md2>250000){ if (u.mesh.visible) u.mesh.visible=false; }
+      else if (_md2<160000){ if (!u.mesh.visible) u.mesh.visible=true; }
+    }
     if(_zu && u && _zu.shouldCull(u.x,u.z)) continue;
     patrolAdvance(u, dt);
     patrolDiscover(u);
