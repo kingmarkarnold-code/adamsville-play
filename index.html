@@ -3043,9 +3043,11 @@ function roadSitY(x,z){
      kinks at every crossover. Sampling the mesh directly puts the road ON
      the visible surface by construction (burial impossible); the +0.55 lift
      and the smoothHeights clamp (to mesh+0.2) keep it proud of the ground.
-     Falls back to analytic only if the mesh grid isn't built yet. */
-  var mh=terrainMeshY(x,z);
-  return (mh>-1e8?mh:heightAt(x,z));
+     Falls back to analytic only if the mesh grid isn't built yet.
+     v1.35: delegates to snapToGround (point sample) — one ground-snapping
+     code path for the whole game (Joshua's "snap to face" directive). */
+  try{ return snapToGround(x,z,0,0,0); }
+  catch(e){ try{ var mh=terrainMeshY(x,z); return (mh>-1e8?mh:heightAt(x,z)); }catch(e2){ return 0; } }
 }
 
 // ---------- text labels ----------
@@ -4089,6 +4091,54 @@ function buildRoadGrids(){
   }catch(e){}
 }
 function ensureRoadSurf(){ buildRoadGrids(); }  // v1.0: now eager; kept as alias
+/* ================= SIDEWALK SURFACES ================= */
+/* v1.35 (2026-10-11, Joshua's bug: "I can run through sidewalks").
+   Roads won solid-surface behavior via roadSurfGrid (groundRefY snaps the
+   player/vehicles up to roadSurfaceY). Sidewalks had NO surface entry -- the
+   player sampled terrain under them and clipped straight through.
+   sidewalkSurfGrid mirrors the road pattern: oriented-box entries
+   [x,z,yaw,hw,hd,topY] in 40u cells. residential_detail.js registers every
+   'walks' strip; mlk_fairburn.js + school_plaza.js + schools3.js register
+   their named sidewalk slabs; codeenforce addSidewalk() registers dynamic
+   crew-placed ones. __regSidewalk is a no-op-safe global (typeof-guarded
+   at every call site) so files can load in any order.
+   Point-in-box uses the l2w inverse convention (see residential_detail.js):
+   lx = dx*cos(yaw) - dz*sin(yaw); lz = dx*sin(yaw) + dz*cos(yaw). */
+var sidewalkSurfGrid=null, sidewalkSurfSegs=0;
+function __regSidewalk(x,z,yaw,sx,sy,sz,baseY){
+  try{
+    if(!sidewalkSurfGrid) sidewalkSurfGrid={cell:40,map:{}};
+    var hw=sx/2+0.3, hd=sz/2+0.3;   // small pad so slab edges don't clip
+    var seg=[x,z,yaw||0,hw,hd,baseY+sy];
+    sidewalkSurfSegs++;
+    var br=Math.sqrt(hw*hw+hd*hd);  // bounding radius for cell coverage
+    var c0=Math.floor((x-br)/40), c1=Math.floor((x+br)/40),
+        d0=Math.floor((z-br)/40), d1=Math.floor((z+br)/40);
+    for (var cx=c0;cx<=c1;cx++) for (var cz=d0;cz<=d1;cz++){
+      var k=cx+','+cz;
+      (sidewalkSurfGrid.map[k]=sidewalkSurfGrid.map[k]||[]).push(seg);
+    }
+  }catch(e){}
+}
+function sidewalkSurfaceY(x,z){
+  // Highest sidewalk top wins (slabs are thin; overlaps are rare).
+  if(!sidewalkSurfGrid) return null;
+  var best=null;
+  try{
+    var arr=sidewalkSurfGrid.map[Math.floor(x/40)+','+Math.floor(z/40)];
+    if(!arr) return null;
+    for (var i=0;i<arr.length;i++){
+      var s=arr[i];
+      var dx=x-s[0], dz=z-s[1];
+      var c=Math.cos(s[2]), sn=Math.sin(s[2]);
+      var lx=dx*c-dz*sn, lz=dx*sn+dz*c;
+      if (Math.abs(lx)<=s[3] && Math.abs(lz)<=s[4]){
+        if (best===null||s[5]>best) best=s[5];
+      }
+    }
+  }catch(e){}
+  return best;
+}
 function gridSegsNear(x,z,padCells){
   // segments in the 3x3 (or 5x5) cell neighborhood of (x,z)
   var out=[];
@@ -4247,7 +4297,12 @@ function groundRefY(x,z){
   var t=terrainMeshY(x,z);
   if (t<-1e8){ try{ t=heightAt(x,z); }catch(e){ t=0; } }
   var r=roadSurfaceY(x,z);
-  return (r!==null&&r>t)?r:t;
+  var y=(r!==null&&r>t)?r:t;
+  /* v1.35 SIDEWALK SURFACES (2026-10-11, Joshua: "I can run through sidewalks").
+     Sidewalks are solid walkable surfaces like roads -- snap up to the sidewalk
+     top when over one and it is above the current reference. */
+  try{ var sw=sidewalkSurfaceY(x,z); if(sw!==null&&sw>y) y=sw; }catch(e){}
+  return y;
 }
 
 /* ================= WATER ================= */
@@ -5201,31 +5256,47 @@ function bldgFaceYaw(x, z){
    -0.6 embed in the placement loop sinks it slightly into the ground.
    Falls back to heightAt() if the mesh grid isn't built yet.
    Player scale reference: 6'1" = 1.85u, so 1u ≈ 1m. */
-function bldgGroundY(x,z,w,d,yaw){
-  /* v1.33 YAW-AWARE (Joshua 2026-10-11: houses looked "askewed/off"): buildings
-     are rotated by byaw (bldgFaceYaw) to face the street, but the old code sampled
-     AXIS-ALIGNED corners [x±w/2, z±d/2]. On slopes, the rotated footprint's actual
-     corners sit at different terrain heights — the base Y was computed for the
-     wrong corners, floating or burying the wrong sides. Now the corner offsets are
-     rotated by yaw (same convention as qt.setFromAxisAngle(YAX,byaw) in the render
-     loop) so the sampled corners match the rendered footprint. yaw is optional —
-     callers without a yaw get the old axis-aligned behavior. */
+/* ============================================================================
+   snapToGround(x, z, w, d, yaw) — THE canonical "snap to face" ground lock.
+   Joshua 2026-10-11: "snap to face — that's what we need to do. We need to
+   snap the face of these things." (Blender's snap-to-face: lock an object's
+   bottom to the surface of another mesh.)
+
+   Every object that sits on the ground MUST get its base Y from this function:
+   buildings, trees, props, parked vehicles, crew equipment, sidewalks.
+   It samples the RENDERED terrain mesh (terrainMeshY — the surface the player
+   SEES), not the analytic heightAt, because the two differ ~2u on slopes due
+   to 40u grid chording. Sampling the mesh puts the object ON the visible
+   surface by construction.
+
+   Footprint-aware: samples the center + 4 footprint corners, rotated by yaw
+   (same convention as qt.setFromAxisAngle(YAX,yaw) in render loops), and
+   returns the MINIMUM — the object's bottom face never floats on a slope.
+   Callers then embed slightly (e.g. buildings use -0.6) to avoid z-fighting.
+
+   Args: x,z = center; w,d = footprint width/depth (0 = point sample);
+         yaw = facing rotation in radians (optional, 0 = axis-aligned).
+   Falls back to heightAt(x,z) center-only if the mesh grid isn't built yet.
+   Player scale reference: 6'1" = 1.85u, so 1u ~= 1m. */
+function snapToGround(x,z,w,d,yaw){
   var ys=[];
   try{
     var yc=terrainMeshY(x,z);
     if (yc>-1e8) ys.push(yc);
-    var hw=(w||8)/2, hd=(d||8)/2;
+    var hw=(w||0)/2, hd=(d||0)/2;
     var corners;
-    if (typeof yaw==='number' && yaw!==0){
+    if ((hw>0||hd>0) && typeof yaw==='number' && yaw!==0){
       var c=Math.cos(yaw), s=Math.sin(yaw);
       corners=[
-        [x+(-hw)*c+( -hd)*s, z-(-hw)*s+( -hd)*c],
-        [x+( hw)*c+( -hd)*s, z-( hw)*s+( -hd)*c],
-        [x+(-hw)*c+(  hd)*s, z-(-hw)*s+(  hd)*c],
-        [x+( hw)*c+(  hd)*s, z-( hw)*s+(  hd)*c]
+        [x+(-hw)*c+(-hd)*s, z-(-hw)*s+(-hd)*c],
+        [x+( hw)*c+(-hd)*s, z-( hw)*s+(-hd)*c],
+        [x+(-hw)*c+( hd)*s, z-(-hw)*s+( hd)*c],
+        [x+( hw)*c+( hd)*s, z-( hw)*s+( hd)*c]
       ];
-    } else {
+    } else if (hw>0||hd>0){
       corners=[[x-hw,z-hd],[x+hw,z-hd],[x-hw,z+hd],[x+hw,z+hd]];
+    } else {
+      corners=[];
     }
     for (var i=0;i<corners.length;i++){
       var cy=terrainMeshY(corners[i][0],corners[i][1]);
@@ -5236,6 +5307,14 @@ function bldgGroundY(x,z,w,d,yaw){
   var mn=ys[0];
   for (var j=1;j<ys.length;j++) if (ys[j]<mn) mn=ys[j];
   return mn;
+}
+/* bldgGroundY: legacy name kept for backward compatibility — delegates to
+   snapToGround (same semantics: min of center + yaw-rotated corners). */
+function bldgGroundY(x,z,w,d,yaw){
+  /* v1.35: canonicalized — was a standalone implementation, now delegates to
+     snapToGround so there is exactly ONE ground-snapping code path. */
+  try{ return snapToGround(x,z,w,d,yaw); }
+  catch(e){ try{ return heightAt(x,z); }catch(e2){ return 0; } }
 }
 /* v2.0 (2026-10-09): DEFERRED INVOCATION — this is now a named function CALLED
    after the final road-grid rebuild (see call site below), so the automatic
@@ -5360,6 +5439,12 @@ function runOsmBuildings(){
       /* v1.33: pass the stored facing yaw (k2[6]) so ground sampling matches
          the rotated footprint — byaw is defined just below, same value */
       try{ gy=bldgGroundY(k2[0],k2[1],k2[2],k2[3],(k2.length>=7&&typeof k2[6]==='number')?k2[6]:0); }catch(e){ try{ gy=heightAt(k2[0],k2[1]); }catch(e2){} }
+      /* v1.35 SNAP-TO-WALL (Joshua 2026-10-11: windows must snap to the wall
+         face, not recompute ground): store the BODY's actual base Y as the
+         8th kept element. The detail pass (residential_detail.js) reads this
+         instead of recomputing — details inherit the wall's exact base, so
+         they can never detach even if ground sampling changes later. */
+      try{ k2[7]=gy-0.6; }catch(e){}
       var bw=k2[2], bd=k2[3], bh=Math.max(2.5,k2[4]), tp=k2[5];
       /* v1.14 (Joshua's directive): rotate the body so its front (+z local)
          faces the street — or the parking lot for apartments (type 2).
@@ -6146,7 +6231,10 @@ var TREE_SPECIES=[
     if (nearRoad(x,z)) continue;
     if (!clearOfStructures(x,z)) continue;
     var sp=TREE_SPECIES[pickSpecies(srng())];
-    var s=(0.75+Math.random()*0.7)*sp.h, gy=heightAt(x,z);
+    /* v1.35 SNAP-TO-FACE (Joshua 2026-10-11): trees snap their trunk base to
+       the RENDERED terrain mesh via snapToGround — was heightAt (analytic),
+       which differs ~2u on slopes, floating trunks above the visible grass. */
+    var s=(0.75+Math.random()*0.7)*sp.h, gy=snapToGround(x,z,2,2,0);
     q.setFromAxisAngle(up, Math.random()*Math.PI*2);
     var ch=getTreeChunk(x,z), ck=treeChunkKey(x,z);
     // trunk (shared mesh, all species) — clone matrix: m4 is reused scratch
@@ -6426,7 +6514,13 @@ function makeCar(x,z,yaw,color,drivable,kind){
   var rimStyle=pickRimStyle(kind);
   var paint=(kind==='boxchevy'||kind==='bubblechevy')?pickPaint(kind,rimStyle):{body:color,roof:null,stripe:null,style:'solid'};
   var mesh=vt.mesh(paint,rimStyle);
-  mesh.position.set(x, heightAt(x,z), z); mesh.rotation.y=yaw;
+  /* v1.35 SNAP-TO-FACE (Joshua 2026-10-11): parked cars snap to the rendered
+     terrain — was heightAt (analytic center-only), which floats cars ~2u on
+     slopes. Footprint ~4x2u with yaw. (Traffic cars get repositioned by the
+     traffic loop; the van's driveway +0.32 override still applies after.) */
+  var _cy=0;
+  try{ _cy=snapToGround(x,z,4,2,yaw); }catch(e){ try{_cy=heightAt(x,z);}catch(e2){} }
+  mesh.position.set(x, _cy, z); mesh.rotation.y=yaw;
   scene.add(mesh);
   var st={ x:x, z:z, yaw:yaw, speed:0, mesh:mesh, driving:false,
     damage:0, dead:false, sunk:false, sinking:false, sinkT:0, lastHit:0,
@@ -9298,6 +9392,8 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <script data-dsrc="marta_system.js" data-dkey="marta"></script>
 <script data-dsrc="marta_bus_data.js" data-dkey="busdata"></script>
 <script data-dsrc="marta_bus_system.js" data-dkey="bus"></script>
+<!-- VISUAL INSPECT (Joshua 2026-10-11): visual/material defect detection for inspectors + drones. Always loads (shared utility). -->
+<script data-dsrc="visual_inspect.js" data-dkey=""></script>
 <script data-dsrc="bird_drones.js" data-dkey="drones"></script>
 <script data-dsrc="schoolbus_system.js" data-dkey=""></script>
 <script data-dsrc="infracrew_system.js" data-dkey="infra"></script>
