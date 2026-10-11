@@ -400,6 +400,8 @@ var bootTries = 0;
 var bootTimer = setInterval(function(){
   bootTries++;
   try{
+    /* v1.34 LAUNCHER SKIP (Joshua 2026-10-11): no traffic system, no assist. */
+    if (window.__launchOpts && window.__launchOpts.traffic===false){ try{clearInterval(bootTimer);}catch(e){} return; }
     if (typeof window.updateTraffic==='function' && !window.updateTraffic.__assistWrap){
       var orig = window.updateTraffic;
       window.updateTraffic = function(dt, pxx, pzz){
