@@ -175,14 +175,21 @@ function init(){
   // apply the starting season to the trees (summer on fresh boot)
   try{ if(window.__trees) window.__trees.setSeason(DC.season); }catch(e){}
 
+  /* v1.47 SIM/RENDER SEPARATION (expert report #15): WorldClock is the
+     tick-driven time authority. Sync our persisted load into it — WorldClock
+     may have initialized with defaults before this module loaded. */
+  try{
+    if(window.WorldClock && WorldClock.setTime) WorldClock.setTime(DC.gameMin, DC.dayNum);
+  }catch(e){}
   // frame hook (same wrap pattern as bird_drones.js / traffic_system.js)
   DC._lastT=performance.now()/1000;
   try{
-    if(typeof animate==='function' && !animate.__dayWrap){
-      var orig=animate;
-      var wrapped=function(){ orig(); updateDayCycle(); };
-      wrapped.__dayWrap=true;
-      animate=wrapped;
+    /* v1.51 TICK REGISTRY (expert report #14, James Park, Joshua approved):
+       was an animate() monkey-patch — now registers on the central Sim tick
+       registry. Same once-per-frame timing, deterministic priority order. */
+    if(window.Sim && typeof Sim.onTick==='function' && !window.__dayTickReg){
+      window.__dayTickReg=true;
+      Sim.onTick('render', 40, function(dt){ updateDayCycle(); });
     }
   }catch(e){}
 
@@ -195,7 +202,9 @@ function init(){
   window.__daycycle={
     get gameMin(){return DC.gameMin;}, get dayNum(){return DC.dayNum;},
     get season(){return DC.season;}, get weather(){return DC.weather;},
-    setTime:function(min,day){ DC.gameMin=min; DC.dayNum=day||DC.dayNum; }
+    setTime:function(min,day){ DC.gameMin=min; DC.dayNum=day||DC.dayNum;
+      /* v1.47: keep the tick-driven WorldClock in sync. */
+      try{ if(window.WorldClock && WorldClock.setTime) WorldClock.setTime(DC.gameMin, DC.dayNum); }catch(e){} }
   };
 }
 
@@ -204,8 +213,18 @@ var _m4=null, _q=null, _v=null, _s=null;
 function updateDayCycle(){
   if(!DC) return;
   if(!_m4){ _m4=new THREE.Matrix4(); _q=new THREE.Quaternion(); _v=new THREE.Vector3(); _s=new THREE.Vector3(); }
-  var now=performance.now()/1000;
-  var dt=Math.min(0.1, now-DC._lastT); DC._lastT=now;
+  /* v1.47 SIM/RENDER SEPARATION (expert report #15, James Park): game time
+     advances per SIMULATION tick via WorldClock, not per wall-clock second.
+     readDelta() returns sim seconds elapsed since our last call — identical
+     on 30fps and 60fps devices, and zero while the sim is paused. Falls back
+     to wall-clock only if sim_core.js failed to load. */
+  var dt;
+  if(window.WorldClock && WorldClock.readDelta){
+    dt=Math.min(0.25, WorldClock.readDelta());
+  }else{
+    var now=performance.now()/1000;
+    dt=Math.min(0.1, now-DC._lastT); DC._lastT=now;
+  }
   DC.t+=dt;
 
   /* --- advance the clock --- */
@@ -213,6 +232,8 @@ function updateDayCycle(){
   var newSeason=null;
   if(DC.gameMin>=1440){
     DC.gameMin-=1440; DC.dayNum++;
+    /* v1.47: WorldClock is the canonical clock — mirror day rollover into it. */
+    try{ if(window.WorldClock && WorldClock.setTime) WorldClock.setTime(DC.gameMin, DC.dayNum); }catch(e){}
     newSeason=seasonForDay(DC.dayNum);
     if(newSeason!==DC.season){ DC.season=newSeason;
       try{ if(window.__trees) window.__trees.setSeason(newSeason); }catch(e){}
