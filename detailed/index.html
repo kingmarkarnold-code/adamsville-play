@@ -4089,6 +4089,54 @@ function buildRoadGrids(){
   }catch(e){}
 }
 function ensureRoadSurf(){ buildRoadGrids(); }  // v1.0: now eager; kept as alias
+/* ================= SIDEWALK SURFACES ================= */
+/* v1.35 (2026-10-11, Joshua's bug: "I can run through sidewalks").
+   Roads won solid-surface behavior via roadSurfGrid (groundRefY snaps the
+   player/vehicles up to roadSurfaceY). Sidewalks had NO surface entry -- the
+   player sampled terrain under them and clipped straight through.
+   sidewalkSurfGrid mirrors the road pattern: oriented-box entries
+   [x,z,yaw,hw,hd,topY] in 40u cells. residential_detail.js registers every
+   'walks' strip; mlk_fairburn.js + school_plaza.js + schools3.js register
+   their named sidewalk slabs; codeenforce addSidewalk() registers dynamic
+   crew-placed ones. __regSidewalk is a no-op-safe global (typeof-guarded
+   at every call site) so files can load in any order.
+   Point-in-box uses the l2w inverse convention (see residential_detail.js):
+   lx = dx*cos(yaw) - dz*sin(yaw); lz = dx*sin(yaw) + dz*cos(yaw). */
+var sidewalkSurfGrid=null, sidewalkSurfSegs=0;
+function __regSidewalk(x,z,yaw,sx,sy,sz,baseY){
+  try{
+    if(!sidewalkSurfGrid) sidewalkSurfGrid={cell:40,map:{}};
+    var hw=sx/2+0.3, hd=sz/2+0.3;   // small pad so slab edges don't clip
+    var seg=[x,z,yaw||0,hw,hd,baseY+sy];
+    sidewalkSurfSegs++;
+    var br=Math.sqrt(hw*hw+hd*hd);  // bounding radius for cell coverage
+    var c0=Math.floor((x-br)/40), c1=Math.floor((x+br)/40),
+        d0=Math.floor((z-br)/40), d1=Math.floor((z+br)/40);
+    for (var cx=c0;cx<=c1;cx++) for (var cz=d0;cz<=d1;cz++){
+      var k=cx+','+cz;
+      (sidewalkSurfGrid.map[k]=sidewalkSurfGrid.map[k]||[]).push(seg);
+    }
+  }catch(e){}
+}
+function sidewalkSurfaceY(x,z){
+  // Highest sidewalk top wins (slabs are thin; overlaps are rare).
+  if(!sidewalkSurfGrid) return null;
+  var best=null;
+  try{
+    var arr=sidewalkSurfGrid.map[Math.floor(x/40)+','+Math.floor(z/40)];
+    if(!arr) return null;
+    for (var i=0;i<arr.length;i++){
+      var s=arr[i];
+      var dx=x-s[0], dz=z-s[1];
+      var c=Math.cos(s[2]), sn=Math.sin(s[2]);
+      var lx=dx*c-dz*sn, lz=dx*sn+dz*c;
+      if (Math.abs(lx)<=s[3] && Math.abs(lz)<=s[4]){
+        if (best===null||s[5]>best) best=s[5];
+      }
+    }
+  }catch(e){}
+  return best;
+}
 function gridSegsNear(x,z,padCells){
   // segments in the 3x3 (or 5x5) cell neighborhood of (x,z)
   var out=[];
@@ -4247,7 +4295,12 @@ function groundRefY(x,z){
   var t=terrainMeshY(x,z);
   if (t<-1e8){ try{ t=heightAt(x,z); }catch(e){ t=0; } }
   var r=roadSurfaceY(x,z);
-  return (r!==null&&r>t)?r:t;
+  var y=(r!==null&&r>t)?r:t;
+  /* v1.35 SIDEWALK SURFACES (2026-10-11, Joshua: "I can run through sidewalks").
+     Sidewalks are solid walkable surfaces like roads -- snap up to the sidewalk
+     top when over one and it is above the current reference. */
+  try{ var sw=sidewalkSurfaceY(x,z); if(sw!==null&&sw>y) y=sw; }catch(e){}
+  return y;
 }
 
 /* ================= WATER ================= */
