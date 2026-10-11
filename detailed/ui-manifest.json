@@ -374,8 +374,14 @@
       "name": "ui_sounds.js",
       "size": 7629,
       "sha256": "abae6f2c81f7aab05f64c5621eb6573671fa0a986cc658dd91fe2a8f011ce7d2"
+    },
+    {
+      "name": "perf_budget.js",
+      "sha256": "5195f628a349ad00c9fd93144d90ca31dbade14f8751232061c1ecf8a6e50cbe",
+      "hash": "5195f628a349ad00c9fd93144d90ca31dbade14f8751232061c1ecf8a6e50cbe",
+      "size": 11610
     }
   ],
-  "ui_version": "2026.10.11.176",
+  "ui_version": "2026.10.11.177",
   "version": "2026.10.11.166"
 }
