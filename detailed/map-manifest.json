@@ -9,6 +9,12 @@
       "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/elev.js"
     },
     {
+      "name": "gas_stations_real.js",
+      "sha256": "1c8f8464c00624a8",
+      "size": 9670,
+      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/gas_stations_real.js"
+    },
+    {
       "name": "zones/mableton/roads.js",
       "sha256": "086fe1027235b6a3",
       "size": 261026,
@@ -28,7 +34,7 @@
     },
     {
       "name": "zones/mableton/lifts.js",
-      "sha256": "fdfaea3d009236ef723430e5a1778cac392973a27cdc8436bc14513f7f351116",
+      "sha256": "fdfaea3d009236ef",
       "size": 61533,
       "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/mableton/lifts.js"
     },
@@ -58,7 +64,7 @@
     },
     {
       "name": "zones/adamsville/lifts.js",
-      "sha256": "0251ab25085e79820ebcf6f852de05b5625a12b1bfdf09f645b594d32d320a7c",
+      "sha256": "0251ab25085e7982",
       "size": 1072068,
       "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/adamsville/lifts.js"
     },
@@ -88,7 +94,7 @@
     },
     {
       "name": "zones/downtown/lifts.js",
-      "sha256": "59f55c1284c318c85dee24fc22f3ba31c4082f3e8ab5ac0c5b41bd0be4d2934c",
+      "sha256": "59f55c1284c318c8",
       "size": 73679,
       "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/downtown/lifts.js"
     },
@@ -118,7 +124,7 @@
     },
     {
       "name": "zones/eastatlanta/lifts.js",
-      "sha256": "aebe9d3ad0d689c74554ba4bd9b03ad310bc8c16f2b7a57cff01d3d8e25c9f76",
+      "sha256": "aebe9d3ad0d689c7",
       "size": 96385,
       "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/eastatlanta/lifts.js"
     },
@@ -148,7 +154,7 @@
     },
     {
       "name": "zones/unioncity/lifts.js",
-      "sha256": "a045719d479868ad3f206ac43c7827eb54441fcb32a909172fe34ec3968c2fec",
+      "sha256": "a045719d479868ad",
       "size": 124507,
       "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/unioncity/lifts.js"
     },
@@ -178,7 +184,7 @@
     },
     {
       "name": "zones/southfulton/lifts.js",
-      "sha256": "2767392998e773db428ee3624c19fc18f3f7439d4f6a14a3353ba9daf994c0d2",
+      "sha256": "2767392998e773db",
       "size": 194261,
       "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/southfulton/lifts.js"
     },
@@ -208,7 +214,7 @@
     },
     {
       "name": "zones/riverdale/lifts.js",
-      "sha256": "350e17b5cf19d2b1a165653eae3dce6b0ac5de7daf4ada84c13e5ebf34c1ddb7",
+      "sha256": "350e17b5cf19d2b1",
       "size": 216789,
       "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/riverdale/lifts.js"
     },
