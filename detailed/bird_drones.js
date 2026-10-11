@@ -221,6 +221,11 @@ function updatePlaneDrones(){
    animate all exist), then init exactly once. Same pattern as traffic. */
 var bootTries=0;
 var bootTimer=setInterval(function(){
+
+  /* v1.34 LAUNCHER SKIP (Joshua 2026-10-11): player unchecked this system
+     in launch options — do not initialize at all. The deferred loader
+     normally skips the script entirely; this is the backstop. */
+  if (window.__launchOpts && window.__launchOpts.drones===false){ try{clearInterval(bootTimer);}catch(e){} return; }
   bootTries++;
   var ready=false;
   try{
