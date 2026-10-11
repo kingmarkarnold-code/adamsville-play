@@ -1310,12 +1310,13 @@ function initSurveyFleet(){
   };
   /* hook into the frame loop — chains with other module wraps */
   try{
-    if (typeof animate==='function' && !animate.__surveyfleetWrap){
-      var orig=animate;
+    /* v1.51 TICK REGISTRY (expert report #14, James Park, Joshua approved):
+       was an animate() monkey-patch — now registers on the central Sim tick
+       registry. Same once-per-frame timing, deterministic priority order. */
+    if(window.Sim && typeof Sim.onTick==='function' && !window.__surveyfleetTickReg){
+      window.__surveyfleetTickReg=true;
       /* v1.22 LAUNCHER (Joshua 2026-10-10): skip when survey fleet disabled in launch options. */
-      var wrapped=function(){ orig(); if(!window.__npcPaused && (!window.__launchOpts || window.__launchOpts.surveyFleet!==false)) updateSurveyFleet(0.016); };
-      wrapped.__surveyfleetWrap=true;
-      animate=wrapped;
+      Sim.onTick('render', 62, function(dt){ if(!window.__npcPaused && (!window.__launchOpts || window.__launchOpts.surveyFleet!==false)) updateSurveyFleet(0.016); });
     }
   }catch(e){}
 }
