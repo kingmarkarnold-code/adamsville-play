@@ -1119,8 +1119,18 @@ window.__applyCrewMaster = function(on){
          __initAA is set in block 2 (~5500 lines of sync JS). If the user
          clicks START GAME before block 2 finishes, __initAA is undefined
          and (antialias !== undefined) is always true -> infinite reload
-         loop. Only reload when __initAA is actually defined. */
-      var needReload = (typeof window.__initAA !== 'undefined') && (window.__launchOpts.antialias !== window.__initAA);
+         loop. Only reload when __initAA is actually defined.
+         v1.27 (Joshua 2026-10-10: weak-hardware reload loop): even with
+         __initAA defined, weak hardware forces AA off at renderer creation
+         while the pref may say on (user re-checked the box after v1.27
+         FIX 1 unchecked it). Reloading can never satisfy that mismatch,
+         so never reload for AA on weak hardware — just force the pref
+         off and continue without a reload. */
+      var _aaWantsReload = (typeof window.__initAA !== 'undefined') && (window.__launchOpts.antialias !== window.__initAA);
+      var needReload = _aaWantsReload && !window.__weakHardware;
+      if (window.__weakHardware && window.__launchOpts.antialias !== false) {
+        window.__launchOpts.antialias = false;  // match the forced-off renderer; no reload needed
+      }
       window.__saveLaunchOpts();
       window.__launcherConfirmed = true;
       launcher.classList.add('hidden');
@@ -2480,6 +2490,21 @@ var container = document.getElementById('game');
    needs a page reload to take effect. */
 var _useAA = (window.__launchOpts && window.__launchOpts.antialias===false) ? false : !window.__weakHardware;
 window.__initAA = _useAA;
+/* v1.27 FIX 1 (Joshua 2026-10-10: infinite reload loop on weak hardware):
+   Weak hardware forces AA off at renderer creation. If the saved pref still
+   says antialias=true, the launcher's START GAME computes
+   needReload = (true !== false) = true and calls location.reload() — forever,
+   because the pref never changes across reloads. Sync the pref (and the
+   checkbox UI) to reality right here so START GAME sees no mismatch and
+   does NOT reload. */
+if (window.__weakHardware && window.__launchOpts && window.__launchOpts.antialias !== false) {
+  window.__launchOpts.antialias = false;
+  try {
+    var _aaBox = document.querySelector('#launcher input[data-opt="antialias"]');
+    if (_aaBox) _aaBox.checked = false;
+  } catch(e){}
+  try { if (typeof window.__saveLaunchOpts === 'function') window.__saveLaunchOpts(); } catch(e){}
+}
 var _pixelRatio = window.__weakHardware ? 1.0 : Math.min(window.devicePixelRatio || 1, 1.5);
 /* v1.21 DIAGNOSTIC (Joshua 2026-10-10): On weak hardware, show a small
    FPS + input indicator so we can tell if the game loop is running and
@@ -8323,8 +8348,16 @@ function __tryStartGame(){
   try{
     /* v1.22 LAUNCHER GATE: do not start until the user has picked options
        and hit START GAME. The launcher covers the loader, so the game
-       waits here instead of auto-starting behind it. */
-    if (!window.__launcherConfirmed) return false;
+       waits here instead of auto-starting behind it.
+       v1.27 FIX 3 (Joshua 2026-10-10: "freezes at click to start" with no
+       explanation): surface WHY the start is blocked on the status line
+       instead of silently returning false. A dead button with no message
+       is indistinguishable from a freeze. */
+    if (!window.__launcherConfirmed){
+      var _ls=document.getElementById('load-status');
+      if(_ls){ _ls.textContent='Pick your options above, then tap START GAME'; _ls.style.opacity='1'; }
+      return false;
+    }
     var l=document.getElementById('loader');
     if(!l || l.style.display==='none') return false;
     /* v1.15 CLICK-BUG HARDENING (Joshua 2026-10-10: click did nothing on APK
@@ -8396,6 +8429,33 @@ setTimeout(function(){
     }
   }catch(e){}
 },45000);
+/* v1.27 FIX 2 (Joshua 2026-10-10: launcher is a single point of failure):
+   If the launcher screen was never confirmed (user didn't see it, tapped
+   START GAME but something swallowed the click, WebView quirk, etc.) AND
+   every load step has genuinely completed, auto-confirm after ~30s so the
+   old click-anywhere path works as a backup. Without this, a broken or
+   invisible launcher means the game can NEVER start — every
+   __tryStartGame() call silently returns false at the __launcherConfirmed
+   gate. The auto-confirm only fires when assets are fully loaded, so it
+   can never start a half-built world. */
+setTimeout(function(){
+  try{
+    if (window.__launcherConfirmed || window.__gameStarted) return;
+    if (typeof window.__loadOrder === 'undefined' || typeof window.__loadDone === 'undefined') return;
+    var pending=0, i;
+    for(i=0;i<window.__loadOrder.length;i++){
+      if(!window.__loadDone[window.__loadOrder[i]]) pending++;
+    }
+    if(pending>0) return;  // assets still arriving — don't auto-confirm yet
+    window.__launcherConfirmed = true;
+    try { if (typeof window.__saveLaunchOpts === 'function') window.__saveLaunchOpts(); } catch(e){}
+    var launcher=document.getElementById('launcher');
+    if(launcher) launcher.classList.add('hidden');
+    var st=document.getElementById('load-status');
+    if(st){ st.textContent='Starting…'; st.style.opacity='1'; }
+    if(typeof __tryStartGame==='function'){ try{ __tryStartGame(); }catch(e){} }
+  }catch(e){}
+},30000);
 /* __autoStart() - Joshua's NO-SKIP rule: the game starts ITSELF ~3s after the
    loader reports Ready - no manual "press start" step, no update-download
    gate. The document-level click handler, the #load-start button, and the
