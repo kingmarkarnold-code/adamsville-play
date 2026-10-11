@@ -665,6 +665,10 @@ function addSidewalk(x,z,w,dir){
   g.position.set(x+px*(Math.max(w,8)/2+3.4), groundY(x,z)+0.02, z+pz*(Math.max(w,8)/2+3.4));
   g.rotation.y=Math.atan2(px,pz);
   scene.add(g); markExtra('walk',x,z);
+  /* v1.35 SIDEWALK COLLISION (2026-10-11): crew-placed sidewalks are solid too.
+     Group at groundY+0.02, box local y=0.12 half-height 0.125 -> base=gy+0.015. */
+  try{ if(typeof __regSidewalk==='function'){ var _swd=Math.max(w,8)/2+3.4;
+    __regSidewalk(x+px*_swd, z+pz*_swd, Math.atan2(px,pz), w+6, 0.25, 2.2, groundY(x,z)+0.015); } }catch(e){}
 }
 /* addDriveway(x,z,w,dir) — asphalt strip (3.4 × 10u) from the street to the
    house (houses only, type 0), offset half-width + 6u toward the road.
