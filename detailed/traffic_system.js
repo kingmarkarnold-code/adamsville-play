@@ -1294,12 +1294,13 @@ function initTraffic(){
   // hook the frame loop — the inner requestAnimationFrame(animate) re-reads
   // the global binding every frame, so wrapping it here takes effect.
   try{
-    if (typeof animate==='function'&&!animate.__trafWrap){
-      var orig=animate;
+    /* v1.51 TICK REGISTRY (expert report #14, James Park, Joshua approved):
+       was an animate() monkey-patch — now registers on the central Sim tick
+       registry. Same once-per-frame timing, deterministic priority order. */
+    if(window.Sim && typeof Sim.onTick==='function' && !window.__trafTickReg){
+      window.__trafTickReg=true;
       /* v1.22 LAUNCHER (Joshua 2026-10-10): skip when traffic disabled in launch options. */
-      var wrapped=function(){ orig(); if(!window.__launchOpts || window.__launchOpts.traffic!==false) updateTraffic(); };
-      wrapped.__trafWrap=true;
-      animate=wrapped;
+      Sim.onTick('render', 10, function(dt){ if(!window.__launchOpts || window.__launchOpts.traffic!==false) updateTraffic(); });
     }
   }catch(e){}
   try{
