@@ -27,7 +27,8 @@
    (roof hidden on entry) and seals the door gap with a segment collider so
    the player must use the EXIT command. Returns final {x,z}. */
 function cdBuildClub(cx, cz, w, d, name) {
-  var gy = heightAt(cx, cz);
+  /* v1.35 SNAP-TO-FACE (Joshua 2026-10-11): base snaps to rendered terrain. */
+  var gy = (typeof snapToGround==='function'?snapToGround(cx,cz,w,d,0):heightAt(cx,cz));
   var wallC = 0x3a3a42, trimC = 0xcc2233, inC = 0x2a2a30, floorC = 0x444448;
   var x0 = cx - w / 2, x1 = cx + w / 2, z0 = cz - d / 2, z1 = cz + d / 2;
 
@@ -100,7 +101,8 @@ function cdBuildClub(cx, cz, w, d, name) {
    door-blocker pattern as cdBuildClub. Returns final {x,z}. */
 function cdBuildWaffleSpot(cx, cz) {
   var w = 22, d = 14;
-  var gy = heightAt(cx, cz);
+  /* v1.35 SNAP-TO-FACE (Joshua 2026-10-11): base snaps to rendered terrain. */
+  var gy = (typeof snapToGround==='function'?snapToGround(cx,cz,22,14,0):heightAt(cx,cz));
   var wallC = 0xd8b93a, winC = 0x9fc4d8, inC = 0xf0e8d0, floorC = 0x8a7a5a;
   var x0 = cx - w / 2, x1 = cx + w / 2, z0 = cz - d / 2, z1 = cz + d / 2;
 
