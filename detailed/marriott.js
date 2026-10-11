@@ -924,7 +924,8 @@ function mqUpdate(dt) {
    inside-state if the player loaded while inside, and mark the system
    online. Failures are logged, not thrown. */
 function mqInit() {
-  try { MQ.gy = heightAt(MQ.cx, MQ.cz); } catch (e) { MQ.gy = 0; }
+  /* v1.35 SNAP-TO-FACE (Joshua 2026-10-11): tower base snaps to rendered terrain. */
+  try { MQ.gy = (typeof snapToGround==='function'?snapToGround(MQ.cx,MQ.cz,44,44,0):heightAt(MQ.cx,MQ.cz)); } catch (e) { MQ.gy = 0; }
   mqBuildInterior();   // creates interior + exterior groups
   mqBuildExterior();   // canopy, sign, enterable registration
   mqBuildElevator();
