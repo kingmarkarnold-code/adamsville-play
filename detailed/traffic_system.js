@@ -380,7 +380,13 @@ function stepCar(c,dt,px,pz){
   if (st==='drive'){
     c.desired=c.targetSpeed;
     /* v1.31: an active pass maneuver owns laneTarget until it finishes —
-       don't stomp it back to the lane center every frame. */
+       don't stomp it back to the lane center every frame.
+       v1.32 LANE RESPECT (Joshua 2026-10-10): this snap-back IS the lane
+       discipline rule — every frame, a non-passing car returns to its own
+       lane center. The ONLY legal deviations are (a) a verified in-lane
+       pass, (b) an assist-directed opposite-lane pass (c.assistPass, set
+       solely by TrafficAssist while directing), and (c) pull-over states.
+       Anything else gets pulled back here. */
     if (!c.passing) c.laneTarget=c.laneOffBase;
     // v1.12 NPC FUEL (simple sim): fuel drains with distance driven
     c.fuel-=c.speed*dt*FUEL_DRAIN;
@@ -520,7 +526,10 @@ function stepCar(c,dt,px,pz){
      wait always resolves. */
   c.blockedByVehicle=false;
   try{
-    if (c.passing){ c.passT-=dt; if (c.passT<=0){ c.passing=false; c.laneTarget=c.laneOffBase; } }
+    if (c.passing){ c.passT-=dt; if (c.passT<=0){ c.passing=false; c.laneTarget=c.laneOffBase;
+      /* v1.32: a completed assist-directed pass retires the vehicle from the
+         jam queue — the incident drops it on its next refresh. */
+      if (c.assistPass){ c.assistPass=false; c.assistDone=true; } } }
     if (window.VehicleAvoid && (st==='drive'||st==='resuming')
         && !c.blockedByPlayer && !c.blockedByBus && !c.blockedBySchoolBus){
       var _vh=Math.sin(c.heading), _vc=Math.cos(c.heading);
@@ -535,11 +544,28 @@ function stepCar(c,dt,px,pz){
           var _R=TR.roads[c.road], _halfW=_R.w/2;
           var _need=_o.halfW+1.1+0.9;      // their half-width + ours + margin
           var _passOff=c.off-_need;         // pass on the left (US convention)
+          /* v1.32 LANE DISCIPLINE (Joshua 2026-10-10): the opposite (oncoming)
+             lane is legal ONLY when traffic assistance is directing this
+             vehicle around a jam (c.assistPass). Normal passing stays in the
+             travel lanes. The corridor check below proves no oncoming traffic
+             before the maneuver — no head-on collisions. Merge-back when past
+             is handled by the passT timer restoring laneTarget=laneOffBase. */
+          var _useOff=null, _useT=2.5;
           if (_passOff>=-( _halfW-0.6) &&
               VehicleAvoid.corridorClear(c.x,c.z,_vh,_vc,_passOff-c.off,
                                          _vAhead.dist+12,c,1.1)){
+            _useOff=_passOff;               // normal left pass, in-lane
+          } else if (c.assistPass && window.TrafficAssist){
+            var _opp=TrafficAssist.oppositeLaneOff(c,_halfW);
+            if (_opp!==null &&
+                VehicleAvoid.corridorClear(c.x,c.z,_vh,_vc,_opp-c.off,
+                                           _vAhead.dist+18,c,1.1)){
+              _useOff=_opp; _useT=6.0;      // directed pass: longer window
+            }
+          }
+          if (_useOff!==null){
             /* ROOM ON THE ASPHALT: ease around, merge back when past */
-            c.laneTarget=_passOff; c.passing=true; c.passT=2.5;
+            c.laneTarget=_useOff; c.passing=true; c.passT=_useT;
             c.waitVehT=0; c.shoulderTried=false;
             c.desired=Math.min(c.desired,Math.max(4,c.desired*0.55)); // creep past
           } else {
@@ -555,9 +581,17 @@ function stepCar(c,dt,px,pz){
                 c.laneTarget=_shOff; c.passing=true; c.passT=3.2; c.waitVehT=0;
               }
             }
+            /* v1.32 WAIT TIMEOUT (Joshua 2026-10-10): don't wait forever. After
+               WAIT_S seconds behind a blocker, radio traffic assistance — the
+               assist unit drives out, directs the queue around (opposite lane
+               when clear), or tows the blocker. One request per wait. */
+            if (window.TrafficAssist && c.waitVehT>TrafficAssist.WAIT_S && !c.assistReq){
+              c.assistReq=true;
+              TrafficAssist.request({x:c.x, z:c.z, yaw:c.heading, ref:c, kind:'traf'});
+            }
           }
         }
-      } else if (!_vAhead){ c.waitVehT=0; c.shoulderTried=false; }
+      } else if (!_vAhead){ c.waitVehT=0; c.shoulderTried=false; c.assistReq=false; }
     } else if (c.passing && !(st==='drive'||st==='resuming')){
       c.passing=false; c.laneTarget=c.laneOffBase;   // left drive states mid-pass
     }
