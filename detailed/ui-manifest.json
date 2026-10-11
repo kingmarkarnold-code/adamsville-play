@@ -88,8 +88,8 @@
     },
     {
       "name": "index.html",
-      "sha256": "39f130f5d9886b7191d3974833a17a301189166687653bba5b861bd679fb6344",
-      "size": 788139
+      "sha256": "c5b69876a5c04cf6b010160ff2799937496d8116fc417a9a976a32ef598e0dd8",
+      "size": 791576
     },
     {
       "name": "infracrew_system.js",
@@ -325,6 +325,6 @@
       "size": 13217
     }
   ],
-  "ui_version": "2026.10.11.142",
+  "ui_version": "2026.10.11.143",
   "version": "2026.10.11.137"
 }
