@@ -883,6 +883,24 @@ window.Sim=(function(){
   function count(phase){ return ticks[phase]?ticks[phase].length:0; }
   return {onTick:onTick, run:run, count:count, PHASES:PHASES};
 })();
+/* v1.47 FOOT-SKATE FIX (expert report #22, Katherine Brooks — Joshua approved).
+   Walk-cycle phase is driven by DISTANCE TRAVELED, not elapsed time, so feet
+   plant on the ground instead of sliding (~3.5x skate before). One full phase
+   cycle (2π rad) = one stride pair (left step + right step) = STRIDE_LEN
+   meters. Phase rate is clamped to MAX_CADENCE so legs never pump comically
+   fast; standing still (dist 0) means legs still. phaseAdvance() is global so
+   the hero rig, NPCs, and photo-NPC kids all share one convention. */
+var STRIDE_LEN=1.5;                 // meters per full walk cycle (2π rad)
+var MAX_CADENCE_RAD=2.2*Math.PI*2; // max leg rate: 2.2 strides/sec (expert spec)
+/* phaseAdvance(px,pz,x,z,dt) — radians to advance the walk phase this frame
+   for the distance actually traveled from (px,pz) to (x,z). Returns 0 when
+   standing still. The dt-based cap keeps cadence ≤ 2.2 strides/sec. */
+function phaseAdvance(px,pz,x,z,dt){
+  var dx=x-px, dz=z-pz;
+  var adv=Math.sqrt(dx*dx+dz*dz)/STRIDE_LEN*Math.PI*2;
+  var cap=MAX_CADENCE_RAD*Math.max(dt,0.0001);
+  return adv>cap?cap:adv;
+}
 /* v1.11 loading-screen bootstrap — runs before the game scripts */
 window.__loadOrder=['engine','elev','roads','signs','lifts','pins','buildings','vehmeshes','world','music','npc','refnpc','gasdata','traffic','semis','roadcrew','marta','busdata','bus'];
 window.__loadNames={engine:'3D engine',elev:'Elevation data',roads:'Roads',signs:'Exit signs',
@@ -6710,7 +6728,16 @@ function animateHero(dt){
   var active=(spd>0.4||player.swimming)?1:0;
   R.blend+=(active-R.blend)*Math.min(1,7*dt);
   var amp=Math.min(1,spd/13.8), b=R.blend, ib=1-b;
-  if(b>0.01) R.phase+=dt*(3.4+spd*0.72)*b;
+  /* v1.47 foot-skate fix (expert #22): phase advances by DISTANCE TRAVELED
+     (phaseAdvance), not dt*speed — feet plant instead of sliding. R.px/R.pz
+     track last frame's position; teleports (door exits) just hit the cadence
+     cap for one frame, no visual glitch. Scaled by blend b so the phase and
+     the eased amplitude stay in sync while starting/stopping. */
+  if(b>0.01){
+    if(R.px===undefined){ R.px=player.x; R.pz=player.z; }
+    R.phase+=phaseAdvance(R.px,R.pz,player.x,player.z,dt)*b;
+    R.px=player.x; R.pz=player.z;
+  }
   var p=R.phase, s1=Math.sin(p), s2=Math.sin(p+Math.PI), T;
   if(player.swimming){
     var k=Math.sin(heroT*6.5)*0.28, q=Math.sin(heroT*3.2)*0.65;
