@@ -69,9 +69,9 @@
     },
     {
       "name": "index.html",
-      "size": 744801,
-      "sha256": "3f963dea76813e8a525cbaa1c610d4095f58ca75efcd9f7ccaa4e56e5f5cebd8",
-      "hash": "753370eb30b3704e",
+      "size": 759204,
+      "sha256": "b96656c7196c39ea0246d0abe0dc17b9a0adaa88b7afe31a507adbbf43b55c9a",
+      "hash": "b96656c7196c39ea",
       "md5": "baf9460296c6b0af3e7a4259acdc44db"
     },
     {
@@ -95,9 +95,9 @@
     },
     {
       "name": "marta_bus_system.js",
-      "size": 28126,
-      "sha256": "a56a8f69f3455a3848a756686653c10dbe8dfba3cfda88f2ea56b5ef9f18c1c2",
-      "hash": "a56a8f69f3455a38"
+      "size": 30119,
+      "sha256": "e640fac73fa4f347dc270b3d9bcc34c0e55ad9bfeed3aed009a5a98f0d48fb4b",
+      "hash": "e640fac73fa4f347"
     },
     {
       "name": "marta_data.js",
@@ -279,6 +279,6 @@
       "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zoneloader.js"
     }
   ],
-  "ui_version": "2026.10.10.121",
+  "ui_version": "2026.10.10.122",
   "version": "1.13.0"
 }
