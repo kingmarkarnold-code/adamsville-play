@@ -2583,16 +2583,59 @@ scene.add(sun);
                         true gaps, not skipped circles) - also floor-aware.
    See removeCollider() / resolveCollision() docs below. */
 // ---------- collision registry ----------
-var colliders = [];  // {x, z, r}
-function addCollider(x, z, r, y0, y1){ colliders.push({x:x, z:z, r:r,
-  y0:(y0===undefined?-1e9:y0), y1:(y1===undefined?1e9:y1)}); }
+var colliders = [];  // {x, z, r} - kept as source of truth; propGrid mirrors it for fast lookup
+function addCollider(x, z, r, y0, y1){
+  /* v1.28 PERF (FIX 1): spatial-index tree/prop colliders. The old flat-array
+     scan in resolveCollision() was O(3000+) per entity per frame (trees alone
+     add ~2,600). Now every collider is ALSO filed into propGrid (40u cells,
+     same size as bldgGrid) so resolveCollision only checks the 3x3 cells
+     around the entity (~a dozen colliders). The flat `colliders` array is
+     kept as the source of truth (removeCollider uses indexOf on it); the
+     cell key is stamped on the object so removal finds the right grid cell. */
+  var c={x:x, z:z, r:r, y0:(y0===undefined?-1e9:y0), y1:(y1===undefined?1e9:y1)};
+  colliders.push(c);
+  var k=Math.floor(x/40)+','+Math.floor(z/40);
+  c._cell=k;
+  (propGrid[k]=propGrid[k]||[]).push(c);
+  return c;
+}
+/* v1.28 PERF (FIX 1): parallel spatial grid for prop/tree/sign colliders.
+   Same 40u cell size as bldgGrid. resolvePropColliders() does the 3x3-cell
+   lookup with the same floor-awareness the flat loop had. */
+var propGrid = {};
+function resolvePropColliders(p, radius, py){
+  var cx=Math.floor(p.x/40), cz=Math.floor(p.z/40);
+  for (var gx=cx-1; gx<=cx+1; gx++) for (var gz=cz-1; gz<=cz+1; gz++){
+    var cell=propGrid[gx+','+gz]; if (!cell) continue;
+    for (var i=0;i<cell.length;i++){
+      var c=cell[i];
+      if (py<c.y0||py>c.y1) continue; // floor-aware (same as old flat loop)
+      var dx=p.x-c.x, dz=p.z-c.z;
+      /* v1.28 PERF (FIX 2): Math.sqrt(dx*dx+dz*dz) instead of Math.hypot —
+         2-5x faster, identical result for game-scale coordinates. */
+      var d=Math.sqrt(dx*dx+dz*dz), min=c.r+radius;
+      if (d < min && d > 0.001){
+        var push=(min-d)/d;
+        p.x += dx*push; p.z += dz*push;
+      }
+    }
+  }
+}
 /* removeCollider(c) - unregisters one circle collider from the global
    `colliders` registry. Used for TEMPORARY work-zone colliders (road-crew
    cones/barriers) that must stop blocking movement when the zone clears.
    No-op when the object isn't registered. Permanent world colliders
    (buildings, walls, props) are never removed - only temporary ones go
    through this path. */
-function removeCollider(c){ var i=colliders.indexOf(c); if(i>=0) colliders.splice(i,1); }
+function removeCollider(c){
+  /* v1.28 PERF (FIX 1): remove from BOTH the flat array and propGrid so the
+     spatial index never holds a stale reference to a removed collider. */
+  var i=colliders.indexOf(c); if(i>=0) colliders.splice(i,1);
+  try{
+    var cell=propGrid[c._cell||(Math.floor(c.x/40)+','+Math.floor(c.z/40))];
+    if (cell){ var j=cell.indexOf(c); if(j>=0) cell.splice(j,1); }
+  }catch(e){}
+}
 /* v1.3: spatial grid for OSM building colliders (thousands — flat array
    would make resolveCollision O(n) per entity per frame). Cell 40u. */
 var bldgGrid = {};
@@ -2637,16 +2680,9 @@ function resolveCollision(p, radius){
      pushed the player. Now initialized up front from p.y or the player mesh. */
   var py=-1e9; try{ py=p.y!==undefined?p.y:(player&&player.mesh?player.mesh.position.y:-1e9); }catch(e){}
   for (var iter=0; iter<2; iter++){
-    for (var i=0;i<colliders.length;i++){
-      var c=colliders[i];
-      if(py<c.y0||py>c.y1) continue; // floor-aware
-      var dx=p.x-c.x, dz=p.z-c.z;
-      var d=Math.hypot(dx,dz), min=c.r+radius;
-      if (d < min && d > 0.001){
-        var push=(min-d)/d;
-        p.x += dx*push; p.z += dz*push;
-      }
-    }
+    /* v1.28 PERF (FIX 1): prop/tree colliders now resolved via the propGrid
+       spatial hash (3x3 cells) instead of a flat O(3000+) scan. */
+    try{ resolvePropColliders(p, radius, py); }catch(e){}
     try{ resolveBldgColliders(p, radius); }catch(e){}  // v1.3 OSM buildings
     try{ py=player.mesh.position.y; }catch(e){}
     for (var s=0;s<segColliders.length;s++){
@@ -2658,7 +2694,8 @@ function resolveCollision(p, radius){
       t=t<0?0:(t>1?1:t);
       var cx=sg.x1+vx*t, cz=sg.z1+vz*t;
       var ex=p.x-cx, ez=p.z-cz;
-      var ed=Math.hypot(ex,ez);
+      /* v1.28 PERF (FIX 2): sqrt instead of hypot in this per-frame hot path. */
+      var ed=Math.sqrt(ex*ex+ez*ez);
       if (ed < radius && ed > 0.001){
         var epush=(radius-ed)/ed;
         p.x += ex*epush; p.z += ez*epush;
@@ -4021,7 +4058,10 @@ function distToCreek(x,z){
     var vx=bx-ax, vz=bz-az, len2=vx*vx+vz*vz;
     var t=len2>0 ? ((x-ax)*vx+(z-az)*vz)/len2 : 0;
     t=Math.max(0,Math.min(1,t));
-    var d=Math.hypot(x-(ax+vx*t), z-(az+vz*t));
+    /* v1.28 PERF (FIX 2): sqrt instead of hypot — distToCreek runs per-frame
+       for the player (swimming/wading checks). */
+    var ddx=x-(ax+vx*t), ddz=z-(az+vz*t);
+    var d=Math.sqrt(ddx*ddx+ddz*ddz);
     if (d<best) best=d;
   }
   return best;
@@ -6134,7 +6174,10 @@ function nearestUsableCar(){
   var best=null, bd=1e9;
   cars.forEach(function(c){
     if (c.dead||c.sunk||c.sinking||c.driving) return;
-    var d=Math.hypot(player.x-c.x, player.z-c.z);
+    /* v1.28 PERF (FIX 2): sqrt instead of hypot — called every frame by
+       updateActionButton(). */
+    var ddx=player.x-c.x, ddz=player.z-c.z;
+    var d=Math.sqrt(ddx*ddx+ddz*ddz);
     if (d<bd){ bd=d; best=c; }
   });
   return bd<4.5 ? best : null;
@@ -7866,7 +7909,9 @@ function spawnPickup(name, kind, x, z){
 function nearestPickup(){
   var best=null, bd=3.5;
   for (var i=0;i<pickups.length;i++){
-    var p=pickups[i], d=Math.hypot(player.x-p.x, player.z-p.z);
+    /* v1.28 PERF (FIX 2): sqrt instead of hypot — per-frame via updateActionButton(). */
+    var p=pickups[i], _dx=player.x-p.x, _dz=player.z-p.z;
+    var d=Math.sqrt(_dx*_dx+_dz*_dz);
     if (d<bd){ bd=d; best=p; }
   }
   return best;
@@ -7959,6 +8004,9 @@ function hideNpcDialog(){
 }
 document.getElementById('npc-dialog-bye').addEventListener('click', function(){ hideNpcDialog(); });
 function updateActionButton(){
+  /* v1.28 PERF (FIX 2): all distance checks in this function use the fast
+     sqrt form instead of Math.hypot. This function runs every frame (see
+     FIX 3 throttle in animate()), so every hypot saved matters. */
   var act=null, label='';
   pendingPickup=null;   // v1.12: reset each frame; set fresh below when in range
   if (car.driving){
@@ -7966,13 +8014,15 @@ function updateActionButton(){
   } else {
     // v3.0: front door on the SOUTH wall — trigger SOUTH of it (on the porch);
     // back door on the NORTH wall — trigger NORTH of it.
-    var df=Math.hypot(player.x-heroHouse.frontDoor.x, player.z-(heroHouse.frontDoor.z+1.5));
-    var db=Math.hypot(player.x-heroHouse.backDoor.x, player.z-(heroHouse.backDoor.z-1.5));
+    var _fdx=player.x-heroHouse.frontDoor.x, _fdz=player.z-(heroHouse.frontDoor.z+1.5);
+    var df=Math.sqrt(_fdx*_fdx+_fdz*_fdz);
+    var _bdx=player.x-heroHouse.backDoor.x, _bdz=player.z-(heroHouse.backDoor.z-1.5);
+    var db=Math.sqrt(_bdx*_bdx+_bdz*_bdz);
     /* v3.3 HILL: basement walkout door is on the NORTH wall — trigger
        NORTH of it at ground level. Joshua: "there's a door at the bottom"
        where the hill drops away. */
     var dbs=heroHouse.bsmtDoor ?
-      Math.hypot(player.x-heroHouse.bsmtDoor.x, player.z-(heroHouse.bsmtDoor.z-1.5)) : 1e9;
+      (function(){ var _x=player.x-heroHouse.bsmtDoor.x, _z=player.z-(heroHouse.bsmtDoor.z-1.5); return Math.sqrt(_x*_x+_z*_z); })() : 1e9;
     if (player.inside){
       if (player.locIdx>=0 && typeof spCheckEnterables==='function'){
         var spIn=spCheckEnterables(); if (spIn){ act=spIn.act; label=spIn.label; }
@@ -7981,11 +8031,13 @@ function updateActionButton(){
         var mqA=mqCheck(); if (mqA){ act=mqA.act; label=mqA.label; }
       }
       if (!act){
-        var dfi=Math.hypot(player.x-(heroHouse.frontDoor.x+2.2), player.z-heroHouse.frontDoor.z);
-        var dbi=Math.hypot(player.x-(heroHouse.backDoor.x-2.2), player.z-heroHouse.backDoor.z);
+        var _fdx2=player.x-(heroHouse.frontDoor.x+2.2), _fdz2=player.z-heroHouse.frontDoor.z;
+        var dfi=Math.sqrt(_fdx2*_fdx2+_fdz2*_fdz2);
+        var _bdx2=player.x-(heroHouse.backDoor.x-2.2), _bdz2=player.z-heroHouse.backDoor.z;
+        var dbi=Math.sqrt(_bdx2*_bdx2+_bdz2*_bdz2);
         /* v3.3: also offer EXIT HOUSE near the basement door (inside). */
         var dsbi=heroHouse.bsmtDoor ?
-          Math.hypot(player.x-heroHouse.bsmtDoor.x, player.z-heroHouse.bsmtDoor.z) : 1e9;
+          (function(){ var _x=player.x-heroHouse.bsmtDoor.x, _z=player.z-heroHouse.bsmtDoor.z; return Math.sqrt(_x*_x+_z*_z); })() : 1e9;
         if (dfi<5||dbi<5||dsbi<5){ act='exit-house'; label='EXIT HOUSE'; }
         else { pendingPickup=nearestPickup(); if (pendingPickup){ act='pickup'; label='PICK UP'; } }
       }
@@ -8081,7 +8133,9 @@ function resolveNPCVehicleCollisions(){
       var a=B[i], b=B[j];
       if (a.spd<0.5 && b.spd<0.5) continue;   // both stopped: parked/queued — nothing to resolve
       var dx=a.x-b.x, dz=a.z-b.z;
-      var maxR=Math.hypot(a.hl,a.hw)+Math.hypot(b.hl,b.hw);   // broadphase
+      /* v1.28 PERF (FIX 2): sqrt instead of hypot in this per-frame
+         vehicle-pair broadphase. */
+      var maxR=Math.sqrt(a.hl*a.hl+a.hw*a.hw)+Math.sqrt(b.hl*b.hl+b.hw*b.hw);   // broadphase
       if (dx*dx+dz*dz > maxR*maxR) continue;
       /* oriented-box overlap test in b's frame (same convention as v1.6:
          yaw=0 faces +z, forward=(sin yaw, cos yaw)) */
@@ -8138,7 +8192,14 @@ function animate(){
   if (car.driving) updateCar(dt); else updatePlayer(dt);
   try{ updateVehicleCosmetics(dt); }catch(e){}
   updateCamera(dt);
-  updateActionButton();
+  /* v1.28 PERF (FIX 3): throttle updateActionButton() to ~8Hz instead of
+     every frame. Its proximity scans (nearest car/train/bus/NPC/pickup,
+     door distances) don't need 60Hz precision — 8Hz is imperceptible for
+     button prompts and saves thousands of distance checks per second. */
+  try{
+    window.__uabT=(window.__uabT||0)+dt;
+    if (window.__uabT>0.12){ window.__uabT=0; updateActionButton(); }
+  }catch(e){ try{ updateActionButton(); }catch(e2){} }
   try{ updatePickups(dt); }catch(e){}
   try{ if(typeof mqUpdate!=='undefined') mqUpdate(dt); }catch(e){}
   updateSmoke(dt);
