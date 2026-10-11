@@ -91,7 +91,8 @@ try{
       var pkb=publishedKept[pki];
       if (!pkb || pkb.length<6) continue;
       var pkyaw=(pkb.length>=7 && typeof pkb[6]==='number')?pkb[6]:null;
-      kept.push([pkb[0],pkb[1],pkb[2],pkb[3],pkb[4],pkb[5],pkyaw]);
+      kept.push([pkb[0],pkb[1],pkb[2],pkb[3],pkb[4],pkb[5],pkyaw,
+                 (pkb.length>=8&&typeof pkb[7]==='number')?pkb[7]:null]);  // v1.35: carry body base Y for snap-to-wall
     }
   } else {
   for (var i=0;i<OSM_BUILDINGS.length;i++){
@@ -141,8 +142,20 @@ try{
      the bodies use — bldgGroundY(bx,bz,bw,bd,yaw) minus the same 0.6 embed —
      so every detail sits on the same ground plane as its body. Falls back to
      the old heightAt behavior if bldgGroundY isn't defined yet. */
-  function detailBaseY(bx,bz,bw,bd,yaw){
+  function detailBaseY(bx,bz,bw,bd,yaw,kb){
+    /* v1.35 SNAP-TO-WALL (Joshua 2026-10-11: windows must snap to the BUILDING
+       WALL face, not recompute ground): the body placement loop stores its
+       ACTUAL base Y as the 8th kept element (kb[7]). Details inherit that
+       exact value — the wall and its windows/doors/porches can never detach,
+       even if ground sampling changes. Falls back to snapToGround (then the
+       old bldgGroundY/heightAt paths) when kb[7] isn't available (e.g. the
+       re-derived fallback placements). */
     try{
+      if (kb && typeof kb[7]==='number' && isFinite(kb[7])) return kb[7];
+    }catch(e){}
+    try{
+      if (typeof snapToGround==='function')
+        return snapToGround(bx,bz,bw,bd,(typeof yaw==='number')?yaw:0)-0.6;
       if (typeof bldgGroundY==='function')
         return bldgGroundY(bx,bz,bw,bd,(typeof yaw==='number')?yaw:0)-0.6;
     }catch(e){}
@@ -168,7 +181,7 @@ try{
     var yaw=(kb.length>=7 && typeof kb[6]==='number')?kb[6]:Math.atan2(ri.dx,ri.dz);
     /* v1.34: base Y now matches the body exactly (see detailBaseY) — was
        heightAt(center)-0.6, which detached windows on slopes. */
-    var base=detailBaseY(bx,bz,bw,bd,yaw);
+    var base=detailBaseY(bx,bz,bw,bd,yaw,kb);  // v1.35: kb carries body base Y (snap-to-wall)
     var hsh=hash01(k);
     stats.houses++;
 
@@ -248,7 +261,11 @@ try{
         driveways.push({x:(ax2+fx2)/2,y:0,z:(az2+fz2)/2,
           yaw:Math.atan2(ri.dx,ri.dz),sx:3.2,sy:0.14,sz:dlen,c:0xb0aca2});
         // set y from terrain at center
-        try{ driveways[driveways.length-1].y=heightAt((ax2+fx2)/2,(az2+fz2)/2)+0.06; }catch(e){}
+        /* v1.35 SNAP-TO-FACE: driveway ribbon snaps to rendered terrain. */
+        try{
+          var _dgy=(typeof snapToGround==='function')?snapToGround((ax2+fx2)/2,(az2+fz2)/2,3,3,0):heightAt((ax2+fx2)/2,(az2+fz2)/2);
+          driveways[driveways.length-1].y=_dgy+0.06;
+        }catch(e){}
         stats.driveways++;
       }
     }
@@ -257,7 +274,8 @@ try{
     if ((ri.cat==='local'||ri.cat===null) && ri.dist<45){
       var swx=bx+ri.dx*(ri.dist-1.4), swz=bz+ri.dz*(ri.dist-1.4);
       var swYaw=Math.atan2(ri.tx,ri.tz);
-      var swy=0; try{ swy=heightAt(swx,swz); }catch(e){}
+      /* v1.35 SNAP-TO-FACE: sidewalk strips snap to rendered terrain. */
+      var swy=0; try{ swy=(typeof snapToGround==='function')?snapToGround(swx,swz,2,2,swYaw):heightAt(swx,swz); }catch(e){}
       walks.push({x:swx,y:swy+0.1,z:swz,yaw:swYaw,
         sx:2.2,sy:0.15,sz:Math.min(bw+10,26),c:0xb9b5ab});
       stats.walks++;
@@ -279,7 +297,7 @@ try{
     var yaw2=(ab.length>=7 && typeof ab[6]==='number')?ab[6]:Math.atan2(ri2.dx,ri2.dz);
     /* v1.34: base Y now matches the body exactly (see detailBaseY) — was
        heightAt(center)-0.6, which detached windows on slopes. */
-    var base2=detailBaseY(ax,az,aw,ad,yaw2);
+    var base2=detailBaseY(ax,az,aw,ad,yaw2,ab);  // v1.35: ab carries body base Y (snap-to-wall)
     var hsh2=hash01(k2+7919);
     stats.apts++;
 
