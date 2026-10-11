@@ -821,6 +821,17 @@
         <option value="medium" selected>Medium</option>
         <option value="long">Long (original)</option>
       </select><span class="opt-impact heavy">HEAVY</span></label>
+    <!-- EXPERT #42 (Dr. Elena Vasquez — Joshua approved "Fix 42"): manual
+         quality override. Auto = the perf budget steps quality up/down based
+         on measured FPS (30 target on the TCL). Manual levels lock it. -->
+    <label class="launch-opt"><span class="opt-label">Quality</span>
+      <select id="launch-quality" style="margin-left:8px;background:#1a2030;color:#fff;border:1px solid #444;padding:4px 8px;border-radius:4px;">
+        <option value="auto" selected>Auto (recommended)</option>
+        <option value="0">Full</option>
+        <option value="1">High</option>
+        <option value="2">Medium</option>
+        <option value="3">Low</option>
+      </select><span class="opt-impact medium">MEDIUM</span></label>
   </div>
 
   <div class="launch-presets">
@@ -1591,11 +1602,26 @@ window.__applyCrewMaster = function(on){
       // v1.25: sync the draw distance dropdown (a <select>, not a checkbox)
       var dd = document.getElementById('launch-drawdist');
       if (dd && window.__launchOpts.drawDist) dd.value = window.__launchOpts.drawDist;
+      /* EXPERT #42: sync the quality override dropdown from saved pref. */
+      try {
+        var qd = document.getElementById('launch-quality');
+        if (qd && typeof window.__getPerfQuality === 'function') qd.value = window.__getPerfQuality();
+        else if (qd) {
+          var _sq = null;
+          try { _sq = localStorage.getItem('sa_perf_q'); } catch(e){}
+          qd.value = (_sq === null) ? 'auto' : _sq;
+        }
+      } catch(e){}
     }
     syncBoxes();
     // Checkbox changes update __launchOpts live
     launcher.addEventListener('change', function(e){
       var t = e.target;
+      /* EXPERT #42: quality dropdown has no data-opt — handle by id first. */
+      if (t && t.id === 'launch-quality') {
+        try { if (typeof window.__setPerfQuality === 'function') window.__setPerfQuality(t.value); } catch(e){}
+        return;
+      }
       if (!t || !t.getAttribute('data-opt')) return;
       var key = t.getAttribute('data-opt');
       if (key === 'crews') {
@@ -10421,6 +10447,7 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <script data-dsrc="workerhousing.js" data-dkey=""></script>
 <script data-dsrc="daycycle.js" data-dkey=""></script>
 <script data-dsrc="blob_shadows.js" data-dkey=""></script>
+<script data-dsrc="perf_budget.js" data-dkey=""></script>
 <script data-dsrc="ambient_audio.js" data-dkey=""></script>
 <script data-dsrc="helicopter_system.js" data-dkey=""></script>
 <script data-dsrc="priority_dispatch.js" data-dkey=""></script>

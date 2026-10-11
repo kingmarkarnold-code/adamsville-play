@@ -961,7 +961,12 @@ function assignSlots(px,pz){
     if (d2<STREAM_DIST2) cand.push([d2,i]);
   }
   cand.sort(function(a,b){return a[0]-b[0];});
-  var n=Math.min(cand.length,MAX_RENDERED);
+  /* EXPERT #42 (Dr. Elena Vasquez, Engine Programmer — Joshua approved "Fix
+     42"): perf budget can cap the rendered traffic slots on weak hardware.
+     window.__perfTrafficCap is null at full quality (stock 40). Cars that
+     lose a slot keep driving as data — same as the existing slot system. */
+  var _cap=(typeof window!=='undefined'&&window.__perfTrafficCap)||MAX_RENDERED;
+  var n=Math.min(cand.length,_cap);
   for (var s=0;s<MAX_RENDERED;s++){
     var prev=TR.slots[s];
     if (prev>=0&&TR.cars[prev]) TR.cars[prev].slot=-1;

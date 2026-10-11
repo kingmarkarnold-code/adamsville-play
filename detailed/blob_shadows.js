@@ -114,10 +114,29 @@ function update(){
   if (!trafficIM) return;
   computeSun();
   var on = (!window.__launchOpts || window.__launchOpts.shadows !== false);
+  /* EXPERT #42 (Dr. Elena Vasquez, Engine Programmer — Joshua approved "Fix
+     42"): perf budget can limit shadow distance. window.__perfShadowDist is
+     null at full quality (all shadows), 0 to disable, or a max distance in
+     world units. Player position from the global `player` object. */
+  var shMaxD2 = 1e18, px = 0, pz = 0, hasP = false;
+  try {
+    var _psd = window.__perfShadowDist;
+    if (_psd !== null && _psd !== undefined) {
+      if (_psd <= 0) { trafficIM.visible = false; npcIM.visible = false; busIM.visible = false; return; }
+      shMaxD2 = _psd * _psd;
+    }
+    if (typeof player !== 'undefined' && player) { px = player.x || 0; pz = player.z || 0; hasP = true; }
+  } catch(e){}
   trafficIM.visible = on; npcIM.visible = on; busIM.visible = on;
   if (!on) return;
 
   var s, ci, c, n, b, i;
+  /* Distance filter helper: true if (x,z) is within the perf shadow range. */
+  function shInRange(x, z){
+    if (!hasP || shMaxD2 > 1e17) return true;
+    var dx = x - px, dz = z - pz;
+    return (dx*dx + dz*dz) <= shMaxD2;
+  }
 
   /* --- traffic vehicles (window.TRAFFIC slots) --- */
   var ti = 0;
@@ -129,7 +148,7 @@ function update(){
         ci = TR.slots[s];
         if (ci >= 0 && TR.cars[ci]){
           c = TR.cars[ci];
-          if (isFinite(c.x) && isFinite(c.y) && isFinite(c.z)){
+          if (isFinite(c.x) && isFinite(c.y) && isFinite(c.z) && shInRange(c.x, c.z)){
             putShadow(trafficIM, ti++, c.x, c.y, c.z, c.heading || 0, CAR_W, CAR_L);
           }
         }
@@ -139,7 +158,7 @@ function update(){
        would otherwise cast nothing. Slot 40 is reserved for it. */
     if (ti < CAP_TRAFFIC && typeof car !== 'undefined' && car && car.driving && car.mesh){
       var p = car.mesh.position;
-      if (isFinite(p.x) && isFinite(p.y) && isFinite(p.z)){
+      if (isFinite(p.x) && isFinite(p.y) && isFinite(p.z) && shInRange(p.x, p.z)){
         putShadow(trafficIM, ti++, p.x, p.y, p.z, car.yaw || 0, VAN_W, VAN_L);
       }
     }
@@ -156,7 +175,7 @@ function update(){
         var nMax = Math.min(NS.length, CAP_NPC);
         for (s = 0; s < nMax; s++){
           n = NS[s];
-          if (n && isFinite(n.x) && isFinite(n.y) && isFinite(n.z)){
+          if (n && isFinite(n.x) && isFinite(n.y) && isFinite(n.z) && shInRange(n.x, n.z)){
             putShadow(npcIM, ni++, n.x, n.y, n.z, 0, NPC_W, NPC_L);
           }
         }
@@ -174,7 +193,7 @@ function update(){
       var bMax = Math.min(MB.buses.length, CAP_BUS);
       for (i = 0; i < bMax; i++){
         b = MB.buses[i];
-        if (b && b.mesh && isFinite(b.x) && isFinite(b.z)){
+        if (b && b.mesh && isFinite(b.x) && isFinite(b.z) && shInRange(b.x, b.z)){
           var by = b.mesh.position.y;
           if (isFinite(by)){
             putShadow(busIM, bi++, b.x, by, b.z, b.yaw || 0, BUS_W, BUS_L);

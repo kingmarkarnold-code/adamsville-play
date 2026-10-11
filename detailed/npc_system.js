@@ -841,7 +841,13 @@ function assignSlot(s,n){
    array. Note: the fill scan is O(slots × npcs) — acceptable at 0.5s
    cadence, would not be per frame. */
 function refreshSlots(px,pz){
-  var VR2=VISIBLE_R*VISIBLE_R, HR2=HIDE_R*HIDE_R, i, s, n;
+  /* EXPERT #42 (Dr. Elena Vasquez, Engine Programmer — Joshua approved "Fix
+     42"): perf budget can shrink the NPC streaming distance on weak hardware.
+     window.__perfNpcDist is null at full quality (stock behavior). HIDE_R
+     scales proportionally to keep the 1.33x anti-pop hysteresis ratio. */
+  var _vr=(typeof window!=='undefined'&&window.__perfNpcDist)||VISIBLE_R;
+  var _hr=_vr*(HIDE_R/VISIBLE_R);
+  var VR2=_vr*_vr, HR2=_hr*_hr, i, s, n;
   _free.length=0;
   for (s=0;s<MAX_VISIBLE;s++){
     n=slots[s];
