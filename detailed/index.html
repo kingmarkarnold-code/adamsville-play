@@ -406,6 +406,17 @@
     box-shadow:0 0 16px rgba(57,255,106,.45);user-select:none;-webkit-tap-highlight-color:transparent;
     max-width:92vw;box-sizing:border-box;}
   @keyframes loadpulse{0%,100%{opacity:1;}50%{opacity:.35;}}
+  /* v1.52 #28: critical-failure panel on the loader. Red/amber so a failed
+     population system reads as a problem, not a normal state. */
+  #load-critwarn{display:none;margin-top:14px;text-align:center;max-width:92vw;box-sizing:border-box;}
+  #load-critmsg{color:#ffb04e;font-size:clamp(14px,4vw,17px);font-weight:bold;line-height:1.5;
+    background:rgba(60,20,0,.6);border:2px solid #b35a00;border-radius:12px;
+    padding:12px 18px;margin-bottom:12px;}
+  #load-critbtns{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}
+  #load-retry{padding:12px 22px;font-size:16px;font-weight:bold;border-radius:12px;border:none;
+    background:#39ff6a;color:#062b0f;cursor:pointer;}
+  #load-continue{padding:12px 22px;font-size:14px;font-weight:bold;border-radius:12px;
+    border:2px solid #777;background:#222836;color:#bbb;cursor:pointer;}
   /* Standard breakpoint refinements for the loader */
   @media (min-width:375px){
     #loader{gap:3vh;}
@@ -449,7 +460,11 @@
     #music-btn{top:68px!important;left:8px!important;right:auto!important;}
     #ce-btn{left:68px!important;top:8px!important;bottom:auto!important;}
     #rc-btn{left:128px!important;top:8px!important;bottom:auto!important;}
-    #action-btn{top:60px!important;right:8px!important;bottom:auto!important;}
+    /* v1.34 #30 THUMB REACH: action button moved from top-right to lower-right thumb zone
+       (Maya Patel UI/UX). Mobile: bottom:140px (portrait) / bottom:200px (landscape).
+       Desktop unchanged (top-right is fine for mouse). Mode-tag may sit behind the
+       button when visible — acceptable, tag is pointer-events:none and button is temporary. */
+    #action-btn{top:auto!important;right:8px!important;bottom:140px!important;}
     #steer-left{left:8px!important;bottom:8px!important;}
     #steer-right{left:100px!important;bottom:8px!important;}
     #ver-tag{left:50%!important;bottom:8px!important;transform:translateX(-50%);}
@@ -479,7 +494,7 @@
     #street-name{top:8px!important;left:8px!important;max-width:55vw;}
     #ce-btn{left:8px!important;top:96px!important;}
     #rc-btn{left:68px!important;top:96px!important;}
-    #action-btn{top:60px!important;right:8px!important;}
+    #action-btn{top:auto!important;right:8px!important;bottom:140px!important;}
     #help-btn{top:10px!important;right:12px!important;}
     #steer-left{left:8px!important;bottom:148px!important;}
     #steer-right{left:100px!important;bottom:148px!important;}
@@ -498,7 +513,7 @@
     #street-name{top:54px!important;left:276px!important;max-width:30vw;}  /* v1.33: below daycycle HUD */
     #ce-btn{left:8px!important;top:110px!important;bottom:auto!important;}
     #rc-btn{left:68px!important;top:110px!important;bottom:auto!important;}
-    #action-btn{top:8px!important;right:64px!important;bottom:auto!important;}
+    #action-btn{top:auto!important;right:8px!important;bottom:200px!important;}
     #help-btn{top:8px!important;right:12px!important;}
     #steer-left{left:8px!important;bottom:110px!important;}
     #steer-right{left:80px!important;bottom:110px!important;}
@@ -813,7 +828,7 @@
 
   <div id="launch-actions">
     <button id="launch-start">▶ START GAME</button>
-    <button id="launch-anyway" title="Skip the options and start with defaults">Start Anyway</button>
+    <button id="launch-anyway" title="Skip the options and start — NPCs and traffic always on">Start Anyway</button>
   </div>
   <div id="launch-note">Your choices are saved on this device.<br>
   Graphics changes (antialiasing) need a reload to take effect.</div>
@@ -833,6 +848,12 @@
     <div id="load-status" class="phase-download">Loading...</div>
     <div id="load-detail"></div>
     <div id="load-start">CLICK ANYWHERE TO START</div>
+    <!-- v1.52 #28: critical-failure panel (hidden unless a population system
+         failed to download). Shown by __showCriticalWarning(). -->
+    <div id="load-critwarn" style="display:none">
+      <div id="load-critmsg"></div>
+      <div id="load-critbtns"><button id="load-retry">&#8635; RETRY</button><button id="load-continue">CONTINUE ANYWAY</button></div>
+    </div>
   </div>
 </div>
 <!-- Toast line: transient on-screen messages (track names, update notices,
@@ -1001,6 +1022,12 @@ function __parseSet(label, detail, pct){
 function __loadStep(key,failed){
   if(window.__loadDone[key]) return;
   window.__loadDone[key]=failed?'warn':'ok';
+  /* v1.52 #28: remember failed CRITICAL steps so __tryStartGame can block
+     with a clear error instead of silently starting an empty city. */
+  try{
+    if(failed && window.__criticalLoadKeys && window.__criticalLoadKeys[key] &&
+       window.__criticalFailed.indexOf(key)===-1) window.__criticalFailed.push(key);
+  }catch(e){}
   /* v1.16: late download steps (after green phase) switch bar back to blue.
      The __dlBase/__dlSpan maps them to 90-100%. */
   if(window.__dlBase>0 && window.__loadPhase!=='download'){
@@ -1033,6 +1060,41 @@ function __loadStep(key,failed){
     var pct=__paintProgress();
     var s=document.getElementById('load-start'); if(s) s.style.display='block';
   }
+}
+/* v1.52 #28 __showCriticalWarning(): renders the critical-failure panel on
+   the loader when a population system (NPCs/traffic) failed to download.
+   RETRY reloads the page for a clean download attempt; CONTINUE ANYWAY
+   records the player's explicit choice and re-runs the start gate. Wired
+   once here (block 1) so the buttons work even if deferred blocks failed. */
+function __showCriticalWarning(){
+  try{
+    var w=document.getElementById('load-critwarn');
+    var msg=document.getElementById('load-critmsg');
+    var startBtn=document.getElementById('load-start');
+    if(startBtn) startBtn.style.display='none';
+    var names=[];
+    var fails=window.__criticalFailed||[];
+    for(var i=0;i<fails.length;i++){
+      var n=(window.__criticalLoadKeys||{})[fails[i]]||fails[i];
+      if(names.indexOf(n)===-1) names.push(n);
+    }
+    if(msg) msg.innerHTML='&#9888; '+names.join(' + ')+' failed to load.<br>'+
+      'Starting now would leave the city empty.';
+    if(w) w.style.display='block';
+    var rb=document.getElementById('load-retry');
+    if(rb && !rb.__wired){ rb.__wired=true; rb.addEventListener('click',function(){
+      try{ window.location.reload(); }catch(e){}
+    }); }
+    var cb=document.getElementById('load-continue');
+    if(cb && !cb.__wired){ cb.__wired=true; cb.addEventListener('click',function(){
+      try{
+        window.__criticalAcked=true;
+        var w2=document.getElementById('load-critwarn');
+        if(w2) w2.style.display='none';
+        if(typeof __tryStartGame==='function') __tryStartGame();
+      }catch(e){}
+    }); }
+  }catch(e){}
 }
 /* show the first step right away so the single line is never generic */
 (function(){
@@ -1090,6 +1152,19 @@ try{
   };
   window.__isAPKLaunch=isAPK;  // informational: which default set was applied
 })();
+/* v1.52 #28 START-ANYWAY EMPTY CITY (Maya Patel, UI/UX — Joshua approved fix).
+   CRITICAL vs OPTIONAL launch systems. Critical = the population systems that
+   make Adamsville a living city (NPC citizens + ambient traffic). "Start
+   Anyway" always forces these ON so it can never strand the player in an
+   empty ghost town; everything else keeps the platform default for the
+   session. __criticalLoadKeys maps the same idea onto loader step keys, so a
+   failed download of a critical system blocks the start gate with a clear
+   error instead of loading silently broken. Optional systems (crews, MARTA,
+   drones, shadows, AA, hi-detail) may stay off with no warning. */
+window.__criticalSystems=['npcs','traffic'];
+window.__criticalLoadKeys={npc:'NPC system',refnpc:'Photo NPCs',traffic:'Traffic system'};
+window.__criticalFailed=[];   // load keys of critical steps that reported failure
+window.__criticalAcked=false; // player saw the failure warning and chose to continue anyway
 window.__launcherConfirmed = false;  // set true when user hits START GAME
 /* v1.28 NO-DOWNLOAD-BEFORE-OPTIONS (Joshua 2026-10-10: "nothing downloads
    until after the player has selected the options"). Any network fetch that
@@ -1444,7 +1519,10 @@ window.__applyCrewMaster = function(on){
        then runs the normal confirm path. No timers, no auto-confirm: the
        launcher waits for an explicit choice. (Also covers the old v1.27
        single-point-of-failure worry: if START GAME ever broke, this is the
-       backup way in.) */
+       backup way in.)
+       v1.52 #28: "Start Anyway" now forces the CRITICAL population systems
+       (NPCs + traffic, see window.__criticalSystems) ON even on web, so the
+       button can never strand the player in an empty ghost town. */
     var bAnyway = document.getElementById('launch-anyway');
     if (bAnyway) bAnyway.addEventListener('click', function(){
       try{
@@ -1454,6 +1532,17 @@ window.__applyCrewMaster = function(on){
         for (var k in window.__launchOpts){
           if (typeof window.__launchOpts[k]==='boolean') window.__launchOpts[k]=dflt;
         }
+        /* v1.52 #28 (expert report, Joshua approved): "Start Anyway" must
+           never produce an empty ghost town. NPCs + traffic are the
+           population systems — force them ON for this session even on web
+           (where the platform default is everything-off). Everything else
+           keeps the platform default. Session-only: saved prefs untouched. */
+        try{
+          var _crit=window.__criticalSystems||['npcs','traffic'];
+          for (var _ci=0; _ci<_crit.length; _ci++){
+            if (typeof window.__launchOpts[_crit[_ci]]==='boolean') window.__launchOpts[_crit[_ci]]=true;
+          }
+        }catch(e){}
         window.__launchOpts.drawDist='medium';
         syncBoxes();
       }catch(e){}
@@ -9816,6 +9905,14 @@ function __tryStartGame(){
       var st=document.getElementById('load-status');
       if(st){ st.textContent='Still loading… '+__realProgressPct()+'% — one moment'; st.style.opacity='1'; }
       try{ __paintProgress(); }catch(e){}
+      return false;
+    }
+    /* v1.52 #28 CRITICAL-FAILURE GATE (Maya Patel): if a population system
+       failed to download (npc/refnpc/traffic step), do NOT silently start an
+       empty city. Show the failure with RETRY / CONTINUE ANYWAY choices.
+       The player decides — the game never pretends a broken city is fine. */
+    if(window.__criticalFailed && window.__criticalFailed.length && !window.__criticalAcked){
+      try{ if(typeof __showCriticalWarning==='function') __showCriticalWarning(); }catch(e){}
       return false;
     }
     l.style.display='none';
