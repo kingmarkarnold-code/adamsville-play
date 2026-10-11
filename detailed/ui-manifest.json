@@ -1,334 +1,346 @@
 {
-  "files": [
-    {
-      "name": "agentdock.js",
-      "size": 4982,
-      "sha256": "ed5017309e3f077ed4797d923409e4ae2ee5de91fd5a34c52ccc03742824eee3",
-      "hash": "ed5017309e3f077ed4797d923409e4ae2ee5de91fd5a34c52ccc03742824eee3"
-    },
-    {
-      "name": "bird_drones.js",
-      "size": 13476,
-      "sha256": "76cf92e432f7dc88522e9f6d548b21d3a6f19c6338699fbad062589085d4e22e"
-    },
-    {
-      "name": "cityworkforce.js",
-      "size": 29176,
-      "sha256": "2f7944f32a175a2001907c3697d3de54d224faa2033be31074e0a40954f3f94a",
-      "hash": "2f7944f32a175a2001907c3697d3de54d224faa2033be31074e0a40954f3f94a"
-    },
-    {
-      "name": "clubs_diners.js",
-      "size": 13479,
-      "sha256": "0d47a4491f345772b1ba6efd78353eeccfacdcd1644e933bdd077e1723805c56",
-      "hash": "0d47a4491f345772b1ba6efd78353eeccfacdcd1644e933bdd077e1723805c56"
-    },
-    {
-      "name": "codeenforce_system.js",
-      "size": 67742,
-      "sha256": "63344fb7827e627e4cb97dbd40700c06ddcf2e5f81577f0bfd41ad7f894aa163",
-      "hash": "63344fb7827e627e4cb97dbd40700c06ddcf2e5f81577f0bfd41ad7f894aa163",
-      "md5": "00fb519414f69337eb25e73da2e2e9c6"
-    },
-    {
-      "name": "daycycle.js",
-      "size": 13395,
-      "sha256": "82ac1b4ec67aa686ee103f31440676f04664682a76600fc0a1c15dcfb0a36eb7",
-      "hash": "82ac1b4ec67aa686ee103f31440676f04664682a76600fc0a1c15dcfb0a36eb7"
-    },
-    {
-      "name": "dialogue_director_npc.js",
-      "size": 25884,
-      "sha256": "b6b83e3a7179664a45ced8c6e3d8466becacd4578a9cf61c4c4efec98523893d",
-      "hash": "b6b83e3a7179664a45ced8c6e3d8466becacd4578a9cf61c4c4efec98523893d"
-    },
-    {
-      "name": "face_platform.js",
-      "size": 3765,
-      "sha256": "b2a73f3d84e06bfd6342c491df9a6c382e5e703b202083450d56ba0323987e25",
-      "hash": "b2a73f3d84e06bfd6342c491df9a6c382e5e703b202083450d56ba0323987e25"
-    },
-    {
-      "name": "github-config.js",
-      "size": 3695,
-      "sha256": "3468bac6c2bd9bc89ff4a7b777d4ba3c6767334328accffc10a6bfc63541ea95",
-      "hash": "3468bac6c2bd9bc89ff4a7b777d4ba3c6767334328accffc10a6bfc63541ea95",
-      "md5": "d08f513d201195a0354428aa827314e5"
-    },
-    {
-      "name": "github_reports.js",
-      "size": 14104,
-      "sha256": "91806c24b2f1beddd3bd859fb2960ef60b03f42647cd0966bb0ea52f82011c87",
-      "hash": "91806c24b2f1beddd3bd859fb2960ef60b03f42647cd0966bb0ea52f82011c87",
-      "md5": "2c2b3a3eb8844da4922af709f35628e5"
-    },
-    {
-      "name": "helicopter_system.js",
-      "size": 34591,
-      "sha256": "ca9134741bfd97bd3ffecc4a7a1398e021f2d2f5d6bb338bc1deeee1dbbfb270",
-      "hash": "ca9134741bfd97bd3ffecc4a7a1398e021f2d2f5d6bb338bc1deeee1dbbfb270"
-    },
-    {
-      "name": "hotreload.js",
-      "size": 15642,
-      "sha256": "189f64f2434c5e76a865c595f8e567238317eda53bfaef9bec0bfdd436d1417c",
-      "hash": "189f64f2434c5e76a865c595f8e567238317eda53bfaef9bec0bfdd436d1417c"
-    },
-    {
-      "name": "hq_staff_system.js",
-      "size": 27277,
-      "sha256": "45e68b6b5696ef7582ef534df0f55cfb0df5dbf326ae594644400096349ee888",
-      "hash": "45e68b6b5696ef7582ef534df0f55cfb0df5dbf326ae594644400096349ee888"
-    },
-    {
-      "name": "icon.png",
-      "size": 69132,
-      "sha256": "be119f2f4e02c4c20be2dc2db973b64e1d8c68ed202c9e6077deb7fbd7620574",
-      "hash": "be119f2f4e02c4c20be2dc2db973b64e1d8c68ed202c9e6077deb7fbd7620574"
-    },
-    {
-      "name": "index.html",
-      "size": 807340,
-      "sha256": "b7dfd59cbc2870e86aed81656096ba5f2feb5e806d48be50957012914eae0c4f"
-    },
-    {
-      "name": "infracrew_system.js",
-      "size": 39943,
-      "sha256": "e8fa85d383cf14549c78e8569ddf2b26dae46b59a12822858391e09025840af6",
-      "hash": "e8fa85d383cf14549c78e8569ddf2b26dae46b59a12822858391e09025840af6",
-      "md5": "c51f937b485f9664e21206168930136c"
-    },
-    {
-      "name": "inspector_crew.js",
-      "size": 22784,
-      "sha256": "0b4a5be7491d8a194d47f6a8098756928f4b3ba575a4509da2b075eff2db69cb"
-    },
-    {
-      "name": "marriott.js",
-      "size": 41852,
-      "sha256": "368cd2998c7fbd623bcd66cecfd47e1a87e27ebc410f17874cd2db5c2d092382",
-      "hash": "368cd2998c7fbd623bcd66cecfd47e1a87e27ebc410f17874cd2db5c2d092382"
-    },
-    {
-      "name": "marta_bus_data.js",
-      "size": 171909,
-      "sha256": "ef99f042c58607e6e4aa83eb8a501988bf9e4eeaee190e6c5cfc4b2a43806de7",
-      "hash": "ef99f042c58607e6e4aa83eb8a501988bf9e4eeaee190e6c5cfc4b2a43806de7"
-    },
-    {
-      "name": "marta_bus_system.js",
-      "size": 32097,
-      "sha256": "47036e4a6e80651f1fdfc47daf5a7843aa1d8b2e04614b263f2d8af8ab45a426",
-      "hash": "47036e4a6e80651f1fdfc47daf5a7843aa1d8b2e04614b263f2d8af8ab45a426"
-    },
-    {
-      "name": "marta_data.js",
-      "size": 18608,
-      "sha256": "3fdbe011c1a5990b4d53a95e6a470a741610705c8fdd0403c140816468b791c8",
-      "hash": "3fdbe011c1a5990b4d53a95e6a470a741610705c8fdd0403c140816468b791c8"
-    },
-    {
-      "name": "marta_system.js",
-      "size": 36066,
-      "sha256": "5cb7fef392284a468d529d0415272ddb804e6b722c714861d35f4e7a1b082059",
-      "hash": "5cb7fef392284a468d529d0415272ddb804e6b722c714861d35f4e7a1b082059",
-      "md5": "ffaf377120eee165b605225e4649621b"
-    },
-    {
-      "name": "mlk_fairburn.js",
-      "size": 5940,
-      "sha256": "a80b164d16a484bcbe9a42c193e04c5bea548eb98f269961338d755d66b29fe2",
-      "hash": "a80b164d16a484bcbe9a42c193e04c5bea548eb98f269961338d755d66b29fe2"
-    },
-    {
-      "name": "npc_system.js",
-      "size": 81103,
-      "sha256": "68ef114ac0a1e6cac0e3424bcd479aa2386f7f14e7de855aa0a9f0231550396a",
-      "hash": "68ef114ac0a1e6cac0e3424bcd479aa2386f7f14e7de855aa0a9f0231550396a",
-      "md5": "878bc88ab4f710eab8731b2ea4d4f360"
-    },
-    {
-      "name": "poi_map.js",
-      "size": 9075,
-      "sha256": "38df503c54d0b8167afe85646883ce3ca11dfb459e0222dd51dee370056cdd56",
-      "hash": "38df503c54d0b8167afe85646883ce3ca11dfb459e0222dd51dee370056cdd56"
-    },
-    {
-      "name": "police_system.js",
-      "size": 24354,
-      "sha256": "bfbcb935955a8116741f16fca0045e4e8ee98e88ff80e1aa5ccfd3ed2bfbb1e6",
-      "hash": "bfbcb935955a8116741f16fca0045e4e8ee98e88ff80e1aa5ccfd3ed2bfbb1e6"
-    },
-    {
-      "name": "priority_dispatch.js",
-      "size": 13199,
-      "sha256": "c6476c4b5a258ee53ffb02a0801d93af9307072ebfbd05a9803d042f2bcee3a8",
-      "hash": "c6476c4b5a258ee53ffb02a0801d93af9307072ebfbd05a9803d042f2bcee3a8"
-    },
-    {
-      "name": "refnpc_system.js",
-      "size": 37773,
-      "sha256": "d8f71ae44f41d57a0bba55221c05a8ad77bc70260a138d3ef88c44fbfd9a1f17",
-      "hash": "d8f71ae44f41d57a0bba55221c05a8ad77bc70260a138d3ef88c44fbfd9a1f17"
-    },
-    {
-      "name": "residential_detail.js",
-      "size": 25794,
-      "sha256": "8d3cdaf51c546fff3a27ce32c9de4530947b0be2ea1a0b2d165571fee9d9dae3",
-      "hash": "8d3cdaf51c546fff3a27ce32c9de4530947b0be2ea1a0b2d165571fee9d9dae3"
-    },
-    {
-      "name": "roadcrew_system.js",
-      "size": 59813,
-      "sha256": "573361f4b2d9cc31902e69ba662b4f84df7439dce0763bd4a44aa3ff0fa56791",
-      "hash": "573361f4b2d9cc31902e69ba662b4f84df7439dce0763bd4a44aa3ff0fa56791",
-      "md5": "55e06b2a8ddafd32eab5ba19967aabfe"
-    },
-    {
-      "name": "roadfix.js",
-      "size": 24236,
-      "sha256": "341172c854b4622f35301bf36bffe9f6ddbf2ae14ddea5520afbec74fe71c275",
-      "hash": "341172c854b4622f35301bf36bffe9f6ddbf2ae14ddea5520afbec74fe71c275"
-    },
-    {
-      "name": "satellite_view.js",
-      "size": 13993,
-      "sha256": "1af37c06001c4b1c0237499b3f6471c470dc38345d1611f55cc3722f6c49757f",
-      "hash": "1af37c06001c4b1c0237499b3f6471c470dc38345d1611f55cc3722f6c49757f"
-    },
-    {
-      "name": "school_plaza.js",
-      "size": 22559,
-      "sha256": "eab2233b3e486efeea75df5c5c750c09ac2396407dd43bca21801a54fd6422e8",
-      "hash": "eab2233b3e486efeea75df5c5c750c09ac2396407dd43bca21801a54fd6422e8"
-    },
-    {
-      "name": "schoolbus_system.js",
-      "size": 14282,
-      "sha256": "301056997d1344fad255ca239b99c46d5ff2b679b4ce34c85d0209da21c6ae48",
-      "hash": "301056997d1344fad255ca239b99c46d5ff2b679b4ce34c85d0209da21c6ae48"
-    },
-    {
-      "name": "schools3.js",
-      "size": 16310,
-      "sha256": "4772284681263c7a9431e0df0e860ff60a3f0a9e62edc711e15c481fe4707cae",
-      "hash": "4772284681263c7a9431e0df0e860ff60a3f0a9e62edc711e15c481fe4707cae"
-    },
-    {
-      "name": "semi_system.js",
-      "size": 18768,
-      "sha256": "20bf07ac5d53df0a6fb7258d38c143a83f0bb4ee90173f9c8412468124dd7605",
-      "hash": "20bf07ac5d53df0a6fb7258d38c143a83f0bb4ee90173f9c8412468124dd7605"
-    },
-    {
-      "name": "shirt_designs.js",
-      "size": 6967,
-      "sha256": "ab88444351442063032a1de7cf03811c10a5ed59d60f66a3c246e41fa56d51af",
-      "hash": "ab88444351442063032a1de7cf03811c10a5ed59d60f66a3c246e41fa56d51af"
-    },
-    {
-      "name": "sign_rules.js",
-      "size": 6882,
-      "sha256": "35406b69bafddbfe8df6df3604b409ec1d06c2a885e9d05406fdb54bb7a00a65",
-      "hash": "35406b69bafddbfe8df6df3604b409ec1d06c2a885e9d05406fdb54bb7a00a65"
-    },
-    {
-      "name": "stayawake.js",
-      "size": 9476,
-      "sha256": "b192b1aaceead7082db689f4a0e0417fff70544d569b1d38e954da3913919e8d",
-      "hash": "b192b1aaceead7082db689f4a0e0417fff70544d569b1d38e954da3913919e8d"
-    },
-    {
-      "name": "stuck.js",
-      "size": 17891,
-      "sha256": "1ddbeafb54746cf643edb347efcee471040af2b64d1e2864a3220d8b8076e63a",
-      "hash": "1ddbeafb54746cf643edb347efcee471040af2b64d1e2864a3220d8b8076e63a"
-    },
-    {
-      "name": "stuck_diag.js",
-      "size": 30066,
-      "sha256": "082134f070b004a7c7b46d55692a1247d5150d57dc4392da1af283c3fb913c08",
-      "hash": "082134f070b004a7c7b46d55692a1247d5150d57dc4392da1af283c3fb913c08"
-    },
-    {
-      "name": "surveyfleet_system.js",
-      "size": 60919,
-      "sha256": "3e0621b4cbb69469e6d3f936c4bd4a90747e5fc4745654d0df965649de66c650",
-      "hash": "3e0621b4cbb69469e6d3f936c4bd4a90747e5fc4745654d0df965649de66c650",
-      "md5": "c66f040994fa70662edc11de95a18f90"
-    },
-    {
-      "name": "terrainfix.js",
-      "size": 12693,
-      "sha256": "ebdf20dfceb44ec523def8633a048c1226cdce0e699062e8f9d76cdfa84faa0f",
-      "hash": "ebdf20dfceb44ec523def8633a048c1226cdce0e699062e8f9d76cdfa84faa0f"
-    },
-    {
-      "name": "three.min.js",
-      "size": 603445,
-      "sha256": "9274bbcec8d96168626c732b5d31c775aa8cfb7eaa0599bec0c175908a2c1ce2",
-      "hash": "9274bbcec8d96168626c732b5d31c775aa8cfb7eaa0599bec0c175908a2c1ce2"
-    },
-    {
-      "name": "traffic_assist.js",
-      "size": 18226,
-      "sha256": "e8c3ff29b576edb31cf7a8ace6054ea800434e41a7b677e29add611ad2ffd52c",
-      "hash": "e8c3ff29b576edb31cf7a8ace6054ea800434e41a7b677e29add611ad2ffd52c"
-    },
-    {
-      "name": "traffic_system.js",
-      "size": 64131,
-      "sha256": "6c20eef9e45140cc1071be90fb299665701d4ae6ce272963fe646f1238a32d10",
-      "hash": "6c20eef9e45140cc1071be90fb299665701d4ae6ce272963fe646f1238a32d10",
-      "md5": "56a48d72d36ccb85097368b614b8e9c3"
-    },
-    {
-      "name": "vehicle_avoid.js",
-      "size": 15488,
-      "sha256": "57a3efa459bd20d004da4231f40cea1248dd1b5e0175ada9c6ef125983053c2b",
-      "hash": "57a3efa459bd20d004da4231f40cea1248dd1b5e0175ada9c6ef125983053c2b"
-    },
-    {
-      "name": "veteran_crew.js",
-      "size": 29207,
-      "sha256": "bc664a30fb9a53493533081fcbd3b2d830f9cfb1fe330d00ea4e93570d2d0dff",
-      "hash": "bc664a30fb9a53493533081fcbd3b2d830f9cfb1fe330d00ea4e93570d2d0dff"
-    },
-    {
-      "name": "workerhousing.js",
-      "size": 37369,
-      "sha256": "560cb0a0cd04b22e82ec5266b7ad182732b5dadfe1dbfde5dcc9d1e669352ba9",
-      "hash": "560cb0a0cd04b22e82ec5266b7ad182732b5dadfe1dbfde5dcc9d1e669352ba9"
-    },
-    {
-      "name": "zoneloader.js",
-      "size": 8521,
-      "sha256": "36cabfe3ffd317188f31d3ade0f4bb3aba7aff7a81ae0f9b231fdb6334e50ebe",
-      "hash": "36cabfe3ffd317188f31d3ade0f4bb3aba7aff7a81ae0f9b231fdb6334e50ebe"
-    },
-    {
-      "name": "zoneunlock.js",
-      "size": 15371,
-      "sha256": "f4937cb7a32d5e12de4a8ffe3bc7255aa1f04831ec037d1d495a8766e6fa96f9",
-      "hash": "f4937cb7a32d5e12de4a8ffe3bc7255aa1f04831ec037d1d495a8766e6fa96f9"
-    },
-    {
-      "name": "worldfix_sync.js",
-      "size": 25060,
-      "sha256": "95e9034b845505f5890371c74ed5ef02847dae83fb6aff11142af9f30dfe8bf3",
-      "hash": "95e9034b845505f5890371c74ed5ef02847dae83fb6aff11142af9f30dfe8bf3"
-    },
-    {
-      "name": "visual_inspect.js",
-      "size": 13217,
-      "sha256": "ac7b7c70a23514d7e55bf996ed8f5ab549cbfab36db5969b74475d911b5ae8e4"
-    },
-    {
-      "name": "terrain_heights_adamsville_600x800.bin",
-      "size": 1925604,
-      "sha256": "c2ba76e594c5e834eda2c27ffc2d4f156359d11770683b1348c28f086afaeb84"
-    }
-  ],
-  "ui_version": "2026.10.11.151",
-  "version": "2026.10.11.137"
+ "files": [
+  {
+   "name": "agentdock.js",
+   "size": 4982,
+   "sha256": "ed5017309e3f077ed4797d923409e4ae2ee5de91fd5a34c52ccc03742824eee3",
+   "hash": "ed5017309e3f077ed4797d923409e4ae2ee5de91fd5a34c52ccc03742824eee3"
+  },
+  {
+   "name": "bird_drones.js",
+   "size": 13692,
+   "sha256": "d037c7031559698beab5ebc22568bff59f752b370694a95a624568b0e437bba5"
+  },
+  {
+   "name": "blob_shadows.js",
+   "size": 10505,
+   "sha256": "fae4e82ee806e451aaf86bfa737714a4e5f125626316a9d6e449c43f832ee792",
+   "hash": "fae4e82ee806e451aaf86bfa737714a4e5f125626316a9d6e449c43f832ee792"
+  },
+  {
+   "name": "cityworkforce.js",
+   "size": 29393,
+   "sha256": "a60b991f7c43225949d34ab2d4f5f237dda1ad54c7570640a778fd961795c362",
+   "hash": "a60b991f7c43225949d34ab2d4f5f237dda1ad54c7570640a778fd961795c362"
+  },
+  {
+   "name": "clubs_diners.js",
+   "size": 13479,
+   "sha256": "0d47a4491f345772b1ba6efd78353eeccfacdcd1644e933bdd077e1723805c56",
+   "hash": "0d47a4491f345772b1ba6efd78353eeccfacdcd1644e933bdd077e1723805c56"
+  },
+  {
+   "name": "codeenforce_system.js",
+   "size": 67957,
+   "sha256": "b31a14cd82f74b079d9f8e2a7a5986f36ea729e7274b039d17df5a53c4384a7e",
+   "hash": "b31a14cd82f74b079d9f8e2a7a5986f36ea729e7274b039d17df5a53c4384a7e",
+   "md5": "00fb519414f69337eb25e73da2e2e9c6"
+  },
+  {
+   "name": "daycycle.js",
+   "sha256": "c134ee9006efcced00611b7895fa38a4e5879b1a8566cd980f2c2372936f29b3",
+   "size": 14794,
+   "hash": "c134ee9006efcced00611b7895fa38a4e5879b1a8566cd980f2c2372936f29b3"
+  },
+  {
+   "name": "dialogue_director_npc.js",
+   "size": 26089,
+   "sha256": "7dc3965bb73029404e4e6b90af5601b6b5beeabd20b0940f6494af8719c7185d",
+   "hash": "7dc3965bb73029404e4e6b90af5601b6b5beeabd20b0940f6494af8719c7185d"
+  },
+  {
+   "name": "face_platform.js",
+   "size": 3765,
+   "sha256": "b2a73f3d84e06bfd6342c491df9a6c382e5e703b202083450d56ba0323987e25",
+   "hash": "b2a73f3d84e06bfd6342c491df9a6c382e5e703b202083450d56ba0323987e25"
+  },
+  {
+   "name": "github-config.js",
+   "size": 3695,
+   "sha256": "3468bac6c2bd9bc89ff4a7b777d4ba3c6767334328accffc10a6bfc63541ea95",
+   "hash": "3468bac6c2bd9bc89ff4a7b777d4ba3c6767334328accffc10a6bfc63541ea95",
+   "md5": "d08f513d201195a0354428aa827314e5"
+  },
+  {
+   "name": "github_reports.js",
+   "size": 14104,
+   "sha256": "91806c24b2f1beddd3bd859fb2960ef60b03f42647cd0966bb0ea52f82011c87",
+   "hash": "91806c24b2f1beddd3bd859fb2960ef60b03f42647cd0966bb0ea52f82011c87",
+   "md5": "2c2b3a3eb8844da4922af709f35628e5"
+  },
+  {
+   "name": "helicopter_system.js",
+   "size": 34806,
+   "sha256": "4aae28261508500e892fc551c9b495eaf7c97d2d3811273abb86f324730fdee7",
+   "hash": "4aae28261508500e892fc551c9b495eaf7c97d2d3811273abb86f324730fdee7"
+  },
+  {
+   "name": "hotreload.js",
+   "size": 15642,
+   "sha256": "189f64f2434c5e76a865c595f8e567238317eda53bfaef9bec0bfdd436d1417c",
+   "hash": "189f64f2434c5e76a865c595f8e567238317eda53bfaef9bec0bfdd436d1417c"
+  },
+  {
+   "name": "hq_staff_system.js",
+   "size": 27482,
+   "sha256": "414e4477f405fbb827100befa98a4c215dced8e654b2d9990fbdec594a256988",
+   "hash": "414e4477f405fbb827100befa98a4c215dced8e654b2d9990fbdec594a256988"
+  },
+  {
+   "name": "icon.png",
+   "size": 69132,
+   "sha256": "be119f2f4e02c4c20be2dc2db973b64e1d8c68ed202c9e6077deb7fbd7620574",
+   "hash": "be119f2f4e02c4c20be2dc2db973b64e1d8c68ed202c9e6077deb7fbd7620574"
+  },
+  {
+   "name": "index.html",
+   "size": 812632,
+   "sha256": "d9fce133c99eec8a0501de38a57dc10ac8492782fdd82c9bdb5d201fc2397c97",
+   "hash": "d9fce133c99eec8a0501de38a57dc10ac8492782fdd82c9bdb5d201fc2397c97"
+  },
+  {
+   "name": "infracrew_system.js",
+   "size": 40158,
+   "sha256": "8c10361682983d68e2b0bf71133ae91b6db19cd90fea6bf01b5fac743355a511",
+   "hash": "8c10361682983d68e2b0bf71133ae91b6db19cd90fea6bf01b5fac743355a511",
+   "md5": "c51f937b485f9664e21206168930136c"
+  },
+  {
+   "name": "inspector_crew.js",
+   "size": 23001,
+   "sha256": "1484932740e1a14c7f381386bc9927ac229aca934124e4cdd3cfbb0c6408bf30"
+  },
+  {
+   "name": "marriott.js",
+   "size": 41852,
+   "sha256": "368cd2998c7fbd623bcd66cecfd47e1a87e27ebc410f17874cd2db5c2d092382",
+   "hash": "368cd2998c7fbd623bcd66cecfd47e1a87e27ebc410f17874cd2db5c2d092382"
+  },
+  {
+   "name": "marta_bus_data.js",
+   "size": 171909,
+   "sha256": "ef99f042c58607e6e4aa83eb8a501988bf9e4eeaee190e6c5cfc4b2a43806de7",
+   "hash": "ef99f042c58607e6e4aa83eb8a501988bf9e4eeaee190e6c5cfc4b2a43806de7"
+  },
+  {
+   "name": "marta_bus_system.js",
+   "size": 32314,
+   "sha256": "3e1c2493303380216eb2efc8efcaf3b5b491e4244af1b3009afe27057d6f55a0",
+   "hash": "3e1c2493303380216eb2efc8efcaf3b5b491e4244af1b3009afe27057d6f55a0"
+  },
+  {
+   "name": "marta_data.js",
+   "size": 18608,
+   "sha256": "3fdbe011c1a5990b4d53a95e6a470a741610705c8fdd0403c140816468b791c8",
+   "hash": "3fdbe011c1a5990b4d53a95e6a470a741610705c8fdd0403c140816468b791c8"
+  },
+  {
+   "name": "marta_system.js",
+   "size": 36283,
+   "sha256": "40406ad726262ed1c25cbcd694c66c30b7816c9f23fe1ce82a992875d9778093",
+   "hash": "40406ad726262ed1c25cbcd694c66c30b7816c9f23fe1ce82a992875d9778093",
+   "md5": "ffaf377120eee165b605225e4649621b"
+  },
+  {
+   "name": "mlk_fairburn.js",
+   "size": 5940,
+   "sha256": "a80b164d16a484bcbe9a42c193e04c5bea548eb98f269961338d755d66b29fe2",
+   "hash": "a80b164d16a484bcbe9a42c193e04c5bea548eb98f269961338d755d66b29fe2"
+  },
+  {
+   "name": "npc_system.js",
+   "size": 81265,
+   "sha256": "7a61fe5cd756bfd85423566613cc37e5261f46571b7a8e697153413204b81513",
+   "hash": "7a61fe5cd756bfd85423566613cc37e5261f46571b7a8e697153413204b81513"
+  },
+  {
+   "name": "poi_map.js",
+   "size": 9075,
+   "sha256": "38df503c54d0b8167afe85646883ce3ca11dfb459e0222dd51dee370056cdd56",
+   "hash": "38df503c54d0b8167afe85646883ce3ca11dfb459e0222dd51dee370056cdd56"
+  },
+  {
+   "name": "police_system.js",
+   "size": 24571,
+   "sha256": "7f838fd9656fe3dbb5686d8a89913ad24b193c5fe6cb03ea3963f86e8c9e597f",
+   "hash": "7f838fd9656fe3dbb5686d8a89913ad24b193c5fe6cb03ea3963f86e8c9e597f"
+  },
+  {
+   "name": "priority_dispatch.js",
+   "size": 13199,
+   "sha256": "c6476c4b5a258ee53ffb02a0801d93af9307072ebfbd05a9803d042f2bcee3a8",
+   "hash": "c6476c4b5a258ee53ffb02a0801d93af9307072ebfbd05a9803d042f2bcee3a8"
+  },
+  {
+   "name": "refnpc_system.js",
+   "size": 37994,
+   "sha256": "4c573d50e637074791b63822a485a8bace7d94821b59c5399d44779539e3e967",
+   "hash": "4c573d50e637074791b63822a485a8bace7d94821b59c5399d44779539e3e967"
+  },
+  {
+   "name": "residential_detail.js",
+   "size": 25794,
+   "sha256": "8d3cdaf51c546fff3a27ce32c9de4530947b0be2ea1a0b2d165571fee9d9dae3",
+   "hash": "8d3cdaf51c546fff3a27ce32c9de4530947b0be2ea1a0b2d165571fee9d9dae3"
+  },
+  {
+   "name": "roadcrew_system.js",
+   "size": 60028,
+   "sha256": "1e5870a036e353b73b839ba8c598ff686e9cd5c7d879f5e1a24a7f7ac49de044",
+   "hash": "1e5870a036e353b73b839ba8c598ff686e9cd5c7d879f5e1a24a7f7ac49de044",
+   "md5": "55e06b2a8ddafd32eab5ba19967aabfe"
+  },
+  {
+   "name": "roadfix.js",
+   "size": 24236,
+   "sha256": "341172c854b4622f35301bf36bffe9f6ddbf2ae14ddea5520afbec74fe71c275",
+   "hash": "341172c854b4622f35301bf36bffe9f6ddbf2ae14ddea5520afbec74fe71c275"
+  },
+  {
+   "name": "satellite_view.js",
+   "size": 13993,
+   "sha256": "1af37c06001c4b1c0237499b3f6471c470dc38345d1611f55cc3722f6c49757f",
+   "hash": "1af37c06001c4b1c0237499b3f6471c470dc38345d1611f55cc3722f6c49757f"
+  },
+  {
+   "name": "school_plaza.js",
+   "size": 22559,
+   "sha256": "eab2233b3e486efeea75df5c5c750c09ac2396407dd43bca21801a54fd6422e8",
+   "hash": "eab2233b3e486efeea75df5c5c750c09ac2396407dd43bca21801a54fd6422e8"
+  },
+  {
+   "name": "schoolbus_system.js",
+   "size": 14499,
+   "sha256": "9b23beba718da6fa288aa9821c86e299dbc51e98a2181ad5b90013346fda1d30",
+   "hash": "9b23beba718da6fa288aa9821c86e299dbc51e98a2181ad5b90013346fda1d30"
+  },
+  {
+   "name": "schools3.js",
+   "size": 16310,
+   "sha256": "4772284681263c7a9431e0df0e860ff60a3f0a9e62edc711e15c481fe4707cae",
+   "hash": "4772284681263c7a9431e0df0e860ff60a3f0a9e62edc711e15c481fe4707cae"
+  },
+  {
+   "name": "semi_system.js",
+   "size": 18985,
+   "sha256": "9abcd10102d81009c46e0fa5891c590d24a8a7113cd5ae93cbdb401dfcb9573e",
+   "hash": "9abcd10102d81009c46e0fa5891c590d24a8a7113cd5ae93cbdb401dfcb9573e"
+  },
+  {
+   "name": "shirt_designs.js",
+   "size": 6967,
+   "sha256": "ab88444351442063032a1de7cf03811c10a5ed59d60f66a3c246e41fa56d51af",
+   "hash": "ab88444351442063032a1de7cf03811c10a5ed59d60f66a3c246e41fa56d51af"
+  },
+  {
+   "name": "sign_rules.js",
+   "size": 6882,
+   "sha256": "35406b69bafddbfe8df6df3604b409ec1d06c2a885e9d05406fdb54bb7a00a65",
+   "hash": "35406b69bafddbfe8df6df3604b409ec1d06c2a885e9d05406fdb54bb7a00a65"
+  },
+  {
+   "name": "sim_core.js",
+   "sha256": "25eab586acb71d9a1b1be1876d4641c1077f8067b673e4293691546107e1ecad",
+   "size": 12480,
+   "hash": "25eab586acb71d9a1b1be1876d4641c1077f8067b673e4293691546107e1ecad"
+  },
+  {
+   "name": "stayawake.js",
+   "size": 9476,
+   "sha256": "b192b1aaceead7082db689f4a0e0417fff70544d569b1d38e954da3913919e8d",
+   "hash": "b192b1aaceead7082db689f4a0e0417fff70544d569b1d38e954da3913919e8d"
+  },
+  {
+   "name": "stuck.js",
+   "size": 17891,
+   "sha256": "1ddbeafb54746cf643edb347efcee471040af2b64d1e2864a3220d8b8076e63a",
+   "hash": "1ddbeafb54746cf643edb347efcee471040af2b64d1e2864a3220d8b8076e63a"
+  },
+  {
+   "name": "stuck_diag.js",
+   "size": 30066,
+   "sha256": "082134f070b004a7c7b46d55692a1247d5150d57dc4392da1af283c3fb913c08",
+   "hash": "082134f070b004a7c7b46d55692a1247d5150d57dc4392da1af283c3fb913c08"
+  },
+  {
+   "name": "surveyfleet_system.js",
+   "size": 61134,
+   "sha256": "7fbd49fb8a8ac5dd6f03517069fdd3993a1630478274333998c3f17b1411bca3",
+   "hash": "7fbd49fb8a8ac5dd6f03517069fdd3993a1630478274333998c3f17b1411bca3",
+   "md5": "c66f040994fa70662edc11de95a18f90"
+  },
+  {
+   "name": "terrain_heights_adamsville_600x800.bin",
+   "size": 1925604,
+   "sha256": "c2ba76e594c5e834eda2c27ffc2d4f156359d11770683b1348c28f086afaeb84"
+  },
+  {
+   "name": "terrainfix.js",
+   "size": 12693,
+   "sha256": "ebdf20dfceb44ec523def8633a048c1226cdce0e699062e8f9d76cdfa84faa0f",
+   "hash": "ebdf20dfceb44ec523def8633a048c1226cdce0e699062e8f9d76cdfa84faa0f"
+  },
+  {
+   "name": "three.min.js",
+   "size": 603445,
+   "sha256": "9274bbcec8d96168626c732b5d31c775aa8cfb7eaa0599bec0c175908a2c1ce2",
+   "hash": "9274bbcec8d96168626c732b5d31c775aa8cfb7eaa0599bec0c175908a2c1ce2"
+  },
+  {
+   "name": "traffic_assist.js",
+   "size": 18226,
+   "sha256": "e8c3ff29b576edb31cf7a8ace6054ea800434e41a7b677e29add611ad2ffd52c",
+   "hash": "e8c3ff29b576edb31cf7a8ace6054ea800434e41a7b677e29add611ad2ffd52c"
+  },
+  {
+   "name": "traffic_system.js",
+   "size": 64348,
+   "sha256": "05161ba511a9a651229d226f31d2da5234fc3693eb26bd38cea0c6ae04b31aa9",
+   "hash": "05161ba511a9a651229d226f31d2da5234fc3693eb26bd38cea0c6ae04b31aa9",
+   "md5": "56a48d72d36ccb85097368b614b8e9c3"
+  },
+  {
+   "name": "vehicle_avoid.js",
+   "size": 15488,
+   "sha256": "57a3efa459bd20d004da4231f40cea1248dd1b5e0175ada9c6ef125983053c2b",
+   "hash": "57a3efa459bd20d004da4231f40cea1248dd1b5e0175ada9c6ef125983053c2b"
+  },
+  {
+   "name": "veteran_crew.js",
+   "size": 29207,
+   "sha256": "bc664a30fb9a53493533081fcbd3b2d830f9cfb1fe330d00ea4e93570d2d0dff",
+   "hash": "bc664a30fb9a53493533081fcbd3b2d830f9cfb1fe330d00ea4e93570d2d0dff"
+  },
+  {
+   "name": "visual_inspect.js",
+   "size": 13217,
+   "sha256": "ac7b7c70a23514d7e55bf996ed8f5ab549cbfab36db5969b74475d911b5ae8e4"
+  },
+  {
+   "name": "workerhousing.js",
+   "size": 37574,
+   "sha256": "3b58ac9aa4f2c64e8e3b7f04715328598563223c8c47af1aaff5ea63a842bd45",
+   "hash": "3b58ac9aa4f2c64e8e3b7f04715328598563223c8c47af1aaff5ea63a842bd45"
+  },
+  {
+   "name": "worldfix_sync.js",
+   "size": 25060,
+   "sha256": "95e9034b845505f5890371c74ed5ef02847dae83fb6aff11142af9f30dfe8bf3",
+   "hash": "95e9034b845505f5890371c74ed5ef02847dae83fb6aff11142af9f30dfe8bf3"
+  },
+  {
+   "name": "zoneloader.js",
+   "size": 8521,
+   "sha256": "36cabfe3ffd317188f31d3ade0f4bb3aba7aff7a81ae0f9b231fdb6334e50ebe",
+   "hash": "36cabfe3ffd317188f31d3ade0f4bb3aba7aff7a81ae0f9b231fdb6334e50ebe"
+  },
+  {
+   "name": "zoneunlock.js",
+   "size": 15371,
+   "sha256": "f4937cb7a32d5e12de4a8ffe3bc7255aa1f04831ec037d1d495a8766e6fa96f9",
+   "hash": "f4937cb7a32d5e12de4a8ffe3bc7255aa1f04831ec037d1d495a8766e6fa96f9"
+  }
+ ],
+ "ui_version": "2026.10.11.154",
+ "version": "2026.10.11.137"
 }
