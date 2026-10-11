@@ -125,7 +125,8 @@ function loadImage(cfg, cv, baseColor, tex){
 function makeShirtMats(baseColor, charName){
   /* returns [ +x, -x, +y, -y, +z(front), -z ] for BoxGeometry */
   var cfg=CONFIGS[charName]||null;
-  var plain=new THREE.MeshLambertMaterial({color:baseColor});
+  /* v1.48 (#18): shirts use the shared toon palette (characters). */
+  var plain=(typeof toonMat==='function')?toonMat(baseColor):new THREE.MeshLambertMaterial({color:baseColor});
   if (!cfg) return [plain,plain,plain,plain,plain,plain];
   var cv=document.createElement('canvas'); cv.width=128; cv.height=128;
   var bc=(typeof baseColor==='string')?baseColor:'#'+new THREE.Color(baseColor).getHexString();
@@ -134,7 +135,7 @@ function makeShirtMats(baseColor, charName){
   try{ if (THREE.sRGBEncoding!==undefined) tex.encoding=THREE.sRGBEncoding; }catch(e){}
   tex.anisotropy=2;
   loadImage(cfg, cv, bc, tex);
-  var front=new THREE.MeshLambertMaterial({map:tex});
+  var front=(typeof toonMatMap==='function')?toonMatMap(tex):new THREE.MeshLambertMaterial({map:tex});
   return [plain,plain,plain,plain,front,plain];
 }
 
