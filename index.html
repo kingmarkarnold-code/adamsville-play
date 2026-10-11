@@ -2916,9 +2916,13 @@ function removeCollider(c){
 /* v1.3: spatial grid for OSM building colliders (thousands — flat array
    would make resolveCollision O(n) per entity per frame). Cell 40u. */
 var bldgGrid = {};
-function addBldgCollider(x, z, r){
+/* v1.37 CAMERA COLLISION (Joshua's expert review #2 — Marcus Chen): building
+   colliders now carry an optional height `h` (building top ~= base + h) so the
+   third-person camera can raycast against them and pull in instead of clipping
+   through walls. Defaults to 4u when not supplied. */
+function addBldgCollider(x, z, r, h){
   var k=Math.floor(x/40)+','+Math.floor(z/40);
-  (bldgGrid[k]=bldgGrid[k]||[]).push({x:x, z:z, r:r});
+  (bldgGrid[k]=bldgGrid[k]||[]).push({x:x, z:z, r:r, h:(typeof h==='number'?h:4)});
 }
 function resolveBldgColliders(p, radius){
   var cx=Math.floor(p.x/40), cz=Math.floor(p.z/40);
@@ -5487,7 +5491,7 @@ function runOsmBuildings(){
       m4.compose(pv,qt,sv); roofs.setMatrixAt(placed,m4);
       col.set(tp===1?0x5a6068:0x6b4a3a);
       try{ roofs.setColorAt(placed,col); }catch(e){}
-      addBldgCollider(k2[0],k2[1],Math.max(bw,bd)/2+0.5);
+      addBldgCollider(k2[0],k2[1],Math.max(bw,bd)/2+0.5,bh);  // v1.37: pass height for camera raycast
       placed++;
     }
     bodies.count=placed; roofs.count=placed;
@@ -5610,7 +5614,7 @@ var INSPECTOR_BLDG=null;
       band.position.set(bx,gy-0.6+f*6,bz);
       scene.add(band);
     }
-    addBldgCollider(bx,bz,Math.max(bw,bd)/2+1);
+    addBldgCollider(bx,bz,Math.max(bw,bd)/2+1,bh);  // v1.37: 6-story office, bh=36
     // Division offices with signage
     var divisions=[
       {name:"Road Inspection", floor:"3rd Floor",
@@ -5680,7 +5684,7 @@ var PLACES_OF_INTEREST=[];
       spire.rotation.y=Math.PI/4; spire.position.set(0,19,-8); g.add(spire);
       g.position.set(x,gy-0.6,z);
       scene.add(g);
-      addBldgCollider(x,z,12);
+      addBldgCollider(x,z,12,22);  // v1.37: church steeple+spire ~=22u
       try{
         var sp=makeLabel("Community Church", 26, '#ffffff');
         sp.position.set(x,gy+24,z); scene.add(sp);
@@ -5703,7 +5707,7 @@ var PLACES_OF_INTEREST=[];
       roof.position.y=10.5; g.add(roof);
       g.position.set(x,gy-0.6,z);
       scene.add(g);
-      addBldgCollider(x,z,24);
+      addBldgCollider(x,z,24,11);  // v1.37: school wing+roof ~=11u
       try{
         var sp=makeLabel("Neighborhood School", 30, '#ffffff');
         sp.position.set(x,gy+16,z); scene.add(sp);
@@ -8240,6 +8244,53 @@ function updateCar(dt){
   if (car.steerWheel) car.steerWheel.rotation.z = -steerIn*0.9;
 }
 
+/* v1.37 CAMERA COLLISION (expert review #2 — Marcus Chen): pull-in-only chase
+   camera. camSafeDist() raycasts in 2D from the look target (player head)
+   toward the desired camera position against bldgGrid — the EXISTING building
+   collision registry, no new data structures. It returns the furthest distance
+   along the ray that stays clear of buildings. A building only blocks if its
+   top (base terrain + stored collider height) actually reaches the ray height
+   at the hit point, so short structures don't yank the camera for no reason.
+   camColDist is the smoothed distance: fast pull-in when blocked, slow
+   ease-out when clear (no popping through walls as the player turns). The
+   camera can never end up inside a building. */
+var camColDist=-1;  // smoothed camera distance; -1 = unset (snaps on 1st frame)
+function camSafeDist(lx,ly,lz, tx,ty,tz, wantDist){
+  var dx=tx-lx, dz=tz-lz;
+  var len=Math.sqrt(dx*dx+dz*dz);
+  if (len<0.001) return wantDist;
+  dx/=len; dz/=len;
+  var best=wantDist;
+  /* Walk the bldgGrid cells overlapped by the ray's bounding box, expanded by
+     the largest plausible building radius so no candidate is missed. The ray
+     is <=9u, so this is only a few 40u cells — trivial per-frame cost. */
+  var gx0=Math.floor((Math.min(lx,tx)-26)/40), gx1=Math.floor((Math.max(lx,tx)+26)/40);
+  var gz0=Math.floor((Math.min(lz,tz)-26)/40), gz1=Math.floor((Math.max(lz,tz)+26)/40);
+  for (var gx=gx0; gx<=gx1; gx++) for (var gz=gz0; gz<=gz1; gz++){
+    var cell=bldgGrid[gx+','+gz]; if (!cell) continue;
+    for (var i=0;i<cell.length;i++){
+      var c=cell[i];
+      var R=c.r+0.7;                        // camera margin — never touch the wall
+      var ox=c.x-lx, oz=c.z-lz;
+      var tca=ox*dx+oz*dz;                  // distance along ray to closest approach
+      if (tca<-R || tca>len+R) continue;
+      var d2=ox*ox+oz*oz-tca*tca;           // squared dist from center to ray
+      if (d2>=R*R) continue;
+      var t=tca-Math.sqrt(R*R-d2);          // ray entry point into the circle
+      if (t<0) t=0;
+      if (t>=best) continue;                // already have a closer blocker
+      /* Vertical check: only block if the building reaches the ray here. */
+      var frac=t/Math.max(len,0.001);
+      var rayY=ly+(ty-ly)*frac;
+      var baseY=0;
+      try{ baseY=heightAt(c.x,c.z); }catch(e){}
+      if (baseY+(c.h||4) > rayY-0.3){
+        best=Math.max(1.0, t-0.9);          // stop just outside the wall
+      }
+    }
+  }
+  return best;
+}
 // v1.13 first-person interior camera state
 var fpLookYaw=0, fpPitch=0, fpBlend=0, wasFP=false;
 function updateCamera(dt){
@@ -8296,24 +8347,37 @@ function updateCamera(dt){
   // GTA-style: behind + above, angled down; right-drag adds yaw offset (driving chase cam)
   var cy=yaw+Math.PI+look.yawOff;
   var dist=car.driving?9:4.6, height=car.driving?4.2:3.0;
-  var tx=fx+Math.sin(cy)*dist, tz=fz+Math.cos(cy)*dist;
+  var lx=fx+Math.sin(yaw)*3, lz=fz+Math.cos(yaw)*3;
+  var ly=(car.driving?heightAt(car.x,car.z):player.mesh.position.y)+1.2;
   var ty=(car.driving?heightAt(car.x,car.z):player.mesh.position.y)+height;
-  if (camSnapT>0){
-    // v0.6: authoritative snap — hard-hold behind the car, ignore drag
-    camSnapT-=dt;
-    var _cy=yaw+Math.PI;
-    camera.position.set(fx+Math.sin(_cy)*dist, ty, fz+Math.cos(_cy)*dist);
+  /* v1.37 CAMERA COLLISION: pull the camera in when a building blocks the
+     view, instead of letting it clip through walls. */
+  var ecy=(camSnapT>0)?(yaw+Math.PI):cy;   // snap branch ignores drag offset
+  var wantTX=fx+Math.sin(ecy)*dist, wantTZ=fz+Math.cos(ecy)*dist;
+  var safeD=dist;
+  try{ safeD=camSafeDist(lx,ly,lz, wantTX,ty,wantTZ, dist); }catch(e){ safeD=dist; }
+  if (camColDist<0) camColDist=safeD;                     // first frame: snap
+  if (safeD<camColDist){
+    camColDist+=(safeD-camColDist)*Math.min(1,dt*14);     // fast pull-in
+    if (camColDist<safeD+0.01) camColDist=safeD;
   } else {
-    // v0.7 PINNED: rigid follow — camera.position set directly every frame so
-    // camera + player/car move in unison, zero drift. (look.yawOff still orbits
-    // the view when he drags; this only kills the positional lag.)
-    camera.position.set(tx, ty, tz);
+    camColDist+=(safeD-camColDist)*Math.min(1,dt*2.2);    // slow ease-out
+    if (camColDist>safeD-0.01) camColDist=safeD;
   }
+  var useD=Math.max(1.0, camColDist);
+  var camX=fx+Math.sin(ecy)*useD, camZ=fz+Math.cos(ecy)*useD, camY=ty;
+  try{  // never bury the camera in a hill rising behind the player
+    var _cgy=heightAt(camX,camZ);
+    if (camY<_cgy+0.6) camY=_cgy+0.6;
+  }catch(e){}
+  if (camSnapT>0) camSnapT-=dt;   // v0.6: authoritative snap — hard-hold behind the car, ignore drag
+  // v0.7 PINNED: rigid follow — camera.position set directly every frame so
+  // camera + player/car move in unison, zero drift. (look.yawOff still orbits
+  // the view when he drags; this only kills the positional lag.)
+  camera.position.set(camX, camY, camZ);
   if (car.driving && !look.dragging && car.speed>3 && camSnapT<=0){
     look.yawOff*=Math.pow(0.35,dt);  // v0.6: ease back behind while driving
   }
-  var lx=fx+Math.sin(yaw)*3, lz=fz+Math.cos(yaw)*3;
-  var ly=(car.driving?heightAt(car.x,car.z):player.mesh.position.y)+1.2;
   camera.lookAt(lx, ly, lz);
 }
 
