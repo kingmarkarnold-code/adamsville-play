@@ -11,8 +11,9 @@
        seconds, IDLE (look around), TURN to a new heading; a 3.2u lookahead
        probe turns the NPC away from blockages. Simple sim, Joshua's rule.
      - Streaming renderer: only MAX_VISIBLE=40 bodies within 150u of the
-       camera get instanced bodies (hysteresis: released beyond 200u), 6
-       InstancedMeshes (torso/head/2 arms/2 legs), per-instance colors
+       camera get instanced bodies (hysteresis: released beyond 200u), 10
+       InstancedMeshes (torso/head/upper arms/forearms/thighs/shins —
+       v1.57 expert #24 jointed limbs), per-instance colors
        (skin head+arms = short-sleeve look, shirt torso, pants legs).
        Limb animation only within 80u (LOD); distant bodies are static.
        TCL T513V (Joshua's phone) budget drove these caps.
@@ -73,7 +74,7 @@
    Reads (all optional/guarded — the system degrades gracefully if one is
    missing): player, car, roadDrawData, PLACED_HOUSES, OSM_BUILDINGS,
    bldgGrid, BORDER, heightAt, onRoad, inWater, waterDepthAt, Report.
-   Writes: 6 InstancedMeshes added to scene; window.updateNPCs;
+   Writes: 10 InstancedMeshes added to scene; window.updateNPCs;
    Report.setSys('npc', ...) every 5s.
    ============================================================================ */
 (function npcPedestrians(){
@@ -134,7 +135,7 @@ var WF_MAXT=14;                       // max seconds wall-following before fallb
 
 /* scratch / temps — allocated once, never in the hot loop */
 var _m1=null,_m2=null,_m3=null,_m4=null,_m5=null,_m6=null,_m7=null,_out=null;
-var _col=null, _free=[], _mesh=null;   // _mesh: {torso,head,armL,armR,legL,legR}
+var _col=null, _free=[], _mesh=null;   // _mesh: {torso,head,uArmL,uArmR,fArmL,fArmR,thighL,thighR,shinL,shinR}
 var walkRoads=[], comSpots=[], resSpots=[];
 var borderOK=null;      // null = no constraint; else {px,py...} half-planes
 
@@ -815,16 +816,21 @@ function aiNPC(n, dt){
 
 /* ---------------- streaming: bodies only near the camera ---------------- */
 /* assignSlot(s,n) — binds NPC n to render slot s and bakes its per-instance
-   colors: skin on head+arms (short-sleeve look), shirt on torso, pants on
-   legs. Slot count is set to the visible count each frame; unassigned slots
-   are never drawn. */
+   colors: skin on head+upper arms+forearms (short-sleeve look), shirt on
+   torso, pants on thighs+shins. Slot count is set to the visible count each
+   frame; unassigned slots are never drawn. */
 function assignSlot(s,n){
   n.slot=s; slots[s]=n;
   _col.set(n.skin);
-  _mesh.head.setColorAt(s,_col); _mesh.armL.setColorAt(s,_col); _mesh.armR.setColorAt(s,_col);
+  _mesh.head.setColorAt(s,_col);
+  _mesh.uArmL.setColorAt(s,_col); _mesh.uArmR.setColorAt(s,_col);
+  _mesh.fArmL.setColorAt(s,_col); _mesh.fArmR.setColorAt(s,_col);
   _col.set(n.shirt); _mesh.torso.setColorAt(s,_col);
-  _col.set(n.pants); _mesh.legL.setColorAt(s,_col); _mesh.legR.setColorAt(s,_col);
-  var mk=[_mesh.torso,_mesh.head,_mesh.armL,_mesh.armR,_mesh.legL,_mesh.legR];
+  _col.set(n.pants);
+  _mesh.thighL.setColorAt(s,_col); _mesh.thighR.setColorAt(s,_col);
+  _mesh.shinL.setColorAt(s,_col);  _mesh.shinR.setColorAt(s,_col);
+  var mk=[_mesh.torso,_mesh.head,_mesh.uArmL,_mesh.uArmR,_mesh.fArmL,_mesh.fArmR,
+          _mesh.thighL,_mesh.thighR,_mesh.shinL,_mesh.shinR];
   for (var i=0;i<mk.length;i++) if (mk[i].instanceColor) mk[i].instanceColor.needsUpdate=true;
 }
 /* refreshSlots(px,pz) — reassigns the 40 render slots every 0.5s: releases
@@ -859,10 +865,15 @@ function refreshSlots(px,pz){
   for (i=0;i<npcs.length;i++) npcs[i]._pick=false;
 }
 
-/* ---------------- rendering: 6 InstancedMeshes, ~6-10 boxes per NPC ----------------
+/* ---------------- rendering: 10 InstancedMeshes, jointed limbs ----------------
    One unit box per part, scaled by matrix. Per-instance colors: skin on head
-   + arms (short-sleeve look), shirt on torso, pants on legs. Boys render at
-   0.85 scale; 3 width variants via wid. */
+   + upper arms + forearms (short-sleeve look), shirt on torso, pants on
+   thighs + shins. Boys render at 0.85 scale; 3 width variants via wid.
+   v1.57 JOINTED LIMBS (expert #24, Katherine Brooks): arms split into upper
+   arm + forearm (elbow joint), legs into thigh + shin (knee joint), mirroring
+   the hero rig's walk cycle — elbows bend on the counter-swing, knees bend
+   on the swing-through. Same proportions as the old single-piece limbs
+   (arm 0.58 = 0.29+0.29, leg 0.66 = 0.33+0.33), so silhouettes are unchanged. */
 /* partMat(...) — composes one body-part's matrix from 7 premultiplied
    matrices: world translate → yaw → body scale → part offset → limb swing
    (rotation X) → pivot drop → part size. All scratch matrices are allocated
@@ -882,8 +893,10 @@ function partMat(wx,wy,wz,yaw,scl, px,py,pz, swing,drop, sx,sy,sz){
    walkAmt eases toward 1 (walking) / 0 (idle) so limbs don't snap; the walk
    phase advances by DISTANCE TRAVELED (v1.47 foot-skate fix, expert #22) via
    the shared phaseAdvance() helper — feet plant instead of sliding; legs
-   swing opposed (sw / -sw), arms counter-swing (asw / -asw); distant NPCs
-   get a static pose (ANIM_R=80u LOD — animation only near the camera). A
+   swing opposed (sw / -sw), arms counter-swing (asw / -asw); elbows and
+   knees bend per the hero rig's formulas (v1.57 expert #24): knees flex on
+   the swing-through, elbows flex on the counter-swing; distant NPCs get a
+   static pose (ANIM_R=80u LOD — animation only near the camera). A
    non-finite terrain height is reported as a "fell through world" glitch
    and clamped to the last good height. */
 function renderNPCs(dt,px,pz){
@@ -917,19 +930,49 @@ function renderNPCs(dt,px,pz){
       n.phase+=__pa*n.walkAmt;
       n.rx=n.x; n.rz=n.z;
     }
-    var sw=Math.sin(n.phase)*0.55*n.walkAmt;       // legs oppose...
-    var asw=Math.sin(n.phase)*0.45*n.walkAmt;      // ...arms counter-swing
+    var sP=Math.sin(n.phase);
+    var sw=sP*0.55*n.walkAmt;       // legs oppose...
+    var asw=sP*0.45*n.walkAmt;      // ...arms counter-swing
     if (!near){ sw=0; asw=0; }                    // distant: static pose
     var scl=n.scl, yaw=n.heading, wid=n.wid;
+    /* v1.57 JOINTED LIMBS (expert #24, Katherine Brooks): elbow/knee bend
+       angles mirror the hero rig — knees flex on the swing-through
+       (max(0,sin(phase-0.7))), elbows flex on the counter-swing; everything
+       scaled by walkAmt so idle NPCs keep the old straight-limb silhouette.
+       Segment lengths preserve the old totals exactly (arm 0.58=0.29+0.29,
+       leg 0.66=0.33+0.33) — ground contact height is unchanged, so the #22
+       foot-planting fix keeps working. */
+    var sK=Math.sin(n.phase-0.7);
+    var kneeL=(Math.max(0, sK)*0.95+0.06)*n.walkAmt;
+    var kneeR=(Math.max(0,-sK)*0.95+0.06)*n.walkAmt;
+    var elbL=(-0.22-Math.max(0,-sP)*0.35)*n.walkAmt;
+    var elbR=(-0.22-Math.max(0, sP)*0.35)*n.walkAmt;
     _mesh.torso.setMatrixAt(s, partMat(n.x,y,n.z,yaw,scl, 0,1.075,0, 0,0, 0.42*wid,0.55,0.26*wid));
     _mesh.head.setMatrixAt (s, partMat(n.x,y,n.z,yaw,scl, 0,1.49,0,  0,0, 0.24,0.28,0.24));
-    _mesh.armL.setMatrixAt(s, partMat(n.x,y,n.z,yaw,scl, -0.265*wid,1.28,0, -asw,-0.29, 0.11,0.58,0.11));
-    _mesh.armR.setMatrixAt(s, partMat(n.x,y,n.z,yaw,scl,  0.265*wid,1.28,0,  asw,-0.29, 0.11,0.58,0.11));
-    _mesh.legL.setMatrixAt(s, partMat(n.x,y,n.z,yaw,scl, -0.115*wid,0.80,0,  sw,-0.33, 0.15,0.66,0.15));
-    _mesh.legR.setMatrixAt(s, partMat(n.x,y,n.z,yaw,scl,  0.115*wid,0.80,0, -sw,-0.33, 0.15,0.66,0.15));
+    // upper arms: shoulder pivot, same swing the old one-piece arms used
+    _mesh.uArmL.setMatrixAt(s, partMat(n.x,y,n.z,yaw,scl, -0.265*wid,1.28,0, -asw,-0.145, 0.11,0.29,0.11));
+    _mesh.uArmR.setMatrixAt(s, partMat(n.x,y,n.z,yaw,scl,  0.265*wid,1.28,0,  asw,-0.145, 0.11,0.29,0.11));
+    /* forearms: the elbow sits at the upper-arm tip after the shoulder
+       swing — E=(px, 1.28-0.29*cos(swing), -0.29*sin(swing)) in scaled body
+       space; the forearm hangs from E with shoulder swing PLUS elbow bend. */
+    var eLy=1.28-0.29*Math.cos(asw), eLz= 0.29*Math.sin(asw);  // -asw swing: cos even, sin odd
+    var eRy=1.28-0.29*Math.cos(asw), eRz=-0.29*Math.sin(asw);
+    _mesh.fArmL.setMatrixAt(s, partMat(n.x,y,n.z,yaw,scl, -0.265*wid,eLy,eLz, -asw+elbL,-0.145, 0.10,0.29,0.10));
+    _mesh.fArmR.setMatrixAt(s, partMat(n.x,y,n.z,yaw,scl,  0.265*wid,eRy,eRz,  asw+elbR,-0.145, 0.10,0.29,0.10));
+    // thighs: hip pivot, same swing the old one-piece legs used
+    _mesh.thighL.setMatrixAt(s, partMat(n.x,y,n.z,yaw,scl, -0.115*wid,0.80,0,  sw,-0.165, 0.15,0.33,0.15));
+    _mesh.thighR.setMatrixAt(s, partMat(n.x,y,n.z,yaw,scl,  0.115*wid,0.80,0, -sw,-0.165, 0.15,0.33,0.15));
+    /* shins: the knee sits at the thigh tip after the hip swing —
+       K=(px, 0.80-0.33*cos(swing), -0.33*sin(swing)); the shin hangs from K
+       with hip swing PLUS knee bend. */
+    var kLy=0.80-0.33*Math.cos(sw), kLz=-0.33*Math.sin(sw);
+    var kRy=0.80-0.33*Math.cos(sw), kRz= 0.33*Math.sin(sw);   // -sw swing: cos even, sin odd
+    _mesh.shinL.setMatrixAt(s, partMat(n.x,y,n.z,yaw,scl, -0.115*wid,kLy,kLz,  sw+kneeL,-0.165, 0.13,0.33,0.13));
+    _mesh.shinR.setMatrixAt(s, partMat(n.x,y,n.z,yaw,scl,  0.115*wid,kRy,kRz, -sw+kneeR,-0.165, 0.13,0.33,0.13));
   }
   visCount=vis;
-  var mk=[_mesh.torso,_mesh.head,_mesh.armL,_mesh.armR,_mesh.legL,_mesh.legR];
+  var mk=[_mesh.torso,_mesh.head,_mesh.uArmL,_mesh.uArmR,_mesh.fArmL,_mesh.fArmR,
+          _mesh.thighL,_mesh.thighR,_mesh.shinL,_mesh.shinR];
   for (var i=0;i<mk.length;i++){ mk[i].count=vis; mk[i].instanceMatrix.needsUpdate=true; }
 }
 
@@ -950,7 +993,7 @@ function publishReport(){
 
 /* ---------------- init ---------------- */
 /* initNPCs() — allocates scratch matrices, builds the border, fills spawn
-   pools, creates all 1000 NPCs, the 40 render slots, and the 6
+   pools, creates all 1000 NPCs, the 40 render slots, and the 10
    InstancedMeshes (one per body part, unit-box geometry scaled per part).
    Meshes are frustumCulled=false (positions update every frame; culling the
    batch would hide everyone) with cast/receive shadows off for perf. */
@@ -976,11 +1019,15 @@ function initNPCs(){
     m.castShadow=false; m.receiveShadow=false;
     m.count=0; scene.add(m); return m;
   }
-  _mesh={ torso:im(), head:im(), armL:im(), armR:im(), legL:im(), legR:im() };
+  _mesh={ torso:im(), head:im(),
+           uArmL:im(), uArmR:im(), fArmL:im(), fArmR:im(),
+           thighL:im(), thighR:im(), shinL:im(), shinR:im() };
   /* v1.21 NPC KILL SWITCH: register meshes globally so __setNpcPaused can
      hide/show them instantly without touching the NPC data. */
   try {
-    window.__npcMeshes=[_mesh.torso,_mesh.head,_mesh.armL,_mesh.armR,_mesh.legL,_mesh.legR];
+    window.__npcMeshes=[_mesh.torso,_mesh.head,
+      _mesh.uArmL,_mesh.uArmR,_mesh.fArmL,_mesh.fArmR,
+      _mesh.thighL,_mesh.thighR,_mesh.shinL,_mesh.shinR];
   window.__npcSlots=slots; /* v1.52 BLOB SHADOWS (expert #16): expose render slots so blob_shadows.js can read NPC positions without touching this render loop */
     if (window.__npcPaused) for (var _hi=0; _hi<window.__npcMeshes.length; _hi++) window.__npcMeshes[_hi].visible=false;
   } catch(e){}

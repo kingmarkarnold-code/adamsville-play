@@ -116,12 +116,18 @@ function buildKid(r){
     m.position.set(x,y,z); (parent||g).add(m); return m;
   }
   var tw=P.torsoW||0.4, td=P.torsoD||0.26;
-  // legs (pivot at hip y=0.82)
+  // legs (pivot at hip y=0.82) — v1.57 JOINTED LIMBS (expert #24): thigh +
+  // shin with a knee pivot, using the recipe's own upperArm/forearm/thigh/
+  // shin params (previously unused). Shoe rides on the shin so feet follow
+  // the knee bend.
   function leg(sx){
     var piv=new THREE.Group(); piv.position.set(sx*(P.hipX||0.11),0.82,0); g.add(piv);
-    box((P.legW||0.13),0.62,(P.legW||0.13),vehLam(pants),0,-0.31,0,piv);
-    box(0.14,0.10,0.24,vehLam(shoeC),0,-0.66,0.04,piv);
-    return piv;
+    var th=P.thigh||0.31, sh=P.shin||0.31, lw=P.legW||0.13;
+    box(lw,th,lw,vehLam(pants),0,-th/2,0,piv);                       // thigh
+    var knee=new THREE.Group(); knee.position.set(0,-th,0); piv.add(knee);
+    box(lw*0.87,sh,lw*0.87,vehLam(pants),0,-sh/2,0,knee);            // shin (slimmer)
+    box(0.14,0.10,0.24,vehLam(shoeC),0,-sh-0.05,0.04,knee);          // shoe
+    return {hip:piv,knee:knee};
   }
   var legL=leg(-1), legR=leg(1);
   // torso — front face carries the character's shirt design (original art only)
@@ -131,11 +137,15 @@ function buildKid(r){
       tm.position.set(0,1.10,0); g.add(tm); }
     else box(tw,0.55,td,vehLam(shirt),0,1.10,0);
   })();
-  // arms (pivot at shoulder y=1.30)
+  // arms (pivot at shoulder y=1.30) — v1.57 JOINTED LIMBS (expert #24):
+  // upper arm + forearm with an elbow pivot.
   function arm(sx){
     var piv=new THREE.Group(); piv.position.set(sx*((P.shoulderX||0.24)),1.30,0); g.add(piv);
-    box((P.armW||0.10),0.58,(P.armW||0.10),vehLam(skin),0,-0.29,0,piv);
-    return piv;
+    var ua=P.upperArm||0.29, fa=P.forearm||0.29, aw=P.armW||0.10;
+    box(aw,ua,aw,vehLam(skin),0,-ua/2,0,piv);                        // upper arm
+    var elb=new THREE.Group(); elb.position.set(0,-ua,0); piv.add(elb);
+    box(aw*0.9,fa,aw*0.9,vehLam(skin),0,-fa/2,0,elb);                // forearm (slimmer)
+    return {sh:piv,elb:elb};
   }
   var armL=arm(-1), armR=arm(1);
   // head + hair
@@ -160,7 +170,9 @@ function buildKid(r){
     box(hs+0.03,0.10,hs+0.03,vehLam(hairC),0,1.70,0);          // top
   }
   g.scale.setScalar(scl);
-  g.userData={armL:armL,armR:armR,legL:legL,legR:legR,phase:Math.random()*6.28};
+  g.userData={armL:armL.sh,armR:armR.sh,legL:legL.hip,legR:legR.hip,
+              elbL:armL.elb,elbR:armR.elb,kneeL:legL.knee,kneeR:legR.knee,
+              phase:Math.random()*6.28};
   return g;
 }
 
@@ -747,12 +759,23 @@ function updateRefNPCs(dt){
            render-side k.phase+=dt*7 double-counted it, so it's removed —
            the pose below just reads k.phase. */
         if (k.moving){
-          var sw=Math.sin(k.phase)*0.5;
+          var sw=Math.sin(k.phase)*0.5, sP2=Math.sin(k.phase), sK2=Math.sin(k.phase-0.7);
           u.armL.rotation.x=sw; u.armR.rotation.x=-sw;
           u.legL.rotation.x=-sw; u.legR.rotation.x=sw;
+          /* v1.57 JOINTED LIMBS (expert #24, Katherine Brooks): elbows flex
+             with their own arm's forward swing, knees flex on the
+             swing-through — same hero-rig formulas as the main NPC system
+             (armL swings +sw like the hero's armR, legL swings -sw like the
+             hero's legR, hence the mirrored signs). */
+          u.elbL.rotation.x=-0.22-Math.max(0, sP2)*0.35;
+          u.elbR.rotation.x=-0.22-Math.max(0,-sP2)*0.35;
+          u.kneeL.rotation.x=Math.max(0,-sK2)*0.95+0.06;
+          u.kneeR.rotation.x=Math.max(0, sK2)*0.95+0.06;
         } else {
           u.armL.rotation.x*=0.9; u.armR.rotation.x*=0.9;
           u.legL.rotation.x*=0.9; u.legR.rotation.x*=0.9;
+          u.elbL.rotation.x*=0.9; u.elbR.rotation.x*=0.9;
+          u.kneeL.rotation.x*=0.9; u.kneeR.rotation.x*=0.9;
         }
       }
     }
