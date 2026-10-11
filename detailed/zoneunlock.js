@@ -66,18 +66,54 @@ if (window.ZONEUNLOCK) return;  // single instance guard
    Adamsville (start) contains home base 535 Dollar Mill Rd (1953, 6813). // RESCALED 2026-10-10 */
 var ZONES=[
   // Adamsville band — extends north to the map edge (Joshua 2026-10-10)
-  {id:'mableton',    name:'Mableton',      xMin:-200, xMax:2147, zMin:-200, zMax:4218},
-  {id:'adamsville',name:'Adamsville',   xMin:-832, xMax:8377, zMin:-4249, zMax:8267, start:true},  // RESCALED 2026-10-10: true 1:1 (was x[2147,5398] z[-200,4218])
-  {id:'downtown',  name:'Downtown',     xMin:5398, xMax:8200, zMin:-200, zMax:2202},
-  {id:'eastatlanta',name:'East Atlanta',xMin:5398, xMax:8200, zMin:2202, zMax:4218},
+  // SCALE (expert #25 fix, 2026-10-11): Adamsville was rescaled to true 1:1
+  // (scale 2.833) but other zones remain at scale 1.0. Zones at different
+  // scales use incompatible coordinate systems and cannot be mixed in one
+  // map. The zone system is now scale-aware: only zones matching the
+  // currently-loaded map's scale are considered for lock enforcement,
+  // minimap display, and the zone picker. This keeps the UI honest —
+  // it no longer shows "locked" zones that don't exist in the current map.
+  {id:'mableton',    name:'Mableton',      xMin:-200, xMax:2147, zMin:-200, zMax:4218, scale:1.0},
+  {id:'adamsville',name:'Adamsville',   xMin:-832, xMax:8377, zMin:-4249, zMax:8267, start:true, scale:2.833},  // RESCALED 2026-10-10: true 1:1 (was x[2147,5398] z[-200,4218])
+  {id:'downtown',  name:'Downtown',     xMin:5398, xMax:8200, zMin:-200, zMax:2202, scale:1.0},
+  {id:'eastatlanta',name:'East Atlanta',xMin:5398, xMax:8200, zMin:2202, zMax:4218, scale:1.0},
   // Row 2 (south of Adamsville) — REVERTED 2026-10-10: Joshua asked to undo
   // the 70/30 horizontal split; these three zones run Cascade to the
   // south map edge again (z 4218 -> 12200). Renamed 2026-10-10 per Joshua:
   // Union City, South Fulton, Riverdale. Boundaries to be readjusted later.
-  {id:'unioncity',  name:'Union City',    xMin:-200, xMax:2147, zMin:4218, zMax:12200},
-  {id:'southfulton',name:'South Fulton',   xMin:2147, xMax:5398, zMin:4218, zMax:12200},
-  {id:'riverdale',  name:'Riverdale',     xMin:5398, xMax:8200, zMin:4218, zMax:12200},
+  {id:'unioncity',  name:'Union City',    xMin:-200, xMax:2147, zMin:4218, zMax:12200, scale:1.0},
+  {id:'southfulton',name:'South Fulton',   xMin:2147, xMax:5398, zMin:4218, zMax:12200, scale:1.0},
+  {id:'riverdale',  name:'Riverdale',     xMin:5398, xMax:8200, zMin:4218, zMax:12200, scale:1.0},
 ];
+
+/* ---------------- scale awareness (expert #25, 2026-10-11) ----------------
+   Returns the scale of the currently-loaded map. Adamsville's zone files
+   were rescaled to true 1:1 (scale ~2.833); all other zones remain at 1.0.
+   Only zones matching the current map's scale are valid for lock
+   enforcement and UI display — mixing scales would compare coordinates
+   from incompatible systems and the locks could never trigger correctly. */
+function getCurrentScale(){
+  try{
+    // Prefer ZONELOADER's current zone lookup
+    if(typeof ZONELOADER!=='undefined' && ZONELOADER.currentZone){
+      var cz=ZONELOADER.currentZone;
+      for(var i=0;i<ZONES.length;i++){
+        if(ZONES[i].id===cz && ZONES[i].scale) return ZONES[i].scale;
+      }
+    }
+  }catch(e){}
+  // Default: Adamsville rescaled map (the map Joshua actually plays)
+  return 2.833;
+}
+/* Zones compatible with the currently-loaded map (same scale, within tolerance) */
+function compatibleZones(){
+  var s=getCurrentScale(), out=[];
+  for(var i=0;i<ZONES.length;i++){
+    var zsc=ZONES[i].scale||1.0;
+    if(Math.abs(zsc-s)<0.01) out.push(ZONES[i]);
+  }
+  return out;
+}
 
 /* ---------------- persistence ---------------- */
 var LS_KEY='sa_zoneunlock_v1';
@@ -102,8 +138,13 @@ function dlog(msg){
 
 /* ---------------- zone helpers ---------------- */
 function zoneAt(x,z){
-  for(var i=0;i<ZONES.length;i++){
-    var zn=ZONES[i];
+  // Expert #25: only check zones compatible with the current map's scale.
+  // In the rescaled Adamsville map, the old-scale zones' bounds are
+  // meaningless (different coordinate system) — checking them would
+  // return phantom "locked" zones the player can never actually enter.
+  var czones=compatibleZones();
+  for(var i=0;i<czones.length;i++){
+    var zn=czones[i];
     if(x>=zn.xMin && x<zn.xMax && z>=zn.zMin && z<zn.zMax) return zn;
   }
   return null;
@@ -113,14 +154,16 @@ function isLockedZone(x,z){
   var zn=zoneAt(x,z);
   return zn ? !isUnlocked(zn.id) : false;  // outside all zones = treat as locked
 }
-// Zones touching the given zone (share an edge)
+// Zones touching the given zone (share an edge) — same map scale only
+// (expert #25: adjacency across incompatible scales is meaningless)
 function adjacentZones(zoneId){
+  var czones=compatibleZones();
   var zn=null, i;
-  for(i=0;i<ZONES.length;i++) if(ZONES[i].id===zoneId) zn=ZONES[i];
+  for(i=0;i<czones.length;i++) if(czones[i].id===zoneId) zn=czones[i];
   if(!zn) return [];
   var out=[];
-  for(i=0;i<ZONES.length;i++){
-    var o=ZONES[i];
+  for(i=0;i<czones.length;i++){
+    var o=czones[i];
     if(o.id===zoneId) continue;
     // share an edge: x-ranges overlap AND z-edges touch, or vice versa
     var xOverlap = o.xMin < zn.xMax && o.xMax > zn.xMin;
@@ -142,8 +185,9 @@ function zoneCellCount(zn){
   return w*h;
 }
 function explorationPct(zoneId){
+  var czones=compatibleZones();
   var zn=null;
-  for(var i=0;i<ZONES.length;i++) if(ZONES[i].id===zoneId) zn=ZONES[i];
+  for(var i=0;i<czones.length;i++) if(czones[i].id===zoneId) zn=czones[i];
   if(!zn) return 0;
   var total=zoneCellCount(zn), visited=0;
   // count visited cells in this zone (iterate state.visited keys)
@@ -157,8 +201,11 @@ function unlockZone(id){
   if(state.unlocked[id]) return false;
   state.unlocked[id]=true;
   save();
+  var czones=compatibleZones();
   var zn=null;
-  for(var i=0;i<ZONES.length;i++) if(ZONES[i].id===id) zn=ZONES[i];
+  for(var i=0;i<czones.length;i++) if(czones[i].id===id) zn=czones[i];
+  // fall back to full list for the name if not in this map's scale
+  if(!zn) for(var j=0;j<ZONES.length;j++) if(ZONES[j].id===id) zn=ZONES[j];
   dlog('Zone unlocked: '+(zn?zn.name:id));
   // notify player via toast if available
   try{
@@ -253,6 +300,50 @@ function getUnlockHint(lockedZone){
   for(var i=0;i<adj.length;i++) if(isUnlocked(adj[i].id)) return adj[i].name;
   return 'Adamsville';
 }
+/* ---------------- per-frame invisible wall (expert #25, 2026-10-11) ----------------
+   trackPlayer() runs at 2Hz which is too slow to stop fast movement —
+   a car can cross deep into a locked zone between ticks. This runs every
+   frame: it remembers the last position that was NOT in a locked zone,
+   and if the player/car is now inside a locked zone, it snaps them back
+   to that last-good position (an invisible wall). Call it every frame
+   AFTER movement updates, BEFORE render. Cheap: one zoneAt() lookup. */
+var _lastGoodX=null, _lastGoodZ=null, _lastGoodDriving=false;
+var _wallMsgT=0;
+function blockLockedMovement(){
+  var px, pz, driving=false;
+  try{
+    if(typeof car!=='undefined'&&car&&car.driving){ px=car.x; pz=car.z; driving=true; }
+    else if(typeof player!=='undefined'&&player){ px=player.x; pz=player.z; }
+    else return;
+  }catch(e){ return; }
+  if(!isFinite(px)||!isFinite(pz)) return;
+  var zn;
+  try{ zn=zoneAt(px,pz); }catch(e){ return; }
+  if(zn && !isUnlocked(zn.id)){
+    // Inside a locked zone: revert to last good position (invisible wall)
+    if(_lastGoodX!==null && isFinite(_lastGoodX)){
+      try{
+        if(driving && typeof car!=='undefined'&&car){ car.x=_lastGoodX; car.z=_lastGoodZ; }
+        else if(typeof player!=='undefined'&&player){
+          player.x=_lastGoodX; player.z=_lastGoodZ;
+          if(player.mesh) player.mesh.position.set(_lastGoodX, player.mesh.position.y, _lastGoodZ);
+        }
+      }catch(e){}
+    }
+    // Throttled feedback message
+    var now=Date.now();
+    if(now-_wallMsgT>4000){
+      _wallMsgT=now;
+      try{
+        if(typeof showToast==='function') showToast('🔒 '+zn.name+' is locked — explore '+getUnlockHint(zn)+' to unlock it');
+      }catch(e){}
+      dlog('Invisible wall blocked entry to: '+zn.name);
+    }
+    return;
+  }
+  // Position is fine (unlocked zone or outside all zones): remember it
+  _lastGoodX=px; _lastGoodZ=pz; _lastGoodDriving=driving;
+}
 function pushBackToUnlocked(px,pz){
   // Search outward from player for the nearest unlocked position.
   // Simple approach: try the 4 cardinal directions at increasing distances.
@@ -305,8 +396,12 @@ function setCullDist(d){
    as dark overlays. Expects the minimap's toMap function and context. */
 function drawZoneOverlay(mm, toMap, px, pz, range, R){
   try{
-    for(var i=0;i<ZONES.length;i++){
-      var zn=ZONES[i];
+    // Expert #25: only draw zones compatible with the current map's scale.
+    // Drawing old-scale "locked" zones on the rescaled Adamsville minimap
+    // was the lie — those rectangles don't correspond to anything real.
+    var czones=compatibleZones();
+    for(var i=0;i<czones.length;i++){
+      var zn=czones[i];
       if(isUnlocked(zn.id)) continue;
       // draw locked zone as semi-transparent dark rect
       // only if any part is in view
@@ -348,16 +443,19 @@ window.ZONEUNLOCK={
   unlockZone:unlockZone,
   explorationPct:explorationPct,
   adjacentZones:adjacentZones,
+  compatibleZones:compatibleZones,  // expert #25: zones valid in this map
+  getCurrentScale:getCurrentScale,  // expert #25: current map's scale
   shouldCull:shouldCull,
   inActiveRange:inActiveRange,
   canOperateAt:canOperateAt,
   get CULL_DIST(){ return state.cullDist; },
   setCullDist:setCullDist,
   trackPlayer:trackPlayer,
+  blockLockedMovement:blockLockedMovement,  // expert #25: per-frame invisible wall
   drawZoneOverlay:drawZoneOverlay,
   get log(){ return activityLog.slice(); },
   // debug/admin
-  unlockAll:function(){ for(var i=0;i<ZONES.length;i++) state.unlocked[ZONES[i].id]=true; save(); dlog('All zones unlocked (admin)'); },
+  unlockAll:function(){ var cz=compatibleZones(); for(var i=0;i<cz.length;i++) state.unlocked[cz[i].id]=true; save(); dlog('All zones unlocked (admin)'); },
   reset:function(){ state.unlocked={adamsville:true}; state.visited={}; save(); dlog('Zone progress reset'); },
 };
 

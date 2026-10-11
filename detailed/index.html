@@ -7659,7 +7659,13 @@ function showZonePicker(){
     var list=document.getElementById('zonepick-list');
     list.innerHTML='';
     var zones=[];
-    try{ zones=(window.ZONEUNLOCK && ZONEUNLOCK.zones) || []; }catch(e){}
+    // Expert #25 (2026-10-11): only list zones compatible with the current
+    // map's scale. Showing old-scale zones in the rescaled Adamsville map
+    // (or vice versa) would offer destinations that don't exist here.
+    try{
+      if(window.ZONEUNLOCK && ZONEUNLOCK.compatibleZones) zones=ZONEUNLOCK.compatibleZones();
+      else zones=(window.ZONEUNLOCK && ZONEUNLOCK.zones) || [];
+    }catch(e){}
     if (!zones.length){
       // ZoneUnlock missing — fall back to the classic 535 spawn.
       startNewGame();
@@ -9422,6 +9428,9 @@ function simTick(dt){
   drawMinimap(dt);
   // v1.15 ZONE UNLOCK + CULLING (Joshua 2026-10-10): track player for zone
   // exploration, enforce locked-zone boundaries, update culling state.
+  // Expert #25 (2026-10-11): per-frame invisible wall runs BEFORE the throttled
+  // tracker — snaps player/car back if they entered a locked zone this frame.
+  try{ if(window.ZONEUNLOCK&&window.ZONEUNLOCK.blockLockedMovement) window.ZONEUNLOCK.blockLockedMovement(); }catch(e){}
   try{ if(window.ZONEUNLOCK) window.ZONEUNLOCK.trackPlayer(dt); }catch(e){}
   try{ if(window.SATVIEW) window.SATVIEW.update(dt); }catch(e){}  // v1.16 SATELLITE VIEW per-frame camera/labels
   /* v1.20 PERFORMANCE: Throttle NPC AI on weak hardware to 10Hz.

@@ -57,8 +57,8 @@
     {
       "name": "github-config.js",
       "size": 3695,
-      "sha256": "3468bac6c2bd9bc89ff4a7b777d4ba3c6767334328accffc10a6bfc63541ea95",
-      "hash": "3468bac6c2bd9bc89ff4a7b777d4ba3c6767334328accffc10a6bfc63541ea95",
+      "sha256": "c152eb69e5ceff523b4974a8dbe1fe8cb5d1c1980eaabb05bd783c617520829b",
+      "hash": "c152eb69e5ceff523b4974a8dbe1fe8cb5d1c1980eaabb05bd783c617520829b",
       "md5": "d08f513d201195a0354428aa827314e5"
     },
     {
@@ -94,9 +94,9 @@
     },
     {
       "name": "index.html",
-      "size": 815768,
-      "sha256": "da2392dc4c642d7d24e088978b273fdbbb79e73441a4c6ddc9e27a94491711f0",
-      "hash": "da2392dc4c642d7d24e088978b273fdbbb79e73441a4c6ddc9e27a94491711f0"
+      "size": 816382,
+      "sha256": "84ab07a2ec63375f9d25bd6d1701917ede1adbed6541e0b13c466dfe66872e9e",
+      "hash": "84ab07a2ec63375f9d25bd6d1701917ede1adbed6541e0b13c466dfe66872e9e"
     },
     {
       "name": "infracrew_system.js",
@@ -342,9 +342,9 @@
     },
     {
       "name": "zoneunlock.js",
-      "size": 15371,
-      "sha256": "f4937cb7a32d5e12de4a8ffe3bc7255aa1f04831ec037d1d495a8766e6fa96f9",
-      "hash": "f4937cb7a32d5e12de4a8ffe3bc7255aa1f04831ec037d1d495a8766e6fa96f9"
+      "size": 20237,
+      "sha256": "2248743d8873d7545feea2ba6366d028dabc102ef434fe0785f74068aedbcc2e",
+      "hash": "2248743d8873d7545feea2ba6366d028dabc102ef434fe0785f74068aedbcc2e"
     },
     {
       "name": "toon_mats.js",
@@ -353,6 +353,6 @@
       "hash": "fd01a802a68d0322d9e7de7bf66e217ff9e4773846806dd95325628fa69ea49e"
     }
   ],
-  "ui_version": "2026.10.11.159",
+  "ui_version": "2026.10.11.160",
   "version": "2026.10.11.137"
 }
