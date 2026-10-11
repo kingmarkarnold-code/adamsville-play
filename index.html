@@ -1006,6 +1006,28 @@ try{
   window.__isAPKLaunch=isAPK;  // informational: which default set was applied
 })();
 window.__launcherConfirmed = false;  // set true when user hits START GAME
+/* v1.28 NO-DOWNLOAD-BEFORE-OPTIONS (Joshua 2026-10-10: "nothing downloads
+   until after the player has selected the options"). Any network fetch that
+   is not required to render the options screen itself must wait for the
+   player to confirm. __whenConfirmed(fn) runs fn immediately if the player
+   already confirmed, otherwise queues it. __flushConfirmQueue() runs the
+   queue — called from both confirm paths (START GAME click and the 30s
+   auto-confirm fallback). The <script src> downloads are exempt: the page
+   cannot render the options UI without its own code. */
+window.__confirmQueue = [];
+window.__whenConfirmed = function(fn){
+  try{
+    if (window.__launcherConfirmed){ fn(); return; }
+    window.__confirmQueue.push(fn);
+  }catch(e){}
+};
+window.__flushConfirmQueue = function(){
+  try{
+    var q = window.__confirmQueue || [];
+    window.__confirmQueue = [];
+    for (var i = 0; i < q.length; i++){ try{ q[i](); }catch(e){} }
+  }catch(e){}
+};
 (function __loadLaunchOpts(){
   try {
     var saved = null;
@@ -1133,6 +1155,8 @@ window.__applyCrewMaster = function(on){
       }
       window.__saveLaunchOpts();
       window.__launcherConfirmed = true;
+      /* v1.28: options confirmed — release any deferred network fetches. */
+      try{ if(typeof window.__flushConfirmQueue==='function') window.__flushConfirmQueue(); }catch(e){}
       launcher.classList.add('hidden');
       if (needReload) {
         try { window.location.reload(); } catch(e){}
@@ -1293,10 +1317,13 @@ var MAPVER=(function(){
     // Web only: on the APK the native bridge is the source of truth (the
     // bundled manifest can be older than the downloaded map).
     if (!b){
+      /* v1.28: no downloads before the player confirms launch options. */
       try{
-        fetch('map-manifest.json',{cache:'no-store'}).then(function(r){ return r.ok?r.json():null; })
-        .then(function(m){ if(m){ active=m.map_version||m.version||'unknown'; lsSet(LS_ACTIVE,active); } })
-        .catch(function(){});
+        window.__whenConfirmed(function(){
+          fetch('map-manifest.json',{cache:'no-store'}).then(function(r){ return r.ok?r.json():null; })
+          .then(function(m){ if(m){ active=m.map_version||m.version||'unknown'; lsSet(LS_ACTIVE,active); } })
+          .catch(function(){});
+        });
       }catch(e){}
     }
     return active;
@@ -1312,6 +1339,8 @@ var MAPVER=(function(){
      (red dot + admin tag). Cheap (~2KB), read-only, never disturbs play. */
   // Is a newer map staged/available? (never touches the running session)
   function checkPending(){
+    /* v1.28: no downloads before the player confirms launch options. */
+    if (!window.__launcherConfirmed) return;
     var b=mapBridge();
     if (b && b.hasPendingMapUpdate){
       try{
@@ -1403,8 +1432,11 @@ var MAPVER=(function(){
     if (_hadRn){ try{ updateGearBadge(); refreshAdmTags(); }catch(e){} }
     // First check shortly after load, then every 2 minutes (Joshua's spec).
     // Cheap: 4 small manifest fetches (~1-2KB each). Never disrupts play.
-    setTimeout(checkPending, 30000);
-    setInterval(checkPending, 2*60*1000);
+    // v1.28: timers start only after the player confirms launch options.
+    window.__whenConfirmed(function(){
+      setTimeout(checkPending, 30000);
+      setInterval(checkPending, 2*60*1000);
+    });
     /* v1.13: LIVE red dot — check immediately when the user returns. */
     try{
       document.addEventListener('visibilitychange',function(){
@@ -1557,13 +1589,16 @@ var ASSETVER=(function(){
       if (v) lsSet(lsKey(t),v);
     }
     // Web fallback: read each manifest once at boot.
+    // v1.28: no downloads before the player confirms launch options.
     if (!b){
       for (var j=0;j<TYPES.length;j++)(function(t){
         if (active[t] && active[t]!=='unknown') return;
         try{
-          fetch(manifestUrl(t),{cache:'no-store'}).then(function(r){ return r.ok?r.json():null; })
-          .then(function(m){ if(m){ var v=m[verField(t)]||m.version||'unknown'; active[t]=v; lsSet(lsKey(t),v); } })
-          .catch(function(){});
+          window.__whenConfirmed(function(){
+            fetch(manifestUrl(t),{cache:'no-store'}).then(function(r){ return r.ok?r.json():null; })
+            .then(function(m){ if(m){ var v=m[verField(t)]||m.version||'unknown'; active[t]=v; lsSet(lsKey(t),v); } })
+            .catch(function(){});
+          });
         }catch(e){}
       })(TYPES[j]);
     }
@@ -1580,6 +1615,8 @@ var ASSETVER=(function(){
      Cheap (~1-2KB per manifest), read-only, never disrupts play. The MAPVER
      pending state is also folded in so the gear dot covers the map too. */
   function checkPending(){
+    /* v1.28: no downloads before the player confirms launch options. */
+    if (!window.__launcherConfirmed) return;
     var b=bridge();
     var anyNew=false;
     for (var i=0;i<TYPES.length;i++){
@@ -2011,8 +2048,11 @@ var ASSETVER=(function(){
     detectActive();
     // Joshua's rule: UI/vehicle/music updates apply automatically on launch.
     try{ if (autoApplyBootUpdates()) return; }catch(e){}
-    setTimeout(function(){ checkPending(); }, 35000);
-    setInterval(checkPending, 2*60*1000); // Joshua's spec: check every 2 minutes.
+    /* v1.28: timers start only after the player confirms launch options. */
+    window.__whenConfirmed(function(){
+      setTimeout(function(){ checkPending(); }, 35000);
+      setInterval(checkPending, 2*60*1000); // Joshua's spec: check every 2 minutes.
+    });
     /* v1.13: LIVE red dot — check immediately when the user returns to the
        game (tab refocus / app foreground). Catches updates pushed while they
        were away. */
@@ -6152,7 +6192,7 @@ function makeCar(x,z,yaw,color,drivable,kind){
   scene.add(mesh);
   var st={ x:x, z:z, yaw:yaw, speed:0, mesh:mesh, driving:false,
     damage:0, dead:false, sunk:false, sinking:false, sinkT:0, lastHit:0,
-    fuel:100, _refuelT:0, _lowFuelWarned:false,
+    fuel:100, _refuelT:0, _lowFuelWarned:false, _vLowFuelWarned:false, _outOfGasWarned:false, _repairT:0,
     dented:false, smoke:[], steerWheel:null, camMode:'chase',
     kind:kind, eyeH:vt.eyeH, lookH:vt.lookH, driverX:vt.driverX,
     paint:paint, rimStyle:rimStyle, halfL:vt.halfL, halfW:vt.halfW };
@@ -6229,8 +6269,15 @@ var car=null;
 function addDamage(c, amt){
   if (c.dead||c.sunk||c.sinking) return;
   c.damage=Math.min(100, c.damage+amt);
+  /* v1.31 CRASH NOTIFY (Joshua): tell the player when the van takes a hit.
+     addDamage is only ever called for the player's van, so these toasts are
+     always about the player's crash. Severity scales with impact force. */
+  try{
+    if (amt>=18) showToast('CRASH! The van is damaged', 2400);
+    else if (amt>=7) showToast('You hit something!', 1800);
+  }catch(e){}
   if (c.damage>=35 && !c.dented){ c.dented=true; applyDents(c); }
-  if (c.damage>=100 && !c.dead){ c.dead=true; c.speed=0; }
+  if (c.damage>=100 && !c.dead){ c.dead=true; c.speed=0; try{ showToast('ENGINE DEAD - the van will not run', 3200); }catch(e){} }
   updateDamageHUD();
 }
 function applyDents(c){
@@ -6434,6 +6481,22 @@ actionBtn.addEventListener('click', function(){
     setDrivingUI(true); updateDamageHUD();
     try{ hideNpcDialog(); }catch(e){}   // v1.14: end any NPC chat when driving off
     try{Report.note('enter-car',{x:Math.round(car.x),z:Math.round(car.z),kind:car.kind||'?'});}catch(e){}
+  } else if (a==='tow-gas'){
+    /* v1.31 OUT-OF-GAS TOW (Joshua): tow the empty van to the nearest gas
+       station lot with a splash of fuel (12%) - enough to reach the pump and
+       refuel properly. Fair recovery, not a free full tank. */
+    try{
+      var _gs=(typeof nearestGasStation==='function')?nearestGasStation(car.x,car.z,1e9):null;
+      if (_gs){
+        var _spot=(_gs.pumpSpots&&_gs.pumpSpots[0])||{x:_gs.x,z:_gs.z};
+        car.x=_spot.x; car.z=_spot.z; car.yaw=_gs.faceAngle||0; car.speed=0;
+        car.fuel=12; car._outOfGasWarned=false; car._lowFuelWarned=true; car._vLowFuelWarned=true;
+        try{ car.mesh.position.set(car.x,heightAt(car.x,car.z)+0.1,car.z); }catch(e){}
+        try{ car.mesh.rotation.y=car.yaw; }catch(e){}
+        try{ showToast('Towed to gas station - 12% fuel, pull up to a pump',3200); }catch(e){}
+        try{ if (typeof Report!=='undefined'&&Report.note) Report.note('van','tow-gas',{x:Math.round(car.x),z:Math.round(car.z)}); }catch(e){}
+      } else { try{ showToast('No gas station found',2000); }catch(e){} }
+    }catch(e){ try{ showToast('Tow failed',2000); }catch(x){} }
   } else if (a==='exit-car'){
     exitCar(false);
   } else if (a==='enter-front'){
@@ -7610,7 +7673,7 @@ function updateCar(dt){
     return;
   }
   if (car.sunk) return;
-  var canDrive=!car.dead;  // engine dead at 100 damage: no throttle, no reverse
+  var canDrive=!car.dead && car.fuel>0;  // v1.31: engine dead at 100 damage OR empty tank: no throttle, no reverse
   var accel=0;
   if (canDrive){
     if (drive.gas) accel+=22*SPD_SCALE;
@@ -7658,10 +7721,20 @@ function updateCar(dt){
   // drag + rolling resistance
   car.speed -= car.speed*0.6*dt;
   if (!drive.gas && !drive.brake) car.speed -= Math.sign(car.speed)*4*SPD_SCALE*dt;
-  car.speed=Math.max(-VAN_TOP_US/3, Math.min(VAN_TOP_US, car.speed));  // v1.8: 165mph top
+  /* v1.31 DAMAGE PERF (Joshua): a beat-up van loses a little top speed - fair, not punishing. */
+  var _dmgScale=1-0.3*((car.damage||0)/100);
+  car.speed=Math.max(-VAN_TOP_US/3, Math.min(VAN_TOP_US*_dmgScale, car.speed));  // v1.8: 165mph top
   if (Math.abs(car.speed)<0.05) car.speed=0;
   // v1.12 FUEL (simple sim): drains with driving; refuel at any pump
+  /* v1.31 FUEL (Joshua): idle sips slowly; running dry stalls the van and notifies. */
+  var _fuelBefore=car.fuel;
   car.fuel=Math.max(0, car.fuel-Math.abs(car.speed)*dt*0.02);
+  if (car.driving && Math.abs(car.speed)<0.5) car.fuel=Math.max(0, car.fuel-0.12*dt);  // idle sip: ~14 min idling per tank
+  if (_fuelBefore>0 && car.fuel<=0 && !car._outOfGasWarned){
+    car._outOfGasWarned=true;
+    try{ showToast('OUT OF GAS - the van stalled', 4000); }catch(e){}
+    try{ if (typeof Report!=='undefined'&&Report.note) Report.note('van','out-of-gas',{x:Math.round(car.x),z:Math.round(car.z)}); }catch(e){}
+  } else if (car.fuel>1){ car._outOfGasWarned=false; }
   try{
     if (car.fuel<100 && Math.abs(car.speed)<1.5 && typeof GAS_PUMP_SPOTS!=='undefined'){
       var _np=null,_nd=81;   // 9u radius
@@ -8083,10 +8156,15 @@ function updateGasHUD(){
   if(isMobileUI()){ f.style.width='100%'; f.style.height=pct+'%'; }
   else { f.style.width=pct+'%'; f.style.height='100%'; }
   f.style.background=pct<20?'#ff5b5b':(pct<45?'#ffd75e':'#3fd34f');
-  if (pct<20 && !car._lowFuelWarned){
+  /* v1.31 FUEL WARNINGS (Joshua): tiered — 25% heads-up, 10% urgent. */
+  if (pct<10 && !car._vLowFuelWarned){
+    car._vLowFuelWarned=true;
+    try{ showToast('VERY LOW FUEL - find a gas station now!',3200); }catch(e){}
+  } else if (pct>=10){ car._vLowFuelWarned=false; }
+  if (pct<25 && !car._lowFuelWarned){
     car._lowFuelWarned=true;
-    try{ showToast('LOW FUEL — pull up to a gas pump',2600); }catch(e){}
-  } else if (pct>=20){ car._lowFuelWarned=false; }
+    try{ showToast('LOW FUEL - pull up to a gas pump',2600); }catch(e){}
+  } else if (pct>=25){ car._lowFuelWarned=false; }
 }
 /* v1.14 NPC conversation panel (Joshua: non-crew NPCs talk about Atlanta).
    showNpcDialog(name,line) opens the bottom sheet; hideNpcDialog() closes it.
@@ -8440,6 +8518,15 @@ function updateActionButton(){
         else { act='exit-bus'; label='REQUEST STOP'; }
       }
       if (!act){
+        /* v1.31 OUT-OF-GAS TOW (Joshua): van stalled on empty and the player
+           is on foot nearby - offer a tow to the nearest gas station instead
+           of leaving the player soft-locked with a dead van. */
+        if (typeof car!=='undefined' && car && !car.driving && car.fuel<=0){
+          var _tdx=player.x-car.x, _tdz=player.z-car.z;
+          if ((_tdx*_tdx+_tdz*_tdz)<36){ act='tow-gas'; label='TOW TO GAS STATION'; }
+        }
+      }
+      if (!act){
         /* v1.29: nearest usable car comes from the tracker (4.5u radius,
            wrecks/sunk/driven filtered at track time). */
         pendingCar=proxCars?proxCars.nearest:null;
@@ -8594,6 +8681,19 @@ function animate(){
     }
   }catch(e){}
   if (car.driving) updateCar(dt); else updatePlayer(dt);
+  /* v1.31 AUTO-REPAIR (Joshua): a parked van slowly fixes itself - fair, not
+     punishing. 1 damage point per 5s parked (~8 min for a full rebuild). */
+  try{
+    if (!car.driving && car.damage>0 && !car.sunk && !car.sinking && !car.dead){
+      car._repairT=(car._repairT||0)+dt;
+      if (car._repairT>=5){
+        car._repairT=0;
+        car.damage=Math.max(0,car.damage-1);
+        if (car.dented && car.damage<35) car.dented=false;
+        if (typeof updateDamageHUD==='function') updateDamageHUD();
+      }
+    } else { car._repairT=0; }
+  }catch(e){}
   try{ updateVehicleCosmetics(dt); }catch(e){}
   updateCamera(dt);
   /* v1.28 PERF (FIX 3): throttle updateActionButton() to ~8Hz instead of
@@ -8928,6 +9028,8 @@ setTimeout(function(){
     }
     if(pending>0) return;  // assets still arriving — don't auto-confirm yet
     window.__launcherConfirmed = true;
+    /* v1.28: auto-confirmed — release any deferred network fetches. */
+    try{ if(typeof window.__flushConfirmQueue==='function') window.__flushConfirmQueue(); }catch(e){}
     try { if (typeof window.__saveLaunchOpts === 'function') window.__saveLaunchOpts(); } catch(e){}
     var launcher=document.getElementById('launcher');
     if(launcher) launcher.classList.add('hidden');
@@ -8999,6 +9101,7 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <script src="surveyfleet_system.js"></script>
 <script src="cityworkforce.js">
 <script src="inspector_crew.js"></script>
+<script src="police_system.js"></script>
 <script src="github-config.js"></script>
 <script src="github_reports.js"></script>
 <script src="hq_staff_system.js"></script>
