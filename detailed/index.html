@@ -6442,13 +6442,36 @@ function makeCar(x,z,yaw,color,drivable,kind){
 }
 var car=null;
 (function(){
-  // Joshua's GMC Safari van (brown/gold two-tone), parked in the 535 driveway.
-  // v3.1 FIX (2026-10-09 inspection): yaw 0 = nose SOUTH toward Dollar Mill Rd
-  // (was Math.PI/2 — the 5.6u van lay sideways across the 4.5u driveway,
-  // overhanging the grass). The driveway ribbon is graded at heightAt+0.32,
-  // so the van sits on the concrete instead of sinking to the axles.
-  car=makeCar(heroHouse.drivewayPark.x, heroHouse.drivewayPark.z, 0, 0x8b2e2e, true, 'safari');
-  car.mesh.position.y=heightAt(car.x,car.z)+0.32;
+  /* Joshua's GMC Safari van (brown/gold two-tone), parked in the 535 driveway.
+     v3.1 FIX (2026-10-09 inspection): yaw 0 = nose SOUTH toward Dollar Mill Rd
+     (was Math.PI/2 — the 5.6u van lay sideways across the 4.5u driveway,
+     overhanging the grass). The driveway ribbon is graded at heightAt+0.32,
+     so the van sits on the concrete instead of sinking to the axles.
+     v1.38 FIX (2026-10-11 Joshua): van was missing from 535 — wrapped in
+     try/catch with fallbacks so it ALWAYS spawns. If drivewayPark is missing,
+     uses hardcoded 535 driveway coords. If safariMesh is missing, falls back
+     to sedan. Logs the result for diagnostics. */
+  try {
+    var vx=3124, vz=3705;  // 535 driveway fallback (matches heroHouse.drivewayPark)
+    try {
+      if (heroHouse && heroHouse.drivewayPark && 
+          typeof heroHouse.drivewayPark.x==='number' && 
+          typeof heroHouse.drivewayPark.z==='number') {
+        vx=heroHouse.drivewayPark.x; vz=heroHouse.drivewayPark.z;
+      }
+    }catch(e){}
+    var vkind='safari';
+    try {
+      if (typeof safariMesh!=='function') vkind='sedan';  // fallback if mesh missing
+    }catch(e){ vkind='sedan'; }
+    car=makeCar(vx, vz, 0, 0x8b2e2e, true, vkind);
+    try { car.mesh.position.y=heightAt(car.x,car.z)+0.32; }catch(e){}
+    try { car.mesh.visible=true; }catch(e){}  // ensure visible (culling keeps it visible anyway)
+    try { console.log('[van] Player van spawned at '+vx+','+vz+' kind='+vkind); }catch(e){}
+  }catch(e){
+    try { console.error('[van] FAILED to spawn player van:', e); }catch(_){}
+    try { if (typeof Report!=='undefined' && Report.noteError) Report.noteError('van-spawn', String(e)); }catch(_){}
+  }
 })();
 // v1.6: parked cars sit in DRIVEWAYS at dwellings — never on the road surface.
 // (Cars on roads should be moving traffic; that's NPC work for later.)
