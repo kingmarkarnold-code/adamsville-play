@@ -69,8 +69,8 @@
     },
     {
       "name": "index.html",
-      "size": 735214,
-      "sha256": "bb29df9075fb446c4dcd978999de6132b7a6aa447fcce7896f81b920d01a15b3",
+      "size": 737550,
+      "sha256": "a0f9440075be471b60263c094126c3e38903d424c40fa91a97052ad983dd9975",
       "hash": "753370eb30b3704e",
       "md5": "baf9460296c6b0af3e7a4259acdc44db"
     },
@@ -279,6 +279,6 @@
       "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zoneloader.js"
     }
   ],
-  "ui_version": "2026.10.10.115",
+  "ui_version": "2026.10.10.116",
   "version": "1.13.0"
 }
