@@ -5719,7 +5719,10 @@ function updateVehicleCosmetics(dt){
    The player's current car is ALWAYS visible (never culled).
    Called at ~2Hz from the animate loop — position updates continue every
    frame regardless; only the mesh visibility toggles. */
-var VEHICLE_SHOW_R=250, VEHICLE_HIDE_R=300;
+/* v1.30 VEHICLE DISTANCE CULLING (Joshua 2026-10-10): cars outside view
+   distance don't render — tracked as data only. Hysteresis: show < 175u,
+   hide > 200u (~2 football fields, per Joshua's visibility rule 2026-10-10). */
+var VEHICLE_SHOW_R=175, VEHICLE_HIDE_R=200;
 function updateVehicleVisibility(px,pz){
   try{
     var show2=VEHICLE_SHOW_R*VEHICLE_SHOW_R, hide2=VEHICLE_HIDE_R*VEHICLE_HIDE_R;
@@ -5730,7 +5733,7 @@ function updateVehicleVisibility(px,pz){
       var dx=c.x-px, dz=c.z-pz, d2=dx*dx+dz*dz;
       if (d2>hide2){ if (c.mesh.visible) c.mesh.visible=false; }
       else if (d2<show2){ if (!c.mesh.visible) c.mesh.visible=true; }
-      /* else: in the hysteresis band (250-300u) — keep current state, no pop */
+      /* else: in the hysteresis band (175-200u) — keep current state, no pop */
     }
   }catch(e){}
 }
