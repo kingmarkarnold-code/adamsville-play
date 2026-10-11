@@ -155,12 +155,13 @@ function initPlaneDrones(){
   _lastT=performance.now()/1000;
   // hook the frame loop (same wrap pattern as traffic_system.js)
   try{
-    if(typeof animate==='function' && !animate.__planeWrap){
-      var orig=animate;
+    /* v1.51 TICK REGISTRY (expert report #14, James Park, Joshua approved):
+       was an animate() monkey-patch — now registers on the central Sim tick
+       registry. Same once-per-frame timing, deterministic priority order. */
+    if(window.Sim && typeof Sim.onTick==='function' && !window.__planeTickReg){
+      window.__planeTickReg=true;
       /* v1.22 LAUNCHER (Joshua 2026-10-10): skip when drones disabled in launch options. */
-      var wrapped=function(){ orig(); if(!window.__launchOpts || window.__launchOpts.drones!==false) updatePlaneDrones(); };
-      wrapped.__planeWrap=true;
-      animate=wrapped;
+      Sim.onTick('render', 50, function(dt){ if(!window.__launchOpts || window.__launchOpts.drones!==false) updatePlaneDrones(); });
     }
   }catch(e){}
   try{
