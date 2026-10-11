@@ -1023,6 +1023,106 @@ window.__flushConfirmQueue = function(){
     for (var i = 0; i < q.length; i++){ try{ q[i](); }catch(e){} }
   }catch(e){}
 };
+
+/* v1.29 DEFERRED SCRIPT LOADING (Joshua 2026-10-11: "nothing downloads until
+   after the player has selected the options").
+   The v129 fix gated fetch() manifest checks but MISSED <script src> tags,
+   which downloaded ~5MB during HTML parsing before confirmation (the 18%
+   stuck was scripts downloading). Now ALL game/data scripts use data-dsrc
+   instead of src (browser skips them), and inline game blocks use
+   type="text/x-deferred" (browser skips execution).
+   After confirmation, __loadDeferredQueue() injects everything in document
+   order. Each script gets a 45s timeout (Joshua 2026-10-11: laptop stuck at
+   18% for 7-10 minutes — a hanging script must not block forever). */
+window.__deferredQueue = null;
+window.__deferredLoading = false;
+window.__deferredDone = false;
+window.__startGameAfterLoad = false;
+function __collectDeferredScripts(){
+  var queue = [];
+  var scripts = document.querySelectorAll('script[data-dsrc], script[type="text/x-deferred"]');
+  for (var i = 0; i < scripts.length; i++){
+    var s = scripts[i];
+    if (s.hasAttribute('data-dsrc')){
+      queue.push({type:'external', src:s.getAttribute('data-dsrc'), key:s.getAttribute('data-dkey')||''});
+    } else {
+      queue.push({type:'inline', code:s.textContent});
+    }
+  }
+  return queue;
+}
+function __injectZoneFiles(files, callback){
+  /* Dynamically inject zone data scripts in order (replaces zoneloader's
+     document.write, which cannot run after parsing). */
+  var i = 0;
+  function nextFile(){
+    if (i >= files.length){ if (callback) callback(); return; }
+    var f = files[i++];
+    var s = document.createElement('script');
+    var done = false;
+    function finish(ok){
+      if (done) return; done = true;
+      try{ if (f.key) __loadStep(f.key, !ok); }catch(e){}
+      nextFile();
+    }
+    s.onload = function(){ finish(true); };
+    s.onerror = function(){ finish(false); };
+    setTimeout(function(){ if(!done){ try{ console.warn('[deferred] Zone script timeout: '+f.src); }catch(e){} finish(false); } }, 45000);
+    s.src = f.src;
+    document.head.appendChild(s);
+  }
+  nextFile();
+}
+function __loadDeferredQueue(){
+  if (window.__deferredLoading || window.__deferredDone) return;
+  window.__deferredLoading = true;
+  if (!window.__deferredQueue) window.__deferredQueue = __collectDeferredScripts();
+  var queue = window.__deferredQueue;
+  var idx = 0;
+  function next(){
+    if (idx >= queue.length){
+      window.__deferredDone = true;
+      window.__deferredLoading = false;
+      /* All scripts loaded — start the game if confirmation requested it. */
+      if (window.__startGameAfterLoad){
+        window.__startGameAfterLoad = false;
+        try{ if (typeof __tryStartGame === 'function') __tryStartGame(); }catch(e){}
+      }
+      return;
+    }
+    var item = queue[idx++];
+    if (item.type === 'inline'){
+      try{ (0,eval)(item.code); }catch(e){ try{ console.error('[deferred] Inline block failed:', e); }catch(_){} }
+      next();
+    } else {
+      var s = document.createElement('script');
+      var done = false;
+      var key = item.key;
+      var src = item.src;
+      function finish(ok){
+        if (done) return; done = true;
+        try{ if (key) __loadStep(key, !ok); }catch(e){}
+        /* zoneloader.js exposes zone files; inject them next in order. */
+        if (src.indexOf('zoneloader.js') !== -1 && window.__zoneScriptFiles && !window.__zoneScriptsInjected){
+          window.__zoneScriptsInjected = true;
+          __injectZoneFiles(window.__zoneScriptFiles, next);
+          return;
+        }
+        next();
+      }
+      s.onload = function(){ finish(true); };
+      s.onerror = function(){ finish(false); };
+      setTimeout(function(){ if(!done){ try{ console.warn('[deferred] Script timeout: '+src); }catch(e){} finish(false); } }, 45000);
+      s.src = src;
+      document.head.appendChild(s);
+    }
+  }
+  next();
+}
+/* Queue deferred loading for after confirmation. */
+window.__whenConfirmed(function(){
+  setTimeout(__loadDeferredQueue, 100);
+});
 (function __loadLaunchOpts(){
   try {
     var saved = null;
@@ -1158,7 +1258,9 @@ window.__applyCrewMaster = function(on){
         return;
       }
       // Let any pending start request through now
-      try { if (typeof __tryStartGame === 'function') __tryStartGame(); } catch(e){}
+      /* v1.29: __tryStartGame is deferred — game scripts load after confirmation.
+         __loadDeferredQueue() calls it when all scripts are ready. */
+      window.__startGameAfterLoad = true;
     });
   } catch(e){}
 })();
@@ -1170,23 +1272,23 @@ window.__applyCrewMaster = function(on){
      *-manifest.json files + MAPVER/ASSETVER); vehicle_meshes.js is the
      CANONICAL vehicle model library. On web they are parsed fresh on every
      page load. -->
-<script src="three.min.js" onload="__loadStep('engine')" onerror="__loadStep('engine',true)"></script>
-<script src="elev.js" onload="__loadStep('elev')" onerror="__loadStep('elev',true)"></script>
+<script data-dsrc="three.min.js" data-dkey="engine"></script>
+<script data-dsrc="elev.js" data-dkey="elev"></script>
 <!-- v2.0 ZONE-SEPARATED MAPS (2026-10-10, Joshua's directive):
      Zone data files are now loaded per-zone from zones/<zone_id>/.
      zoneloader.js reads ?zone= from URL (default 'adamsville') and
      injects the correct zone's data scripts via document.write.
      To enter a different zone, the page reloads with ?zone=<id>. -->
-<script src="zoneloader.js"></script>
-<script src="terrainfix.js"></script>
-<script src="vehicle_meshes.js" onload="__loadStep('vehmeshes')" onerror="__loadStep('vehmeshes',true)"></script>
-<script src="shirt_designs.js" onload="__loadStep('shirtdesigns')" onerror="__loadStep('shirtdesigns',true)"></script>
-<script src="sign_rules.js" onload="__loadStep('signrules')" onerror="__loadStep('signrules',true)"></script>
+<script data-dsrc="zoneloader.js" data-dkey=""></script>
+<script data-dsrc="terrainfix.js" data-dkey=""></script>
+<script data-dsrc="vehicle_meshes.js" data-dkey="vehmeshes"></script>
+<script data-dsrc="shirt_designs.js" data-dkey="shirtdesigns"></script>
+<script data-dsrc="sign_rules.js" data-dkey="signrules"></script>
 <!-- v1.16 TWO-PHASE: GREEN PHASE START — separate script element so the browser
      PAINTS the phase switch BEFORE block 2's synchronous init freezes the main
      thread. Blue (downloading) -> Green (parsing). The CSS dots animate during
      the freeze (pure @keyframes, no JS needed). Counts from actual data. -->
-<script>
+<script type="text/x-deferred">
 try{
   window.__wbT0=Date.now();
   /* Count data items for honest labels */
@@ -1249,7 +1351,7 @@ try{
      ASSETVER.checkPending/updateGearBadge/refreshAdmTags/confirmRedownload/
      forceRedownload/autoApplyBootUpdates, removeCollider, resolveCollision,
      __tryStartGame, __autoStart. -->
-<script>
+<script type="text/x-deferred">
 "use strict";
 /* v1.4: single source of truth for the HUD version — bump ONCE per release.
    The tags below are stamped from here so they can never go stale again. */
@@ -5024,13 +5126,32 @@ function bldgFaceYaw(x, z){
    -0.6 embed in the placement loop sinks it slightly into the ground.
    Falls back to heightAt() if the mesh grid isn't built yet.
    Player scale reference: 6'1" = 1.85u, so 1u ≈ 1m. */
-function bldgGroundY(x,z,w,d){
+function bldgGroundY(x,z,w,d,yaw){
+  /* v1.33 YAW-AWARE (Joshua 2026-10-11: houses looked "askewed/off"): buildings
+     are rotated by byaw (bldgFaceYaw) to face the street, but the old code sampled
+     AXIS-ALIGNED corners [x±w/2, z±d/2]. On slopes, the rotated footprint's actual
+     corners sit at different terrain heights — the base Y was computed for the
+     wrong corners, floating or burying the wrong sides. Now the corner offsets are
+     rotated by yaw (same convention as qt.setFromAxisAngle(YAX,byaw) in the render
+     loop) so the sampled corners match the rendered footprint. yaw is optional —
+     callers without a yaw get the old axis-aligned behavior. */
   var ys=[];
   try{
     var yc=terrainMeshY(x,z);
     if (yc>-1e8) ys.push(yc);
     var hw=(w||8)/2, hd=(d||8)/2;
-    var corners=[[x-hw,z-hd],[x+hw,z-hd],[x-hw,z+hd],[x+hw,z+hd]];
+    var corners;
+    if (typeof yaw==='number' && yaw!==0){
+      var c=Math.cos(yaw), s=Math.sin(yaw);
+      corners=[
+        [x+(-hw)*c+( -hd)*s, z-(-hw)*s+( -hd)*c],
+        [x+( hw)*c+( -hd)*s, z-( hw)*s+( -hd)*c],
+        [x+(-hw)*c+(  hd)*s, z-(-hw)*s+(  hd)*c],
+        [x+( hw)*c+(  hd)*s, z-( hw)*s+(  hd)*c]
+      ];
+    } else {
+      corners=[[x-hw,z-hd],[x+hw,z-hd],[x-hw,z+hd],[x+hw,z+hd]];
+    }
     for (var i=0;i<corners.length;i++){
       var cy=terrainMeshY(corners[i][0],corners[i][1]);
       if (cy>-1e8) ys.push(cy);
@@ -5161,7 +5282,9 @@ function runOsmBuildings(){
       var k2=kept[j], gy=0;
       /* v2.1 (2026-10-10): sample the RENDERED terrain mesh (center+corners),
          not analytic heightAt — fixes "stacked houses" on slopes. */
-      try{ gy=bldgGroundY(k2[0],k2[1],k2[2],k2[3]); }catch(e){ try{ gy=heightAt(k2[0],k2[1]); }catch(e2){} }
+      /* v1.33: pass the stored facing yaw (k2[6]) so ground sampling matches
+         the rotated footprint — byaw is defined just below, same value */
+      try{ gy=bldgGroundY(k2[0],k2[1],k2[2],k2[3],(k2.length>=7&&typeof k2[6]==='number')?k2[6]:0); }catch(e){ try{ gy=heightAt(k2[0],k2[1]); }catch(e2){} }
       var bw=k2[2], bd=k2[3], bh=Math.max(2.5,k2[4]), tp=k2[5];
       /* v1.14 (Joshua's directive): rotate the body so its front (+z local)
          faces the street — or the parking lot for apartments (type 2).
@@ -9075,53 +9198,53 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
      map, stuck-recovery, code enforcement. Each reports to __loadStep()
      where wired (npc / refnpc / gasdata / traffic / semis / roadcrew /
      marta / busdata / bus). -->
-<script src="npc_system.js" onload="__loadStep('npc')" onerror="__loadStep('npc',true)"></script>
-<script src="face_platform.js"></script>
-<script src="refnpc_system.js" onload="__loadStep('refnpc')" onerror="__loadStep('refnpc',true)"></script>
-<script src="gas_stations_real.js" onload="__loadStep('gasdata')" onerror="__loadStep('gasdata',true)"></script>
+<script data-dsrc="npc_system.js" data-dkey="npc"></script>
+<script data-dsrc="face_platform.js" data-dkey=""></script>
+<script data-dsrc="refnpc_system.js" data-dkey="refnpc"></script>
+<script data-dsrc="gas_stations_real.js" data-dkey="gasdata"></script>
 <!-- v1.31 shared vehicle-avoidance (Joshua's no-drive-through rule) -->
-<script src="vehicle_avoid.js"></script>
-<script src="traffic_system.js" onload="__loadStep('traffic')" onerror="__loadStep('traffic',true)"></script>
-<script src="traffic_assist.js"></script>
-<script src="residential_detail.js"></script>
-<script src="semi_system.js" onload="__loadStep('semis')" onerror="__loadStep('semis',true)">
-<script src="school_plaza.js"></script>
-<script src="mlk_fairburn.js"></script>
-<script src="schools3.js"></script>
-<script src="marriott.js"></script>
-<script src="clubs_diners.js"></script>
-<script src="poi_map.js"></script>
-<script src="stuck.js"></script>
-<script src="stuck_diag.js"></script>
-<script src="veteran_crew.js"></script>
-<script src="codeenforce_system.js"></script>
-<script src="roadcrew_system.js" onload="__loadStep('roadcrew')" onerror="__loadStep('roadcrew',true)"></script>
-<script src="roadfix.js"></script>
-<script src="marta_data.js"></script>
-<script src="marta_system.js" onload="__loadStep('marta')" onerror="__loadStep('marta',true)"></script>
-<script src="marta_bus_data.js" onload="__loadStep('busdata')" onerror="__loadStep('busdata',true)"></script>
-<script src="marta_bus_system.js" onload="__loadStep('bus')" onerror="__loadStep('bus',true)"></script>
-<script src="bird_drones.js"></script>
-<script src="schoolbus_system.js"></script>
-<script src="infracrew_system.js"></script>
-<script src="surveyfleet_system.js"></script>
-<script src="cityworkforce.js">
-<script src="inspector_crew.js"></script>
-<script src="police_system.js"></script>
-<script src="github-config.js"></script>
-<script src="github_reports.js"></script>
-<script src="worldfix_sync.js"></script>
-<script src="hq_staff_system.js"></script>
-<script src="dialogue_director_npc.js"></script>
-<script src="workerhousing.js"></script>
-<script src="daycycle.js"></script>
-<script src="helicopter_system.js"></script>
-<script src="priority_dispatch.js"></script>
-<script src="stayawake.js"></script>
-<script src="agentdock.js"></script>
-<script src="zoneunlock.js"></script>
-<script src="satellite_view.js"></script>
-<script src="hotreload.js"></script>
+<script data-dsrc="vehicle_avoid.js" data-dkey=""></script>
+<script data-dsrc="traffic_system.js" data-dkey="traffic"></script>
+<script data-dsrc="traffic_assist.js" data-dkey=""></script>
+<script data-dsrc="residential_detail.js" data-dkey=""></script>
+<script data-dsrc="semi_system.js" data-dkey="semis">
+<script data-dsrc="school_plaza.js" data-dkey=""></script>
+<script data-dsrc="mlk_fairburn.js" data-dkey=""></script>
+<script data-dsrc="schools3.js" data-dkey=""></script>
+<script data-dsrc="marriott.js" data-dkey=""></script>
+<script data-dsrc="clubs_diners.js" data-dkey=""></script>
+<script data-dsrc="poi_map.js" data-dkey=""></script>
+<script data-dsrc="stuck.js" data-dkey=""></script>
+<script data-dsrc="stuck_diag.js" data-dkey=""></script>
+<script data-dsrc="veteran_crew.js" data-dkey=""></script>
+<script data-dsrc="codeenforce_system.js" data-dkey=""></script>
+<script data-dsrc="roadcrew_system.js" data-dkey="roadcrew"></script>
+<script data-dsrc="roadfix.js" data-dkey=""></script>
+<script data-dsrc="marta_data.js" data-dkey=""></script>
+<script data-dsrc="marta_system.js" data-dkey="marta"></script>
+<script data-dsrc="marta_bus_data.js" data-dkey="busdata"></script>
+<script data-dsrc="marta_bus_system.js" data-dkey="bus"></script>
+<script data-dsrc="bird_drones.js" data-dkey=""></script>
+<script data-dsrc="schoolbus_system.js" data-dkey=""></script>
+<script data-dsrc="infracrew_system.js" data-dkey=""></script>
+<script data-dsrc="surveyfleet_system.js" data-dkey=""></script>
+<script data-dsrc="cityworkforce.js" data-dkey="">
+<script data-dsrc="inspector_crew.js" data-dkey=""></script>
+<script data-dsrc="police_system.js" data-dkey=""></script>
+<script data-dsrc="github-config.js" data-dkey=""></script>
+<script data-dsrc="github_reports.js" data-dkey=""></script>
+<script data-dsrc="worldfix_sync.js" data-dkey=""></script>
+<script data-dsrc="hq_staff_system.js" data-dkey=""></script>
+<script data-dsrc="dialogue_director_npc.js" data-dkey=""></script>
+<script data-dsrc="workerhousing.js" data-dkey=""></script>
+<script data-dsrc="daycycle.js" data-dkey=""></script>
+<script data-dsrc="helicopter_system.js" data-dkey=""></script>
+<script data-dsrc="priority_dispatch.js" data-dkey=""></script>
+<script data-dsrc="stayawake.js" data-dkey=""></script>
+<script data-dsrc="agentdock.js" data-dkey=""></script>
+<script data-dsrc="zoneunlock.js" data-dkey=""></script>
+<script data-dsrc="satellite_view.js" data-dkey=""></script>
+<script data-dsrc="hotreload.js" data-dkey=""></script>
 <!-- ===== INLINE SCRIPT BLOCK 3: final placement audit (v2.0 - Joshua's
      automatic check) ===== Runs ONCE, after EVERY building system has loaded
      (OSM, churches, schools, plaza, gas, Marriott, clubs, MARTA). Summarizes
