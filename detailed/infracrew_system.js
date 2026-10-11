@@ -375,7 +375,11 @@ function icFindConnection(x,z,selfI){
 }
 function spawnInfraPatrol(n, sx, sz){
   try{
-    var truck=makeInfraTruck(); scene.add(truck);
+    var truck=makeInfraTruck();
+    /* v1.30 CREW RENDER RULE (Joshua 2026-10-10): patrols NEVER render.
+       Scouting only — pure data, no graphics. */
+    truck.visible=false;
+    scene.add(truck);
     var nr=nearestRoad(sx,sz);
     var u={n:n, mesh:truck, seg:nr?nr.seg:null, idx:nr?nr.idx:0, dir:1,
            x:sx, z:sz, waitT:0};
@@ -440,22 +444,11 @@ function patrolDiscover(u){
 }
 function updatePatrols(dt){
   // v1.15 DISTANCE CULLING (Joshua 2026-10-10)
-  // v1.30 MESH CULLING (Joshua's directive): hide truck mesh when beyond
-  // 500u — tracked as data only until visible. Throttled to ~2Hz.
+  // v1.30: patrol meshes are ALWAYS hidden (never render — scouting only).
+  // Job-site visibility is handled in updateJobs().
   var _zu=window.ZONEUNLOCK;
-  IC._visT=(IC._visT||0)+dt;
-  var _doVis=IC._visT>0.5;
-  if (_doVis) IC._visT=0;
-  var _px=0,_pz=0;
-  try{ _px=player.x; _pz=player.z; }catch(e){}
   for (var i=0;i<IC.patrols.length;i++){
     var u=IC.patrols[i];
-    if (_doVis && u && u.mesh){
-      var _mx=u.mesh.position.x, _mz=u.mesh.position.z;
-      var _mdx=_mx-_px, _mdz=_mz-_pz, _md2=_mdx*_mdx+_mdz*_mdz;
-      if (_md2>250000){ if (u.mesh.visible) u.mesh.visible=false; }
-      else if (_md2<160000){ if (!u.mesh.visible) u.mesh.visible=true; }
-    }
     if(_zu && u && _zu.shouldCull(u.x,u.z)) continue;
     patrolAdvance(u, dt);
     patrolDiscover(u);
@@ -479,7 +472,11 @@ function dispatchCrew(d){
   var y=groundY(d.x,d.z);
   var hx=Math.sin(heading), hz=Math.cos(heading);
   var px=hz, pz=-hx;
-  var grp=new THREE.Group(); scene.add(grp);
+  var grp=new THREE.Group();
+  /* v1.30: job sites start hidden — updateJobs() shows them only when
+     the player is within 300u (Joshua's crew render rule). */
+  grp.visible=false;
+  scene.add(grp);
   /* truck parked to the side */
   var truck=makeInfraTruck();
   var tx=d.x+px*12, tz=d.z+pz*12;
@@ -638,8 +635,22 @@ function icFixTick(j, dt){
    collider cleanup, localStorage persistence). Jobs without vet state keep
    the legacy timing. */
 function updateJobs(dt){
+  /* v1.30 CREW RENDER RULE (Joshua 2026-10-10): job sites render ONLY when
+     the player is nearby (within 300u). Otherwise pure data — no graphics.
+     Throttled to ~2Hz; the repair logic itself runs every frame. */
+  IC._jobVisT=(IC._jobVisT||0)+dt;
+  var _doJobVis=IC._jobVisT>0.5;
+  if (_doJobVis) IC._jobVisT=0;
+  var _px=0,_pz=0;
+  try{ _px=player.x; _pz=player.z; }catch(e){}
+  var _show2=300*300;
   for (var i=IC.jobs.length-1;i>=0;i--){
     var j=IC.jobs[i];
+    if (_doJobVis && j && j.group && j.issue){
+      var _jdx=j.issue.x-_px, _jdz=j.issue.z-_pz;
+      var _wantVis=(_jdx*_jdx+_jdz*_jdz)<_show2;
+      if (j.group.visible!==_wantVis) j.group.visible=_wantVis;
+    }
     if (j.vet && typeof VeteranCrew!=='undefined'){
       var ph=VeteranCrew.updateJob(j, dt, {time:IC.time,
         log:function(m){ dlog(m); }, toast:function(m){ toast(m); }});
