@@ -935,15 +935,15 @@ function phaseAdvance(px,pz,x,z,dt){
   return adv>cap?cap:adv;
 }
 /* v1.11 loading-screen bootstrap — runs before the game scripts */
-window.__loadOrder=['engine','elev','roads','signs','lifts','pins','buildings','vehmeshes','world','music','npc','refnpc','gasdata','traffic','semis','roadcrew','marta','busdata','bus'];
-window.__loadNames={engine:'3D engine',elev:'Elevation data',roads:'Roads',signs:'Exit signs',
+window.__loadOrder=['engine','elev','zoneloader','roads','signs','lifts','pins','buildings','vehmeshes','world','music','npc','refnpc','gasdata','traffic','semis','roadcrew','marta','busdata','bus'];
+window.__loadNames={engine:'3D engine',elev:'Elevation data',zoneloader:'Zone loader',roads:'Roads',signs:'Exit signs',
   lifts:'Terrain lifts',pins:'Junction pins',buildings:'Buildings',vehmeshes:'Vehicle models',world:'Game world',music:'Music',
   npc:'NPC system',refnpc:'Photo NPCs',gasdata:'Gas station data',traffic:'Traffic system',semis:'Delivery trucks',roadcrew:'Road crew',marta:'MARTA rail',busdata:'MARTA bus data',bus:'MARTA buses',
   martadata:'MARTA rail data',trafficassist:'Traffic assist',drones:'Drones',survey:'Survey fleet',infra:'Infra crew',hq:'HQ staff',inspector:'Crew inspectors'};
 /* v1.15: REAL file sizes in bytes (measured 2026-10-10). The progress bar is
    weighted by these so a 2.8MB file moves the bar proportionally more than
    a 4KB file. Steps without a listed size default to 40KB. */
-window.__loadWeight={engine:604160,elev:4505,roads:2936012,signs:57344,
+window.__loadWeight={engine:604160,elev:4505,zoneloader:8521,roads:2936012,signs:57344,
   lifts:623616,pins:1258291,buildings:454656,vehmeshes:40960,world:40960,music:40960,
   npc:72704,refnpc:37888,gasdata:40960,traffic:44032,semis:40960,roadcrew:56320,
   marta:40960,busdata:171008,bus:40960};
@@ -1061,6 +1061,39 @@ function __loadStep(key,failed){
     var s=document.getElementById('load-start'); if(s) s.style.display='block';
   }
 }
+/* v1.53 #34 __criticalConsequence(fails): picks the honest consequence line for
+   the critical-failure panel based on WHAT failed. An engine/world failure
+   means the game cannot run; map-data failure means a broken world; a
+   population failure means an empty city. The player always sees exactly
+   what is at stake — Jennifer Wu, QA. */
+function __criticalConsequence(fails){
+  try{
+    var fatal=['engine','world','music','zoneloader'];
+    var worldBroken=['elev','roads','signs','lifts','pins','buildings','vehmeshes'];
+    var i, broken=false;
+    for(i=0;i<fails.length;i++){
+      if(fatal.indexOf(fails[i])!==-1) return 'the game broken — it cannot run at all';
+      if(worldBroken.indexOf(fails[i])!==-1) broken=true;
+    }
+    if(broken) return 'the world broken or missing';
+    return 'the city empty';
+  }catch(e){ return 'the game in a broken state'; }
+}
+/* v1.53 #34 __criticalBlockedList(): every critical load key that is still
+   pending (never reported) or reported failure. The failsafes and the start
+   gate use this so a broken world can never start silently. */
+function __criticalBlockedList(){
+  var out=[];
+  try{
+    var keys=window.__criticalLoadKeys||{};
+    for(var k in keys){
+      if(!Object.prototype.hasOwnProperty.call(keys,k)) continue;
+      if(!window.__loadDone[k]) out.push(k);
+      else if(window.__loadDone[k]!=='ok') out.push(k);
+    }
+  }catch(e){}
+  return out;
+}
 /* v1.52 #28 __showCriticalWarning(): renders the critical-failure panel on
    the loader when a population system (NPCs/traffic) failed to download.
    RETRY reloads the page for a clean download attempt; CONTINUE ANYWAY
@@ -1078,8 +1111,9 @@ function __showCriticalWarning(){
       var n=(window.__criticalLoadKeys||{})[fails[i]]||fails[i];
       if(names.indexOf(n)===-1) names.push(n);
     }
-    if(msg) msg.innerHTML='&#9888; '+names.join(' + ')+' failed to load.<br>'+
-      'Starting now would leave the city empty.';
+    if(msg) msg.innerHTML='&#9888; '+names.join(' + ')+' failed to load or timed out.<br>'+
+      'Starting now would leave '+__criticalConsequence(fails)+'.<br>'+
+      '<span style="font-weight:normal;font-size:0.9em;">Check your connection, then tap RETRY for a fresh download.</span>';
     if(w) w.style.display='block';
     var rb=document.getElementById('load-retry');
     if(rb && !rb.__wired){ rb.__wired=true; rb.addEventListener('click',function(){
@@ -1162,7 +1196,21 @@ try{
    error instead of loading silently broken. Optional systems (crews, MARTA,
    drones, shadows, AA, hi-detail) may stay off with no warning. */
 window.__criticalSystems=['npcs','traffic'];
-window.__criticalLoadKeys={npc:'NPC system',refnpc:'Photo NPCs',traffic:'Traffic system'};
+/* v1.53 #34 CRITICAL LOADER FAILURES (Jennifer Wu, QA — Joshua approved fix).
+   A failed download of ANY of these must block the start gate with a loud,
+   clear error — never a silently broken world. Population (npc/refnpc/traffic)
+   was already critical (#28); engine/zone-data/world are the deeper criticals:
+   without the 3D engine, the zone loader, the map data, or the world init,
+   the game cannot run at all. music is listed as 'Game world' because its
+   load step is marked together with the world-build block (they succeed or
+   fail as one). Audio files themselves stay optional — the game plays fine
+   silent; the step here is the world-build marker. */
+window.__criticalLoadKeys={
+  engine:'3D engine', zoneloader:'Zone loader',
+  elev:'Elevation data', roads:'Road data', signs:'Exit signs',
+  lifts:'Terrain lifts', pins:'Junction pins', buildings:'Buildings',
+  vehmeshes:'Vehicle models', world:'Game world', music:'Game world',
+  npc:'NPC system', refnpc:'Photo NPCs', traffic:'Traffic system'};
 window.__criticalFailed=[];   // load keys of critical steps that reported failure
 window.__criticalAcked=false; // player saw the failure warning and chose to continue anyway
 window.__launcherConfirmed = false;  // set true when user hits START GAME
@@ -1318,27 +1366,43 @@ function __loadDeferredQueue(){
       try{ (0,eval)(item.code); }catch(e){ try{ console.error('[deferred] Inline block failed:', e); }catch(_){} }
       next();
     } else {
-      var s = document.createElement('script');
-      var done = false;
-      var key = item.key;
-      var src = item.src;
-      function finish(ok){
-        if (done) return; done = true;
-        try{ if (key) __loadStep(key, !ok); }catch(e){}
-        /* zoneloader.js exposes zone files; inject them next in order. */
-        if (src.indexOf('zoneloader.js') !== -1 && window.__zoneScriptFiles && !window.__zoneScriptsInjected){
-          window.__zoneScriptsInjected = true;
-          __injectZoneFiles(window.__zoneScriptFiles, next);
-          return;
-        }
-        next();
-      }
-      s.onload = function(){ finish(true); };
-      s.onerror = function(){ finish(false); };
-      setTimeout(function(){ if(!done){ try{ console.warn('[deferred] Script timeout: '+src); }catch(e){} finish(false); } }, 45000);
-      s.src = src;
-      document.head.appendChild(s);
+      /* v1.53 #34: external scripts get one automatic retry on transient
+         failure (same pattern as zone files, v1.38) — a single network
+         hiccup must not silently kill a critical system. */
+      loadDeferredScript(item, 0);
     }
+  }
+  /* loadDeferredScript(item, attempt) — inject one deferred external script.
+     On first failure (onerror or 45s timeout), waits 2s and retries once with
+     a cache-busting query param so a stale CDN edge cannot serve the same
+     broken bytes twice. Only after the retry fails is the step marked failed
+     (and, if critical, recorded in __criticalFailed to block the start gate). */
+  function loadDeferredScript(item, attempt){
+    var s = document.createElement('script');
+    var done = false;
+    var key = item.key;
+    var src = item.src;
+    function finish(ok){
+      if (done) return; done = true;
+      if(!ok && attempt < 1){
+        try{ console.warn('[deferred] Script failed, retrying once: '+src); }catch(e){}
+        setTimeout(function(){ loadDeferredScript(item, attempt+1); }, 2000);
+        return;
+      }
+      try{ if (key) __loadStep(key, !ok); }catch(e){}
+      /* zoneloader.js exposes zone files; inject them next in order. */
+      if (src.indexOf('zoneloader.js') !== -1 && window.__zoneScriptFiles && !window.__zoneScriptsInjected){
+        window.__zoneScriptsInjected = true;
+        __injectZoneFiles(window.__zoneScriptFiles, next);
+        return;
+      }
+      next();
+    }
+    s.onload = function(){ finish(true); };
+    s.onerror = function(){ finish(false); };
+    setTimeout(function(){ if(!done){ try{ console.warn('[deferred] Script timeout: '+src); }catch(e){} finish(false); } }, 45000);
+    s.src = attempt > 0 ? src + (src.indexOf('?')===-1?'?':'&') + 'retry='+Date.now() : src;
+    document.head.appendChild(s);
   }
   /* v1.44 TERRAIN-PRECOMPUTE: fetch the precomputed 600x800 heightfield
      BEFORE the first game script evaluates, so buildTerrain() can skip
@@ -1570,7 +1634,7 @@ window.__applyCrewMaster = function(on){
      zoneloader.js reads ?zone= from URL (default 'adamsville') and
      injects the correct zone's data scripts via document.write.
      To enter a different zone, the page reloads with ?zone=<id>. -->
-<script data-dsrc="zoneloader.js" data-dkey=""></script>
+<script data-dsrc="zoneloader.js" data-dkey="zoneloader"></script>
 <script data-dsrc="terrainfix.js" data-dkey=""></script>
 <script data-dsrc="vehicle_meshes.js" data-dkey="vehmeshes"></script>
 <script data-dsrc="shirt_designs.js" data-dkey="shirtdesigns"></script>
@@ -9977,21 +10041,31 @@ function __tryStartGame(){
    failed"): the 45s watchdog only SHOWED a message — it never unblocked the
    loader. Now it also reveals a SKIP AND START button that force-marks all
    pending steps done so the player is never trapped. A 3-minute ABSOLUTE
-   failsafe force-completes everything automatically as a last resort. */
+   failsafe force-completes everything automatically as a last resort.
+   v1.53 #34 (Jennifer Wu, QA): CRITICAL steps are NEVER force-completed.
+   Starting without the 3D engine / zone loader / map data / world init would
+   hand the player a silently broken game — exactly the bug being fixed.
+   This now completes OPTIONAL steps only and returns the count of critical
+   steps still blocked, so callers can show the loud failure panel instead
+   of starting a broken world. */
 window.__forceCompletePendingSteps=function(){
-  /* Mark every pending __loadOrder step as warned-done so __tryStartGame
-     stops waiting. The game starts with whatever actually loaded. */
+  /* Mark every pending OPTIONAL __loadOrder step as warned-done so
+     __tryStartGame stops waiting on systems the game can live without.
+     Critical steps stay pending/failed — the start gate and the critical
+     warning panel handle those loudly. */
+  var forced=0;
   try{
     for(var i=0;i<window.__loadOrder.length;i++){
       var k=window.__loadOrder[i];
-      if(!window.__loadDone[k]){
+      if(!window.__loadDone[k] && !(window.__criticalLoadKeys||{})[k]){
         window.__loadDone[k]='warn';
-        try{ console.warn('[loader] Failsafe force-completed step: '+k); }catch(e){}
+        try{ console.warn('[loader] Failsafe force-completed OPTIONAL step: '+k); }catch(e){}
+        forced++;
       }
     }
     try{ __paintProgress(); }catch(e){}
-    return true;
-  }catch(e){ return false; }
+    return forced;
+  }catch(e){ return 0; }
 };
 setTimeout(function(){
   try{
@@ -10014,12 +10088,24 @@ setTimeout(function(){
       if(s){
         s.style.display='block';
         if(pending.length){
-          /* Offer an escape hatch: skip the stuck steps and start anyway. */
+          /* Offer an escape hatch: skip the stuck OPTIONAL steps and start anyway.
+             v1.53 #34: critical steps are never skipped — if any are still
+             blocked, show the loud critical-failure panel (RETRY / CONTINUE
+             ANYWAY) instead of silently starting a broken world. */
           s.textContent='SKIP AND START';
           s.onclick=function(){
             try{
               window.__forceCompletePendingSteps();
-              if(typeof __tryStartGame==='function') __tryStartGame();
+              var blocked=__criticalBlockedList();
+              if(blocked.length){
+                for(var bi=0;bi<blocked.length;bi++){
+                  if(window.__criticalFailed.indexOf(blocked[bi])===-1) window.__criticalFailed.push(blocked[bi]);
+                }
+                if(typeof __showCriticalWarning==='function') __showCriticalWarning();
+                var st0=document.getElementById('load-status');
+                if(st0){ st0.textContent='⚠ Critical systems still missing — see warning above'; st0.style.opacity='1'; }
+              }
+              else if(typeof __tryStartGame==='function') __tryStartGame();
             }catch(e){}
           };
         }else{
@@ -10030,18 +10116,31 @@ setTimeout(function(){
   }catch(e){}
 },45000);
 /* v1.38 ABSOLUTE FAILSAFE: 3 minutes after page load, if the game still has
-   not started and the loader is still visible, force-complete all pending
-   steps automatically. The player should NEVER be stuck forever. */
+   not started and the loader is still visible, force-complete pending
+   OPTIONAL steps automatically. The player should NEVER be stuck forever.
+   v1.53 #34: critical systems are NEVER force-completed. If any are still
+   blocked, the loud critical-failure panel shows instead of silently
+   starting a broken world. */
 setTimeout(function(){
   try{
     var l=document.getElementById('loader');
     if(l && l.style.display!=='none' && !window.__gameStarted){
-      try{ console.warn('[loader] ABSOLUTE FAILSAFE: 3min elapsed, force-completing pending steps'); }catch(e){}
+      try{ console.warn('[loader] ABSOLUTE FAILSAFE: 3min elapsed, force-completing OPTIONAL pending steps'); }catch(e){}
       window.__forceCompletePendingSteps();
+      var blocked=__criticalBlockedList();
       var st=document.getElementById('load-status');
-      if(st){ st.textContent='⚠ Some assets timed out — starting with what loaded'; st.style.opacity='1'; }
       var s=document.getElementById('load-start');
-      if(s){ s.style.display='block'; s.textContent='TAP TO START'; }
+      if(blocked.length){
+        for(var bi=0;bi<blocked.length;bi++){
+          if(window.__criticalFailed.indexOf(blocked[bi])===-1) window.__criticalFailed.push(blocked[bi]);
+        }
+        if(typeof __showCriticalWarning==='function') __showCriticalWarning();
+        if(st){ st.textContent='⚠ Critical systems missing — see warning above'; st.style.opacity='1'; }
+        if(s){ s.style.display='none'; }
+      }else{
+        if(st){ st.textContent='⚠ Some optional assets timed out — starting with what loaded'; st.style.opacity='1'; }
+        if(s){ s.style.display='block'; s.textContent='TAP TO START'; }
+      }
     }
   }catch(e){}
 },180000);
