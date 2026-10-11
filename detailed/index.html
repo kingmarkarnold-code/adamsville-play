@@ -5709,6 +5709,32 @@ function updateVehicleCosmetics(dt){
   }
 }
 
+/* v1.30 VEHICLE DISTANCE CULLING (Joshua's directive 2026-10-10):
+   Vehicles outside the player's view distance don't need to render at all —
+   they're tracked as data only (position, speed, state) until they come back
+   into range. This is CULLING (not LOD): invisible = zero GPU cost.
+   - VEHICLE_SHOW_R: mesh becomes visible inside this range (250u)
+   - VEHICLE_HIDE_R: mesh hidden beyond this range (300u — hysteresis prevents
+     visible popping when a car sits near the boundary)
+   The player's current car is ALWAYS visible (never culled).
+   Called at ~2Hz from the animate loop — position updates continue every
+   frame regardless; only the mesh visibility toggles. */
+var VEHICLE_SHOW_R=250, VEHICLE_HIDE_R=300;
+function updateVehicleVisibility(px,pz){
+  try{
+    var show2=VEHICLE_SHOW_R*VEHICLE_SHOW_R, hide2=VEHICLE_HIDE_R*VEHICLE_HIDE_R;
+    for (var i=0;i<cars.length;i++){
+      var c=cars[i];
+      if (!c||!c.mesh) continue;
+      if (c===car) { if (!c.mesh.visible) c.mesh.visible=true; continue; }  // player's car always visible
+      var dx=c.x-px, dz=c.z-pz, d2=dx*dx+dz*dz;
+      if (d2>hide2){ if (c.mesh.visible) c.mesh.visible=false; }
+      else if (d2<show2){ if (!c.mesh.visible) c.mesh.visible=true; }
+      /* else: in the hysteresis band (250-300u) — keep current state, no pop */
+    }
+  }catch(e){}
+}
+
 /* ================= TREES (v2.0 multi-species, Atlanta natives) ================= */
 // Joshua's directive (2026-10-09): add tree types beyond pines — ALL native
 // to Atlanta, Georgia — with seasonal color change (fall colors, winter bare).
@@ -5795,15 +5821,41 @@ var TREE_SPECIES=[
     }
     return true;
   }
-  var trunkI=new THREE.InstancedMesh(new THREE.CylinderGeometry(0.3,0.5,4,6),
-    new THREE.MeshLambertMaterial({ color:0x5a4030 }), COUNT);
-  var pineI=new THREE.InstancedMesh(new THREE.ConeGeometry(3.8,12,7),
-    new THREE.MeshLambertMaterial({ color:0x2d5a27 }), COUNT);
-  var decidI=new THREE.InstancedMesh(new THREE.IcosahedronGeometry(3.5,1),
-    new THREE.MeshLambertMaterial({ color:0xffffff }), COUNT);
+  /* v1.30 TREE CHUNKING (Joshua's LOD directive 2026-10-10):
+     Was: 3 global InstancedMeshes with frustumCulled=false — all 2,600 trees
+     pushed through the vertex shader every frame, even ones behind the camera.
+     Now: trees are bucketed into a 4x6 spatial grid (2,000u chunks). Each
+     chunk gets its own InstancedMeshes with a proper bounding sphere, so
+     Three.js frustum-culls off-screen chunks automatically. Typical view
+     shows 4-6 chunks of 24 = ~75% fewer vertices per frame.
+     Trees ARE visible at distance (unlike NPCs/vehicles), so culling — not
+     hiding — is the right optimization. LOD levels (simplified geometry at
+     range) were considered but rejected: canopies are already 7-80 triangles,
+     there is nothing meaningful left to simplify. */
+  var TREE_CHUNK=2000, TREE_COLS=4, TREE_ROWS=6;
+  function treeChunkKey(x,z){
+    var cx=Math.max(0,Math.min(TREE_COLS-1,Math.floor(x/TREE_CHUNK)));
+    var cz=Math.max(0,Math.min(TREE_ROWS-1,Math.floor(z/TREE_CHUNK)));
+    return cx+'_'+cz;
+  }
+  // per-chunk tree records: {trunks:[Matrix4], pines:[{m:Matrix4}],
+  //   decids:[{m:Matrix4, col:hex, sp:speciesIdx, x,gy,z,s}]}
+  var treeChunks={};
+  function getTreeChunk(x,z){
+    var k=treeChunkKey(x,z);
+    var c=treeChunks[k];
+    if (!c){ c={trunks:[],pines:[],decids:[]}; treeChunks[k]=c; }
+    return c;
+  }
+  var trunkGeo=new THREE.CylinderGeometry(0.3,0.5,4,6);
+  var pineGeo=new THREE.ConeGeometry(3.8,12,7);
+  var decidGeo=new THREE.IcosahedronGeometry(3.5,1);
+  var trunkMat=new THREE.MeshLambertMaterial({ color:0x5a4030 });
+  var pineMat=new THREE.MeshLambertMaterial({ color:0x2d5a27 });
+  var decidMat=new THREE.MeshLambertMaterial({ color:0xffffff });
   var m4=new THREE.Matrix4(), q=new THREE.Quaternion(), sc=new THREE.Vector3(),
       pv=new THREE.Vector3(), up=new THREE.Vector3(0,1,0), col=new THREE.Color();
-  // per-deciduous-tree records for seasonal updates: [instanceIdx, speciesIdx, x, gy, z, s]
+  // per-deciduous-tree records for seasonal updates: [chunkKey, localIdx, speciesIdx, x, gy, z, s]
   var decidRecs=[];
   var placed=0, pineN=0, decidN=0, guard=0;
   var srng=mulberry32(0x7EE5);
@@ -5815,44 +5867,88 @@ var TREE_SPECIES=[
     var sp=TREE_SPECIES[pickSpecies(srng())];
     var s=(0.75+Math.random()*0.7)*sp.h, gy=heightAt(x,z);
     q.setFromAxisAngle(up, Math.random()*Math.PI*2);
-    // trunk (shared mesh, all species)
+    var ch=getTreeChunk(x,z), ck=treeChunkKey(x,z);
+    // trunk (shared mesh, all species) — clone matrix: m4 is reused scratch
     m4.compose(pv.set(x,gy+2*s,z), q, sc.set(s,s,s));
-    trunkI.setMatrixAt(placed,m4);
+    ch.trunks.push(m4.clone());
     if (sp.kind==='conifer'){
       var cw=0.9+Math.random()*0.35;
       m4.compose(pv.set(x,gy+8*s,z), q, sc.set(s*cw*sp.sc[0],s*sp.sc[1],s*cw*sp.sc[2]));
-      pineI.setMatrixAt(pineN,m4);
+      ch.pines.push({m:m4.clone()});
       pineN++;
     } else {
       var cwx=0.9+Math.random()*0.3;
       m4.compose(pv.set(x,gy+(4+5.5)*s*0.72,z), q,
         sc.set(s*cwx*sp.sc[0], s*sp.sc[1], s*cwx*sp.sc[2]));
-      decidI.setMatrixAt(decidN,m4);
-      col.setHex(sp.sum);
-      decidI.setColorAt(decidN,col);
-      decidRecs.push([decidN, TREE_SPECIES.indexOf(sp), x, gy, z, s]);
+      var spi=TREE_SPECIES.indexOf(sp);
+      var li=ch.decids.length;
+      ch.decids.push({m:m4.clone(), col:sp.sum, sp:spi, x:x, gy:gy, z:z, s:s});
+      decidRecs.push([ck, li, spi, x, gy, z, s]);
       decidN++;
     }
     addCollider(x,z,0.8);  // solid trunks: cars take damage, player walks around
     placed++;
   }
-  trunkI.count=placed; pineI.count=pineN; decidI.count=decidN;
-  trunkI.instanceMatrix.needsUpdate=true; pineI.instanceMatrix.needsUpdate=true;
-  decidI.instanceMatrix.needsUpdate=true;
-  if (decidI.instanceColor) decidI.instanceColor.needsUpdate=true;
-  trunkI.frustumCulled=false; pineI.frustumCulled=false; decidI.frustumCulled=false;
-  scene.add(trunkI); scene.add(pineI); scene.add(decidI);
+  /* Build per-chunk InstancedMeshes. Each chunk mesh gets frustumCulled=true
+     (the default) with a manually-set bounding sphere covering the chunk —
+     r128's InstancedMesh.computeBoundingSphere exists but we set it explicitly
+     for reliability: center of chunk, radius = half-diagonal + max tree height. */
+  var treeChunkMeshes={};  // chunkKey -> {trunk, pine, decid}
+  var _halfDiag=Math.sqrt(2)*TREE_CHUNK/2+20;  // chunk half-diagonal + tree height margin
+  for (var _ck in treeChunks){
+    if (!treeChunks.hasOwnProperty(_ck)) continue;
+    var _c=treeChunks[_ck];
+    var _parts=_ck.split('_');
+    var _ccx=(parseInt(_parts[0],10)+0.5)*TREE_CHUNK;
+    var _ccz=(parseInt(_parts[1],10)+0.5)*TREE_CHUNK;
+    var _bs=new THREE.Sphere(new THREE.Vector3(_ccx,10,_ccz), _halfDiag);
+    var _cm={};
+    if (_c.trunks.length){
+      var _tm=new THREE.InstancedMesh(trunkGeo, trunkMat, _c.trunks.length);
+      for (var _ti=0;_ti<_c.trunks.length;_ti++) _tm.setMatrixAt(_ti,_c.trunks[_ti]);
+      _tm.instanceMatrix.needsUpdate=true;
+      _tm.boundingSphere=_bs.clone();
+      _tm.frustumCulled=true;
+      scene.add(_tm); _cm.trunk=_tm;
+    }
+    if (_c.pines.length){
+      var _pm=new THREE.InstancedMesh(pineGeo, pineMat, _c.pines.length);
+      for (var _pi=0;_pi<_c.pines.length;_pi++) _pm.setMatrixAt(_pi,_c.pines[_pi].m);
+      _pm.instanceMatrix.needsUpdate=true;
+      _pm.boundingSphere=_bs.clone();
+      _pm.frustumCulled=true;
+      scene.add(_pm); _cm.pine=_pm;
+    }
+    if (_c.decids.length){
+      var _dm=new THREE.InstancedMesh(decidGeo, decidMat, _c.decids.length);
+      for (var _di=0;_di<_c.decids.length;_di++){
+        _dm.setMatrixAt(_di,_c.decids[_di].m);
+        col.setHex(_c.decids[_di].col);
+        _dm.setColorAt(_di,col);
+      }
+      _dm.instanceMatrix.needsUpdate=true;
+      if (_dm.instanceColor) _dm.instanceColor.needsUpdate=true;
+      _dm.boundingSphere=_bs.clone();
+      _dm.frustumCulled=true;
+      scene.add(_dm); _cm.decid=_dm;
+    }
+    treeChunkMeshes[_ck]=_cm;
+  }
   /* setSeason(season): recolors + reshapes deciduous canopies.
      'spring' — fresh green; dogwood white / redbud pink blossoms.
      'summer' — full green. 'fall' — species-specific color. 'winter' — bare
-     (canopy shrunk to branch stubs, brown-gray). Conifers untouched. */
+     (canopy shrunk to branch stubs, brown-gray). Conifers untouched.
+     v1.30: looks up the per-chunk decid mesh via decidRecs [chunkKey, localIdx]. */
   var _curSeason='summer';
   function setSeason(season){
     _curSeason=season;
     var winter=(season==='winter');
+    var _dirty={};
     for (var i=0;i<decidRecs.length;i++){
-      var r=decidRecs[i], idx=r[0], sp=TREE_SPECIES[r[1]];
-      var x=r[2], gy=r[3], z=r[4], s=r[5];
+      var r=decidRecs[i], ck2=r[0], idx=r[1], sp=TREE_SPECIES[r[2]];
+      var x=r[3], gy=r[4], z=r[5], s=r[6];
+      var cm2=treeChunkMeshes[ck2];
+      if (!cm2||!cm2.decid) continue;
       if (winter){
         col.setHex(0x6b5a48);
         m4.compose(pv.set(x,gy+6.5*s*0.72,z), q.identity(), sc.set(s*0.14,s*0.14,s*0.14));
@@ -5862,11 +5958,15 @@ var TREE_SPECIES=[
         m4.compose(pv.set(x,gy+(4+5.5)*s*0.72,z), q.identity(),
           sc.set(s*cwx*sp.sc[0], s*sp.sc[1], s*cwx*sp.sc[2]));
       }
-      decidI.setMatrixAt(idx,m4);
-      decidI.setColorAt(idx,col);
+      cm2.decid.setMatrixAt(idx,m4);
+      cm2.decid.setColorAt(idx,col);
+      _dirty[ck2]=cm2.decid;
     }
-    decidI.instanceMatrix.needsUpdate=true;
-    if (decidI.instanceColor) decidI.instanceColor.needsUpdate=true;
+    for (var _dk in _dirty){
+      if (!_dirty.hasOwnProperty(_dk)) continue;
+      _dirty[_dk].instanceMatrix.needsUpdate=true;
+      if (_dirty[_dk].instanceColor) _dirty[_dk].instanceColor.needsUpdate=true;
+    }
   }
   window.__trees={ setSeason:setSeason, getSeason:function(){return _curSeason;},
     count:placed, pines:pineN, deciduous:decidN, species:TREE_SPECIES.map(function(s){return s.n;}) };
@@ -8384,6 +8484,17 @@ function animate(){
     window.__uabT=(window.__uabT||0)+dt;
     if (window.__uabT>0.12){ window.__uabT=0; updateProximity(); updateActionButton(); }
   }catch(e){ try{ updateProximity(); updateActionButton(); }catch(e2){} }
+  /* v1.30 VEHICLE CULLING: toggle vehicle mesh visibility at ~2Hz.
+     Position/state updates run every frame; only rendering is culled. */
+  try{
+    window.__vehVisT=(window.__vehVisT||0)+dt;
+    if (window.__vehVisT>0.5){
+      window.__vehVisT=0;
+      var _px=(typeof player!=='undefined'?player.x:0), _pz=(typeof player!=='undefined'?player.z:0);
+      if (typeof car!=='undefined'&&car&&car.driving){ _px=car.x; _pz=car.z; }
+      updateVehicleVisibility(_px,_pz);
+    }
+  }catch(e){}
   try{ updatePickups(dt); }catch(e){}
   try{ if(typeof mqUpdate!=='undefined') mqUpdate(dt); }catch(e){}
   updateSmoke(dt);
