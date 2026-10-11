@@ -94,9 +94,9 @@
   },
   {
    "name": "index.html",
-   "size": 813078,
-   "sha256": "35994b6d1d26d92df6421e1c3a1593ca4de120b32e7c18d77c41d93a889fa313",
-   "hash": "35994b6d1d26d92df6421e1c3a1593ca4de120b32e7c18d77c41d93a889fa313"
+   "size": 814702,
+   "sha256": "3786643810be29b4942fdf4c06292bf8c9b355ce2caaea889752b45b714e09d9",
+   "hash": "3786643810be29b4942fdf4c06292bf8c9b355ce2caaea889752b45b714e09d9"
   },
   {
    "name": "infracrew_system.js",
@@ -149,9 +149,9 @@
   },
   {
    "name": "npc_system.js",
-   "size": 81508,
-   "sha256": "877023c199c886cc94a11eb46f4785df3d2ce1eb1b1cfb8959fb9d311eccef38",
-   "hash": "877023c199c886cc94a11eb46f4785df3d2ce1eb1b1cfb8959fb9d311eccef38"
+   "size": 82368,
+   "sha256": "9142992e2447fd2c5b2c6ae0b9c1f9e58dcdab9939b31976ea344213786a3a67",
+   "hash": "9142992e2447fd2c5b2c6ae0b9c1f9e58dcdab9939b31976ea344213786a3a67"
   },
   {
    "name": "poi_map.js",
@@ -173,9 +173,9 @@
   },
   {
    "name": "refnpc_system.js",
-   "size": 37994,
-   "sha256": "4c573d50e637074791b63822a485a8bace7d94821b59c5399d44779539e3e967",
-   "hash": "4c573d50e637074791b63822a485a8bace7d94821b59c5399d44779539e3e967"
+   "size": 38640,
+   "sha256": "aa8f8aa721603a4464df8b6883972c47c47e88a7a83be29c56f66a46ded38456",
+   "hash": "aa8f8aa721603a4464df8b6883972c47c47e88a7a83be29c56f66a46ded38456"
   },
   {
    "name": "residential_detail.js",
@@ -347,6 +347,6 @@
    "hash": "fd01a802a68d0322d9e7de7bf66e217ff9e4773846806dd95325628fa69ea49e"
   }
  ],
- "ui_version": "2026.10.11.155",
+ "ui_version": "2026.10.11.156",
  "version": "2026.10.11.137"
 }
