@@ -732,11 +732,12 @@ function initHeli(){
   };
   /* hook into the frame loop — chains with other module wraps */
   try{
-    if (typeof animate==='function' && !animate.__heliWrap){
-      var orig=animate;
-      var wrapped=function(){ orig(); updateHeli(0.016); };
-      wrapped.__heliWrap=true;
-      animate=wrapped;
+    /* v1.51 TICK REGISTRY (expert report #14, James Park, Joshua approved):
+       was an animate() monkey-patch — now registers on the central Sim tick
+       registry. Same once-per-frame timing, deterministic priority order. */
+    if(window.Sim && typeof Sim.onTick==='function' && !window.__heliTickReg){
+      window.__heliTickReg=true;
+      Sim.onTick('render', 51, function(dt){ updateHeli(0.016); });
     }
   }catch(e){}
 }
