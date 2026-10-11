@@ -782,6 +782,12 @@
       <span class="opt-label">Antialiasing</span><span class="opt-impact heavy">HEAVY</span></label>
     <label class="launch-opt"><input type="checkbox" data-opt="hiDetail" checked>
       <span class="opt-label">High-detail buildings</span><span class="opt-impact medium">MEDIUM</span></label>
+    <label class="launch-opt"><span class="opt-label">Draw distance</span>
+      <select id="launch-drawdist" data-opt="drawDist" style="margin-left:8px;background:#1a2030;color:#fff;border:1px solid #444;padding:4px 8px;border-radius:4px;">
+        <option value="short">Short (fastest)</option>
+        <option value="medium" selected>Medium</option>
+        <option value="long">Long (original)</option>
+      </select><span class="opt-impact heavy">HEAVY</span></label>
   </div>
 
   <div class="launch-presets">
@@ -990,23 +996,33 @@ try{
           boxes[i].checked = !!window.__launchOpts[key];
         }
       }
+      // v1.25: sync the draw distance dropdown (a <select>, not a checkbox)
+      var dd = document.getElementById('launch-drawdist');
+      if (dd && window.__launchOpts.drawDist) dd.value = window.__launchOpts.drawDist;
     }
     syncBoxes();
     // Checkbox changes update __launchOpts live
     launcher.addEventListener('change', function(e){
       var t = e.target;
-      if (!t || t.tagName !== 'INPUT' || !t.getAttribute('data-opt')) return;
+      if (!t || !t.getAttribute('data-opt')) return;
       var key = t.getAttribute('data-opt');
       if (key === 'crews') {
         window.__applyCrewMaster(t.checked);
-      } else if (key in window.__launchOpts) {
+      } else if (key === 'drawDist' && t.tagName === 'SELECT') {
+        // v1.25: draw distance dropdown — string preset, not boolean
+        if (t.value === 'short' || t.value === 'medium' || t.value === 'long') {
+          window.__launchOpts.drawDist = t.value;
+        }
+      } else if (t.tagName === 'INPUT' && key in window.__launchOpts) {
         window.__launchOpts[key] = t.checked;
       }
       syncBoxes(); // keep master/sub in sync
     });
     // Presets
     function setAll(on){
-      for (var k in window.__launchOpts) window.__launchOpts[k] = on;
+      for (var k in window.__launchOpts) {
+        if (typeof window.__launchOpts[k] === 'boolean') window.__launchOpts[k] = on;  // v1.25: skip drawDist (string)
+      }
       syncBoxes();
     }
     var bAll = document.getElementById('launch-all');
@@ -1025,6 +1041,7 @@ try{
       window.__launchOpts.antialias = false;
       window.__launchOpts.hiDetail = false;
       window.__launchOpts.shadows = false;
+      window.__launchOpts.drawDist = 'short';  // v1.25: shortest view = least to render
       syncBoxes();
     });
     // START GAME: save, hide launcher, reveal loader
@@ -2375,7 +2392,8 @@ window.__setNpcPaused = function(paused){
   window.__launchOpts={
     npcs:dflt,roadCrew:dflt,surveyFleet:dflt,infraCrew:dflt,hqStaff:dflt,
     martaBuses:dflt,martaTrains:dflt,drones:dflt,traffic:dflt,
-    shadows:dflt,antialias:dflt,hiDetail:dflt
+    shadows:dflt,antialias:dflt,hiDetail:dflt,
+    drawDist:'medium'  // v1.25: draw distance preset ('short'|'medium'|'long') — not a boolean, excluded from SELECT ALL/NONE presets
   };
   window.__isAPKLaunch=isAPK;  // informational: which default set was applied
 })();
@@ -2387,6 +2405,11 @@ window.__launcherConfirmed = false;  // set true when user hits START GAME
     if (saved && typeof saved === 'object') {
       for (var k in window.__launchOpts) {
         if (typeof saved[k] === 'boolean') window.__launchOpts[k] = saved[k];
+        // v1.25: drawDist is a string preset, not a boolean
+        else if (k === 'drawDist' && typeof saved[k] === 'string' &&
+                 (saved[k] === 'short' || saved[k] === 'medium' || saved[k] === 'long')) {
+          window.__launchOpts[k] = saved[k];
+        }
       }
     }
     // Backward compat: ?nonpc=1 URL param (v1.21 kill switch) maps to npcs:false
@@ -2491,13 +2514,24 @@ try{
     renderer:(_gl&&_gl.getParameter(_gl.RENDERER))?String(_gl.getParameter(_gl.RENDERER)).slice(0,48):'?'});
 }catch(e){}
 scene.background = new THREE.Color(0x9fc7e8);
-/* v1.20: Closer fog on weak hardware hides the reduced draw distance. */
-scene.fog = window.__weakHardware
-  ? new THREE.Fog(0x9fc7e8, 200, 1200)
-  : new THREE.Fog(0x9fc7e8, 400, 2500);
+/* v1.25 DRAW DISTANCE (Joshua 2026-10-10: "make the drawn area shorter"):
+   Launcher preset controls how far the camera sees. Shorter = less to
+   render = better performance on weak hardware. Fog end matches the far
+   plane so there's no visible hard cutoff at the edge of the drawn area.
+   - short:  far 1500, fog 150-900   (fastest, old weak-hardware default)
+   - medium: far 2500, fog 250-1500  (new default — half the old distance)
+   - long:   far 5000, fog 400-2500  (original full distance) */
+var _dd = (window.__launchOpts && window.__launchOpts.drawDist) || 'medium';
+if (window.__weakHardware && _dd === 'medium') _dd = 'short';  // auto-detected weak hardware caps at short
+var _ddCfg = ({
+  short:  { far: 1500, fogNear: 150, fogFar: 900  },
+  medium: { far: 2500, fogNear: 250, fogFar: 1500 },
+  long:   { far: 5000, fogNear: 400, fogFar: 2500 }
+})[_dd] || { far: 2500, fogNear: 250, fogFar: 1500 };
+scene.fog = new THREE.Fog(0x9fc7e8, _ddCfg.fogNear, _ddCfg.fogFar);
 
-/* v1.20 PERFORMANCE: Reduce view distance on weak hardware — less to render. */
-var _camFar = (window.__weakHardware) ? 1500 : 5000;
+/* v1.25: camera far plane follows the draw distance preset. */
+var _camFar = _ddCfg.far;
 var camera = new THREE.PerspectiveCamera(62, window.innerWidth/window.innerHeight, 0.5, _camFar);  // v0.6: tighter depth range = less z-fight on mobile GPUs
 
 var hemi = new THREE.HemisphereLight(0xcfe8ff, 0x4a7c3a, 0.95);
