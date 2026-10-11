@@ -98,6 +98,9 @@
 
   /* sidewalk: road -> entrance */
   spSlab(3544, 3185, 16, 3, 0x9a9a9a, heightAt(3544, 3185), 0.12);
+  /* v1.35 SIDEWALK COLLISION (2026-10-11, Joshua: "I can run through sidewalks"):
+     register this named sidewalk slab as a solid walkable surface. */
+  try{ if(typeof __regSidewalk==='function') __regSidewalk(3544, 3185, 0, 16, 0.3, 3, heightAt(3544,3185)+0.12-0.15); }catch(e){}
 
   labelAt('ADAMSVILLE ELEMENTARY', cx, cz, 18, 46, '#ffd75e');
   addCollider(cx, cz, 28);
