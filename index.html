@@ -941,7 +941,13 @@ function __loadStep(key,failed){
     if(next){
       /* single current-step display: fade out, flip to next step, fade in */
       var label='Loading '+window.__loadNames[next].toLowerCase()+'...';
-      if(failed) label='⚠ '+window.__loadNames[key]+' failed — '+label;
+      /* v1.38 HQ-FAIL FIX (Joshua 2026-10-11: "headquarters staff failed" stuck
+         at 18%): only show the failure warning for CRITICAL __loadOrder steps.
+         Optional systems (hq, drones, etc.) log to console instead — showing
+         "HQ staff failed" in the main status line confused players into
+         thinking HQ staff was the blocker when the real issue was elsewhere. */
+      if(failed && window.__loadOrder.indexOf(key)!==-1) label='⚠ '+window.__loadNames[key]+' failed — '+label;
+      else if(failed){ try{ console.warn('[loader] Optional system failed (non-blocking): '+key); }catch(e){} }
       st.style.opacity='0';
       setTimeout(function(){ st.textContent=label; st.style.opacity='1'; },150);
     } else {
@@ -1101,21 +1107,34 @@ function __collectDeferredScripts(){
 function __injectZoneFiles(files, callback){
   /* Dynamically inject zone data scripts in order (replaces zoneloader's
      document.write, which cannot run after parsing). */
+  /* v1.38 ZONE RETRY (Joshua 2026-10-11: laptop stuck at 18% — a single
+     transient failure on roads.js must not trap the loader forever).
+     Each zone file gets one automatic retry before being marked failed. */
   var i = 0;
   function nextFile(){
     if (i >= files.length){ if (callback) callback(); return; }
     var f = files[i++];
+    loadZoneFile(f, 0);
+  }
+  function loadZoneFile(f, attempt){
     var s = document.createElement('script');
     var done = false;
     function finish(ok){
       if (done) return; done = true;
+      if(!ok && attempt < 1){
+        /* First failure — retry once before giving up. */
+        try{ console.warn('[deferred] Zone script failed, retrying: '+f.src); }catch(e){}
+        setTimeout(function(){ loadZoneFile(f, attempt+1); }, 2000);
+        return;
+      }
       try{ if (f.key) __loadStep(f.key, !ok); }catch(e){}
       nextFile();
     }
     s.onload = function(){ finish(true); };
     s.onerror = function(){ finish(false); };
     setTimeout(function(){ if(!done){ try{ console.warn('[deferred] Zone script timeout: '+f.src); }catch(e){} finish(false); } }, 45000);
-    s.src = f.src;
+    /* Cache-bust on retry so a stale CDN edge does not serve the same broken bytes. */
+    s.src = attempt > 0 ? f.src + (f.src.indexOf('?')===-1?'?':'&') + 'retry='+Date.now() : f.src;
     document.head.appendChild(s);
   }
   nextFile();
@@ -9317,6 +9336,26 @@ function __tryStartGame(){
 /* v1.15: STUCK-LOADER WATCHDOG — if the loader is still visible 45s after
    block 2 parsed and the game never started, surface a diagnostic instead of
    a dead "click to continue". This catches the exact symptom Joshua reported. */
+/* v1.38 HARD FAILSAFE (Joshua 2026-10-11: laptop stuck at 18% with "HQ staff
+   failed"): the 45s watchdog only SHOWED a message — it never unblocked the
+   loader. Now it also reveals a SKIP AND START button that force-marks all
+   pending steps done so the player is never trapped. A 3-minute ABSOLUTE
+   failsafe force-completes everything automatically as a last resort. */
+window.__forceCompletePendingSteps=function(){
+  /* Mark every pending __loadOrder step as warned-done so __tryStartGame
+     stops waiting. The game starts with whatever actually loaded. */
+  try{
+    for(var i=0;i<window.__loadOrder.length;i++){
+      var k=window.__loadOrder[i];
+      if(!window.__loadDone[k]){
+        window.__loadDone[k]='warn';
+        try{ console.warn('[loader] Failsafe force-completed step: '+k); }catch(e){}
+      }
+    }
+    try{ __paintProgress(); }catch(e){}
+    return true;
+  }catch(e){ return false; }
+};
 setTimeout(function(){
   try{
     var l=document.getElementById('loader');
@@ -9335,10 +9374,40 @@ setTimeout(function(){
         st.style.opacity='1';
       }
       var s=document.getElementById('load-start');
-      if(s){ s.style.display='block'; s.textContent='TAP TO START'; }
+      if(s){
+        s.style.display='block';
+        if(pending.length){
+          /* Offer an escape hatch: skip the stuck steps and start anyway. */
+          s.textContent='SKIP AND START';
+          s.onclick=function(){
+            try{
+              window.__forceCompletePendingSteps();
+              if(typeof __tryStartGame==='function') __tryStartGame();
+            }catch(e){}
+          };
+        }else{
+          s.textContent='TAP TO START';
+        }
+      }
     }
   }catch(e){}
 },45000);
+/* v1.38 ABSOLUTE FAILSAFE: 3 minutes after page load, if the game still has
+   not started and the loader is still visible, force-complete all pending
+   steps automatically. The player should NEVER be stuck forever. */
+setTimeout(function(){
+  try{
+    var l=document.getElementById('loader');
+    if(l && l.style.display!=='none' && !window.__gameStarted){
+      try{ console.warn('[loader] ABSOLUTE FAILSAFE: 3min elapsed, force-completing pending steps'); }catch(e){}
+      window.__forceCompletePendingSteps();
+      var st=document.getElementById('load-status');
+      if(st){ st.textContent='⚠ Some assets timed out — starting with what loaded'; st.style.opacity='1'; }
+      var s=document.getElementById('load-start');
+      if(s){ s.style.display='block'; s.textContent='TAP TO START'; }
+    }
+  }catch(e){}
+},180000);
 /* v1.33 REMOVED (Joshua 2026-10-11): the 30s auto-confirm fallback is gone.
    The launcher now waits for an explicit choice — START GAME or the new
    "Start Anyway" button. No timers, no auto-proceed. (__autoStart below only
