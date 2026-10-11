@@ -278,7 +278,7 @@
     {
       "name": "terrain_heights_adamsville_600x800.bin",
       "size": 1925604,
-      "sha256": "1089070e7342f8a350551e6aeeebbc523a9ae3e5e42f4fab7b68effa67c23e9c"
+      "sha256": "bda2e3ab256809e986d8d689bff727d0d59da9557779cbd6ca4714e0eae10027"
     },
     {
       "name": "terrainfix.js",
@@ -383,6 +383,6 @@
       "size": 11610
     }
   ],
-  "ui_version": "2026.10.11.178",
+  "ui_version": "2026.10.11.179",
   "version": "2026.10.11.166"
 }
