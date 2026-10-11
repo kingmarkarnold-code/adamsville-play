@@ -7314,6 +7314,11 @@ actionBtn.addEventListener('click', function(){
     if (typeof busDoBoard==='function') busDoBoard();
   } else if (a==='exit-bus'){
     if (typeof busDoExit==='function') busDoExit();
+  } else if (a==='board-schoolbus'){
+    /* #32 (Joshua): school bus boarding — same action-button pattern as MARTA. */
+    if (typeof sbDoBoard==='function') sbDoBoard();
+  } else if (a==='exit-schoolbus'){
+    if (typeof sbDoExit==='function') sbDoExit();
   } else if (a && a.indexOf('mq-')===0){
     if (typeof mqDoAction==='function') mqDoAction(a);
   }
@@ -9380,6 +9385,11 @@ function updateActionButton(){
         if (player.busStopRequested){ act='exit-bus'; label='STOP REQUESTED'; }
         else { act='exit-bus'; label='REQUEST STOP'; }
       }
+      /* #32 (Joshua): school-bus ride — same REQUEST STOP pattern as MARTA. */
+      else if (player.ridingSchoolBus){
+        if (player.sbStopRequested){ act='exit-schoolbus'; label='STOP REQUESTED'; }
+        else { act='exit-schoolbus'; label='REQUEST STOP'; }
+      }
       if (!act){
         /* v1.31 OUT-OF-GAS TOW (Joshua): van stalled on empty and the player
            is on foot nearby - offer a tow to the nearest gas station instead
@@ -9415,6 +9425,13 @@ function updateActionButton(){
           act='board-bus'; label='BOARD BUS '+_b.route.num;
           window.__busBoardBus=_b;
         }
+        /* #32 (Joshua): dwelling school bus at a stop — sbCheckBoard does the
+           proximity scan and returns act/label. typeof-guarded: the schoolbus
+           module may be disabled in the launcher. */
+        if (!act && typeof sbCheckBoard==='function'){
+          var _sb=sbCheckBoard();
+          if (_sb){ act=_sb.act; label=_sb.label; }
+        }
         /* v1.29: enterable building from the tracker (5u to the door).
            Index is resolved for the 'enter-loc:N' action. */
         if (!act && proxEnterables && proxEnterables.nearest){
@@ -9437,7 +9454,16 @@ function updateActionButton(){
           if (!_tn && typeof npcTalkNearest==='function'){
             try{ _tn=npcTalkNearest(player.x,player.z); }catch(e){}
           }
-          if (_tn){ act='talk-npc'; label='TALK'; window.__talkNPC=_tn; }
+          if (_tn){
+            act='talk-npc'; label='TALK'; window.__talkNPC=_tn;
+            /* v1.61 (#33, Robert Hayes): show who you're talking to — "TALK TO MARCUS". */
+            try{
+              if (typeof npcNameOf==='function'){
+                var _nm=npcNameOf(_tn);
+                if (_nm && _nm.indexOf(' ')>0) label='TALK TO '+_nm.split(' ')[0].toUpperCase();
+              }
+            }catch(e){}
+          }
         }
       }
     }
