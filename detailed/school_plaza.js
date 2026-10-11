@@ -337,6 +337,9 @@ function spShelf(x, z, len, gy, alongX) {
   fp.position.set(cx - 20, gy + 6, z1 + 8); scene.add(fp);
   addCollider(cx - 20, z1 + 8, 0.5);
   spSlab(cx, 2618, 6, 12, 0x9a9a9a, heightAt(cx, 2618), 0.12);
+  /* v1.35 SIDEWALK COLLISION (2026-10-11, Joshua: "I can run through sidewalks"):
+     register this named sidewalk slab as a solid walkable surface. */
+  try{ if(typeof __regSidewalk==='function') __regSidewalk(cx, 2618, 0, 6, 0.3, 12, heightAt(cx,2618)+0.12-0.15); }catch(e){}
 
   labelAt('HARPER ARCHER HIGH SCHOOL', cx, cz, 22, 60, '#ffd75e');
   addCollider(cx, cz, 40);
@@ -437,6 +440,9 @@ function spShelf(x, z, len, gy, alongX) {
 
   /* ---- sidewalk along storefronts ---- */
   spSlab(px0 - 3, cz, 5, 100, 0x9a9a9a, heightAt(px0 - 3, cz), 0.12);
+  /* v1.35 SIDEWALK COLLISION (2026-10-11, Joshua: "I can run through sidewalks"):
+     register this named sidewalk slab as a solid walkable surface. */
+  try{ if(typeof __regSidewalk==='function') __regSidewalk(px0-3, cz, 0, 5, 0.3, 100, heightAt(px0-3,cz)+0.12-0.15); }catch(e){}
 
   /* ---- pylon sign near Fairburn Rd ---- */
   var pyX = 3690, pyZ = 4260, pyGy = heightAt(pyX, pyZ);
