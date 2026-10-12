@@ -1280,7 +1280,10 @@ function initTraffic(){
      reservation protocol. */
   TR.jx=buildJunctionGraph(TR.roads); TR.jxClock=0;
   buildRenderPool();
-  var hw=TR.roads.filter(function(R){return R.cat==='highway';});
+  /* v1.61 FIX (2026-10-12 Joshua: no vehicles near Dollar Mill):
+     Was R.cat==='highway' only — but I-20 and other interstates are categorized
+     as 'interstate', so ZERO highway cars spawned on them. Now includes both. */
+  var hw=TR.roads.filter(function(R){return R.cat==='highway'||R.cat==='interstate';});
   var ar=TR.roads.filter(function(R){return R.cat==='minor_artery'||R.cat==='major_artery'||R.cat==='arterial';});  /* v2.1 */
   var lo=TR.roads.filter(function(R){return R.cat==='local';});
   // highway pace: 25-31 u/s ≈ 54-67 mph (MPH_PER_US = 65/30)

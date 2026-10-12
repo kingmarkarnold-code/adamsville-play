@@ -230,6 +230,17 @@
   #slotpick .row:active { background:#2d3547; }
   #slotpick .row.empty { color:#8a93a8; }
   #slotpick-cancel { border-color:#7d2e2e; color:#ff9e9e; }
+  /* v1.60 SAVE-AND-EXIT (2026-10-12, Joshua): "Save and Exit" now exits the
+     game entirely instead of returning to the title screen. Browsers won't
+     let a page close a tab it didn't open, so when no native close is
+     available we show this overlay telling the player it's safe to close. */
+  #exitdone { position:fixed; inset:0; z-index:70; display:none; align-items:center; justify-content:center;
+    background:rgba(0,0,0,.85); }
+  #exitdone.show { display:flex; }
+  #exitdone .card { background:#161b26; border-radius:14px; padding:20px 22px; max-width:430px; width:82%;
+    text-align:center; }
+  #exitdone h3 { margin:0 0 12px 0; color:#7dff9e; }
+  #exitdone p { color:#c7cddc; }
   /* Exit button in the gameplay menu: red tint so it stands out. */
   #gp-exit { border-color:#7d2e2e; color:#ff9e9e; }
   /* v0.9: CAR RADIO UI — only while driving (prev / song name / next) */
@@ -632,10 +643,10 @@
   <div id="zonepick-list"></div>
   <button id="zonepick-cancel">Cancel</button>
 </div></div>
-<!-- Save prompt for the Exit flow (Joshua 2026-10-11):
+<!-- Save prompt for the Exit flow (Joshua 2026-10-11, exit behavior updated 2026-10-12):
      Save -> slot picker -> stay in game;
      Continue -> back to game, no save;
-     Save and Exit -> slot picker -> exit to title screen. -->
+     Save and Exit -> slot picker -> save, then exit the game entirely. -->
 <div id="saveexit"><div class="card">
   <h3>Save game?</h3>
   <button class="row" id="se-save">Save</button>
@@ -648,6 +659,13 @@
   <h3>Choose a save slot</h3>
   <div id="slotpick-list"></div>
   <button class="row" id="slotpick-cancel">Cancel</button>
+</div></div>
+<!-- v1.60 SAVE-AND-EXIT (2026-10-12, Joshua): "Game saved" overlay shown when
+     the page can't close itself (browsers block window.close on tabs the
+     script didn't open). The APK's native bridge closes the app instead. -->
+<div id="exitdone"><div class="card">
+  <h3>&#10003; Game saved</h3>
+  <p>You can close this tab.</p>
 </div></div>
 <!-- v1.12.10: report-view panel removed per Joshua — reporting still runs headless to GitHub. -->
 <!-- HUD readouts: current street name (GTA-style), version tag, how-to-play card. -->
@@ -4543,7 +4561,7 @@ try{ __parseSet('Placing street furniture', '', 40); }catch(e){}
     nameSigns.forEach(function(s, i){
       placeInst(posts, pi++, s.x, s.y, s.z, 0);
       placeInst(boards, i, s.x, s.y, s.z, s.yaw);
-      try{ addCollider(s.x, s.z, 0.4); }catch(e){}  // v2.1: solid sign posts
+      try{ addCollider(s.x, s.z, 0.2); }catch(e){}  // v1.61 COLLISION AUDIT (2026-10-12, Joshua's rule): post is 0.12r — was 0.4, walk right up to it
       // text sprite
       var nm=name1995(s.name);
       if (nm){
@@ -4568,7 +4586,7 @@ try{ __parseSet('Placing street furniture', '', 40); }catch(e){}
     stops.forEach(function(s, i){
       placeInst(posts, pi++, s.x, s.y, s.z, 0);
       placeInst(stopMesh, i, s.x, s.y, s.z, s.yaw);
-      try{ addCollider(s.x, s.z, 0.4); }catch(e){}  // v2.1: solid sign posts
+      try{ addCollider(s.x, s.z, 0.2); }catch(e){}  // v1.61 COLLISION AUDIT (2026-10-12, Joshua's rule): post is 0.12r — was 0.4, walk right up to it
     });
     // traffic lights: housing + 3 bulbs (red lit)
     var housGeo=new THREE.BoxGeometry(0.55,1.7,0.55); housGeo.translate(0,3.6,0);
@@ -4638,7 +4656,16 @@ try{ __parseSet('Placing street furniture', '', 40); }catch(e){}
       });
       pv.set(s.x, gy, s.z); sv.set(1,1,1); m4.compose(pv,qt,sv);
       boards.setMatrixAt(i, m4);
-      try{ addCollider(s.x, s.z, 1.2); }catch(e){}  // v2.1: solid exit sign
+      /* v1.61 COLLISION AUDIT (2026-10-12, Joshua's rule): was a single 1.2r circle
+         at center — but the board is 7.5u wide at y+4.6 (player walks UNDER it).
+         The posts at ±2.8 are the real ground obstruction. Two small post
+         colliders instead of one wrong-shaped circle. */
+      try{
+        [-2.8,2.8].forEach(function(off){
+          var px=s.x+Math.cos(s.yaw)*off, pz=s.z-Math.sin(s.yaw)*off;
+          addCollider(px, pz, 0.3);
+        });
+      }catch(e){}
       // text sprite: "next exit <name>"
       var cv=document.createElement('canvas'); cv.width=512; cv.height=128;
       var g2=cv.getContext('2d');
@@ -5735,7 +5762,7 @@ function heroPorchY(x, z){
     var mbx=3127, mbz=3705, mby=heightAt(mbx,mbz);
     box(0.7,1.3,0.7, brick, mbx, mby+0.65, mbz);
     box(0.9,0.4,0.5, 0x2a2a2a, mbx, mby+1.5, mbz);
-    addCollider(mbx,mbz,0.8);
+    addCollider(mbx,mbz,0.5);  // v1.61 COLLISION AUDIT (2026-10-12, Joshua's rule): brick pillar is 0.7u wide — was 0.8, walk right up to it
   })();
 
   /* ---- dense tall pines around the lot (per the photo) ----
@@ -5765,7 +5792,10 @@ function heroPorchY(x, z){
       var can=new THREE.Mesh(new THREE.ConeGeometry(3.1,13,7),
         new THREE.MeshLambertMaterial({ color:0x2d5a27 }));
       can.position.set(tx, gy2+13.5*s, tz); can.scale.set(s,s,s); scene.add(can);
-      addCollider(tx,tz,0.8);
+      /* v1.60 TREE COLLISION (2026-10-12, Joshua: collision must match the
+         object itself): was a fixed 0.8u — oversized for these yard pines
+         (trunk base radius 0.45 x scale s). Now matches the visible trunk. */
+      addCollider(tx,tz,0.45*s);
     }
   })();
 })();
@@ -6259,10 +6289,20 @@ function runOsmBuildings(){
         }
       }
     }catch(e){}
-    var BLDG_CHUNK=2000, BLDG_COLS=4, BLDG_ROWS=6;
+    /* v1.61 FIX (2026-10-12 Joshua: houses visible far away but not near Dollar Mill):
+       The chunk grid assumed 0-based coordinates (x:[0,8000], z:[0,12000]),
+       but Adamsville was RESCALED to x:[-832,8377], z:[-4249,8267]. Buildings
+       with negative coords got clamped to chunk (0,0) via Math.max(0,...),
+       but the bounding sphere was centered at (1000,1000) — thousands of units
+       away from the actual buildings. Three.js frustum-culled the whole chunk
+       even when the buildings were right in front of the camera.
+       Now: offset coords so the grid covers the real bounds. No clamping —
+       chunk indices can go negative, and the bounding sphere center is computed
+       with the same offset so it actually contains the buildings. */
+    var BLDG_CHUNK=2000, BLDG_XOFF=1000, BLDG_ZOFF=5000;
     function bldgChunkKey(x,z){
-      var cx=Math.max(0,Math.min(BLDG_COLS-1,Math.floor(x/BLDG_CHUNK)));
-      var cz=Math.max(0,Math.min(BLDG_ROWS-1,Math.floor(z/BLDG_CHUNK)));
+      var cx=Math.floor((x+BLDG_XOFF)/BLDG_CHUNK);
+      var cz=Math.floor((z+BLDG_ZOFF)/BLDG_CHUNK);
       return cx+'_'+cz;
     }
     // per-chunk records: bodies/roofs:[{m:Matrix4,col:hex}], plus extents
@@ -6338,8 +6378,10 @@ function runOsmBuildings(){
       var _bc=bldgChunks[_bck];
       if(!_bc.bodies.length) continue;
       var _bp=_bck.split('_');
-      var _bcx=(parseInt(_bp[0],10)+0.5)*BLDG_CHUNK;
-      var _bcz=(parseInt(_bp[1],10)+0.5)*BLDG_CHUNK;
+      /* v1.61: bounding sphere center must use the same offset as bldgChunkKey,
+         or the sphere won't contain the chunk's buildings (see chunk key fix). */
+      var _bcx=(parseInt(_bp[0],10)+0.5)*BLDG_CHUNK-BLDG_XOFF;
+      var _bcz=(parseInt(_bp[1],10)+0.5)*BLDG_CHUNK-BLDG_ZOFF;
       var _bcy=(_bc.minBase+_bc.maxTop)/2;
       var _bhr=Math.sqrt(_bHalf*_bHalf+((_bc.maxTop-_bc.minBase)/2)*((_bc.maxTop-_bc.minBase)/2))+_bc.maxFoot+5;
       var _bbs=new THREE.Sphere(new THREE.Vector3(_bcx,_bcy,_bcz), _bhr);
@@ -6703,7 +6745,7 @@ try{
   for (var b=0;b<3;b++){
     var bx=a.x-30+b*30, bz=a.z+(b%2)*18;
     box(24,14,14, 0xa5714f, bx, bz);
-    addCollider(bx, bz, 17);
+    addCollider(bx, bz, 14);  // v1.61 COLLISION AUDIT (2026-10-12, Joshua's rule): 24x14 bldg, half-diag 13.9 — was 17
   }
   labelAt('RIVERDALE APARTMENTS', a.x, a.z, 22, 40);
 })();
@@ -6748,7 +6790,7 @@ try{
   /* #26 LANDMARK AUDIT (2026-10-11): corrected from (33.57,-84.574) — was on NE Broad St, ~800m off. */
   /* Source: Nominatim/OSM — West Broad Street, Fairburn, GA 30213. */
   var m=xz(33.56621, -84.58205);
-  for (var i=0;i<4;i++){ box(18,10+i%2*3,14, 0x96543c, m.x-42+i*24, m.z); addCollider(m.x-42+i*24, m.z, 14); }
+  for (var i=0;i<4;i++){ box(18,10+i%2*3,14, 0x96543c, m.x-42+i*24, m.z); addCollider(m.x-42+i*24, m.z, 12); }  // v1.61 COLLISION AUDIT (2026-10-12, Joshua's rule): 18x14 bldg, half-diag 11.4 — was 14
   labelAt('W BROAD ST — FAIRBURN', m.x, m.z, 20, 44);
   var e=xz(33.53045, -84.60615);
   labelAt('I-85 SOUTH — FAIRBURN EXIT', e.x, e.z, 22, 44);
@@ -6829,7 +6871,7 @@ try{
       var pil=new THREE.Mesh(new THREE.BoxGeometry(2.2,clearH,2.2),
         new THREE.MeshLambertMaterial({ color:0x8a8f94 }));
       pil.position.set(px, gy+clearH/2, pz); scene.add(pil);
-      addCollider(px, pz, 2.2);
+      addCollider(px, pz, 1.6);  // v1.61 COLLISION AUDIT (2026-10-12, Joshua's rule): pillar is 2.2x2.2 (half-diag 1.56) — was 2.2
     });
   }
   overpass(3646.8, 2783.8, -1.486);   // (a) I-20 over MLK Jr Dr
@@ -7149,10 +7191,14 @@ var TREE_SPECIES=[
      hiding — is the right optimization. LOD levels (simplified geometry at
      range) were considered but rejected: canopies are already 7-80 triangles,
      there is nothing meaningful left to simplify. */
-  var TREE_CHUNK=2000, TREE_COLS=4, TREE_ROWS=6;
+  /* v1.61 FIX (2026-10-12): same negative-coords chunking bug as buildings.
+     Adamsville rescaled to x:[-832,8377], z:[-4249,8267] but the grid assumed
+     0-based. Trees with negative coords got clamped to chunk (0,0) with a
+     bounding sphere at (1000,1000) — wrong culling. Now offset like buildings. */
+  var TREE_CHUNK=2000, TREE_XOFF=1000, TREE_ZOFF=5000;
   function treeChunkKey(x,z){
-    var cx=Math.max(0,Math.min(TREE_COLS-1,Math.floor(x/TREE_CHUNK)));
-    var cz=Math.max(0,Math.min(TREE_ROWS-1,Math.floor(z/TREE_CHUNK)));
+    var cx=Math.floor((x+TREE_XOFF)/TREE_CHUNK);
+    var cz=Math.floor((z+TREE_ZOFF)/TREE_CHUNK);
     return cx+'_'+cz;
   }
   // per-chunk tree records: {trunks:[Matrix4], pines:[{m:Matrix4}],
@@ -7206,7 +7252,14 @@ var TREE_SPECIES=[
       decidRecs.push([ck, li, spi, x, gy, z, s]);
       decidN++;
     }
-    addCollider(x,z,0.8);  // solid trunks: cars take damage, player walks around
+    /* v1.60 TREE COLLISION (2026-10-12, Joshua: collision must match the
+       object itself): was a fixed 0.8u for every tree regardless of size —
+       small trees blocked the player a full unit of empty air from the
+       visible trunk. Now the collider matches the actual trunk base radius
+       (trunkGeo bottom radius 0.5 x per-tree scale s). resolveCollision adds
+       the player's own radius (0.5) on top, so the player stops with their
+       edge exactly at the visible trunk surface. */
+    addCollider(x,z,0.5*s);  // solid trunks: cars take damage, player walks right up to the trunk
     placed++;
   }
   /* Build per-chunk InstancedMeshes. Each chunk mesh gets frustumCulled=true
@@ -7219,8 +7272,9 @@ var TREE_SPECIES=[
     if (!treeChunks.hasOwnProperty(_ck)) continue;
     var _c=treeChunks[_ck];
     var _parts=_ck.split('_');
-    var _ccx=(parseInt(_parts[0],10)+0.5)*TREE_CHUNK;
-    var _ccz=(parseInt(_parts[1],10)+0.5)*TREE_CHUNK;
+    /* v1.61: bounding sphere center must use the same offset as treeChunkKey. */
+    var _ccx=(parseInt(_parts[0],10)+0.5)*TREE_CHUNK-TREE_XOFF;
+    var _ccz=(parseInt(_parts[1],10)+0.5)*TREE_CHUNK-TREE_ZOFF;
     var _bs=new THREE.Sphere(new THREE.Vector3(_ccx,10,_ccz), _halfDiag);
     var _cm={};
     if (_c.trunks.length){
@@ -7540,8 +7594,14 @@ var car=null;
    -> ReferenceError -> caught silently -> no car ever spawned.
    Now spawnPlayerVan() tries immediately, then retries every 100ms until
    the mesh builders arrive (or 10s passes). Already-spawned = no-op. */
+/* v1.61 FIX (2026-10-12): _vanSpawned flag — the driveSelfTest() temporarily
+   sets car=testCar during its self-test. The old retry check (car && car.mesh)
+   would see the test car and stop retrying, thinking the van was spawned.
+   Then the test restores car=keepCar (null) and the van never spawns.
+   Now we track the van explicitly. */
+var _vanSpawned=false;
 function spawnPlayerVan(){
-  if (car && car.mesh) return true;  // already spawned — don't double up
+  if (_vanSpawned && car && car.mesh) return true;  // already spawned — don't double up
   /* Joshua's GMC Safari van (brown/gold two-tone), parked in the 535 driveway.
      v3.1 FIX (2026-10-09 inspection): yaw 0 = nose SOUTH toward Dollar Mill Rd
      (was Math.PI/2 — the 5.6u van lay sideways across the 4.5u driveway,
@@ -7575,6 +7635,7 @@ function spawnPlayerVan(){
     try { car.mesh.position.y=heightAt(car.x,car.z)+0.32; }catch(e){}
     try { car.mesh.visible=true; }catch(e){}  // ensure visible (culling keeps it visible anyway)
     try { console.log('[van] Player van spawned at '+vx+','+vz+' kind='+vkind); }catch(e){}
+    _vanSpawned=true;  // v1.61: mark explicitly (driveSelfTest swaps car temporarily)
     return true;
   }catch(e){
     try { console.error('[van] FAILED to spawn player van:', e); }catch(_){}
@@ -7584,12 +7645,14 @@ function spawnPlayerVan(){
 }
 spawnPlayerVan();  // first attempt — may fail if vehicle_meshes.js isn't here yet
 /* v1.57 retry: poll until the deferred vehicle_meshes.js arrives, then spawn.
-   Stops once the car exists or after ~10s (100 tries x 100ms). */
+   Stops once the van exists or after ~10s (100 tries x 100ms).
+   v1.61: check _vanSpawned (not car.mesh) — the driveSelfTest swaps in a
+   test car temporarily, which would fool the old check. */
 (function(){
   var _tries=0;
   var _timer=setInterval(function(){
     _tries++;
-    if ((car && car.mesh) || _tries>100){ clearInterval(_timer); return; }
+    if (_vanSpawned || _tries>100){ clearInterval(_timer); return; }
     if (window.__deferredDone || typeof safariMesh==='function' || typeof sedanMesh==='function'){
       if (spawnPlayerVan()) clearInterval(_timer);
     }
@@ -7599,7 +7662,24 @@ spawnPlayerVan();  // first attempt — may fail if vehicle_meshes.js isn't here
 // (Cars on roads should be moving traffic; that's NPC work for later.)
 // Each old road spot is replaced by the nearest placed house's driveway apron:
 // off the road corridor, near the house, nose facing the street.
-(function(){
+/* v1.61 FIX (2026-10-12 Joshua: "no vehicles around Dollar Mill"):
+   The parked-cars IIFE ran inline during page parse, BEFORE vehicle_meshes.js
+   (deferred via data-dsrc) finished loading. makeCar() calls vt.mesh() which
+   calls safariMesh()/sedanMesh()/etc — all undefined at parse time ->
+   ReferenceError -> the IIFE died silently -> ZERO parked cars ever spawned.
+   Now spawnParkedCars() is retryable like spawnPlayerVan(): it bails (returns
+   false) if the mesh builders aren't here yet, and a 100ms poll retries until
+   they arrive (or 10s passes). Already-spawned = no-op. */
+var _parkedCarsSpawned=false;
+function spawnParkedCars(){
+  if (_parkedCarsSpawned) return true;  // already spawned — don't double up
+  /* v1.61: don't try until the mesh builders actually exist. vehicle_meshes.js
+     loads deferred — bail now, the retry loop below picks it up once the
+     script arrives. Check all mesh functions used by VEHICLE_TYPES. */
+  try {
+    if (typeof safariMesh!=='function' || typeof sedanMesh!=='function') return false;
+  }catch(e){ return false; }
+  try {
   function drivewaySpot(nearX, nearZ){
     var best=null, bd=1e9;
     try{
@@ -7647,6 +7727,27 @@ spawnPlayerVan();  // first attempt — may fail if vehicle_meshes.js isn't here
     }
   });
   try{Report.setSys('parkedCars',{driveways:driveways,total:anchors.length});}catch(e){}
+  try{ console.log('[parked] Spawned '+anchors.length+' parked cars ('+driveways+' in driveways)'); }catch(e){}
+  _parkedCarsSpawned=true;
+  return true;
+  }catch(e){
+    try{ console.error('[parked] FAILED to spawn parked cars:', e); }catch(_){}
+    try{ if (typeof Report!=='undefined' && Report.noteError) Report.noteError('parked-spawn', String(e)); }catch(_){}
+    return false;
+  }
+}
+spawnParkedCars();  // first attempt — may fail if vehicle_meshes.js isn't here yet
+/* v1.61 retry: poll until the deferred vehicle_meshes.js arrives, then spawn.
+   Stops once the cars exist or after ~10s (100 tries x 100ms). */
+(function(){
+  var _tries=0;
+  var _timer=setInterval(function(){
+    _tries++;
+    if (_parkedCarsSpawned || _tries>100){ clearInterval(_timer); return; }
+    if (window.__deferredDone || typeof safariMesh==='function' || typeof sedanMesh==='function'){
+      if (spawnParkedCars()) clearInterval(_timer);
+    }
+  }, 100);
 })();
 // ---- damage (GTA style): dents -> hood smoke -> engine dead ----
 function addDamage(c, amt){
@@ -8362,6 +8463,10 @@ function saveSlot(n){
       music:{mode:musicMode, radioIdx:radioIdx, muted:musicMuted}
     };
     localStorage.setItem('sa_save_'+n, JSON.stringify(s));
+    /* v1.61 APK SAVE TRACKING (2026-10-12): tell the APK's AppBridge which
+       slot was used, so the in-app updater can auto-save to the last slot
+       before applying updates. No-op on web (window.Android undefined). */
+    try{ if(window.Android && typeof window.Android.onGameSaved==='function') window.Android.onGameSaved(n); }catch(e){}
     try{ Report.note('save',{slot:n}); Report.save(true); }catch(e){}
     return true;
   }catch(e){ return false; }
@@ -8475,23 +8580,20 @@ document.getElementById('se-save').addEventListener('click', function(){
   renderExitSlots();
   document.getElementById('slotpick').classList.add('show');
 });
-// Save and Exit: save the game, then exit to the title screen.
+// Save and Exit: save the game, then exit the game entirely (Joshua 2026-10-12).
+// (Old behavior returned to the title screen; the spec now says exit the app.)
 document.getElementById('se-saveexit').addEventListener('click', function(){
   var n=window.__pendingSaveSlot|0;
   if(n){
-    // Legacy inline-slot path: save, then show the loader (title screen).
+    // Legacy inline-slot path: save, then exit the game.
     var ok=saveSlot(n);
     window.__pendingSaveSlot=0;
     document.getElementById('saveexit').classList.remove('show');
     document.getElementById('gameplay').classList.remove('show');
-    if(ok){
-      // exit to the title screen (loader); tap CLICK ANYWHERE TO START to resume the saved session
-      var l=document.getElementById('loader');
-      if(l){ l.style.display='flex'; }
-    }
+    if(ok){ exitGame(); }
     return;
   }
-  // Exit flow: choose a slot first, then exit to the title screen.
+  // Exit flow: choose a slot first, then save and exit the game.
   window.__exitSaveMode='save-exit';
   document.getElementById('saveexit').classList.remove('show');
   renderExitSlots();
@@ -8504,6 +8606,36 @@ document.getElementById('se-continue').addEventListener('click', function(){
   document.getElementById('saveexit').classList.remove('show');
   document.getElementById('gameplay').classList.remove('show');
 });
+/* v1.60 SAVE-AND-EXIT (2026-10-12, Joshua): "Save and Exit" now exits the game
+   entirely instead of returning to the title screen.
+   exitGame() tries, in order:
+     1. Native bridge (APK): an Android WebView can inject a close interface
+        (window.Android.closeApp/finish/exitGame, or window.JSBridge.close).
+        If the APK exposes one, the activity closes.
+     2. window.close() — only works on windows/tabs the script itself opened.
+     3. Fallback overlay (#exitdone): "Game saved. You can close this tab."
+        Browsers block window.close() on normal tabs, so this is the common
+        web path. */
+function exitGame(){
+  // 1. APK native bridge, if the host app injected one.
+  try{
+    if(window.Android){
+      if(typeof window.Android.closeApp==='function'){ window.Android.closeApp(); return; }
+      if(typeof window.Android.finish==='function'){ window.Android.finish(); return; }
+      if(typeof window.Android.exitGame==='function'){ window.Android.exitGame(); return; }
+    }
+    if(window.JSBridge && typeof window.JSBridge.close==='function'){
+      window.JSBridge.close(); return;
+    }
+  }catch(e){}
+  // 2. Script-opened window/tab close attempt.
+  try{ window.close(); }catch(e){}
+  // 3. Fallback: tell the player the save is done and the tab can be closed.
+  try{
+    var ov=document.getElementById('exitdone');
+    if(ov){ ov.classList.add('show'); }
+  }catch(e){}
+}
 // Render the 5-slot picker for the Exit flow. Each slot shows empty or the
 // saved date; occupied slots ask for overwrite confirmation before saving.
 function renderExitSlots(){
@@ -8530,9 +8662,8 @@ function renderExitSlots(){
         document.getElementById('slotpick').classList.remove('show');
         document.getElementById('gameplay').classList.remove('show');
         if(window.__exitSaveMode==='save-exit' && ok){
-          // Exit to the title screen (loader); tap to resume the saved session.
-          var l=document.getElementById('loader');
-          if(l){ l.style.display='flex'; }
+          // v1.60 SAVE-AND-EXIT: exit the game entirely (not the title screen).
+          exitGame();
         }
         // 'save-stay' (or a failed save): stay in the game.
         window.__exitSaveMode=null;
@@ -8686,9 +8817,24 @@ var mmZoom=1, mmZoomHintUntil=0, mmSuppressClickUntil=0;
 })();
 document.getElementById('fullmap-close').addEventListener('click', closeFullMap);
 // v1.16 SATELLITE VIEW (Joshua 2026-10-10): button in the full map opens the 3D top-down view.
+// v1.62 SAT FIX (2026-10-12): if the deferred module didn't load, inject it
+// directly and retry — previously a missing window.SATVIEW failed silently
+// and the map "just closed".
 document.getElementById('satview-btn').addEventListener('click', function(){
   try{ closeFullMap(); }catch(e){}
-  try{ if(window.SATVIEW) SATVIEW.open(); }catch(e){}
+  function doOpen(){
+    try{ if(window.SATVIEW){ SATVIEW.open(); return true; } }catch(e){}
+    return false;
+  }
+  if (doOpen()) return;
+  try{ showToast('Loading satellite view\u2026', 1500); }catch(x){}
+  var s=document.createElement('script');
+  s.src='satellite_view.js';
+  s.onload=function(){
+    if (!doOpen()){ try{ showToast('Satellite view unavailable', 2200); }catch(x){} }
+  };
+  s.onerror=function(){ try{ showToast('Satellite view unavailable', 2200); }catch(x){} };
+  document.head.appendChild(s);
 });
 /* v1.17 GPS (expert report #27): screen->world for destination picking.
    Inverse of drawFullMap's M(): screen = center + sc*Rot(rot)*(world-center). */
@@ -8719,7 +8865,9 @@ function fmGpsTap(sx, sy){
         var cb=document.getElementById('gps-clear-btn');
         if (cb) cb.style.display='block';
       }catch(e){}
-      drawFullMap();
+      /* v1.62 NAV FIX (2026-10-12): close the map after the pin drops —
+         Joshua's spec: the floating HUD arrow takes over guidance. */
+      try{ closeFullMap(); }catch(e){}
     }
     return true;
   }catch(e){ return false; }
@@ -10862,6 +11010,21 @@ function __tryStartGame(){
       /* v1.14: hot-reload session restore — if the last page saved its spot
          before a UI-apply reload, put Joshua back exactly where he was. */
       try{ if(typeof window!=='undefined' && window.HR && HR.maybeRestore) HR.maybeRestore(); }catch(e){}
+      /* v1.61 APK AUTO-LOAD (2026-10-12): after an in-app update restart, the
+         APK sets localStorage 'sa_apk_autoload' to the slot number before
+         reloading. Load that save automatically so the player resumes exactly
+         where the auto-save left them. Marker is cleared after use. Deferred
+         one tick so the first frame renders before the teleport. */
+      try{
+        var _al=null; try{ _al=localStorage.getItem('sa_apk_autoload'); }catch(e){}
+        if(_al){
+          try{ localStorage.removeItem('sa_apk_autoload'); }catch(e){}
+          var _as=parseInt(_al,10);
+          if(_as>=1 && _as<=5 && typeof loadSlot==='function'){
+            setTimeout(function(){ try{ loadSlot(_as); }catch(e){} }, 500);
+          }
+        }
+      }catch(e){}
     }catch(e){
       console.error('animate failed:', e);
       window.__gameStarted=false; /* allow a retry */

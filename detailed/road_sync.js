@@ -19,12 +19,16 @@
  *   running world."
  *
  * FORMAT CONVERSION:
- *   Editor categories -> game categories:
- *     interstate   -> highway   (game already widens named interstates)
- *     major_artery -> arterial
- *     minor_artery -> arterial
- *     arterial     -> arterial  (legacy)
+ *   Editor categories -> game categories (v1.59 ROAD CATS, 2026-10-12):
+ *   The game renderer now supports the full five-category road schema.
+ *   All five editor categories pass through UNCHANGED — this script must
+ *   never collapse them (the old GAME_CATS=["highway","arterial","local"]
+ *   mapping destroyed interstate/major_artery/minor_artery data).
+ *     interstate   -> interstate
  *     highway      -> highway
+ *     major_artery -> major_artery
+ *     minor_artery -> minor_artery
+ *     arterial     -> minor_artery  (legacy editor value, matches normRoadCat())
  *     local        -> local
  *   Unknown categories fall back to local (never crash).
  *   Editor-only fields (divided_sections, width_class, paint,
@@ -52,15 +56,21 @@
   var ZONES_URL = "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-map-editor/main/zones.json";
 
   // Game's internal road categories (what buildRoads() iterates).
-  var GAME_CATS = ["highway", "arterial", "local"];
+  // v1.59 ROAD CATS (2026-10-12): full five-category schema. The old
+  // three-category list ["highway","arterial","local"] silently destroyed
+  // interstate/major_artery/minor_artery data on every sync — never revert.
+  var GAME_CATS = ["interstate", "highway", "major_artery", "minor_artery", "local"];
 
   // Editor category -> game category mapping.
+  // v1.59 ROAD CATS (2026-10-12): all five categories pass through unchanged.
+  // Legacy "arterial" (old editor files) maps to "minor_artery", matching the
+  // game's normRoadCat(). Mirrors the convert_roads.py GitHub workflow fix.
   var CAT_MAP = {
-    interstate: "highway",
+    interstate: "interstate",
     highway: "highway",
-    major_artery: "arterial",
-    minor_artery: "arterial",
-    arterial: "arterial",   // legacy editor value
+    major_artery: "major_artery",
+    minor_artery: "minor_artery",
+    arterial: "minor_artery",   // legacy editor value
     local: "local"
   };
 
@@ -102,12 +112,17 @@
 
   /**
    * Convert the editor's roads.json ({cat: [roads]}) to the game's
-   * ROAD_DATA shape ({highway: [...], arterial: [...], local: [...]}).
+   * ROAD_DATA shape ({interstate: [...], highway: [...],
+   * major_artery: [...], minor_artery: [...], local: [...]}).
+   * v1.59 ROAD CATS (2026-10-12): the output bucket keys come from GAME_CATS
+   * (the full five-category schema) — never hardcode the old 3-key shape.
    * Returns null if the doc is unusable.
    */
   function convertRoads(doc) {
     if (!doc || typeof doc !== "object") return null;
-    var out = { highway: [], arterial: [], local: [] };
+    // Build one bucket per game category so no category is ever dropped.
+    var out = {};
+    for (var b = 0; b < GAME_CATS.length; b++) out[GAME_CATS[b]] = [];
     var cats = Object.keys(doc);
     var anyValid = false;
     for (var i = 0; i < cats.length; i++) {
@@ -130,6 +145,9 @@
 
   /**
    * Swap converted roads into the global ROAD_DATA in place.
+   * v1.59 ROAD CATS (2026-10-12): iterates GAME_CATS, so all five keys
+   * (interstate/highway/major_artery/minor_artery/local) are written —
+   * no category is left stale.
    * In-place swap (not rebinding) so any module holding a reference
    * to the ROAD_DATA object sees the update.
    */
@@ -235,8 +253,12 @@
       // debugging tools can inspect what the editor published.
       try { window.__REMOTE_ROAD_DATA = converted; } catch (e) {}
       if (swapRoadData(converted)) {
-        var n = converted.highway.length + converted.arterial.length +
-                converted.local.length;
+        // v1.59 ROAD CATS (2026-10-12): count across all game categories,
+        // not just the old hardcoded 3.
+        var n = 0;
+        for (var ci = 0; ci < GAME_CATS.length; ci++) {
+          n += (converted[GAME_CATS[ci]] || []).length;
+        }
         log("live roads applied: " + n + " roads " +
             "(geometry refreshes on next load).");
         try { window.__ROAD_SYNC_ACTIVE = true; } catch (e) {}

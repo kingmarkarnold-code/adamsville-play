@@ -265,7 +265,7 @@ function spShelf(x, z, len, gy, alongX) {
     pole.position.set(p[0], ggy + 1.75, p[1]); scene.add(pole);
     var rim = new THREE.Mesh(new THREE.TorusGeometry(0.45, 0.08, 8, 16), hoopM);
     rim.position.set(p[0], ggy + 3.2, p[1]); rim.rotation.x = Math.PI / 2; scene.add(rim);
-    addCollider(p[0], p[1], 0.7);
+    addCollider(p[0], p[1], 0.25);  // v1.61 COLLISION AUDIT (2026-10-12, Joshua's rule): pole is 0.15r — was 0.7
   });
   for (var b = 0; b < 2; b++) {
     var bl = new THREE.Mesh(new THREE.BoxGeometry(24, 0.8 + b * 0.8, 1.2),
@@ -293,7 +293,7 @@ function spShelf(x, z, len, gy, alongX) {
       new THREE.MeshLambertMaterial({ color: 0xcccccc }));
     var txp = ffx0 + 5 + tx * 8, tzp = ffz0 + 6 + tz * 10;
     tbl.position.set(txp, fgy + 0.55, tzp); scene.add(tbl);
-    addCollider(txp, tzp, 2);
+    addCollider(txp, tzp, 1.7);  // v1.61 COLLISION AUDIT (2026-10-12, Joshua's rule): table is 3x1.5 (half-diag 1.68) — was 2
   }
   var ctr = new THREE.Mesh(new THREE.BoxGeometry(14, 1.1, 1.2),
     new THREE.MeshLambertMaterial({ color: 0x9a9a9a }));

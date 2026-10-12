@@ -180,7 +180,7 @@
     {
      "id": "gp-exit",
      "label": "Exit",
-     "description": "Exit to the main menu. Asks whether to save first: Save, Continue, or Save and Exit.",
+     "description": "Exit the game. Asks whether to save first: Save, Continue, or Save and Exit.",
      "action": "exit_game",
      "visible": true
     }
@@ -229,7 +229,7 @@
     {
      "id": "se-saveexit",
      "label": "Save and Exit",
-     "description": "Save the game to a slot, then exit to the main menu.",
+     "description": "Save the game to a slot, then exit the game entirely.",
      "action": "save_and_exit",
      "visible": true
     }

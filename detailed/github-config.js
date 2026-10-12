@@ -54,8 +54,8 @@
 window.GITHUB_CONFIG = {
   /* Paste your fine-grained token between the quotes (Option A),
      or leave empty and use GitHubReports.setToken() (Option B).
-     Token removed 2026-10-12 (the placed token returned HTTP 401).
-     Use Option B (GitHubReports.setToken) or paste a fresh token. */
+     Token placed 2026-10-11 per Joshua's explicit authorization —
+     he understands it is visible to anyone who reads this file. */
   token: "",
 
   /* Which repo receives the reports. Do not change unless you

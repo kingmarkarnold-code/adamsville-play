@@ -248,7 +248,25 @@ function playerPos(){
 
 /* setDestination(x, z, name) — snap to nearest junction node, route, draw. */
 function setDestination(x, z, name){
-  if (!G) return false;
+  /* v1.62 NAV FIX (2026-10-12): no routing graph (traffic system unavailable
+     or disabled) — fall back to a straight-line route instead of failing.
+     The pin still drops, the HUD arrow still guides. A* is used when G exists. */
+  if (!G){
+    var from0;
+    try{ from0=playerPos(); }catch(e){ from0={x:4000,z:6000}; }
+    route={pts:[{x:from0.x,z:from0.z},{x:x,z:z}], destX:x, destZ:z,
+           destName:name||'Destination', dist:Math.hypot(x-from0.x,z-from0.z)};
+    try{ rebuildRouteMesh(); }catch(e){}
+    try{
+      var cb0=document.getElementById('gps-clear-btn');
+      if (cb0) cb0.style.display='block';
+    }catch(e){}
+    try{ showToast('\uD83E\uDDF5 Navigating to '+(route.destName)+
+      ' \u2014 '+Math.round(route.dist)+'u (direct)', 2600); }catch(e){}
+    try{ if(typeof Report!=='undefined') Report.note('gps',
+      'route set (direct fallback): '+(route.destName)+' '+Math.round(route.dist)+'u'); }catch(e){}
+    return true;
+  }
   var from=playerPos();
   var nA=nearestNode(from.x, from.z);
   var nB=nearestNode(x, z);
@@ -465,48 +483,144 @@ function drawFullMapRoute(ctx, M){
 }
 
 /* ---------------------------------------------------------------------------
-   initGPS — build the graph, expose window.GPS, wire UI + tick.
+   v1.62 NAV FIX (2026-10-12): EARLY EXPOSURE.
+   Previously window.GPS, the Navigate-button wiring, and the per-frame tick
+   all lived inside initGPS(), which only runs after the traffic system's
+   junction graph is ready. If the traffic system failed (or is disabled in
+   launch options), initGPS() never ran: the Navigate button was dead and
+   map taps just closed the map. Now the UI works at module load; initGPS()
+   only builds the routing graph for A* (setDestination falls back to a
+   straight-line route when the graph is unavailable).
+   --------------------------------------------------------------------------- */
+window.GPS={
+  setDestination:setDestination,
+  clearDestination:clearDestination,
+  hasDestination:hasDestination,
+  getPickMode:getPickMode,
+  setPickMode:setPickMode,
+  drawMinimapRoute:drawMinimapRoute,
+  drawFullMapRoute:drawFullMapRoute,
+  version:'1.62'
+};
+// per-frame ticks on the central registry (expert #14); interval fallback
+// when Sim isn't available yet — independent of the graph boot poll.
+try{
+  if (window.Sim && typeof Sim.onTick==='function'){
+    Sim.onTick('render', 75, function(){ gpsTick(); });
+    Sim.onTick('render', 76, function(){ hudArrowTick(); });
+  } else {
+    setInterval(function(){ try{ gpsTick(); }catch(e){} }, 150);
+    setInterval(function(){ try{ hudArrowTick(); }catch(e){} }, 150);
+  }
+}catch(e){
+  try{ setInterval(function(){ try{ gpsTick(); hudArrowTick(); }catch(x){} }, 150); }catch(x){}
+}
+// full-map "Navigate" button wiring (button element added in index.html)
+try{
+  var b=document.getElementById('gps-nav-btn');
+  if (b) b.addEventListener('click', function(e){
+    e.stopPropagation();
+    if (route && !pickMode){ clearDestination(); setPickMode(false); return; }
+    setPickMode(!pickMode);
+    if (pickMode){ try{ showToast('Tap the map to set your destination', 2500); }catch(x){} }
+  });
+  var c=document.getElementById('gps-clear-btn');
+  if (c) c.addEventListener('click', function(e){
+    e.stopPropagation(); setPickMode(false); clearDestination();
+  });
+}catch(e){}
+// floating HUD navigation arrow (Joshua 2026-10-12): after the pin drops and
+// the map closes, this shows which direction to travel.
+try{ buildHudArrow(); }catch(e){}
+
+/* ---------------------------------------------------------------------------
+   initGPS — build the routing graph only. Called by the boot poll once the
+   traffic system's junction data is ready. Safe to call repeatedly (no-op
+   after the first successful build). Everything else is wired at module
+   load (see EARLY EXPOSURE above).
    --------------------------------------------------------------------------- */
 function initGPS(){
+  if (G) return; // graph already built
   var TR=window.TRAFFIC;
-  G=buildRoutingGraph(TR.roads, TR.jx);
-  buildNodeGrid(G.nodePos);
-  window.GPS={
-    setDestination:setDestination,
-    clearDestination:clearDestination,
-    hasDestination:hasDestination,
-    getPickMode:getPickMode,
-    setPickMode:setPickMode,
-    drawMinimapRoute:drawMinimapRoute,
-    drawFullMapRoute:drawFullMapRoute,
-    version:'1.0'
-  };
-  // per-frame tick on the central registry (expert #14)
+  if (!TR || !TR.roads || !TR.jx) return;
   try{
-    if (window.Sim && typeof Sim.onTick==='function')
-      Sim.onTick('render', 75, function(){ gpsTick(); });
-  }catch(e){}
-  // full-map "Navigate" button wiring (button element added in index.html)
-  try{
-    var b=document.getElementById('gps-nav-btn');
-    if (b) b.addEventListener('click', function(e){
-      e.stopPropagation();
-      if (route && !pickMode){ clearDestination(); setPickMode(false); return; }
-      setPickMode(!pickMode);
-      if (pickMode){ try{ showToast('Tap the map to set your destination', 2500); }catch(x){} }
-    });
-    var c=document.getElementById('gps-clear-btn');
-    if (c) c.addEventListener('click', function(e){
-      e.stopPropagation(); setPickMode(false); clearDestination();
-    });
-  }catch(e){}
+    G=buildRoutingGraph(TR.roads, TR.jx);
+    buildNodeGrid(G.nodePos);
+  }catch(e){
+    try{ if(typeof Report!=='undefined') Report.noteError('gps','graph build failed',String(e&&e.message||e)); }catch(x){}
+    return;
+  }
   try{
     var edgeCount=0, ks=Object.keys(G.adj);
     for (var i=0;i<ks.length;i++) edgeCount+=G.adj[ks[i]].length;
-    if (typeof Report!=='undefined') Report.setSys('gps',{status:'ok',version:'1.0',
+    if (typeof Report!=='undefined') Report.setSys('gps',{status:'ok',version:'1.62',
       nodes:G.nNodes, edges:Math.round(edgeCount/2), isolatedRoads:G.nIsolated,
       note:'A* over #7 junction graph; route follows real roads only'});
   }catch(e){}
+}
+
+/* ---------------------------------------------------------------------------
+   v1.62 NAV FIX (2026-10-12): floating HUD navigation arrow.
+   Joshua's spec: after dropping a pin and closing the map, a floating arrow
+   shows which direction to travel. Screen-space DOM overlay (always visible,
+   unlike the 3D cone which can be occluded or out of frame). Rotates to point
+   toward the destination relative to the camera view; shows destination name
+   + distance. Tap to clear. Auto-hides on arrival (route cleared) and while
+   the full map or satellite view is open.
+   --------------------------------------------------------------------------- */
+var hudArrowEl=null, hudArrowIcon=null, hudArrowDist=null, hudArrowVisible=false;
+function buildHudArrow(){
+  if (hudArrowEl) return;
+  if (typeof document==='undefined' || !document.body) return;
+  var el=document.createElement('div');
+  el.id='gps-hud-arrow';
+  el.style.cssText='position:fixed;top:70px;left:50%;transform:translateX(-50%);'+
+    'z-index:40;display:none;text-align:center;pointer-events:auto;cursor:pointer;'+
+    'user-select:none;-webkit-user-select:none;';
+  el.innerHTML='<div id="gps-hud-arrow-icon" style="font-size:46px;line-height:1;'+
+    'color:#35e0ff;text-shadow:0 0 10px rgba(0,0,0,.85),0 2px 4px #000;">&#11014;</div>'+
+    '<div id="gps-hud-arrow-dist" style="font-size:13px;font-weight:bold;color:#fff;'+
+    'text-shadow:0 1px 3px #000;background:rgba(0,0,0,.5);border-radius:9px;'+
+    'padding:2px 10px;margin-top:3px;white-space:nowrap;"></div>'+
+    '<div style="font-size:10px;color:#9fd8ff;text-shadow:0 1px 2px #000;margin-top:1px;">tap to clear</div>';
+  el.title='Tap to clear navigation';
+  function doClear(e){
+    try{ if(e){ e.stopPropagation(); if(e.preventDefault) e.preventDefault(); } }catch(x){}
+    clearDestination();
+    try{ setPickMode(false); }catch(x){}
+    try{ showToast('Navigation cleared', 1200); }catch(x){}
+  }
+  el.addEventListener('click', doClear);
+  // touchend fallback for webviews that swallow click on fixed overlays
+  el.addEventListener('touchend', doClear, {passive:false});
+  document.body.appendChild(el);
+  hudArrowEl=el;
+  hudArrowIcon=el.querySelector('#gps-hud-arrow-icon');
+  hudArrowDist=el.querySelector('#gps-hud-arrow-dist');
+}
+function hudArrowTick(){
+  if (!hudArrowEl) return;
+  var show=!!route;
+  // hide while the full map or satellite view is open (route shown there)
+  try{ if (typeof fullMapOpen!=='undefined' && fullMapOpen) show=false; }catch(e){}
+  try{ if (window.__satViewActive) show=false; }catch(e){}
+  if (!show){ if (hudArrowVisible){ hudArrowEl.style.display='none'; hudArrowVisible=false; } return; }
+  if (!hudArrowVisible){ hudArrowEl.style.display='block'; hudArrowVisible=true; }
+  var p;
+  try{ p=playerPos(); }catch(e){ return; }
+  var dx=route.destX-p.x, dz=route.destZ-p.z;
+  var dist=Math.hypot(dx,dz);
+  // world bearing to destination (game yaw convention: atan2(dx,dz))
+  var bearing=Math.atan2(dx,dz);
+  // camera view yaw: driving -> car.yaw; on foot -> orbit camYaw
+  var viewYaw=0;
+  try{
+    if (typeof car!=='undefined' && car && car.driving) viewYaw=car.yaw||0;
+    else if (typeof camYaw!=='undefined') viewYaw=camYaw||0;
+  }catch(e){}
+  var rel=bearing-viewYaw;
+  if (hudArrowIcon) hudArrowIcon.style.transform='rotate('+(rel*180/Math.PI)+'deg)';
+  if (hudArrowDist) hudArrowDist.textContent=(route.destName||'Destination')+' \u2022 '+Math.round(dist)+'u';
 }
 
 })();

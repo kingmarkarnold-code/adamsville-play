@@ -1,6 +1,6 @@
 {
   "version": "2.0.0",
-  "map_version": "2026.10.12.2",
+  "map_version": "2026.10.12.3",
   "files": [
     {
       "name": "elev.js",
@@ -58,14 +58,14 @@
     },
     {
       "name": "zones/adamsville/pins.js",
-      "sha256": "712b1203f9d110b45e210677671ac7e94937a367db0729b472ab63f672a0f59d",
+      "sha256": "5d9157f6d644f35e4d30494bfa1bdc2d6206e3e4dea87305abb45b26ace36968",
       "size": 270870,
       "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/adamsville/pins.js",
       "hash": "712b1203f9d110b45e210677671ac7e94937a367db0729b472ab63f672a0f59d"
     },
     {
       "name": "zones/adamsville/lifts.js",
-      "sha256": "0232fbc30b740134",
+      "sha256": "f19191e0c26d5710",
       "size": 484006,
       "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/adamsville/lifts.js"
     },

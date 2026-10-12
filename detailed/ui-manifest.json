@@ -83,7 +83,7 @@
     {
       "name": "hq_staff_system.js",
       "size": 27482,
-      "sha256": "414e4477f405fbb827100befa98a4c215dced8e654b2d9990fbdec594a256988",
+      "sha256": "5e85954ba254a38e3230fcc92d4af497ff8bc65b4131bd3c41bf83153b3f525a",
       "hash": "414e4477f405fbb827100befa98a4c215dced8e654b2d9990fbdec594a256988"
     },
     {
@@ -95,7 +95,7 @@
     {
       "name": "index.html",
       "size": 847546,
-      "sha256": "be3149b7c17a2437ff0c708e3edfe68fc6327675b12853d3a8437cbf9c43570a",
+      "sha256": "86af3a50807d81c85b225bf8f753bac8ee99dcb6e83587d2ae07fec639a80262",
       "hash": "18d7448dcc6c2a39381510a10e281f87a5ae3d022ffa1b242a08ec286b725d38"
     },
     {
@@ -150,7 +150,7 @@
     {
       "name": "npc_system.js",
       "size": 92585,
-      "sha256": "f3d6dce5fc63b38b674abf7063e77d174f5b2a1d6f4fceb8624471c955b8307b",
+      "sha256": "da9c4fd1ac4abf81d0f1380338b60e97ea52eb1c89f021247aa9395c3eca4225",
       "hash": "f3d6dce5fc63b38b674abf7063e77d174f5b2a1d6f4fceb8624471c955b8307b"
     },
     {
@@ -174,7 +174,7 @@
     {
       "name": "refnpc_system.js",
       "size": 40311,
-      "sha256": "5aed27c8acbdea714331d38f20352883568060e5b873b6959f78cb3ad31d121d",
+      "sha256": "6eeb2903d116145f64fbb42b51bee6b6655b9c4bfc05c3e6ba9e83b9b94fd349",
       "hash": "5aed27c8acbdea714331d38f20352883568060e5b873b6959f78cb3ad31d121d"
     },
     {
@@ -229,7 +229,7 @@
     {
       "name": "semi_system.js",
       "size": 18985,
-      "sha256": "9abcd10102d81009c46e0fa5891c590d24a8a7113cd5ae93cbdb401dfcb9573e",
+      "sha256": "36f764b996e1772a8c4d3054d99ca0346674f066243d2b29a9097bed0e808c4f",
       "hash": "9abcd10102d81009c46e0fa5891c590d24a8a7113cd5ae93cbdb401dfcb9573e"
     },
     {
@@ -301,7 +301,7 @@
     {
       "name": "traffic_system.js",
       "size": 64730,
-      "sha256": "402d51f7b8c38beeebf5d5a48e8d9d1b4917d4c2dbcd392725276e964ffb2ac6",
+      "sha256": "dec42f715d615092284d690addf1e5a67b3fd9817e13367b03c80548210cfde1",
       "hash": "402d51f7b8c38beeebf5d5a48e8d9d1b4917d4c2dbcd392725276e964ffb2ac6",
       "md5": "56a48d72d36ccb85097368b614b8e9c3"
     },
@@ -337,7 +337,7 @@
     {
       "name": "zoneloader.js",
       "size": 8521,
-      "sha256": "36cabfe3ffd317188f31d3ade0f4bb3aba7aff7a81ae0f9b231fdb6334e50ebe",
+      "sha256": "ad31f61d49e6374fd86c18e3cf0c110b12700f5c52e8472e219af2dbf81c52b4",
       "hash": "36cabfe3ffd317188f31d3ade0f4bb3aba7aff7a81ae0f9b231fdb6334e50ebe"
     },
     {
@@ -385,13 +385,13 @@
     {
       "name": "building_spawner.js",
       "size": 26724,
-      "sha256": "b98dce5054f522fda24ee5cb38627ef3af4fc62c3545243957e12ebf8788ad48",
+      "sha256": "592897764044c3e2a10495d7d1e3782b3ba8eb4f66e2f7cadbabacf4700d1e47",
       "hash": "b98dce5054f522fda24ee5cb38627ef3af4fc62c3545243957e12ebf8788ad48"
     },
     {
       "name": "interior_system.js",
       "size": 39818,
-      "sha256": "f739d5e4d420776276b752d2f2f7b0ea6151d06d76fc40b1bf31c74f53c0cf26",
+      "sha256": "d664ff9514f8d5e00d64e68a4da8d1f7058f522d0c0d725da00ba550fcee9a3d",
       "hash": "f739d5e4d420776276b752d2f2f7b0ea6151d06d76fc40b1bf31c74f53c0cf26"
     },
     {
@@ -403,7 +403,7 @@
     {
       "name": "menu_layout.json",
       "size": 12946,
-      "sha256": "e9ae44a9c4520206911e01c7133f72d7b89e5a7167422a159f30e69bc0366e3a",
+      "sha256": "969c6dd7c46ff1e0632e9c0c3aad34956ea62b88a72726c1a30e9937ea96bb2b",
       "hash": "e9ae44a9c4520206911e01c7133f72d7b89e5a7167422a159f30e69bc0366e3a"
     },
     {
@@ -411,8 +411,18 @@
       "size": 4286,
       "sha256": "814f9e79a32a9bbaedb605db0ad4f9901272de30d581c40369cebceb4578fe01",
       "hash": "814f9e79a32a9bbaedb605db0ad4f9901272de30d581c40369cebceb4578fe01"
+    },
+    {
+      "name": "road_sync.js",
+      "size": 11124,
+      "sha256": "82aba6a14f689b1ed1ec941ca4dbaf622bc558f2b91c3a597702f26d14fd47aa"
+    },
+    {
+      "name": "terrain_sync.js",
+      "size": 8403,
+      "sha256": "059bdd0d517e2b39fecc7c973a429298e4f4140aee967f8286f3cc4147f112cd"
     }
   ],
-  "ui_version": "2026.10.12.183",
+  "ui_version": "2026.10.12.185",
   "version": "2026.10.12.180"
 }
