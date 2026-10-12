@@ -1,6 +1,6 @@
 {
-  "version": "1.7.3",
-  "changelog": "Startup hardening \u2014 the editor now opens even if updater.py is missing or broken; crash log written to ~/.cache/adamsville-ui-editor-native/crash.log for diagnosis.",
+  "version": "1.7.4",
+  "changelog": "Fixed AttributeError crash on launch \u2014 status bar init order.",
   "files": [
     {
       "path": "about.py",
