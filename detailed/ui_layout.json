@@ -81,8 +81,8 @@
       "type": "label",
       "visible": true,
       "width": 300,
-      "x": 66,
-      "y": 54,
+      "x": 1163,
+      "y": 15,
       "description": "Shows the name of the street the player is currently on"
     },
     {
@@ -137,8 +137,8 @@
       "type": "image",
       "visible": true,
       "width": 148,
-      "x": 14,
-      "y": 14,
+      "x": 13,
+      "y": 315,
       "description": "Small overhead map showing the player's location and nearby streets"
     },
     {
@@ -242,13 +242,13 @@
     {
       "anchor": "tc",
       "asset": null,
-      "height": 36,
+      "height": 94,
       "id": "toast",
       "label": "",
       "mobile_only": false,
       "type": "label",
       "visible": true,
-      "width": 400,
+      "width": 467,
       "x": 0,
       "y": 64,
       "description": "Small popup messages at the bottom of the screen (e.g. 'Item picked up')"
