@@ -7,17 +7,21 @@
 
    WHAT THIS DOES:
    - Each of the 7 zones has its own map data files in zones/<zone_id>/:
-       roads.js      (ROAD_DATA)
-       buildings.js  (OSM_BUILDINGS, OSM_BLDG_VERSION, OSM_REAL_COUNT)
-       pins.js       (JUNCTION_PINS)
-       lifts.js      (TERRAIN_LIFTS)
-       signs.js      (EXIT_SIGNS)
-       zone.json     (metadata: bounds, scale, counts)
+       roads.json      (ROAD_DATA)
+       buildings.json  (OSM_BUILDINGS, OSM_BLDG_VERSION, OSM_REAL_COUNT)
+       pins.json       (JUNCTION_PINS)
+       lifts.json      (TERRAIN_LIFTS)
+       signs.json      (EXIT_SIGNS)
+       zone.json       (metadata: bounds, scale, counts)
+   - v1.54 (2026-10-12): .json format (was .js). iOS Safari froze at 18%
+     parsing the 1.6M-char single lines — JSON.parse has no such pathology.
+     The old .js files are kept as fallback only.
    - On page load, reads ?zone=<id> from URL (defaults to 'adamsville').
    - Dynamically injects <script> tags for that zone's data files using
      document.write() during HTML parsing (synchronous, in-order).
    - Zone files define the SAME globals as the original monolithic files,
-     so all existing game code works unchanged.
+     so all existing game code works unchanged (index.html assigns them from
+     the fetched JSON).
    - When the player crosses a zone boundary, triggers a full page reload
      with ?zone=<new_id> — "to leave one zone you load another map."
 
@@ -75,12 +79,18 @@ var ZONE_BOUNDS = {
    loader in index.html injects them dynamically after launch confirmation. */
 function injectZoneScripts(zoneId){
   var base = 'zones/' + zoneId + '/';
+  /* v1.54 JSON ZONE DATA (2026-10-12): iOS Safari's JavaScriptCore engine is
+     pathologically slow parsing extremely long single lines (1.6M chars in
+     adamsville/roads.js), freezing Apple mobile web at 18% load. Zone data
+     now ships as pure JSON — JSON.parse is native C++ with no line-length
+     pathology. index.html fetches each .json and assigns the globals below.
+     The old .js files remain as fallback (loaded if JSON fails). */
   var files = [
-    {src: base + 'roads.js',     key: 'roads'},
-    {src: base + 'signs.js',     key: 'signs'},
-    {src: base + 'lifts.js',     key: 'lifts'},
-    {src: base + 'pins.js',      key: 'pins'},
-    {src: base + 'buildings.js', key: 'buildings'},
+    {src: base + 'roads.json',     key: 'roads',     global: 'ROAD_DATA'},
+    {src: base + 'signs.json',     key: 'signs',     global: 'EXIT_SIGNS'},
+    {src: base + 'lifts.json',     key: 'lifts',     global: 'TERRAIN_LIFTS'},
+    {src: base + 'pins.json',      key: 'pins',      global: 'JUNCTION_PINS'},
+    {src: base + 'buildings.json', key: 'buildings', global: null},  // special: 3 vars, see assignZoneGlobals
   ];
   // Expose for the deferred loader (index.html). Do NOT document.write —
   // this script now runs after HTML parsing via deferred injection.

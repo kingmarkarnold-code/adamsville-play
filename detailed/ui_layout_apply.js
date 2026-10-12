@@ -1,106 +1,179 @@
-/* ui_layout_apply.js — applies ui_layout.json to the game's HUD.
+/*
+ * Surviving Adamsville — ui_layout_apply.js
  *
- * Joshua edits the UI layout visually in the UI Layout Editor; that tool
- * saves ui_layout.json, and this script reads it at startup and moves /
- * hides the matching DOM elements. It is fully defensive:
- *   - if ui_layout.json is missing or corrupt, nothing changes;
- *   - it only ever HIDES elements Joshua marked invisible — it never
- *     force-shows anything, so game-driven show/hide logic keeps working;
- *   - every DOM touch is wrapped so one bad element can't break the rest.
+ * Applies ui_layout.json (authored in the Adamsville UI Editor's Layout
+ * tab) to the game's HUD elements at startup.
  *
- * Anchors: tl = top-left, tr = top-right, bl = bottom-left,
- *           br = bottom-right, tc = top-center, bc = bottom-center,
- *           c = center. x/y are pixel offsets from the anchor corner
- *           (measured the same way CSS top/left/right/bottom work).
+ * Same defensive pattern as menu_layout_apply.js:
+ *   - Fetches detailed/ui_layout.json (cache-busted by ui_version).
+ *   - Fully no-op if the file is missing or corrupt — the game keeps
+ *     its default HUD layout.
+ *   - Never force-shows an element the game hides programmatically
+ *     (e.g. context-sensitive buttons). Only hides what the layout
+ *     marks invisible, and only positions/sizes elements that exist.
+ *   - Mobile-only elements are hidden on non-mobile viewports.
+ *
+ * Coordinate model (matches the UI editor):
+ *   Each element stores (anchor, x, y, width, height) in canonical
+ *   pixels of a 1280x800 reference frame. Anchors pin the element to
+ *   a screen corner/edge; x/y are offsets from that anchor.
+ *
+ * Joshua's rule: all code commented.
  */
 (function () {
-  'use strict';
+  "use strict";
 
-  // Convert (anchor, x, y, w, h) into concrete left/top for a viewport.
-  function anchorPos(anchor, x, y, w, h, vw, vh) {
+  // Canonical reference frame the UI editor uses (pixels).
+  var CANON_W = 1280;
+  var CANON_H = 800;
+
+  /**
+   * Convert (anchor, x, y, width, height) to concrete CSS
+   * left/top for the current viewport size.
+   * Returns {left, top} in CSS pixels, or null on bad input.
+   */
+  function anchorToLeftTop(el, vw, vh) {
+    var w = +el.width || 0;
+    var h = +el.height || 0;
+    var x = +el.x || 0;
+    var y = +el.y || 0;
+    // Scale from the canonical frame to the real viewport so layouts
+    // authored at 1280x800 adapt to any screen size.
+    var sx = vw / CANON_W;
+    var sy = vh / CANON_H;
+    // Use uniform scale (min) so elements keep their proportions.
+    var s = Math.min(sx, sy);
+    var sw = w * s;
+    var sh = h * s;
+    var ox = x * s;
+    var oy = y * s;
     var left = 0, top = 0;
-    switch (anchor) {
-      case 'tr': left = vw - x - w; top = y; break;
-      case 'bl': left = x; top = vh - y - h; break;
-      case 'br': left = vw - x - w; top = vh - y - h; break;
-      case 'tc': left = (vw - w) / 2 + x; top = y; break;
-      case 'bc': left = (vw - w) / 2 + x; top = vh - y - h; break;
-      case 'c':  left = (vw - w) / 2 + x; top = (vh - h) / 2 + y; break;
-      default:   left = x; top = y; break; // 'tl'
+    switch (el.anchor) {
+      case "tl": // top-left: offsets from the top-left corner
+        left = ox; top = oy; break;
+      case "tr": // top-right: x offsets leftward from the right edge
+        left = vw - ox - sw; top = oy; break;
+      case "bl": // bottom-left: y offsets upward from the bottom edge
+        left = ox; top = vh - oy - sh; break;
+      case "br": // bottom-right
+        left = vw - ox - sw; top = vh - oy - sh; break;
+      case "tc": // top-center: x offsets from horizontal center
+        left = vw / 2 + ox - sw / 2; top = oy; break;
+      case "bc": // bottom-center
+        left = vw / 2 + ox - sw / 2; top = vh - oy - sh; break;
+      case "c": // center: x/y offsets from screen center
+        left = vw / 2 + ox - sw / 2; top = vh / 2 + oy - sh / 2; break;
+      default: // unknown anchor — treat as top-left, don't crash
+        left = ox; top = oy; break;
     }
-    return { left: Math.round(left), top: Math.round(top) };
+    return { left: left, top: top, width: sw, height: sh };
   }
 
-  // Best-effort mobile check: mirrors the game's own isMobileUI logic.
-  function isMobile() {
+  /**
+   * Heuristic: is this a mobile/coarse-pointer viewport?
+   * Mobile-only HUD elements (joystick, pedals) stay hidden on desktop.
+   */
+  function isMobileViewport() {
     try {
-      if (typeof isMobileUI !== 'undefined') return !!isMobileUI;
-    } catch (e) {}
-    try {
-      return window.innerWidth <= 820 ||
-        (window.matchMedia && window.matchMedia('(pointer:coarse)').matches);
-    } catch (e) {}
+      if (window.matchMedia &&
+          window.matchMedia("(pointer: coarse)").matches) return true;
+      // Small screens are treated as mobile too.
+      if (Math.min(window.innerWidth, window.innerHeight) < 600) return true;
+    } catch (e) { /* ignore — default to desktop */ }
     return false;
   }
 
-  function applyLayout(layout) {
+  /**
+   * Apply one element definition to its DOM node.
+   * Skips anything missing; never throws.
+   */
+  function applyElement(def, vw, vh, mobile) {
+    if (!def || !def.id) return;
+    var el = document.getElementById(def.id);
+    if (!el) return; // element not in this build — skip safely
+
+    // Mobile-only elements: hide on desktop viewports, leave alone
+    // on mobile (the game controls their show/hide from here).
+    if (def.mobile_only && !mobile) {
+      el.style.display = "none";
+      return;
+    }
+
+    // Visibility: hide what the layout marks invisible. Never
+    // force-show — game code may hide elements dynamically.
+    if (def.visible === false) {
+      el.style.display = "none";
+      return;
+    }
+
+    // Position + size via the anchor math.
+    var pos = anchorToLeftTop(def, vw, vh);
+    if (!pos) return;
+    // Only touch elements that are already absolutely positioned by
+    // the game's CSS; don't change anyone's position scheme.
+    var cs = null;
+    try { cs = window.getComputedStyle(el); } catch (e) { /* ignore */ }
+    if (cs && cs.position !== "absolute" && cs.position !== "fixed") return;
+    el.style.left = Math.round(pos.left) + "px";
+    el.style.top = Math.round(pos.top) + "px";
+    // Only resize when the layout gives sane dimensions.
+    if (pos.width > 0) el.style.width = Math.round(pos.width) + "px";
+    if (pos.height > 0) el.style.height = Math.round(pos.height) + "px";
+  }
+
+  /**
+   * Fetch ui_layout.json and apply every element it defines.
+   * Idempotent — safe to re-run (e.g. after resize or hot-reload).
+   */
+  function applyUILayout() {
+    var vw = window.innerWidth || CANON_W;
+    var vh = window.innerHeight || CANON_H;
+    var mobile = isMobileViewport();
+
+    var url = "ui_layout.json";
     try {
-      var vw = window.innerWidth, vh = window.innerHeight;
-      var mobile = isMobile();
-      var els = (layout && layout.elements) || [];
-      for (var i = 0; i < els.length; i++) {
-        (function (el) {
-          try {
-            if (!el || !el.id) return;
-            // Mobile-only elements are skipped on desktop and vice versa
-            // is not needed (desktop elements show on both).
-            if (el.mobile_only && !mobile) return;
-            var node = document.getElementById(el.id);
-            if (!node) return;
-            // Joshua asked to remove this element: hide it and stop.
-            // (We never force-show: game-driven visibility keeps working.)
-            if (el.visible === false) {
-              node.style.display = 'none';
-              return;
-            }
-            var w = el.width || 50, h = el.height || 30;
-            var p = anchorPos(el.anchor || 'tl', el.x || 0, el.y || 0,
-                              w, h, vw, vh);
-            node.style.position = 'fixed';
-            node.style.left = p.left + 'px';
-            node.style.top = p.top + 'px';
-            node.style.width = w + 'px';
-            node.style.height = h + 'px';
-          } catch (e) { /* one bad element can't break the rest */ }
-        })(els[i]);
+      // Cache-bust with the UI version so edited layouts go live promptly.
+      var v = null;
+      if (window.ASSETVER && window.ASSETVER.uiVersion) {
+        v = window.ASSETVER.uiVersion;
+      } else if (window.UI_VERSION) {
+        v = window.UI_VERSION;
       }
-    } catch (e) {}
+      if (v) url += "?v=" + encodeURIComponent(v);
+    } catch (e) { /* keep plain URL on any error */ }
+
+    fetch(url, { cache: "no-store" })
+      .then(function (resp) {
+        if (!resp.ok) throw new Error("HTTP " + resp.status);
+        return resp.json();
+      })
+      .then(function (doc) {
+        if (!doc || !Array.isArray(doc.elements)) return;
+        doc.elements.forEach(function (def) {
+          try {
+            applyElement(def, vw, vh, mobile);
+          } catch (e) { /* one bad element must not break the rest */ }
+        });
+      })
+      .catch(function () {
+        /* Missing/corrupt file: leave the HUD exactly as authored. */
+      });
   }
 
-  function boot() {
-    try {
-      fetch('ui_layout.json?v=' + Date.now(), { cache: 'no-store' })
-        .then(function (r) {
-          if (!r.ok) throw new Error('no layout');
-          return r.json();
-        })
-        .then(applyLayout)
-        .catch(function () { /* missing file = keep default layout */ });
-    } catch (e) {}
+  // Run after the DOM is ready so every HUD element exists.
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", applyUILayout);
+  } else {
+    applyUILayout();
   }
 
-  // Re-apply (debounced) on resize / orientation change so anchored
-  // elements stay glued to their corners.
-  var _t = null;
-  window.addEventListener('resize', function () {
-    clearTimeout(_t);
-    _t = setTimeout(boot, 400);
+  // Re-apply (debounced) on resize so anchors track the viewport.
+  var _rt = null;
+  window.addEventListener("resize", function () {
+    if (_rt) clearTimeout(_rt);
+    _rt = setTimeout(applyUILayout, 250);
   });
 
-  if (document.readyState === 'complete' ||
-      document.readyState === 'interactive') {
-    boot();
-  } else {
-    document.addEventListener('DOMContentLoaded', boot);
-  }
+  // Expose for debugging / re-apply after hot-reload.
+  window.UILayoutApply = { apply: applyUILayout };
 })();

@@ -8,6 +8,8 @@
    Data sources (map-editor repo, fetched live at startup):
      buildings.json    - hand-authored building templates (walkable + styles)
      subdivisions.json - named polygons to fill with houses (currently empty)
+     water.json        - rivers/streams (centerline + width) and lakes/ponds
+                         (polygons); may not exist yet — spawner runs without it
 
    This module is COMPLEMENTARY to residential_detail.js, not a duplicate:
    residential_detail.js decorates OSM-derived buildings (OSM_BUILDINGS) with
@@ -16,15 +18,19 @@
    touches. Two data sources, two modules, no overlap.
 
    What it does:
-     1. Fetches buildings.json + subdivisions.json from GitHub. On failure it
-        logs a warning and runs with empty arrays — the game never crashes.
+     1. Fetches buildings.json + subdivisions.json + water.json from GitHub.
+        On failure it logs a warning and runs with empty arrays — the game
+        never crashes.
      2. Walkable buildings (walkable:true): placed at their hand-authored
         position/rotation with full detail (walls, roof, windows, doors) and
         published on window.WalkableBuildings for the interior system.
      3. Subdivision houses: N per polygon (~1 per 2000 sq units, max 50 per
         subdivision, hard cap TOTAL for the TCL phone). Each house is rotated
         so its front_face points at the nearest (or largest, on corner lots)
-        road. Spawned as cheap InstancedMesh boxes — non-walkable.
+        road. Rejection sampling ALSO excludes water: no spawned house may
+        sit in a river, stream, lake, or pond, or within WATER_BUFFER units
+        of the water's edge. Spawned as cheap InstancedMesh boxes —
+        non-walkable.
 
    Exposed API:
      window.BuildingSpawner  = { init(), getWalkableBuildings(),
@@ -47,6 +53,12 @@
 /* ---------- configuration (tweakables in one place) ------------------------ */
 var BUILDINGS_URL   = 'https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-map-editor/main/buildings.json';
 var SUBDIVISIONS_URL= 'https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-map-editor/main/subdivisions.json';
+/* Water features (rivers, lakes, ponds, streams). The file may not exist yet
+   (the map editor hasn't published it) — the loader below treats ANY failure
+   as "no water data" and spawning works exactly as before. */
+var WATER_URL       = 'https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-map-editor/main/water.json';
+var WATER_BUFFER    = 20;    // extra clearance beyond the water edge (world
+                             // units) — houses should not hug the waterline
 var AREA_PER_HOUSE  = 2000;  // ~1 spawned house per this many sq world units
 var MAX_PER_SUBDIV  = 50;    // per-subdivision perf cap (Joshua's TCL phone)
 var MAX_TOTAL       = 500;   // hard cap across all subdivisions
@@ -60,7 +72,8 @@ var GROUND_EMBED    = 0.6;   // sink bases slightly (same as osmBuildings)
 var EDITOR_ROT_SIGN = -1;
 /* Road class rank for corner lots: larger road wins (highway > arterial >
    local). Matches the class keys in ROAD_DATA. */
-var CLASS_RANK = {highway:3, arterial:2, local:1};
+/* v2.1: new road category set (2026-10-11, Joshua). Legacy 'arterial' kept for old data. */
+var CLASS_RANK = {interstate:5, highway:4, major_artery:3, minor_artery:2, arterial:2, local:1};
 /* front_face -> yaw offset added to atan2(dx,dz) (local +Z = front). */
 var FACE_OFFSET = {front:0, right:-Math.PI/2, back:Math.PI, left:Math.PI/2};
 /* Default footprints per building type (world units; 1u ~ 1m). buildings.json
@@ -83,6 +96,9 @@ var walkablePlaced = [];   // {name,type,def,x,z,yaw,w,d,h,doors,mesh}
 var spawnedHouses  = [];   // {x,z,yaw,w,d,h,name,subdivision}
 var inited = false;
 var spawnMeshes = null;    // {bodies, roofs} InstancedMesh refs
+/* Normalized water data: {rivers:[], lakes:[], ponds:[], streams:[]}.
+   Empty until water.json loads; an empty set means "no water exclusion". */
+var water = {rivers:[], lakes:[], ponds:[], streams:[]};
 
 /* ---------- tiny utilities ------------------------------------------------- */
 /* Clamp any value to a safe #rrggbb color string. */
@@ -241,6 +257,13 @@ function placeWalkable(def){
       console.warn('[buildingSpawner] walkable "'+(def.name||'?')+'" at ('+x+','+z+
                    ') is on/near a road — left as hand-placed for editor fix');
   }catch(e){}
+  /* Water sanity check — same warn-only pattern as roads: Joshua's
+     hand-placed data is never auto-moved or auto-deleted. */
+  try{
+    if (inWater(x, z, halfDiag))
+      console.warn('[buildingSpawner] walkable "'+(def.name||'?')+'" at ('+x+','+z+
+                   ') is in/near water — left as hand-placed for editor fix');
+  }catch(e){}
   var baseY = groundY(x, z, fp.w, fp.d, yaw) - GROUND_EMBED;
   var mesh = buildTemplateMesh(def, true);
   mesh.position.set(x, baseY, z);
@@ -366,6 +389,76 @@ function overlapsSpawned(x, z){
   return false;
 }
 
+/* ---------- water features (rivers, lakes, ponds, streams) ------------------- */
+/* Joshua's rule (2026-10-11): when water features are added to the map, NO
+   spawned house may sit in a lake, river, stream, or pond.
+
+   Expected water.json shape (map-editor repo):
+     { rivers:  [{name, pts:[[x,z],...], width}],
+       streams: [{name, pts:[[x,z],...], width}],
+       lakes:   [{name, polygon:[[x,z],...]}],
+       ponds:   [{name, polygon:[[x,z],...]}] }
+   Anything else (missing file, 404, bad JSON, wrong shape) normalizes to an
+   empty set — spawning then behaves exactly as if there were no water. */
+/* Normalize whatever fetchJson returned into the canonical water shape.
+   fetchJson gives [] on ANY load failure, which lands here as "no water". */
+function normalizeWater(raw){
+  var w = {rivers:[], lakes:[], ponds:[], streams:[]};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return w;
+  var keys = ['rivers', 'lakes', 'ponds', 'streams'];
+  for (var i=0;i<keys.length;i++){
+    if (Array.isArray(raw[keys[i]])) w[keys[i]] = raw[keys[i]];
+  }
+  return w;
+}
+/* Distance from point (x,z) to segment (ax,az)-(bx,bz), clamped to the
+   segment. Used for river/stream centerlines and lake/pond edges. */
+function distToSeg(x, z, ax, az, bx, bz){
+  var vx = bx-ax, vz = bz-az;
+  var len2 = vx*vx + vz*vz;
+  var t = len2 > 0 ? ((x-ax)*vx + (z-az)*vz)/len2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(x-(ax+vx*t), z-(az+vz*t));
+}
+/* True if a candidate house CENTER (x,z) with footprint half-diagonal
+   halfDiag would touch water (or sit inside the WATER_BUFFER ring around it):
+     - lakes/ponds: reject when the center is INSIDE the polygon, or when any
+       polygon edge comes within halfDiag + WATER_BUFFER of the center
+       (so the house footprint can't overhang the shoreline).
+     - rivers/streams: reject when the centerline comes within
+       width/2 + halfDiag + WATER_BUFFER (the house footprint plus the
+       clearance ring, measured from the water's edge). */
+function inWater(x, z, halfDiag){
+  var i, j, p, q, pts, poly, d;
+  /* Lakes + ponds: solid polygons. */
+  var bodies = water.lakes.concat(water.ponds);
+  for (i=0;i<bodies.length;i++){
+    poly = bodies[i] && bodies[i].polygon;
+    if (!Array.isArray(poly) || poly.length < 3) continue;
+    if (pointInPoly(x, z, poly)) return true;   // center in the water
+    for (j=0;j<poly.length;j++){
+      p = poly[j]; q = poly[(j+1)%poly.length];
+      if (!p || !q) continue;
+      d = distToSeg(x, z, p[0], p[1], q[0], q[1]);
+      if (d < halfDiag + WATER_BUFFER) return true;
+    }
+  }
+  /* Rivers + streams: centerline polylines with a width in world units. */
+  var flows = water.rivers.concat(water.streams);
+  for (i=0;i<flows.length;i++){
+    pts = flows[i] && flows[i].pts;
+    if (!Array.isArray(pts) || pts.length < 2) continue;
+    var clearance = (Number(flows[i].width)||0)/2 + halfDiag + WATER_BUFFER;
+    for (j=0;j<pts.length-1;j++){
+      p = pts[j]; q = pts[j+1];
+      if (!p || !q) continue;
+      d = distToSeg(x, z, p[0], p[1], q[0], q[1]);
+      if (d < clearance) return true;
+    }
+  }
+  return false;
+}
+
 /* ---------- subdivision spawning ------------------------------------------ */
 /* Shoelace polygon area (absolute, world units^2). */
 function polyArea(poly){
@@ -423,6 +516,9 @@ function spawnSubdivision(sub, template){
     if (!pointInPoly(x, z, poly)) continue;
     /* Reject: on a road (reuse the game's own clearance test). */
     if (roadEdgeDist(x, z) < halfDiag + ROAD_MARGIN) continue;
+    /* Reject: in or near water (Joshua 2026-10-11 — no spawned house in a
+       lake, river, stream, or pond, plus a WATER_BUFFER clearance ring). */
+    if (inWater(x, z, halfDiag)) continue;
     /* Reject: overlapping this spawner's houses (min 30u apart). */
     if (overlapsSpawned(x, z)) continue;
     /* Reject: overlapping an existing OSM building. */
@@ -532,9 +628,15 @@ function init(){
      keeps running meanwhile. */
   var p1 = fetchJson(BUILDINGS_URL);
   var p2 = fetchJson(SUBDIVISIONS_URL);
-  Promise.all([p1, p2]).then(function(res){
+  /* Water features (rivers, lakes, ponds, streams). fetchJson returns [] on
+     ANY failure (including 404 when water.json doesn't exist yet) and
+     normalizeWater turns that into an empty set — spawning then works
+     exactly as before, with no water exclusion. */
+  var p3 = fetchJson(WATER_URL);
+  Promise.all([p1, p2, p3]).then(function(res){
     var buildings = res[0] || [];
     var subdivs   = res[1] || [];
+    water = normalizeWater(res[2]);
     try{
       if (!Array.isArray(buildings)) buildings = [];
       if (!Array.isArray(subdivs))   subdivs = [];

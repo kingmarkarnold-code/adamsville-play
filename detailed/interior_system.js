@@ -292,6 +292,17 @@ function setDoorBlock(door, blocked){
   } else {
     if (door.colliderId){ window.InteriorCollision.removeBox(door.colliderId); door.colliderId = null; }
   }
+  /* COLLISION MATERIAL (Joshua 2026-10-11): register the door with the
+     material system. Closed = DOOR material (solid). Open = passable.
+     The material cache is invalidated on state change. */
+  try {
+    if (typeof window.registerDoor === 'function' && door.position){
+      if (!door._matDoor){
+        door._matDoor = window.registerDoor(door.position.x, door.position.z, 1.5);
+      }
+      door._matDoor.setOpen(!blocked);
+    }
+  } catch(e){}
 }
 
 /* registerDoors(building) -- spec API: creates one door per `doors` entry in

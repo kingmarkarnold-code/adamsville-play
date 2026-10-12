@@ -399,8 +399,20 @@
       "size": 26943,
       "sha256": "b808eaeac7894a3129820d2af9d0c4c2d2f550e7ebbc7364ee71ff575fd5e30b",
       "hash": "b808eaeac7894a3129820d2af9d0c4c2d2f550e7ebbc7364ee71ff575fd5e30b"
+    },
+    {
+      "name": "menu_layout.json",
+      "size": 12946,
+      "sha256": "e9ae44a9c4520206911e01c7133f72d7b89e5a7167422a159f30e69bc0366e3a",
+      "hash": "e9ae44a9c4520206911e01c7133f72d7b89e5a7167422a159f30e69bc0366e3a"
+    },
+    {
+      "name": "menu_layout_apply.js",
+      "size": 4286,
+      "sha256": "814f9e79a32a9bbaedb605db0ad4f9901272de30d581c40369cebceb4578fe01",
+      "hash": "814f9e79a32a9bbaedb605db0ad4f9901272de30d581c40369cebceb4578fe01"
     }
   ],
-  "ui_version": "2026.10.12.180",
+  "ui_version": "2026.10.12.183",
   "version": "2026.10.12.180"
 }

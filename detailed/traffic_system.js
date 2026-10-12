@@ -126,7 +126,8 @@ function buildRoadIndex(){
     var r=roadDrawData[i];
     if (!r||!r.pts||r.pts.length<2||!r.ys||r.ys.length!==r.pts.length) continue;
     // v1.13: include local roads so residential areas have traffic
-    if (r.cat!=='highway'&&r.cat!=='arterial'&&r.cat!=='local') continue;
+    /* v2.1: new category set — interstate/highway/major/minor/local all carry traffic */
+    if (r.cat!=='interstate'&&r.cat!=='highway'&&r.cat!=='major_artery'&&r.cat!=='minor_artery'&&r.cat!=='arterial'&&r.cat!=='local') continue;
     var cum=[0];
     for (var p=1;p<r.pts.length;p++){
       var dx=r.pts[p][0]-r.pts[p-1][0], dz=r.pts[p][1]-r.pts[p-1][1];
@@ -136,7 +137,7 @@ function buildRoadIndex(){
     if (len<MIN_ROAD_LEN) continue;
     // lanes per direction: interstates carry r.lanes=5; other highways 3-4;
     // arterials are marked 2/dir in the v1.5 striping pass.
-    var lpd = r.lanes>0 ? r.lanes : (r.cat==='highway' ? 4 : 2);
+    var lpd = r.lanes>0 ? r.lanes : (r.cat==='interstate' ? 5 : (r.cat==='highway' ? 4 : 2));  /* v2.1 */
     idx.push({r:r, cum:cum, len:len, name:r.name||('road#'+i),
               cat:r.cat, w:r.w||10, lanesPerDir:lpd,
               laneW:(r.w||10)/(lpd*2)});
@@ -192,7 +193,14 @@ function roadEndY(R,end){
   return end===1?ys[n-1]:ys[0];
 }
 /* roadRank(cat) — intersection priority: highway > arterial > local. */
-function roadRank(cat){ return cat==='highway'?3:(cat==='arterial'?2:1); }
+/* v2.1: road rank for the new category set (legacy 'arterial' -> minor_artery rank). */
+function roadRank(cat){
+  if (cat==='interstate') return 5;
+  if (cat==='highway') return 4;
+  if (cat==='major_artery') return 3;
+  if (cat==='minor_artery'||cat==='arterial') return 2;
+  return 1;
+}
 /* buildJunctionGraph(roads) — one-time build. Returns the TR.jx structure. */
 function buildJunctionGraph(roads){
   var t0=Date.now();
@@ -1165,7 +1173,7 @@ function placeGasStations(){
     }
   } else {
     // fallback: procedural (should never happen — data file is bundled)
-    var arts=TR.roads.filter(function(R){return R.cat==='arterial';});
+    var arts=TR.roads.filter(function(R){return R.cat==='minor_artery'||R.cat==='major_artery'||R.cat==='arterial';});  /* v2.1 */
     if (!arts.length) return;
     var want=10, guard=0;
     while (made<want&&guard++<120){
@@ -1273,7 +1281,7 @@ function initTraffic(){
   TR.jx=buildJunctionGraph(TR.roads); TR.jxClock=0;
   buildRenderPool();
   var hw=TR.roads.filter(function(R){return R.cat==='highway';});
-  var ar=TR.roads.filter(function(R){return R.cat==='arterial';});
+  var ar=TR.roads.filter(function(R){return R.cat==='minor_artery'||R.cat==='major_artery'||R.cat==='arterial';});  /* v2.1 */
   var lo=TR.roads.filter(function(R){return R.cat==='local';});
   // highway pace: 25-31 u/s ≈ 54-67 mph (MPH_PER_US = 65/30)
   spawnOn(hw,N_HW_CARS,25,31);

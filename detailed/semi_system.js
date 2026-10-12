@@ -274,6 +274,39 @@ function stepSemi(s,dt){
      too wide to verify a passing lane, so they always wait. Waiting is NOT
      stuck: the watchdog below is paused while yielding. */
   s.vehWait=false;
+  /* TRUCK RESTRICTIONS (Joshua 2026-10-11): 18-wheelers must not drive under
+     low-clearance overpasses (truck_restricted in overpasses.json). Before
+     the lane-block check, scan ahead for a restricted overpass. If one is
+     within the lookahead, brake to a hold and wait — same as yielding to a
+     blocked lane. Waiting is NOT stuck: the watchdog below is paused while
+     s.truckWait is true. Cars, vans, and all other vehicles ignore this. */
+  s.truckWait=false;
+  if (!done && (s.state==='i20_in'||s.state==='fib_out'||s.state==='fib_back'||s.state==='i20_out')){
+    try{
+      if (window.TruckRestrictions && window.TruckRestrictions.ready){
+        var hx=Math.sin(s.heading), hz=Math.cos(s.heading);
+        var block=TruckRestrictions.aheadBlocked(s.x,s.z,hx,hz,500);
+        if (block){
+          // Ease to a stop well before the restricted zone (60u buffer).
+          var stopDist=Math.max(0, block.dist-60);
+          var want=Math.min(s.speed, Math.max(0, stopDist*0.4));
+          s.speed+=(want-s.speed)*Math.min(1,4*dt);
+          if (s.speed<0.5 && block.dist<200){
+            s.truckWait=true;
+            // One dashboard warning per hold (not every frame).
+            if (!s.truckWarned){
+              s.truckWarned=true;
+              try{
+                if (typeof showToast==='function')
+                  showToast('LOW CLEARANCE — 18-wheeler holding for "'+
+                    block.ovp.name+'" ('+block.ovp.clearance_ft+' ft)', 5000);
+              }catch(e){}
+            }
+          }
+        } else { s.truckWarned=false; }
+      }
+    }catch(e){}
+  }
   if (!done && (s.state==='i20_in'||s.state==='fib_out'||s.state==='fib_back'||s.state==='i20_out')){
     try{
       if (window.VehicleAvoid &&
@@ -296,7 +329,7 @@ function stepSemi(s,dt){
   if (!done && (s.state==='i20_in'||s.state==='fib_out'||s.state==='fib_back'||s.state==='i20_out')){
     s.stuckT+=dt;
     if (s.stuckT>STUCK_AFTER) done=true;
-    else if (s.speed>3||s.vehWait) s.stuckT=0;
+    else if (s.speed>3||s.vehWait||s.truckWait) s.stuckT=0;
   } else if (!done){ s.stuckT=0; }
   return done;
 }

@@ -217,7 +217,21 @@
     border-radius:10px; border:2px solid #444; background:#222836; color:#fff; text-align:left; }
   #saveexit .row:active { background:#2d3547; }
   #se-saveexit { border-color:#2e7d4f; color:#7dff9e; }
-  #se-cancel { border-color:#7d2e2e; color:#ff9e9e; }
+  #se-continue { border-color:#7d2e2e; color:#ff9e9e; }
+  /* Exit flow: slot-picker popup (5 slots) shown after Save / Save and Exit.
+     Joshua 2026-10-11. */
+  #slotpick { position:fixed; inset:0; z-index:61; display:none; align-items:center; justify-content:center;
+    background:rgba(0,0,0,.55); }
+  #slotpick.show { display:flex; }
+  #slotpick .card { background:#161b26; border-radius:14px; padding:20px 22px; max-width:430px; width:82%; }
+  #slotpick h3 { margin:0 0 12px 0; color:#ffd75e; }
+  #slotpick .row { display:block; width:100%; margin:8px 0; padding:12px 14px; font-size:16px; font-weight:bold;
+    border-radius:10px; border:2px solid #444; background:#222836; color:#fff; text-align:left; }
+  #slotpick .row:active { background:#2d3547; }
+  #slotpick .row.empty { color:#8a93a8; }
+  #slotpick-cancel { border-color:#7d2e2e; color:#ff9e9e; }
+  /* Exit button in the gameplay menu: red tint so it stands out. */
+  #gp-exit { border-color:#7d2e2e; color:#ff9e9e; }
   /* v0.9: CAR RADIO UI — only while driving (prev / song name / next) */
   #radio { position:fixed; z-index:11; top:12px; left:50%; transform:translateX(-50%);
     display:none; align-items:center; gap:8px; background:rgba(0,0,0,.55); color:#fff;
@@ -607,6 +621,7 @@
   <button class="row" id="gp-load">Load game</button>
   <div id="gp-slots"></div>
   <button id="gp-back">Back</button>
+  <button class="row" id="gp-exit">Exit</button>
 </div></div>
 <!-- Zone picker for New Game (Joshua 2026-10-10, demo behavior):
      the very first game ever starts at 535 Dollar Mill Rd (Adamsville);
@@ -617,12 +632,22 @@
   <div id="zonepick-list"></div>
   <button id="zonepick-cancel">Cancel</button>
 </div></div>
-<!-- Save-and-exit confirmation dialog. -->
+<!-- Save prompt for the Exit flow (Joshua 2026-10-11):
+     Save -> slot picker -> stay in game;
+     Continue -> back to game, no save;
+     Save and Exit -> slot picker -> exit to title screen. -->
 <div id="saveexit"><div class="card">
-  <h3>Do you want to save and exit?</h3>
-  <button class="row" id="se-saveexit">Save &amp; Exit</button>
+  <h3>Save game?</h3>
   <button class="row" id="se-save">Save</button>
-  <button class="row" id="se-cancel">Cancel</button>
+  <button class="row" id="se-continue">Continue</button>
+  <button class="row" id="se-saveexit">Save and Exit</button>
+</div></div>
+<!-- Slot picker popup: shown after Save / Save and Exit in the Exit flow.
+     5 slots; occupied slots ask for overwrite confirmation. -->
+<div id="slotpick"><div class="card">
+  <h3>Choose a save slot</h3>
+  <div id="slotpick-list"></div>
+  <button class="row" id="slotpick-cancel">Cancel</button>
 </div></div>
 <!-- v1.12.10: report-view panel removed per Joshua — reporting still runs headless to GitHub. -->
 <!-- HUD readouts: current street name (GTA-style), version tag, how-to-play card. -->
@@ -1130,8 +1155,19 @@ function __showCriticalWarning(){
       var n=(window.__criticalLoadKeys||{})[fails[i]]||fails[i];
       if(names.indexOf(n)===-1) names.push(n);
     }
+    /* v1.55: Include specific failure reasons when available (e.g. HTTP 404
+       vs timeout vs script error) so the cause is diagnosable. */
+    var detailHtml = '';
+    try{
+      var errs = window.__zoneLoadErrors || {};
+      var details = [];
+      for (var di=0; di<fails.length; di++){
+        if (errs[fails[di]]) details.push(errs[fails[di]]);
+      }
+      if (details.length) detailHtml = '<br><span style="font-weight:normal;font-size:0.85em;color:#aaa;">'+details.join('<br>')+'</span>';
+    }catch(e){}
     if(msg) msg.innerHTML='&#9888; '+names.join(' + ')+' failed to load or timed out.<br>'+
-      'Starting now would leave '+__criticalConsequence(fails)+'.<br>'+
+      'Starting now would leave '+__criticalConsequence(fails)+'.'+detailHtml+'<br>'+
       '<span style="font-weight:normal;font-size:0.9em;">Check your connection, then tap RETRY for a fresh download.</span>';
     if(w) w.style.display='block';
     var rb=document.getElementById('load-retry');
@@ -1320,40 +1356,145 @@ function __collectDeferredScripts(){
   return queue;
 }
 function __injectZoneFiles(files, callback){
-  /* Dynamically inject zone data scripts in order (replaces zoneloader's
+  /* Dynamically fetch zone data JSON in order (replaces zoneloader's
      document.write, which cannot run after parsing). */
+  /* v1.54 JSON ZONE DATA (2026-10-12): iOS Safari froze at 18% on Apple
+     mobile — JavaScriptCore is pathologically slow parsing the 1.6M-char
+     single lines in zone .js files. Zone data now ships as .json:
+     fetch() downloads off the main thread, JSON.parse is native C++,
+     and the main thread stays responsive so the progress bar updates.
+     The old .js files remain as fallback (loaded via <script> if JSON
+     fails after one retry). */
   /* v1.38 ZONE RETRY (Joshua 2026-10-11: laptop stuck at 18% — a single
-     transient failure on roads.js must not trap the loader forever).
-     Each zone file gets one automatic retry before being marked failed. */
+     transient failure on roads data must not trap the loader forever).
+     Each zone file gets one automatic retry before falling back. */
   var i = 0;
   function nextFile(){
     if (i >= files.length){ if (callback) callback(); return; }
     var f = files[i++];
     loadZoneFile(f, 0);
   }
-  function loadZoneFile(f, attempt){
-    var s = document.createElement('script');
-    var done = false;
-    function finish(ok){
-      if (done) return; done = true;
-      if(!ok && attempt < 1){
-        /* First failure — retry once before giving up. */
-        try{ console.warn('[deferred] Zone script failed, retrying: '+f.src); }catch(e){}
-        setTimeout(function(){ loadZoneFile(f, attempt+1); }, 2000);
-        return;
-      }
-      try{ if (f.key) __loadStep(f.key, !ok); }catch(e){}
-      nextFile();
+  /* v1.54: map a fetched JSON payload to the globals the game expects. */
+  function assignZoneGlobals(f, data){
+    if (f.key === 'buildings'){
+      /* buildings.json = {version, realCount, buildings} — expands to the
+         three globals the old buildings.js defined. */
+      window.OSM_BLDG_VERSION = data.version;
+      window.OSM_REAL_COUNT = data.realCount;
+      window.OSM_BUILDINGS = data.buildings;
+    } else if (f.global){
+      window[f.global] = data;
+    } else {
+      throw new Error('no global mapping for zone key: ' + f.key);
     }
-    s.onload = function(){ finish(true); };
-    s.onerror = function(){ finish(false); };
-    setTimeout(function(){ if(!done){ try{ console.warn('[deferred] Zone script timeout: '+f.src); }catch(e){} finish(false); } }, 45000);
+  }
+  function loadZoneFile(f, attempt){
     /* v1.35 #35: cache-bust zone files with the live map_version (a map
        update always changes the URL). Retry also busts so a stale CDN edge
        cannot serve the same broken bytes twice. */
     var _mver = window.__MAPVER || '';
-    var _zsrc = f.src + (f.src.indexOf('?')===-1?'?':'&') + 'v=' + encodeURIComponent(_mver);
-    s.src = attempt > 0 ? _zsrc + '&retry='+Date.now() : _zsrc;
+    function bust(url){
+      return url + (url.indexOf('?')===-1?'?':'&') + 'v=' + encodeURIComponent(_mver) +
+             (attempt > 0 ? '&retry='+Date.now() : '');
+    }
+    function finish(ok){
+      try{ if (f.key) __loadStep(f.key, !ok); }catch(e){}
+      nextFile();
+    }
+    var isJson = /\.json(\?|$)/.test(f.src);
+    /* v1.55 BULLETPROOF LOADER (2026-10-12): If a previous zone file's JSON
+       fetch returned 404, the .json files aren't deployed yet — skip the JSON
+       attempts entirely and go straight to the .js fallback. This avoids
+       wasting 2x45s timeouts per file when JSON isn't on the server. */
+    if (isJson && window.__zoneJsonMissing){
+      try{ console.warn('[deferred] JSON not deployed, using .js directly: '+f.src); }catch(e){}
+      isJson = false;
+    }
+    if (isJson && attempt < 2){
+      /* --- JSON path (attempts 0-1): fetch + JSON.parse, off-thread --- */
+      var done = false;
+      var timer = setTimeout(function(){
+        if (done) return; done = true;
+        try{ console.warn('[deferred] Zone JSON timeout, '+(attempt<1?'retrying':'falling back to .js')+': '+f.src); }catch(e){}
+        loadZoneFile(f, attempt+1);
+      }, 45000);
+      fetch(bust(f.src)).then(function(r){
+        if (!r.ok){
+          /* v1.55: 404 means JSON isn't deployed — flag it so remaining files
+             skip JSON and go straight to .js fallback. */
+          if (r.status === 404){
+            try{ window.__zoneJsonMissing = true; }catch(e){}
+          }
+          throw new Error('HTTP '+r.status);
+        }
+        return r.json();
+      }).then(function(data){
+        if (done) return; done = true; clearTimeout(timer);
+        try {
+          assignZoneGlobals(f, data);
+          finish(true);
+        } catch(e){
+          try{ console.warn('[deferred] Zone JSON assign failed: '+e.message); }catch(ee){}
+          loadZoneFile(f, attempt+1);
+        }
+      }).catch(function(err){
+        if (done) return; done = true; clearTimeout(timer);
+        /* v1.55: Record the specific failure reason for diagnostics. */
+        try{
+          if (!window.__zoneLoadErrors) window.__zoneLoadErrors = {};
+          /* Only record the FINAL failure reason (not intermediate retries). */
+          if (attempt >= 1){
+            window.__zoneLoadErrors[f.key] = 'JSON fetch failed for '+f.src+': '+(err&&err.message||'unknown');
+          }
+        }catch(e){}
+        try{ console.warn('[deferred] Zone JSON failed ('+(err&&err.message)+'), '+(attempt<1?'retrying':'falling back to .js')+': '+f.src); }catch(e){}
+        loadZoneFile(f, attempt+1);
+      });
+      return;
+    }
+    /* --- .js fallback path (attempt 2+, or non-JSON src): original script
+       injection. The old zone .js files are kept for this fallback only. */
+    var jsSrc = isJson ? f.src.replace(/\.json(\?|$)/, '.js$1') : f.src;
+    var s = document.createElement('script');
+    var done = false;
+    function finishJs(ok){
+      if (done) return; done = true;
+      if(!ok && attempt < 3){
+        /* One retry on the fallback path before giving up. */
+        try{ console.warn('[deferred] Zone script failed, retrying: '+jsSrc); }catch(e){}
+        setTimeout(function(){ loadZoneFile(f, attempt+1); }, 2000);
+        return;
+      }
+      finish(ok);
+    }
+    s.onload = function(){
+      /* v1.55: Verify the .js actually defined the expected global. A script
+         can 'load' (HTTP 200) but fail to define globals if it threw during
+         parse/execute. Check before declaring success. */
+      var globalOk = true;
+      try{
+        if (f.key === 'buildings'){
+          globalOk = (typeof window.OSM_BUILDINGS !== 'undefined' && window.OSM_BUILDINGS);
+        } else if (f.global){
+          globalOk = (typeof window[f.global] !== 'undefined' && window[f.global]);
+        }
+      }catch(e){ globalOk = false; }
+      if (!globalOk){
+        try{ console.warn('[deferred] .js loaded but global missing for '+f.key+', retrying'); }catch(e){}
+      }
+      finishJs(globalOk);
+    };
+    s.onerror = function(){
+      try{
+        /* v1.55: Record the specific failure for diagnostics. */
+        var reason = 'script load failed: ' + jsSrc;
+        if (!window.__zoneLoadErrors) window.__zoneLoadErrors = {};
+        window.__zoneLoadErrors[f.key] = reason;
+      }catch(e){}
+      finishJs(false);
+    };
+    setTimeout(function(){ if(!done){ try{ console.warn('[deferred] Zone script timeout: '+jsSrc); }catch(e){} finishJs(false); } }, 45000);
+    s.src = bust(jsSrc);
     document.head.appendChild(s);
   }
   nextFile();
@@ -1797,9 +1938,13 @@ try{
   var _rc=0, _bc=0;
   try{
     if(typeof ROAD_DATA!=='undefined'&&ROAD_DATA){
-      _rc=(ROAD_DATA.highway?ROAD_DATA.highway.length:0)+
-          (ROAD_DATA.arterial?ROAD_DATA.arterial.length:0)+
-          (ROAD_DATA.local?ROAD_DATA.local.length:0);
+      /* v2.1: count across whatever category keys exist in the data. */
+      _rc=0;
+      try{
+        Object.keys(ROAD_DATA).forEach(function(k){
+          if (ROAD_DATA[k]&&ROAD_DATA[k].length) _rc+=ROAD_DATA[k].length;
+        });
+      }catch(e){}
     }
   }catch(e){}
   try{
@@ -3575,7 +3720,22 @@ function labelAt(text, x, z, yOff, worldW, color){
 }
 
 /* ================= ROADS (real TIGER/Line geometry) ================= */
-var ROAD_WIDTHS = { highway: 22, arterial: 18.4, local: 7.2 }; /* 2026-10-10 Joshua: local=7.2m (2x3.6m lanes), no center lines on neighborhood streets */
+/* v2.1 ROAD CATEGORIES (2026-10-11, Joshua: major/minor artery split) --
+   New category set from the map editor, ranked:
+   interstate > highway > major_artery > minor_artery > local.
+   Legacy 'arterial' data is treated as minor_artery. Unknown categories
+   fall back to local styling so the renderer never crashes on bad data. */
+var ROAD_CATS = ['interstate','highway','major_artery','minor_artery','local'];
+function normRoadCat(cat){
+  if (cat==='arterial') return 'minor_artery';  /* legacy map data */
+  for (var i=0;i<ROAD_CATS.length;i++) if (ROAD_CATS[i]===cat) return cat;
+  return 'local';  /* unknown -> local styling, never crash */
+}
+/* v2.1: per-category asphalt tint (Joshua's map-editor color scheme) so
+   road types read at a glance in 3D. */
+var ROAD_COLORS = { interstate:0x7a1f1f, highway:0x8f2b22, major_artery:0x96521e,
+  minor_artery:0x8f6a1e, local:0x33373c };
+var ROAD_WIDTHS = { interstate:34, highway:22, major_artery:20, minor_artery:18.4, local:7.2 }; /* 2026-10-10 Joshua: local=7.2m (2x3.6m lanes), no center lines on neighborhood streets */
 var roadDrawData = [];  // {pts:[[x,z]..], w} for minimap + bridges
 
 function ribbonGeom(pts, width, yOff){
@@ -3719,7 +3879,7 @@ function roughness(ys){
 
 var roadSegsTotal=0, roadSegsBuilt=0, roadMeshesBuilt=0, roadVerts=0;
 var v13_roughRaw=0, v13_roughSmooth=0, v13_roughN=0;  // v1.3 smoothing audit
-var roadBuiltByClass={highway:0,arterial:0,local:0};  // v1.0: per-class audit
+var roadBuiltByClass={interstate:0,highway:0,major_artery:0,minor_artery:0,local:0};  // v1.0: per-class audit (v2.1: new category set)
 /* v1.0: declared BEFORE buildRoads — auditHighways() runs inside the
    buildRoads IIFE, and a later declaration left it undefined at call time
    (hoisting), throwing on device. */
@@ -3759,7 +3919,8 @@ function clipToWorld(pts, margin){
   if (cur.length>1) out.push(cur);
   return out;
 }
-try{ ['highway','arterial','local'].forEach(function(c){ roadSegsTotal+=ROAD_DATA[c].length; }); }catch(e){}
+/* v2.1: total across whatever category keys exist in the data. */
+try{ Object.keys(ROAD_DATA||{}).forEach(function(c){ if(ROAD_DATA[c]) roadSegsTotal+=ROAD_DATA[c].length; }); }catch(e){}
 (function buildRoads(){
   /* v1.17 ROADFIX BOOT PATCHES (Joshua 2026-10-09): construction-crew pin
      re-surveys recorded in localStorage ('sa_roadfixes_v1', patch
@@ -3787,7 +3948,11 @@ try{ ['highway','arterial','local'].forEach(function(c){ roadSegsTotal+=ROAD_DAT
         console.log('[roadfix] boot: applied '+_rfn+' saved pin-height patch(es)');
     }
   }catch(_re){}
-  var asphalt={pos:[],idx:[]}, lines={pos:[],idx:[]}, median={pos:[],idx:[]}; /* v2.0 ARTERIAL MEDIAN (2026-10-10 Joshua): grass median geometry */
+  /* v2.1: asphalt is baked per category so each road type gets its own
+     tint. 'concrete' holds the raised light-gray medians for divided
+     sections (separate from the green grass median). */
+  var asphaltByCat={}, lines={pos:[],idx:[]}, median={pos:[],idx:[]}, concrete={pos:[],idx:[]}; /* v2.0 ARTERIAL MEDIAN (2026-10-10 Joshua): grass median geometry */
+  ROAD_CATS.forEach(function(c){ asphaltByCat[c]={pos:[],idx:[]}; });
   function pushInto(store, geo){
     var base=store.pos.length/3;
     var pa=geo.attributes.position.array, ia=geo.index.array;
@@ -3917,20 +4082,109 @@ try{ ['highway','arterial','local'].forEach(function(c){ roadSegsTotal+=ROAD_DAT
       }
     });
   }
-  ['highway','arterial','local'].forEach(function(cat){
-    ROAD_DATA[cat].forEach(function(r){
-      if (r.pts.length<2) return;
-      var w=ROAD_WIDTHS[cat];
-      var isInterstate=(cat==='highway'&&INTERSTATES[r.name]);
+  /* v2.1 DIVIDED SECTIONS (2026-10-11, Joshua): a road may carry
+     divided_sections:[{from_idx,to_idx,type}] where type is 'median'
+     (raised light-gray concrete) or 'divider' (dark strip, yellow edges).
+     Indices refer to the road's ORIGINAL pts array. This splits the road
+     into normal/divided runs BEFORE the standard pipeline so each renders
+     with the right geometry. */
+  function splitDivided(pts, divSecs){
+    if (!divSecs || !divSecs.length) return [{pts:pts, divided:null}];
+    var secs=divSecs.map(function(s){
+      return { from:Math.max(0, s.from_idx|0),
+               to:Math.min(pts.length-1, s.to_idx===undefined?pts.length-1:(s.to_idx|0)),
+               type:(s.type==='divider')?'divider':'median' };
+    }).filter(function(s){ return s.to>s.from; });
+    secs.sort(function(a,b){ return a.from-b.from; });
+    var merged=[];  /* merge overlapping sections, keep first type */
+    secs.forEach(function(s){
+      var last=merged[merged.length-1];
+      if (last && s.from<=last.to+1){ last.to=Math.max(last.to,s.to); }
+      else merged.push(s);
+    });
+    var out=[], cursor=0;
+    merged.forEach(function(s){
+      if (s.from>cursor) out.push({pts:pts.slice(cursor, s.from+1), divided:null});
+      out.push({pts:pts.slice(s.from, s.to+1), divided:s.type});
+      cursor=s.to;
+    });
+    if (cursor<pts.length-1) out.push({pts:pts.slice(cursor), divided:null});
+    return out.filter(function(r){ return r.pts.length>=2; });
+  }
+  /* v2.1: build the two direction ribbons + center strip for a divided run.
+     dpts/dys are the densified points and smoothed heights from the
+     standard pipeline. */
+  function buildDividedRun(dpts, dys, w, divType, ncat, isInterstate){
+    var medW = divType==='divider' ? 2.5 : 4.0;
+    var dirW = (w - medW)/2;
+    if (dirW < 2) dirW = 2;  /* sanity: never invert */
+    var off = medW/2 + dirW/2;  /* centerline offset per direction */
+    var left=[], right=[];
+    for (var i=0;i<dpts.length;i++){
+      var p=dpts[i], pr=dpts[Math.max(0,i-1)], nx=dpts[Math.min(dpts.length-1,i+1)];
+      var dx=nx[0]-pr[0], dz=nx[1]-pr[1], ln=Math.hypot(dx,dz)||1; dx/=ln; dz/=ln;
+      left.push([p[0]+(-dz)*off, p[1]+dx*off]);
+      right.push([p[0]-(-dz)*off, p[1]-dx*off]);
+    }
+    var store = asphaltByCat[ncat]||asphaltByCat.local;
+    pushInto(store, ribbonGeomY(left, dirW, dys));
+    pushInto(store, ribbonGeomY(right, dirW, dys));
+    var stripLift = divType==='median' ? 0.35 : 0;  /* median is raised */
+    if (divType==='median'){
+      var mdys=dys.map(function(y){ return (y||0)+0.35; });
+      pushInto(concrete, ribbonGeomY(dpts, medW, mdys));  /* light-gray concrete */
+    } else {
+      pushInto(store, ribbonGeomY(dpts, medW, dys));  /* divider: dark strip */
+    }
+    /* yellow edge lines along the center strip */
+    [-medW/2+0.35, medW/2-0.35].forEach(function(o){
+      for (var i=0;i<dpts.length-1;i++){
+        var a=dpts[i], b=dpts[i+1];
+        var ya=(dys[i]||0)+stripLift+0.17, yb=(dys[i+1]||0)+stripLift+0.17;
+        var dx=b[0]-a[0], dz=b[1]-a[1], sl=Math.hypot(dx,dz)||1; dx/=sl; dz/=sl;
+        var px=-dz*o, pz=dx*o;
+        pushInto(lines, ribbonGeomY([[a[0]+px,a[1]+pz],[b[0]+px,b[1]+pz]], 0.35, [ya,yb]));
+      }
+    });
+    /* lane dashes within each direction */
+    var lpd = isInterstate?5:(ncat==='highway'?3:2);
+    laneDashes(left, dys, dirW, lpd);
+    laneDashes(right, dys, dirW, lpd);
+  }
+  /* v2.1: render across the normalized category set. Roads are gathered
+     from whatever keys exist in ROAD_DATA — the old 'arterial' key folds
+     into minor_artery via normRoadCat, so old and new data both render. */
+  ROAD_CATS.forEach(function(ncat){
+    var list=[];
+    Object.keys(ROAD_DATA||{}).forEach(function(k){
+      if (normRoadCat(k)===ncat && ROAD_DATA[k]) list=list.concat(ROAD_DATA[k]);
+    });
+    list.forEach(function(r){
+      if (!r.pts || r.pts.length<2) return;
+      var w=ROAD_WIDTHS[ncat]||ROAD_WIDTHS.local;
+      var isInterstate=(ncat==='interstate')||(ncat==='highway'&&INTERSTATES[r.name]);
       if (isInterstate) w=34;   // v1.3: 5 lanes/dir + shoulders
-      var runs=splitJumps([r.pts]);  // v1.11: cut phantom connectors at data jumps
+      var divRuns=splitDivided(r.pts, r.divided_sections);
+      var runs=[];  /* v2.1: {pts, divided} — divided survives gap splits */
+      divRuns.forEach(function(dr){
+        splitJumps([dr.pts]).forEach(function(sj){ runs.push({pts:sj, divided:dr.divided}); });
+      });
+      /* v2.1: gap-split helper preserves the divided flag per run */
+      function applyGaps(runList, gaps){
+        var out=[];
+        runList.forEach(function(rn){
+          gapRuns(rn.pts, gaps).forEach(function(gp){ out.push({pts:gp, divided:rn.divided}); });
+        });
+        return out;
+      }
       if (r.name==='I- 20'||r.name==='State Rte 402'){  // v0.6: both TIGER names for I-20
-        var _g=[]; runs.forEach(function(rn){ _g=_g.concat(gapRuns(rn, OP_GAP)); }); runs=_g;
+        runs=applyGaps(runs, OP_GAP);
       }
       else if (/Martin Luther King Jr Dr/.test(r.name)){  // v1.0: MLK over I-285
-        var _g2=[]; runs.forEach(function(rn){ _g2=_g2.concat(gapRuns(rn, MLK_GAP)); }); runs=_g2;
+        runs=applyGaps(runs, MLK_GAP);
       }
-      runs.forEach(function(pts){
+      runs.forEach(function(run){
+        var pts=run.pts, runDivided=run.divided;  /* v2.1: null | 'median' | 'divider' */
         // v1.0: clip to world, then DENSIFY so the ribbon drapes terrain
         var clipped=clipToWorld(pts, 100);
         clipped.forEach(function(cpts){
@@ -3952,19 +4206,25 @@ try{ ['highway','arterial','local'].forEach(function(c){ roadSegsTotal+=ROAD_DAT
           // v1.0: decimated points for the minimap (14k features — full density is too slow per frame)
           var mmPts=[]; for (var mi2=0; mi2<dpts.length; mi2+=4) mmPts.push(dpts[mi2]);
           if (dpts.length>1) mmPts.push(dpts[dpts.length-1]);
-          pushInto(asphalt, ribbonGeomY(dpts, w, dys));
-          roadDrawData.push({pts:dpts, ys:dys, mmPts:mmPts, w:w, cat:cat, name:r.name,
-            lanes:isInterstate?5:0});
+          var astore=asphaltByCat[ncat]||asphaltByCat.local;  /* v2.1: per-category tint */
+          roadDrawData.push({pts:dpts, ys:dys, mmPts:mmPts, w:w, cat:ncat, name:r.name,
+            lanes:isInterstate?5:0, divided:runDivided||null});  /* v2.1: divided flag for traffic */
           roadSegsBuilt++;
-          try{ roadBuiltByClass[cat]=(roadBuiltByClass[cat]||0)+1; }catch(e){}
-          /* v1.5 MARKING COVERAGE by class — no unmarked roads:
-             interstate: double-yellow directional divider + lane dashes
-               within each direction (5/dir); non-interstate highway:
-               divider + 3/dir; arterial: divider + 2/dir; local: center dashes. */
-          if (isInterstate){ centerDoubleYellow(dpts, dys); laneDashes(dpts, dys, w, 5); }
-          else if (cat==='highway'){ centerDoubleYellow(dpts, dys); laneDashes(dpts, dys, w, 3); }
-          else if (cat==='arterial'){ grassMedian(dpts, dys); laneDashes(dpts, dys, w, 2); } /* v2.0: grass median replaces painted divider */
-          else { dashes(dpts, dys); }
+          try{ roadBuiltByClass[ncat]=(roadBuiltByClass[ncat]||0)+1; }catch(e){}
+          /* v2.1 MARKING COVERAGE by class:
+             interstate: double-yellow + 5/dir dashes; highway: double-yellow + 3/dir;
+             major_artery: grass median + 3/dir; minor_artery: grass median + 2/dir;
+             local: center dashes. Divided runs get the split-ribbon treatment. */
+          if (runDivided){
+            buildDividedRun(dpts, dys, w, runDivided, ncat, isInterstate);
+          } else {
+            pushInto(astore, ribbonGeomY(dpts, w, dys));
+            if (isInterstate){ centerDoubleYellow(dpts, dys); laneDashes(dpts, dys, w, 5); }
+            else if (ncat==='highway'){ centerDoubleYellow(dpts, dys); laneDashes(dpts, dys, w, 3); }
+            else if (ncat==='major_artery'){ grassMedian(dpts, dys); laneDashes(dpts, dys, w, 3); }
+            else if (ncat==='minor_artery'){ grassMedian(dpts, dys); laneDashes(dpts, dys, w, 2); } /* v2.0: grass median replaces painted divider */
+            else { dashes(dpts, dys); }
+          }
         });
       });
     });
@@ -3995,7 +4255,7 @@ try{ ['highway','arterial','local'].forEach(function(c){ roadSegsTotal+=ROAD_DAT
       var dys=smoothHeights(dpts,draw);
       var mmPts=[]; for(var mi2=0;mi2<dpts.length;mi2+=4) mmPts.push(dpts[mi2]);
       if(dpts.length>1) mmPts.push(dpts[dpts.length-1]);
-      pushInto(asphalt, ribbonGeomY(dpts,34,dys));
+      pushInto(asphaltByCat.highway, ribbonGeomY(dpts,34,dys));  /* v2.1: per-category store */
       roadDrawData.push({pts:dpts,ys:dys,mmPts:mmPts,w:34,cat:'highway',
         name:'I- 20',lanes:5});
       roadSegsBuilt++;
@@ -4012,11 +4272,20 @@ try{ ['highway','arterial','local'].forEach(function(c){ roadSegsTotal+=ROAD_DAT
     scene.add(mesh); return mesh;
   }
   try{
-    var aMesh=bake(asphalt, 0x33373c, -2);   // asphalt
-    var mMesh=bake(median, 0x3a7d2a, -3);     // v2.0 grass median (green, between asphalt and lines)
-    var lMesh=bake(lines, 0xf2e9a4, -4);     // lane dashes (drawn over asphalt)
-    roadMeshesBuilt=(aMesh?1:0)+(lMesh?1:0)+(mMesh?1:0);
-    roadVerts=((asphalt.pos.length/3)|0)+((lines.pos.length/3)|0)+((median.pos.length/3)|0);
+    /* v2.1: one asphalt mesh per category, staggered polygon offsets so
+       bigger roads win depth ties where they cross (interstate on top). */
+    var aMeshes=[], aMesh=null;
+    var catPO={interstate:-6, highway:-5, major_artery:-4, minor_artery:-3, local:-2};
+    ROAD_CATS.forEach(function(c){
+      var _m=bake(asphaltByCat[c], ROAD_COLORS[c], catPO[c]);
+      if (_m){ aMeshes.push(_m); if(!aMesh) aMesh=_m; }
+    });
+    var mMesh=bake(median, 0x3a7d2a, -7);     // v2.0 grass median (green, above asphalt)
+    var cMesh=bake(concrete, 0x9a9a98, -7);   // v2.1 concrete median (light gray, divided sections)
+    var lMesh=bake(lines, 0xf2e9a4, -8);     // lane dashes (drawn over everything)
+    roadMeshesBuilt=aMeshes.length+(lMesh?1:0)+(mMesh?1:0)+(cMesh?1:0);
+    roadVerts=((lines.pos.length/3)|0)+((median.pos.length/3)|0)+((concrete.pos.length/3)|0);
+    aMeshes.forEach(function(_m){ try{ roadVerts+=((_m.geometry.attributes.position.array.length/3)|0); }catch(e){} });
   }catch(e){
     roadMeshesBuilt=0; roadVerts=0;
     try{Report.noteError('roadtest','buildRoads threw',String(e&&e.stack||e));}catch(x){}
@@ -4026,8 +4295,10 @@ try{ ['highway','arterial','local'].forEach(function(c){ roadSegsTotal+=ROAD_DAT
   // invisible-roads bug was reversed triangle winding: normals pointed DOWN,
   // backface-culled from above. Fixed in ribbonGeom; this proves it.)
   try{
+    /* v2.1: audit counts all per-category asphalt meshes + median/line meshes */
+    var roadMeshList=aMeshes.concat([mMesh,cMesh,lMesh].filter(Boolean));
     var inScene=0;
-    scene.children.forEach(function(o){ if(o===aMesh||o===lMesh) inScene++; });
+    scene.children.forEach(function(o){ if(roadMeshList.indexOf(o)>=0) inScene++; });
     var windOk='?', ySamples=[];
     try{
       var pa=aMesh.geometry.attributes.position.array;
@@ -4058,7 +4329,7 @@ try{ ['highway','arterial','local'].forEach(function(c){ roadSegsTotal+=ROAD_DAT
       byClass:roadBuiltByClass,
       meshesBuilt:roadMeshesBuilt,meshesInScene:inScene,verts:roadVerts,
       winding:windOk, material:matType, ySamples:ySamples,
-      status:(roadSegsBuilt>0&&inScene===2&&windOk==='up')?'ok':'BROKEN',
+      status:(roadSegsBuilt>0&&inScene>=2&&windOk==='up')?'ok':'BROKEN',  /* v2.1: >=2 (5 asphalt meshes possible) */
       highways:auditHighways()});
     /* v1.3 VERIFICATIONS */
     try{
@@ -4188,7 +4459,12 @@ try{ __parseSet('Placing street furniture', '', 40); }catch(e){}
     var lights=[], stops=[], nameSigns=[];
     found.forEach(function(f){
       var cats=[f.a.cat, f.b.cat];
-      var major=cats.indexOf('highway')>=0 || (cats[0]==='arterial' && cats[1]==='arterial');
+      /* v2.1: major intersection = interstate/highway involved, or two
+         arterials (major or minor) crossing. Legacy 'arterial' normalized. */
+      var nc0=normRoadCat(cats[0]), nc1=normRoadCat(cats[1]);
+      var _big=function(c){ return c==='interstate'||c==='highway'; };
+      var _art=function(c){ return c==='major_artery'||c==='minor_artery'; };
+      var major=_big(nc0)||_big(nc1)||(_art(nc0)&&_art(nc1));
       // offset beside the road: perpendicular to road A, outside its half-width + 2.5u
       var rA=roadDrawData[f.a.ri];
       var p0=rA.pts[0], p1=rA.pts[rA.pts.length-1];
@@ -4806,7 +5082,7 @@ function groundRefY(x,z){
 /* ================= WATER ================= */
 // Tatum Lake (verified name) + pond + creek near home base
 var WATER = [];
-function waterDisc(cx, cz, rx, rz, name){
+function waterDisc(cx, cz, rx, rz, name, depthFt){
   var geo=new THREE.CircleGeometry(1, 28);
   geo.rotateX(-Math.PI/2); geo.scale(rx, 1, rz);
   var m=new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color:0x2e6f9e }));
@@ -4826,7 +5102,10 @@ function waterDisc(cx, cz, rx, rz, name){
   sm.position.set(cx, y+0.35+0.15-depth/2, cz);  // top edge overlaps the surface disc
   sm.renderOrder=1;
   scene.add(sm);
-  WATER.push({x:cx, z:cz, rx:rx, rz:rz, name:name});
+  /* depthFt flows through so waterDepthAt() uses per-feature depth
+     (Joshua 2026-10-11: Tatum Lake ~12ft, the pond ~6ft). */
+  WATER.push({x:cx, z:cz, rx:rx, rz:rz, name:name,
+              depthFt:(typeof depthFt==='number'&&depthFt>0)?depthFt:12});
   if (name) labelAt(name, cx, cz, 14, 34, '#7fd4ff');
 }
 (function buildWater(){
@@ -4838,9 +5117,9 @@ function waterDisc(cx, cz, rx, rz, name){
      to the lake along its south shore, Boulder Park side is HIGH ground.
      New center + slightly smaller disc: water sits north of Boulder Park Dr. */
   var lake = xz(33.74946, -84.52388);   // Tatum Lake — south shore clears Boulder Park Dr
-  waterDisc(lake.x, lake.z, 75, 48, 'TATUM LAKE');
+  waterDisc(lake.x, lake.z, 75, 48, 'TATUM LAKE', 12);
   var pond = xz(33.74795, -84.52161);   // second pond from satellite
-  waterDisc(pond.x+40, pond.z-25, 38, 26, 'POND');  // v0.5: labelled — no more mystery water
+  waterDisc(pond.x+40, pond.z-25, 38, 26, 'POND', 6);  // v0.5: labelled — no more mystery water
   /* v1.2 CREEK REPOSITIONED: the old synthetic path ran SW from the lake straight
      through the 535 neighborhood, crossing Dollar Mill Rd twice and trapping the
      van (Joshua: "impossible to leave the neighborhood"). Replaced with the REAL
@@ -4851,38 +5130,47 @@ function waterDisc(cx, cz, rx, rz, name){
   var creekPts=CREEK_OSM;
   var cg=ribbonGeom(creekPts, 7, 0.18);
   scene.add(new THREE.Mesh(cg, new THREE.MeshLambertMaterial({ color:0x2e6f9e })));
-  WATER.push({creek:creekPts, name:'creek'});
+  WATER.push({creek:creekPts, name:'creek', depthFt:2});
   // v0.3: NO invented bridges — overpasses only where they really exist (see I-20 below)
 })();
 // ---------- water mechanics (v0.3): cars sink, people float-then-swim ----------
-/* distToCreek(x,z): shortest distance from (x,z) to the creek polyline.
-   O(segments) scan — the creek is short, so no spatial hash needed. Used by
-   inWater(), tree placement exclusion, and wading depth. */
-function distToCreek(x,z){
-  var pts=null;
-  for (var i=0;i<WATER.length;i++) if (WATER[i].creek) pts=WATER[i].creek;
-  if (!pts) return 1e9;
+/* distToPolyline(pts,x,z): shortest distance from (x,z) to a polyline.
+   O(segments) scan. Generalized from distToCreek so rivers/streams from
+   water_features.json use the same math. */
+function distToPolyline(pts,x,z){
+  if (!pts || pts.length < 2) return 1e9;
   var best=1e9;
   for (var i=0;i<pts.length-1;i++){
     var ax=pts[i][0], az=pts[i][1], bx=pts[i+1][0], bz=pts[i+1][1];
     var vx=bx-ax, vz=bz-az, len2=vx*vx+vz*vz;
     var t=len2>0 ? ((x-ax)*vx+(z-az)*vz)/len2 : 0;
     t=Math.max(0,Math.min(1,t));
-    /* v1.28 PERF (FIX 2): sqrt instead of hypot — distToCreek runs per-frame
-       for the player (swimming/wading checks). */
+    /* v1.28 PERF (FIX 2): sqrt instead of hypot — runs per-frame for the
+       player (swimming/wading checks). */
     var ddx=x-(ax+vx*t), ddz=z-(az+vz*t);
     var d=Math.sqrt(ddx*ddx+ddz*ddz);
     if (d<best) best=d;
   }
   return best;
 }
-/* inWater(x,z): true inside a lake/pond disc (normalized ellipse test)
-   or within 4.5u of the creek centerline. Drives swimming, sinking,
-   splash effects, and placement exclusion. */
+/* distToCreek(x,z): shortest distance from (x,z) to the creek polyline.
+   Kept for compatibility — delegates to distToPolyline. Used by
+   inWater(), tree placement exclusion, and wading depth. */
+function distToCreek(x,z){
+  var pts=null;
+  for (var i=0;i<WATER.length;i++) if (WATER[i].creek) pts=WATER[i].creek;
+  if (!pts) return 1e9;
+  return distToPolyline(pts,x,z);
+}
+/* inWater(x,z): true inside a lake/pond disc (normalized ellipse test),
+   within 4.5u of the creek centerline, or inside a river/stream ribbon
+   (within half the channel width of its centerline). Drives swimming,
+   sinking, splash effects, and placement exclusion. */
 function inWater(x,z){
   for (var i=0;i<WATER.length;i++){
     var w=WATER[i];
     if (w.creek){ if (distToCreek(x,z)<4.5) return true; }
+    else if (w.river){ if (distToPolyline(w.river,x,z) < (w.width||30)/2) return true; }
     else { var dx=(x-w.x)/w.rx, dz=(z-w.z)/w.rz; if (dx*dx+dz*dz<1) return true; }
   }
   return false;
@@ -4896,29 +5184,51 @@ function waterLevelAt(x,z){
   for (var i=0;i<WATER.length;i++){
     var w=WATER[i], y;
     if (w.creek){ if (distToCreek(x,z)<4.5){ y=heightAt(x,z)+0.18; if(best===null||y<best) best=y; } }
+    else if (w.river){ if (distToPolyline(w.river,x,z) < (w.width||30)/2){ y=heightAt(x,z)+0.25; if(best===null||y<best) best=y; } }
     else { var dx=(x-w.x)/w.rx, dz=(z-w.z)/w.rz; if (dx*dx+dz*dz<1){ y=heightAt(w.x,w.z)+0.35; if(best===null||y<best) best=y; } }
   }
   return best;
 }
-/* v1.2 DEPTH-BASED WATER (Joshua: "it should be a matter of depth"). Old rule sank
-   the van on ANY water touch. New rule: shallow water is FORDABLE (slowdown, no
-   sink), deep water sinks. Depth model: lake/pond discs are deepest at center
-   (parabolic profile, 0 at the shoreline); the creek is uniformly shallow. */
-var WADE_LIMIT=1.2;   // van fords water up to 1.2u deep (~1/3 of van height)
-var LAKE_MAXD=9, POND_MAXD=5, CREEK_DEPTH=0.8;
-/* SWIM_DEPTH (Joshua 2026-10-10): player only enters the swimming state in
-   DEEP water. Below this depth (streams, puddles, lake shallows) he just
-   wades through on foot — no swim animation, no float. Threshold is just
-   above waist height for the 6'1" (1.85u) player. */
-var SWIM_DEPTH=1.1;
+/* v1.3 PER-FEATURE DEPTH (Joshua 2026-10-11): "it should be a matter of depth."
+   Every water feature carries its own max depth in FEET (water_features.json
+   "depth", or depthFt on the WATER entry). World units ≈ feet / 3.29
+   (the player is 1.85u = 6'1"). Depth model: lake/pond discs are deepest at
+   the center (parabolic profile, 0 at the shoreline); rivers/streams are
+   deepest at the channel centerline, shallowing toward the banks; the home
+   creek is uniformly shallow. Shallow water is FORDABLE (drive/wade through),
+   deep water sinks cars and swims the player. */
+var U_PER_FT=0.304;   // world units per foot
+/* waterDepthFt(w): max depth of a WATER entry in FEET. Falls back to sensible
+   defaults by water type when the entry carries no depth. */
+function waterDepthFt(w){
+  if (w && typeof w.depthFt==='number' && w.depthFt>0) return w.depthFt;
+  var nm=(w && w.name) || '';
+  if (w && w.river) return 8;        // rivers: 6-10 ft
+  if (w && w.creek) return 2;        // the home creek is shallow
+  if (/pond/i.test(nm)) return 6;    // ponds: 4-8 ft
+  return 12;                          // lakes: 8-15 ft
+}
+/* SINK_DEPTH (Joshua 2026-10-11): vehicles sink in water deeper than ~3 ft.
+   At or below this depth they ford straight through. */
+var SINK_DEPTH_FT=3;
+var SINK_DEPTH=SINK_DEPTH_FT*U_PER_FT;  // ≈0.91u
+var WADE_LIMIT=SINK_DEPTH;  // legacy name — vehicles ford at/below this depth
+/* SWIM_DEPTH (Joshua 2026-10-10, refined 2026-10-11): the player only enters
+   the swimming state in water deeper than ~4 ft. Below that (streams, lake
+   shallows) he just wades on foot — no swim animation. */
+var SWIM_DEPTH=4*U_PER_FT;  // ≈1.22u
 function waterDepthAt(x,z){
   var best=0;
   for (var i=0;i<WATER.length;i++){
-    var w=WATER[i], d=0;
-    if (w.creek){ if (distToCreek(x,z)<4.5) d=CREEK_DEPTH; }
+    var w=WATER[i], d=0, maxd=waterDepthFt(w)*U_PER_FT;
+    if (w.creek){ if (distToCreek(x,z)<4.5) d=maxd; }
+    else if (w.river){
+      var rd=distToPolyline(w.river,x,z), hw=(w.width||30)/2;
+      if (rd<hw){ var t=rd/hw; d=maxd*(1-0.5*t*t); }  // center deep, banks ~half
+    }
     else {
       var dx=(x-w.x)/w.rx, dz=(z-w.z)/w.rz, r2=dx*dx+dz*dz;
-      if (r2<1) d=(w.name==='POND'?POND_MAXD:LAKE_MAXD)*(1-r2);
+      if (r2<1) d=maxd*(1-r2);  // parabolic: deepest at center
     }
     if (d>best) best=d;
   }
@@ -5495,7 +5805,7 @@ function ranchHouse(x, z, style){
 // subdivision fill near home base (along local TIGER streets)
 (function subdivision(){
   var placed=0, tries=0;
-  ROAD_DATA.local.forEach(function(r){
+  (ROAD_DATA.local||[]).forEach(function(r){  /* v2.1: guard against missing key */
     if (r.name.toLowerCase().indexOf('dollar mill')<0 &&
         Math.hypot(r.pts[0][0]-HOME.x, r.pts[0][1]-HOME.z)>900) return;
     for (var i=0;i<r.pts.length-1 && placed<46;i++){
@@ -6498,8 +6808,8 @@ try{
   }
   var fiMm=[]; for (var fmi=0; fmi<fiDense.length; fmi+=4) fiMm.push(fiDense[fmi]);
   fiMm.push(fiDense[fiDense.length-1]);
-  roadDrawData.push({pts:fiDense, ys:fiYs, mmPts:fiMm, w:11, cat:'arterial', name:'Fulton Industrial Blvd SW'});
-  try{ roadBuiltByClass.arterial=(roadBuiltByClass.arterial||0)+1; roadSegsBuilt++; }catch(e){}
+  roadDrawData.push({pts:fiDense, ys:fiYs, mmPts:fiMm, w:11, cat:'major_artery', name:'Fulton Industrial Blvd SW'});  /* v2.1: Fulton Industrial is a major artery */
+  try{ roadBuiltByClass.major_artery=(roadBuiltByClass.major_artery||0)+1; roadSegsBuilt++; }catch(e){}
   // elevated I-20 deck over a lower-road crossing; lower road keeps its ribbon at grade
   function overpass(cx, cz, yaw){
     var gy=heightAt(cx,cz), deckLen=84, deckW=30, clearH=7.5;
@@ -6605,7 +6915,7 @@ try{
         }
         var mm=[]; for (var mi=0; mi<pts.length; mi+=2) mm.push(pts[mi]);
         mm.push(pts[pts.length-1]);
-        roadDrawData.push({pts:pts, ys:ys, mmPts:mm, w:w, cat:'arterial',
+        roadDrawData.push({pts:pts, ys:ys, mmPts:mm, w:w, cat:'minor_artery',  /* v2.1 */
           name:'Martin Luther King Jr Dr SW (overpass ramp)'});
         try{ roadSegsBuilt++; }catch(e){}
       }
@@ -6619,7 +6929,7 @@ try{
       scene.add(new THREE.Mesh(ribbonGeomY(dpts, w, dys), rampMat));
       var dmm=[]; for (var dmi=0; dmi<dpts.length; dmi+=2) dmm.push(dpts[dmi]);
       dmm.push(dpts[dpts.length-1]);
-      roadDrawData.push({pts:dpts, ys:dys, mmPts:dmm, w:w, cat:'arterial',
+      roadDrawData.push({pts:dpts, ys:dys, mmPts:dmm, w:w, cat:'minor_artery',  /* v2.1 */
         name:'Martin Luther King Jr Dr SW (overpass deck)'});
       try{ roadSegsBuilt++; }catch(e){}
       try{ Report.setSys('mlkOverpass',{ramps:true, deckTopY:+deckTopY.toFixed(1),
@@ -7124,9 +7434,34 @@ function animateHero(dt){
   }
   var p=R.phase, s1=Math.sin(p), s2=Math.sin(p+Math.PI), T;
   if(player.swimming){
-    var k=Math.sin(heroT*6.5)*0.28, q=Math.sin(heroT*3.2)*0.65;
-    T={ll:-0.55+k,lr:-0.55-k,kl:0.18,kr:0.18,al:q-0.35,ar:-q-0.35,
-       el:-0.55,er:-0.55,bob:Math.sin(heroT*2.4)*0.05,lean:0.28,sway:0,head:0.10};
+    /* v1.3 THREE SWIM STATES (Joshua 2026-10-11):
+       - MOVING (input) → freestyle: prone, alternating arm strokes, flutter kick
+       - STATIONARY → treading water: upright, chest-deep, gentle bob, sculling
+       swimBlend eases 0<->1 so the transition never pops. Shallow water never
+       reaches this branch — updatePlayer only sets swimming in deep water, so
+       wading keeps the normal walk cycle (see else branch). */
+    var _moving=(spd>0.5)?1:0;
+    if (R.swimBlend===undefined) R.swimBlend=_moving;
+    R.swimBlend+=(_moving-R.swimBlend)*Math.min(1,5*dt);
+    var sb=R.swimBlend, tb=1-sb;
+    var kick=Math.sin(heroT*7.0), stroke=heroT*5.2, scull=Math.sin(heroT*3.0);
+    /* SWIM: prone freestyle — torso pitched forward, legs extended back with
+       flutter kick, big alternating arm strokes, head up to breathe. */
+    var SW={ll:1.00+kick*0.30, lr:1.00-kick*0.30,
+            kl:0.18, kr:0.18,
+            al:Math.sin(stroke)*1.15-0.20, ar:Math.sin(stroke+Math.PI)*1.15-0.20,
+            el:-0.50, er:-0.50,
+            bob:Math.sin(heroT*2.4)*0.06, lean:1.00, sway:0, head:-0.55};
+    /* TREAD: upright and chest-deep — soft alternating leg movements, arms
+       sculling out to the sides (spread applied via rotation.z below), gentle
+       bobbing. */
+    var TR={ll:kick*0.18, lr:-kick*0.18,
+            kl:0.35+Math.max(0,kick)*0.25, kr:0.35+Math.max(0,-kick)*0.25,
+            al:scull*0.16, ar:-scull*0.16,
+            el:-0.90, er:-0.90,
+            bob:Math.sin(heroT*2.0)*0.12, lean:0.12, sway:0, head:0.05};
+    T={};
+    for (var _sk in SW) T[_sk]=SW[_sk]*sb+TR[_sk]*tb;
   } else {
     T={ll:s1*0.62*amp, lr:s2*0.62*amp,
        kl:Math.max(0,Math.sin(p-0.7))*0.95*amp+0.06,
@@ -7139,6 +7474,10 @@ function animateHero(dt){
   var br=Math.sin(heroT*1.7);
   var I={ll:0,lr:0,kl:0.06,kr:0.06,al:br*0.02,ar:-br*0.02,el:-0.12,er:-0.12,
          bob:br*0.012,lean:0,sway:0,head:0};
+  /* treading arms open sideways for the scull — fades as swimming takes over,
+     zero when not swimming (keeps the walk cycle clean) */
+  var _armZ=(player.swimming&&typeof R.swimBlend==='number')?0.55*(1-R.swimBlend):0;
+  R.armL.sh.rotation.z=_armZ; R.armR.sh.rotation.z=-_armZ;
   R.legL.hp.rotation.x=I.ll*ib+T.ll*b;
   R.legR.hp.rotation.x=I.lr*ib+T.lr*b;
   R.legL.kn.rotation.x=I.kl*ib+T.kl*b;
@@ -7194,7 +7533,15 @@ function makeCar(x,z,yaw,color,drivable,kind){
   cars.push(st); return st;
 }
 var car=null;
-(function(){
+/* v1.57 FIX (2026-10-12 Joshua: "there's no car at 535 Dollar"):
+   The van spawn ran inline during page parse, BEFORE vehicle_meshes.js
+   (deferred via data-dsrc) finished loading. safariMesh() AND sedanMesh()
+   both live in vehicle_meshes.js, so both were undefined when makeCar ran
+   -> ReferenceError -> caught silently -> no car ever spawned.
+   Now spawnPlayerVan() tries immediately, then retries every 100ms until
+   the mesh builders arrive (or 10s passes). Already-spawned = no-op. */
+function spawnPlayerVan(){
+  if (car && car.mesh) return true;  // already spawned — don't double up
   /* Joshua's GMC Safari van (brown/gold two-tone), parked in the 535 driveway.
      v3.1 FIX (2026-10-09 inspection): yaw 0 = nose SOUTH toward Dollar Mill Rd
      (was Math.PI/2 — the 5.6u van lay sideways across the 4.5u driveway,
@@ -7207,8 +7554,8 @@ var car=null;
   try {
     var vx=3124, vz=3705;  // 535 driveway fallback (matches heroHouse.drivewayPark)
     try {
-      if (heroHouse && heroHouse.drivewayPark && 
-          typeof heroHouse.drivewayPark.x==='number' && 
+      if (typeof heroHouse!=='undefined' && heroHouse && heroHouse.drivewayPark &&
+          typeof heroHouse.drivewayPark.x==='number' &&
           typeof heroHouse.drivewayPark.z==='number') {
         vx=heroHouse.drivewayPark.x; vz=heroHouse.drivewayPark.z;
       }
@@ -7217,14 +7564,36 @@ var car=null;
     try {
       if (typeof safariMesh!=='function') vkind='sedan';  // fallback if mesh missing
     }catch(e){ vkind='sedan'; }
+    /* v1.57: don't call makeCar until the mesh builder actually exists.
+       vehicle_meshes.js loads deferred — bail now, the retry loop below
+       will pick it up once the script arrives. */
+    try {
+      if (vkind==='safari' && typeof safariMesh!=='function') return false;
+      if (vkind==='sedan' && typeof sedanMesh!=='function') return false;
+    }catch(e){ return false; }
     car=makeCar(vx, vz, 0, 0x8b2e2e, true, vkind);
     try { car.mesh.position.y=heightAt(car.x,car.z)+0.32; }catch(e){}
     try { car.mesh.visible=true; }catch(e){}  // ensure visible (culling keeps it visible anyway)
     try { console.log('[van] Player van spawned at '+vx+','+vz+' kind='+vkind); }catch(e){}
+    return true;
   }catch(e){
     try { console.error('[van] FAILED to spawn player van:', e); }catch(_){}
     try { if (typeof Report!=='undefined' && Report.noteError) Report.noteError('van-spawn', String(e)); }catch(_){}
+    return false;
   }
+}
+spawnPlayerVan();  // first attempt — may fail if vehicle_meshes.js isn't here yet
+/* v1.57 retry: poll until the deferred vehicle_meshes.js arrives, then spawn.
+   Stops once the car exists or after ~10s (100 tries x 100ms). */
+(function(){
+  var _tries=0;
+  var _timer=setInterval(function(){
+    _tries++;
+    if ((car && car.mesh) || _tries>100){ clearInterval(_timer); return; }
+    if (window.__deferredDone || typeof safariMesh==='function' || typeof sedanMesh==='function'){
+      if (spawnPlayerVan()) clearInterval(_timer);
+    }
+  }, 100);
 })();
 // v1.6: parked cars sit in DRIVEWAYS at dwellings — never on the road surface.
 // (Cars on roads should be moving traffic; that's NPC work for later.)
@@ -7367,7 +7736,7 @@ function hideJoystick(){ joyBase.style.display='none'; joyKnob.style.display='no
 renderer.domElement.addEventListener('touchstart', function(e){
   for (var i=0;i<e.changedTouches.length;i++){
     var t=e.changedTouches[i];
-    if (t.clientX < window.innerWidth*0.45 && !joy.active && !car.driving){
+    if (t.clientX < window.innerWidth*0.45 && !joy.active && !(car && car.driving)){
       joy.active=true; joy.id=t.identifier; joy.sx=t.clientX; joy.sy=t.clientY; joy.dx=0; joy.dy=0;
       showJoystick(t.clientX, t.clientY);
     } else if (!look.dragging && t.clientX >= window.innerWidth*0.45){
@@ -7390,9 +7759,9 @@ renderer.domElement.addEventListener('touchmove', function(e){
       // (camYaw); while driving the chase cam keeps the yawOff scheme.
       // v1.13: inside a building (first-person), drag looks around (yaw+pitch).
       // v1.12.2: gentler look indoors (Joshua) — half sensitivity inside buildings
-      var dYaw=(t.clientX-look.lx)/window.innerWidth*Math.PI*((player.inside&&!car.driving)?0.5:1.0);
-      if (car.driving) look.yawOff-=dYaw;
-      else if (player.inside && !car.driving){
+      var dYaw=(t.clientX-look.lx)/window.innerWidth*Math.PI*((player.inside&&!(car && car.driving))?0.5:1.0);
+      if (car && car.driving) look.yawOff-=dYaw;
+      else if (player.inside && !(car && car.driving)){
         fpLookYaw-=dYaw;
         var dPitch=(t.clientY-(look.ly||t.clientY))/window.innerHeight*Math.PI;
         fpPitch=Math.max(-1.1, Math.min(1.1, fpPitch-dPitch));
@@ -7452,6 +7821,8 @@ document.getElementById('cam-btn').addEventListener('click', function(){
 });
 var pendingCar=null;
 function exitCar(fromWater){
+  /* v1.58: null-car guard — exitCar should only run with a valid car. */
+  if (!car) return;
   car.driving=false; car.speed=0;
   try{ setCarDoors(car,true); car._doorT=1.6; }catch(e){}
   try{Report.note('exit-car',{x:Math.round(car.x),z:Math.round(car.z),fromWater:!!fromWater});}catch(e){}
@@ -7460,7 +7831,8 @@ function exitCar(fromWater){
   resolveCollision(player, 0.5);
   // v1.4: the hero can't walk THROUGH the parked van — oriented-box push-out
   // against the van footprint (van forward = (sin yaw, cos yaw)).
-  if(!car.driving && !player.inside && !player.swimming && !car.sunk){
+  /* v1.58: null-car guard — no van = no push-out needed. */
+  if(car && !car.driving && !player.inside && !player.swimming && !car.sunk){
     var vfx=Math.sin(car.yaw), vfz=Math.cos(car.yaw);
     var vsx=Math.cos(car.yaw), vsz=-Math.sin(car.yaw);
     var vdx=player.x-car.x, vdz=player.z-car.z;
@@ -7487,6 +7859,8 @@ actionBtn.addEventListener('click', function(){
   var a=actionBtn.dataset.act;
   if (a==='enter-car'){
     if (pendingCar) car=pendingCar;   // nearest usable vehicle becomes the driven car
+    /* v1.58: null-car guard — don't try to drive a car that doesn't exist. */
+    if (!car) return;
     car.driving=true; player.mesh.visible=false;  // hide the on-foot sprite while driving
     // v0.5: reset look offset and SNAP the chase camera behind the car NOW —
     // a stale drag offset used to leave the camera in front, reading as "reverse"
@@ -7751,9 +8125,15 @@ if(radioIdx<0||radioIdx>=RADIO_TRACKS.length) radioIdx=0;
    the old track fades out. Same src = no-op (avoids restart churn).
    ============================================================================ */
 function playSrc(src){
-  /* Same track already playing — don't restart. */
+  /* v1.56 AUDIO (2026-10-12, Joshua approved "MP3 to OGG"): Try the OGG Vorbis
+     version first — it is smaller and more efficient than the MP3. The canonical
+     src stays .mp3 (matches music-manifest.json); we map to the .ogg sibling
+     here. If the OGG fails to load, the error handler below falls back to MP3. */
+  var oggSrc = src.replace(/\.mp3$/i, '.ogg');
+  /* Same track already playing — don't restart. Check both variants, since the
+     element's src will be the .ogg URL while the canonical src is .mp3. */
   try{
-    if (musicAudio.src && musicAudio.src.indexOf(src) !== -1 && !musicAudio.paused)
+    if (musicAudio.src && (musicAudio.src.indexOf(src) !== -1 || musicAudio.src.indexOf(oggSrc) !== -1) && !musicAudio.paused)
       return;
   }catch(e){}
   var outgoing = musicAudio;       /* currently audible */
@@ -7764,7 +8144,7 @@ function playSrc(src){
   /* Load and play the new track on the incoming element. */
   try{ incoming.pause(); }catch(e){}
   incoming.volume = 0;
-  incoming.src = src;
+  incoming.src = oggSrc;
   /* Attach ended/error to the incoming element (each element needs its own). */
   /* (Listeners are attached once at setup below — both elements covered.) */
   if(!musicMuted){
@@ -7836,6 +8216,19 @@ el.addEventListener('ended', function(){
 });
 el.addEventListener('error', function(){
   if (el !== musicAudio) return;
+  /* v1.56 AUDIO (2026-10-12): OGG-first with MP3 fallback. If the failed src
+     was the .ogg version, retry once with the .mp3 before giving up on the
+     track. (Joshua's rule: keep MP3s as backup.) */
+  try{
+    var failedSrc = el.src || '';
+    if (/\.ogg(\?|#|$)/i.test(failedSrc)){
+      var mp3Src = failedSrc.replace(/\.ogg/i, '.mp3');
+      try{Report.noteError('music','ogg failed, falling back to mp3',mp3Src);}catch(e){}
+      el.src = mp3Src;
+      if(!musicMuted){ try{ var p=el.play(); if(p&&p.catch) p.catch(function(){}); }catch(e){} }
+      return;
+    }
+  }catch(e){}
   try{Report.noteError('music','track failed, skipping',musicMode+':'+radioIdx);}catch(e){}
   if(musicMode==='walk') playSrc(WALK_TRACK); else radioNext(1);
 });
@@ -8024,10 +8417,10 @@ function loadSlot(n){
     return false;
   }
 }
-function renderSlots(mode){  // mode: 'save' | 'load'
+function renderSlots(mode){  // mode: 'save' | 'load' — 5 slots (Joshua 2026-10-11)
   var box=document.getElementById('gp-slots');
   box.innerHTML='';
-  for(var n=1;n<=3;n++){
+  for(var n=1;n<=5;n++){
     (function(n){
       var raw=null; try{ raw=localStorage.getItem('sa_save_'+n); }catch(e){}
       var b=document.createElement('button');
@@ -8055,26 +8448,103 @@ function renderSlots(mode){  // mode: 'save' | 'load'
 }
 document.getElementById('gp-save').addEventListener('click', function(){ renderSlots('save'); });
 document.getElementById('gp-load').addEventListener('click', function(){ renderSlots('load'); });
-/* v1.12 save-and-exit dialog */
-document.getElementById('se-saveexit').addEventListener('click', function(){
-  var n=window.__pendingSaveSlot|0;
-  var ok=n?saveSlot(n):false;
-  document.getElementById('saveexit').classList.remove('show');
-  document.getElementById('gameplay').classList.remove('show');
-  if(ok){
-    // exit to the title screen (loader); tap CLICK ANYWHERE TO START to resume the saved session
-    var l=document.getElementById('loader');
-    if(l){ l.style.display='flex'; }
-  }
+/* Exit flow (Joshua 2026-10-11): Menu -> Exit -> [Save | Continue | Save and Exit].
+   Slot selection comes AFTER the save choice via the #slotpick popup (5 slots),
+   never inline in the menu. window.__exitSaveMode: null | 'save-stay' | 'save-exit'.
+   The legacy inline-slot path (Save game button -> renderSlots -> __pendingSaveSlot)
+   is preserved: when __pendingSaveSlot is set, the buttons save directly. */
+// Exit button in the gameplay menu: open the save prompt.
+document.getElementById('gp-exit').addEventListener('click', function(){
+  window.__pendingSaveSlot=0; // clear any stale inline-slot state
+  window.__exitSaveMode=null;
+  document.getElementById('saveexit').classList.add('show');
 });
+// Save: save the game, stay in the game.
 document.getElementById('se-save').addEventListener('click', function(){
   var n=window.__pendingSaveSlot|0;
-  if(n) saveSlot(n);
+  if(n){
+    // Legacy inline-slot path (Save game button): save directly, stay.
+    saveSlot(n);
+    window.__pendingSaveSlot=0;
+    document.getElementById('saveexit').classList.remove('show');
+    return;
+  }
+  // Exit flow: choose a slot first, then stay in the game.
+  window.__exitSaveMode='save-stay';
   document.getElementById('saveexit').classList.remove('show');
+  renderExitSlots();
+  document.getElementById('slotpick').classList.add('show');
 });
-document.getElementById('se-cancel').addEventListener('click', function(){
-  window.__pendingSaveSlot=0;
+// Save and Exit: save the game, then exit to the title screen.
+document.getElementById('se-saveexit').addEventListener('click', function(){
+  var n=window.__pendingSaveSlot|0;
+  if(n){
+    // Legacy inline-slot path: save, then show the loader (title screen).
+    var ok=saveSlot(n);
+    window.__pendingSaveSlot=0;
+    document.getElementById('saveexit').classList.remove('show');
+    document.getElementById('gameplay').classList.remove('show');
+    if(ok){
+      // exit to the title screen (loader); tap CLICK ANYWHERE TO START to resume the saved session
+      var l=document.getElementById('loader');
+      if(l){ l.style.display='flex'; }
+    }
+    return;
+  }
+  // Exit flow: choose a slot first, then exit to the title screen.
+  window.__exitSaveMode='save-exit';
   document.getElementById('saveexit').classList.remove('show');
+  renderExitSlots();
+  document.getElementById('slotpick').classList.add('show');
+});
+// Continue: no save, back to the game.
+document.getElementById('se-continue').addEventListener('click', function(){
+  window.__pendingSaveSlot=0;
+  window.__exitSaveMode=null;
+  document.getElementById('saveexit').classList.remove('show');
+  document.getElementById('gameplay').classList.remove('show');
+});
+// Render the 5-slot picker for the Exit flow. Each slot shows empty or the
+// saved date; occupied slots ask for overwrite confirmation before saving.
+function renderExitSlots(){
+  var box=document.getElementById('slotpick-list');
+  box.innerHTML='';
+  for(var n=1;n<=5;n++){
+    (function(n){
+      var raw=null;
+      try{ raw=localStorage.getItem('sa_save_'+n); }catch(e){}
+      var b=document.createElement('button');
+      b.className='row'+(raw?'':' empty');
+      var label='Slot '+n;
+      if(raw){
+        try{ label+=' \u2014 '+JSON.parse(raw).savedAt; }
+        catch(e){ label+=' \u2014 saved'; }
+      } else {
+        label+=' \u2014 empty';
+      }
+      b.textContent=label;
+      b.addEventListener('click', function(){
+        // Occupied slot: confirm overwrite before saving.
+        if(raw && !window.confirm('Overwrite the save in Slot '+n+'?')) return;
+        var ok=saveSlot(n);
+        document.getElementById('slotpick').classList.remove('show');
+        document.getElementById('gameplay').classList.remove('show');
+        if(window.__exitSaveMode==='save-exit' && ok){
+          // Exit to the title screen (loader); tap to resume the saved session.
+          var l=document.getElementById('loader');
+          if(l){ l.style.display='flex'; }
+        }
+        // 'save-stay' (or a failed save): stay in the game.
+        window.__exitSaveMode=null;
+      });
+      box.appendChild(b);
+    })(n);
+  }
+}
+// Cancel in the slot picker: go back to the save prompt.
+document.getElementById('slotpick-cancel').addEventListener('click', function(){
+  document.getElementById('slotpick').classList.remove('show');
+  document.getElementById('saveexit').classList.add('show');
 });
 /* startNewGame(spawnX, spawnZ) — v1.15: optional spawn coordinates.
    No args (or non-numbers) = the classic 535 Dollar Mill Rd spawn:
@@ -8400,7 +8870,8 @@ function openFullMap(){
   document.getElementById('fullmap').classList.add('show');
   fmCanvas.width=window.innerWidth; fmCanvas.height=window.innerHeight;
   var W=fmCanvas.width, H=fmCanvas.height;
-  var p=car.driving?car:player;
+  /* v1.58: null-car guard — car may not have spawned yet. */
+  var p=(car && car.driving)?car:player;
   fmView.scFit=fmFitScale(W,H);
   fmView.sc=Math.min(W,H)/1500;              // local area first (~1500u across)
   if (fmView.sc<fmView.scFit) fmView.sc=fmView.scFit;
@@ -8423,8 +8894,8 @@ function drawMinimap(dt){
   mm.beginPath(); mm.arc(R,R,R-2,0,Math.PI*2); mm.clip();
   mm.fillStyle='#0e2a1a'; mm.fillRect(0,0,S,S);
   var range=260/mmZoom;  // world units visible (v1.14: pinch/wheel zoom 1x-4x)
-  var px=car.driving?car.x:player.x, pz=car.driving?car.z:player.z;
-  var yaw=car.driving?car.yaw:player.yaw;
+  var px=(car && car.driving)?car.x:player.x, pz=(car && car.driving)?car.z:player.z;
+  var yaw=(car && car.driving)?car.yaw:player.yaw;
   function toMap(x,z){
     var dx=x-px, dz=z-pz;
     // GTA SA convention: map rotates so the player's facing = up.
@@ -8444,8 +8915,11 @@ function drawMinimap(dt){
   });
   // roads — v1.0: decimated mmPts (14k features); full density would stall the frame
   roadDrawData.forEach(function(r){
-    mm.strokeStyle = r.cat==='highway' ? '#c8a03a' : (r.cat==='arterial' ? '#9a9a9a' : '#6a6a6a');
-    mm.lineWidth = r.cat==='highway' ? 5 : 3;
+    /* v2.1: minimap colors for the new category set */
+    var _nc=normRoadCat(r.cat);
+    mm.strokeStyle = _nc==='interstate' ? '#c8a03a' : (_nc==='highway' ? '#c8a03a' :
+      (_nc==='major_artery' ? '#c08030' : (_nc==='minor_artery' ? '#9a9a9a' : '#6a6a6a')));
+    mm.lineWidth = (_nc==='interstate'||_nc==='highway') ? 5 : 3;
     mm.beginPath();
     var mp=r.mmPts||r.pts;
     mp.forEach(function(p,i){
@@ -8490,7 +8964,9 @@ function drawMinimap(dt){
     for(var ri=0; ri<roadDrawData.length; ri++){
       var rr=roadDrawData[ri];
       if(!rr.name) continue;
-      var rt = rr.cat==='highway'?0 : (rr.cat==='arterial'?1 : 2);
+      /* v2.1: label tiers for the new category set (0=always, 1=mid zoom, 2=close zoom) */
+      var _nc2=normRoadCat(rr.cat);
+      var rt = (_nc2==='interstate'||_nc2==='highway')?0 : ((_nc2==='major_artery'||_nc2==='minor_artery')?1 : 2);
       if(rt>mmTier) continue;
       var mp=rr.mmPts||rr.pts, vis=[];
       for(var pi=0; pi<mp.length; pi++){
@@ -8584,8 +9060,11 @@ function drawFullMap(){
   });
   // roads
   roadDrawData.forEach(function(r){
-    g.strokeStyle = r.cat==='highway' ? '#c8a03a' : (r.cat==='arterial' ? '#777' : '#555');
-    g.lineWidth = r.cat==='highway' ? 3 : 1.5;
+    /* v2.1: full-map colors for the new category set */
+    var _nc3=normRoadCat(r.cat);
+    g.strokeStyle = (_nc3==='interstate'||_nc3==='highway') ? '#c8a03a' :
+      (_nc3==='major_artery' ? '#a07030' : (_nc3==='minor_artery' ? '#777' : '#555'));
+    g.lineWidth = (_nc3==='interstate'||_nc3==='highway') ? 3 : 1.5;
     g.beginPath();
     r.pts.forEach(function(p,i){ var m=M(p[0],p[1]); i?g.lineTo(m[0],m[1]):g.moveTo(m[0],m[1]); });
     g.stroke();
@@ -8613,11 +9092,11 @@ function drawFullMap(){
   }catch(e){}
   // player: facing arrow (rotates with look direction); edge-clamped so it
   // stays visible while panning/zooming
-  var pyaw=car.driving?car.yaw:player.yaw;
+  var pyaw=(car && car.driving)?car.yaw:player.yaw;
   var _f=Mdir(Math.sin(pyaw), Math.cos(pyaw)); // facing, rotated into screen space
   var fx=_f[0], fz=_f[1];
   var pxp=-fz, pzp=fx;                        // perpendicular
-  var pxm=M(car.driving?car.x:player.x, car.driving?car.z:player.z);  // v0.6: track LIVE pos (was frozen at spawn while driving)
+  var pxm=M((car && car.driving)?car.x:player.x, (car && car.driving)?car.z:player.z);  // v0.6: track LIVE pos (was frozen at spawn while driving)
   var mrg=36;
   var qx=Math.max(mrg,Math.min(W-mrg,pxm[0])), qy=Math.max(mrg,Math.min(H-mrg,pxm[1]));
   g.fillStyle='#fff';
@@ -8711,8 +9190,29 @@ function updatePlayer(dt){
     // v1.12.2 indoor speed (Joshua): 5.0 u/s inside buildings — no more
     // sprinting into the back wall. Swimming stays 4.5, outdoor run stays 13.8.
     var spd=(player.swimming?4.5:(player.inside?5.0:13.8))*curve;
-    player.x += wx*spd*dt;
-    player.z += wz*spd*dt;
+    /* COLLISION MATERIAL (Joshua 2026-10-11): check the material at the
+       target position BEFORE committing the move. This is a single cheap
+       lookup (grid/flag check), not a per-frame collision scan. If the
+       material system isn't loaded, fall back to direct movement and let
+       resolveCollision() below handle it. */
+    var _nx = player.x + wx*spd*dt, _nz = player.z + wz*spd*dt;
+    if (typeof canMoveTo === 'function'){
+      if (canMoveTo(player.x, player.z, _nx, _nz, 'player')){
+        player.x = _nx; player.z = _nz;
+      } else {
+        /* Blocked: try sliding along each axis (wall-slide behavior).
+           Two extra cheap lookups, still far cheaper than a collision scan. */
+        if (canMoveTo(player.x, player.z, _nx, player.z, 'player')){
+          player.x = _nx;
+        } else if (canMoveTo(player.x, player.z, player.x, _nz, 'player')){
+          player.z = _nz;
+        }
+        /* Fully blocked: don't move. resolveCollision() below still runs
+           as fallback for edge cases. */
+      }
+    } else {
+      player.x = _nx; player.z = _nz;
+    }
     player.speed=spd;
   } else player.speed=0;
   // border clamp
@@ -8746,7 +9246,8 @@ function updatePlayer(dt){
   if (inW && !player.swimming) player.swimming=true;
   if (!inW && player.swimming) player.swimming=false;  // climbed out at the shore
   // v0.8: mode tag tracks the live state — swimming shows SWIMMING, not ON FOOT
-  if (!car.driving){
+  /* v1.58: null-car guard (see simTick) — car may not have spawned yet. */
+  if (!car || !car.driving){
     var wantMode=player.swimming?'SWIMMING':(player.inside?'INSIDE 535':'ON FOOT');
     if (modeTag.textContent!==wantMode) modeTag.textContent=wantMode;
   }
@@ -8754,7 +9255,13 @@ function updatePlayer(dt){
   if (player.swimming){
     swimT+=dt;
     var wl=waterLevelAt(player.x,player.z);
-    gy=(wl===null?heightAt(player.x,player.z):wl)+0.05+Math.sin(swimT*2.4)*0.1; // bob
+    /* v1.3 SUBMERSION (Joshua 2026-10-11): the swimmer does NOT float on
+       top of the water — he sits chest-deep. Mesh origin ~1.10u below the
+       surface while stroking (head + shoulders above), ~1.25u while treading
+       water (blended via the animation's swimBlend). */
+    var _sb=(player.rig&&typeof player.rig.swimBlend==='number')?player.rig.swimBlend:1;
+    var _sub=1.25-0.15*_sb;
+    gy=(wl===null?heightAt(player.x,player.z):wl)-_sub+Math.sin(swimT*2.4)*0.1; // bob
     player.mesh.position.set(player.x, gy, player.z);
   } else {
     // v3.0 535 PORCH: outside on the raised front porch/entry stairs, use the
@@ -8800,9 +9307,12 @@ function updateCar(dt){
      input from the per-tick Input snapshot. Falls back to the live drive
      object if sim_core.js failed to load. */
   var _drv=(window.Input && Input.sampled) ? Input.drive : drive;
-  // sinking: car drove into DEEP water — submerge over ~2s, then auto-eject (v0.3).
-  // v1.2: depth-based — shallow water is fordable, only depth > WADE_LIMIT sinks.
-  if (!car.sunk && !car.sinking && waterDepthAt(car.x, car.z) > WADE_LIMIT){ car.sinking=true; car.sinkT=0; }
+  /* SINKING (Joshua 2026-10-11): "it should be a matter of depth."
+     Shallow water (at/below SINK_DEPTH, ~3 ft) is FORDABLE — drive through.
+     DEEP water swallows the car: it submerges over ~2s, the car is LOST, and
+     the player treads water right where it sank — he must swim to shore
+     himself (Joshua 2026-10-11: no shore teleport). No free replacement. */
+  if (!car.sunk && !car.sinking && waterDepthAt(car.x, car.z) > SINK_DEPTH){ car.sinking=true; car.sinkT=0; }
   if (car.sinking){
     car.sinkT+=dt; car.speed=0;
     var k=Math.min(1, car.sinkT/2);
@@ -8810,7 +9320,29 @@ function updateCar(dt){
     car.mesh.rotation.x=k*0.16;  // nose dips as she goes down
     if (k>=1){
       car.sinking=false; car.sunk=true;
-      exitCar(true);   // pop out beside the wreck, floating
+      /* v1.4 TREAD WATER (Joshua 2026-10-11): the car is GONE — but the player
+         is NOT teleported to shore. He stays in the water right where the car
+         sank, treading water (swimBlend eases to the tread pose while he is
+         still, to the stroke when he moves), and must swim to shore himself.
+         The sunk car stays sunk — nearestUsableCar() already skips sunk cars. */
+      try{ showToast('Your car sank!', 3000); }catch(e){}
+      try{ if (typeof Report!=='undefined' && Report.note) Report.note('car-sank',{x:Math.round(car.x),z:Math.round(car.z)}); }catch(e){}
+      car.driving=false; car.speed=0;
+      player.x=car.x; player.z=car.z;  // v1.4: stay at the sink spot — no shore teleport
+      try{ resolveCollision(player, 0.5); }catch(e){}
+      player.yaw=car.yaw; player.mesh.rotation.y=player.yaw;
+      player.mesh.visible=true;
+      player.swimming = inWater(player.x,player.z) && waterDepthAt(player.x,player.z)>=SWIM_DEPTH;
+      try{ setDrivingUI(false); }catch(e){}
+      try{ updateDamageHUD(); }catch(e){}
+      /* snap the camera behind him at the sink spot (same framing as exitCar) */
+      try{
+        var _sgy=player.swimming ? (waterLevelAt(player.x,player.z)||heightAt(player.x,player.z)) : heightAt(player.x,player.z);
+        var _scb=player.yaw+Math.PI;
+        camYaw=player.yaw; look.yawOff=0;
+        camera.position.set(player.x+Math.sin(_scb)*4.6, _sgy+3.0, player.z+Math.cos(_scb)*4.6);
+        camera.lookAt(player.x, _sgy+1.4, player.z);
+      }catch(e){}
     }
     return;
   }
@@ -8915,8 +9447,22 @@ function updateCar(dt){
   car.yaw += steerIn*turnRate*dt*Math.sign(car.speed||1);
   var nx=car.x+Math.sin(car.yaw)*car.speed*dt;
   var nz=car.z+Math.cos(car.yaw)*car.speed*dt;
-  // collision: try move, resolve — impact damage from blocked distance (solid hits only)
+  // COLLISION MATERIAL (Joshua 2026-10-11, refined same night): check material
+  // before moving. Single cheap lookup. playerDriven: true — Joshua's own
+  // driving is exempt from the NPC grass limits (he can park on his grass
+  // or pull over anywhere). Buildings, deep water, closed doors still block.
+  // resolveCollision() is KEPT as fallback for fine push-out.
   var tmp={x:nx,z:nz};
+  if (typeof canMoveTo === 'function' && !canMoveTo(car.x, car.z, nx, nz, 'vehicle', {playerDriven: true, speed: car.speed, key: 'player_car'})){
+    /* Material says no: don't move into the blocked position.
+       Kill forward momentum (like hitting a barrier). */
+    nx = car.x; nz = car.z;
+    tmp={x:nx,z:nz};
+    if (Math.abs(car.speed) > 3){
+      /* Gentle stop, not a crash — the material prevented the move. */
+      car.speed *= 0.5;
+    }
+  }
   resolveCollision(tmp, 2.2);
   var intended=Math.hypot(nx-car.x, nz-car.z);
   var moved=Math.hypot(tmp.x-car.x, tmp.z-car.z);
@@ -9100,13 +9646,13 @@ function updateCamera(dt){
   // When the player is inside a building: camera at head level (~1.6m),
   // looking where the player faces. Drag to look around (yaw + pitch).
   // View yaw tracks player.yaw so turning moves the view naturally.
-  var wantFP = player.inside && !car.driving;
+  var wantFP = player.inside && !(car && car.driving);
   if (wantFP && !wasFP){
     fpLookYaw = 0; fpPitch = 0; fpBlend = 0;
     if (player.mesh) player.mesh.visible = false;
   }
   if (!wantFP && wasFP){
-    if (player.mesh && !car.driving) player.mesh.visible = true;
+    if (player.mesh && !(car && car.driving)) player.mesh.visible = true;
     fpBlend = 0;
   }
   wasFP = wantFP;
@@ -9127,7 +9673,8 @@ function updateCamera(dt){
     camera.lookAt(player.x + _sy*10, _eyeY + _p*10, player.z + _cy*10);
     return;
   }
-  if (car.driving && car.camMode==='driver'){
+  /* v1.58: null-car guard — car may not have spawned yet. */
+  if (car && car.driving && car.camMode==='driver'){
     // FIRST-PERSON: driver's seat (left side), see dash + hood + road
     if (car.mesh.userData.cab) car.mesh.userData.cab.visible=false;
     var sy=Math.sin(car.yaw), cy2=Math.cos(car.yaw);
@@ -9143,7 +9690,8 @@ function updateCamera(dt){
   }
   if (car.mesh.userData.cab) car.mesh.userData.cab.visible=true;
   var fx, fz, yaw;
-  if (car.driving){ yaw=car.yaw; fx=car.x; fz=car.z; }
+  /* v1.58: null-car guard — car may not have spawned yet. */
+  if (car && car.driving){ yaw=car.yaw; fx=car.x; fz=car.z; }
   else { yaw=camYaw; fx=player.x; fz=player.z; }   // v0.8: orbit camera owns its yaw
   // GTA-style: behind + above, angled down; right-drag adds yaw offset (driving chase cam)
   var cy=yaw+Math.PI+look.yawOff;
@@ -9216,7 +9764,7 @@ function distToPts(x,z,pts){
 var streetTimer=0, lastStreet=' ';
 function updateStreetName(dt){
   streetTimer+=dt; if (streetTimer<0.25) return; streetTimer=0;  // cheap: 4x/sec, not per frame
-  var px=car.driving?car.x:player.x, pz=car.driving?car.z:player.z;
+  var px=(car && car.driving)?car.x:player.x, pz=(car && car.driving)?car.z:player.z;
   // v1.0: grid-based nearest-name lookup (14k features — no full scan)
   var best=roadNameNear(px,pz,30);
   if (best==='Unname St') best=null;
@@ -9228,7 +9776,7 @@ function updateStreetName(dt){
   }
   /* v1.9: nearby points of interest override/enhance the street label */
   try{
-    var px2=car.driving?car.x:player.x, pz2=car.driving?car.z:player.z;
+    var px2=(car && car.driving)?car.x:player.x, pz2=(car && car.driving)?car.z:player.z;
     var poi=null, poiD=80;
     if (typeof BUSINESSES!=='undefined'){
       for(var bi=0;bi<BUSINESSES.length;bi++){
@@ -9748,7 +10296,7 @@ function updateActionButton(){
         /* v1.31 OUT-OF-GAS TOW (Joshua): van stalled on empty and the player
            is on foot nearby - offer a tow to the nearest gas station instead
            of leaving the player soft-locked with a dead van. */
-        if (typeof car!=='undefined' && car && !car.driving && car.fuel<=0){
+        if (typeof car!=='undefined' && car && !(car && car.driving) && car.fuel<=0){
           var _tdx=player.x-car.x, _tdz=player.z-car.z;
           if ((_tdx*_tdx+_tdz*_tdz)<36){ act='tow-gas'; label='TOW TO GAS STATION'; }
         }
@@ -9927,11 +10475,17 @@ function simTick(dt){
      snapshot + spatial hash ONCE per frame. Without this, every vehicle
      re-gathers the whole world per query = O(V^2) garbage per frame. */
   try{ if (window.VehicleAvoid && VehicleAvoid.beginFrame) VehicleAvoid.beginFrame(); }catch(e){}
-  if (car.driving) updateCar(dt); else updatePlayer(dt);
+  /* v1.58 NULL-CAR GUARD (2026-10-12 Joshua: "cannot move"): car starts as
+     null and spawnPlayerVan() retries until vehicle_meshes.js arrives. If
+     the van hasn't spawned yet (or spawn failed), car.driving would throw
+     TypeError every frame, killing simTick — no movement, no 3D updates,
+     while DOM UI kept working. Guard here so the player can always walk. */
+  if (car && car.driving) updateCar(dt); else updatePlayer(dt);
   /* v1.31 AUTO-REPAIR (Joshua): a parked van slowly fixes itself - fair, not
      punishing. 1 damage point per 5s parked (~8 min for a full rebuild). */
   try{
-    if (!car.driving && car.damage>0 && !car.sunk && !car.sinking && !car.dead){
+    /* v1.58: null-car guard — car may not have spawned yet. */
+    if (car && !car.driving && car.damage>0 && !car.sunk && !car.sinking && !car.dead){
       car._repairT=(car._repairT||0)+dt;
       if (car._repairT>=5){
         car._repairT=0;
@@ -10093,7 +10647,7 @@ window.addEventListener('keydown', function(e){
      drive the van on PC. Only active while driving so on-foot WASD movement
      (which reads the separate keys[] object) is unaffected. Space = handbrake.
      preventDefault stops arrows/space from scrolling the page. */
-  else if (typeof car!=='undefined' && car.driving){
+  else if (car && car.driving){
     if (k==='w'||k==='arrowup'){ drive.gas=true; e.preventDefault(); }
     else if (k==='s'||k==='arrowdown'){ drive.brake=true; e.preventDefault(); }
     else if (k==='a'||k==='arrowleft'){ drive.left=true; e.preventDefault(); }
@@ -10485,14 +11039,22 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <!-- v1.56: UI LAYOUT (Joshua 2026-10-11) — applies ui_layout.json
      (positions/visibility edited visually in the UI Layout Editor).
      Defensive: no-op if the file is missing. -->
-<script data-dsrc="ui_layout_apply.js" data-dkey=""></script>
+<script data-dsrc="ui_layout_apply.js" data-dkey=""></script> <!-- MENU LAYOUT (Joshua 2026-10-11) — applies menu_layout.json (menus edited visually in the UI Menu Editor). Defensive: no-op if the file is missing. --> <script data-dsrc="menu_layout_apply.js" data-dkey=""></script> <script data-dsrc="water_render.js" data-dkey=""></script>
 <script data-dsrc="traffic_assist.js" data-dkey="trafficassist"></script>
 <script data-dsrc="residential_detail.js" data-dkey=""></script>
 <!-- BUILDING SPAWNER v1.0 (2026-10-11): map-editor buildings.json (walkable
      hand-placed buildings) + subdivisions.json (street-facing house fill).
      Complementary to residential_detail.js (OSM data) — separate data source,
      no overlap. -->
-<script data-dsrc="building_spawner.js" data-dkey=""></script>
+<script data-dsrc="building_spawner.js" data-dkey="">
+<script data-dsrc="road_sync.js" data-dkey=""></script>
+<!-- TRUCK RESTRICTIONS (Joshua 2026-10-11): 18-wheelers avoid low-clearance overpasses. -->
+<script data-dsrc="truck_restrictions.js" data-dkey="">
+<!-- AIRPORT (Joshua 2026-10-11): Hartsfield-Jackson runways, terminals,
+     concourses, and the I-85 connector road. Defensive: no-op if the
+     data file is missing. -->
+<script data-dsrc="airport.js" data-dkey="">
+<script data-dsrc="terrain_sync.js" data-dkey=""></script>
 <script data-dsrc="semi_system.js" data-dkey="semis"></script>
 <script data-dsrc="school_plaza.js" data-dkey=""></script>
 <script data-dsrc="mlk_fairburn.js" data-dkey=""></script>
@@ -10540,6 +11102,8 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
      pickupables. Non-invasive hooks (wraps updateActionButton /
      resolveCollision, own #action-btn listener) -- no game-code edits needed. -->
 <script data-dsrc="interior_system.js" data-dkey=""></script>
+<script data-dsrc="collision_material.js" data-dkey=""></script>
+<script data-dsrc="water_interaction.js" data-dkey=""></script> <!-- WATER INTERACTION (Joshua 2026-10-11) — sinking/shore-respawn helpers + fish system. Defensive: no-op if water data is missing. -->
 <!-- ===== INLINE SCRIPT BLOCK 3: final placement audit (v2.0 - Joshua's
      automatic check) ===== Runs ONCE, after EVERY building system has loaded
      (OSM, churches, schools, plaza, gas, Marriott, clubs, MARTA). Summarizes
