@@ -14,8 +14,10 @@ UI element on a canvas per view mode, and lets Joshua:
     (no uploading custom graphics, per Joshua's rule),
   * save the layout, which stages ui_layout.json for the next push.
 
-View modes: Application (mobile), Web desktop, Web mobile (with phone
-portrait / phone landscape / tablet size presets).
+View modes: Application (mobile), Web desktop, Web mobile. The two mobile
+views share the Size presets (Phone portrait / Phone landscape / Tablet);
+the app view defaults to Phone landscape because the game plays in
+landscape (Joshua 2026-10-12).
 
 Coordinate model: each element stores (anchor, x, y, width, height).
 Anchors keep elements glued to screen corners across view sizes; the
@@ -316,7 +318,11 @@ class LayoutTab:
         self.doc = None          # full ui_layout.json dict
         self.selected = None     # currently selected element dict
         self.view_key = "app"    # one of LAYOUT_VIEWS keys
-        self.preset_idx = 0      # index into WEB_MOBILE_PRESETS
+        # v1.7.5 ORIENTATION (2026-10-12): index into WEB_MOBILE_PRESETS.
+        # Defaults to 1 = "Phone landscape" because the game plays in
+        # landscape (Joshua). Both orientations stay selectable via the
+        # Size dropdown, which is now enabled for the app view too.
+        self.preset_idx = 1
         self._dirty = False      # unsaved changes?
         self._custom_seq = 1     # counter for custom-N ids
         self._build_ui()
@@ -325,16 +331,23 @@ class LayoutTab:
     # -- view helpers ------------------------------------------------------
     def current_view_size(self):
         """(width, height) in view pixels for the active view/preset."""
-        if self.view_key == "web_mobile":
+        # v1.7.5 ORIENTATION: the "app" view and "web_mobile" both use
+        # the Size presets, so Joshua can pick Phone portrait or Phone
+        # landscape for the APK HUD. Defaults to landscape.
+        if self.view_key in ("app", "web_mobile"):
             _label, w, h = WEB_MOBILE_PRESETS[self.preset_idx]
             return w, h
         for key, _label, w, h in LAYOUT_VIEWS:
             if key == self.view_key:
                 return w, h
-        return 390, 844
+        return 844, 390  # landscape fallback (v1.7.5)
 
     def current_view_label(self):
         """Human label for the active view."""
+        # v1.7.5 ORIENTATION: show the chosen preset for mobile views.
+        if self.view_key == "app":
+            return ("Application (mobile) — "
+                    + WEB_MOBILE_PRESETS[self.preset_idx][0])
         if self.view_key == "web_mobile":
             return "Web mobile — " + WEB_MOBILE_PRESETS[self.preset_idx][0]
         for key, label, _w, _h in LAYOUT_VIEWS:
@@ -395,10 +408,12 @@ class LayoutTab:
         self.preset_combo = Gtk.ComboBoxText()
         for i, (label, _w, _h) in enumerate(WEB_MOBILE_PRESETS):
             self.preset_combo.append(str(i), label)
-        self.preset_combo.set_active(0)
+        # v1.7.5 ORIENTATION: default to Phone landscape (index 1) —
+        # that's how the game plays. Both orientations stay selectable.
+        self.preset_combo.set_active(1)
         self.preset_combo.connect("changed", self.on_preset_changed)
         viewbar.pack_start(self.preset_combo, False, False, 0)
-        self.preset_combo.set_sensitive(False)  # only for web_mobile
+        # v1.7.5: enabled for the app view too (was web_mobile only).
 
         hint = Gtk.Label()
         hint.set_markup('<small><i>Drag elements to move · drag the yellow '
@@ -409,11 +424,13 @@ class LayoutTab:
         # Content: element list (left) | canvas (center) | props (right).
         # Both side panels are collapsible (Joshua 2026-10-11): a thin
         # toggle strip stays visible so he can focus on the canvas.
-        # The strip+panel wrappers stay packed in the paneds; only the
-        # scroll widgets hide, so layout never breaks.
-        paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
-        paned.set_position(220)
-        self.root.pack_start(paned, True, True, 0)
+        # v1.7.5 PANEL FIX: the paneds and wrapper boxes are kept as
+        # instance attributes so the toggle methods can remove the scroll
+        # widgets and move the dividers (see toggle_left_panel).
+        self.paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
+        self.paned.set_position(220)
+        self.root.pack_start(self.paned, True, True, 0)
+        paned = self.paned
 
         # Left: element list with visibility toggles.
         self._build_element_list()
@@ -422,6 +439,7 @@ class LayoutTab:
         self.list_scroll.add(self.el_tree)
         left_wrap = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
                             spacing=0)
+        self.left_wrap = left_wrap  # v1.7.5: needed for panel collapse
         self.left_toggle = self._make_collapse_button(
             "◀", "Hide element list (F9)", self.toggle_left_panel)
         left_wrap.pack_start(self.left_toggle, False, False, 0)
@@ -433,6 +451,7 @@ class LayoutTab:
         inner = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
         inner.set_position(700)
         paned.pack2(inner, resize=True, shrink=False)
+        self.inner = inner  # v1.7.5: needed for panel collapse
 
         self.canvas = LayoutCanvas(self)
         canvas_scroll = Gtk.ScrolledWindow()
@@ -445,6 +464,7 @@ class LayoutTab:
         self.props_scroll.add(self.props_box)
         right_wrap = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
                              spacing=0)
+        self.right_wrap = right_wrap  # v1.7.5: needed for panel collapse
         right_wrap.pack_start(self.props_scroll, True, True, 0)
         self.right_toggle = self._make_collapse_button(
             "▶", "Hide properties (F10)", self.toggle_right_panel)
@@ -466,26 +486,54 @@ class LayoutTab:
         return btn
 
     def toggle_left_panel(self):
-        """Collapse/expand the left element-list panel (F9)."""
+        """Collapse/expand the left element-list panel (F9).
+
+        v1.7.5 PANEL FIX (2026-10-12): Gtk.Paned keeps its divider
+        position when a child is merely hidden, so the old hide() left
+        dead space where the panel was. We now remove the scroll widget
+        from the paned's child box and move the divider to the toggle
+        strip, so the canvas expands into the freed space. The divider
+        position is stashed so re-expanding restores it.
+        """
         self.left_collapsed = not self.left_collapsed
         if self.left_collapsed:
-            self.list_scroll.hide()
+            self._left_pos = self.paned.get_position()
+            self.left_wrap.remove(self.list_scroll)
+            self.paned.set_position(28)  # toggle strip only (~26px + pad)
             self.left_toggle.set_label("▶")
             self.left_toggle.set_tooltip_text("Show element list (F9)")
         else:
+            self.left_wrap.pack_start(self.list_scroll, True, True, 0)
             self.list_scroll.show()
+            self.paned.set_position(getattr(self, "_left_pos", 220))
             self.left_toggle.set_label("◀")
             self.left_toggle.set_tooltip_text("Hide element list (F9)")
 
     def toggle_right_panel(self):
-        """Collapse/expand the right properties panel (F10)."""
+        """Collapse/expand the right properties panel (F10).
+
+        v1.7.5 PANEL FIX (2026-10-12): same approach as
+        toggle_left_panel — remove the scroll widget and park the
+        inner divider at the right edge so the canvas takes the freed
+        space instead of leaving a gap.
+        """
         self.right_collapsed = not self.right_collapsed
         if self.right_collapsed:
-            self.props_scroll.hide()
+            self._inner_pos = self.inner.get_position()
+            self.right_wrap.remove(self.props_scroll)
+            # Divider near the right edge: inner width minus the
+            # toggle strip. Guard against an unallocated widget.
+            w = self.inner.get_allocated_width()
+            self.inner.set_position(max(0, w - 28) if w > 100 else 10 ** 9)
             self.right_toggle.set_label("◀")
             self.right_toggle.set_tooltip_text("Show properties (F10)")
         else:
+            self.right_wrap.pack_start(self.props_scroll, True, True, 0)
+            # pack_start appends after the toggle button; move it back
+            # to the front so the layout matches the original build.
+            self.right_wrap.reorder_child(self.props_scroll, 0)
             self.props_scroll.show()
+            self.inner.set_position(getattr(self, "_inner_pos", 700))
             self.right_toggle.set_label("▶")
             self.right_toggle.set_tooltip_text("Hide properties (F10)")
 
@@ -668,15 +716,22 @@ class LayoutTab:
     def on_view_changed(self, combo):
         """View-mode dropdown: switch canvas + element filtering."""
         self.view_key = combo.get_active_id() or "app"
-        self.preset_combo.set_sensitive(self.view_key == "web_mobile")
+        # v1.7.5 ORIENTATION: the Size presets apply to both mobile
+        # views (app + web_mobile); web_desktop has a fixed size.
+        self.preset_combo.set_sensitive(
+            self.view_key in ("app", "web_mobile"))
         self.select(None)
         self.canvas.queue_draw()
 
     def on_preset_changed(self, combo):
-        """Web-mobile size preset changed."""
+        """Size preset changed (Phone portrait / Phone landscape / Tablet).
+
+        v1.7.5 ORIENTATION: this now drives the app view too, so picking
+        "Phone landscape" resizes the APK HUD canvas to 844x390.
+        """
         self.preset_idx = combo.get_active()
-        if self.preset_idx < 0:
-            self.preset_idx = 0
+        if self.preset_idx < 0 or self.preset_idx >= len(WEB_MOBILE_PRESETS):
+            self.preset_idx = 1  # landscape fallback
         self.select(None)
         self.canvas.queue_draw()
 
