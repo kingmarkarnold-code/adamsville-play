@@ -235,8 +235,8 @@
       "type": "panel",
       "visible": true,
       "width": 1256,
-      "x": 12,
-      "y": 14,
+      "x": 332,
+      "y": 13,
       "description": "Speech bubble panel where NPC conversation text appears"
     },
     {
@@ -277,8 +277,8 @@
       "type": "panel",
       "visible": true,
       "width": 170,
-      "x": 20,
-      "y": 20,
+      "x": 298,
+      "y": 156,
       "description": "On-screen joystick base for moving the player on mobile"
     },
     {
@@ -291,8 +291,8 @@
       "type": "image",
       "visible": true,
       "width": 86,
-      "x": 62,
-      "y": 62,
+      "x": 100,
+      "y": 303,
       "description": "The movable knob part of the on-screen joystick"
     },
     {
@@ -305,8 +305,8 @@
       "type": "button",
       "visible": true,
       "width": 70,
-      "x": 16,
-      "y": 120,
+      "x": 295,
+      "y": 347,
       "description": "Mobile button to steer the vehicle left"
     },
     {
@@ -319,8 +319,8 @@
       "type": "button",
       "visible": true,
       "width": 70,
-      "x": 100,
-      "y": 120,
+      "x": 532,
+      "y": 237,
       "description": "Mobile button to steer the vehicle right"
     },
     {
