@@ -10482,6 +10482,10 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <!-- v1.54 #37 ENGINE SOUNDS (Michael Torres, Audio - Joshua approved fix, expanded: all drivable vehicles + buses/trains/trucks/crews) -->
 <script data-dsrc="engine_sounds.js" data-dkey=""></script>
 <script data-dsrc="ui_sounds.js" data-dkey=""></script>
+<!-- v1.56: UI LAYOUT (Joshua 2026-10-11) — applies ui_layout.json
+     (positions/visibility edited visually in the UI Layout Editor).
+     Defensive: no-op if the file is missing. -->
+<script data-dsrc="ui_layout_apply.js" data-dkey=""></script>
 <script data-dsrc="traffic_assist.js" data-dkey="trafficassist"></script>
 <script data-dsrc="residential_detail.js" data-dkey=""></script>
 <!-- BUILDING SPAWNER v1.0 (2026-10-11): map-editor buildings.json (walkable
