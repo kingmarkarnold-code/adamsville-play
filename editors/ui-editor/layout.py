@@ -37,6 +37,7 @@ from data import (
     anchor_to_left_top, left_top_to_xy, download_ui_layout, load_ui_layout,
     stage_content, is_visual, load_manifest, LAYOUT_VIEWS,
     WEB_MOBILE_PRESETS, ANCHORS, ANCHOR_LABELS, CANON_W, CANON_H,
+    canon_scale, element_size_in_view,
 )
 
 # Element type -> (fill RGB, border RGB) used by the canvas mockup.
@@ -106,10 +107,13 @@ class LayoutCanvas(Gtk.DrawingArea):
         return (sx - ox) / scale, (sy - oy) / scale
 
     def element_rect(self, el):
-        """Concrete (left, top, w, h) in view pixels for an element."""
+        # v1.7.6: concrete (left, top, w, h) in view pixels. Position AND
+        # size go through the 1280x800 canonical frame (mirroring the
+        # game's ui_layout_apply.js) so the preview matches the game.
         vw, vh = self.tab.current_view_size()
         left, top = anchor_to_left_top(el, vw, vh)
-        return left, top, el.get("width", 50), el.get("height", 30)
+        sw, sh = element_size_in_view(el, vw, vh)
+        return left, top, sw, sh
 
     def hit_test(self, sx, sy):
         """
@@ -167,7 +171,9 @@ class LayoutCanvas(Gtk.DrawingArea):
         """Draw one UI element as a labeled mockup box."""
         vw, vh = self.tab.current_view_size()
         left, top = anchor_to_left_top(el, vw, vh)
-        w, h = el.get("width", 50), el.get("height", 30)
+        # v1.7.6: size is canonical 1280x800 pixels in storage — scale to
+        # view pixels like the game does (see element_size_in_view).
+        w, h = element_size_in_view(el, vw, vh)
         x, y = ox + left * scale, oy + top * scale
         sw, sh = max(3, w * scale), max(3, h * scale)
 
@@ -284,8 +290,12 @@ class LayoutCanvas(Gtk.DrawingArea):
             el["x"], el["y"] = left_top_to_xy(el, new_left, new_top, vw, vh)
         elif self._drag == "resize":
             left, top, _w, _h = self.element_rect(el)
-            el["width"] = max(8, round(vx - left))
-            el["height"] = max(8, round(vy - top))
+            # v1.7.6: drag distances are view pixels; stored width/height
+            # are 1280x800 canonical pixels, so divide by the canonical
+            # scale (mirrors the game's uniform s = min(vw/1280, vh/800)).
+            cs = canon_scale(vw, vh)
+            el["width"] = max(8, round((vx - left) / cs))
+            el["height"] = max(8, round((vy - top) / cs))
         self.tab.after_element_changed(el, live=True)
         self.queue_draw()
         return True
