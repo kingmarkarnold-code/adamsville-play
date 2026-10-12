@@ -1,0 +1,56 @@
+{
+  "version": "1.7.2",
+  "changelog": "Help -> Check for Updates: update the app in place without reinstalling the .deb.",
+  "files": [
+    {
+      "path": "about.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/ui-editor/about.py",
+      "sha256": "0b172aa3a3e94c80136473f95f42cef62f26927cfb9a8644f9aa14a4b3463140"
+    },
+    {
+      "path": "app.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/ui-editor/app.py",
+      "sha256": "546b62967eb818c5d51615740a1130ba2639433bdbee1ed0a2072bd2ceda6c9a"
+    },
+    {
+      "path": "data.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/ui-editor/data.py",
+      "sha256": "136f10d6beec667cdd604cbae31fb3b01b92f7ce0790d74e1b5e0e187972913f"
+    },
+    {
+      "path": "github_sync.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/ui-editor/github_sync.py",
+      "sha256": "e4289f5ae72f438a079d994a388d5a5751268886659aeb35f6492ea81b89a3a9"
+    },
+    {
+      "path": "layout.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/ui-editor/layout.py",
+      "sha256": "bd83c0657dc7ef99a283b2ba185cb6bfd87db9b95d5539fe97fa3c863239d541"
+    },
+    {
+      "path": "menus.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/ui-editor/menus.py",
+      "sha256": "01e91e519fd260408833aaf8dd4b72e77c0476f04a871be1ce8494d0eb6d0508"
+    },
+    {
+      "path": "mollie-icon.png",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/ui-editor/mollie-icon.png",
+      "sha256": "28990027fd79e03e2ef8416e8c1d3410ee284ec86383280968b245f08576e768"
+    },
+    {
+      "path": "preview.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/ui-editor/preview.py",
+      "sha256": "6809a81007aaf80593e52bf7bf19bd8b58150140bb01d925d481230929e74f94"
+    },
+    {
+      "path": "ui_layout_default.json",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/ui-editor/ui_layout_default.json",
+      "sha256": "62d22bd5feaf01906203fdedca58be592b36933ba2e3a73174062aeecf0e293d"
+    },
+    {
+      "path": "updater.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/ui-editor/updater.py",
+      "sha256": "0c36b000830e5661165ac9f636466cd6d8402bab410bcab7da10b3e1e13e3a92"
+    }
+  ]
+}
