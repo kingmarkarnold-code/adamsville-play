@@ -52,7 +52,7 @@ from menus import MenuTab
 
 # App version shown in the Help -> About dialog (bump with each release).
 # Joshua 2026-10-11: version number must be prominent in About.
-APP_VERSION = "1.7.5"
+APP_VERSION = "1.7.6"
 # Display name and icon-theme name for the About dialog.
 APP_NAME = "Adamsville UI Editor"
 APP_ICON = "adamsville-ui-editor-native"
