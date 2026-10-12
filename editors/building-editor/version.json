@@ -1,6 +1,6 @@
 {
-  "version": "1.5.1",
-  "changelog": "Help -> Check for Updates: update the app in place without reinstalling the .deb.",
+  "version": "1.5.2",
+  "changelog": "Crash fix: editor now opens even if updater.py is missing/broken (soft import); startup crashes are logged to ~/.cache/adamsville-building-editor-native/crash.log for diagnosis.",
   "files": [
     {
       "path": "about.py",
@@ -10,7 +10,7 @@
     {
       "path": "app.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/app.py",
-      "sha256": "cd4f3d43e592fd9cca17bbe678f539fec5fcb9e3b8226f543d0654852300d248"
+      "sha256": "34440dcf393cf808cd07fb562d06663f6076a1e3a9fb69cea0492428af97ec2f"
     },
     {
       "path": "buildingcanvas.py",
@@ -26,11 +26,6 @@
       "path": "github_sync.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/github_sync.py",
       "sha256": "e4289f5ae72f438a079d994a388d5a5751268886659aeb35f6492ea81b89a3a9"
-    },
-    {
-      "path": "mollie-icon.png",
-      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/mollie-icon.png",
-      "sha256": "28990027fd79e03e2ef8416e8c1d3410ee284ec86383280968b245f08576e768"
     },
     {
       "path": "subdivisioncanvas.py",
