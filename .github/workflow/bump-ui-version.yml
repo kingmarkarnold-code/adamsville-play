@@ -1,0 +1,80 @@
+# ============================================================================
+# Bump UI Version
+# ----------------------------------------------------------------------------
+# WHERE THIS FILE GOES:
+#   kingmarkarnold-code/adamsville-play/.github/workflows/bump-ui-version.yml
+#
+# WHAT IT DOES:
+#   The UI editor already pushes directly to this repo
+#   (detailed/ui_layout.json, detailed/menu_layout.json).
+#   When those files change, this workflow bumps `ui_version` in
+#   ui-manifest.json so the game and all clients pick up the new layout.
+#
+#   UI editor push → files land → this workflow bumps ui_version
+#
+# TRIGGER: push to main affecting ui_layout.json or menu_layout.json
+#
+# SECRETS NEEDED: none — uses the built-in GITHUB_TOKEN (write access to
+#   this repo is automatic for workflows triggered by pushes).
+# ============================================================================
+
+name: Bump UI Version
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'detailed/ui_layout.json'
+      - 'detailed/menu_layout.json'
+
+jobs:
+  bump-ui-version:
+    runs-on: ubuntu-latest
+    # Only run when the push did NOT come from this workflow itself
+    # (prevents infinite loops — the version-bump commit only touches
+    # ui-manifest.json, which is not in the trigger paths, but this is
+    # belt-and-suspenders).
+    if: github.actor != 'github-actions[bot]'
+
+    steps:
+      - name: Checkout game repo
+        uses: actions/checkout@v4
+        with:
+          # GITHUB_TOKEN is provided automatically; no secret needed.
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Bump ui_version
+        run: |
+          python3 - << 'PYEOF'
+          import json, datetime
+
+          mp = 'detailed/ui-manifest.json'
+          with open(mp) as f:
+              m = json.load(f)
+
+          # ui_version format: YYYY.MM.DD.N
+          today = datetime.date.today().strftime('%Y.%m.%d')
+          ver = m.get('ui_version', '')
+          if ver.startswith(today):
+              n = int(ver.rsplit('.', 1)[-1]) + 1
+              m['ui_version'] = f'{today}.{n}'
+          else:
+              m['ui_version'] = f'{today}.1'
+
+          with open(mp, 'w') as f:
+              json.dump(m, f, indent=2)
+          print(f"Bumped ui_version to {m['ui_version']}")
+          PYEOF
+
+      - name: Commit version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add detailed/ui-manifest.json
+          # Idempotent: only commit if the version actually changed
+          if git diff --cached --quiet; then
+            echo "ui_version already current — skipping commit."
+          else
+            git commit -m "Auto-bump ui_version for UI layout changes"
+            git push
+          fi
