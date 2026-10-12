@@ -52,7 +52,7 @@ from menus import MenuTab
 
 # App version shown in the Help -> About dialog (bump with each release).
 # Joshua 2026-10-11: version number must be prominent in About.
-APP_VERSION = "1.7.3"
+APP_VERSION = "1.7.4"
 # Display name and icon-theme name for the About dialog.
 APP_NAME = "Adamsville UI Editor"
 APP_ICON = "adamsville-ui-editor-native"
@@ -105,6 +105,14 @@ class UIEditorApp:
         # --- Menu bar ---
         vbox.pack_start(self._build_menubar(), False, False, 0)
 
+        # --- Status bar (created early — MenuTab.__init__ calls set_status()
+        # during its own init, before the rest of the window is built).
+        # v1.7.4 STATUSBAR FIX (2026-10-12): was created after the notebook
+        # tabs, so MenuTab -> set_status() crashed with AttributeError because
+        # self.statusbar did not exist yet. Now created here, packed below.
+        self.statusbar = Gtk.Statusbar()
+        self.status_ctx = self.statusbar.get_context_id("main")
+
         # --- Notebook: Layout (primary) + Resources (file manager) ---
         self.notebook = Gtk.Notebook()
         self.notebook.set_tab_pos(Gtk.PositionType.TOP)
@@ -125,9 +133,9 @@ class UIEditorApp:
         self.notebook.append_page(self._build_resources_tab(),
                                   Gtk.Label(label="Resources"))
 
-        # --- Status bar ---
-        self.statusbar = Gtk.Statusbar()
-        self.status_ctx = self.statusbar.get_context_id("main")
+        # --- Status bar widget (already created above; pack it at the bottom
+        # of the window here). v1.7.4: creation moved earlier in __init__ so
+        # MenuTab can safely call set_status() during its own init.
         vbox.pack_start(self.statusbar, False, False, 0)
         self.set_status("Ready")
 
@@ -1233,8 +1241,16 @@ class UIEditorApp:
 
     def set_status(self, text):
         """Replace the status bar message."""
-        self.statusbar.pop(self.status_ctx)
-        self.statusbar.push(self.status_ctx, text)
+        # v1.7.4 STATUSBAR FIX (2026-10-12): guard against being called
+        # before the status bar exists (e.g. MenuTab.__init__ runs during
+        # UIEditorApp.__init__, before widgets are fully built). Silently
+        # skip instead of raising AttributeError and killing the app.
+        sb = getattr(self, "statusbar", None)
+        ctx = getattr(self, "status_ctx", None)
+        if sb is None or ctx is None:
+            return
+        sb.pop(ctx)
+        sb.push(ctx, text)
 
     def update_status(self):
         """Show resource count and pending change count."""
