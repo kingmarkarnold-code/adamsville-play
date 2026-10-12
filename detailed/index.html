@@ -3127,27 +3127,28 @@ var WX=8000, WZ=12000;
 function xz(lat, lon){
   var x=(lon-LON_MIN)/LON_RANGE*WX, z=(LAT_MAX-lat)/LAT_RANGE*WZ;
   /* ZONE-SEPARATED MAPS (2026-10-10): Adamsville rescaled to true 1:1.
-     Apply rescale transform when in Adamsville zone. */
-  try{
-    if(typeof ZONELOADER!=='undefined'&&ZONELOADER.currentZone==='adamsville'){
-      x=3772.5+(x-3772.5)*2.8327464788732395;
-      z=2009+(z-2009)*2.8327464788732395;
-    }
-  }catch(e){}
+     v1.65 FIX (2026-10-12 Joshua: "no NPCs/cars/houses in Dollar Mill"):
+     The rescale was conditional on ZONELOADER.currentZone==='adamsville',
+     but ZONELOADER (deferred script) isn't defined when HOME and other
+     lat/lon positions are computed during initial parse — so HOME landed
+     at pre-rescale (3124,3705), ~1500u from the rescaled Dollar Mill Rd
+     (1938,6791), in an empty area with no houses/NPCs/cars. The game only
+     plays in Adamsville (the only zone with rescaled data), so ALWAYS
+     apply the rescale — no timing dependency. */
+  x=3772.5+(x-3772.5)*2.8327464788732395;
+  z=2009+(z-2009)*2.8327464788732395;
   return { x:x, z:z };
 }
 /* latLon(x, z) -> {lat, lon}: inverse of xz() — world units back to geo. */
 /* v2026.10.11 COORDINATE FIX (Phase 1): xz() applies the 2.8327x Adamsville
    zone rescale, but latLon() never inverted it — so heightAt() was sampling
    elevation for the wrong geographic location (up to 22u off). Now inverts
-   the rescale to make latLon() the true inverse of xz(). */
+   the rescale to make latLon() the true inverse of xz().
+   v1.65 (2026-10-12): xz() now always rescales (no ZONELOADER timing
+   dependency), so latLon() always inverts — same reason. */
 function latLon(x, z){
-  try{
-    if(typeof ZONELOADER!=='undefined'&&ZONELOADER.currentZone==='adamsville'){
-      x=3772.5+(x-3772.5)/2.8327464788732395;
-      z=2009+(z-2009)/2.8327464788732395;
-    }
-  }catch(e){}
+  x=3772.5+(x-3772.5)/2.8327464788732395;
+  z=2009+(z-2009)/2.8327464788732395;
   return { lat: LAT_MAX - z/WZ*LAT_RANGE, lon: LON_MIN + x/WX*LON_RANGE };
 }
 
@@ -3180,7 +3181,8 @@ function gauss(x,z,cx,cz,amp,sig){
   return amp*Math.exp(-(dx*dx+dz*dz)/(2*sig*sig));
 }
 // Dollar Mill Rd entrance (south end of TIGER segment) — large hill per Joshua
-var DM_ENT = { x:3064, z:3290 };
+// v1.65 (2026-10-12): rescaled to Adamsville 1:1 (was 3064,3290 pre-rescale)
+var DM_ENT = { x:1765.5, z:5637.7 };
 // v0.8: Tatum Lake north water-edge (elevation probe point) — the lake sits ON
 // a hill; shoreline ground here must sit BELOW the water surface.
 /* v1.1: moved NW with the lake (was xz(33.74955,-84.52261)) — north water-edge of the new position */
@@ -5214,7 +5216,8 @@ function waterDisc(cx, cz, rx, rz, name, depthFt){
      outflow from OpenStreetMap: Tatum Lake drains south (x~3210-3240) east of 535,
      curving into Utoy Creek which flows SE. New path keeps 26u+ clear of
      Dollar Mill Rd SW along its whole length. */
-  var CREEK_OSM=[[3215.0,3425.0],[3210.0,3447.0],[3205.0,3468.9],[3208.0,3473.7],[3210.4,3476.2],[3211.0,3479.3],[3216.4,3481.5],[3216.4,3481.5],[3218.3,3486.1],[3216.9,3491.1],[3216.9,3494.4],[3217.4,3497.9],[3219.8,3504.3],[3221.7,3508.1],[3223.3,3510.2],[3223.5,3513.5],[3222.6,3516.8],[3221.5,3523.6],[3221.7,3533.7],[3225.6,3550.3],[3228.0,3556.7],[3229.1,3560.1],[3229.7,3563.4],[3230.8,3566.5],[3232.1,3569.8],[3235.4,3575.8],[3236.7,3578.9],[3238.2,3585.5],[3241.1,3595.3],[3241.5,3598.8],[3241.3,3605.4],[3241.7,3608.9],[3243.0,3612.1],[3243.2,3615.3],[3242.8,3618.7],[3242.8,3629.0],[3243.4,3636.3],[3242.5,3642.1],[3240.4,3654.1],[3235.8,3664.0],[3228.4,3674.4],[3223.6,3685.1],[3218.2,3690.3],[3212.9,3694.4],[3199.2,3701.5],[3192.3,3704.6],[3183.1,3709.7],[3178.3,3714.1],[3177.9,3716.2],[3164.6,3734.2],[3159.8,3739.4],[3155.2,3743.5],[3164.2,3749.1],[3172.4,3755.7],[3174.8,3758.2],[3178.7,3763.8],[3181.8,3770.0],[3185.5,3775.8],[3187.7,3778.7],[3190.0,3781.2],[3192.9,3783.1],[3196.4,3784.1],[3199.4,3785.5],[3207.7,3792.2],[3209.8,3794.9],[3211.1,3798.0],[3212.9,3800.9],[3215.1,3803.6],[3220.5,3808.2],[3226.1,3812.3],[3232.0,3816.0],[3237.5,3820.4],[3236.6,3823.8],[3240.3,3830.0],[3245.1,3835.6],[3254.2,3838.0],[3255.9,3840.9],[3258.1,3843.6],[3265.9,3850.6],[3275.1,3859.7],[3290.5,3868.0],[3296.4,3870.7],[3306.2,3871.5],[3310.8,3871.5],[3313.0,3869.1],[3313.0,3866.0],[3313.6,3851.1],[3313.8,3843.1],[3319.1,3837.0],[3323.9,3839.3],[3330.8,3848.5],[3335.0,3856.8],[3343.2,3866.8],[3344.9,3873.6],[3343.4,3879.0],[3344.3,3882.6],[3346.4,3885.2],[3349.5,3886.9],[3358.4,3888.4],[3364.7,3890.4],[3371.9,3891.4],[3375.4,3891.4],[3379.2,3893.2],[3386.1,3894.2],[3396.3,3891.0],[3400.1,3887.8],[3405.6,3885.9],[3409.1,3885.0],[3412.1,3883.4],[3415.6,3883.0],[3422.2,3885.7],[3425.2,3887.6],[3427.5,3894.6],[3430.6,3899.9],[3434.1,3906.4],[3439.2,3910.4],[3441.8,3911.3],[3445.1,3910.3],[3448.4,3913.3],[3448.9,3917.0],[3455.2,3936.4],[3457.2,3946.4],[3459.6,3952.8],[3463.0,3958.8],[3465.2,3965.2],[3465.6,3968.7],[3465.8,3972.1],[3465.6,3975.4],[3464.3,3982.0],[3463.9,3985.5],[3463.9,3988.8],[3463.2,3992.1],[3460.2,4001.9],[3459.8,4005.4],[3458.7,4008.5],[3457.1,4011.6],[3449.5,4023.2],[3445.4,4028.6],[3443.6,4031.7],[3437.5,4047.6],[3436.0,4054.3],[3433.3,4060.1],[3433.1,4063.6],[3438.8,4067.8],[3444.4,4075.2],[3447.5,4078.9],[3447.7,4083.2],[3447.1,4088.2],[3445.8,4095.3],[3445.6,4098.7],[3447.1,4101.6],[3448.6,4105.0],[3450.6,4107.9],[3450.6,4111.2],[3451.6,4114.5],[3453.8,4117.2],[3456.4,4119.5],[3462.7,4122.6],[3469.7,4124.5],[3477.8,4125.9],[3484.7,4126.5],[3508.0,4132.9],[3519.2,4136.0],[3526.0,4136.4],[3535.2,4133.4],[3545.8,4134.6],[3559.5,4138.0],[3562.2,4140.5]];
+  /* v1.65 (2026-10-12): rescaled to Adamsville 1:1 — was pre-rescale coords */
+  var CREEK_OSM=[[2193.2,6020.2],[2179.1,6082.5],[2164.9,6144.5],[2173.4,6158.1],[2180.2,6165.2],[2181.9,6174.0],[2197.2,6180.2],[2197.2,6180.2],[2202.6,6193.2],[2198.6,6207.4],[2198.6,6216.8],[2200.0,6226.7],[2206.8,6244.8],[2212.2,6255.6],[2216.8,6261.5],[2217.3,6270.9],[2214.8,6280.2],[2211.7,6299.5],[2212.2,6328.1],[2223.3,6375.1],[2230.1,6393.2],[2233.2,6402.9],[2234.9,6412.2],[2238.0,6421.0],[2241.7,6430.4],[2251.0,6447.3],[2254.7,6456.1],[2259.0,6474.8],[2267.2,6502.6],[2268.3,6512.5],[2267.7,6531.2],[2268.9,6541.1],[2272.6,6550.2],[2273.1,6559.2],[2272.0,6568.9],[2272.0,6598.0],[2273.7,6618.7],[2271.1,6635.2],[2265.2,6669.2],[2252.2,6697.2],[2231.2,6726.7],[2217.6,6757.0],[2202.3,6771.7],[2187.3,6783.3],[2148.5,6803.4],[2128.9,6812.2],[2102.9,6826.7],[2089.3,6839.1],[2088.1,6845.1],[2050.5,6896.1],[2036.9,6910.8],[2023.8,6922.4],[2049.3,6938.3],[2072.6,6957.0],[2079.4,6964.0],[2090.4,6979.9],[2099.2,6997.5],[2109.7,7013.9],[2115.9,7022.1],[2122.4,7029.2],[2130.6,7034.6],[2140.6,7037.4],[2149.1,7041.4],[2172.6,7060.4],[2178.5,7068.0],[2182.2,7076.8],[2187.3,7085.0],[2193.5,7092.6],[2208.8,7105.7],[2224.7,7117.3],[2241.4,7127.8],[2257.0,7140.2],[2254.4,7149.9],[2264.9,7167.4],[2278.5,7183.3],[2304.3,7190.1],[2309.1,7198.3],[2315.3,7206.0],[2337.4,7225.8],[2363.5,7251.6],[2407.1,7275.1],[2423.8,7282.7],[2451.6,7285.0],[2464.6,7285.0],[2470.9,7278.2],[2470.9,7269.4],[2472.6,7227.2],[2473.1,7204.5],[2488.1,7187.3],[2501.7,7193.8],[2521.3,7219.8],[2533.2,7243.3],[2556.4,7271.7],[2561.2,7290.9],[2557.0,7306.2],[2559.5,7316.4],[2565.5,7323.8],[2574.2,7328.6],[2599.5,7332.9],[2617.3,7338.5],[2637.7,7341.4],[2647.6,7341.4],[2658.4,7346.5],[2677.9,7349.3],[2706.8,7340.2],[2717.6,7331.2],[2733.2,7325.8],[2743.1,7323.2],[2751.6,7318.7],[2761.5,7317.6],[2780.2,7325.2],[2788.7,7330.6],[2795.2,7350.4],[2804.0,7365.4],[2813.9,7383.9],[2828.3,7395.2],[2835.7,7397.7],[2845.1,7394.9],[2854.4,7403.4],[2855.8,7413.9],[2873.7,7468.8],[2879.3,7497.2],[2886.1,7515.3],[2895.8,7532.3],[2902.0,7550.4],[2903.1,7560.3],[2903.7,7570.0],[2903.1,7579.3],[2899.4,7598.0],[2898.3,7607.9],[2898.3,7617.3],[2896.3,7626.6],[2887.8,7654.4],[2886.7,7664.3],[2883.6,7673.1],[2879.1,7681.9],[2857.5,7714.7],[2845.9,7730.0],[2840.8,7738.8],[2823.5,7783.8],[2819.3,7802.8],[2811.6,7819.2],[2811.1,7829.2],[2827.2,7841.1],[2843.1,7862.0],[2851.9,7872.5],[2852.4,7884.7],[2850.7,7898.8],[2847.0,7919.0],[2846.5,7928.6],[2850.7,7936.8],[2855.0,7946.4],[2860.6,7954.7],[2860.6,7964.0],[2863.5,7973.3],[2869.7,7981.0],[2877.1,7987.5],[2894.9,7996.3],[2914.7,8001.7],[2937.7,8005.6],[2957.2,8007.3],[3023.2,8025.5],[3055.0,8034.3],[3074.2,8035.4],[3100.3,8026.9],[3130.3,8030.3],[3169.1,8039.9],[3176.8,8047.0]];
   var creekPts=CREEK_OSM;
   var cg=ribbonGeom(creekPts, 7, 0.18);
   scene.add(new THREE.Mesh(cg, new THREE.MeshLambertMaterial({ color:0x2e6f9e })));
@@ -5799,16 +5802,20 @@ function heroPorchY(x, z){
   /* ---- DRIVEWAY: road -> basement garage, meeting the road SQUARELY ----
      Dollar Mill Rd runs east-west past the house; the driveway runs
      north-south (perpendicular). Concrete, graded up from the road.
-     (The old driveway ran SOUTH away from the house — wrong side.) */
-  var dvPts=[[3126,3709],[3125,3705],[3123.5,3703],[3121.5,3701.2]];
+     (The old driveway ran SOUTH away from the house — wrong side.)
+     v1.65 (2026-10-12): rescaled to Adamsville 1:1 (x2.8327) — the old
+     pre-rescale coords put the driveway ~1500u from the actual road. */
+  var dvPts=[[1941.1,6824.7],[1938.3,6813.3],[1934.0,6807.7],[1928.4,6802.6]];
   var dvYs=dvPts.map(function(p){ return heightAt(p[0],p[1])+0.32; });
   dvYs[dvYs.length-1]=bsmtY+0.32;   // meet the garage floor
   var dg2=ribbonGeomY(dvPts.map(function(p){return [p[0],p[1]];}), 4.5, dvYs);
   scene.add(new THREE.Mesh(dg2, new THREE.MeshLambertMaterial({ color:0x9a9a9a })));
   // the van parks on the driveway in front of the garage
-  heroHouse.drivewayPark={ x:3124, z:3705 };
+  // v1.65: rescaled (was 3124,3705 pre-rescale)
+  heroHouse.drivewayPark={ x:1935.5, z:6813.3 };
   // walkway: driveway -> front porch stairs
-  var ww=ribbonGeom([[3125,3706],[hx,hz+D/2+6.2]], 1.6, 0.32);
+  // v1.65: rescaled
+  var ww=ribbonGeom([[1938.3,6814.5],[hx,hz+D/2+6.2]], 1.6, 0.32);
   scene.add(new THREE.Mesh(ww, new THREE.MeshLambertMaterial({ color:0x9a9a9a })));
 
   /* ---- brick mailbox pillar at the street (by the driveway, per photo) ----
@@ -5818,9 +5825,10 @@ function heroPorchY(x, z){
      ~1.7u off the road edge and beside the driveway mouth, as in the photo. */
   /* v3.3 (2026-10-10 Joshua): mailbox was IN THE MIDDLE OF THE STREET.
      Moved to (3127, 3705) — just off the road edge, by the driveway mouth,
-     at the property edge. Brick pillar, as in the photo. */
+     at the property edge. Brick pillar, as in the photo.
+     v1.65 (2026-10-12): rescaled to Adamsville 1:1 (was 3127,3705). */
   (function(){
-    var mbx=3127, mbz=3705, mby=heightAt(mbx,mbz);
+    var mbx=1944.0, mbz=6813.3, mby=heightAt(mbx,mbz);
     box(0.7,1.3,0.7, brick, mbx, mby+0.65, mbz);
     box(0.9,0.4,0.5, 0x2a2a2a, mbx, mby+1.5, mbz);
     addCollider(mbx,mbz,0.5);  // v1.61 COLLISION AUDIT (2026-10-12, Joshua's rule): brick pillar is 0.7u wide — was 0.8, walk right up to it
@@ -5839,7 +5847,7 @@ function heroPorchY(x, z){
       if (Math.hypot(tx-hx,tz-hz)<13) continue;
       if (tx>x0-5&&tx<x1+5&&tz>zN-5&&tz<zS+5) continue;  // house footprint
       if (distToRoadEdge(tx,tz)<10) continue;
-      if (Math.hypot(tx-3127,tz-3705)<3.5) continue;  // mailbox (v3.3 moved)
+      if (Math.hypot(tx-1944.0,tz-6813.3)<3.5) continue;  // mailbox (v3.3 moved, v1.65 rescaled)
       var dD=1e9;
       for (var di=0;di<dvPts.length;di++){
         var dd=Math.hypot(tx-dvPts[di][0],tz-dvPts[di][1]);
@@ -7688,7 +7696,7 @@ function spawnPlayerVan(){
      uses hardcoded 535 driveway coords. If safariMesh is missing, falls back
      to sedan. Logs the result for diagnostics. */
   try {
-    var vx=3124, vz=3705;  // 535 driveway fallback (matches heroHouse.drivewayPark)
+    var vx=1935.5, vz=6813.3;  // v1.65: 535 driveway fallback, rescaled (was 3124,3705)
     try {
       if (typeof heroHouse!=='undefined' && heroHouse && heroHouse.drivewayPark &&
           typeof heroHouse.drivewayPark.x==='number' &&
@@ -7795,9 +7803,12 @@ function spawnParkedCars(){
     return spot;
   }
   // old road spots (kept as neighborhood anchors; the car moves to the nearest driveway)
+  /* v1.65 (2026-10-12): rescaled to Adamsville 1:1 — the old pre-rescale
+     coords put anchors ~1500u from the actual roads, so drivewaySpot found
+     no houses and cars fell back to empty locations. */
   var anchors=[
-    [3072,3620],[3075,3550],[3090,3400],[3068,3350],
-    [4260,3225],[7250,10600],[1560,10150],[3300,2350]
+    [1788.2,6572.6],[1796.7,6374.3],[1839.2,5949.4],[1776.8,5807.7],
+    [5153.5,5453.6],[13623.4,26345.1],[-2495.0,25070.4],[2434.0,2975.0]
   ];
   var colors=[0x2e4a6b,0x6b6b6b,0x3a6b2e,0x7a6b2e,0x5a2e5a,0x2e6b6b];
   var driveways=0;
@@ -8597,8 +8608,19 @@ function loadSlot(n){
       }
       c.sinking=false;
       // v3.1: sit on the driveway concrete (+0.32) when parked at the house
+      // v1.65 FIX (2026-10-12 Joshua: "wheel stuck below grass on load"):
+      // was heightAt() (terrain only) — a car saved on a raised sidewalk
+      // reloaded with its wheels under the concrete. Now uses the material
+      // system (surfaceYAt) so the car sits on whatever surface is actually
+      // there (road/sidewalk/driveway/grass), same as spawn. Falls back to
+      // the old heightAt chain if the material module isn't loaded.
       var atHome=Math.hypot(c.x-heroHouse.drivewayPark.x, c.z-heroHouse.drivewayPark.z)<2;
-      c.mesh.position.set(c.x,heightAt(c.x,c.z)+(atHome?0.32:0),c.z); c.mesh.rotation.y=c.yaw;
+      var _ly=0;
+      try{
+        var _ls=(typeof surfaceYAt==='function')?surfaceYAt(c.x,c.z):null;
+        _ly=(_ls===null||_ls===undefined)?groundRefY(c.x,c.z):_ls;
+      }catch(e){ try{_ly=heightAt(c.x,c.z);}catch(e2){} }
+      c.mesh.position.set(c.x,_ly+(atHome?0.32:0),c.z); c.mesh.rotation.y=c.yaw;
     }
     camYaw=s.camYaw||p.yaw; look.yawOff=s.lookYawOff||0;
     var cb=camYaw+Math.PI, gy=heightAt(player.x,player.z);
