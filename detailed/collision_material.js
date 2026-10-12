@@ -18,17 +18,21 @@
    runs first (cheap reject), old system runs after (fine push-out).
    ============================================================================ */
 
-/* Material types. Higher number = more restrictive (for priority). */
+/* Material types. The numbers are identifiers — lookup priority comes from
+   the if/else chain order in getMaterialAt(), not the numeric values. */
 var COLLISION_MATERIALS = {
-  NONE:  0,  // Air, decorations, open ground — no restriction
-  ROAD:  2,  // Road surface — vehicles constrained to road network
+  NONE:  0,  // Air, decorations — no surface, no restriction
+  GRASS: 5,  // Terrain/grass surface — the base layer everything sits on.
+             // Walkable (behaves like NONE for movement); exists so the
+             // vertical layering model can name what ROAD sits on.
+  ROAD:  2,  // Road surface — sits ON grass (see VERTICAL LAYERING below)
   WATER: 3,  // Water — blocks all ground movement
   DOOR:  4,  // Door — solid when closed, passable when open
   SOLID: 1   // Walls, buildings, trees, fences — cannot pass through
 };
 /* Note: SOLID=1 is intentionally lower than ROAD/WATER/DOOR so that
    specific materials (road, water, door) take priority in the lookup.
-   The numeric order is: NONE < SOLID < ROAD < WATER < DOOR. */
+   GRASS is the ground itself — the default when nothing else matches. */
 
 /* Mover types for canMoveTo(). */
 var MOVER_PLAYER  = 'player';   // Joshua on foot
@@ -76,7 +80,9 @@ function getMaterialAt(x, z, skipCache){
     }
   }
 
-  var mat = COLLISION_MATERIALS.NONE;
+  /* v1.62 (2026-10-12, Joshua): open ground IS the GRASS material — the
+     base layer of the vertical stack. Walkable, like NONE. */
+  var mat = COLLISION_MATERIALS.GRASS;
 
   try {
     /* --- WATER: highest priority after DOOR --- */
@@ -100,8 +106,9 @@ function getMaterialAt(x, z, skipCache){
       mat = COLLISION_MATERIALS.SOLID;
     }
   } catch(e){
-    /* Any lookup failure = treat as NONE (permissive, old system catches it). */
-    mat = COLLISION_MATERIALS.NONE;
+    /* Any lookup failure = treat as GRASS (permissive, old system catches
+       it). GRASS and NONE behave identically for movement. */
+    mat = COLLISION_MATERIALS.GRASS;
   }
 
   /* --- Store in cache (movement-gate lookups skip the cache entirely) --- */
@@ -109,6 +116,159 @@ function getMaterialAt(x, z, skipCache){
     _matCache[key] = { mat: mat, time: now, gen: _matCacheTime };
   }
   return mat;
+}
+
+/* ---------------------------------------------------------------------------
+   VERTICAL SURFACE LAYERING — v1.62 (2026-10-12, Joshua).
+
+   "Use the MATERIAL system, not collision detection." Materials don't just
+   gate horizontal movement — they define VERTICAL relationships. The ROAD
+   material knows it sits ON the GRASS material:
+
+       ROAD top surface    = GRASS surface + ROAD_LIFT
+       ROAD bottom surface = GRASS surface (meets exactly — no clip, no gap)
+
+   Renderers ask "how high is the surface here?" (surfaceHeightAt),
+   movers ask "can I be here?" (canMoveTo) — one source of truth, so the
+   road mesh, the player snap, and the movement gate can never disagree
+   about where the ground is. This is the same "snap to face" philosophy
+   as the player-on-road snap, applied to the street-on-grass relationship.
+
+   Layer stack (bottom to top):
+     GRASS -> base layer. Top = the rendered terrain mesh surface.
+     ROAD  -> sits ON grass. Top = grass + ROAD_LIFT.
+     WATER -> its own level (waterLevelAt), independent of terrain.
+   --------------------------------------------------------------------------- */
+
+/* ROAD_LIFT — how far the ROAD material's top sits above the GRASS it
+   covers. This is the SAME 0.55 the renderer and groundRefY always used —
+   now a named material property instead of a magic number, so every
+   consumer (road mesh, player snap, car placement) agrees by construction. */
+var ROAD_LIFT = 0.55;
+
+/* MATERIAL_LAYERS — vertical relationship table. For each surface
+   material: base = the material it sits ON (null = the world base layer),
+   lift = how far its TOP surface sits above its base. A surface's BOTTOM
+   meets its base exactly. */
+var MATERIAL_LAYERS = {};
+MATERIAL_LAYERS[COLLISION_MATERIALS.GRASS] = { base: null, lift: 0 };
+MATERIAL_LAYERS[COLLISION_MATERIALS.ROAD]  = { base: COLLISION_MATERIALS.GRASS, lift: ROAD_LIFT };
+
+/* grassSurfaceY(x, z) — the GRASS material's top surface: the RENDERED
+   terrain mesh height (the same surface the player sees), via the same
+   bilinear grid the mesh was built from. Single source of truth for
+   "where is the ground". Falls back to analytic heightAt only if the
+   mesh grid isn't built yet. */
+function grassSurfaceY(x, z){
+  try {
+    if (typeof terrainMeshY === 'function'){
+      var y = terrainMeshY(x, z);
+      if (y > -1e8) return y;
+    }
+  } catch(e){}
+  try { return heightAt(x, z); } catch(e2){ return 0; }
+}
+
+/* surfaceHeightAt(x, z) — TOP-surface world Y for the material at (x,z):
+     ROAD  -> grass surface + ROAD_LIFT  (road sits ON the grass)
+     WATER -> water surface level (falls back to grass surface)
+     GRASS / NONE / SOLID / DOOR -> grass surface
+   (Solids and doors stand ON the grass; their own meshes define their
+   tops. This answers "where is the walkable/drivable surface?".) */
+function surfaceHeightAt(x, z){
+  var mat = COLLISION_MATERIALS.GRASS;
+  try { mat = getMaterialAt(x, z, true); } catch(e){}
+  if (mat === COLLISION_MATERIALS.WATER){
+    try {
+      if (typeof waterLevelAt === 'function'){
+        var wl = waterLevelAt(x, z);
+        if (wl !== null && wl !== undefined && isFinite(wl)) return wl;
+      }
+    } catch(e){}
+    return grassSurfaceY(x, z);
+  }
+  if (mat === COLLISION_MATERIALS.ROAD){
+    return grassSurfaceY(x, z) + ROAD_LIFT;
+  }
+  return grassSurfaceY(x, z);
+}
+
+/* materialRoadTopY(x, z) — where the ROAD material's top surface sits at
+   (x,z), whether or not a road mesh is currently there. Road renderers
+   use this to drape pavement onto the grass: the road top follows
+   grass+lift along its path (slopes included), and the road bottom meets
+   the grass exactly — they cannot clip through each other. */
+function materialRoadTopY(x, z){
+  return grassSurfaceY(x, z) + ROAD_LIFT;
+}
+
+/* ---------------------------------------------------------------------------
+   VEHICLE REST SURFACE — v1.63 (Joshua 2026-10-12): "this should be a
+   material thing for the cars."
+
+   surfaceYAt(x, z) returns the Y a VEHICLE should rest on at a position,
+   based on the MATERIAL there — not on explicit height knowledge in the
+   caller. This is the vertical half of the material system for vehicles:
+   canMoveTo() gates horizontal movement, surfaceYAt() pins vertical
+   placement. A car on a road, sidewalk, driveway, or grass all goes
+   through this one function — the material decides, uniformly.
+
+   Material -> rest-surface mapping:
+   - ROAD  -> the EXACT rendered road top via roadSurfaceY() (bridge-aware:
+              on a bridge deck it returns the deck height, not grass+lift).
+              Falls back to grass+ROAD_LIFT when no road surface data exists.
+   - WATER -> the SOLID SURFACE BENEATH (lakebed / submerged roadbed).
+              Vehicles ford on the bottom — updateCar()'s sink path handles
+              deep water separately and never consults this function.
+              (A future floating object, e.g. a boat, should query
+              waterLevelAt() directly.)
+   - SOLID -> null (no rest surface, e.g. inside a wall — the caller keeps
+              its last Y rather than teleporting).
+   - GRASS / NONE / DOOR -> grass surface, raised by any sidewalk/driveway
+              slab on top (thin walkable slabs are material NONE).
+
+   Relationship to surfaceHeightAt(): that function answers "where is the
+   walkable surface?" with the simplified layer model (ROAD = grass+lift).
+   surfaceYAt() answers "where does a vehicle rest?" with the EXACT
+   rendered surface (bridge-aware). On ordinary roads they agree; on
+   bridges only surfaceYAt() is correct for vehicles. The two may be
+   unified once the renderer work settles — until then, vehicles use this.
+
+   Returns null when no valid surface exists. Callers MUST fall back to
+   their previous Y or another reference (never teleport to 0).
+   --------------------------------------------------------------------------- */
+function surfaceYAt(x, z){
+  try {
+    /* Exact (uncached) material — a 20u cache cell can straddle a road
+       edge, and rest height must match the exact sample point. */
+    var mat = getMaterialAt(x, z, true);
+    /* SOLID: nothing to rest on. */
+    if (mat === COLLISION_MATERIALS.SOLID) return null;
+    /* ROAD: exact rendered top (bridge-aware). */
+    if (mat === COLLISION_MATERIALS.ROAD){
+      try {
+        if (typeof roadSurfaceY === 'function'){
+          var r = roadSurfaceY(x, z);
+          if (r !== null && r !== undefined && isFinite(r)) return r;
+        }
+      } catch(e){}
+      /* No road surface data — fall back to the material layer model,
+         consistent with surfaceHeightAt(). */
+      try { return grassSurfaceY(x, z) + ROAD_LIFT; } catch(e2){ return null; }
+    }
+    /* GRASS / NONE / DOOR / WATER: the ground beneath. WATER falls through
+       here deliberately — vehicles ford on the bottom (see header). */
+    var y = grassSurfaceY(x, z);
+    /* Sidewalk / driveway slabs sit above the grass; they're material NONE
+       (walkable, not blockers), so fold them into the ground case. */
+    try {
+      if (typeof sidewalkSurfaceY === 'function'){
+        var sw = sidewalkSurfaceY(x, z);
+        if (sw !== null && sw !== undefined && isFinite(sw) && sw > y) y = sw;
+      }
+    } catch(e){}
+    return y;
+  } catch(e){ return null; }
 }
 
 /* _isClosedDoorAt(x, z) — true if a CLOSED door is at this position.
@@ -542,9 +702,22 @@ window.CollisionMaterial = {
   canMoveTo: canMoveTo,
   tryMove: tryMove,
   registerDoor: registerDoor,
-  invalidateCache: invalidateMaterialCache
+  invalidateCache: invalidateMaterialCache,
+  /* v1.62 vertical layering (Joshua: material system owns the
+     road-on-grass relationship). */
+  ROAD_LIFT: ROAD_LIFT,
+  MATERIAL_LAYERS: MATERIAL_LAYERS,
+  grassSurfaceY: grassSurfaceY,
+  surfaceHeightAt: surfaceHeightAt,
+  materialRoadTopY: materialRoadTopY,
+  /* v1.63 vehicle rest surface (Joshua: "this should be a material thing
+     for the cars"). */
+  surfaceYAt: surfaceYAt
 };
 
 /* Also expose the key functions globally for index.html integration. */
 window.getMaterialAt = getMaterialAt;
 window.canMoveTo = canMoveTo;
+window.surfaceHeightAt = surfaceHeightAt;
+window.grassSurfaceY = grassSurfaceY;
+window.surfaceYAt = surfaceYAt;

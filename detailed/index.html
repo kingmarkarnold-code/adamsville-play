@@ -2029,7 +2029,7 @@ try{
 "use strict";
 /* v1.4: single source of truth for the HUD version — bump ONCE per release.
    The tags below are stamped from here so they can never go stale again. */
-var APP_VERSION='1.12.3';
+var APP_VERSION='1.15.0';
 try{
   document.getElementById('hud-sub').textContent='demo v'+APP_VERSION;
   document.getElementById('ver-tag').textContent='v'+APP_VERSION;
@@ -3710,6 +3710,22 @@ function roadSitY(x,z){
   try{ return snapToGround(x,z,0,0,0); }
   catch(e){ try{ var mh=terrainMeshY(x,z); return (mh>-1e8?mh:heightAt(x,z)); }catch(e2){ return 0; } }
 }
+/* v1.62 MATERIAL VERTICAL SNAP (2026-10-12, Joshua: use the MATERIAL system,
+   not collision code). The ROAD material sits ON the GRASS material —
+   road top = grass surface + ROAD_LIFT, road bottom meets the grass exactly
+   (no clipping, no floating). collision_material.js (deferred) owns this
+   relationship; this bridge uses it when loaded and falls back to the
+   identical local formula during page parse (roads build before the
+   deferred scripts arrive). Same math either way — one truth, no drift. */
+function roadMatY(x, z){
+  try {
+    if (typeof window !== 'undefined' && window.CollisionMaterial &&
+        typeof window.CollisionMaterial.materialRoadTopY === 'function'){
+      return window.CollisionMaterial.materialRoadTopY(x, z);
+    }
+  } catch(e){}
+  try { return roadSitY(x, z) + 0.55; } catch(e2){ return 0.55; }
+}
 
 // ---------- text labels ----------
 function makeLabel(text, worldW, color) {
@@ -3780,8 +3796,17 @@ function ribbonGeom(pts, width, yOff){
 /* v1.3 ribbonGeomY: ribbon with EXPLICIT per-centerline heights (for ramps,
    decks, and smoothed roads). ys[i] is the centerline height at pts[i];
    both edge verts use it (flat across width — more road-like). Same UP
-   winding as ribbonGeom. */
-function ribbonGeomY(pts, width, ys){
+   winding as ribbonGeom.
+   v1.62 MATERIAL DRAPE (2026-10-12, Joshua): optional 4th param `drape`.
+   When true, each edge vertex is lifted to at least its own material road
+   height (roadMatY — the ROAD material on the GRASS material). On a
+   cross-slope the uphill edge rides up out of the grass instead of burying;
+   on flat ground the edge roadMatY ≈ centerline ys, so the flat road-like
+   profile is unchanged. max() (never min) so engineered heights — decks,
+   ramps, bridge approaches — are never pulled down. Markings, medians,
+   dividers, ramps and decks pass no drape: their heights are engineered,
+   not terrain-following. */
+function ribbonGeomY(pts, width, ys, drape){
   var verts=[], idx=[], n=0;
   for (var pi=0; pi<pts.length; pi++){
     var p=pts[pi];
@@ -3790,7 +3815,18 @@ function ribbonGeomY(pts, width, ys){
     var len=Math.hypot(dx,dz)||1; dx/=len; dz/=len;
     var px=-dz*width/2, pz=dx*width/2;
     var y=(ys&&ys[pi]!==undefined)?ys[pi]:roadSitY(p[0],p[1])+0.55;
-    verts.push(p[0]+px, y, p[1]+pz,  p[0]-px, y, p[1]-pz);
+    var ax=p[0]+px, az=p[1]+pz, bx=p[0]-px, bz=p[1]-pz;
+    var yL=y, yR=y;
+    if (drape){
+      /* Each edge meets its own grass: never buried, never floating.
+         The road bottom and the grass cannot clip through each other. */
+      try{
+        var eL=roadMatY(ax,az), eR=roadMatY(bx,bz);
+        if (eL>yL) yL=eL;
+        if (eR>yR) yR=eR;
+      }catch(e){}
+    }
+    verts.push(ax, yL, az,  bx, yR, bz);
     if (n>0){ var b=(n-1)*2; idx.push(b,b+2,b+1, b+1,b+2,b+3); }
     n++;
   }
@@ -4042,13 +4078,38 @@ try{ Object.keys(ROAD_DATA||{}).forEach(function(c){ if(ROAD_DATA[c]) roadSegsTo
     'I- 75':1,'State Rte 401':1,'I- 285':1,'I-285':1,'State Rte 407':1};
   function laneDashes(dpts, dys, width, lanesPerDir){
     // v1.3: divider dashes between lanes, riding the smoothed surface.
+    /* v1.62 MATERIAL DRAPE (2026-10-12, Joshua): dashes ride the DRAPED
+       carriageway surface, not the flat centerline. The ribbon edges may
+       lift on cross-slopes (see ribbonGeomY drape); a dash at lateral
+       offset off sits at the linearly-interpolated draped height + 0.17.
+       With no drape the lifts are 0 and this is exactly dys+0.17 as before. */
+    var halfW=width/2;
+    var liftL=[], liftR=[];
+    for (var si=0; si<dpts.length; si++){
+      var sp=dpts[si], spr=dpts[Math.max(0,si-1)], snx=dpts[Math.min(dpts.length-1,si+1)];
+      var sdx=snx[0]-spr[0], sdz=snx[1]-spr[1], sln=Math.hypot(sdx,sdz)||1; sdx/=sln; sdz/=sln;
+      var yc=(dys[si]||0), lL=0, lR=0;
+      try{
+        var gL=roadMatY(sp[0]+(-sdz)*halfW, sp[1]+sdx*halfW);
+        var gR=roadMatY(sp[0]-(-sdz)*halfW, sp[1]-sdx*halfW);
+        if (gL>yc) lL=gL-yc;
+        if (gR>yc) lR=gR-yc;
+      }catch(e){}
+      liftL.push(lL); liftR.push(lR);
+    }
     var lanes=lanesPerDir*2, laneW=width/lanes;
     for (var L=1; L<lanes; L++){
       if (L===lanesPerDir) continue;  // center: skip (could be double-yellow)
       var off=-width/2+L*laneW;
       for (var i=0;i<dpts.length-1;i++){
         var a=dpts[i], b=dpts[i+1];
-        var ya=(dys[i]||0)+0.17, yb=(dys[i+1]||0)+0.17;
+        /* Draped surface at this lateral offset: y(s) is linear across the
+           ribbon, y(+halfW)=yL (the +px side), y(-halfW)=yR. Dash offset
+           off>0 sits on the +px side, so t=(halfW-off)/(2*halfW). */
+        var tA=(halfW-off)/(2*halfW), tB=tA;
+        var surfA=(dys[i]||0)+liftL[i]+tA*(liftR[i]-liftL[i]);
+        var surfB=(dys[i+1]||0)+liftL[i+1]+tB*(liftR[i+1]-liftL[i+1]);
+        var ya=surfA+0.17, yb=surfB+0.17;
         var dx=b[0]-a[0], dz=b[1]-a[1], segLen=Math.hypot(dx,dz)||1;
         dx/=segLen; dz/=segLen;
         var px=-dz*off, pz=dx*off;
@@ -4145,8 +4206,8 @@ try{ Object.keys(ROAD_DATA||{}).forEach(function(c){ if(ROAD_DATA[c]) roadSegsTo
       right.push([p[0]-(-dz)*off, p[1]-dx*off]);
     }
     var store = asphaltByCat[ncat]||asphaltByCat.local;
-    pushInto(store, ribbonGeomY(left, dirW, dys));
-    pushInto(store, ribbonGeomY(right, dirW, dys));
+    pushInto(store, ribbonGeomY(left, dirW, dys, true));  /* v1.62: material drape */
+    pushInto(store, ribbonGeomY(right, dirW, dys, true));  /* v1.62: material drape */
     var stripLift = divType==='median' ? 0.35 : 0;  /* median is raised */
     if (divType==='median'){
       var mdys=dys.map(function(y){ return (y||0)+0.35; });
@@ -4236,7 +4297,7 @@ try{ Object.keys(ROAD_DATA||{}).forEach(function(c){ if(ROAD_DATA[c]) roadSegsTo
           if (runDivided){
             buildDividedRun(dpts, dys, w, runDivided, ncat, isInterstate);
           } else {
-            pushInto(astore, ribbonGeomY(dpts, w, dys));
+            pushInto(astore, ribbonGeomY(dpts, w, dys, true));  /* v1.62: material drape — edges ride out of uphill grass */
             if (isInterstate){ centerDoubleYellow(dpts, dys); laneDashes(dpts, dys, w, 5); }
             else if (ncat==='highway'){ centerDoubleYellow(dpts, dys); laneDashes(dpts, dys, w, 3); }
             else if (ncat==='major_artery'){ grassMedian(dpts, dys); laneDashes(dpts, dys, w, 3); }
@@ -4273,7 +4334,7 @@ try{ Object.keys(ROAD_DATA||{}).forEach(function(c){ if(ROAD_DATA[c]) roadSegsTo
       var dys=smoothHeights(dpts,draw);
       var mmPts=[]; for(var mi2=0;mi2<dpts.length;mi2+=4) mmPts.push(dpts[mi2]);
       if(dpts.length>1) mmPts.push(dpts[dpts.length-1]);
-      pushInto(asphaltByCat.highway, ribbonGeomY(dpts,34,dys));  /* v2.1: per-category store */
+      pushInto(asphaltByCat.highway, ribbonGeomY(dpts,34,dys, true));  /* v2.1: per-category store; v1.62: material drape (deck heights win via max) */
       roadDrawData.push({pts:dpts,ys:dys,mmPts:mmPts,w:34,cat:'highway',
         name:'I- 20',lanes:5});
       roadSegsBuilt++;
@@ -7569,9 +7630,24 @@ function makeCar(x,z,yaw,color,drivable,kind){
   /* v1.35 SNAP-TO-FACE (Joshua 2026-10-11): parked cars snap to the rendered
      terrain — was heightAt (analytic center-only), which floats cars ~2u on
      slopes. Footprint ~4x2u with yaw. (Traffic cars get repositioned by the
-     traffic loop; the van's driveway +0.32 override still applies after.) */
+     traffic loop; the van's driveway +0.32 override still applies after.)
+     v1.62 FIX (2026-10-12 Joshua: "vehicles stuck in concrete"): was
+     snapToGround (terrain ONLY). Cars spawning on raised sidewalks or
+     driveway aprons sat at terrain height -> sunk into the concrete.
+     Now uses groundRefY (max of terrain/road/sidewalk) so cars sit ON
+     whatever surface they're actually parked on.
+     v1.63 MATERIAL SURFACE (Joshua 2026-10-12): "this should be a material
+     thing for the cars." Vertical placement now comes from the material
+     system (surfaceYAt: material -> rest surface) instead of explicit
+     height math in spawn code. A car on a road, sidewalk, driveway, or
+     grass all goes through the one material function — uniform. Falls
+     back to groundRefY when the material module hasn't loaded yet
+     (deferred data-dsrc script). */
   var _cy=0;
-  try{ _cy=snapToGround(x,z,4,2,yaw); }catch(e){ try{_cy=heightAt(x,z);}catch(e2){} }
+  try{
+    var _sy=(typeof surfaceYAt==='function')?surfaceYAt(x,z):null;
+    _cy=(_sy===null||_sy===undefined)?groundRefY(x,z):_sy;
+  }catch(e){ try{_cy=snapToGround(x,z,4,2,yaw);}catch(e2){ try{_cy=heightAt(x,z);}catch(e3){} } }
   mesh.position.set(x, _cy, z); mesh.rotation.y=yaw;
   scene.add(mesh);
   var st={ x:x, z:z, yaw:yaw, speed:0, wheelA:0, mesh:mesh, driving:false,
@@ -7652,7 +7728,12 @@ spawnPlayerVan();  // first attempt — may fail if vehicle_meshes.js isn't here
   var _tries=0;
   var _timer=setInterval(function(){
     _tries++;
-    if (_vanSpawned || _tries>100){ clearInterval(_timer); return; }
+    /* v1.62 FIX (2026-10-12 Joshua: van still missing after update): the old
+       loop gave up after 100 tries (10s). On slow devices vehicle_meshes.js
+       can take longer than that to download+parse — the loop quit before the
+       meshes arrived and the van never spawned. Now retries indefinitely
+       until success (clears on spawn). The 100ms poll is cheap. */
+    if (_vanSpawned){ clearInterval(_timer); return; }
     if (window.__deferredDone || typeof safariMesh==='function' || typeof sedanMesh==='function'){
       if (spawnPlayerVan()) clearInterval(_timer);
     }
@@ -7698,6 +7779,17 @@ function spawnParkedCars(){
       var edge;
       try{ edge=distToRoadEdge(px,pz); }catch(e){ edge=1e9; }
       if (edge<3) continue;  // on/near the road — not a driveway
+      /* v1.62 FIX (2026-10-12 Joshua: "vehicles stuck in concrete"): skip
+         spots on raised sidewalks — the old code picked the spot closest to
+         the road, which is often ON the sidewalk. A sidewalk surface above
+         the terrain means this isn't a driveway. */
+      try{
+        var swy=sidewalkSurfaceY(px,pz);
+        if (swy!==null){
+          var ty=heightAt(px,pz);
+          if (swy>ty+0.1) continue;  // raised sidewalk — not a parking spot
+        }
+      }catch(e){}
       if (edge<bestEdge){ bestEdge=edge; spot={x:px,z:pz,ang:ang}; }
     }
     return spot;
@@ -7743,7 +7835,10 @@ spawnParkedCars();  // first attempt — may fail if vehicle_meshes.js isn't her
   var _tries=0;
   var _timer=setInterval(function(){
     _tries++;
-    if (_parkedCarsSpawned || _tries>100){ clearInterval(_timer); return; }
+    /* v1.62 FIX (2026-10-12): same as van — the old 100-try (10s) limit could
+       expire on slow devices before vehicle_meshes.js arrived. Retry
+       indefinitely until the parked cars spawn. */
+    if (_parkedCarsSpawned){ clearInterval(_timer); return; }
     if (window.__deferredDone || typeof safariMesh==='function' || typeof sedanMesh==='function'){
       if (spawnParkedCars()) clearInterval(_timer);
     }
@@ -7819,10 +7914,15 @@ function nearestUsableCar(){
 
 /* ================= INPUT ================= */
 var keys={};
+window.keys=keys;  // v1.64 FIX (2026-10-12 Joshua: "can't drive"): this block
+                   // runs via indirect eval with "use strict", so var does NOT
+                   // create globals. sim_core.js Input.sample() reads
+                   // window.keys/window.drive — without this, input is dead.
 var joy={ active:false, id:null, sx:0, sy:0, dx:0, dy:0 };
 var look={ yawOff:0, dragging:false, id:null, lx:0, ly:0 };
 var camSnapT=0;  // v0.6: authoritative behind-car snap timer (seconds)
 var drive={ gas:false, brake:false, hb:false, left:false, right:false };
+window.drive=drive;  // v1.64 FIX: same — expose for Input.sample()
 
 var joyBase=document.getElementById('joy-base'), joyKnob=document.getElementById('joy-knob');
 var actionBtn=document.getElementById('action-btn'), modeTag=document.getElementById('mode-tag');
@@ -9688,9 +9788,16 @@ function updateCar(dt){
     var isVan=(car.kind==='safari');
     var L=isVan?2.2:1.9, Wd=isVan?0.95:0.85;   // half wheelbase / half track
     function wg(ax,az){ // ground under a point (ax,az): ax along heading, az right
-      // v1.0: road surface on corridors, terrain elsewhere — the car rides
-      // the ROAD, never clips through it
+      // v1.63 MATERIAL SURFACE (Joshua 2026-10-12): "this should be a
+      // material thing for the cars." The material at each sample point
+      // decides the rest surface (road/sidewalk/terrain) — uniform for
+      // every surface type, no explicit height math here. Falls back to
+      // groundRefY if the material module isn't loaded yet.
       var px=car.x+sy*ax-cy2*az, pz=car.z+cy2*ax+sy*az;
+      try{
+        var _sy=(typeof surfaceYAt==='function')?surfaceYAt(px,pz):null;
+        if (_sy!==null&&_sy!==undefined) return _sy;
+      }catch(e){}
       return groundRefY(px,pz);
     }
     var hC=wg(0,0);
@@ -9709,8 +9816,14 @@ function updateCar(dt){
   car.mesh.rotation.y=car.yaw;
   // v0.5 SAFETY NET: the car can never fall through the world either
   // v1.0: net uses the same road-aware ground reference
+  // v1.63 MATERIAL SURFACE (Joshua 2026-10-12): safety net uses the
+  // material rest surface, falling back to groundRefY.
   if (!car.sinking && !car.sunk){
-    var _cg=groundRefY(car.x,car.z);
+    var _cg;
+    try{
+      var _cs=(typeof surfaceYAt==='function')?surfaceYAt(car.x,car.z):null;
+      _cg=(_cs===null||_cs===undefined)?groundRefY(car.x,car.z):_cs;
+    }catch(e){ _cg=car.mesh.position.y; }
     if (car.mesh.position.y < _cg-2.5){
       car.mesh.position.y=_cg+0.1;
       try{Report.note('snapback',{who:'car',x:Math.round(car.x),z:Math.round(car.z)});}catch(e){}
