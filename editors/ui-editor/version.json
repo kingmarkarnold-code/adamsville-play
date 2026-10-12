@@ -1,6 +1,6 @@
 {
-  "version": "1.7.5",
-  "changelog": "Layout tab: the Size preset dropdown (Phone portrait / Phone landscape / Tablet) now works for the Application (mobile) view too \u2014 defaults to Phone landscape (844x390) since the game plays in landscape. Collapsing the side panels now gives the freed space to the canvas.",
+  "version": "1.7.6",
+  "changelog": "Preview now mirrors the game exactly: UI coordinates are 1280x800 canonical pixels, scaled uniformly then anchored \u2014 Phone landscape (844x390) shows what the game renders. Drag/resize store canonical coords.",
   "files": [
     {
       "path": "about.py",
@@ -10,12 +10,12 @@
     {
       "path": "app.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/ui-editor/app.py",
-      "sha256": "7aa79b9fb4e79115a7c9d0f9506e52d2241f7c9d0af37a5ba58ab0710a22e223"
+      "sha256": "b58e25188eff342912ab2903b14e257ee1fcd863bb0fb30dbdffe3b05a55ba41"
     },
     {
       "path": "data.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/ui-editor/data.py",
-      "sha256": "136f10d6beec667cdd604cbae31fb3b01b92f7ce0790d74e1b5e0e187972913f"
+      "sha256": "a7feaa6f20da9c0609b40159c0e07d04d0d7977ceb8465ec28301ffad6d25ff7"
     },
     {
       "path": "github_sync.py",
@@ -25,7 +25,7 @@
     {
       "path": "layout.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/ui-editor/layout.py",
-      "sha256": "3fab925849a4a8f38b87384b64ec84d803174f23b0256d4e98e3c6dec2b46906"
+      "sha256": "027e6f08bc461fe14d40d9a649d96cf5711b31e9b99a0d54263872dfe0bba85f"
     },
     {
       "path": "menus.py",
