@@ -1,0 +1,720 @@
+#!/usr/bin/env python3
+"""
+Adamsville UI Resource Editor (Native) — Data management module.
+
+Downloads the game's UI resource list (ui-manifest.json) from GitHub,
+caches it locally, and tracks Joshua's add/remove changes for pushing
+back to the game repo.
+
+Pure Python + GTK3. NO webview, NO HTML, NO JavaScript.
+
+Joshua's rule: all code commented.
+"""
+
+import base64
+import json
+import os
+import shutil
+import sys
+import urllib.request
+import urllib.error
+from pathlib import Path
+
+# Shared suite module (Joshua 2026-10-11): common utilities (GitHub push,
+# token storage, shared file cache) live in one place so all suite apps
+# use the same code. Falls back to local implementations if not present.
+# Shared suite module locations: system-wide (installed by .deb) first,
+# then per-user (for development/testing). Falls back to None if neither
+# exists, in which case the app uses its local implementations.
+for _suite_path in ("/usr/share/adamsville-suite",
+                    str(Path.home() / ".local" / "share" / "adamsville-suite")):
+    if _suite_path not in sys.path:
+        sys.path.insert(0, _suite_path)
+try:
+    import adamsville_suite as suite
+except ImportError:
+    suite = None  # fall back to local implementations
+
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+# Game repo and the UI manifest inside it (list of UI files + sizes + hashes)
+REPO = "kingmarkarnold-code/adamsville-play"
+MANIFEST_PATH = "detailed/ui-manifest.json"
+MANIFEST_URL = f"https://raw.githubusercontent.com/{REPO}/main/{MANIFEST_PATH}"
+API_URL = f"https://api.github.com/repos/{REPO}/contents/{MANIFEST_PATH}"
+# Individual resource files download from this prefix (for image previews)
+RAW_PREFIX = f"https://raw.githubusercontent.com/{REPO}/main/detailed/"
+
+# Local data directory (XDG-compliant)
+DATA_DIR = Path.home() / ".local" / "share" / "adamsville-ui-editor-native"
+MANIFEST_FILE = DATA_DIR / "ui-manifest.json"
+VERSION_FILE = DATA_DIR / "version.json"
+WINDOW_FILE = DATA_DIR / "window.json"
+# Joshua's pending add/remove changes (not yet pushed to GitHub)
+CHANGES_FILE = DATA_DIR / "pending_changes.json"
+# Files Joshua added from local disk wait here until pushed
+STAGING_DIR = DATA_DIR / "staging"
+# Lazily downloaded resource files (image previews only)
+PREVIEW_DIR = DATA_DIR / "previews"
+
+USER_AGENT = "adamsville-ui-editor-native"
+
+# Extensions we can show a thumbnail for
+IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
+# Extensions treated as readable text for the preview pane
+TEXT_EXTS = {".js", ".json", ".html", ".css", ".txt", ".md", ".xml", ".svg"}
+
+
+# ---------------------------------------------------------------------------
+# Resource typing helpers
+# ---------------------------------------------------------------------------
+
+def resource_type(name):
+    """
+    Human-readable type label from a file extension.
+    Examples: "app.js" -> "JavaScript", "icon.png" -> "Image".
+    """
+    ext = Path(name).suffix.lower()
+    if ext in IMAGE_EXTS:
+        return "Image"
+    if ext == ".js":
+        return "JavaScript"
+    if ext == ".json":
+        return "JSON data"
+    if ext in (".mp3", ".ogg", ".wav", ".m4a"):
+        return "Audio"
+    if ext in (".mp4", ".webm"):
+        return "Video"
+    if ext == ".bin":
+        return "Binary data"
+    if ext in TEXT_EXTS:
+        return "Text"
+    if ext == "":
+        return "File"
+    return ext[1:].upper() + " file"
+
+
+def is_image(name):
+    """True if this resource can be previewed as a thumbnail image."""
+    return Path(name).suffix.lower() in IMAGE_EXTS
+
+
+def is_text(name):
+    """True if this resource can be previewed as text."""
+    return Path(name).suffix.lower() in TEXT_EXTS
+
+
+def is_visual(name):
+    """
+    True if this resource is a *visual* UI resource worth showing when
+    Joshua enables the "Visual only" filter: images, JavaScript UI
+    files, and JSON layout files. Everything else (background scripts,
+    raw data, audio, binaries) is hidden by that filter.
+    """
+    ext = Path(name).suffix.lower()
+    if ext in IMAGE_EXTS or ext == ".svg":
+        return True
+    if ext in (".js", ".json"):
+        return True
+    return False
+
+
+def stage_content(name, data_bytes):
+    """
+    Stage raw bytes as a file (used for content Joshua edited in the
+    visual editors). Same bookkeeping as stage_added_file: the file
+    lands in STAGING_DIR and is marked "added" so the next push
+    overwrites the same-named game file. Any pending removal of the
+    same name is cancelled (editing wins over removing).
+    Returns the staged file name, or None on failure.
+    """
+    ensure_data_dir()
+    # Keep the staging name safe: plain file name only, no directories.
+    # (Same convention as stage_added_file.)
+    safe = Path(name).name
+    try:
+        (STAGING_DIR / safe).write_bytes(data_bytes)
+    except Exception as e:
+        print(f"Could not stage edited content for {name}: {e}")
+        return None
+    changes = load_changes()
+    if safe not in changes["added"]:
+        changes["added"].append(safe)
+    if safe in changes["removed"]:
+        changes["removed"].remove(safe)  # editing cancels a pending removal
+    save_changes(changes)
+    return safe
+
+
+# ---------------------------------------------------------------------------
+# UI layout editor (visual) — ui_layout.json
+# ---------------------------------------------------------------------------
+# Joshua's visual UI layout editor works on ui_layout.json: every HUD
+# element's id, type, anchor, offsets, size, and visibility. The game
+# fetches the same file at startup (see ui_layout_apply.js in the game
+# repo) so what Joshua arranges here is what players see.
+
+# Canonical reference frame the x/y offsets were authored against.
+CANON_W, CANON_H = 1280, 800
+
+LAYOUT_URL = RAW_PREFIX + "ui_layout.json"
+LAYOUT_FILE = DATA_DIR / "ui_layout.json"
+# Shipped fallback when GitHub is unreachable on first run.
+DEFAULT_LAYOUT_FILE = Path(__file__).parent / "ui_layout_default.json"
+
+# View modes Joshua can preview: (key, label, width, height).
+# "web_mobile" expands into size presets in the UI.
+LAYOUT_VIEWS = [
+    ("app", "Application (mobile)", 390, 844),
+    ("web_desktop", "Web desktop", 1280, 800),
+    ("web_mobile", "Web mobile", 390, 844),  # presets override size
+]
+WEB_MOBILE_PRESETS = [
+    ("Phone portrait", 390, 844),
+    ("Phone landscape", 844, 390),
+    ("Tablet", 820, 1180),
+]
+
+ANCHORS = ["tl", "tr", "bl", "br", "tc", "bc", "c"]
+ANCHOR_LABELS = {
+    "tl": "top-left", "tr": "top-right", "bl": "bottom-left",
+    "br": "bottom-right", "tc": "top-center", "bc": "bottom-center",
+    "c": "center",
+}
+
+
+def anchor_to_left_top(el, vw, vh):
+    """
+    Convert an element's (anchor, x, y, width, height) into concrete
+    left/top pixel coordinates for a viewport of vw x vh.
+    Mirrors ui_layout_apply.js in the game repo — keep them in sync.
+    """
+    w, h = el.get("width", 50), el.get("height", 30)
+    x, y, a = el.get("x", 0), el.get("y", 0), el.get("anchor", "tl")
+    if a == "tr":
+        return vw - x - w, y
+    if a == "bl":
+        return x, vh - y - h
+    if a == "br":
+        return vw - x - w, vh - y - h
+    if a == "tc":
+        return (vw - w) / 2 + x, y
+    if a == "bc":
+        return (vw - w) / 2 + x, vh - y - h
+    if a == "c":
+        return (vw - w) / 2 + x, (vh - h) / 2 + y
+    return x, y  # "tl"
+
+
+def left_top_to_xy(el, left, top, vw, vh):
+    """
+    Inverse of anchor_to_left_top: given a dragged left/top position,
+    recompute the x/y offsets so the element keeps its anchor.
+    Returns (x, y) rounded to whole pixels.
+    """
+    w, h = el.get("width", 50), el.get("height", 30)
+    a = el.get("anchor", "tl")
+    if a == "tr":
+        return round(vw - left - w), round(top)
+    if a == "bl":
+        return round(left), round(vh - top - h)
+    if a == "br":
+        return round(vw - left - w), round(vh - top - h)
+    if a == "tc":
+        return round(left - (vw - w) / 2), round(top)
+    if a == "bc":
+        return round(left - (vw - w) / 2), round(vh - top - h)
+    if a == "c":
+        return round(left - (vw - w) / 2), round(top - (vh - h) / 2)
+    return round(left), round(top)  # "tl"
+
+
+def download_ui_layout():
+    """
+    Download ui_layout.json from the game repo into the local cache.
+    Returns True on success, False on failure (offline / missing).
+    Atomic write so a failed download never corrupts the cache.
+    """
+    ensure_data_dir()
+    try:
+        req = urllib.request.Request(LAYOUT_URL,
+                                     headers={"User-Agent": USER_AGENT})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = resp.read()
+        # Must be valid JSON with an "elements" list, else ignore it.
+        doc = json.loads(data.decode("utf-8"))
+        if not isinstance(doc.get("elements"), list):
+            return False
+        tmp_path = LAYOUT_FILE.with_suffix(".tmp")
+        tmp_path.write_bytes(data)
+        tmp_path.rename(LAYOUT_FILE)
+        return True
+    except Exception as e:
+        print(f"UI layout download failed: {e}")
+        return False
+
+
+def load_ui_layout():
+    """
+    Load the UI layout: local cache first, shipped default as fallback.
+    Returns the parsed dict, or None if nothing is available.
+    """
+    for path in (LAYOUT_FILE, DEFAULT_LAYOUT_FILE):
+        try:
+            if path.exists():
+                doc = json.loads(path.read_text())
+                if isinstance(doc.get("elements"), list):
+                    return doc
+        except Exception:
+            continue
+    return None
+
+
+def format_size(num_bytes):
+    """Format a byte count as '1.4 MB', '255 KB', etc."""
+    n = float(num_bytes or 0)
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024.0 or unit == "GB":
+            return f"{n:.1f} {unit}" if unit != "B" else f"{int(n)} B"
+        n /= 1024.0
+    return f"{n:.1f} GB"
+
+
+# ---------------------------------------------------------------------------
+# Data directory setup
+# ---------------------------------------------------------------------------
+
+def ensure_data_dir():
+    """Create the local data directory (and subdirs) if missing."""
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    STAGING_DIR.mkdir(parents=True, exist_ok=True)
+    PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# GitHub download and version checking
+# ---------------------------------------------------------------------------
+
+def get_remote_sha():
+    """
+    Get the current blob SHA of ui-manifest.json on GitHub.
+    Returns None if offline or on error (non-blocking by design).
+    """
+    try:
+        req = urllib.request.Request(
+            API_URL,
+            headers={"User-Agent": USER_AGENT,
+                     "Accept": "application/vnd.github+json"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
+            return data.get("sha")
+    except Exception:
+        return None  # offline or API error — caller handles None
+
+
+def get_local_sha():
+    """Read the saved SHA of the locally cached manifest."""
+    try:
+        with open(VERSION_FILE) as f:
+            return json.load(f).get("sha")
+    except Exception:
+        return None
+
+
+def save_local_sha(sha):
+    """Save the SHA after a successful download."""
+    ensure_data_dir()
+    with open(VERSION_FILE, "w") as f:
+        json.dump({"sha": sha, "source": "github"}, f)
+
+
+def needs_download():
+    """
+    Check if we need to (re)download ui-manifest.json.
+    Returns (needed: bool, reason: str).
+    """
+    if not MANIFEST_FILE.exists():
+        return True, "UI resource list not found locally. Download from GitHub?"
+    local_sha = get_local_sha()
+    if not local_sha:
+        return True, "Local version unknown. Re-download from GitHub?"
+    remote_sha = get_remote_sha()
+    if remote_sha is None:
+        return False, "Offline — using local copy."
+    if remote_sha != local_sha:
+        return True, "A newer version is available on GitHub. Download?"
+    return False, "Local copy is up to date."
+
+
+def download_manifest(progress_callback=None):
+    """
+    Download ui-manifest.json from GitHub into the local cache.
+    Returns True on success, False on failure.
+    Uses atomic write (temp file -> rename) to avoid partial files.
+    """
+    ensure_data_dir()
+    try:
+        req = urllib.request.Request(MANIFEST_URL,
+                                     headers={"User-Agent": USER_AGENT})
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            total = int(resp.headers.get("Content-Length", 0))
+            downloaded = 0
+            chunks = []
+            while True:
+                chunk = resp.read(65536)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                downloaded += len(chunk)
+                if progress_callback:
+                    progress_callback(downloaded, total)
+        # Atomic write
+        tmp_path = MANIFEST_FILE.with_suffix(".tmp")
+        with open(tmp_path, "wb") as f:
+            for chunk in chunks:
+                f.write(chunk)
+        tmp_path.rename(MANIFEST_FILE)
+        remote_sha = get_remote_sha()
+        if remote_sha:
+            save_local_sha(remote_sha)
+        return True
+    except Exception as e:
+        print(f"Manifest download failed: {e}")
+        return False
+
+
+def download_resource(name, progress_callback=None):
+    """
+    Lazily download one resource file (used for image previews).
+    Returns the local Path on success, None on failure.
+    Cached in PREVIEW_DIR so it is only fetched once.
+    """
+    ensure_data_dir()
+    dest = PREVIEW_DIR / name
+    if dest.exists():
+        return dest  # already cached
+    try:
+        req = urllib.request.Request(RAW_PREFIX + name,
+                                     headers={"User-Agent": USER_AGENT})
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            data = resp.read()
+        tmp_path = dest.with_suffix(".tmp")
+        tmp_path.write_bytes(data)
+        tmp_path.rename(dest)
+        return dest
+    except Exception as e:
+        print(f"Resource download failed ({name}): {e}")
+        return None
+
+
+def load_manifest():
+    """
+    Load the cached UI manifest.
+    Returns a list of {"name": str, "size": int} dicts, or None if missing.
+    """
+    try:
+        with open(MANIFEST_FILE) as f:
+            doc = json.load(f)
+        files = doc.get("files", [])
+        return [{"name": e.get("name", "?"),
+                 "size": int(e.get("size", 0))} for e in files]
+    except Exception:
+        return None
+
+
+def read_text_preview(local_path, max_chars=2000):
+    """
+    Read the first max_chars of a text file for the preview pane.
+    Returns the text, or an error note if unreadable.
+    """
+    try:
+        with open(local_path, "r", errors="replace") as f:
+            text = f.read(max_chars + 1)
+        if len(text) > max_chars:
+            text = text[:max_chars] + "\n…(truncated)"
+        return text
+    except Exception as e:
+        return f"(could not read file: {e})"
+
+
+# ---------------------------------------------------------------------------
+# Pending add/remove change tracking
+# ---------------------------------------------------------------------------
+# Joshua's changes are tracked locally until he pushes them:
+#   {"added": ["file1.png", ...], "removed": ["old.js", ...]}
+# Added files are copied into STAGING_DIR. Removed names refer to manifest
+# entries. export_payload() builds the push package.
+
+def load_changes():
+    """Read pending changes from disk. Returns {"added": [], "removed": []}."""
+    try:
+        if CHANGES_FILE.exists():
+            doc = json.loads(CHANGES_FILE.read_text())
+            return {"added": list(doc.get("added", [])),
+                    "removed": list(doc.get("removed", []))}
+    except Exception:
+        pass  # corrupt file — start fresh rather than crash
+    return {"added": [], "removed": []}
+
+
+def save_changes(changes):
+    """Persist pending changes to disk."""
+    ensure_data_dir()
+    CHANGES_FILE.write_text(json.dumps(changes, indent=2))
+
+
+def stage_added_file(src_path):
+    """
+    Copy a local file into the staging dir and mark it as added.
+    If a manifest file with the same name is marked removed, unmark it
+    (re-adding wins over removing).
+    Returns the staged file name, or None on failure.
+    """
+    ensure_data_dir()
+    name = Path(src_path).name
+    # Keep the staging name safe: plain file name only, no directories
+    dest = STAGING_DIR / name
+    try:
+        shutil.copy2(src_path, dest)
+    except Exception as e:
+        print(f"Could not stage {src_path}: {e}")
+        return None
+    changes = load_changes()
+    if name not in changes["added"]:
+        changes["added"].append(name)
+    if name in changes["removed"]:
+        changes["removed"].remove(name)  # re-adding cancels a pending removal
+    save_changes(changes)
+    return name
+
+
+def mark_removed(name):
+    """
+    Mark a manifest resource for removal (pending push).
+    If the file was staged as a brand-new add (not in the manifest),
+    unstage it instead (nothing to push).
+    If it was a staged *edit* of an existing game file (Joshua's pencil
+    edit, 2026-10-11), drop the edit AND mark it removed — removal wins.
+    """
+    changes = load_changes()
+    staged = STAGING_DIR / name
+    in_manifest = any(e.get("name") == name
+                      for e in (load_manifest() or []))
+    if staged.exists() and name in changes["added"]:
+        # Drop the staged copy either way.
+        try:
+            staged.unlink()
+        except Exception:
+            pass
+        changes["added"].remove(name)
+        if in_manifest and name not in changes["removed"]:
+            # It was an edit of a real game file: removal still applies.
+            changes["removed"].append(name)
+    elif name not in changes["removed"]:
+        changes["removed"].append(name)
+    save_changes(changes)
+
+
+def undo_pending_for(name):
+    """
+    Cancel a pending change for one resource (un-remove or un-add).
+    Returns True if something was cancelled.
+    """
+    changes = load_changes()
+    changed = False
+    if name in changes["removed"]:
+        changes["removed"].remove(name)
+        changed = True
+    if name in changes["added"]:
+        changes["added"].remove(name)
+        changed = True
+        try:
+            (STAGING_DIR / name).unlink()
+        except Exception:
+            pass
+    if changed:
+        save_changes(changes)
+    return changed
+
+
+def pending_count():
+    """Total number of pending add/remove changes."""
+    c = load_changes()
+    return len(c["added"]) + len(c["removed"])
+
+
+def export_payload():
+    """
+    Build the push package for GitHub.
+
+    Returns a dict:
+      {"added": [{"name":..., "size":..., "data_base64":...}, ...],
+       "removed": ["name", ...],
+       "target_repo": ..., "target_dir": "detailed"}
+    Added files are base64-encoded so binary images survive the JSON trip.
+    Returns None if there is nothing to push.
+    """
+    changes = load_changes()
+    if not changes["added"] and not changes["removed"]:
+        return None
+    added = []
+    for name in changes["added"]:
+        p = STAGING_DIR / name
+        try:
+            raw = p.read_bytes()
+        except Exception:
+            continue  # staged file vanished — skip it
+        added.append({"name": name,
+                      "size": len(raw),
+                      "data_base64": base64.b64encode(raw).decode("ascii")})
+    return {"added": added,
+            "removed": list(changes["removed"]),
+            "target_repo": REPO,
+            "target_dir": "detailed"}
+
+
+def clear_changes_after_push():
+    """
+    Clear local pending changes after Joshua confirms the push was applied.
+    Removes staged files and the changes file.
+    """
+    try:
+        if STAGING_DIR.exists():
+            shutil.rmtree(STAGING_DIR)
+        STAGING_DIR.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+    try:
+        if CHANGES_FILE.exists():
+            CHANGES_FILE.unlink()
+    except Exception:
+        pass
+
+
+# ---------------------------------------------------------------------------
+# Window state persistence
+# ---------------------------------------------------------------------------
+
+def save_window_state(x, y, width, height, maximized):
+    """Save window geometry for restore on next launch."""
+    ensure_data_dir()
+    with open(WINDOW_FILE, "w") as f:
+        json.dump({"x": x, "y": y, "width": width,
+                   "height": height, "maximized": maximized}, f)
+
+
+def load_window_state():
+    """Load saved window geometry. Returns None if not saved."""
+    try:
+        with open(WINDOW_FILE) as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Menu editor (visual) — menu_layout.json
+# ---------------------------------------------------------------------------
+# Joshua's menu editor works on menu_layout.json: every game menu's title,
+# groups, items, labels, descriptions, and visibility. The game fetches the
+# same file at startup (see menu_layout_apply.js in the game repo) so what
+# Joshua arranges here is what players see.
+#
+# Document shape:
+#   {"menus": {menu_key: {"title", "description", "groups": [...],
+#                         "ungrouped": [...]}},
+#    "version": N}
+# Group shape:  {"name": str, "items": [item, ...]}
+# Item shape:   {"id", "label", "description", "action", "visible"}
+
+MENU_LAYOUT_URL = RAW_PREFIX + "menu_layout.json"
+MENU_LAYOUT_FILE = DATA_DIR / "menu_layout.json"
+
+
+def download_menu_layout():
+    """
+    Download menu_layout.json from the game repo into the local cache.
+    Returns True on success, False on failure (offline / missing).
+    Atomic write so a failed download never corrupts the cache.
+    """
+    ensure_data_dir()
+    try:
+        req = urllib.request.Request(MENU_LAYOUT_URL,
+                                     headers={"User-Agent": USER_AGENT})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = resp.read()
+        # Must be valid JSON with a "menus" dict, else ignore it.
+        doc = json.loads(data.decode("utf-8"))
+        if not isinstance(doc.get("menus"), dict):
+            return False
+        tmp_path = MENU_LAYOUT_FILE.with_suffix(".tmp")
+        tmp_path.write_bytes(data)
+        tmp_path.rename(MENU_LAYOUT_FILE)
+        return True
+    except Exception as e:
+        print(f"Menu layout download failed: {e}")
+        return False
+
+
+def load_menu_layout():
+    """
+    Load the menu layout: local cache first, None if unavailable.
+    Returns the parsed dict, or None if nothing is available.
+    Unlike ui_layout.json there is no shipped default — the menus are
+    extracted from the game code on first download.
+    """
+    try:
+        if MENU_LAYOUT_FILE.exists():
+            doc = json.loads(MENU_LAYOUT_FILE.read_text())
+            if isinstance(doc.get("menus"), dict):
+                return doc
+    except Exception:
+        pass
+    return None
+
+
+def validate_menu_doc(doc):
+    """
+    Ensure a menu document has the expected shape, backfilling missing
+    keys so the editor never crashes on a partial file.
+    Returns the (possibly fixed) doc.
+    """
+    if not isinstance(doc, dict):
+        return {"menus": {}, "version": 1}
+    if not isinstance(doc.get("menus"), dict):
+        doc["menus"] = {}
+    for _key, menu in doc["menus"].items():
+        if not isinstance(menu, dict):
+            continue
+        menu.setdefault("title", "")
+        menu.setdefault("description", "")
+        if not isinstance(menu.get("groups"), list):
+            menu["groups"] = []
+        if not isinstance(menu.get("ungrouped"), list):
+            menu["ungrouped"] = []
+        for grp in menu["groups"]:
+            if not isinstance(grp, dict):
+                continue
+            grp.setdefault("name", "Group")
+            if not isinstance(grp.get("items"), list):
+                grp["items"] = []
+            for item in grp["items"]:
+                _backfill_menu_item(item)
+        for item in menu["ungrouped"]:
+            _backfill_menu_item(item)
+    return doc
+
+
+def _backfill_menu_item(item):
+    """Fill missing keys on a menu item dict so the editor is safe."""
+    if not isinstance(item, dict):
+        return
+    item.setdefault("id", "")
+    item.setdefault("label", "")
+    item.setdefault("description", "")
+    item.setdefault("action", "")
+    if "visible" not in item:
+        item["visible"] = True
