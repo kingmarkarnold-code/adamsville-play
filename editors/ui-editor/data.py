@@ -186,50 +186,76 @@ ANCHOR_LABELS = {
 }
 
 
+def canon_scale(vw, vh):
+    # v1.7.6 CANONICAL FRAME FIX (2026-10-12): uniform scale factor from
+    # the 1280x800 canonical frame to a vw x vh viewport. Mirrors
+    # ui_layout_apply.js in the game repo — keep them in sync.
+    return min(vw / CANON_W, vh / CANON_H)
+
+
 def anchor_to_left_top(el, vw, vh):
     """
     Convert an element's (anchor, x, y, width, height) into concrete
     left/top pixel coordinates for a viewport of vw x vh.
     Mirrors ui_layout_apply.js in the game repo — keep them in sync.
+
+    v1.7.6: element coordinates are 1280x800 CANONICAL pixels (the frame
+    the game renders from). They are scaled uniformly by
+    s = min(vw/1280, vh/800), then anchored to the real viewport —
+    exactly like the game. Previously the editor treated them as raw
+    view-frame pixels, so the preview did not match the game.
     """
     w, h = el.get("width", 50), el.get("height", 30)
     x, y, a = el.get("x", 0), el.get("y", 0), el.get("anchor", "tl")
+    s = canon_scale(vw, vh)
+    sw, sh, ox, oy = w * s, h * s, x * s, y * s
     if a == "tr":
-        return vw - x - w, y
+        return vw - ox - sw, oy
     if a == "bl":
-        return x, vh - y - h
+        return ox, vh - oy - sh
     if a == "br":
-        return vw - x - w, vh - y - h
+        return vw - ox - sw, vh - oy - sh
     if a == "tc":
-        return (vw - w) / 2 + x, y
+        return vw / 2 + ox - sw / 2, oy
     if a == "bc":
-        return (vw - w) / 2 + x, vh - y - h
+        return vw / 2 + ox - sw / 2, vh - oy - sh
     if a == "c":
-        return (vw - w) / 2 + x, (vh - h) / 2 + y
-    return x, y  # "tl"
+        return vw / 2 + ox - sw / 2, vh / 2 + oy - sh / 2
+    return ox, oy  # "tl"
+
+
+def element_size_in_view(el, vw, vh):
+    # v1.7.6: scaled (width, height) in view pixels, mirroring the
+    # game's sw/sh. Callers must use this instead of the raw stored
+    # width/height when drawing or hit-testing in a viewport.
+    s = canon_scale(vw, vh)
+    return el.get("width", 50) * s, el.get("height", 30) * s
 
 
 def left_top_to_xy(el, left, top, vw, vh):
     """
-    Inverse of anchor_to_left_top: given a dragged left/top position,
-    recompute the x/y offsets so the element keeps its anchor.
-    Returns (x, y) rounded to whole pixels.
+    Inverse of anchor_to_left_top: given a dragged left/top position
+    (in view pixels), recompute the canonical x/y offsets so the
+    element keeps its anchor. Returns (x, y) rounded to whole
+    canonical pixels. Mirrors ui_layout_apply.js — keep in sync.
     """
-    w, h = el.get("width", 50), el.get("height", 30)
+    s = canon_scale(vw, vh)
+    sw = el.get("width", 50) * s
+    sh = el.get("height", 30) * s
     a = el.get("anchor", "tl")
     if a == "tr":
-        return round(vw - left - w), round(top)
+        return round((vw - left - sw) / s), round(top / s)
     if a == "bl":
-        return round(left), round(vh - top - h)
+        return round(left / s), round((vh - top - sh) / s)
     if a == "br":
-        return round(vw - left - w), round(vh - top - h)
+        return round((vw - left - sw) / s), round((vh - top - sh) / s)
     if a == "tc":
-        return round(left - (vw - w) / 2), round(top)
+        return round((left - (vw - sw) / 2) / s), round(top / s)
     if a == "bc":
-        return round(left - (vw - w) / 2), round(vh - top - h)
+        return round((left - (vw - sw) / 2) / s), round((vh - top - sh) / s)
     if a == "c":
-        return round(left - (vw - w) / 2), round(top - (vh - h) / 2)
-    return round(left), round(top)  # "tl"
+        return round((left - (vw - sw) / 2) / s), round((top - (vh - sh) / 2) / s)
+    return round(left / s), round(top / s)  # "tl"
 
 
 def download_ui_layout():
