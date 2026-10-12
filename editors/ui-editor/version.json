@@ -1,6 +1,6 @@
 {
-  "version": "1.7.2",
-  "changelog": "Help -> Check for Updates: update the app in place without reinstalling the .deb.",
+  "version": "1.7.3",
+  "changelog": "Startup hardening \u2014 the editor now opens even if updater.py is missing or broken; crash log written to ~/.cache/adamsville-ui-editor-native/crash.log for diagnosis.",
   "files": [
     {
       "path": "about.py",
@@ -10,7 +10,7 @@
     {
       "path": "app.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/ui-editor/app.py",
-      "sha256": "546b62967eb818c5d51615740a1130ba2639433bdbee1ed0a2072bd2ceda6c9a"
+      "sha256": "e47270c23f8348f3ba63e38299894a98c62cd0626e045959cb0a56bebe7c06be"
     },
     {
       "path": "data.py",
