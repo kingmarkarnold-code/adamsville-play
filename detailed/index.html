@@ -5411,8 +5411,10 @@ var HOUSE_535 = {
    interpolates between the two floors; the bottom is at the south end. */
 function heroHouseFloorY(){
   var gy0 = heightAt(heroHouse.cx, heroHouse.cz);
-  var f0 = gy0 - HOUSE_535.bsmtD + 0.25;   // basement floor
-  var f1 = gy0 + HOUSE_535.mainUp + 0.25;   // main floor
+  /* v1.66: use data-driven params (heroHouse.params) instead of hardcoded HOUSE_535. */
+  var _pp = heroHouse.params || HOUSE_535;
+  var f0 = gy0 - _pp.bsmtD + 0.25;   // basement floor
+  var f1 = gy0 + _pp.mainUp + 0.25;   // main floor
   var hx = heroHouse.cx, hz = heroHouse.cz;
   if (player.x >= hx+4.6 && player.x <= hx+5.8 &&
       player.z >= hz-2.5 && player.z <= hz+1.5){
@@ -5430,7 +5432,8 @@ function heroHouseFloorY(){
    floor sits 2.4u above grade, per the photo's elevated entry. */
 function heroPorchY(x, z){
   if (!heroHouse.cx && heroHouse.cx !== 0) return null;
-  var hx = heroHouse.cx, hz = heroHouse.cz, D = HOUSE_535.D;
+  /* v1.66: use data-driven params instead of hardcoded HOUSE_535. */
+  var hx = heroHouse.cx, hz = heroHouse.cz, D = (heroHouse.params || HOUSE_535).D;
   var mainY = heroHouse.mainY;
   if (mainY === undefined) return null;
   var pz0 = hz + D/2;   // porch starts at the south (front) wall
@@ -5445,16 +5448,62 @@ function heroPorchY(x, z){
   return null;
 }
 (function buildHeroHouse(){
-  var hx = HOME.x, hz = HOME.z, gy = heightAt(hx, hz);
-  var W = HOUSE_535.W, D = HOUSE_535.D;
-  var bsmtY = gy - HOUSE_535.bsmtD;    // basement floor
-  var mainY = gy + HOUSE_535.mainUp;   // main floor (top of foundation)
-  var topY  = mainY + HOUSE_535.wallH; // top of main walls (roof base)
-  var foundT = HOUSE_535.foundT, wallT = HOUSE_535.wallT;
-  var brick = HOUSE_535.brick, trim = HOUSE_535.trim;
-  var roofC = HOUSE_535.roofC, glassC = HOUSE_535.glassC;
+  /* v1.66 HERO DATA (2026-10-12 Joshua: "535 wasn't in the editor"):
+     The 535 Dollar Mill spec now lives in zones/adamsville/hero_buildings.json
+     (baked into game data per Joshua's standing rule — the building editor
+     lists it). Load parameters from there; fall back to the hardcoded
+     HOUSE_535/HOME if the JSON hasn't arrived yet. */
+  var _heroSpec = null;
+  try {
+    var _hb = window.HERO_BUILDINGS;
+    if (_hb && _hb.buildings && _hb.buildings.length){
+      for (var _hi = 0; _hi < _hb.buildings.length; _hi++){
+        if (_hb.buildings[_hi].id === 'hero-535-dollar-mill'){ _heroSpec = _hb.buildings[_hi]; break; }
+      }
+      if (!_heroSpec) _heroSpec = _hb.buildings[0];  // fallback: first entry
+    }
+  } catch(e){ _heroSpec = null; }
+  /* _hs(): hero spec accessor — data value if present, else hardcoded default. */
+  function _hs(path, def){
+    if (!_heroSpec) return def;
+    var parts = path.split('.'), v = _heroSpec;
+    for (var i = 0; i < parts.length; i++){ v = v ? v[parts[i]] : undefined; }
+    return (v !== undefined) ? v : def;
+  }
+  /* _hx(): parse a hex color string ("0xa05c42") to a number. */
+  function _hx(s, def){ try { return parseInt(s, 16); } catch(e){ return def; } }
+  var hx = _hs('x', HOME.x), hz = _hs('z', HOME.z), gy = heightAt(hx, hz);
+  var _dim = _heroSpec ? _heroSpec.dimensions : null;
+  var _col = _heroSpec ? _heroSpec.colors : null;
+  var _lvl = _heroSpec ? _heroSpec.levels : null;
+  /* Build a HOUSE_535-compatible params object from data (or hardcoded). */
+  var P535 = {
+    W: _dim ? _dim.W : HOUSE_535.W,
+    D: _dim ? _dim.D : HOUSE_535.D,
+    bsmtD: _lvl ? _lvl.bsmtD : HOUSE_535.bsmtD,
+    mainUp: _lvl ? _lvl.mainUp : HOUSE_535.mainUp,
+    wallH: _dim ? _dim.wallH : HOUSE_535.wallH,
+    foundT: _dim ? _dim.foundT : HOUSE_535.foundT,
+    wallT: _dim ? _dim.wallT : HOUSE_535.wallT,
+    roofRise: _dim ? _dim.roofRise : HOUSE_535.roofRise,
+    overhang: _dim ? _dim.overhang : HOUSE_535.overhang,
+    brick: _col ? _hx(_col.brick, HOUSE_535.brick) : HOUSE_535.brick,
+    foundC: _col ? _hx(_col.foundC, HOUSE_535.foundC) : HOUSE_535.foundC,
+    trim: _col ? _hx(_col.trim, HOUSE_535.trim) : HOUSE_535.trim,
+    roofC: _col ? _hx(_col.roofC, HOUSE_535.roofC) : HOUSE_535.roofC,
+    glassC: _col ? _hx(_col.glassC, HOUSE_535.glassC) : HOUSE_535.glassC
+  };
+  var W = P535.W, D = P535.D;
+  var bsmtY = gy - P535.bsmtD;    // basement floor
+  var mainY = gy + P535.mainUp;   // main floor (top of foundation)
+  var topY  = mainY + P535.wallH; // top of main walls (roof base)
+  var foundT = P535.foundT, wallT = P535.wallT;
+  var brick = P535.brick, trim = P535.trim;
+  var roofC = P535.roofC, glassC = P535.glassC;
   heroHouse.cx = hx; heroHouse.cz = hz; heroHouse.inside = false;
   heroHouse.bsmtY = bsmtY; heroHouse.mainY = mainY;
+  heroHouse.specId = _heroSpec ? _heroSpec.id : 'hardcoded-fallback';
+  heroHouse.params = P535;  // v1.66: store data-driven params for helper fns
 
   /* box(): one Lambert-shaded box in the scene. The workhorse for the whole
      house — walls, slabs, doors, windows, stairs, furniture. */
@@ -5465,7 +5514,7 @@ function heroPorchY(x, z){
   }
 
   var fH = mainY - bsmtY, fCy = bsmtY + fH/2;   // foundation wall height / center Y
-  var wH = HOUSE_535.wallH, wCy = mainY + wH/2; // main wall height / center Y
+  var wH = P535.wallH, wCy = mainY + wH/2; // main wall height / center Y
   var x0 = hx-W/2, x1 = hx+W/2, zN = hz-D/2, zS = hz+D/2;
   // floor-aware collider bands — basement walls only block the basement,
   // main walls only block the main level (so the stacked walls don't fight)
@@ -5644,7 +5693,7 @@ function heroPorchY(x, z){
      Four-sided pyramid, same pattern as the neighborhood ranchHouse() shells
      so 535 sits naturally among them. Ridge-free hip reads "ranch" at a glance. */
   (function hipRoof(){
-    var rise = HOUSE_535.roofRise, ov = HOUSE_535.overhang;
+    var rise = P535.roofRise, ov = P535.overhang;
     heroHouse.roofParts = [];
     var roof = new THREE.Mesh(
       new THREE.CylinderGeometry(0.01, 1, rise, 4, 1),
@@ -5727,8 +5776,8 @@ function heroPorchY(x, z){
       if (s[1]-s[0]<=0.01) return;
       var ax=x1+(x2-x1)*s[0], az=z1+(z2-z1)*s[0];
       var bx=x1+(x2-x1)*s[1], bz=z1+(z2-z1)*s[1];
-      box(Math.abs(bx-ax)||0.18, HOUSE_535.wallH-0.1, Math.abs(bz-az)||0.18,
-        inMat, (ax+bx)/2, floorY+(HOUSE_535.wallH-0.1)/2, (az+bz)/2);
+      box(Math.abs(bx-ax)||0.18, P535.wallH-0.1, Math.abs(bz-az)||0.18,
+        inMat, (ax+bx)/2, floorY+(P535.wallH-0.1)/2, (az+bz)/2);
       addSegCollider(ax,az,bx,bz,cy0,cy1);
     });
   }
@@ -5812,7 +5861,9 @@ function heroPorchY(x, z){
   scene.add(new THREE.Mesh(dg2, new THREE.MeshLambertMaterial({ color:0x9a9a9a })));
   // the van parks on the driveway in front of the garage
   // v1.65: rescaled (was 3124,3705 pre-rescale)
-  heroHouse.drivewayPark={ x:1935.5, z:6813.3 };
+  // v1.66: drivewayPark now comes from hero_buildings.json data if available.
+  var _dp = _hs('drivewayPark', null);
+  heroHouse.drivewayPark = _dp ? { x: _dp.x, z: _dp.z } : { x:1935.5, z:6813.3 };
   // walkway: driveway -> front porch stairs
   // v1.65: rescaled
   var ww=ribbonGeom([[1938.3,6814.5],[hx,hz+D/2+6.2]], 1.6, 0.32);

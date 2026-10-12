@@ -91,6 +91,11 @@ function injectZoneScripts(zoneId){
     {src: base + 'lifts.json',     key: 'lifts',     global: 'TERRAIN_LIFTS'},
     {src: base + 'pins.json',      key: 'pins',      global: 'JUNCTION_PINS'},
     {src: base + 'buildings.json', key: 'buildings', global: null},  // special: 3 vars, see assignZoneGlobals
+    /* v1.66 HERO BUILDINGS (2026-10-12 Joshua: "535 wasn't in the editor"):
+       Hero/special buildings (535 Dollar Mill) baked into data per Joshua's
+       standing rule — buildings in the editor are baked into game data, no
+       runtime spawning. The building editor lists these. */
+    {src: base + 'hero_buildings.json', key: 'hero_buildings', global: 'HERO_BUILDINGS'},
   ];
   // Expose for the deferred loader (index.html). Do NOT document.write —
   // this script now runs after HTML parsing via deferred injection.
