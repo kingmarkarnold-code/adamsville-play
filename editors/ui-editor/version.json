@@ -1,6 +1,6 @@
 {
-  "version": "1.7.4",
-  "changelog": "Fixed AttributeError crash on launch \u2014 status bar init order.",
+  "version": "1.7.5",
+  "changelog": "Layout tab: the Size preset dropdown (Phone portrait / Phone landscape / Tablet) now works for the Application (mobile) view too \u2014 defaults to Phone landscape (844x390) since the game plays in landscape. Collapsing the side panels now gives the freed space to the canvas.",
   "files": [
     {
       "path": "about.py",
@@ -10,7 +10,7 @@
     {
       "path": "app.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/ui-editor/app.py",
-      "sha256": "e47270c23f8348f3ba63e38299894a98c62cd0626e045959cb0a56bebe7c06be"
+      "sha256": "7aa79b9fb4e79115a7c9d0f9506e52d2241f7c9d0af37a5ba58ab0710a22e223"
     },
     {
       "path": "data.py",
@@ -25,7 +25,7 @@
     {
       "path": "layout.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/ui-editor/layout.py",
-      "sha256": "bd83c0657dc7ef99a283b2ba185cb6bfd87db9b95d5539fe97fa3c863239d541"
+      "sha256": "3fab925849a4a8f38b87384b64ec84d803174f23b0256d4e98e3c6dec2b46906"
     },
     {
       "path": "menus.py",
