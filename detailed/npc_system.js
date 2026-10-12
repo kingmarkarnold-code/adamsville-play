@@ -86,6 +86,9 @@ var MAX_VISIBLE = 40;     // hard cap on instanced bodies (TCL T513V budget)
 var VISIBLE_R   = 150;    // stream a body in within this distance (u)
 var HIDE_R      = 200;    // release the body beyond this distance (hysteresis)
 var ANIM_R      = 80;     // limb animation only inside this range (LOD)
+/* ROUNDED TOE (Joshua 2026-10-11): one shared shoe color for all instanced
+   NPCs (dark, matches the reference-NPC and staff shoe color). */
+var NPC_SHOE    = 0x222226;
 var ST_WALK = 0, ST_IDLE = 1, ST_TURN = 2;
 var STATE_NAMES = ['WALK','IDLE','TURN'];
 var TYPE_NAMES  = ['man','woman','boy16'];   // nobody under 16, nobody over 65
@@ -135,7 +138,7 @@ var WF_MAXT=14;                       // max seconds wall-following before fallb
 
 /* scratch / temps — allocated once, never in the hot loop */
 var _m1=null,_m2=null,_m3=null,_m4=null,_m5=null,_m6=null,_m7=null,_out=null;
-var _col=null, _free=[], _mesh=null;   // _mesh: {torso,head,uArmL,uArmR,fArmL,fArmR,thighL,thighR,shinL,shinR}
+var _col=null, _free=[], _mesh=null;   // _mesh: {torso,head,uArmL,uArmR,fArmL,fArmR,thighL,thighR,shinL,shinR,shoeL,shoeR,toeL,toeR}
 var walkRoads=[], comSpots=[], resSpots=[];
 var borderOK=null;      // null = no constraint; else {px,py...} half-planes
 
@@ -829,8 +832,14 @@ function assignSlot(s,n){
   _col.set(n.pants);
   _mesh.thighL.setColorAt(s,_col); _mesh.thighR.setColorAt(s,_col);
   _mesh.shinL.setColorAt(s,_col);  _mesh.shinR.setColorAt(s,_col);
+  /* ROUNDED TOE (Joshua 2026-10-11): shoe boxes + toe tips share the one
+     dark NPC shoe color (NPC_SHOE). */
+  _col.set(NPC_SHOE);
+  _mesh.shoeL.setColorAt(s,_col); _mesh.shoeR.setColorAt(s,_col);
+  _mesh.toeL.setColorAt(s,_col);  _mesh.toeR.setColorAt(s,_col);
   var mk=[_mesh.torso,_mesh.head,_mesh.uArmL,_mesh.uArmR,_mesh.fArmL,_mesh.fArmR,
-          _mesh.thighL,_mesh.thighR,_mesh.shinL,_mesh.shinR];
+          _mesh.thighL,_mesh.thighR,_mesh.shinL,_mesh.shinR,
+          _mesh.shoeL,_mesh.shoeR,_mesh.toeL,_mesh.toeR];
   for (var i=0;i<mk.length;i++) if (mk[i].instanceColor) mk[i].instanceColor.needsUpdate=true;
 }
 /* refreshSlots(px,pz) — reassigns the 40 render slots every 0.5s: releases
@@ -871,8 +880,9 @@ function refreshSlots(px,pz){
   for (i=0;i<npcs.length;i++) npcs[i]._pick=false;
 }
 
-/* ---------------- rendering: 10 InstancedMeshes, jointed limbs ----------------
-   One unit box per part, scaled by matrix. Per-instance colors: skin on head
+/* ---------------- rendering: 14 InstancedMeshes, jointed limbs ----------------
+   One unit box per part, scaled by matrix (toe tips use a unit sphere,
+   scaled flat). Per-instance colors: skin on head
    + upper arms + forearms (short-sleeve look), shirt on torso, pants on
    thighs + shins. Boys render at 0.85 scale; 3 width variants via wid.
    v1.57 JOINTED LIMBS (expert #24, Katherine Brooks): arms split into upper
@@ -975,10 +985,25 @@ function renderNPCs(dt,px,pz){
     var kRy=0.80-0.33*Math.cos(sw), kRz= 0.33*Math.sin(sw);   // -sw swing: cos even, sin odd
     _mesh.shinL.setMatrixAt(s, partMat(n.x,y,n.z,yaw,scl, -0.115*wid,kLy,kLz,  sw+kneeL,-0.165, 0.13,0.33,0.13));
     _mesh.shinR.setMatrixAt(s, partMat(n.x,y,n.z,yaw,scl,  0.115*wid,kRy,kRz, -sw+kneeR,-0.165, 0.13,0.33,0.13));
+    /* ROUNDED TOE (Joshua 2026-10-11): each foot is a heel/midfoot shoe box
+       plus a squashed-sphere toe tip (same look as the hero's rounded toe).
+       The shoe hangs rigidly off the shin tip, so it follows the knee bend
+       (swing aL/aR). Shoe center = knee + Rx(a)*(0,-0.38,0.03): half a
+       shoe-height below the ankle, biased toward the toes; the toe tip sits
+       at the front of the box, squashed flat to shoe height. */
+    var aL=sw+kneeL, aR=-sw+kneeR;
+    var cL=Math.cos(aL), sL=Math.sin(aL), cR=Math.cos(aR), sR=Math.sin(aR);
+    var shxL=-0.115*wid, shyL=kLy-0.38*cL-0.03*sL, shzL=kLz-0.38*sL+0.03*cL;
+    var shxR= 0.115*wid, shyR=kRy-0.38*cR-0.03*sR, shzR=kRz-0.38*sR+0.03*cR;
+    _mesh.shoeL.setMatrixAt(s, partMat(n.x,y,n.z,yaw,scl, shxL,shyL,shzL, aL,0, 0.14,0.10,0.22));
+    _mesh.shoeR.setMatrixAt(s, partMat(n.x,y,n.z,yaw,scl, shxR,shyR,shzR, aR,0, 0.14,0.10,0.22));
+    _mesh.toeL.setMatrixAt(s, partMat(n.x,y,n.z,yaw,scl, shxL,shyL-0.015*cL-0.095*sL,shzL-0.015*sL+0.095*cL, aL,0, 0.14,0.098,0.14));
+    _mesh.toeR.setMatrixAt(s, partMat(n.x,y,n.z,yaw,scl, shxR,shyR-0.015*cR-0.095*sR,shzR-0.015*sR+0.095*cR, aR,0, 0.14,0.098,0.14));
   }
   visCount=vis;
   var mk=[_mesh.torso,_mesh.head,_mesh.uArmL,_mesh.uArmR,_mesh.fArmL,_mesh.fArmR,
-          _mesh.thighL,_mesh.thighR,_mesh.shinL,_mesh.shinR];
+          _mesh.thighL,_mesh.thighR,_mesh.shinL,_mesh.shinR,
+          _mesh.shoeL,_mesh.shoeR,_mesh.toeL,_mesh.toeR];
   for (var i=0;i<mk.length;i++){ mk[i].count=vis; mk[i].instanceMatrix.needsUpdate=true; }
 }
 
@@ -999,8 +1024,9 @@ function publishReport(){
 
 /* ---------------- init ---------------- */
 /* initNPCs() — allocates scratch matrices, builds the border, fills spawn
-   pools, creates all 1000 NPCs, the 40 render slots, and the 10
-   InstancedMeshes (one per body part, unit-box geometry scaled per part).
+   pools, creates all 1000 NPCs, the 40 render slots, and the 14
+   InstancedMeshes (one per body part: unit-box geometry scaled per part,
+   plus unit-sphere geometry for the rounded toe tips).
    Meshes are frustumCulled=false (positions update every frame; culling the
    batch would hide everyone) with cast/receive shadows off for perf. */
 function initNPCs(){
@@ -1014,11 +1040,15 @@ function initNPCs(){
   for (var i=0;i<NPC_COUNT;i++) npcs.push(spawnNPC(i));
   for (var s=0;s<MAX_VISIBLE;s++) slots.push(null);
   var unitBox=new THREE.BoxGeometry(1,1,1);
+  /* ROUNDED TOE (Joshua 2026-10-11): unit sphere (diameter 1, like the unit
+     box) for the instanced toe tips — scaled flat per instance so every NPC
+     gets the same rounded toe tip as the hero. */
+  var unitSphere=new THREE.SphereGeometry(0.5,10,8);
   /* v1.48 (#18, Aria Nakamura): NPC body parts use the shared toon palette
      (MeshToonMaterial) — Pixar-style stepped shading. Falls back to Lambert
      if toon_mats.js is unavailable. */
-  function im(){
-    var m=new THREE.InstancedMesh(unitBox,
+  function im(geo){
+    var m=new THREE.InstancedMesh(geo||unitBox,
       (typeof toonMat==='function'?toonMat(0xffffff):new THREE.MeshLambertMaterial({color:0xffffff})), MAX_VISIBLE);
     m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     m.frustumCulled=false;      // positions update every frame; never cull the batch
@@ -1027,13 +1057,16 @@ function initNPCs(){
   }
   _mesh={ torso:im(), head:im(),
            uArmL:im(), uArmR:im(), fArmL:im(), fArmR:im(),
-           thighL:im(), thighR:im(), shinL:im(), shinR:im() };
+           thighL:im(), thighR:im(), shinL:im(), shinR:im(),
+           shoeL:im(), shoeR:im(),                    // shoe: heel/midfoot box
+           toeL:im(unitSphere), toeR:im(unitSphere) };// ROUNDED TOE: squashed-sphere toe tip
   /* v1.21 NPC KILL SWITCH: register meshes globally so __setNpcPaused can
      hide/show them instantly without touching the NPC data. */
   try {
     window.__npcMeshes=[_mesh.torso,_mesh.head,
       _mesh.uArmL,_mesh.uArmR,_mesh.fArmL,_mesh.fArmR,
-      _mesh.thighL,_mesh.thighR,_mesh.shinL,_mesh.shinR];
+      _mesh.thighL,_mesh.thighR,_mesh.shinL,_mesh.shinR,
+      _mesh.shoeL,_mesh.shoeR,_mesh.toeL,_mesh.toeR];  // ROUNDED TOE: shoes pause too
   window.__npcSlots=slots; /* v1.52 BLOB SHADOWS (expert #16): expose render slots so blob_shadows.js can read NPC positions without touching this render loop */
     if (window.__npcPaused) for (var _hi=0; _hi<window.__npcMeshes.length; _hi++) window.__npcMeshes[_hi].visible=false;
   } catch(e){}

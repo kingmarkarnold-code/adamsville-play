@@ -126,7 +126,15 @@ function buildKid(r){
     box(lw,th,lw,vehLam(pants),0,-th/2,0,piv);                       // thigh
     var knee=new THREE.Group(); knee.position.set(0,-th,0); piv.add(knee);
     box(lw*0.87,sh,lw*0.87,vehLam(pants),0,-sh/2,0,knee);            // shin (slimmer)
-    box(0.14,0.10,0.24,vehLam(shoeC),0,-sh-0.05,0.04,knee);          // shoe
+    // ROUNDED TOE (Joshua 2026-10-11): the old single-box shoe had a blunt
+    // rectangular front. The shoe is now a heel/midfoot box plus a squashed
+    // sphere at the front — a rounded toe tip (matches the hero). Same shoe color.
+    var shoeMat=vehLam(shoeC);
+    box(0.14,0.10,0.18,shoeMat,0,-sh-0.05,0.01,knee);       // shoe: heel + midfoot box
+    var toe=new THREE.Mesh(new THREE.SphereGeometry(0.07,10,8),shoeMat);
+    toe.scale.set(1,0.7,1);                                 // squash flat: toe height matches the box
+    toe.position.set(0,-sh-0.05,0.115);                     // front of the shoe
+    knee.add(toe);                                          // rounded toe tip
     return {hip:piv,knee:knee};
   }
   var legL=leg(-1), legR=leg(1);

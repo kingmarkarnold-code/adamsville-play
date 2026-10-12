@@ -217,7 +217,15 @@ function buildStaffMember(opts){
     piv.position.set(sx * 0.11, 0.82, 0);
     g.add(piv);
     box(0.13, 0.62, 0.13, lam(pantsC), 0, -0.31, 0, piv);
-    box(0.14, 0.10, 0.24, lam(shoeC), 0, -0.66, 0.04, piv);
+    /* ROUNDED TOE (Joshua 2026-10-11): the old single-box shoe had a blunt
+       rectangular front. The shoe is now a heel/midfoot box plus a squashed
+       sphere at the front — a rounded toe tip (matches the hero). Same shoe color. */
+    var shoeMat = lam(shoeC);
+    box(0.14, 0.10, 0.18, shoeMat, 0, -0.66, 0.01, piv);   // shoe: heel + midfoot box
+    var toe = new THREE.Mesh(new THREE.SphereGeometry(0.07, 10, 8), shoeMat);
+    toe.scale.set(1, 0.7, 1);                              // squash flat: toe height matches the box
+    toe.position.set(0, -0.66, 0.115);                     // front of the shoe
+    piv.add(toe);                                          // rounded toe tip
     return piv;
   }
   var legL = leg(-1), legR = leg(1);

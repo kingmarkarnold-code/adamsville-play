@@ -1776,6 +1776,7 @@ window.__applyCrewMaster = function(on){
 <script data-dsrc="terrainfix.js" data-dkey=""></script>
 <script data-dsrc="vehicle_meshes.js" data-dkey="vehmeshes"></script>
 <script data-dsrc="shirt_designs.js" data-dkey="shirtdesigns"></script>
+<script data-dsrc="clothing_system.js" data-dkey=""></script>
 <script data-dsrc="sign_rules.js" data-dkey="signrules"></script>
 <!-- v1.16 TWO-PHASE: GREEN PHASE START — separate script element so the browser
      PAINTS the phase switch BEFORE block 2's synchronous init freezes the main
@@ -7081,7 +7082,14 @@ var FACE_WEBP_DATAURL="data:image/webp;base64,UklGRm5yAwBXRUJQVlA4WAoAAAAEAAAAXw
     hp.add(box(0.15,0.40,0.15,mPants,0,-0.20,0));       // thigh
     var kn=new THREE.Group(); kn.position.set(0,-0.40,0); hp.add(kn);
     kn.add(box(0.13,0.40,0.13,mPants,0,-0.20,0));       // shin
-    kn.add(box(0.14,0.10,0.27,mShoe,0,-0.45,0.055));    // shoe
+    // ROUNDED TOE (Joshua 2026-10-11): the old single-box shoe had a blunt
+    // rectangular front. The shoe is now a heel/midfoot box plus a squashed
+    // sphere at the front — a rounded toe tip. Same mShoe material/color.
+    kn.add(box(0.14,0.10,0.20,mShoe,0,-0.45,0.02));     // shoe: heel + midfoot box
+    var toe=new THREE.Mesh(new THREE.SphereGeometry(0.07,10,8),mShoe);
+    toe.scale.set(1,0.7,1);                            // squash flat: toe height matches the box
+    toe.position.set(0,-0.45,0.13);                    // front of the shoe
+    kn.add(toe);                                       // rounded toe tip
     return {hp:hp,kn:kn};
   }
   var legL=makeLeg(-1), legR=makeLeg(1);
@@ -10476,6 +10484,11 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <script data-dsrc="ui_sounds.js" data-dkey=""></script>
 <script data-dsrc="traffic_assist.js" data-dkey="trafficassist"></script>
 <script data-dsrc="residential_detail.js" data-dkey=""></script>
+<!-- BUILDING SPAWNER v1.0 (2026-10-11): map-editor buildings.json (walkable
+     hand-placed buildings) + subdivisions.json (street-facing house fill).
+     Complementary to residential_detail.js (OSM data) — separate data source,
+     no overlap. -->
+<script data-dsrc="building_spawner.js" data-dkey=""></script>
 <script data-dsrc="semi_system.js" data-dkey="semis"></script>
 <script data-dsrc="school_plaza.js" data-dkey=""></script>
 <script data-dsrc="mlk_fairburn.js" data-dkey=""></script>
@@ -10519,6 +10532,10 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <script data-dsrc="zoneunlock.js" data-dkey=""></script>
 <script data-dsrc="satellite_view.js" data-dkey=""></script>
 <script data-dsrc="hotreload.js" data-dkey=""></script>
+<!-- INTERIOR SYSTEM (2026-10-11): doors, furniture collision, appliances,
+     pickupables. Non-invasive hooks (wraps updateActionButton /
+     resolveCollision, own #action-btn listener) -- no game-code edits needed. -->
+<script data-dsrc="interior_system.js" data-dkey=""></script>
 <!-- ===== INLINE SCRIPT BLOCK 3: final placement audit (v2.0 - Joshua's
      automatic check) ===== Runs ONCE, after EVERY building system has loaded
      (OSM, churches, schools, plaza, gas, Marriott, clubs, MARTA). Summarizes
