@@ -25,7 +25,16 @@ from gi.repository import Gtk, Gdk, GLib
 
 import github_sync  # noqa: E402 -- suite auto-push + close warning
 from about import show_about_dialog
-import updater  # noqa: E402 -- Help -> Check for Updates (in-place updater)
+# v1.5.2 (Joshua 2026-10-12): soft import for updater — if updater.py is
+# missing or broken (partial install, failed in-place update), the editor
+# must still open. The Help -> Check for Updates item is only added when
+# the import succeeds.
+try:
+    import updater  # noqa: E402 -- Help -> Check for Updates (in-place updater)
+    _UPDATER_AVAILABLE = True
+except Exception:
+    updater = None
+    _UPDATER_AVAILABLE = False
 import data
 from data import (BUILDING_TYPES, WALL_MATERIALS, ROOF_TEXTURES,
                   WINDOW_TYPES, DOOR_TYPES, FLOOR_PLAN_TEMPLATES,
@@ -40,7 +49,7 @@ from subdivisioncanvas import SubdivisionCanvas
 
 # App version shown in the Help -> About dialog (bump with each release).
 # Joshua 2026-10-11: version number must be prominent in About.
-APP_VERSION = "1.5.1"
+APP_VERSION = "1.5.2"
 # Display name and icon-theme name for the About dialog.
 APP_NAME = "Adamsville Building Editor"
 APP_ICON = "adamsville-building-editor-native"
@@ -159,9 +168,12 @@ class AssetEditorWindow(Gtk.Window):
         help_item = Gtk.MenuItem(label="Help")
         help_item.set_submenu(help_menu)
 
-        update_item = Gtk.MenuItem(label="Check for Updates")
-        update_item.connect("activate", self.on_check_updates)
-        help_menu.append(update_item)
+        # v1.5.2: only offer in-place updates when updater.py imported OK.
+        # (A missing/broken updater must never stop the editor opening.)
+        if _UPDATER_AVAILABLE:
+            update_item = Gtk.MenuItem(label="Check for Updates")
+            update_item.connect("activate", self.on_check_updates)
+            help_menu.append(update_item)
 
         about = Gtk.MenuItem(label="About")
         about.connect("activate", self._on_about)
@@ -429,6 +441,10 @@ class AssetEditorWindow(Gtk.Window):
         """Help -> Check for Updates: in-place update flow."""
         # (Joshua 2026-10-12: update the installed app in
         # place instead of reinstalling the .deb.)
+        # v1.5.2: guard — this handler is only wired when the updater
+        # imported successfully, but never trust the menu state.
+        if not _UPDATER_AVAILABLE or updater is None:
+            return
         updater.check_for_updates_gui(
             self, APP_NAME, APP_VERSION,
             UPDATE_SLUG, UPDATE_MANIFEST_URL)
@@ -2301,11 +2317,28 @@ class SubdivisionTab(Gtk.Box):
 
 def main():
     """Launch the asset editor."""
-    data.ensure_data_dir()
-    win = AssetEditorWindow()
-    win.connect("destroy", Gtk.main_quit)
-    win.show_all()
-    Gtk.main()
+    # v1.5.2 (Joshua 2026-10-12): crash logger. If the editor fails to
+    # start on Joshua's machine, the traceback is written to
+    # ~/.cache/adamsville-building-editor-native/crash.log so the real
+    # cause can be diagnosed instead of failing silently.
+    try:
+        data.ensure_data_dir()
+        win = AssetEditorWindow()
+        win.connect("destroy", Gtk.main_quit)
+        win.show_all()
+        Gtk.main()
+    except Exception:
+        try:
+            import traceback
+            from pathlib import Path
+            log_dir = Path.home() / ".cache" / "adamsville-building-editor-native"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            with open(log_dir / "crash.log", "w") as f:
+                f.write("Adamsville Building Editor %s crash log\n" % APP_VERSION)
+                traceback.print_exc(file=f)
+        except Exception:
+            pass
+        raise
 
 
 if __name__ == "__main__":
