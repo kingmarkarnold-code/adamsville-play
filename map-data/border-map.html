@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Game Map — Border Area</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; }
+  #map { width: 100%; height: 420px; }
+  .lbl { font: 12px/1.4 system-ui, sans-serif; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  var map = L.map('map');
+
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
+
+  // Border polygon (odd shape) — vertices in order
+  var border = [
+    [33.82524, -84.57752],  // 3 — South Cobb Regional Library
+    [33.75860, -84.38908],  // 6 — Downtown Atlanta (NE extent)
+    [33.53500, -84.39200],  // SE corner — pushed past Riverdale apartments so the whole complex sits inside
+    [33.53045, -84.60615]   // 7 — Fairburn exit, I-85 S (SW extent)
+  ];
+
+  var poly = L.polygon(border, {
+    color: '#e11d48', weight: 3, fillColor: '#e11d48', fillOpacity: 0.08
+  }).addTo(map);
+  poly.bindPopup('<b class="lbl">Game border</b>');
+
+  // Crop the view to the border area
+  map.fitBounds(poly.getBounds(), { padding: [10, 10] });
+
+  var pins = [
+    [[33.74110, -84.52645], 'Home base', '535 Dollar Mill Rd SW'],
+    [[33.81877, -84.58010], 'Mableton', 'West side'],
+    [[33.82524, -84.57752], 'South Cobb Regional Library', '805 Clay Rd SW'],
+    [[33.55658, -84.40224], 'Riverdale High School', '160 Roberts Dr'],
+    [[33.54300, -84.39900], 'Riverdale apartments', 'Placeholder — past Hwy 138 light, east side'],
+    [[33.75860, -84.38908], 'Downtown Atlanta', 'Northeast extent'],
+    [[33.53045, -84.60615], 'Fairburn exit, I-85 S', 'Southwest extent']
+  ];
+  pins.forEach(function(p) {
+    L.marker(p[0]).addTo(map)
+      .bindPopup('<b class="lbl">' + p[1] + '</b><br><span class="lbl">' + p[2] + '</span>');
+  });
+</script>
+</body>
+</html>

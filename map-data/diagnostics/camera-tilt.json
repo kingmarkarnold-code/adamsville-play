@@ -1,0 +1,9 @@
+{
+  "tilt_deg": 9.56,
+  "offset": {
+    "x": 0,
+    "y": 1.52,
+    "z": -0.55
+  },
+  "note": "Default roof-camera setup for the road preview: tilt_deg is the pitch in degrees above the car's own pitch (set by measurement so the hood's front edge lands at ~90% of frame height - a thin sliver - and the bumper stays out of frame); offset is the camera mount in car-local metres (x right, y up, z forward from the car's centre; the default (0, 1.52, -0.55) sits 0.15 m above the cab roof, 0.55 m behind centre). A setup Joshua saves in the preview (localStorage sa.preview.camera.v2) wins over this file on his device; Mollie updates tilt_deg/offset here with his chosen values so the game can share the same default."
+}

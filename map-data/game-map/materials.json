@@ -1,0 +1,30 @@
+{
+ "note": "Material system for the game map. Every surface has a material; the material decides how it sits (snap-to-terrain) and which surface wins where two overlap (higher 'layer' is on top).",
+ "road_lift": 0.55,
+ "materials": {
+  "grass": {
+   "layer": 0,
+   "role": "terrain surface (default ground)"
+  },
+  "water": {
+   "layer": 1,
+   "role": "water surface, sits in terrain"
+  },
+  "concrete": {
+   "layer": 2,
+   "role": "building bottom face (foundation); snaps the building to its terrain pad"
+  },
+  "roadbed": {
+   "layer": 2,
+   "role": "road bottom face; carries the road's ground profile"
+  },
+  "asphalt": {
+   "layer": 3,
+   "role": "road top/driving surface; ground + road_lift, always on top of grass"
+  }
+ },
+ "snap_rules": {
+  "buildings": "bottom face (concrete) placed at the footprint's terrain pad height; foundation skirt extends 'skirt' meters below the pad to the lowest ground under the ring",
+  "roads": "bottom face (roadbed) follows the stored ground profile point-for-point; top face (asphalt) = ground + road_lift"
+ }
+}

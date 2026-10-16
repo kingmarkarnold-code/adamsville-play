@@ -1,0 +1,55 @@
+{
+ "bounds": {
+  "west": -84.638671875,
+  "south": 33.504759069226075,
+  "east": -84.287109375,
+  "north": 33.87041555094183
+ },
+ "min_ft": 457,
+ "max_ft": 1149,
+ "mean_ft": 920,
+ "min_m": 139,
+ "max_m": 350,
+ "bands": [
+  {
+   "from_ft": 400,
+   "to_ft": 500,
+   "color": "#8fbf6f"
+  },
+  {
+   "from_ft": 500,
+   "to_ft": 600,
+   "color": "#a9c97a"
+  },
+  {
+   "from_ft": 600,
+   "to_ft": 700,
+   "color": "#c3d189"
+  },
+  {
+   "from_ft": 700,
+   "to_ft": 800,
+   "color": "#dcd69a"
+  },
+  {
+   "from_ft": 800,
+   "to_ft": 900,
+   "color": "#e8d9a0"
+  },
+  {
+   "from_ft": 900,
+   "to_ft": 1000,
+   "color": "#dfc493"
+  },
+  {
+   "from_ft": 1000,
+   "to_ft": 1100,
+   "color": "#d3af7e"
+  },
+  {
+   "from_ft": 1100,
+   "to_ft": 1200,
+   "color": "#c49a6b"
+  }
+ ]
+}
