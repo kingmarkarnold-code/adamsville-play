@@ -13,41 +13,6 @@
               "description": "Opens the How to Play help panel with controls and instructions.",
               "action": "open_help",
               "visible": true
-            },
-            {
-              "id": "set-music",
-              "label": "Music: ON",
-              "description": "Toggles the background music on or off.",
-              "action": "toggle_music",
-              "visible": true
-            },
-            {
-              "id": "set-engine",
-              "label": "Engine sounds: ON",
-              "description": "Toggles vehicle engine sounds on or off.",
-              "action": "toggle_engine",
-              "visible": true
-            },
-            {
-              "id": "set-uisounds",
-              "label": "UI sounds: ON",
-              "description": "Toggles the user interface click and notification sounds on or off.",
-              "action": "toggle_uisounds",
-              "visible": true
-            },
-            {
-              "id": "set-record",
-              "label": "Record: OFF",
-              "description": "Starts or stops the in-game screen recorder (saves video to the device).",
-              "action": "toggle_record",
-              "visible": true
-            },
-            {
-              "id": "set-gameplay",
-              "label": "Gameplay",
-              "description": "Opens the Gameplay submenu (New game, Restart level, Save game, Load game).",
-              "action": "open_gameplay",
-              "visible": true
             }
           ]
         },
@@ -128,7 +93,36 @@
         },
         {
           "name": "Sound",
-          "items": []
+          "items": [
+            {
+              "id": "set-music",
+              "label": "Music: ON",
+              "description": "Toggles the background music on or off.",
+              "action": "toggle_music",
+              "visible": true
+            },
+            {
+              "id": "set-engine",
+              "label": "Engine sounds: ON",
+              "description": "Toggles vehicle engine sounds on or off.",
+              "action": "toggle_engine",
+              "visible": true
+            },
+            {
+              "id": "set-uisounds",
+              "label": "UI sounds: ON",
+              "description": "Toggles the user interface click and notification sounds on or off.",
+              "action": "toggle_uisounds",
+              "visible": true
+            },
+            {
+              "id": "set-record",
+              "label": "Record: OFF",
+              "description": "Starts or stops the in-game screen recorder (saves video to the device).",
+              "action": "toggle_record",
+              "visible": true
+            }
+          ]
         }
       ],
       "ungrouped": [
@@ -137,6 +131,13 @@
           "label": "Close",
           "description": "Closes the Settings panel and returns to the game.",
           "action": "close",
+          "visible": true
+        },
+        {
+          "id": "set-gameplay",
+          "label": "Gameplay",
+          "description": "Opens the Gameplay submenu (New game, Restart level, Save game, Load game).",
+          "action": "open_gameplay",
           "visible": true
         }
       ]
