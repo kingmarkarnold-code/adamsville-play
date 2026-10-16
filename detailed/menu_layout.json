@@ -127,17 +127,17 @@
       ],
       "ungrouped": [
         {
-          "id": "set-close",
-          "label": "Close",
-          "description": "Closes the Settings panel and returns to the game.",
-          "action": "close",
-          "visible": true
-        },
-        {
           "id": "set-gameplay",
           "label": "Gameplay",
           "description": "Opens the Gameplay submenu (New game, Restart level, Save game, Load game).",
           "action": "open_gameplay",
+          "visible": true
+        },
+        {
+          "id": "set-close",
+          "label": "Close",
+          "description": "Closes the Settings panel and returns to the game.",
+          "action": "close",
           "visible": true
         }
       ]
