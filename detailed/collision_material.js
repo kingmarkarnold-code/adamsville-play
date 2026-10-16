@@ -144,7 +144,13 @@ function getMaterialAt(x, z, skipCache){
    covers. This is the SAME 0.55 the renderer and groundRefY always used —
    now a named material property instead of a magic number, so every
    consumer (road mesh, player snap, car placement) agrees by construction. */
-var ROAD_LIFT = 0.55;
+/* STAGE2 DECISION -- APPROVED (Joshua, CONVERSION-DESIGN SS6.1,
+   2026-10-16): ROAD_LIFT is 0.01 at cutover, so material consumers
+   (materialRoadTopY / surfaceHeightAt) agree with the baked roads'
+   drawn +0.01 surface -- one truth with the baked roads. This replaces
+   the earlier pending-decision note in the staging copy, which had
+   deliberately left the value at 0.55 until Joshua decided SS6.1. */
+var ROAD_LIFT = 0.01;
 
 /* MATERIAL_LAYERS — vertical relationship table. For each surface
    material: base = the material it sits ON (null = the world base layer),

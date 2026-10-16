@@ -1400,6 +1400,15 @@ function __injectZoneFiles(files, callback){
       window.OSM_BLDG_VERSION = data.version;
       window.OSM_REAL_COUNT = data.realCount;
       window.OSM_BUILDINGS = data.buildings;
+    } else if (f.key === 'zone'){
+      /* STAGE2 (conversion cutover, CONVERSION-DESIGN SS2.9/SS5 step 2e):
+         zone.json is real metadata now, not a dead file. The deferred
+         loader fetches it like the other zone files; here it is stored
+         for any consumer and handed to zoneloader, which adopts its
+         bounds over the literal fallback table (fail-open: if zone.json
+         is missing or malformed, the literals keep working as today). */
+      window.__ZONE_META = data;
+      try{ if (window.ZONELOADER && window.ZONELOADER.registerZoneMeta) window.ZONELOADER.registerZoneMeta(data); }catch(e){}
     } else if (f.global){
       window[f.global] = data;
     } else {
@@ -1419,6 +1428,14 @@ function __injectZoneFiles(files, callback){
       try{ if (f.key) __loadStep(f.key, !ok); }catch(e){}
       nextFile();
     }
+    /* STAGE2 (conversion cutover, design SS2.9): the zone.json metadata
+       entry is OPTIONAL -- if its JSON fetch already failed twice, do NOT
+       fall through to the .js fallback (converted zones ship zone.json
+       only; there is no zone.js, and the fallback's retries/timeouts
+       would stall the loader). Bounds simply stay on zoneloader's
+       literal fallback table -- fail-open, exactly like a missing
+       zone.json today. */
+    if (f.key === 'zone' && attempt >= 2){ finish(false); return; }
     var isJson = /\.json(\?|$)/.test(f.src);
     /* v1.55 BULLETPROOF LOADER (2026-10-12): If a previous zone file's JSON
        fetch returned 404, the .json files aren't deployed yet — skip the JSON
@@ -1524,7 +1541,7 @@ function __injectZoneFiles(files, callback){
    a phone ~30s). The deferred loader fetches it before any game script
    evaluates; buildTerrain() uses it when present, else synchronous compute.
    The ?v= cache-buster MUST match ui_version — the generator stamps it. */
-var TERR_PRE_URL='terrain_heights_adamsville_600x800.bin?v=2026.10.11.178';
+var TERR_PRE_URL='terrain_heights_adamsville_600x800.bin?v=2026.10.16.193';
 var TERR_PRE_LEN=(600+1)*(800+1);
 /* v1.35 #35: prefer the LIVE ui_version for the terrain binary cache-buster
    at fetch time. The generator stamps TERR_PRE_URL above (keep that line's
@@ -3115,6 +3132,16 @@ var Report=(function(){
    GTA San Andreas style). North = -Z.
    ============================================================ */
 
+/* CUTOVER §6.2 STAGE CONSTANTS (approved by Joshua 2026-10-16):
+   STAGE rect = union of the 7 converted zone.json bounds (xMin -7480.585...,
+   xMax 16314.485..., zMin -4248.537..., zMax 30877.519...), rounded outward.
+   The drawn ground outside the core rect [0,WX]x[0,WZ] is terrainMeshY()
+   itself -- the clamped edge surface (fx/fz clamp at the core edge) -- which
+   is the SAME surface the converted roads were baked against. TERR_H,
+   TERR_SEGX/SEGZ, TERR_CX/CZ, terrainMeshY() and heightAt() are intentionally
+   UNCHANGED by the stage extension; only what is DRAWN (buildTerrain apron)
+   and what is CLIPPED (clipToWorld/clipToWorldY) widen to this rect. */
+var STAGE_X0=-7481, STAGE_X1=16315, STAGE_Z0=-4249, STAGE_Z1=30878;
 // ---------- geo mapping ----------
 // World <-> lat/lon projection. The map is a flat local tangent plane:
 // lon maps linearly to +X (east), lat maps linearly to +Z with north = -Z
@@ -3658,6 +3685,66 @@ var TERR_CX=WX/TERR_SEGX, TERR_CZ=WZ/TERR_SEGZ;
       meshAtOrigin:(terrMesh.position.x===0&&terrMesh.position.z===0),
       status:(pos.count===_expVerts)?'ok':'BROKEN'});
   }catch(e){}
+  /* CUTOVER §6.2 STAGE APRON (approved by Joshua 2026-10-16): four strip
+     meshes covering STAGE minus the core rect, so the converted zones have
+     drawn ground under them. Every apron vertex height is sampled from
+     terrainMeshY() itself -- outside the core that function returns the
+     clamped edge surface, i.e. exactly the surface the converted roads were
+     baked on -- so the apron IS that surface, not an approximation of it:
+     grid lines along each strip's varying axis sit at every multiple of the
+     TERR cell size inside the strip (plus the strip ends), which is exactly
+     where the clamped bilinear surface can bend; the constant axis needs
+     only its 2 edge lines. Colours use the SAME formula as the core mesh
+     above. Winding: index order chosen per strip orientation so every
+     triangle faces UP (+Y); computeVertexNormals() is then called and the
+     harness verifies sampled normals have normal.y > 0. Runs AFTER the
+     telemetry block above so its pos.count checks are undisturbed, and
+     after the core loop so TERR_H is filled before terrainMeshY() is
+     sampled. Wrapped in try/catch like the telemetry block: an apron
+     failure must never take the core terrain down with it. */
+  try{
+    function _apronLines(lo,hi,cell){
+      var lines=[lo];
+      var k=Math.floor(lo/cell)+1;
+      for(var v=k*cell; v<hi; k++, v=k*cell) lines.push(v);
+      lines.push(hi);
+      return lines;
+    }
+    function _apronStrip(x0,x1,z0,z1,varyZ){
+      var lines=varyZ?_apronLines(z0,z1,TERR_CZ):_apronLines(x0,x1,TERR_CX);
+      var n=lines.length;
+      var positions=[], cols=[];
+      for(var i=0;i<n;i++){
+        for(var s=0;s<2;s++){
+          var vx=varyZ?(s===0?x0:x1):lines[i];
+          var vz=varyZ?lines[i]:(s===0?z0:z1);
+          positions.push(vx, terrainMeshY(vx,vz), vz);
+          var t=rand();
+          tmp.copy(c1).lerp(t<0.5?c2:c3, t<0.5? t*2 : (t-0.5)*2);
+          var shade=0.92+0.08*Math.sin(vx*0.01+vz*0.013);
+          cols.push(tmp.r*shade, tmp.g*shade, tmp.b*shade);
+        }
+      }
+      var idx=[];
+      for(var q=0;q<n-1;q++){
+        var a=q*2, b=q*2+1, c=q*2+2, d=q*2+3;
+        if(varyZ) idx.push(a,c,b, b,c,d);
+        else idx.push(a,b,c, b,d,c);
+      }
+      var g2=new THREE.BufferGeometry();
+      g2.setAttribute('position', new THREE.Float32BufferAttribute(positions,3));
+      g2.setAttribute('color', new THREE.Float32BufferAttribute(cols,3));
+      g2.setIndex(idx);
+      g2.computeVertexNormals();
+      var m2=new THREE.Mesh(g2, new THREE.MeshLambertMaterial({ vertexColors:true }));
+      scene.add(m2);
+      return m2;
+    }
+    _apronStrip(STAGE_X0,0,STAGE_Z0,STAGE_Z1,true);   /* WEST  (corners incl.) */
+    _apronStrip(WX,STAGE_X1,STAGE_Z0,STAGE_Z1,true); /* EAST  (corners incl.) */
+    _apronStrip(0,WX,STAGE_Z0,0,false);               /* NORTH */
+    _apronStrip(0,WX,WZ,STAGE_Z1,false);             /* SOUTH */
+  }catch(e){}
 })();
 /* v1.16 GREEN PHASE: terrain built (15%) — browser still frozen, label queued.
    CSS dots animate to prove aliveness. */
@@ -3795,6 +3882,110 @@ function ribbonGeom(pts, width, yOff){
   return geo;
 }
 
+/* ================= STAGE2 BAKED STRIP SURFACE (2026-10-16) =================
+   Conversion cutover (CONVERSION-DESIGN SS3.1 + Joshua's SS6.6 decision:
+   "everything at 0.01"). Converted roads are BAKED records {name, pts, ys}
+   whose pts/ys are the final settled shape. Two problems the old ribbon
+   could not solve, both fixed here:
+   1. The old ribbonGeomY applied the centreline height FLAT across the
+      width -- where the ground curves across a wide road, the flat surface
+      buried up to -0.243u / floated +0.126u between the rails (pilot
+      verify, Check 2 FAIL). Baked ribbons are therefore built as N STRIPS
+      across the width: vertices sit at every strip boundary and EVERY
+      vertex height is SET to terrainMeshY(vertex xz) + 0.01, so the whole
+      road SURFACE follows the ground across the width, not just along it.
+   2. Physics must read the surface that is drawn. roadSurfaceY() evaluates
+      baked segments through bakedStripSurfaceY() below -- the same strip
+      geometry, the same rail sampling, the same triangle interpolation --
+      so driving height == drawn height by construction.
+   STRIP COUNT RULE (documented choice, design asked for 3-5 adaptive):
+     width <= 10u  -> 3 strips  (local streets, 7.2u)
+     width <= 20u  -> 4 strips  (minor_artery 18.4u, major_artery 20u)
+     width  > 20u  -> 5 strips  (highway 22u, interstate 34u)
+   Wider roads cross more terrain curvature per metre of width, so they
+   get more strips; even the widest case costs only 6 verts per station.
+   Decks / ramps / medians / markings do NOT use any of this: they keep
+   the legacy ribbonGeomY behaviour (flat centreline heights, max() drape)
+   and never pass the rail flag -- engineered heights still win there. */
+function stripCountForWidth(w){
+  /* STAGE2: adaptive strip count by road width -- see rule above. */
+  if (w<=10) return 3;
+  if (w<=20) return 4;
+  return 5;
+}
+function stripRailFractions(strips){
+  /* STAGE2: cross-width rail positions as fractions of the half-width,
+     from -1 (one edge) to +1 (other edge), evenly spaced. Every strip
+     boundary gets a vertex; rails are shared between adjacent strips. */
+  var f=[];
+  for (var k=0;k<=strips;k++) f.push(-1+2*k/strips);
+  return f;
+}
+function stripQuadY(h00,h01,h10,h11,t,u){
+  /* STAGE2: exact height of ONE strip quad's drawn surface at (t along,
+     u across the strip interval). The quad is two triangles split by the
+     P_{s+1}-C_s diagonal -- the same diagonal ribbonGeomY's index list
+     creates ((P_s, C_s, P_{s+1}) + (P_{s+1}, C_s, C_{s+1})). Heights:
+     h00/h01 = start-station rails (u=0 / u=1), h10/h11 = end-station
+     rails. Barycentric on whichever triangle contains (t,u); the two
+     formulas agree on the diagonal, so the surface is continuous. */
+  if (t+u<=1) return h00*(1-t-u) + h10*t + h01*u;
+  return h01*(1-t) + h10*(1-u) + h11*(t+u-1);
+}
+function bakedStripSurfaceY(seg, x, z){
+  /* STAGE2: drawn-surface height of a BAKED road segment at world (x,z).
+     seg is a roadSurfGrid entry built by buildRoadGrids():
+       [0..3] endpoints ax,az,bx,bz   [4..5] stored centre heights y1,y2
+       [9] baked flag  [10] true road width
+       [11..14] per-endpoint unit perpendiculars (station direction)
+       [15] strip count
+     Rail heights are re-sampled exactly as ribbonGeomY's strip mode
+     samples them -- terrainMeshY(rail xz) + 0.01, using the stored
+     endpoint perpendiculars so bends evaluate the same rails the ribbon
+     drew -- then interpolated with stripQuadY over the containing strip.
+     Falls back to the stored centre height if the terrain grid is not
+     built yet (same value by construction: the converter draped the
+     centreline at terrainMeshY + 0.01). */
+  var ax=seg[0], az=seg[1], bx=seg[2], bz=seg[3];
+  var vx=bx-ax, vz=bz-az, len2=vx*vx+vz*vz;
+  var t=len2>0?((x-ax)*vx+(z-az)*vz)/len2:0; t=Math.max(0,Math.min(1,t));
+  var w=seg[10]||7.2, hw=w/2;
+  var cx=ax+vx*t, cz=az+vz*t;
+  /* STAGE2 frame consistency: the across coordinate is recovered in the
+     LERPED station-perpendicular frame -- the frame the ribbon's ruled
+     surface is actually built in -- not the raw segment frame. At bends
+     the two frames differ by several degrees, and the segment frame
+     would read the surface at a shifted across position (centimetre
+     scale height error on steep crossfalls, measured 0.073u before this
+     fix). For a point on the surface, P = C + perpT*f*hw exactly, so
+     f = (P-C).perpT / (hw*|perpT|^2). Hairpin fallback: if the two
+     station perpendiculars nearly cancel (|perpT|^2 small), use the
+     segment frame rather than dividing by ~0. */
+  var pTx=seg[11]+(seg[13]-seg[11])*t, pTz=seg[12]+(seg[14]-seg[12])*t;
+  var pt2=pTx*pTx+pTz*pTz, f;
+  if (pt2>0.25){ f=((x-cx)*pTx+(z-cz)*pTz)/(hw*pt2); }
+  else { var ln2=Math.sqrt(len2)||1, spx2=-vz/ln2, spz2=vx/ln2; f=((x-cx)*spx2+(z-cz)*spz2)/hw; }
+  f=Math.max(-1,Math.min(1,f));
+  var strips=seg[15]||stripCountForWidth(w);
+  var fracs=stripRailFractions(strips);
+  function railY(ex,ez,epx,epz,frac,centreY){
+    var rx=ex+epx*frac*hw, rz=ez+epz*frac*hw;
+    try{ var gy=terrainMeshY(rx,rz); if (gy>-1e8) return gy+0.01; }catch(e){}
+    return centreY;
+  }
+  var k=0; while (k<strips-1 && f>fracs[k+1]) k++;
+  var f0=fracs[k], f1=fracs[k+1];
+  var u=(f1>f0)?(f-f0)/(f1-f0):0; u=Math.max(0,Math.min(1,u));
+  var h00=railY(ax,az,seg[11],seg[12],f0,seg[4]), h01=railY(ax,az,seg[11],seg[12],f1,seg[4]);
+  var h10=railY(bx,bz,seg[13],seg[14],f0,seg[5]), h11=railY(bx,bz,seg[13],seg[14],f1,seg[5]);
+  return stripQuadY(h00,h01,h10,h11,t,u);
+}
+/* STAGE2: expose the strip helpers for the verification harness and for
+   debugging (read-only; the game itself calls the functions directly). */
+try{ window.__bakedStrip={ stripCountForWidth:stripCountForWidth,
+  stripRailFractions:stripRailFractions, stripQuadY:stripQuadY,
+  bakedStripSurfaceY:bakedStripSurfaceY }; }catch(e){}
+
 /* v1.3 ribbonGeomY: ribbon with EXPLICIT per-centerline heights (for ramps,
    decks, and smoothed roads). ys[i] is the centerline height at pts[i];
    both edge verts use it (flat across width — more road-like). Same UP
@@ -3808,7 +3999,51 @@ function ribbonGeom(pts, width, yOff){
    ramps, bridge approaches — are never pulled down. Markings, medians,
    dividers, ramps and decks pass no drape: their heights are engineered,
    not terrain-following. */
-function ribbonGeomY(pts, width, ys, drape){
+function ribbonGeomY(pts, width, ys, drape, rail){
+  /* STAGE2 BAKED STRIP MODE (conversion cutover, design SS3.1 + SS6.6):
+     when `rail` is passed (true, or {strips:N}) the ribbon is built as N
+     strips across the width and EVERY vertex height is SET to
+     terrainMeshY(vertex xz) + 0.01 -- never max()ed against the +0.55
+     material lift, never taken from the flat centreline. Only the baked
+     road path in buildRoads passes this flag. Decks, ramps, medians and
+     markings call without it and keep the legacy behaviour below,
+     byte-for-byte. If the terrain grid is unavailable the centre stored
+     ys is the fallback (identical by construction -- the converter
+     draped ys at terrainMeshY + 0.01). */
+  if (rail){
+    var strips=(typeof rail==='object' && rail.strips)?rail.strips:stripCountForWidth(width);
+    var fracs=stripRailFractions(strips), V=fracs.length, hwS=width/2;
+    var vertsS=[], idxS=[], nS=0;
+    for (var spi=0; spi<pts.length; spi++){
+      var sp=pts[spi];
+      var spr=pts[Math.max(0,spi-1)], snx=pts[Math.min(pts.length-1,spi+1)];
+      var sdx=snx[0]-spr[0], sdz=snx[1]-spr[1];
+      var sln=Math.hypot(sdx,sdz)||1; sdx/=sln; sdz/=sln;
+      var spx=-sdz, spz=sdx;  /* unit perpendicular; vertex = p + perp*frac*hw (frac +1 = legacy left edge) */
+      for (var rk=0; rk<V; rk++){
+        var vx2=sp[0]+spx*fracs[rk]*hwS, vz2=sp[1]+spz*fracs[rk]*hwS, vy2;
+        try{ var gy2=terrainMeshY(vx2,vz2);
+          vy2=(gy2>-1e8)?gy2+0.01:((ys&&ys[spi]!==undefined)?ys[spi]:roadSitY(sp[0],sp[1])+0.01);
+        }catch(e){ vy2=(ys&&ys[spi]!==undefined)?ys[spi]:0; }
+        vertsS.push(vx2, vy2, vz2);
+      }
+      if (nS>0){
+        var pb=(nS-1)*V, cb=nS*V;
+        for (var rs=0; rs<strips; rs++){
+          /* Same UP winding as the legacy two-vertex ribbon, per strip
+             quad: (P_s, C_s, P_{s+1}) + (P_{s+1}, C_s, C_{s+1}) -- at
+             V=2 this is exactly idx.push(b,b+2,b+1, b+1,b+2,b+3). */
+          idxS.push(pb+rs, cb+rs, pb+rs+1,  pb+rs+1, cb+rs, cb+rs+1);
+        }
+      }
+      nS++;
+    }
+    var geoS=new THREE.BufferGeometry();
+    geoS.setAttribute('position', new THREE.Float32BufferAttribute(vertsS,3));
+    geoS.setIndex(idxS); geoS.computeVertexNormals();
+    try{ geoS.__strips=strips; geoS.__vertsPerStation=V; }catch(e){}
+    return geoS;
+  }
   var verts=[], idx=[], n=0;
   for (var pi=0; pi<pts.length; pi++){
     var p=pts[pi];
@@ -3939,8 +4174,15 @@ var roadBuiltByClass={interstate:0,highway:0,major_artery:0,minor_artery:0,local
 /* v1.0: declared BEFORE buildRoads — auditHighways() runs inside the
    buildRoads IIFE, and a later declaration left it undefined at call time
    (hoisting), throwing on device. */
+/* STAGE2 (conversion cutover, CONVERSION-DESIGN SS2.1): OSM name forms
+   added alongside the TIGER forms. Converted data names interstates
+   "I-20" (no space, no "State Rte" alias), so the group table must
+   recognise those exact strings or auditHighways() would treat every
+   converted interstate as its own one-off road. TIGER entries stay:
+   unconverted zones and the synthetic I-20 bridge connector use them. */
 var HWY_GROUP={'I- 20':'I-20','State Rte 402':'I-20','I- 85':'I-85','State Rte 403':'I-85',
-  'I- 75':'I-75','State Rte 401':'I-75','I-285':'I-285','I- 285':'I-285','State Rte 407':'I-285'};
+  'I- 75':'I-75','State Rte 401':'I-75','I-285':'I-285','I- 285':'I-285','State Rte 407':'I-285',
+  'I-20':'I-20','I-85':'I-85','I-75':'I-75'};
 /* v1.0 ROAD DRAPE: TIGER polylines have vertices 100-500u apart, but the
    terrain mesh samples every 40u and curves between. A ribbon with one
    vertex pair per TIGER point is a straight 3D chord — it floats over dips
@@ -3963,16 +4205,37 @@ function densify(pts, maxStep){
   }
   return out;
 }
+/* CUTOVER §6.2 (approved by Joshua 2026-10-16): clip rect widened from the
+   core rect [0,WX]x[0,WZ] to the STAGE rect (STAGE_X0..X1 / STAGE_Z0..Z1);
+   margin semantics preserved exactly -- margin still extends past the rect. */
 function clipToWorld(pts, margin){
   margin=(margin===undefined)?100:margin;
   var out=[], cur=[];
-  function inside(p){ return p[0]>=-margin && p[0]<=WX+margin
-    && p[1]>=-margin && p[1]<=WZ+margin; }
+  function inside(p){ return p[0]>=STAGE_X0-margin && p[0]<=STAGE_X1+margin
+    && p[1]>=STAGE_Z0-margin && p[1]<=STAGE_Z1+margin; }
   for (var i=0;i<pts.length;i++){
     if (inside(pts[i])) cur.push(pts[i]);
     else { if (cur.length>1) out.push(cur); cur=[]; }
   }
   if (cur.length>1) out.push(cur);
+  return out;
+}
+/* STAGE2 (conversion cutover, design SS3.1): clipToWorld variant for
+   BAKED records -- clips pts and the aligned ys together, returning
+   {pts, ys} runs, so a baked height can never slide onto a neighbouring
+   station when a run is cut at the world edge. Legacy records keep
+   clipToWorld() above, untouched. */
+/* CUTOVER §6.2: same STAGE-rect widening as clipToWorld above. */
+function clipToWorldY(pts, ys, margin){
+  margin=(margin===undefined)?100:margin;
+  var out=[], cur=[], curY=[];
+  function inside(p){ return p[0]>=STAGE_X0-margin && p[0]<=STAGE_X1+margin
+    && p[1]>=STAGE_Z0-margin && p[1]<=STAGE_Z1+margin; }
+  for (var i=0;i<pts.length;i++){
+    if (inside(pts[i])){ cur.push(pts[i]); curY.push(ys[i]); }
+    else { if (cur.length>1) out.push({pts:cur, ys:curY}); cur=[]; curY=[]; }
+  }
+  if (cur.length>1) out.push({pts:cur, ys:curY});
   return out;
 }
 /* v2.1: total across whatever category keys exist in the data. */
@@ -4076,8 +4339,13 @@ try{ Object.keys(ROAD_DATA||{}).forEach(function(c){ if(ROAD_DATA[c]) roadSegsTo
   /* v1.3 LANE COUNTS (Joshua: I-285 at MLK is 4-6 lanes per direction).
      Interstates get 5 lanes/dir + shoulders = 34u wide with multi-lane
      divider dashes. Other highways keep 22u. */
+  /* STAGE2 (design SS2.1): OSM forms added -- converted data names these
+     "I-20"/"I-85"/"I-75" (no space). Without them a converted interstate
+     would miss the 34u width + 5-lane treatment. TIGER forms kept for
+     unconverted zones. */
   var INTERSTATES={'I- 20':1,'State Rte 402':1,'I- 85':1,'State Rte 403':1,
-    'I- 75':1,'State Rte 401':1,'I- 285':1,'I-285':1,'State Rte 407':1};
+    'I- 75':1,'State Rte 401':1,'I- 285':1,'I-285':1,'State Rte 407':1,
+    'I-20':1,'I-85':1,'I-75':1};
   function laneDashes(dpts, dys, width, lanesPerDir){
     // v1.3: divider dashes between lanes, riding the smoothed surface.
     /* v1.62 MATERIAL DRAPE (2026-10-12, Joshua): dashes ride the DRAPED
@@ -4192,6 +4460,63 @@ try{ Object.keys(ROAD_DATA||{}).forEach(function(c){ if(ROAD_DATA[c]) roadSegsTo
     if (cursor<pts.length-1) out.push({pts:pts.slice(cursor), divided:null});
     return out.filter(function(r){ return r.pts.length>=2; });
   }
+  /* STAGE2 (conversion cutover, CONVERSION-DESIGN SS3.1): ys-CARRYING
+     variants of the run-splitting helpers, used ONLY for baked records
+     (records carrying a stored ys array aligned with pts). Every split
+     that drops or slices points must slice ys at the same indices, or
+     the baked heights would silently attach to the wrong stations.
+     Legacy records never touch these -- they use splitDivided /
+     splitJumps / gapRuns exactly as before. */
+  function splitDividedY(pts, ys, divSecs){
+    if (!divSecs || !divSecs.length) return [{pts:pts, ys:ys, divided:null}];
+    var secs=divSecs.map(function(s){
+      return { from:Math.max(0, s.from_idx|0),
+               to:Math.min(pts.length-1, s.to_idx===undefined?pts.length-1:(s.to_idx|0)),
+               type:(s.type==='divider')?'divider':'median' };
+    }).filter(function(s){ return s.to>s.from; });
+    secs.sort(function(a,b){ return a.from-b.from; });
+    var merged=[];
+    secs.forEach(function(s){
+      var last=merged[merged.length-1];
+      if (last && s.from<=last.to+1){ last.to=Math.max(last.to,s.to); }
+      else merged.push(s);
+    });
+    var out=[], cursor=0;
+    merged.forEach(function(s){
+      if (s.from>cursor) out.push({pts:pts.slice(cursor, s.from+1), ys:ys.slice(cursor, s.from+1), divided:null});
+      out.push({pts:pts.slice(s.from, s.to+1), ys:ys.slice(s.from, s.to+1), divided:s.type});
+      cursor=s.to;
+    });
+    if (cursor<pts.length-1) out.push({pts:pts.slice(cursor), ys:ys.slice(cursor), divided:null});
+    return out.filter(function(r){ return r.pts.length>=2; });
+  }
+  function splitJumpsY(runs){
+    var out=[];
+    runs.forEach(function(rn){
+      var pts=rn.pts, ys=rn.ys, cur=[pts[0]], curY=[ys[0]];
+      for (var i=1;i<pts.length;i++){
+        var d=Math.hypot(pts[i][0]-pts[i-1][0], pts[i][1]-pts[i-1][1]);
+        if (d>800){ if (cur.length>1) out.push({pts:cur, ys:curY, divided:rn.divided}); cur=[pts[i]]; curY=[ys[i]]; }
+        else { cur.push(pts[i]); curY.push(ys[i]); }
+      }
+      if (cur.length>1) out.push({pts:cur, ys:curY, divided:rn.divided});
+    });
+    return out;
+  }
+  function gapRunsY(pts, ys, gaps){
+    var runs=[], cur=[], curY=[];
+    pts.forEach(function(p, pi){
+      var drop=false;
+      for (var i=0;i<gaps.length;i++){
+        var g=gaps[i];
+        if (Math.hypot(p[0]-g[0],p[1]-g[1])<g[2]){ drop=true; break; }
+      }
+      if (drop){ if (cur.length>1) runs.push({pts:cur, ys:curY}); cur=[]; curY=[]; }
+      else { cur.push(p); curY.push(ys[pi]); }
+    });
+    if (cur.length>1) runs.push({pts:cur, ys:curY});
+    return runs;
+  }
   /* v2.1: build the two direction ribbons + center strip for a divided run.
      dpts/dys are the densified points and smoothed heights from the
      standard pipeline. */
@@ -4245,51 +4570,114 @@ try{ Object.keys(ROAD_DATA||{}).forEach(function(c){ if(ROAD_DATA[c]) roadSegsTo
       var w=ROAD_WIDTHS[ncat]||ROAD_WIDTHS.local;
       var isInterstate=(ncat==='interstate')||(ncat==='highway'&&INTERSTATES[r.name]);
       if (isInterstate) w=34;   // v1.3: 5 lanes/dir + shoulders
-      var divRuns=splitDivided(r.pts, r.divided_sections);
-      var runs=[];  /* v2.1: {pts, divided} — divided survives gap splits */
-      divRuns.forEach(function(dr){
-        splitJumps([dr.pts]).forEach(function(sj){ runs.push({pts:sj, divided:dr.divided}); });
-      });
-      /* v2.1: gap-split helper preserves the divided flag per run */
+      /* STAGE2 (conversion cutover, CONVERSION-DESIGN SS3.1): a record is
+         BAKED when it carries a stored ys array aligned with its pts
+         (converted-zone data -- heights are the final settled shape from
+         the converter). Baked records take the ys-carrying split helpers
+         so heights stay glued to their stations; records WITHOUT ys take
+         the original helpers, byte-for-byte the old behaviour. */
+      var recYs=(r.ys && r.ys.length===r.pts.length)?r.ys:null;
+      var isBakedRec=!!recYs;
+      var divRuns, runs=[];  /* v2.1: {pts, divided} -- divided survives gap splits; STAGE2: baked runs also carry {ys} */
+      if (isBakedRec){
+        divRuns=splitDividedY(r.pts, recYs, r.divided_sections);
+        divRuns.forEach(function(dr){
+          splitJumpsY([dr]).forEach(function(sj){ runs.push(sj); });
+        });
+      } else {
+        divRuns=splitDivided(r.pts, r.divided_sections);
+        divRuns.forEach(function(dr){
+          splitJumps([dr.pts]).forEach(function(sj){ runs.push({pts:sj, divided:dr.divided}); });
+        });
+      }
+      /* v2.1: gap-split helper preserves the divided flag per run.
+         STAGE2: on baked runs it slices ys with the points (gapRunsY);
+         on legacy runs it is the original helper, unchanged. */
       function applyGaps(runList, gaps){
         var out=[];
         runList.forEach(function(rn){
-          gapRuns(rn.pts, gaps).forEach(function(gp){ out.push({pts:gp, divided:rn.divided}); });
+          if (rn.ys){
+            gapRunsY(rn.pts, rn.ys, gaps).forEach(function(gp){ out.push({pts:gp.pts, ys:gp.ys, divided:rn.divided}); });
+          } else {
+            gapRuns(rn.pts, gaps).forEach(function(gp){ out.push({pts:gp, divided:rn.divided}); });
+          }
         });
         return out;
       }
-      if (r.name==='I- 20'||r.name==='State Rte 402'){  // v0.6: both TIGER names for I-20
-        runs=applyGaps(runs, OP_GAP);
-      }
-      else if (/Martin Luther King Jr Dr/.test(r.name)){  // v1.0: MLK over I-285
-        runs=applyGaps(runs, MLK_GAP);
+      /* STAGE2 (CONVERSION-DESIGN SS2.1): gap triggers now ALSO match the
+         OSM name forms ("I-20", "Martin Luther King Jr Drive") that
+         converted data uses -- the TIGER forms stay for unconverted
+         zones. BAKED records skip the gaps entirely, deliberately:
+         OP_GAP / MLK_GAP centres are ORIGINAL-frame TIGER patch
+         coordinates for the hand-built decks, while converted records
+         already carry their final geometry (crossings arrive as
+         separate ramp records), so gapping them here would cut holes
+         at wrong-frame locations in good data. */
+      if (!isBakedRec){
+        if (r.name==='I- 20'||r.name==='I-20'||r.name==='State Rte 402'){  // v0.6: TIGER names for I-20; STAGE2: + OSM "I-20"
+          runs=applyGaps(runs, OP_GAP);
+        }
+        else if (/Martin Luther King Jr (Dr|Drive)/.test(r.name)){  // v1.0: MLK over I-285; STAGE2: + OSM "... Jr Drive" form
+          runs=applyGaps(runs, MLK_GAP);
+        }
       }
       runs.forEach(function(run){
         var pts=run.pts, runDivided=run.divided;  /* v2.1: null | 'median' | 'divider' */
-        // v1.0: clip to world, then DENSIFY so the ribbon drapes terrain
-        var clipped=clipToWorld(pts, 100);
-        clipped.forEach(function(cpts){
-          var dpts=densify(cpts, 20);
-          // v1.0: cache per-vertex surface heights once — the ribbon AND the
-          // road-surface grid both read them, so the grid costs zero heightAt
-          var draw=[];
-          for (var di=0; di<dpts.length; di++) draw.push(roadSitY(dpts[di][0],dpts[di][1])+0.55);
-          // v1.3 PAVED FEEL: smooth the profile — macro hills stay,
-          // micro-bumps go. Visible ribbon AND van grid share these heights.
-          var dys=smoothHeights(dpts, draw);
-          // v1.3: roughness audit sample (every 40th run)
-          try{
-            if ((roadSegsBuilt%40)===0 && draw.length>10){
-              v13_roughRaw+=roughness(draw); v13_roughSmooth+=roughness(dys);
-              v13_roughN++;
-            }
-          }catch(e){}
+        /* STAGE2: baked runs carry run.ys (aligned with run.pts); legacy
+           runs carry no ys. clippedRuns normalises both shapes to
+           {pts, ys|null} so the loop below has exactly two paths. */
+        var clippedRuns;
+        if (run.ys){
+          clippedRuns=clipToWorldY(pts, run.ys, 100);
+        } else {
+          // v1.0: clip to world (legacy records, unchanged helper)
+          clippedRuns=clipToWorld(pts, 100).map(function(cp){ return {pts:cp, ys:null}; });
+        }
+        clippedRuns.forEach(function(crun){
+          var cpts=crun.pts;
+          var bakedRun=!!crun.ys;
+          var dpts, dys;
+          if (bakedRun){
+            /* STAGE2 BAKED PATH (CONVERSION-DESIGN SS3.1/SS3.4): the
+               stored points ARE the final stations (converter segmented
+               <=1 m, draped at +0.01, then solidify-pruned) and the
+               stored ys ARE the final heights. NO densify (nothing to
+               densify -- the points are already final), NO smoothHeights
+               (smoothing would undo the +0.01 drape), NO junction-pin
+               pull inside smoothHeights either (two baked roads sampling
+               the same ground at the same xz already agree -- the pins'
+               height role is subsumed by the bake, design SS2.5). */
+            dpts=cpts;
+            dys=crun.ys.slice();
+          } else {
+            // v1.0: DENSIFY so the ribbon drapes terrain
+            dpts=densify(cpts, 20);
+            // v1.0: cache per-vertex surface heights once — the ribbon AND the
+            // road-surface grid both read them, so the grid costs zero heightAt
+            var draw=[];
+            for (var di=0; di<dpts.length; di++) draw.push(roadSitY(dpts[di][0],dpts[di][1])+0.55);
+            // v1.3 PAVED FEEL: smooth the profile — macro hills stay,
+            // micro-bumps go. Visible ribbon AND van grid share these heights.
+            dys=smoothHeights(dpts, draw);
+            // v1.3: roughness audit sample (every 40th run) -- legacy only:
+            // baked runs have no raw-vs-smoothed pair to compare.
+            try{
+              if ((roadSegsBuilt%40)===0 && draw.length>10){
+                v13_roughRaw+=roughness(draw); v13_roughSmooth+=roughness(dys);
+                v13_roughN++;
+              }
+            }catch(e){}
+          }
           // v1.0: decimated points for the minimap (14k features — full density is too slow per frame)
           var mmPts=[]; for (var mi2=0; mi2<dpts.length; mi2+=4) mmPts.push(dpts[mi2]);
           if (dpts.length>1) mmPts.push(dpts[dpts.length-1]);
           var astore=asphaltByCat[ncat]||asphaltByCat.local;  /* v2.1: per-category tint */
           roadDrawData.push({pts:dpts, ys:dys, mmPts:mmPts, w:w, cat:ncat, name:r.name,
-            lanes:isInterstate?5:0, divided:runDivided||null});  /* v2.1: divided flag for traffic */
+            lanes:isInterstate?5:0, divided:runDivided||null,  /* v2.1: divided flag for traffic */
+            /* STAGE2: baked flag + strip count, so buildRoadGrids /
+               roadSurfaceY evaluate the SAME strip surface the ribbon
+               draws (design SS6.6) instead of the flat centreline. */
+            baked:bakedRun?1:0, strips:bakedRun?stripCountForWidth(w):0});
           roadSegsBuilt++;
           try{ roadBuiltByClass[ncat]=(roadBuiltByClass[ncat]||0)+1; }catch(e){}
           /* v2.1 MARKING COVERAGE by class:
@@ -4298,6 +4686,19 @@ try{ Object.keys(ROAD_DATA||{}).forEach(function(c){ if(ROAD_DATA[c]) roadSegsTo
              local: center dashes. Divided runs get the split-ribbon treatment. */
           if (runDivided){
             buildDividedRun(dpts, dys, w, runDivided, ncat, isInterstate);
+          } else if (bakedRun){
+            /* STAGE2: strip ribbon -- drape flag OFF, rail mode ON. Every
+               rail vertex is SET to ground+0.01 by ribbonGeomY's strip
+               branch (never max()ed against the +0.55 material lift --
+               that max() behaviour stays with decks/ramps/markings,
+               which pass no rail flag). Markings below still ride the
+               stored centreline heights (dys), as legacy markings do. */
+            pushInto(astore, ribbonGeomY(dpts, w, dys, false, {strips:stripCountForWidth(w)}));
+            if (isInterstate){ centerDoubleYellow(dpts, dys); laneDashes(dpts, dys, w, 5); }
+            else if (ncat==='highway'){ centerDoubleYellow(dpts, dys); laneDashes(dpts, dys, w, 3); }
+            else if (ncat==='major_artery'){ grassMedian(dpts, dys); laneDashes(dpts, dys, w, 3); }
+            else if (ncat==='minor_artery'){ grassMedian(dpts, dys); laneDashes(dpts, dys, w, 2); }
+            else { dashes(dpts, dys); }
           } else {
             pushInto(astore, ribbonGeomY(dpts, w, dys, true));  /* v1.62: material drape — edges ride out of uphill grass */
             if (isInterstate){ centerDoubleYellow(dpts, dys); laneDashes(dpts, dys, w, 5); }
@@ -4508,8 +4909,13 @@ try{ __parseSet('Placing street furniture', '', 40); }catch(e){}
     /* v1.10.1 road-pass-1: same-corridor alias pairs (I- 85 x State Rte 403 etc.)
        are NOT real intersections (inspector phantom-intersection finding:
        164 alias pairs). Skip them so furniture isn't placed inside the road. */
+    /* STAGE2 (design SS2.1): OSM interstate spellings added so converted
+       records ("I-20" etc.) are recognised as the same corridors as their
+       TIGER aliases -- otherwise every converted interstate crossing
+       would spawn phantom-intersection furniture inside the road. */
     var CORRIDOR={'I- 20':'I20','State Rte 402':'I20','I- 85':'I85','State Rte 403':'I85',
-      'I- 75':'I75','State Rte 401':'I75','I- 285':'I285','I-285':'I285','State Rte 407':'I285'};
+      'I- 75':'I75','State Rte 401':'I75','I- 285':'I285','I-285':'I285','State Rte 407':'I285',
+      'I-20':'I20','I-85':'I85','I-75':'I75'};
     function sameCorridor(a,b){
       var ca=CORRIDOR[(a||'').trim()], cb=CORRIDOR[(b||'').trim()];
       return !!(ca && cb && ca===cb);
@@ -4935,12 +5341,36 @@ function buildRoadGrids(){
   try{
     roadDrawData.forEach(function(r){
       var hw=r.w/2+1.5, nm=r.name||'';
+      /* STAGE2 (BAKE SS5.3 + CONVERSION-DESIGN SS3.4): baked entries
+         (r.baked, from converted records) use the +0.01 grid fallback --
+         the baked truth -- instead of +0.55, and their segments carry the
+         extra fields bakedStripSurfaceY() needs (indices 9-15 below).
+         Legacy entries keep the +0.55 fallback exactly as before; the
+         fallback only fires when an entry has no stored ys at all. */
+      var fbLift=r.baked?0.01:0.55;
       for (var i=0;i<r.pts.length-1;i++){
         var ax=r.pts[i][0], az=r.pts[i][1],
             bx=r.pts[i+1][0], bz=r.pts[i+1][1];
-        var y1=(r.ys&&r.ys[i]!==undefined)?r.ys[i]:heightAt(ax,az)+0.55,
-            y2=(r.ys&&r.ys[i+1]!==undefined)?r.ys[i+1]:heightAt(bx,bz)+0.55;
-        var seg=[ax,az,bx,bz,y1,y2,hw,nm,r.cat||null];  // v1.8: s[8]=road class for speed limits
+        var y1=(r.ys&&r.ys[i]!==undefined)?r.ys[i]:heightAt(ax,az)+fbLift,
+            y2=(r.ys&&r.ys[i+1]!==undefined)?r.ys[i+1]:heightAt(bx,bz)+fbLift;
+        /* STAGE2: per-endpoint unit perpendiculars (station direction
+           from the full polyline -- the same neighbour rule ribbonGeomY
+           uses) so surface evaluation samples rails at the same xz the
+           ribbon drew. Legacy segments store 0s and never read them. */
+        var pax=0, paz=0, pbx=0, pbz=0, segStrips=0;
+        if (r.baked){
+          var pa=r.pts[Math.max(0,i-1)], na=r.pts[i+1];
+          var dax=na[0]-pa[0], daz=na[1]-pa[1], dal=Math.hypot(dax,daz)||1;
+          pax=-daz/dal; paz=dax/dal;
+          var pb=r.pts[i], nb=r.pts[Math.min(r.pts.length-1,i+2)];
+          var dbx=nb[0]-pb[0], dbz=nb[1]-pb[1], dbl=Math.hypot(dbx,dbz)||1;
+          pbx=-dbz/dbl; pbz=dbx/dbl;
+          segStrips=r.strips||stripCountForWidth(r.w);
+        }
+        /* seg layout: indices [0..8] unchanged for every existing
+           consumer; STAGE2 appends [9]=baked flag, [10]=true width,
+           [11..14]=endpoint perpendiculars, [15]=strip count. */
+        var seg=[ax,az,bx,bz,y1,y2,hw,nm,r.cat||null, r.baked?1:0, r.w, pax,paz,pbx,pbz, segStrips];  // v1.8: s[8]=road class for speed limits
         roadSurfSegs++;
         var c0=Math.floor((Math.min(ax,bx)-hw)/40),
             c1=Math.floor((Math.max(ax,bx)+hw)/40),
@@ -5103,11 +5533,21 @@ function roadSurfaceY(x,z){
       t=Math.max(0,Math.min(1,t));
       var dx=x-(s[0]+vx*t), dz=z-(s[1]+vz*t);
       if (dx*dx+dz*dz <= s[6]*s[6]){
-        var y=s[4]+(s[5]-s[4])*t;
+        /* STAGE2 (BAKE SS5.3 / CONVERSION-DESIGN SS3.4+SS6.6): baked
+           segments (s[9]) evaluate the STRIP surface -- the same surface
+           ribbonGeomY draws, rails at ground+0.01 across the width --
+           NOT the flat centreline lerp, so driving height == drawn
+           height across the whole road. Legacy segments keep the
+           centreline lerp exactly as before. */
+        var y=s[9]?bakedStripSurfaceY(s,x,z):(s[4]+(s[5]-s[4])*t);
         // score: prefer surfaces near terrain+0.55 (normal road height).
+        // STAGE2: the preference is per-segment -- baked roads sit at
+        // terrain+0.01 BY DESIGN (BAKE SS5.3 moves the preference
+        // constant to 0.01), legacy roads keep the 0.55 preference, so
+        // an overlapping baked/legacy pair still picks the right one.
         // Surfaces >8u above terrain are heavily penalized (likely ghost/duplicate).
         var above=y-terr;
-        var score=Math.abs(above-0.55) + (above>8 ? (above-8)*10 : 0);
+        var score=Math.abs(above-(s[9]?0.01:0.55)) + (above>8 ? (above-8)*10 : 0);
         if (score<bestScore){ bestScore=score; best=y; }
       }
     }

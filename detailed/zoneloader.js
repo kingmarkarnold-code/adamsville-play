@@ -71,6 +71,55 @@ var ZONE_BOUNDS = {
   'riverdale':   {xMin:5398,  xMax:8200,  zMin:4218,  zMax:12200},
 };
 
+/* ---------------- STAGE2: zone.json metadata (conversion cutover) ----------
+   CONVERSION-DESIGN SS2.9 / SS5 step 2e: converted zones ship a truthful
+   zone.json (id, geographic definition, derived zone-frame bounds,
+   counts). The deferred loader fetches it (see the 'zone' entry in
+   injectZoneScripts below) and hands it to registerZoneMeta(), which
+   adopts its bounds for the CURRENT zone over the literal table above.
+   The literals remain the fail-open fallback -- a missing or malformed
+   zone.json changes nothing.
+   NOTE: zoneunlock.js keeps its OWN literal ZONES table for gameplay
+   unlock logic; this loader change deliberately does NOT rewrite it
+   (flagged as an open item in the Stage 2 report -- the two tables
+   already disagree on rounding for adamsville, and converted bounds
+   will differ more for zones whose literals are still original-frame). */
+var _zoneMetaById = {};   // zoneId -> parsed zone.json, as delivered
+function _validBounds(b){
+  return !!b && isFinite(b.xMin) && isFinite(b.xMax) && isFinite(b.zMin) && isFinite(b.zMax)
+    && b.xMax > b.xMin && b.zMax > b.zMin;
+}
+function registerZoneMeta(meta){
+  try{
+    if (!meta || typeof meta !== 'object') return false;
+    var id = (typeof meta.id === 'string' && meta.id) ? meta.id : CURRENT_ZONE;
+    _zoneMetaById[id] = meta;
+    if (id === CURRENT_ZONE && _validBounds(meta.bounds)){
+      /* Adopt the zone.json bounds verbatim (no rounding -- the file's
+         numbers are the truth, design SS2.9). checkZoneCrossing() and
+         findZoneForPoint() read ZONE_BOUNDS, so they pick this up. */
+      ZONE_BOUNDS[id] = {xMin:meta.bounds.xMin, xMax:meta.bounds.xMax,
+                         zMin:meta.bounds.zMin, zMax:meta.bounds.zMax};
+      try{
+        window.ZONELOADER.bounds = ZONE_BOUNDS[id];
+        window.ZONELOADER.zoneMeta = meta;
+        if (meta.counts) window.ZONELOADER.counts = meta.counts;
+      }catch(e){}
+      return true;
+    }
+    return false;  /* stored for getBounds(), but bounds unusable -> literals stay */
+  }catch(e){ return false; }
+}
+function getEffectiveBounds(zoneId){
+  /* Bounds a caller should trust for a zone: the zone.json bounds when
+     that zone's metadata has been registered, else the literal table. */
+  var id = zoneId || CURRENT_ZONE;
+  var m = _zoneMetaById[id];
+  if (m && _validBounds(m.bounds))
+    return {xMin:m.bounds.xMin, xMax:m.bounds.xMax, zMin:m.bounds.zMin, zMax:m.bounds.zMax};
+  return ZONE_BOUNDS[id] || null;
+}
+
 /* ---------------- dynamic script injection ----------------
    Called during HTML parsing via document.write to load zone data
    synchronously before the world-building code runs. */
@@ -86,6 +135,11 @@ function injectZoneScripts(zoneId){
      pathology. index.html fetches each .json and assigns the globals below.
      The old .js files remain as fallback (loaded if JSON fails). */
   var files = [
+    /* STAGE2 (design SS2.9): zone metadata FIRST, so its bounds are
+       registered before any consumer can ask for them. Handled
+       specially by the deferred loader's assignZoneGlobals (key
+       'zone'); global is null because it maps to no single global. */
+    {src: base + 'zone.json',      key: 'zone',      global: null},
     {src: base + 'roads.json',     key: 'roads',     global: 'ROAD_DATA'},
     {src: base + 'signs.json',     key: 'signs',     global: 'EXIT_SIGNS'},
     {src: base + 'lifts.json',     key: 'lifts',     global: 'TERRAIN_LIFTS'},
@@ -207,6 +261,15 @@ window.ZONELOADER = {
   checkZoneCrossing: checkZoneCrossing,
   findZoneForPoint: findZoneForPoint,
   ZONE_BOUNDS: ZONE_BOUNDS,
+  /* STAGE2 (design SS2.9): zone.json consumption -- registerZoneMeta is
+     called by index.html's deferred loader when zone.json arrives;
+     getBounds returns metadata bounds when available, else literals.
+     zoneMeta/counts are filled in by registerZoneMeta for the current
+     zone (null until then). */
+  registerZoneMeta: registerZoneMeta,
+  getBounds: getEffectiveBounds,
+  zoneMeta: null,
+  counts: null,
 };
 
 /* ---------------- expose zone files on load ----------------

@@ -97,7 +97,12 @@
     };
     // Preserve editor-only fields the new renderer will use.
     // Unknown fields are simply carried along, never interpreted here.
+    // STAGE2 (conversion cutover): "ys" added -- if a record with baked
+    // heights ever passes through here (mixed legacy/converted data),
+    // stripping ys would silently un-bake it back to the smoothed
+    // pipeline. Carrying it is harmless for legacy records (absent).
     var passthrough = [
+      "ys",
       "divided_sections", "width_class", "paint",
       "sidewalk_left", "sidewalk_right", "sidewalk_width",
       "cul_de_sac", "divider_type", "direction_labels",
@@ -233,6 +238,39 @@
    * Exposed for manual re-sync / debugging.
    */
   function syncRoads() {
+    /* STAGE2 (conversion cutover, CONVERSION-DESIGN SS5 step 6): a
+       CONVERTED zone's own files are the single source of truth. Its
+       ROAD_DATA already carries the final baked roads (records with
+       ys), and street-name lookup / GPS read those names straight from
+       roadSurfGrid / ROAD_DATA, which buildRoads built from the zone
+       files -- the converted zone no longer needs this overlay at all.
+       Swapping the old editor repo's roads in here would replace the
+       converted names AND drop every baked ys (overlay records carry
+       no heights): exactly the copy-drift failure the conversion
+       exists to end. So when the loaded zone's data is converted, the
+       remote fetch is skipped FOR THIS ZONE. The fetch/convert code
+       below is untouched and still runs for unconverted zones.
+       Detection (either signal is decisive):
+         - window.__ZONE_META.converted === true (zone.json marker), or
+         - any loaded ROAD_DATA record already carries a ys array
+           (converted records always do; legacy records never do). */
+    try {
+      var metaC = (typeof window !== "undefined" && window.__ZONE_META && window.__ZONE_META.converted === true);
+      var dataC = false;
+      try {
+        if (typeof ROAD_DATA !== "undefined" && ROAD_DATA) {
+          for (var ck in ROAD_DATA) {
+            var lst = ROAD_DATA[ck];
+            if (lst && lst.length && lst[0] && Array.isArray(lst[0].ys)) { dataC = true; break; }
+          }
+        }
+      } catch (e2) {}
+      if (metaC || dataC) {
+        try { window.__ROAD_SYNC_SKIPPED_CONVERTED = true; } catch (e3) {}
+        log("converted zone detected -- zone files are authoritative; remote editor overlay skipped for this zone.");
+        return;
+      }
+    } catch (e) { /* detection must never break the legacy sync */ }
     // Roads and zones fetch in parallel; each is independent.
     fetchJson(ROADS_URL).then(function (doc) {
       if (!doc) {
