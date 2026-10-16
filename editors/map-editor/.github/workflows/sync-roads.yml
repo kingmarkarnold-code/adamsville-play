@@ -1,0 +1,97 @@
+# ============================================================================
+# Sync Roads → Game
+# ----------------------------------------------------------------------------
+# WHERE THIS FILE GOES:
+#   kingmarkarnold-code/adamsville-map-editor/.github/workflows/sync-roads.yml
+#
+# WHAT IT DOES (Joshua's design):
+#   When roads.json or zones.json is pushed to the map-editor repo,
+#   this workflow automatically converts the data and bakes it into the
+#   game repo. The editor's changes become part of the game's new base.
+#
+#   Map editor push → this workflow → game repo updated → game loads local files
+#
+# TRIGGER: push to main affecting roads.json or zones.json
+#
+# SECRETS NEEDED:
+#   GAME_REPO_TOKEN — a GitHub Personal Access Token (classic) with `repo`
+#   scope for kingmarkarnold-code. Create at:
+#   https://github.com/settings/tokens
+#   Add as a repository secret in the map-editor repo:
+#   Settings → Secrets and variables → Actions → New repository secret
+#   Name: GAME_REPO_TOKEN
+# ============================================================================
+
+name: Sync Roads to Game
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'roads.json'
+      - 'zones.json'
+
+jobs:
+  sync-roads:
+    runs-on: ubuntu-latest
+
+    steps:
+      # -- Get the map-editor repo (this repo, the data source) --------------
+      - name: Checkout map-editor repo
+        uses: actions/checkout@v4
+        # (no `path:` — checks out to the workspace root, so this repo's
+        # own .github/workflows/ scripts are reachable at the repo-root
+        # relative path used below)
+
+      # -- Get the game repo (the destination) --------------------------------
+      - name: Checkout game repo
+        uses: actions/checkout@v4
+        with:
+          repository: kingmarkarnold-code/adamsville-play
+          token: ${{ secrets.GAME_REPO_TOKEN }}
+          path: game
+
+      # -- Convert and bake ---------------------------------------------------
+      - name: Convert roads.json to zone road files
+        run: |
+          python3 .github/workflows/convert_roads.py \
+            --roads roads.json \
+            --zones zones.json \
+            --game-dir game/detailed \
+            --manifest game/detailed/map-manifest.json
+
+      # -- Commit to the game repo --------------------------------------------
+      - name: Commit baked road files to game repo
+        run: |
+          cd game
+          git config user.name "Joshua Arnold"
+          git config user.email "joshua.arnold@adamsville.game"
+          git add detailed/zones/*/roads.json
+          git add detailed/zones/*/roads.js
+          git add detailed/zones/*/zone.json
+          git add detailed/map-manifest.json
+          # Only commit if something actually changed (idempotent)
+          if git diff --cached --quiet; then
+            echo "No road changes to bake — skipping commit."
+          else
+            # Bump map_version (format YYYY.MM.DD.N)
+            python3 - << 'PYEOF'
+          import json, datetime
+          mp = 'detailed/map-manifest.json'
+          with open(mp) as f:
+              m = json.load(f)
+          today = datetime.date.today().strftime('%Y.%m.%d')
+          ver = m.get('map_version', '')
+          if ver.startswith(today):
+              n = int(ver.rsplit('.', 1)[-1]) + 1
+              m['map_version'] = f'{today}.{n}'
+          else:
+              m['map_version'] = f'{today}.1'
+          with open(mp, 'w') as f:
+              json.dump(m, f, indent=2)
+          print(f"Bumped map_version to {m['map_version']}")
+          PYEOF
+            git add detailed/map-manifest.json
+            git commit -m "Bake map-editor roads/zones into game (auto-sync)"
+            git push
+          fi
