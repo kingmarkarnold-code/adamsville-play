@@ -414,9 +414,9 @@
     },
     {
       "name": "menu_layout_apply.js",
-      "size": 4286,
-      "sha256": "814f9e79a32a9bbaedb605db0ad4f9901272de30d581c40369cebceb4578fe01",
-      "hash": "814f9e79a32a9bbaedb605db0ad4f9901272de30d581c40369cebceb4578fe01"
+      "size": 7842,
+      "sha256": "96805d61146feeef999ece522c0cc2487e07eaf27e2c72d911289bbdcc2b0e0b",
+      "hash": "96805d61146feeef999ece522c0cc2487e07eaf27e2c72d911289bbdcc2b0e0b"
     },
     {
       "name": "road_sync.js",
@@ -435,6 +435,6 @@
       "hash": "d12a29b303333e7637e2311c5b4fea9608a5c138215032b92093ae93d53d0d17"
     }
   ],
-  "ui_version": "2026.10.16.191",
-  "version": "2026.10.16.191"
+  "ui_version": "2026.10.16.192",
+  "version": "2026.10.16.192"
 }
