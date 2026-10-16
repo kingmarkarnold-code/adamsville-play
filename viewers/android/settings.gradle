@@ -1,0 +1,3 @@
+// Project settings for the Adamsville Map Viewer Android app.
+rootProject.name = "AdamsvilleMapViewer"
+include ":app"
