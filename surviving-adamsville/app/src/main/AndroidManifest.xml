@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.joshua.survivingadamsville"
+    android:versionCode="21"
+    android:versionName="1.10.1">
+
+    <!-- min 26 (Android 8.0, Joshua's TCL) / target 34. -->
+    <uses-sdk
+        android:minSdkVersion="26"
+        android:targetSdkVersion="34" />
+
+    <!-- v1.10: game recorder. MediaProjection on API 34 requires a
+         foreground service of type mediaProjection — no runtime
+         permissions, no storage permission (MediaStore). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+
+    <!-- No other permissions needed: the whole game (Three.js + assets) is local. -->
+
+    <application
+        android:label="Surviving Adamsville"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen"
+        android:allowBackup="true"
+        android:supportsRtl="true">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:screenOrientation="landscape"
+            android:configChanges="orientation|screenSize|keyboardHidden">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <!-- v0.9: serves the shareable report JSON to the share sheet.
+             No storage permission needed (cache dir + per-Intent grant). -->
+        <provider
+            android:name=".ReportProvider"
+            android:authorities="com.joshua.survivingadamsville.reportprovider"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+        <!-- v1.10: foreground service hosting the MediaProjection recorder.
+             API 34 requires foregroundServiceType="mediaProjection". -->
+        <service
+            android:name=".RecorderService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
+    </application>
+</manifest>
