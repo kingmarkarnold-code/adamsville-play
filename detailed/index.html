@@ -7986,6 +7986,40 @@ var camSnapT=0;  // v0.6: authoritative behind-car snap timer (seconds)
 var drive={ gas:false, brake:false, hb:false, left:false, right:false };
 window.drive=drive;  // v1.64 FIX: same — expose for Input.sample()
 
+/* v2.1 GAMEPAD LOOK (2026-10-16 — Joshua: the right stick should rotate
+   the player's view): window exposure for gamepad_input.js, following the
+   same pattern as window.keys / window.drive above (v1.64). add(dYaw,
+   dPitch) applies EXACTLY the look branch logic of the touchmove drag
+   handler below: the caller passes drag-equivalent radians (what a drag's
+   pixel delta converts to at full sensitivity) and add() re-applies the
+   v1.12.2 half-sensitivity indoors on the first-person branch, routes
+   driving -> look.yawOff, indoors -> fpLookYaw + fpPitch (clamped to
+   +/-1.1 here, and clamped again in updateCamera when read), and on foot
+   -> camYaw. Orbit and chase modes ignore dPitch, exactly like the drag.
+   Sign convention matches the drag: positive dYaw turns the view right
+   (the branches subtract it); positive dPitch pitches the first-person
+   view down. The drag path has no delta accumulator — a drag writes
+   these variables the instant it moves — so add() accumulates into the
+   same variables directly. Guarded so a call before the player/car exist
+   (or with junk values) is a safe no-op; gamepad_input.js feature-detects
+   window.LookInput and simply leaves the stick unmapped on builds
+   without it. */
+window.LookInput = {
+  add: function(dYaw, dPitch){
+    try {
+      if (typeof dYaw !== 'number' || !isFinite(dYaw)) dYaw = 0;
+      if (typeof dPitch !== 'number' || !isFinite(dPitch)) dPitch = 0;
+      if (!dYaw && !dPitch) return;
+      if (car && car.driving) look.yawOff -= dYaw;
+      else if (player.inside && !(car && car.driving)){
+        fpLookYaw -= dYaw * 0.5;
+        fpPitch = Math.max(-1.1, Math.min(1.1, fpPitch - dPitch));
+      }
+      else camYaw -= dYaw;
+    } catch(e){}
+  }
+};
+
 var joyBase=document.getElementById('joy-base'), joyKnob=document.getElementById('joy-knob');
 var actionBtn=document.getElementById('action-btn'), modeTag=document.getElementById('mode-tag');
 

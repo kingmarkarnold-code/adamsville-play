@@ -56,9 +56,9 @@
     },
     {
       "name": "gamepad_input.js",
-      "sha256": "7400202ebefff5684d10563b0799b2a242f3906058b35a87d205da32d67dedd5",
-      "size": 38311,
-      "hash": "7400202ebefff5684d10563b0799b2a242f3906058b35a87d205da32d67dedd5"
+      "sha256": "44b1e53bb6759cd8202932aef51b7b88538deb8001b22e9f51ee72265309add2",
+      "size": 44470,
+      "hash": "44b1e53bb6759cd8202932aef51b7b88538deb8001b22e9f51ee72265309add2"
     },
     {
       "name": "github-config.js",
@@ -100,9 +100,9 @@
     },
     {
       "name": "index.html",
-      "size": 900880,
-      "sha256": "7f8c09dbed3ce117068b6bec2d208acd22219ae09f30b8e9a2dd226cf442e2a2",
-      "hash": "7f8c09dbed3ce117068b6bec2d208acd22219ae09f30b8e9a2dd226cf442e2a2"
+      "size": 902633,
+      "sha256": "d8d58252fca7a9681c4f178f0ce23e9340489b33a27a65efc7290f330efdbce6",
+      "hash": "d8d58252fca7a9681c4f178f0ce23e9340489b33a27a65efc7290f330efdbce6"
     },
     {
       "name": "infracrew_system.js",
@@ -429,6 +429,6 @@
       "sha256": "059bdd0d517e2b39fecc7c973a429298e4f4140aee967f8286f3cc4147f112cd"
     }
   ],
-  "ui_version": "2026.10.16.190",
-  "version": "2026.10.16.190"
+  "ui_version": "2026.10.16.191",
+  "version": "2026.10.16.191"
 }

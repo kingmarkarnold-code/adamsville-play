@@ -1,6 +1,11 @@
 /* ============================================================================
-   GAMEPAD INPUT v2.0 — Bluetooth / USB controller support (Joshua 2026-10-16)
-   v2.0 adds USER-REMAPPABLE BUTTONS (Settings -> "Controller Buttons").
+   GAMEPAD INPUT v2.1 — Bluetooth / USB controller support (Joshua 2026-10-16)
+   v2.0 added USER-REMAPPABLE BUTTONS (Settings -> "Controller Buttons").
+   v2.1 adds RIGHT-STICK CAMERA (the stick rotates the player's view via
+   window.LookInput, exposed by index.html) and replaces the remap
+   press-capture flow with a PER-BUTTON PICKER: every assignable button
+   is listed by name, shows its action (or "None"), and tapping a row
+   lets the player pick that button's action from a list.
 
    PURPOSE:
    Lets a standard game controller (Bluetooth HID or USB — Android pairs it
@@ -38,12 +43,20 @@
    On foot, the triggers / d-pad / stick-X steer nothing, exactly like the
    keyboard scheme where WASD only becomes pedals inside the car.
 
-   CAMERA:
-   The orbit camera's yaw variables (camYaw / look.yawOff / fpLookYaw)
-   also live inside index.html's main block and are not exposed on window,
-   and the game has NO keyboard camera keys to fall back to (verified:
-   camera moves by touch/mouse drag only). So the right stick is
-   intentionally unmapped rather than faking drag events.
+   CAMERA (v2.1):
+   The look state (camYaw / look.yawOff / fpLookYaw / fpPitch) lives
+   inside index.html's main block. index.html exposes it through a tiny
+   window.LookInput.add(dYaw, dPitch) API (placed beside the look state,
+   the same window-exposure pattern as window.keys): add() applies the
+   EXACT branch logic of the touch drag handler — driving -> look.yawOff,
+   first-person indoors -> fpLookYaw + clamped fpPitch (including the
+   v1.12.2 half-sensitivity indoors), on foot -> camYaw — so the right
+   stick rotates the view precisely the way a drag does, with no
+   synthetic drag events. The module feature-detects window.LookInput
+   every frame: on a build without it (older index.html) the stick is
+   simply unmapped and everything else works as before. The game has no
+   look-sensitivity or invert setting (verified), so the stick uses the
+   fixed speeds named in the Tunables below.
 
    OWNERSHIP RULE (never fight the physical keyboard):
    The module only ever releases a key/field that IT pressed. If a field
@@ -53,39 +66,48 @@
    owner's own release clears it. On controller disconnect, everything the
    module holds is released, so nothing can stick.
 
-   CONTROLLER MAP — the six button-backed actions are REMAPPABLE:
-   Open Settings (gear button) -> "Controller Buttons" section. Each row
-   shows the action, its current button, and a Change button: tap Change,
-   then press any controller button to assign it. The mapping is saved in
-   localStorage (key 'sa.gamepad.map.v1') and survives restarts. If the
-   button you press already belongs to another action, that action becomes
-   unassigned ("—") — last assignment wins. "Reset controller buttons"
-   restores the defaults below. An action set to "—" (unassigned) does
-   nothing when playing. The sticks and the D-pad are NOT remappable.
+   CONTROLLER MAP — six actions, assigned PER BUTTON:
+   Open Settings (gear button) -> "Controller Buttons" section. The
+   section lists EVERY assignable button as its own row — A, B, X, Y,
+   L1, R1, L2, R2, Select, Start, Home — showing the action it currently
+   performs, or the word "None". Tap a row's Set button and pick the
+   action for that button from the list (Action, Gas, Brake, Handbrake,
+   Settings, Back — or None to clear it). One button per action still
+   holds: giving an action to a button takes it away from whichever
+   button had it (that button drops to None). The mapping is saved in
+   localStorage (key 'sa.gamepad.map.v1', stored action -> button) and
+   survives restarts. "Reset controller buttons" restores the defaults
+   below. A button set to None does nothing in play. The sticks and the
+   D-pad are NOT remappable. (Home is listed like any other button and
+   its assignment saves normally — but note the browser/OS commonly
+   intercepts the Home button, so a press may never reach the page.)
    Defaults (standard mapping indices):
-     A (0) ........ ACTION — Joshua's universal action button: mirrors the
-                    'e' key exactly (holds keys['e'] and clicks #action-btn
-                    on the press edge when the button is on screen)
-     RT (7) ....... drive.gas      (analog value > 0.35 while driving)
-     LT (6) ....... drive.brake    (analog value > 0.35 while driving)
-     LB (4) ....... drive.hb       (handbrake, while driving)
-     Start (9) .... settings menu (clicks the #help-btn gear, which
+     A (0) ........ Action — Joshua's universal action button: mirrors
+                    the 'e' key exactly (holds keys['e'] and clicks
+                    #action-btn on the press edge when it is on screen)
+     R2 (7) ....... Gas      (analog value > 0.35 while driving)
+     L2 (6) ....... Brake    (analog value > 0.35 while driving)
+     L1 (4) ....... Handbrake (while driving)
+     Start (9) .... Settings menu (clicks the #help-btn gear, which
                     toggles the #settings panel)
-     B (1) ........ back — closes the topmost open panel (#help, then
+     B (1) ........ Back — closes the topmost open panel (#help, then
                     #settings, then the full map)
+     X (2), Y (3), R1 (5), Select (8), Home (16) ... None by default
    Fixed (not remappable):
      Left stick .......... movement (keys w/a/s/d; 8-way past threshold)
      Left stick X (driving)  steer (drive.left / drive.right)
+     Right stick ......... camera: rotates the view (see CAMERA above)
      D-pad up / down ..... drive.gas / drive.brake (while driving)
      D-pad left / right .. drive.left / drive.right (while driving)
-     Right stick ......... unmapped (see CAMERA note above)
 
-   DEPENDENCIES: none. Loaded via the deferred data-dsrc queue right after
-   sim_core.js. Runs one lightweight poll per animation frame and does
-   nothing at all until a gamepad is connected. The remap UI is built and
-   injected by this module at runtime (index.html is untouched): it lives
-   in the game's own Settings panel when that panel is found, otherwise a
-   floating "🎮 Buttons" button opens the module's own overlay panel.
+   DEPENDENCIES: none required. Loaded via the deferred data-dsrc queue
+   right after sim_core.js. Runs one lightweight poll per animation frame
+   and does nothing at all until a gamepad is connected. The remap UI is
+   built and injected by this module at runtime: it lives in the game's
+   own Settings panel when that panel is found, otherwise a floating
+   "🎮 Buttons" button opens the module's own overlay panel. The right
+   stick additionally uses window.LookInput when index.html provides it
+   (v2.1+) and is silently unmapped when it does not.
    ============================================================================ */
 (function gamepadInput(){
 'use strict';
@@ -99,36 +121,70 @@ var AXIS_ON    = 0.40;  // per-axis push needed to count as a movement key
 var STEER_ON   = 0.35;  // stick-X push needed to steer while driving
 var TRIGGER_ON = 0.35;  // analog trigger travel that counts as pedal down
 
+/* Right-stick camera speeds: rotation rate at FULL deflection, scaled by
+   the stick's actual (deadzone-rescaled) deflection each frame. 2.4 rad/s
+   of yaw is a full turn in about 2.6 s — normal third-person game feel;
+   pitch runs slower because the first-person pitch range is only
+   +/-1.1 rad end to end. */
+var LOOK_YAW_SPEED   = 2.4;  // rad/s at full right-stick X deflection
+var LOOK_PITCH_SPEED = 1.8;  // rad/s at full right-stick Y deflection
+
 /* ---------------------------------------------------------------------------
    The remappable actions and their DEFAULT standard-mapping button
    indices. This table is the ONLY place those six indices appear: the
    runtime reads the live mapping (btnMap, loaded from localStorage) for
    every one of these actions, never a hardcoded index. The sticks and
-   the D-pad are fixed by design and are not part of this table.
+   the D-pad are fixed by design and are not part of this table. The
+   picker UI works the other way around (button -> action) but derives
+   everything from this same btnMap, so the two views can never disagree.
    ------------------------------------------------------------------------- */
 var ACTIONS = [
-  { id: 'action',    label: 'Action (interact / enter)', def: 0 },  // A
-  { id: 'gas',       label: 'Gas (driving)',             def: 7 },  // RT
-  { id: 'brake',     label: 'Brake (driving)',           def: 6 },  // LT
-  { id: 'handbrake', label: 'Handbrake (driving)',       def: 4 },  // LB
-  { id: 'settings',  label: 'Settings menu',             def: 9 },  // Start
-  { id: 'back',      label: 'Back / close panel',         def: 1 }   // B
+  { id: 'action',    short: 'Action',    label: 'Action (interact / enter)', def: 0 },  // A
+  { id: 'gas',       short: 'Gas',       label: 'Gas (driving)',             def: 7 },  // R2
+  { id: 'brake',     short: 'Brake',     label: 'Brake (driving)',           def: 6 },  // L2
+  { id: 'handbrake', short: 'Handbrake', label: 'Handbrake (driving)',       def: 4 },  // L1
+  { id: 'settings',  short: 'Settings',  label: 'Settings menu',             def: 9 },  // Start
+  { id: 'back',      short: 'Back',      label: 'Back / close panel',        def: 1 }   // B
 ];
 
-/* Human-readable names for standard-mapping button indices, used by the
-   remap UI so the player sees "RT" instead of "7". Anything past the
-   named range falls back to "Button N". */
+/* Short display name for an action id (used by the per-button rows and
+   the picker options), or null when the id is not a real action. */
+function actionShort(id){
+  for (var i = 0; i < ACTIONS.length; i++) if (ACTIONS[i].id === id) return ACTIONS[i].short;
+  return null;
+}
+
+/* Human-readable names for standard-mapping button indices (Joshua's
+   labels: L1/R1/L2/R2 for the shoulders and triggers), used by the
+   remap UI so the player sees "R2" instead of "7". Anything past the
+   named range falls back to "Button N". An unassigned button or action
+   always displays as the word "None". */
 var BTN_NAMES = {
   0: 'A', 1: 'B', 2: 'X', 3: 'Y',
-  4: 'LB', 5: 'RB', 6: 'LT', 7: 'RT',
+  4: 'L1', 5: 'R1', 6: 'L2', 7: 'R2',
   8: 'Select', 9: 'Start',
   10: 'L3 (stick click)', 11: 'R3 (stick click)',
   12: 'D-pad Up', 13: 'D-pad Down', 14: 'D-pad Left', 15: 'D-pad Right',
   16: 'Home', 17: 'Share'
 };
 function btnLabel(idx){
-  if (idx === null || typeof idx === 'undefined') return '—';  // unassigned
+  if (idx === null || typeof idx === 'undefined') return 'None';  // unassigned
   return BTN_NAMES[idx] || ('Button ' + idx);
+}
+
+/* The buttons the remap section lists, in display order — every
+   assignable button gets its own row (the D-pad is fixed and unlisted,
+   as are the stick clicks). The rows are DERIVED from btnMap
+   (action -> button) at render time: a row's action is whichever
+   action currently claims that button. */
+var BUTTON_ROWS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 16];
+
+/* Which action (id) currently owns a button index, or null. */
+function actionForButton(idx){
+  for (var i = 0; i < ACTIONS.length; i++){
+    if (btnMap[ACTIONS[i].id] === idx) return ACTIONS[i].id;
+  }
+  return null;
 }
 
 /* ---------------------------------------------------------------------------
@@ -160,7 +216,7 @@ function validBtn(v){
 /* Load the mapping: start from defaults, overlay any valid stored values.
    If two stored actions claim the same button, the earlier action in the
    ACTIONS table keeps it and the later one becomes unassigned — matching
-   the "one button, one action" rule the capture flow enforces. */
+   the "one button, one action" rule the picker enforces. */
 function loadMap(){
   var map = {}, used = {}, i, id;
   for (i = 0; i < ACTIONS.length; i++) map[ACTIONS[i].id] = ACTIONS[i].def;
@@ -231,29 +287,33 @@ var prevBtn = [];       // last frame's button-down states, for press-edge detec
 var myKeys = {};        // entries for window.keys we currently hold
 var myDrive = {};       // entries for window.drive we currently hold
 
-/* Capture state for the remap UI: while non-null, the player is assigning
-   a button — { action: <actionId>, deadline: <ms timestamp> }. During
-   capture the poll suppresses ALL writes to the game (and anything held
-   was released when capture started), so pressing buttons to assign them
-   can never drive the car or trigger the action being assigned. */
-var capture = null;
-var CAPTURE_MS = 10000; // capture auto-cancels after 10 s
+/* Picker state for the remap UI: while non-null, this is the button
+   index whose action picker is open in the panel. The picker is pure
+   DOM (taps/clicks) — unlike the v2.0 press-capture it needs no gamepad
+   input, so the poll never has to suppress anything for it. */
+var pickIdx = null;
+
+/* Frame-timing state for the right-stick look: the timestamp of the
+   previous poll (ms, from requestAnimationFrame), used to turn stick
+   deflection into a per-frame rotation delta. */
+var lastPollTs = 0;
 
 /* ---------------------------------------------------------------------------
    Public API — window.GamepadInput. The status fields (connected, index,
-   id, driving, capturing) are refreshed by the poll; the functions let the
+   id, driving, picking) are refreshed by the poll; the functions let the
    player (or a future UI) read/change the mapping programmatically.
    getMapping returns a copy; setMapping validates like the loader does
-   and applies the same "one button, one action" steal rule; resetMapping
-   restores the defaults; openRemapUI shows the remap panel. Every change
-   is saved to localStorage immediately.
+   and applies the same "one button, one action" steal rule;
+   setButtonAction assigns a single button (the picker's twin);
+   resetMapping restores the defaults; openRemapUI shows the remap
+   panel. Every change is saved to localStorage immediately.
    ------------------------------------------------------------------------- */
 var api = {
   connected: false,
   index: -1,
   id: '',
   driving: false,
-  capturing: null,
+  picking: null,
   getMapping: function(){ return mappingCopy(); },
   setMapping: function(next){
     if (next && typeof next === 'object'){
@@ -271,11 +331,20 @@ var api = {
     return mappingCopy();
   },
   resetMapping: function(){
-    cancelCapture();
+    pickIdx = null;
     for (var i = 0; i < ACTIONS.length; i++) btnMap[ACTIONS[i].id] = ACTIONS[i].def;
     saveMap();
     refreshRemapUI();
     reportSys('ok', 'controller buttons reset to defaults');
+    return mappingCopy();
+  },
+  /* Per-button assignment, the programmatic twin of the picker:
+     setButtonAction(buttonIndex, actionIdOrNull). Giving an action to
+     this button takes it away from whichever button had it; passing
+     null (or an unknown action id) clears the button instead. */
+  setButtonAction: function(idx, actionId){
+    if (!validBtn(idx)) return mappingCopy();
+    chooseButtonAction(idx, actionId);
     return mappingCopy();
   },
   openRemapUI: function(){ openRemapUI(); }
@@ -288,7 +357,7 @@ function exposeStatus(driving){
   api.index = padIndex;
   api.id = padId;
   api.driving = !!driving;
-  api.capturing = capture ? capture.action : null;
+  api.picking = pickIdx;
 }
 
 /* ---------------------------------------------------------------------------
@@ -298,7 +367,7 @@ function exposeStatus(driving){
 function reportSys(status, note){
   try{
     if (typeof Report !== 'undefined' && Report.setSys)
-      Report.setSys('gamepad', {status: status, version: '2.0', note: note});
+      Report.setSys('gamepad', {status: status, version: '2.1', note: note});
   }catch(e){}
 }
 
@@ -314,6 +383,15 @@ function liveKeys(){
 function liveDrive(){
   try { return (typeof window.drive !== 'undefined' && window.drive) ? window.drive : null; }
   catch(e){ return null; }
+}
+/* The look API index.html exposes for the right stick (v2.1), or null on
+   builds without it. Fetched fresh each poll like the other live
+   objects, so a hot reload swapping either side can never strand us. */
+function lookInput(){
+  try {
+    var li = (typeof window !== 'undefined') ? window.LookInput : null;
+    return (li && typeof li.add === 'function') ? li : null;
+  } catch(e){ return null; }
 }
 
 /* True while the player is driving a vehicle. Primary test is the same one
@@ -363,9 +441,9 @@ function releaseDrive(f){
   }
 }
 
-/* Release everything this module holds (disconnect / pad lost / capture
-   starting). Iterates over a snapshot of names because release* mutates
-   the books. */
+/* Release everything this module holds (disconnect / pad lost).
+   Iterates over a snapshot of names because release* mutates the
+   books. */
 function clearMine(){
   var ks = Object.keys(myKeys), fs = Object.keys(myDrive), i;
   for (i = 0; i < ks.length; i++) releaseKey(ks[i]);
@@ -450,13 +528,13 @@ function getPad(){
 }
 
 /* ---------------------------------------------------------------------------
-   Capture flow (remapping).
-   assignBtn is the single writer of the live table used by BOTH the
-   capture flow and the setMapping API: it applies the steal rule — if the
+   Assignment logic (per-button picker).
+   assignBtn is the single writer of the live table used by the picker,
+   setButtonAction and setMapping: it applies the steal rule — if the
    button already belongs to another action, that action becomes
    unassigned (last assignment wins) — so the table can never hold a
-   duplicate index. (It deliberately does NOT save or refresh; callers do,
-   so setMapping can batch several assignments into one save.)
+   duplicate index. (It deliberately does NOT save or refresh; callers
+   do, so setMapping can batch several assignments into one save.)
    ------------------------------------------------------------------------- */
 function assignBtn(actionId, idx){
   if (idx !== null){
@@ -468,41 +546,25 @@ function assignBtn(actionId, idx){
   btnMap[actionId] = idx;
 }
 
-/* Begin capturing for one action (or cancel if that same action is
-   already capturing — the Change button toggles). Anything the module is
-   currently holding is released first, so the game is fully hands-off
-   while the player picks a button. */
-function startCapture(actionId){
-  if (capture && capture.action === actionId){ cancelCapture(); return; }
-  capture = { action: actionId, deadline: Date.now() + CAPTURE_MS };
-  clearMine();
-  /* clearMine reset the edge snapshot; re-snapshot the pad's CURRENT
-     state so a button the player happens to be holding at this moment
-     does not count as the assigning press — only a fresh press does. */
-  var gp0 = getPad();
-  if (gp0) snapshotButtons(gp0);
-  refreshRemapUI();
-  exposeStatus();
-}
-
-/* End capture without assigning (toggle-cancel, timeout, disconnect). */
-function cancelCapture(){
-  if (!capture) return;
-  capture = null;
-  refreshRemapUI();
-  exposeStatus();
-}
-
-/* A button press landed during capture: assign it, steal if needed, save
-   immediately, end capture, and refresh the panel. */
-function finishCapture(idx){
-  var actionId = capture.action;
-  assignBtn(actionId, idx);
-  capture = null;
+/* The picker chose an action (or None) for one button: apply it with
+   the steal rule, save immediately, close the picker, refresh the
+   panel, and note it in the Report panel. actionId null clears the
+   button (its action, if any, becomes unassigned); an unknown action
+   id is ignored but still closes the picker. */
+function chooseButtonAction(idx, actionId){
+  pickIdx = null;
+  if (actionId !== null && !actionShort(actionId)) actionId = null;
+  if (actionId === null){
+    var cur = actionForButton(idx);
+    if (cur !== null) btnMap[cur] = null;
+  } else {
+    assignBtn(actionId, idx);
+  }
   saveMap();
   refreshRemapUI();
   exposeStatus();
-  reportSys('ok', 'controller button assigned: ' + actionId + ' -> ' + btnLabel(idx) + customSuffix());
+  reportSys('ok', 'controller: ' + btnLabel(idx) + ' -> ' +
+    (actionId === null ? 'None' : actionShort(actionId)) + customSuffix());
 }
 
 /* ---------------------------------------------------------------------------
@@ -518,7 +580,7 @@ function finishCapture(idx){
    to assume.
    ------------------------------------------------------------------------- */
 var uiMode = '';        // '' = not injected yet, 'settings', or 'overlay'
-var rowsEl = null;      // container the six action rows are rendered into
+var rowsEl = null;      // container the button rows / picker render into
 var hintEl = null;      // hint line under the rows (e.g. "connect a controller")
 var overlayEl = null;   // fallback overlay panel element (overlay mode only)
 var uiTries = 0;        // injection attempts so far (fallback timing)
@@ -648,55 +710,97 @@ function openRemapUI(){
   refreshRemapUI();
 }
 
-/* Re-render the six rows from the live mapping + capture state. Each row:
-   action name | current button label | Change/Cancel button. While an
-   action is capturing, its label slot shows "Press a button…" instead. */
+/* Re-render the remap section from the live mapping. Two views:
+   - Button list (default): one row per assignable button — the button's
+     name (Joshua's labels), the action it currently performs (or
+     "None"), and a Set button.
+   - Picker (while pickIdx is set): a title naming the button, one
+     option per action plus "None" (clear), and a Cancel option.
+     Picking an option assigns it via chooseButtonAction and returns
+     to the list; Cancel just returns. */
 function refreshRemapUI(){
   if (!rowsEl) return;
   try {
-    rowsEl.textContent = '';  // clear previous rows (drops their children)
-    for (var i = 0; i < ACTIONS.length; i++){
-      (function(act){
-        var capturing = !!(capture && capture.action === act.id);
-        var row = mkEl('div',
-          'display:flex;align-items:center;gap:8px;background:#222836;' +
-          'border:2px solid #444;border-radius:10px;padding:8px 10px;margin:8px 0;' +
-          'box-sizing:border-box;', null);
-        var name = mkEl('span',
-          'flex:1;color:#fff;font-weight:bold;font-size:14px;', act.label);
-        var cur = mkEl('span',
-          'color:' + (capturing ? '#39ff6a' : '#ffd75e') + ';font-weight:bold;' +
-          'font-size:14px;min-width:44px;text-align:right;',
-          capturing ? 'Press a button…' : btnLabel(btnMap[act.id]));
-        var btn = mkEl('button',
-          'padding:8px 12px;border-radius:8px;border:2px solid #555;' +
-          'background:#2d3547;color:#fff;font-weight:bold;font-size:13px;',
-          capturing ? 'Cancel' : 'Change');
-        btn.addEventListener('click', function(){ startCapture(act.id); });
-        row.appendChild(name);
-        row.appendChild(cur);
-        row.appendChild(btn);
-        rowsEl.appendChild(row);
-      })(ACTIONS[i]);
+    rowsEl.textContent = '';  // clear previous render (drops its children)
+    var i, j;
+    if (pickIdx !== null){
+      var title = mkEl('div',
+        'color:#fff;font-weight:bold;font-size:14px;margin:8px 0;',
+        'Button ' + btnLabel(pickIdx) + ' does…');
+      rowsEl.appendChild(title);
+      var opts = [];
+      for (i = 0; i < ACTIONS.length; i++) opts.push(ACTIONS[i].id);
+      opts.push(null);  // the "None" (clear) option, always last
+      for (j = 0; j < opts.length; j++){
+        (function(opt){
+          var b = mkEl('button',
+            'display:block;width:100%;margin:6px 0;padding:10px 14px;font-size:14px;' +
+            'font-weight:bold;border-radius:10px;border:2px solid #444;' +
+            'background:#222836;color:#fff;text-align:left;box-sizing:border-box;',
+            opt === null ? 'None' : actionShort(opt));
+          b.addEventListener('click', function(){ chooseButtonAction(pickIdx, opt); });
+          rowsEl.appendChild(b);
+        })(opts[j]);
+      }
+      var cancel = mkEl('button',
+        'display:block;width:100%;margin:6px 0;padding:10px 14px;font-size:14px;' +
+        'border-radius:10px;border:2px solid #555;background:#2d3547;color:#fff;' +
+        'text-align:left;box-sizing:border-box;',
+        'Cancel');
+      cancel.addEventListener('click', function(){
+        pickIdx = null;
+        refreshRemapUI();
+        exposeStatus();
+      });
+      rowsEl.appendChild(cancel);
+    } else {
+      for (i = 0; i < BUTTON_ROWS.length; i++){
+        (function(bidx){
+          var act = actionForButton(bidx);
+          var row = mkEl('div',
+            'display:flex;align-items:center;gap:8px;background:#222836;' +
+            'border:2px solid #444;border-radius:10px;padding:8px 10px;margin:8px 0;' +
+            'box-sizing:border-box;', null);
+          var name = mkEl('span',
+            'flex:1;color:#fff;font-weight:bold;font-size:14px;', btnLabel(bidx));
+          var cur = mkEl('span',
+            'color:#ffd75e;font-weight:bold;font-size:14px;min-width:44px;text-align:right;',
+            act === null ? 'None' : actionShort(act));
+          var btn = mkEl('button',
+            'padding:8px 12px;border-radius:8px;border:2px solid #555;' +
+            'background:#2d3547;color:#fff;font-weight:bold;font-size:13px;',
+            'Set');
+          btn.addEventListener('click', function(){
+            pickIdx = bidx;
+            refreshRemapUI();
+            exposeStatus();
+          });
+          row.appendChild(name);
+          row.appendChild(cur);
+          row.appendChild(btn);
+          rowsEl.appendChild(row);
+        })(BUTTON_ROWS[i]);
+      }
     }
     if (hintEl){
       hintEl.textContent = (padIndex === -1)
-        ? 'No controller connected — connect one (Bluetooth or USB), press any ' +
-          'button on it so the game can see it, then tap Change and press the ' +
-          'button you want. You can still reset to defaults now.'
-        : 'Tap Change, then press the controller button you want for that ' +
-          'action. Giving a button to one action takes it away from any ' +
-          'other. Sticks and D-pad are fixed.';
+        ? 'No controller connected — connect one (Bluetooth or USB) and press ' +
+          'any button on it so the game can see it. You can set up the ' +
+          'buttons and reset to defaults right now.'
+        : 'Tap Set on a button row, then pick what that button does. Giving ' +
+          'an action to a button takes it away from any other button. ' +
+          'Sticks and D-pad are fixed: left stick moves (and steers), ' +
+          'right stick rotates the view.';
     }
   } catch(e){}
 }
 
 /* ---------------------------------------------------------------------------
    The per-frame poll. Writes ONLY the live input objects (plus the DOM
-   clicks for action/menu/back) — never any game state. While a remap
-   capture is active it writes NOTHING to the game at all: it only watches
-   for the assigning press (or the timeout) and keeps the edge-detection
-   snapshot fresh so a still-held button cannot fire an edge afterwards.
+   clicks for action/menu/back, and window.LookInput deltas for the
+   right stick) — never any game state. ts is the requestAnimationFrame
+   timestamp (undefined on the setInterval fallback path, where the look
+   delta simply assumes a 60 fps step).
    ------------------------------------------------------------------------- */
 function snapshotButtons(gp){
   var snap = [];
@@ -704,29 +808,24 @@ function snapshotButtons(gp){
   prevBtn = snap;
 }
 
-function poll(){
+function poll(ts){
   /* The remap UI injects lazily (the Settings card may not exist on the
      very first frames); keep retrying until it lands. */
   if (!uiMode) ensureRemapUI();
 
-  var gp = getPad();
-
-  /* --- Capture mode: suppress everything, watch for the assignment. --- */
-  if (capture){
-    if (Date.now() > capture.deadline){
-      cancelCapture();  // 10 s with no press: give up quietly
-    } else if (gp){
-      for (var ci = 0; ci < (gp.buttons ? gp.buttons.length : 0); ci++){
-        if (btnDown(gp, ci) && !prevBtn[ci]){ finishCapture(ci); break; }
-      }
+  /* Frame delta for the right-stick look, clamped so a backgrounded tab
+     or a long hitch cannot whip the camera around on the next frame. */
+  var dt = 1 / 60;
+  if (typeof ts === 'number' && isFinite(ts)){
+    if (lastPollTs > 0){
+      dt = (ts - lastPollTs) / 1000;
+      if (dt < 0) dt = 0;
+      if (dt > 0.1) dt = 0.1;
     }
-    /* If capture just ended (assigned or timed out), still do not write
-       this frame: snapshot the buttons so held buttons produce no edge
-       next frame, and let normal play resume on the following frame. */
-    if (gp) snapshotButtons(gp);
-    exposeStatus(isDriving());
-    return;
+    lastPollTs = ts;
   }
+
+  var gp = getPad();
 
   /* No pad: if we thought one was connected, it vanished without a
      disconnect event — release everything we hold so nothing sticks. */
@@ -744,7 +843,31 @@ function poll(){
 
   var ax = (typeof gp.axes[0] === 'number') ? gp.axes[0] : 0;  // left stick X
   var ay = (typeof gp.axes[1] === 'number') ? gp.axes[1] : 0;  // left stick Y
-  /* (axes 2/3 = right stick: unmapped — see CAMERA note in the header.) */
+  var rx = (typeof gp.axes[2] === 'number') ? gp.axes[2] : 0;  // right stick X
+  var ry = (typeof gp.axes[3] === 'number') ? gp.axes[3] : 0;  // right stick Y
+
+  /* --- Right stick -> camera (v2.1): rotate the player's view. --------
+     Radial deadzone first (kills idle drift); the remaining travel is
+     rescaled so full deflection still reaches full speed. The deltas
+     handed to window.LookInput.add() are DRAG-EQUIVALENT radians: add()
+     applies the drag handler's own branch logic and subtraction
+     convention, so pushing right looks right exactly like dragging
+     right, and pushing down pitches the first-person view down. add()
+     is called ONLY while the stick is deflected — centered means zero
+     calls, so the camera can never creep — and disconnecting
+     mid-deflection stops the calls with the polls themselves (deltas
+     hold no state, so there is nothing to release). */
+  var lookAPI = lookInput();
+  if (lookAPI){
+    var rmag = Math.hypot(rx, ry);
+    if (rmag >= DEADZONE){
+      var rscale = (rmag - DEADZONE) / (1 - DEADZONE);
+      if (rscale > 1) rscale = 1;
+      var dYaw = (rx / rmag) * rscale * LOOK_YAW_SPEED * dt;
+      var dPitch = (ry / rmag) * rscale * LOOK_PITCH_SPEED * dt;
+      try { lookAPI.add(dYaw, dPitch); } catch(e){}
+    }
+  }
 
   /* --- Left stick -> movement keys, exactly like holding WASD. ---------
      Radial deadzone first (kills idle drift), then a per-axis threshold
@@ -814,8 +937,8 @@ function poll(){
 /* ---------------------------------------------------------------------------
    Connect / disconnect events. Connect is reported so Joshua can see in
    the Report panel that the controller registered; disconnect releases
-   everything we hold (nothing may stick when the pad goes away) and
-   cancels any in-progress remap capture.
+   everything we hold (nothing may stick when the pad goes away). The
+   right stick needs no disconnect handling: its deltas are stateless.
    ------------------------------------------------------------------------- */
 if (typeof window !== 'undefined' && window.addEventListener){
   window.addEventListener('gamepadconnected', function(e){
@@ -832,7 +955,6 @@ if (typeof window !== 'undefined' && window.addEventListener){
     try {
       if (e.gamepad.index === padIndex || padIndex === -1){
         padIndex = -1; padId = '';
-        cancelCapture();
         clearMine();
         reportSys('ok', 'controller disconnected — all gamepad inputs released');
         exposeStatus();
@@ -859,8 +981,8 @@ if (!supported){
   reportSys('ok', 'controller support live — connect a Bluetooth/USB gamepad and press any button' + customSuffix());
   exposeStatus();
   ensureRemapUI();
-  var loop = function(){
-    poll();
+  var loop = function(ts){
+    poll(ts);
     window.requestAnimationFrame(loop);
   };
   if (typeof window !== 'undefined' && window.requestAnimationFrame){
