@@ -1,0 +1,1455 @@
+{
+  "_note": "Gas stations held for Joshua's review (created 2026-10-17). The game still uses the skip rule: a station that cannot sit clear of the streets is left out. This list is every station that, under the round-2 rules Joshua approved (fuel stations may sit across their own driveways; no part of a station may sit on a real street), either cannot be placed at all or has to move more than 2 units from its real spot. Joshua decides what happens to each one. Read-only in the editor; lands with Building Editor 1.7.2.",
+  "generated": "2026-10-17",
+  "rules": "Driveway = a road record with no name, class \"local\", at most 200 units long, whose own two ends do not join two different real streets (a segment joining two real streets is a street — Joshua's test). Named and classified streets always block. Station parts tested: canopy, kiosk/roof, columns, pumps.",
+  "counts": {
+    "stationsTotal": 109,
+    "atRealPosition": 50,
+    "within2Units": 6,
+    "movedOver2Units": 50,
+    "skipped": 3,
+    "inReview": 53
+  },
+  "stations": [
+    {
+      "name": "BP",
+      "brand": "BP",
+      "address": "",
+      "zone": "eastatlanta",
+      "stationIndex": 81,
+      "lat": 33.740786,
+      "lon": -84.413717,
+      "realPosition": [
+        12503.6,
+        6824.9
+      ],
+      "outcome": "skipped",
+      "moveUnits": null,
+      "placedPosition": null,
+      "blockingStreets": [
+        "Oak Street Southwest",
+        "Lee Street Southwest"
+      ],
+      "otherBlockers": "1 unnamed stretch of a classified road (classified roads count as streets even without a name); 1 unnamed segment that joins two streets (counts as a street under your rule)",
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "No clear spot within 44 units — part of the station lands on Oak Street Southwest, Lee Street Southwest and 1 unnamed stretch of a classified road (classified roads count as streets even without a name); 1 unnamed segment that joins two streets (counts as a street under your rule) in every nearby position, so the game leaves this station out."
+    },
+    {
+      "name": "Texaco",
+      "brand": "Texaco",
+      "address": "294 Northside Drive Southwest",
+      "zone": "eastatlanta",
+      "stationIndex": 86,
+      "lat": 33.746261,
+      "lon": -84.406118,
+      "realPosition": [
+        13215.8,
+        6240.3
+      ],
+      "outcome": "skipped",
+      "moveUnits": null,
+      "placedPosition": null,
+      "blockingStreets": [
+        "Northside Drive Southwest",
+        "McDaniel Street Southwest"
+      ],
+      "otherBlockers": "1 unnamed segment that joins two streets (counts as a street under your rule)",
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "No clear spot within 44 units — part of the station lands on Northside Drive Southwest, McDaniel Street Southwest and 1 unnamed segment that joins two streets (counts as a street under your rule) in every nearby position, so the game leaves this station out."
+    },
+    {
+      "name": "Shell",
+      "brand": "Shell",
+      "address": "",
+      "zone": "riverdale",
+      "stationIndex": 66,
+      "lat": 33.68322,
+      "lon": -84.440924,
+      "realPosition": [
+        9953.7,
+        12970.7
+      ],
+      "outcome": "skipped",
+      "moveUnits": null,
+      "placedPosition": null,
+      "blockingStreets": [
+        "Church Street",
+        "West Forrest Avenue",
+        "Main Street"
+      ],
+      "otherBlockers": "1 unnamed segment that joins two streets (counts as a street under your rule)",
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "No clear spot within 44 units — part of the station lands on Church Street, West Forrest Avenue, Main Street and 1 unnamed segment that joins two streets (counts as a street under your rule) in every nearby position, so the game leaves this station out."
+    },
+    {
+      "name": "Chevron",
+      "brand": "Chevron",
+      "address": "",
+      "zone": "eastatlanta",
+      "stationIndex": 84,
+      "lat": 33.739748,
+      "lon": -84.407888,
+      "realPosition": [
+        13049.9,
+        6935.7
+      ],
+      "outcome": "moved",
+      "moveUnits": 41,
+      "placedPosition": [
+        13065.6,
+        6897.8
+      ],
+      "blockingStreets": [
+        "Northside Drive Southwest",
+        "Wells Street Southwest"
+      ],
+      "otherBlockers": "1 unnamed segment that joins two streets (counts as a street under your rule)",
+      "partsInTheWay": [
+        "canopy",
+        "roof"
+      ],
+      "issue": "The station as designed (canopy and roof) reaches into Northside Drive Southwest, Wells Street Southwest and 1 unnamed segment that joins two streets (counts as a street under your rule) from its real spot, so it has to move 41 units to clear."
+    },
+    {
+      "name": "Chevron",
+      "brand": "Chevron",
+      "address": "",
+      "zone": "riverdale",
+      "stationIndex": 76,
+      "lat": 33.534438,
+      "lon": -84.418433,
+      "realPosition": [
+        12061.6,
+        28855
+      ],
+      "outcome": "moved",
+      "moveUnits": 37,
+      "placedPosition": [
+        12093.5,
+        28836.3
+      ],
+      "blockingStreets": [],
+      "otherBlockers": "1 unnamed segment that joins two streets (counts as a street under your rule)",
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "The station as designed (canopy) reaches into 1 unnamed segment that joins two streets (counts as a street under your rule) from its real spot, so it has to move 37 units to clear."
+    },
+    {
+      "name": "BP",
+      "brand": "BP",
+      "address": "",
+      "zone": "unioncity",
+      "stationIndex": 20,
+      "lat": 33.576177,
+      "lon": -84.562656,
+      "realPosition": [
+        -1455.3,
+        24398.8
+      ],
+      "outcome": "moved",
+      "moveUnits": 34,
+      "placedPosition": [
+        -1457.5,
+        24364.9
+      ],
+      "blockingStreets": [
+        "Roosevelt Highway"
+      ],
+      "otherBlockers": null,
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "The station as designed (canopy) reaches into Roosevelt Highway from its real spot, so it has to move 34 units to clear."
+    },
+    {
+      "name": "Shell",
+      "brand": "Shell",
+      "address": "",
+      "zone": "downtown",
+      "stationIndex": 85,
+      "lat": 33.78593,
+      "lon": -84.407127,
+      "realPosition": [
+        13121.2,
+        2005.2
+      ],
+      "outcome": "moved",
+      "moveUnits": 32,
+      "placedPosition": [
+        13132.6,
+        2035.1
+      ],
+      "blockingStreets": [
+        "Northside Drive Northwest",
+        "14th Street Northwest"
+      ],
+      "otherBlockers": null,
+      "partsInTheWay": [
+        "roof",
+        "canopy"
+      ],
+      "issue": "The station as designed (roof and canopy) reaches into Northside Drive Northwest, 14th Street Northwest from its real spot, so it has to move 32 units to clear."
+    },
+    {
+      "name": "BP",
+      "brand": "BP",
+      "address": "",
+      "zone": "eastatlanta",
+      "stationIndex": 77,
+      "lat": 33.745706,
+      "lon": -84.417769,
+      "realPosition": [
+        12123.8,
+        6299.6
+      ],
+      "outcome": "moved",
+      "moveUnits": 32,
+      "placedPosition": [
+        12100.8,
+        6277.3
+      ],
+      "blockingStreets": [
+        "Joseph E. Lowery Boulevard"
+      ],
+      "otherBlockers": "1 unnamed segment that joins two streets (counts as a street under your rule)",
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "The station as designed (canopy) reaches into Joseph E. Lowery Boulevard and 1 unnamed segment that joins two streets (counts as a street under your rule) from its real spot, so it has to move 32 units to clear."
+    },
+    {
+      "name": "Chevron",
+      "brand": "Chevron",
+      "address": "",
+      "zone": "riverdale",
+      "stationIndex": 61,
+      "lat": 33.658914,
+      "lon": -84.448044,
+      "realPosition": [
+        9286.4,
+        15565.7
+      ],
+      "outcome": "moved",
+      "moveUnits": 29,
+      "placedPosition": [
+        9260.4,
+        15578.6
+      ],
+      "blockingStreets": [
+        "Main Street",
+        "Ivy Chase Court"
+      ],
+      "otherBlockers": null,
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "The station as designed (canopy) reaches into Main Street, Ivy Chase Court from its real spot, so it has to move 29 units to clear."
+    },
+    {
+      "name": "Unnamed station",
+      "brand": null,
+      "address": "",
+      "zone": "eastatlanta",
+      "stationIndex": 68,
+      "lat": 33.737702,
+      "lon": -84.435232,
+      "realPosition": [
+        10487.1,
+        7154.1
+      ],
+      "outcome": "moved",
+      "moveUnits": 26,
+      "placedPosition": [
+        10509.2,
+        7167.8
+      ],
+      "blockingStreets": [
+        "Cascade Road"
+      ],
+      "otherBlockers": "1 unnamed segment that joins two streets (counts as a street under your rule)",
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "The station as designed (canopy) reaches into Cascade Road and 1 unnamed segment that joins two streets (counts as a street under your rule) from its real spot, so it has to move 26 units to clear."
+    },
+    {
+      "name": "BP",
+      "brand": "BP",
+      "address": "329 14th Street Northwest",
+      "zone": "downtown",
+      "stationIndex": 92,
+      "lat": 33.786353,
+      "lon": -84.397965,
+      "realPosition": [
+        13979.9,
+        1960.1
+      ],
+      "outcome": "moved",
+      "moveUnits": 24,
+      "placedPosition": [
+        13979.8,
+        1936.1
+      ],
+      "blockingStreets": [
+        "14th Street Northwest"
+      ],
+      "otherBlockers": null,
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "The station as designed (canopy) reaches into 14th Street Northwest from its real spot, so it has to move 24 units to clear."
+    },
+    {
+      "name": "Unnamed station",
+      "brand": null,
+      "address": "",
+      "zone": "riverdale",
+      "stationIndex": 96,
+      "lat": 33.609429,
+      "lon": -84.392274,
+      "realPosition": [
+        14513.2,
+        20848.8
+      ],
+      "outcome": "moved",
+      "moveUnits": 23,
+      "placedPosition": [
+        14515.8,
+        20871.6
+      ],
+      "blockingStreets": [
+        "Kennedy Drive"
+      ],
+      "otherBlockers": null,
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "The station as designed (canopy) reaches into Kennedy Drive from its real spot, so it has to move 23 units to clear."
+    },
+    {
+      "name": "Shell",
+      "brand": "Shell",
+      "address": "",
+      "zone": "southfulton",
+      "stationIndex": 25,
+      "lat": 33.593987,
+      "lon": -84.549212,
+      "realPosition": [
+        -195.3,
+        22497.4
+      ],
+      "outcome": "moved",
+      "moveUnits": 23,
+      "placedPosition": [
+        -172.9,
+        22492.3
+      ],
+      "blockingStreets": [
+        "Roosevelt Highway",
+        "Highpoint Road"
+      ],
+      "otherBlockers": null,
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "The station as designed (canopy) reaches into Roosevelt Highway, Highpoint Road from its real spot, so it has to move 23 units to clear."
+    },
+    {
+      "name": "Uptown Station",
+      "brand": "Chevron",
+      "address": "1521 Peachtree Street Northeast",
+      "zone": "downtown",
+      "stationIndex": 99,
+      "lat": 33.79608,
+      "lon": -84.387408,
+      "realPosition": [
+        14969.3,
+        921.6
+      ],
+      "outcome": "moved",
+      "moveUnits": 20,
+      "placedPosition": [
+        14970.1,
+        901.6
+      ],
+      "blockingStreets": [
+        "Peachtree Street Northeast",
+        "Peachtree Circle Northeast"
+      ],
+      "otherBlockers": null,
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "The station as designed (canopy) reaches into Peachtree Street Northeast, Peachtree Circle Northeast from its real spot, so it has to move 20 units to clear."
+    },
+    {
+      "name": "Sunoco",
+      "brand": "Sunoco",
+      "address": "",
+      "zone": "southfulton",
+      "stationIndex": 56,
+      "lat": 33.631892,
+      "lon": -84.468454,
+      "realPosition": [
+        7373.5,
+        18450.6
+      ],
+      "outcome": "moved",
+      "moveUnits": 19,
+      "placedPosition": [
+        7355.9,
+        18443.5
+      ],
+      "blockingStreets": [
+        "Main Street"
+      ],
+      "otherBlockers": "1 unnamed segment longer than the 200-unit driveway limit",
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "The station as designed (canopy) reaches into Main Street and 1 unnamed segment longer than the 200-unit driveway limit from its real spot, so it has to move 19 units to clear."
+    },
+    {
+      "name": "Citgo",
+      "brand": "Citgo",
+      "address": "",
+      "zone": "mableton",
+      "stationIndex": 22,
+      "lat": 33.772599,
+      "lon": -84.560079,
+      "realPosition": [
+        -1213.8,
+        3428.5
+      ],
+      "outcome": "moved",
+      "moveUnits": 18,
+      "placedPosition": [
+        -1229.8,
+        3436.6
+      ],
+      "blockingStreets": [
+        "Riverside Parkway"
+      ],
+      "otherBlockers": null,
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "The station as designed (canopy) reaches into Riverside Parkway from its real spot, so it has to move 18 units to clear."
+    },
+    {
+      "name": "Chevron",
+      "brand": "Chevron",
+      "address": "",
+      "zone": "eastatlanta",
+      "stationIndex": 64,
+      "lat": 33.75132,
+      "lon": -84.443809,
+      "realPosition": [
+        9683.3,
+        5700.2
+      ],
+      "outcome": "moved",
+      "moveUnits": 15,
+      "placedPosition": [
+        9684.8,
+        5685.3
+      ],
+      "blockingStreets": [
+        "Martin Luther King Junior Drive Southwest"
+      ],
+      "otherBlockers": "1 unnamed stretch of a classified road (classified roads count as streets even without a name); 1 unnamed segment that joins two streets (counts as a street under your rule)",
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "The station as designed (canopy) reaches into Martin Luther King Junior Drive Southwest and 1 unnamed stretch of a classified road (classified roads count as streets even without a name); 1 unnamed segment that joins two streets (counts as a street under your rule) from its real spot, so it has to move 15 units to clear."
+    },
+    {
+      "name": "Shell",
+      "brand": "Shell",
+      "address": "",
+      "zone": "eastatlanta",
+      "stationIndex": 88,
+      "lat": 33.74361,
+      "lon": -84.40351,
+      "realPosition": [
+        13460.2,
+        6523.4
+      ],
+      "outcome": "moved",
+      "moveUnits": 15,
+      "placedPosition": [
+        13467.5,
+        6536.5
+      ],
+      "blockingStreets": [
+        "Whitehall Street Southwest"
+      ],
+      "otherBlockers": null,
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "The station as designed (canopy) reaches into Whitehall Street Southwest from its real spot, so it has to move 15 units to clear."
+    },
+    {
+      "name": "Citgo",
+      "brand": "Citgo",
+      "address": "",
+      "zone": "riverdale",
+      "stationIndex": 72,
+      "lat": 33.696695,
+      "lon": -84.430082,
+      "realPosition": [
+        10969.8,
+        11532.1
+      ],
+      "outcome": "moved",
+      "moveUnits": 15,
+      "placedPosition": [
+        10963.4,
+        11545.7
+      ],
+      "blockingStreets": [
+        "Knotts Avenue"
+      ],
+      "otherBlockers": "1 unnamed stretch of a classified road (classified roads count as streets even without a name)",
+      "partsInTheWay": [
+        "roof",
+        "canopy"
+      ],
+      "issue": "The station as designed (roof and canopy) reaches into Knotts Avenue and 1 unnamed stretch of a classified road (classified roads count as streets even without a name) from its real spot, so it has to move 15 units to clear."
+    },
+    {
+      "name": "Exxon",
+      "brand": "Exxon",
+      "address": "",
+      "zone": "southfulton",
+      "stationIndex": 52,
+      "lat": 33.62833,
+      "lon": -84.472959,
+      "realPosition": [
+        6951.3,
+        18830.9
+      ],
+      "outcome": "moved",
+      "moveUnits": 15,
+      "placedPosition": [
+        6941.4,
+        18819.6
+      ],
+      "blockingStreets": [
+        "Roosevelt Highway",
+        "Herschel Road"
+      ],
+      "otherBlockers": "1 unnamed stretch of a classified road (classified roads count as streets even without a name); 1 unnamed segment that joins two streets (counts as a street under your rule)",
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "The station as designed (canopy) reaches into Roosevelt Highway, Herschel Road and 1 unnamed stretch of a classified road (classified roads count as streets even without a name); 1 unnamed segment that joins two streets (counts as a street under your rule) from its real spot, so it has to move 15 units to clear."
+    },
+    {
+      "name": "Shell Express",
+      "brand": "Shell Express",
+      "address": "",
+      "zone": "southfulton",
+      "stationIndex": 39,
+      "lat": 33.722878,
+      "lon": -84.505988,
+      "realPosition": [
+        3855.7,
+        8736.8
+      ],
+      "outcome": "moved",
+      "moveUnits": 14,
+      "placedPosition": [
+        3855.2,
+        8750.7
+      ],
+      "blockingStreets": [
+        "Cascade Road"
+      ],
+      "otherBlockers": null,
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "The station as designed (canopy) reaches into Cascade Road from its real spot, so it has to move 14 units to clear."
+    },
+    {
+      "name": "BP",
+      "brand": "BP",
+      "address": "160 Ponce de Leon Avenue Northeast",
+      "zone": "eastatlanta",
+      "stationIndex": 105,
+      "lat": 33.772707,
+      "lon": -84.382095,
+      "realPosition": [
+        15467.2,
+        3416.9
+      ],
+      "outcome": "moved",
+      "moveUnits": 12,
+      "placedPosition": [
+        15466.5,
+        3404.9
+      ],
+      "blockingStreets": [
+        "Ponce de Leon Avenue Northeast",
+        "Piedmont Avenue Northeast"
+      ],
+      "otherBlockers": null,
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "The station as designed (canopy) reaches into Ponce de Leon Avenue Northeast, Piedmont Avenue Northeast from its real spot, so it has to move 12 units to clear."
+    },
+    {
+      "name": "Unnamed station",
+      "brand": null,
+      "address": "",
+      "zone": "riverdale",
+      "stationIndex": 59,
+      "lat": 33.698487,
+      "lon": -84.457555,
+      "realPosition": [
+        8395,
+        11340.8
+      ],
+      "outcome": "moved",
+      "moveUnits": 12,
+      "placedPosition": [
+        8383,
+        11340.8
+      ],
+      "blockingStreets": [
+        "Delowe Drive"
+      ],
+      "otherBlockers": null,
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "The station as designed (canopy) reaches into Delowe Drive from its real spot, so it has to move 12 units to clear."
+    },
+    {
+      "name": "Citgo",
+      "brand": "Citgo",
+      "address": "655 Cleveland Avenue Southwest",
+      "zone": "riverdale",
+      "stationIndex": 82,
+      "lat": 33.681518,
+      "lon": -84.410387,
+      "realPosition": [
+        12815.7,
+        13152.4
+      ],
+      "outcome": "moved",
+      "moveUnits": 12,
+      "placedPosition": [
+        12815.7,
+        13140.4
+      ],
+      "blockingStreets": [
+        "Cleveland Avenue Southwest"
+      ],
+      "otherBlockers": "1 unnamed segment that joins two streets (counts as a street under your rule)",
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "The station as designed (canopy) reaches into Cleveland Avenue Southwest and 1 unnamed segment that joins two streets (counts as a street under your rule) from its real spot, so it has to move 12 units to clear."
+    },
+    {
+      "name": "BP",
+      "brand": "BP",
+      "address": "",
+      "zone": "adamsville",
+      "stationIndex": 24,
+      "lat": 33.773861,
+      "lon": -84.551287,
+      "realPosition": [
+        -389.8,
+        3293.7
+      ],
+      "outcome": "moved",
+      "moveUnits": 11,
+      "placedPosition": [
+        -379.4,
+        3297.3
+      ],
+      "blockingStreets": [
+        "Six Flags Parkway"
+      ],
+      "otherBlockers": "1 unnamed stretch of a classified road (classified roads count as streets even without a name)",
+      "partsInTheWay": [
+        "canopy",
+        "roof"
+      ],
+      "issue": "The station as designed (canopy and roof) reaches into Six Flags Parkway and 1 unnamed stretch of a classified road (classified roads count as streets even without a name) from its real spot, so it has to move 11 units to clear."
+    },
+    {
+      "name": "Valero",
+      "brand": "Valero",
+      "address": "",
+      "zone": "adamsville",
+      "stationIndex": 31,
+      "lat": 33.764299,
+      "lon": -84.533144,
+      "realPosition": [
+        1310.6,
+        4314.6
+      ],
+      "outcome": "moved",
+      "moveUnits": 11,
+      "placedPosition": [
+        1319.7,
+        4308.4
+      ],
+      "blockingStreets": [],
+      "otherBlockers": "1 unnamed segment that joins two streets (counts as a street under your rule)",
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "The station as designed (canopy) reaches into 1 unnamed segment that joins two streets (counts as a street under your rule) from its real spot, so it has to move 11 units to clear."
+    },
+    {
+      "name": "Exxon",
+      "brand": "Exxon",
+      "address": "",
+      "zone": "eastatlanta",
+      "stationIndex": 62,
+      "lat": 33.7508,
+      "lon": -84.446554,
+      "realPosition": [
+        9426,
+        5755.8
+      ],
+      "outcome": "moved",
+      "moveUnits": 10,
+      "placedPosition": [
+        9424.2,
+        5745.9
+      ],
+      "blockingStreets": [
+        "Martin Luther King Junior Drive Southwest",
+        "Anderson Avenue Southwest"
+      ],
+      "otherBlockers": null,
+      "partsInTheWay": [
+        "canopy",
+        "roof"
+      ],
+      "issue": "The station as designed (canopy and roof) reaches into Martin Luther King Junior Drive Southwest, Anderson Avenue Southwest from its real spot, so it has to move 10 units to clear."
+    },
+    {
+      "name": "Shell",
+      "brand": "Shell",
+      "address": "",
+      "zone": "eastatlanta",
+      "stationIndex": 108,
+      "lat": 33.744312,
+      "lon": -84.37953,
+      "realPosition": [
+        15707.6,
+        6448.4
+      ],
+      "outcome": "moved",
+      "moveUnits": 10,
+      "placedPosition": [
+        15697.6,
+        6448.3
+      ],
+      "blockingStreets": [
+        "Hill Street Southeast"
+      ],
+      "otherBlockers": null,
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "The station as designed (canopy) reaches into Hill Street Southeast from its real spot, so it has to move 10 units to clear."
+    },
+    {
+      "name": "Shell",
+      "brand": "Shell",
+      "address": "1790 Howell Mill Road Northwest",
+      "zone": "downtown",
+      "stationIndex": 80,
+      "lat": 33.803565,
+      "lon": -84.414561,
+      "realPosition": [
+        12424.5,
+        122.5
+      ],
+      "outcome": "moved",
+      "moveUnits": 9,
+      "placedPosition": [
+        12416.6,
+        118.2
+      ],
+      "blockingStreets": [
+        "Howell Mill Road Northwest"
+      ],
+      "otherBlockers": null,
+      "partsInTheWay": [
+        "roof",
+        "canopy"
+      ],
+      "issue": "The station as designed (roof and canopy) reaches into Howell Mill Road Northwest from its real spot, so it has to move 9 units to clear."
+    },
+    {
+      "name": "Exxon",
+      "brand": "Exxon",
+      "address": "568 Chappell Road Northwest",
+      "zone": "eastatlanta",
+      "stationIndex": 69,
+      "lat": 33.771068,
+      "lon": -84.434266,
+      "realPosition": [
+        10577.7,
+        3591.9
+      ],
+      "outcome": "moved",
+      "moveUnits": 9,
+      "placedPosition": [
+        10573.9,
+        3600.1
+      ],
+      "blockingStreets": [
+        "Donald Lee Hollowell Parkway Northwest"
+      ],
+      "otherBlockers": null,
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "The station as designed (canopy) reaches into Donald Lee Hollowell Parkway Northwest from its real spot, so it has to move 9 units to clear."
+    },
+    {
+      "name": "Valero",
+      "brand": "Valero",
+      "address": "2685 Beeler Drive Southwest",
+      "zone": "riverdale",
+      "stationIndex": 90,
+      "lat": 33.681507,
+      "lon": -84.401358,
+      "realPosition": [
+        13661.9,
+        13153.6
+      ],
+      "outcome": "moved",
+      "moveUnits": 9,
+      "placedPosition": [
+        13652.9,
+        13153.4
+      ],
+      "blockingStreets": [
+        "Beeler Drive Southwest"
+      ],
+      "otherBlockers": null,
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "The station as designed (canopy) reaches into Beeler Drive Southwest from its real spot, so it has to move 9 units to clear."
+    },
+    {
+      "name": "Shell",
+      "brand": "Shell",
+      "address": "",
+      "zone": "southfulton",
+      "stationIndex": 40,
+      "lat": 33.621811,
+      "lon": -84.504929,
+      "realPosition": [
+        3955,
+        19526.9
+      ],
+      "outcome": "moved",
+      "moveUnits": 9,
+      "placedPosition": [
+        3952.8,
+        19518.1
+      ],
+      "blockingStreets": [
+        "Roosevelt Highway"
+      ],
+      "otherBlockers": null,
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "The station as designed (canopy) reaches into Roosevelt Highway from its real spot, so it has to move 9 units to clear."
+    },
+    {
+      "name": "Citgo",
+      "brand": "Citgo",
+      "address": "5275 Old National Highway",
+      "zone": "southfulton",
+      "stationIndex": 53,
+      "lat": 33.611646,
+      "lon": -84.472139,
+      "realPosition": [
+        7028.1,
+        20612.1
+      ],
+      "outcome": "moved",
+      "moveUnits": 9,
+      "placedPosition": [
+        7019.5,
+        20614.6
+      ],
+      "blockingStreets": [
+        "Old National Highway"
+      ],
+      "otherBlockers": null,
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "The station as designed (canopy) reaches into Old National Highway from its real spot, so it has to move 9 units to clear."
+    },
+    {
+      "name": "Shell",
+      "brand": "Shell",
+      "address": "3181 Donald Lee Hollowell Parkway Northwest",
+      "zone": "adamsville",
+      "stationIndex": 45,
+      "lat": 33.786145,
+      "lon": -84.490385,
+      "realPosition": [
+        5318.1,
+        1982.3
+      ],
+      "outcome": "moved",
+      "moveUnits": 8,
+      "placedPosition": [
+        5321.2,
+        1974.9
+      ],
+      "blockingStreets": [
+        "Donald Lee Hollowell Parkway Northwest"
+      ],
+      "otherBlockers": null,
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "The station as designed (canopy) reaches into Donald Lee Hollowell Parkway Northwest from its real spot, so it has to move 8 units to clear."
+    },
+    {
+      "name": "76",
+      "brand": "76",
+      "address": "",
+      "zone": "adamsville",
+      "stationIndex": 43,
+      "lat": 33.752591,
+      "lon": -84.492592,
+      "realPosition": [
+        5111.2,
+        5564.5
+      ],
+      "outcome": "moved",
+      "moveUnits": 7,
+      "placedPosition": [
+        5114.3,
+        5558.2
+      ],
+      "blockingStreets": [
+        "Martin Luther King Junior Drive Southwestg",
+        "Harwell Road Northwest"
+      ],
+      "otherBlockers": null,
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "The station as designed (canopy) reaches into Martin Luther King Junior Drive Southwestg, Harwell Road Northwest from its real spot, so it has to move 7 units to clear."
+    },
+    {
+      "name": "Mobil",
+      "brand": "Mobil",
+      "address": "575 Chappell Road Northwest",
+      "zone": "eastatlanta",
+      "stationIndex": 70,
+      "lat": 33.771124,
+      "lon": -84.433449,
+      "realPosition": [
+        10654.2,
+        3585.9
+      ],
+      "outcome": "moved",
+      "moveUnits": 7,
+      "placedPosition": [
+        10655.3,
+        3592.8
+      ],
+      "blockingStreets": [
+        "Donald Lee Hollowell Parkway Northwest"
+      ],
+      "otherBlockers": null,
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "The station as designed (canopy) reaches into Donald Lee Hollowell Parkway Northwest from its real spot, so it has to move 7 units to clear."
+    },
+    {
+      "name": "Chevron",
+      "brand": "Chevron",
+      "address": "",
+      "zone": "eastatlanta",
+      "stationIndex": 106,
+      "lat": 33.772858,
+      "lon": -84.38148,
+      "realPosition": [
+        15524.9,
+        3400.8
+      ],
+      "outcome": "moved",
+      "moveUnits": 7,
+      "placedPosition": [
+        15526.3,
+        3394
+      ],
+      "blockingStreets": [
+        "Piedmont Avenue Northeast",
+        "Ponce de Leon Avenue Northeast"
+      ],
+      "otherBlockers": "1 unnamed segment that joins two streets (counts as a street under your rule)",
+      "partsInTheWay": [
+        "canopy",
+        "roof"
+      ],
+      "issue": "The station as designed (canopy and roof) reaches into Piedmont Avenue Northeast, Ponce de Leon Avenue Northeast and 1 unnamed segment that joins two streets (counts as a street under your rule) from its real spot, so it has to move 7 units to clear."
+    },
+    {
+      "name": "Chevron",
+      "brand": "Chevron",
+      "address": "210 Forest Parkway",
+      "zone": "riverdale",
+      "stationIndex": 93,
+      "lat": 33.617625,
+      "lon": -84.396472,
+      "realPosition": [
+        14119.8,
+        19973.8
+      ],
+      "outcome": "moved",
+      "moveUnits": 7,
+      "placedPosition": [
+        14121.6,
+        19980.5
+      ],
+      "blockingStreets": [
+        "Forest Parkway"
+      ],
+      "otherBlockers": null,
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "The station as designed (canopy) reaches into Forest Parkway from its real spot, so it has to move 7 units to clear."
+    },
+    {
+      "name": "Shell",
+      "brand": "Shell",
+      "address": "1184 Spring Street Northwest",
+      "zone": "downtown",
+      "stationIndex": 97,
+      "lat": 33.786971,
+      "lon": -84.389607,
+      "realPosition": [
+        14763.2,
+        1894.1
+      ],
+      "outcome": "moved",
+      "moveUnits": 6,
+      "placedPosition": [
+        14760.9,
+        1888.5
+      ],
+      "blockingStreets": [
+        "14th Street Northwest",
+        "Spring Street Northwest"
+      ],
+      "otherBlockers": null,
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "The station as designed (canopy) reaches into 14th Street Northwest, Spring Street Northwest from its real spot, so it has to move 6 units to clear."
+    },
+    {
+      "name": "Exxon",
+      "brand": "Exxon",
+      "address": "",
+      "zone": "eastatlanta",
+      "stationIndex": 87,
+      "lat": 33.769844,
+      "lon": -84.405029,
+      "realPosition": [
+        13317.8,
+        3722.6
+      ],
+      "outcome": "moved",
+      "moveUnits": 6,
+      "placedPosition": [
+        13313.7,
+        3726.9
+      ],
+      "blockingStreets": [
+        "North Avenue Northwest",
+        "Northside Drive Northwest"
+      ],
+      "otherBlockers": null,
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "The station as designed (canopy) reaches into North Avenue Northwest, Northside Drive Northwest from its real spot, so it has to move 6 units to clear."
+    },
+    {
+      "name": "Chevron",
+      "brand": "Chevron",
+      "address": "",
+      "zone": "riverdale",
+      "stationIndex": 95,
+      "lat": 33.722427,
+      "lon": -84.393081,
+      "realPosition": [
+        14437.6,
+        8784.9
+      ],
+      "outcome": "moved",
+      "moveUnits": 6,
+      "placedPosition": [
+        14443.6,
+        8785.2
+      ],
+      "blockingStreets": [
+        "Pryor Street"
+      ],
+      "otherBlockers": null,
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "The station as designed (canopy) reaches into Pryor Street from its real spot, so it has to move 6 units to clear."
+    },
+    {
+      "name": "Shell",
+      "brand": "Shell",
+      "address": "4597 Jonesboro Road",
+      "zone": "southfulton",
+      "stationIndex": 30,
+      "lat": 33.567872,
+      "lon": -84.535638,
+      "realPosition": [
+        1076.9,
+        25285.5
+      ],
+      "outcome": "moved",
+      "moveUnits": 6,
+      "placedPosition": [
+        1080.4,
+        25280.6
+      ],
+      "blockingStreets": [],
+      "otherBlockers": "1 unnamed segment that joins two streets (counts as a street under your rule)",
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "The station as designed (canopy) reaches into 1 unnamed segment that joins two streets (counts as a street under your rule) from its real spot, so it has to move 6 units to clear."
+    },
+    {
+      "name": "Shell",
+      "brand": "Shell",
+      "address": "",
+      "zone": "southfulton",
+      "stationIndex": 54,
+      "lat": 33.600504,
+      "lon": -84.471102,
+      "realPosition": [
+        7125.3,
+        21801.6
+      ],
+      "outcome": "moved",
+      "moveUnits": 6,
+      "placedPosition": [
+        7130.6,
+        21798.8
+      ],
+      "blockingStreets": [
+        "Old National Highway"
+      ],
+      "otherBlockers": null,
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "The station as designed (canopy) reaches into Old National Highway from its real spot, so it has to move 6 units to clear."
+    },
+    {
+      "name": "Exxon",
+      "brand": "Exxon",
+      "address": "",
+      "zone": "riverdale",
+      "stationIndex": 89,
+      "lat": 33.544139,
+      "lon": -84.402773,
+      "realPosition": [
+        13529.3,
+        27819.3
+      ],
+      "outcome": "moved",
+      "moveUnits": 5,
+      "placedPosition": [
+        13533.6,
+        27816.8
+      ],
+      "blockingStreets": [
+        "Taylor Road"
+      ],
+      "otherBlockers": null,
+      "partsInTheWay": [
+        "roof"
+      ],
+      "issue": "The station as designed (roof) reaches into Taylor Road from its real spot, so it has to move 5 units to clear."
+    },
+    {
+      "name": "Valero",
+      "brand": "Valero",
+      "address": "",
+      "zone": "southfulton",
+      "stationIndex": 35,
+      "lat": 33.608913,
+      "lon": -84.528155,
+      "realPosition": [
+        1778.2,
+        20903.9
+      ],
+      "outcome": "moved",
+      "moveUnits": 5,
+      "placedPosition": [
+        1775.6,
+        20899.6
+      ],
+      "blockingStreets": [
+        "Roosevelt Highway"
+      ],
+      "otherBlockers": null,
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "The station as designed (canopy) reaches into Roosevelt Highway from its real spot, so it has to move 5 units to clear."
+    },
+    {
+      "name": "Chevron",
+      "brand": "Chevron",
+      "address": "",
+      "zone": "adamsville",
+      "stationIndex": 38,
+      "lat": 33.799332,
+      "lon": -84.513757,
+      "realPosition": [
+        3127.6,
+        574.4
+      ],
+      "outcome": "moved",
+      "moveUnits": 4,
+      "placedPosition": [
+        3125.8,
+        577.9
+      ],
+      "blockingStreets": [
+        "Veterans Memorial Highway Southeast"
+      ],
+      "otherBlockers": null,
+      "partsInTheWay": [
+        "roof"
+      ],
+      "issue": "The station as designed (roof) reaches into Veterans Memorial Highway Southeast from its real spot, so it has to move 4 units to clear."
+    },
+    {
+      "name": "BP",
+      "brand": "BP",
+      "address": "3263 Donald Lee Hollowell Parkway Northwest",
+      "zone": "adamsville",
+      "stationIndex": 42,
+      "lat": 33.787872,
+      "lon": -84.493923,
+      "realPosition": [
+        4986.5,
+        1797.9
+      ],
+      "outcome": "moved",
+      "moveUnits": 4,
+      "placedPosition": [
+        4989.3,
+        1795
+      ],
+      "blockingStreets": [
+        "Donald Lee Hollowell Parkway Northwest"
+      ],
+      "otherBlockers": null,
+      "partsInTheWay": [
+        "canopy",
+        "roof"
+      ],
+      "issue": "The station as designed (canopy and roof) reaches into Donald Lee Hollowell Parkway Northwest from its real spot, so it has to move 4 units to clear."
+    },
+    {
+      "name": "Chevron",
+      "brand": "Chevron",
+      "address": "",
+      "zone": "eastatlanta",
+      "stationIndex": 79,
+      "lat": 33.729754,
+      "lon": -84.415836,
+      "realPosition": [
+        12305,
+        8002.7
+      ],
+      "outcome": "moved",
+      "moveUnits": 4,
+      "placedPosition": [
+        12301.7,
+        8000.4
+      ],
+      "blockingStreets": [
+        "Lee Street Southwest"
+      ],
+      "otherBlockers": null,
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "The station as designed (canopy) reaches into Lee Street Southwest from its real spot, so it has to move 4 units to clear."
+    },
+    {
+      "name": "Chevron",
+      "brand": "Chevron",
+      "address": "",
+      "zone": "mableton",
+      "stationIndex": 19,
+      "lat": 33.802721,
+      "lon": -84.567586,
+      "realPosition": [
+        -1917.3,
+        212.6
+      ],
+      "outcome": "moved",
+      "moveUnits": 4,
+      "placedPosition": [
+        -1913.7,
+        211
+      ],
+      "blockingStreets": [
+        "Mableton Parkway"
+      ],
+      "otherBlockers": null,
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "The station as designed (canopy) reaches into Mableton Parkway from its real spot, so it has to move 4 units to clear."
+    },
+    {
+      "name": "Exxon",
+      "brand": "Exxon",
+      "address": "",
+      "zone": "unioncity",
+      "stationIndex": 21,
+      "lat": 33.577023,
+      "lon": -84.561179,
+      "realPosition": [
+        -1316.9,
+        24308.5
+      ],
+      "outcome": "moved",
+      "moveUnits": 4,
+      "placedPosition": [
+        -1318.6,
+        24304.9
+      ],
+      "blockingStreets": [
+        "Roosevelt Highway"
+      ],
+      "otherBlockers": null,
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "The station as designed (canopy) reaches into Roosevelt Highway from its real spot, so it has to move 4 units to clear."
+    },
+    {
+      "name": "Shell",
+      "brand": "Shell",
+      "address": "873 Veterans Memorial Highway Southeast",
+      "zone": "adamsville",
+      "stationIndex": 34,
+      "lat": 33.806115,
+      "lon": -84.528858,
+      "realPosition": [
+        1712.3,
+        -149.8
+      ],
+      "outcome": "moved",
+      "moveUnits": 3,
+      "placedPosition": [
+        1714.2,
+        -152.1
+      ],
+      "blockingStreets": [
+        "Veterans Memorial Highway Southeast"
+      ],
+      "otherBlockers": null,
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "The station as designed (canopy) reaches into Veterans Memorial Highway Southeast from its real spot, so it has to move 3 units to clear."
+    },
+    {
+      "name": "Otter Citgo",
+      "brand": null,
+      "address": "971 Virginia Avenue",
+      "zone": "riverdale",
+      "stationIndex": 75,
+      "lat": 33.6599,
+      "lon": -84.421126,
+      "realPosition": [
+        11809.2,
+        15460.4
+      ],
+      "outcome": "moved",
+      "moveUnits": 3,
+      "placedPosition": [
+        11812.2,
+        15460.5
+      ],
+      "blockingStreets": [
+        "Lang Avenue"
+      ],
+      "otherBlockers": null,
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "The station as designed (canopy) reaches into Lang Avenue from its real spot, so it has to move 3 units to clear."
+    },
+    {
+      "name": "Chevron",
+      "brand": null,
+      "address": "",
+      "zone": "southfulton",
+      "stationIndex": 37,
+      "lat": 33.58581,
+      "lon": -84.515983,
+      "realPosition": [
+        2919,
+        23370.4
+      ],
+      "outcome": "moved",
+      "moveUnits": 3,
+      "placedPosition": [
+        2917.2,
+        23372.8
+      ],
+      "blockingStreets": [
+        "Flat Shoals Road"
+      ],
+      "otherBlockers": null,
+      "partsInTheWay": [
+        "canopy"
+      ],
+      "issue": "The station as designed (canopy) reaches into Flat Shoals Road from its real spot, so it has to move 3 units to clear."
+    }
+  ]
+}
