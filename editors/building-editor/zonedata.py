@@ -144,6 +144,11 @@ FLAG_MATCH_TOLERANCE = 1.0
 # Bundled flagged index sits next to this module in the install tree.
 FLAGGED_FILE = Path(__file__).with_name("flagged_buildings.json")
 
+# Bundled gas-station review list (staged for 1.7.2, Joshua
+# 2026-10-17): sits next to this module too, same pattern as the
+# flagged index — see GasStationReview below.
+GAS_REVIEW_FILE = Path(__file__).with_name("gas-station-review.json")
+
 
 def zone_repo_path(zone, filename):
     """Repo-relative path of one zone file."""
@@ -448,6 +453,62 @@ FLAGGED_LOCK_MESSAGE = (
     "road, and Joshua has flagged these buildings for his own "
     "decision. Flagged buildings cannot be moved, resized, or "
     "deleted in this version of the editor.")
+
+
+# ---------------------------------------------------------------------------
+# Gas-station review list (staged for 1.7.2 — Joshua 2026-10-17)
+# ---------------------------------------------------------------------------
+
+class GasStationReview:
+    """
+    The problem gas stations, listed for Joshua's decision — the
+    same role the flagged-buildings index plays for buildings.
+
+    Background: the game's placement rule leaves a fuel station out
+    when no part of it can sit clear of the streets. Joshua ruled
+    (2026-10-17) to KEEP that skip rule for now, and to put the
+    stations it hurts into this editor as a review list instead.
+    The list was computed by the round-2 placement audit (fuel
+    stations may sit across their own driveways; no part of a
+    station may sit on a real street): every station that is left
+    out entirely, or has to move more than 2 units from its real
+    spot, is in gas-station-review.json with its zone, real
+    position, outcome, the streets blocking it, and a plain-language
+    note on what is in the way.
+
+    The file is BUNDLED next to this module (like
+    flagged_buildings.json) and is small (dozens of entries), so it
+    fits the load-on-demand design Joshua set for 1.7.2: showing the
+    review queue needs NO zone download at all — this loader reads
+    the bundled file only, and a missing or unreadable file simply
+    means an empty queue (the editor still works).
+
+    READ-ONLY: nothing in the editor edits this list. Stations are
+    not buildings; Joshua decides each one's fate in conversation,
+    and a future audit regenerates the file.
+    """
+
+    def __init__(self, stations=None, counts=None, note=""):
+        """stations: the review entries (list of dicts, worst
+        first); counts: the audit's summary counts; note: the
+        file's own plain-language explanation of the list."""
+        self.stations = stations or []
+        self.counts = counts or {}
+        self.note = note or ""
+
+    @classmethod
+    def load(cls, path=None):
+        """Load the bundled review list; a missing or unreadable
+        file means an empty queue (never raises — same fallback
+        contract as FlaggedIndex.load)."""
+        p = Path(path) if path else GAS_REVIEW_FILE
+        try:
+            raw = json.loads(p.read_text())
+            return cls(raw.get("stations", []),
+                       raw.get("counts", {}),
+                       raw.get("_note", ""))
+        except Exception:
+            return cls()
 
 
 # ---------------------------------------------------------------------------
