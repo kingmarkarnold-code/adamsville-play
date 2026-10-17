@@ -100,9 +100,9 @@
   },
   {
    "name": "index.html",
-   "size": 942768,
-   "sha256": "9f7d48bbe09370e9a01c518ed744498e9bdd46870f1ff459a0e496f5b4bad7c1",
-   "hash": "9f7d48bbe09370e9a01c518ed744498e9bdd46870f1ff459a0e496f5b4bad7c1"
+   "size": 953024,
+   "sha256": "faea88380abb835eda2b3be8a21cde226c1b650520899cdfde568b58123bbf99",
+   "hash": "faea88380abb835eda2b3be8a21cde226c1b650520899cdfde568b58123bbf99"
   },
   {
    "name": "infracrew_system.js",
@@ -118,9 +118,9 @@
   },
   {
    "name": "mapdelivery.js",
-   "size": 21587,
-   "sha256": "85f171fb7bdfedc89f061f385442cfd60d37d2471e91e0cb25bd66e55b010b64",
-   "hash": "85f171fb7bdfedc89f061f385442cfd60d37d2471e91e0cb25bd66e55b010b64"
+   "size": 29229,
+   "sha256": "0da1001c523e924f5c80d436a13e55cf1a6851cfa6608ed11dabf99bc81fab65",
+   "hash": "0da1001c523e924f5c80d436a13e55cf1a6851cfa6608ed11dabf99bc81fab65"
   },
   {
    "name": "marriott.js",
@@ -447,6 +447,6 @@
    "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/collision_material.js"
   }
  ],
- "ui_version": "2026.10.16.198",
- "version": "2026.10.16.198"
+ "ui_version": "2026.10.16.199",
+ "version": "2026.10.16.199"
 }
