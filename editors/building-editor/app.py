@@ -1480,9 +1480,20 @@ class ZoneInspectorPanel(Gtk.Box):
         super().__init__(orientation=Gtk.Orientation.VERTICAL,
                          spacing=4)
         self.set_border_width(6)
-        # Shrinkable + a modest request: the split divider decides
-        # the real width (EDITOR UI RULE — adjustable panes).
-        self.set_size_request(240, -1)
+        # Shrinkable + a real request: the split divider decides
+        # the final width (EDITOR UI RULE — adjustable panes), but
+        # the request is what GTK anchors the divider to when the
+        # panel is first shown. 1.7.2 (real-GTK fix, Xvfb smoke
+        # 2026-10-17): at 240 the anchored allocation came out at
+        # 228px — too narrow for the 3D view + controls, and under
+        # the layout gate's 240px floor; the same request is also
+        # the divider's drag floor in GTK3, so it cannot be set
+        # huge either (the divider must still drag the pane small
+        # — Joshua's adjustability rule cuts both ways). 264 lands
+        # the default allocation at ~252px with the drag floor at
+        # the same ~252px: real space by default, full travel on
+        # the drag.
+        self.set_size_request(264, -1)
         self.tab = tab
         self.app_window = tab.app_window
 
@@ -2938,7 +2949,24 @@ class ZoneBuildingsTab(Gtk.Box):
         combo sets state, and refresh() only ever READS state, so
         switching category works in every state, flagged view
         included.
+
+        1.7.2 (real-GTK fix, found by the Xvfb smoke 2026-10-17):
+        clearing the list store makes real GTK drop the tree's
+        selection — so a refresh landing right after a click (the
+        on-demand zone load finishing) silently ate the selection,
+        and the inspector never opened on the building Joshua had
+        just picked. (The GTK stub kept the selection, which is
+        why only the real-GTK run saw it.) refresh() now remembers
+        the selected building and re-selects its row afterwards;
+        re-selecting fires the normal selection path, which opens
+        the inspector when the zone is loaded — the user's place
+        is kept across every refresh.
         """
+        keep_index = None
+        try:
+            keep_index = self._selected_index()
+        except Exception:
+            keep_index = None
         self.hero_store.clear()
         self.store.clear()
         store = self._store()
@@ -2980,6 +3008,16 @@ class ZoneBuildingsTab(Gtk.Box):
                      f"({'A→Z' if self._sort_asc else 'Z→A'})")
         self.info_label.set_text(info)
         self.info_label.set_tooltip_text(info)
+        # Restore the selection the clear() dropped (see above).
+        if keep_index is not None:
+            for pos, r in enumerate(self._rows[:self.ROW_CAP]):
+                if r["i"] == keep_index:
+                    try:
+                        self.tree.get_selection().select_path(
+                            Gtk.TreePath.new_from_string(str(pos)))
+                    except Exception:
+                        pass
+                    break
 
     def _update_row(self, index):
         """Refresh one visible row in place (after an edit) and its
