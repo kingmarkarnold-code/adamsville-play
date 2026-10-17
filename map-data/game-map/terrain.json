@@ -1,0 +1,12 @@
+{
+ "nx": 1024,
+ "ny": 1536,
+ "x0": -10399.0,
+ "z0": -14343.4,
+ "x1": 22178.3,
+ "z1": 34346.6,
+ "dx": 31.84,
+ "dz": 31.72,
+ "unit": "meters (== game units)",
+ "order": "row-major, north row first, west->east"
+}

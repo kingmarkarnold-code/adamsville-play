@@ -1,0 +1,61 @@
+{
+  "version": "1.9.4",
+  "changelog": "Save-race fixes. (1) Push, the 5-minute auto-push, and the Settings key-saved callback could start two round-trip saves at once; their reads and writes interleaved and GitHub refused the loser with a '…is at X but expected Y' mismatch — the save that failed on 2026-10-16. Now only one save trip runs at a time; extra triggers fold into at most one follow-up trip, and only when the map actually changed during the push. (2) If a push is refused because the file changed between the editor's read and its write (any writer can cause that, not just this app), the editor re-reads the file's current fingerprint once and retries once with the same content. (3) Reopening the editor no longer overwrites locally saved-but-unpushed edits with the fresh download: if this computer holds unpublished changes, the editor loads those, says so in plain language, and keeps them pushable.",
+  "files": [
+    {
+      "path": "about.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/about.py",
+      "sha256": "0b172aa3a3e94c80136473f95f42cef62f26927cfb9a8644f9aa14a4b3463140"
+    },
+    {
+      "path": "app.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/app.py",
+      "sha256": "9841ec0a4d27404108e37069c2f5c7d7db3d9c51bee0d598949128a0f80a1617"
+    },
+    {
+      "path": "data.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/data.py",
+      "sha256": "6829d22d73e8789c59a332d33cc88c3aa97e9528f28cbee0bec767f600cb8f27"
+    },
+    {
+      "path": "gamedata.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/gamedata.py",
+      "sha256": "4bf5817dcad540895996924215e6e24b0a6513f4922e00cdf1a7ec8842a87bb1"
+    },
+    {
+      "path": "github_sync.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/github_sync.py",
+      "sha256": "00727441d1d9d66d0fd17d774aae47a6b94063e67f2e379f668a313cc333cc9e"
+    },
+    {
+      "path": "ground.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/ground.py",
+      "sha256": "e9bd4994bf20bf339a0f4ff307f40b4d8b10dafe0fff4ddb548538f6dde3083a"
+    },
+    {
+      "path": "mapcanvas.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/mapcanvas.py",
+      "sha256": "007e85c621b49f5062412983783cc602947f81ab0a4bb98d57d8a325cdfc4198"
+    },
+    {
+      "path": "overpass.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/overpass.py",
+      "sha256": "9cdd2766f6d4da08ec6730f0a72eeac52e81befc415e46bcaf73ee4ec2b633cf"
+    },
+    {
+      "path": "roadinspect.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/roadinspect.py",
+      "sha256": "b8eae32562276781ed793b625111bd60bd95cb29ad26a001798d7b52292395de"
+    },
+    {
+      "path": "undo.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/undo.py",
+      "sha256": "fd81519489702ebc71fb8b13b927dea408054a483d68ba6d6b0b3fbe7123706b"
+    },
+    {
+      "path": "updater.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/updater.py",
+      "sha256": "0c36b000830e5661165ac9f636466cd6d8402bab410bcab7da10b3e1e13e3a92"
+    }
+  ]
+}

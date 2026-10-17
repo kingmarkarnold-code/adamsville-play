@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Adamsville Map Viewer</title>
+<!-- MapLibre GL: open-source map engine with pan / zoom / rotate / pitch.
+     All data loads live from the map-data repo (single source of truth). -->
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+<style>
+  html, body, #map { height: 100%; margin: 0; background: #e8e4dc; }
+  /* Top tab bar: tap a tab to show its layer, tap again to hide it. */
+  #tabs { position: absolute; top: 0; left: 0; right: 0; z-index: 10; display: flex; gap: 6px;
+          padding: 8px; overflow-x: auto; background: linear-gradient(rgba(255,255,255,.94), rgba(255,255,255,.82));
+          box-shadow: 0 1px 6px rgba(0,0,0,.25); scrollbar-width: none; }
+  #tabs::-webkit-scrollbar { display: none; }
+  .tab { flex: 0 0 auto; border: 1px solid #b6b0a4; background: #fff; color: #333; border-radius: 999px;
+         padding: 7px 14px; font: 600 13px system-ui; cursor: pointer; }
+  .tab.on { background: #2563eb; border-color: #2563eb; color: #fff; }
+  .tab.loading { opacity: .45; }
+  .tab.go3d { background: #111827; border-color: #111827; color: #facc15; margin-left: auto; }
+  /* Right-side layers panel: base map radio + overlay switches (Google-style). */
+  #layers { position: absolute; top: 56px; right: 8px; z-index: 10; background: rgba(255,255,255,.96);
+            border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,.3); padding: 10px 12px;
+            font: 13px/1.5 system-ui; color: #222; width: 178px; }
+  #layers h4 { margin: 2px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: #666; }
+  #layers label { display: block; padding: 3px 0; cursor: pointer; }
+  #layers hr { border: none; border-top: 1px solid #e2ded4; margin: 8px 0; }
+  #layersBtn { display: none; position: absolute; top: 56px; right: 8px; z-index: 11; width: 42px; height: 42px;
+               border-radius: 10px; border: none; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.3);
+               font-size: 19px; cursor: pointer; }
+  /* Small screens: the panel hides behind a floating button. */
+  @media (max-width: 640px) {
+    #layers { display: none; top: 106px; }
+    #layers.open { display: block; }
+    #layersBtn { display: block; }
+  }
+  #msg { position: absolute; left: 10px; bottom: 10px; z-index: 10; background: rgba(17,24,39,.85); color: #e5e7eb;
+         font: 12px system-ui; padding: 6px 10px; border-radius: 8px; }
+  .maplibregl-ctrl-top-right { top: 210px; }
+  @media (max-width: 640px) { .maplibregl-ctrl-top-right { top: 106px; } }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<!-- Tabs (toggle layers). The 3D tab LEAVES this viewer for the separate 3D map. -->
+<div id="tabs">
+  <button class="tab on" data-layer="roads">Roads</button>
+  <button class="tab" data-layer="buildings">Buildings</button>
+  <button class="tab" data-layer="places">Places</button>
+  <button class="tab" data-layer="transit">Transit</button>
+  <button class="tab" data-layer="water">Water</button>
+  <button class="tab" data-layer="parks">Parks</button>
+  <button class="tab" data-layer="rail">Rail &amp; Bridges</button>
+  <button class="tab go3d" id="go3d">3D view &#8599;</button>
+</div>
+<button id="layersBtn" title="Layers">&#9776;</button>
+
+<!-- Right panel: base map choice + overlays that can stack on any base. -->
+<div id="layers">
+  <h4>Map type</h4>
+  <label><input type="radio" name="base" value="default" checked> Default</label>
+  <label><input type="radio" name="base" value="terrain"> Terrain</label>
+  <label><input type="radio" name="base" value="satellite"> Satellite</label>
+  <hr>
+  <h4>Overlays</h4>
+  <label><input type="checkbox" id="ovLabels" checked> Street &amp; place names</label>
+  <label><input type="checkbox" id="ovBorder"> Border (reference)</label>
+  <label><input type="checkbox" id="ovStops"> Transit stops</label>
+  <hr>
+  <div style="color:#666;font-size:12px">Rotate: two-finger twist or right-drag. Compass resets north.</div>
+</div>
+<div id="msg">Loading map data&hellip;</div>
+
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script>
+// ================= Configuration =================
+// Data comes from the map-data repository's Pages site - viewers never fork data.
+const DATA = 'https://kingmarkarnold-code.github.io/map-data/';
+const VIEW3D = DATA + 'game-map/viewer.html';
+const msg = document.getElementById('msg');
+const say = t => { msg.textContent = t; };
+
+// ================= Map + base sources =================
+const map = new maplibregl.Map({
+  container: 'map',
+  style: {
+    version: 8,
+    glyphs: 'https://demotiles.maplibre.org/tiles/{fontstack}/{range}.pbf',
+    sources: {
+      // Street base (Default) and faint base under Terrain.
+      osm: { type: 'raster', tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'], tileSize: 256,
+             attribution: 'OpenStreetMap contributors' },
+      // Satellite imagery (Esri World Imagery, streamed at native resolution).
+      sat: { type: 'raster', tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+             tileSize: 256, attribution: 'Esri, Maxar, Earthstar Geographics' },
+      // Satellite label overlays (place names + road names over imagery, like Google).
+      satplaces: { type: 'raster', tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}'], tileSize: 256 },
+      satroads: { type: 'raster', tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}'], tileSize: 256 },
+      // Elevation DEM (terrarium) for the Terrain base hillshade.
+      dem: { type: 'raster-dem', tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
+             tileSize: 256, encoding: 'terrarium', maxzoom: 15 },
+      // Our own rendered terrain tint (Google-style colors) as an image overlay.
+      tint: { type: 'image', url: DATA + 'terrain_tint.png',
+              coordinates: [[-84.6387, 33.8704], [-84.2871, 33.8704], [-84.2871, 33.5048], [-84.6387, 33.5048]] }
+    },
+    layers: [
+      { id: 'bg', type: 'background', paint: { 'background-color': '#e8e4dc' } },
+      { id: 'base-osm', type: 'raster', source: 'osm' },
+      { id: 'base-sat', type: 'raster', source: 'sat', layout: { visibility: 'none' } },
+      { id: 'base-tint', type: 'raster', source: 'tint', layout: { visibility: 'none' }, paint: { 'raster-opacity': 0.88 } },
+      { id: 'base-hillshade', type: 'hillshade', source: 'dem', layout: { visibility: 'none' },
+        paint: { 'hillshade-shadow-color': '#473b2a', 'hillshade-exaggeration': 0.6 } },
+      { id: 'base-satplaces', type: 'raster', source: 'satplaces', layout: { visibility: 'none' } },
+      { id: 'base-satroads', type: 'raster', source: 'satroads', layout: { visibility: 'none' } }
+    ]
+  },
+  center: [-84.52645, 33.74110], // 535 Dollar Mill Rd
+  zoom: 11,
+  maxZoom: 19,
+  dragRotate: true, pitchWithRotate: true, touchPitch: true
+});
+map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
+map.addControl(new maplibregl.GeolocateControl({ trackUserLocation: false }), 'top-right');
+map.addControl(new maplibregl.ScaleControl({ maxWidth: 110 }), 'bottom-left');
+
+// ================= Base switching (right panel) =================
+// Google's rule, ours too: data overlays stay available on every base.
+function setBase(name) {
+  const vis = {
+    'base-osm': name === 'default' ? 'visible' : (name === 'terrain' ? 'visible' : 'none'),
+    'base-sat': name === 'satellite' ? 'visible' : 'none',
+    'base-tint': name === 'terrain' ? 'visible' : 'none',
+    'base-hillshade': name === 'terrain' ? 'visible' : 'none',
+    'base-satplaces': name === 'satellite' ? 'visible' : 'none',
+    'base-satroads': name === 'satellite' ? 'visible' : 'none'
+  };
+  for (const [id, v] of Object.entries(vis)) map.setLayoutProperty(id, 'visibility', v);
+  // On Terrain the street base fades so the tint + hillshade read clearly.
+  map.setPaintProperty('base-osm', 'raster-opacity', name === 'terrain' ? 0.35 : 1);
+}
+document.querySelectorAll('input[name=base]').forEach(r =>
+  r.addEventListener('change', () => setBase(r.value)));
+
+// ================= Data layer groups =================
+// Each tab owns a group of layer ids. Tapping toggles the whole group.
+const GROUPS = {
+  roads: ['roads-line', 'roads-label'],
+  buildings: ['buildings-fill'],
+  places: ['places-fill', 'places-pt', 'places-label'],
+  transit: ['transit-line'],
+  water: ['water-fill', 'water-line'],
+  parks: ['parks-fill'],
+  rail: ['rail-line', 'bridge-line']
+};
+const stopsLayer = ['transit-stops'];
+function setGroup(name, on) {
+  for (const id of (GROUPS[name] || []))
+    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
+}
+document.querySelectorAll('.tab[data-layer]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const on = !btn.classList.contains('on');
+    btn.classList.toggle('on', on);
+    setGroup(btn.dataset.layer, on);
+  });
+});
+document.getElementById('go3d').addEventListener('click', () => { location.href = VIEW3D; });
+document.getElementById('layersBtn').addEventListener('click', () =>
+  document.getElementById('layers').classList.toggle('open'));
+
+// Overlay switches
+document.getElementById('ovLabels').addEventListener('change', e => {
+  const v = e.target.checked ? 'visible' : 'none';
+  if (map.getLayer('roads-label')) map.setLayoutProperty('roads-label', 'visibility',
+    document.querySelector('.tab[data-layer=roads]').classList.contains('on') ? v : 'none');
+  if (map.getLayer('places-label')) map.setLayoutProperty('places-label', 'visibility',
+    document.querySelector('.tab[data-layer=places]').classList.contains('on') ? v : 'none');
+});
+document.getElementById('ovBorder').addEventListener('change', e => {
+  if (map.getLayer('border-line')) map.setLayoutProperty('border-line', 'visibility', e.target.checked ? 'visible' : 'none');
+});
+document.getElementById('ovStops').addEventListener('change', e => {
+  if (map.getLayer('transit-stops')) map.setLayoutProperty('transit-stops', 'visibility', e.target.checked ? 'visible' : 'none');
+});
+
+// ================= Load the data layers =================
+async function addGeoJSON(id, url) {
+  const res = await fetch(url);
+  const data = await res.json();
+  map.addSource(id, { type: 'geojson', data });
+  return data;
+}
+map.on('load', async () => {
+  try {
+    // Border (reference only; off by default per the red-line rule)
+    const border = await (await fetch(DATA + 'border.geojson')).json();
+    const poly = border.features.find(f => f.geometry.type === 'Polygon');
+    map.addSource('border', { type: 'geojson', data: poly });
+    map.addLayer({ id: 'border-line', type: 'line', source: 'border',
+      layout: { visibility: 'none' }, paint: { 'line-color': '#dc2626', 'line-width': 2 } });
+
+    // Roads (+ street-name labels along the lines)
+    say('Loading roads…');
+    await addGeoJSON('roads', DATA + 'roads_drivable.geojson');
+    map.addLayer({ id: 'roads-line', type: 'line', source: 'roads',
+      paint: { 'line-color': ['match', ['get', 'highway'],
+          ['motorway', 'trunk'], '#b91c1c', ['primary'], '#ea580c', ['secondary'], '#d97706',
+          ['tertiary'], '#78716c', '#a8a29e'],
+        'line-width': ['interpolate', ['linear'], ['zoom'], 10, 0.6, 14, 1.6, 18, 3.2] } });
+    map.addLayer({ id: 'roads-label', type: 'symbol', source: 'roads', minzoom: 13,
+      filter: ['has', 'name'],
+      layout: { 'symbol-placement': 'line', 'text-field': ['get', 'name'], 'text-size': 11,
+                'text-font': ['Open Sans Regular'] },
+      paint: { 'text-color': '#1f2937', 'text-halo-color': '#ffffff', 'text-halo-width': 1.4 } });
+
+    // Features drive water / parks / places (one download, three groups)
+    say('Loading places, water, parks…');
+    const feats = await addGeoJSON('features', DATA + 'features.geojson');
+    map.addLayer({ id: 'water-fill', type: 'fill', source: 'features',
+      filter: ['==', ['get', 'category'], 'water_body'],
+      layout: { visibility: 'none' }, paint: { 'fill-color': '#38bdf8', 'fill-opacity': 0.75 } });
+    map.addLayer({ id: 'water-line', type: 'line', source: 'features',
+      filter: ['==', ['get', 'category'], 'waterway'],
+      layout: { visibility: 'none' }, paint: { 'line-color': '#0284c7', 'line-width': 1.4 } });
+    map.addLayer({ id: 'parks-fill', type: 'fill', source: 'features',
+      filter: ['in', ['get', 'category'], ['literal', ['park', 'golf_course']]],
+      layout: { visibility: 'none' }, paint: { 'fill-color': '#4ade80', 'fill-opacity': 0.55 } });
+    map.addLayer({ id: 'places-fill', type: 'fill', source: 'features',
+      filter: ['all', ['==', ['geometry-type'], 'Polygon'], ['has', 'name'],
+        ['in', ['get', 'category'], ['literal', ['plaza_commercial', 'apartments', 'airport', 'school', 'church']]]],
+      layout: { visibility: 'none' }, paint: { 'fill-color': '#f59e0b', 'fill-opacity': 0.4 } });
+    map.addLayer({ id: 'places-pt', type: 'circle', source: 'features',
+      filter: ['all', ['==', ['geometry-type'], 'Point'], ['has', 'name'],
+        ['in', ['get', 'category'], ['literal', ['gas_station', 'school', 'church', 'restaurant', 'shop_business', 'medical', 'library', 'post_office', 'hotel', 'fire_police', 'transit_station', 'cemetery', 'amenity_other']]]],
+      layout: { visibility: 'none' },
+      paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 11, 2.2, 16, 5],
+        'circle-color': ['match', ['get', 'category'],
+          'gas_station', '#dc2626', 'school', '#2563eb', 'church', '#7c3aed', 'restaurant', '#ea580c',
+          'medical', '#db2777', 'library', '#4d7c0f', 'post_office', '#9333ea', '#0891b2'],
+        'circle-stroke-color': '#ffffff', 'circle-stroke-width': 0.8 } });
+    map.addLayer({ id: 'places-label', type: 'symbol', source: 'features', minzoom: 14,
+      filter: ['all', ['==', ['geometry-type'], 'Point'], ['has', 'name'],
+        ['in', ['get', 'category'], ['literal', ['gas_station', 'school', 'church', 'restaurant', 'shop_business', 'medical', 'library', 'post_office', 'hotel', 'fire_police', 'transit_station', 'cemetery', 'amenity_other']]]],
+      layout: { visibility: 'none', 'text-field': ['get', 'name'], 'text-size': 11,
+                'text-font': ['Open Sans Regular'], 'text-offset': [0, 0.9], 'text-anchor': 'top' },
+      paint: { 'text-color': '#111827', 'text-halo-color': '#ffffff', 'text-halo-width': 1.4 } });
+
+    // Railroads + bridges
+    await addGeoJSON('rail', DATA + 'railroads.geojson');
+    map.addLayer({ id: 'rail-line', type: 'line', source: 'rail', layout: { visibility: 'none' },
+      paint: { 'line-color': '#111827', 'line-width': 2, 'line-dasharray': [3, 1.6] } });
+    await addGeoJSON('bridges', DATA + 'bridges.geojson');
+    map.addLayer({ id: 'bridge-line', type: 'line', source: 'bridges', layout: { visibility: 'none' },
+      paint: { 'line-color': '#f59e0b', 'line-width': 3.4, 'line-opacity': 0.85 } });
+
+    // Transit (MARTA + CobbLinc) + stops
+    await addGeoJSON('transit', DATA + 'transit_routes.geojson');
+    map.addLayer({ id: 'transit-line', type: 'line', source: 'transit', layout: { visibility: 'none' },
+      paint: { 'line-color': ['match', ['get', 'agency'], 'CobbLinc', '#16a34a', '#2563eb'],
+        'line-width': ['case', ['==', ['get', 'type'], '1'], 4, 2.2], 'line-opacity': 0.9 } });
+    await addGeoJSON('stops', DATA + 'transit_stops.geojson');
+    map.addLayer({ id: 'transit-stops', type: 'circle', source: 'stops', minzoom: 12,
+      layout: { visibility: 'none' },
+      paint: { 'circle-radius': 2.6, 'circle-color': '#1d4ed8', 'circle-stroke-color': '#fff', 'circle-stroke-width': 0.7 } });
+
+    // Buildings (game-map data, decompressed in the browser, converted to polygons)
+    say('Loading buildings…');
+    const raw = await (await fetch(DATA + 'game-map/buildings.json.gz')).arrayBuffer();
+    const text = await new Response(new Blob([raw]).stream().pipeThrough(new DecompressionStream('gzip'))).text();
+    const b = JSON.parse(text);
+    // Game coords (meters, origin 535) -> lon/lat with the inverse of the game-map projection.
+    const LAT0 = 33.74110, LON0 = -84.52645;
+    const MPDLAT = 111132.92 - 559.82 * Math.cos(2 * LAT0 * Math.PI / 180);
+    const MPDLON = 111412.84 * Math.cos(LAT0 * Math.PI / 180) - 93.5 * Math.cos(3 * LAT0 * Math.PI / 180);
+    const ll = ([x, z]) => [LON0 + x / MPDLON, LAT0 - z / MPDLAT];
+    const bFeatures = [];
+    for (const [name, type, h, ring] of b.buildings) {
+      bFeatures.push({ type: 'Feature', properties: { name, type, h },
+        geometry: { type: 'Polygon', coordinates: [ring.map(ll)] } });
+    }
+    map.addSource('buildings', { type: 'geojson', data: { type: 'FeatureCollection', features: bFeatures } });
+    map.addLayer({ id: 'buildings-fill', type: 'fill', source: 'buildings', layout: { visibility: 'none' },
+      paint: { 'fill-color': '#b8ab98', 'fill-opacity': 0.75, 'fill-outline-color': '#8a7d68' } });
+
+    // Popups: tap a place / stop / route to identify it.
+    const popupLayers = ['places-pt', 'transit-stops', 'transit-line', 'rail-line'];
+    map.on('click', e => {
+      const hit = map.queryRenderedFeatures(e.point, { layers: popupLayers.filter(l => map.getLayer(l)) });
+      if (!hit.length) return;
+      const p = hit[0].properties;
+      const title = p.name || ((p.agency || '') + ' ' + (p.short_name || '')).trim() || p.long_name || 'Feature';
+      const sub = p.category || p.long_name || p.operator || '';
+      new maplibregl.Popup().setLngLat(e.lngLat).setHTML('<b>' + title + '</b><br>' + sub).addTo(map);
+    });
+
+    say('Ready. Data: map-data repo (live).');
+  } catch (err) {
+    say('Some data failed to load: ' + err.message);
+  }
+});
+</script>
+</body>
+</html>

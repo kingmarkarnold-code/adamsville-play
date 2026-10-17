@@ -1,0 +1,46 @@
+{
+ "id": "downtown",
+ "name": "Downtown",
+ "definition": {
+  "type": "rectangle",
+  "latlon": {
+   "latMin": 33.780773599999996,
+   "latMax": 33.84450666666667,
+   "lonMin": -84.45774545,
+   "lonMax": -84.37305500000001
+  },
+  "original_bounds": {
+   "xMin": 5398,
+   "xMax": 8200,
+   "zMin": -200,
+   "zMax": 2202
+  },
+  "rebuild_m": {
+   "xMin": 6366.452354568785,
+   "xMax": 14214.225388698644,
+   "zMin": -11469.629130578374,
+   "zMax": -4400.5042705968
+  }
+ },
+ "bounds": {
+  "xMin": 8377.129401408598,
+  "xMax": 16314.485035211088,
+  "zMin": -4248.536971831284,
+  "zMax": 2555.720070422735
+ },
+ "frame": "zone frame (split-zones rescale s=1609/568 about centre (3772.5, 2009); rebuilt data transformed via CONVERSION-DESIGN §1.4)",
+ "scale": 2.8327464788732395,
+ "is_start": false,
+ "counts": {
+  "roads": 5004,
+  "buildings": 6697,
+  "pins": 2946,
+  "lifts": 0,
+  "signs": 40,
+  "water": 59,
+  "places": 882
+ },
+ "generated": "2026-10-16",
+ "generator": "full-build/convert.js (CONVERSION-DESIGN.md, Stage 1 full conversion)",
+ "source": "rebuild gamemap (OSM capture 2026-10-14) + new DEM elev (converted-zones/elev.js); signs/hero carried per §2.6: original-frame -> zone-frame via lat/lon chain (origToZone)"
+}

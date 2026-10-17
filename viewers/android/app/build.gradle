@@ -1,0 +1,27 @@
+// App module: a single-activity WebView shell. No third-party libraries.
+plugins { id "com.android.application" }
+
+android {
+    namespace "org.adamsville.mapviewer"
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "org.adamsville.mapviewer"
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName "1.0.0"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            // Signing is configured at build time with the existing release
+            // keystore (same key as the Surviving Adamsville game APK).
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

@@ -1,0 +1,56 @@
+{
+  "version": "1.7.3",
+  "changelog": "Fixes the freeze when opening a big building. (1) Opening Elizabeth Baptist Church (and any other large building) no longer freezes the editor: finding which street a building faces used to re-measure every road in the zone for every edge of the building \u2014 over 3 million measurements for that one church. It now measures only the roads near the building and gets the same answer in a fraction of a second (checked identical on 2,260 buildings across all seven zones). Everything else is unchanged from 1.7.2.",
+  "files": [
+    {
+      "path": "about.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/about.py",
+      "sha256": "0b172aa3a3e94c80136473f95f42cef62f26927cfb9a8644f9aa14a4b3463140"
+    },
+    {
+      "path": "app.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/app.py",
+      "sha256": "a18d5317853faca6367c64b0808720f648ba7ddf3d6e23dbab712ea22107d1da"
+    },
+    {
+      "path": "buildingcanvas.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/buildingcanvas.py",
+      "sha256": "63ff24720818a7ff990651d539641cb893a132775af56ac6fcfacf666d0a4add"
+    },
+    {
+      "path": "data.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/data.py",
+      "sha256": "308da8deeca061fd7318c6d1d1ed3938f12a951cbbfffd3d6714ab61c03704f4"
+    },
+    {
+      "path": "github_sync.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/github_sync.py",
+      "sha256": "09abb8f7c6ad2fc004fb83a22b04f44346b99fbd52b9e28c929c93ba5bc1bcba"
+    },
+    {
+      "path": "mollie-icon.png",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/mollie-icon.png",
+      "sha256": "28990027fd79e03e2ef8416e8c1d3410ee284ec86383280968b245f08576e768"
+    },
+    {
+      "path": "shared_cache.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/shared_cache.py",
+      "sha256": "86e16770fdea09e684c882870f730a794e2d64a807c3f06195dcd3254dedbde5"
+    },
+    {
+      "path": "subdivisioncanvas.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/subdivisioncanvas.py",
+      "sha256": "d76123adcee302159e2316fdeedadb3b3dfee5c0ea6482a0000b4067017a5340"
+    },
+    {
+      "path": "updater.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/updater.py",
+      "sha256": "0c36b000830e5661165ac9f636466cd6d8402bab410bcab7da10b3e1e13e3a92"
+    },
+    {
+      "path": "zonedata.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/zonedata.py",
+      "sha256": "28962a166df08a35d50e6c167aa77cb94744eda84958c429d0c60d12359faa31"
+    }
+  ]
+}

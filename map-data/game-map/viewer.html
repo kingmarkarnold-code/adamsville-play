@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Surviving Adamsville - Game Map 3D Viewer (from reference data)</title>
+<style>html,body,#app{height:100%;margin:0;background:#0b1020} #hud{position:fixed;left:10px;top:10px;color:#e5e7eb;font:13px/1.5 system-ui;background:rgba(10,14,28,.78);padding:10px 12px;border-radius:10px;max-width:330px} #hud b{color:#fff} .k{color:#93c5fd}</style>
+</head><body><div id="app"></div>
+<div id="hud"><b>Game Map - 3D viewer</b><br>
+Built ONLY from the reference maps (roads, water, buildings, terrain) in the true 1:1 scale: 1 unit = 1 meter. Origin = 535 Dollar Mill Rd.<br>
+<span class="k">Drag</span> orbit &nbsp; <span class="k">Right-drag</span> pan &nbsp; <span class="k">Scroll / pinch</span> zoom<br>
+<span id="stat">Loading data...</span><br>
+Viewer notes: terrain is decimated for viewing; buildings render as footprint-sized boxes here - the DATA files keep the exact footprints. Water sits on the terrain surface (first pass).</div>
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ---- Setup: renderer, camera, controls, lights
+const renderer = new THREE.WebGLRenderer({antialias: true});
+renderer.setSize(innerWidth, innerHeight);
+document.getElementById('app').appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0b1020);
+scene.fog = new THREE.Fog(0x0b1020, 9000, 26000);
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 1, 60000);
+camera.position.set(0, 2600, 5200);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.maxPolarAngle = Math.PI * 0.495;
+scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x3a4a2f, 0.95));
+const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+sun.position.set(-4000, 6000, -2500);
+scene.add(sun);
+
+const stat = document.getElementById('stat');
+const J = async p => (await fetch(p)).json();
+
+// ---- Terrain: load the heightfield, build a decimated colored mesh
+const meta = await J('terrain.json');
+const buf = await (await fetch('terrain.bin')).arrayBuffer();
+const H = new Float32Array(buf);
+const NX = meta.nx, NY = meta.ny, Y0 = 139.0; // viewer-only vertical offset (data stays absolute)
+// Height lookup in game coords (nearest grid sample)
+function heightAt(x, z) {
+  const fx = (x - meta.x0) / (meta.x1 - meta.x0) * (NX - 1);
+  const fz = (z - meta.z0) / (meta.z1 - meta.z0) * (NY - 1);
+  const ix = Math.max(0, Math.min(NX - 1, Math.round(fx)));
+  const iz = Math.max(0, Math.min(NY - 1, Math.round(fz)));
+  return H[iz * NX + ix] - Y0;
+}
+{
+  const STEP = 3; // decimation for viewing only
+  const vx = Math.floor(NX / STEP), vz = Math.floor(NY / STEP);
+  const pos = [], col = [], idx = [];
+  const bandCols = [[457,'#8fbf6f'],[600,'#a9c97a'],[700,'#c3d189'],[800,'#dcd69a'],[900,'#e8d9a0'],[1000,'#dfc493'],[1100,'#d3af7e'],[1200,'#c49a6b']]
+    .map(([f, c]) => [f, new THREE.Color(c)]);
+  for (let j = 0; j < vz; j++) for (let i = 0; i < vx; i++) {
+    const gx = i * STEP, gz = j * STEP;
+    const x = meta.x0 + (meta.x1 - meta.x0) * gx / (NX - 1);
+    const z = meta.z0 + (meta.z1 - meta.z0) * gz / (NY - 1);
+    const h = H[gz * NX + gx];
+    pos.push(x, h - Y0, z);
+    const ft = h * 3.28084;
+    let c = bandCols[bandCols.length - 1][1];
+    for (const [f, cc] of bandCols) if (ft < f + 100) { c = cc; break; }
+    col.push(c.r, c.g, c.b);
+  }
+  for (let j = 0; j < vz - 1; j++) for (let i = 0; i < vx - 1; i++) {
+    const a = j * vx + i, b = a + 1, d = a + vx, e = d + 1;
+    idx.push(a, d, b, b, d, e);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex(idx); g.computeVertexNormals();
+  scene.add(new THREE.Mesh(g, new THREE.MeshLambertMaterial({vertexColors: true})));
+}
+stat.textContent = 'Terrain loaded. Loading roads...';
+
+// ---- Roads: draped line segments, colored by category width class
+{
+  const data = await J('roads.json');
+  const pos = [], col = [];
+  const cMajor = new THREE.Color('#f8fafc'), cMid = new THREE.Color('#cbd5e1'), cLocal = new THREE.Color('#94a3b8');
+  // Roads snap to terrain via their stored ground profile (g) + the
+  // material system's road lift (0.55) - no runtime sampling, no floating.
+  for (const [name, cat, w, pts, g] of data.roads) {
+    const c = w >= 14 ? cMajor : (w >= 10 ? cMid : cLocal);
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [x1, z1] = pts[i], [x2, z2] = pts[i + 1];
+      pos.push(x1, (g[i] - Y0) + 0.55, z1, x2, (g[i + 1] - Y0) + 0.55, z2);
+      col.push(c.r, c.g, c.b, c.r, c.g, c.b);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  scene.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({vertexColors: true})));
+}
+stat.textContent = 'Roads loaded. Loading water + buildings...';
+
+// ---- Water: flat shapes on the terrain at each feature's centroid height
+{
+  const data = await J('water.json');
+  const mat = new THREE.MeshBasicMaterial({color: 0x3b82f6, transparent: true, opacity: 0.75});
+  for (const [name, kind, pts] of data.water) {
+    if (kind !== 'body' || pts.length < 3) continue;
+    const cx = pts.reduce((s, p) => s + p[0], 0) / pts.length;
+    const cz = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+    const shape = new THREE.Shape(pts.map(([x, z]) => new THREE.Vector2(x, z)));
+    const g = new THREE.ShapeGeometry(shape);
+    g.rotateX(Math.PI / 2); // shape XY -> XZ plane (flips z sign, corrected below by scale)
+    g.scale(1, 1, -1);
+    const m = new THREE.Mesh(g, mat);
+    m.position.y = heightAt(cx, cz) + 0.35;
+    scene.add(m);
+  }
+}
+
+// ---- Buildings: one InstancedMesh of unit boxes (viewer approximation;
+//      exact footprints live in buildings.json)
+{
+  const raw = await (await fetch('buildings.json.gz')).arrayBuffer();
+  const data = JSON.parse(await new Response(new Blob([raw]).stream().pipeThrough(new DecompressionStream('gzip'))).text());
+  const list = data.buildings;
+  const geo = new THREE.BoxGeometry(1, 1, 1);
+  geo.translate(0, 0.5, 0);
+  const mat = new THREE.MeshLambertMaterial({color: 0xd6cfc4});
+  const inst = new THREE.InstancedMesh(geo, mat, list.length);
+  const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), S = new THREE.Vector3(), P = new THREE.Vector3();
+  const UP = new THREE.Vector3(0, 1, 0);
+  list.forEach((b, i) => {
+    const ring = b[3];
+    let cx = 0, cz = 0;
+    ring.forEach(p => { cx += p[0]; cz += p[1]; });
+    cx /= ring.length; cz /= ring.length;
+    // footprint size + orientation from the ring's bounding extent
+    let minx = 1e18, maxx = -1e18, minz = 1e18, maxz = -1e18;
+    ring.forEach(p => { minx = Math.min(minx, p[0]); maxx = Math.max(maxx, p[0]); minz = Math.min(minz, p[1]); maxz = Math.max(maxz, p[1]); });
+    const sx = Math.max(1.5, maxx - minx), sz = Math.max(1.5, maxz - minz);
+    // Snap-to-terrain: the foundation (bottom face, concrete material) sits
+    // at the stored pad height; the skirt extends below it to the lowest
+    // ground under the footprint, so no corner ever floats.
+    const pad = b[4] - Y0, skirt = b[5];
+    P.set(cx, pad - skirt, cz);
+    S.set(sx, b[2] + skirt, sz);
+    Q.setFromAxisAngle(UP, 0);
+    M.compose(P, Q, S);
+    inst.setMatrixAt(i, M);
+  });
+  inst.instanceMatrix.needsUpdate = true;
+  scene.add(inst);
+  stat.textContent = 'Done: terrain + ' + list.length.toLocaleString() + ' buildings + roads + water. Origin (0,0) = 535 Dollar Mill Rd.';
+}
+
+// Home-base marker at the origin
+{
+  const m = new THREE.Mesh(new THREE.SphereGeometry(14, 16, 12), new THREE.MeshBasicMaterial({color: 0xfacc15}));
+  m.position.set(0, heightAt(0, 0) + 16, 0);
+  scene.add(m);
+}
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+</script></body></html>

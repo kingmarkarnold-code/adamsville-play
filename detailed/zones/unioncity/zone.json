@@ -1,0 +1,46 @@
+{
+ "id": "unioncity",
+ "name": "Union City",
+ "definition": {
+  "type": "rectangle",
+  "latlon": {
+   "latMin": 33.51549333333333,
+   "latMax": 33.7272824,
+   "lonMin": -84.626945,
+   "lonMax": -84.556006925
+  },
+  "original_bounds": {
+   "xMin": -200,
+   "xMax": 2147,
+   "zMin": 4218,
+   "zMax": 12200
+  },
+  "rebuild_m": {
+   "xMin": -9312.289060513736,
+   "xMax": -2738.8688923824925,
+   "zMin": 1532.6163446075404,
+   "zMax": 25023.7714788162
+  }
+ },
+ "bounds": {
+  "xMin": -7480.585387323972,
+  "xMax": -832.1294014084006,
+  "zMin": 8266.53697183079,
+  "zMax": 30877.519366197153
+ },
+ "frame": "zone frame (split-zones rescale s=1609/568 about centre (3772.5, 2009); rebuilt data transformed via CONVERSION-DESIGN §1.4)",
+ "scale": 2.8327464788732395,
+ "is_start": false,
+ "counts": {
+  "roads": 2055,
+  "buildings": 7921,
+  "pins": 758,
+  "lifts": 0,
+  "signs": 3,
+  "water": 147,
+  "places": 40
+ },
+ "generated": "2026-10-16",
+ "generator": "full-build/convert.js (CONVERSION-DESIGN.md, Stage 1 full conversion)",
+ "source": "rebuild gamemap (OSM capture 2026-10-14) + new DEM elev (converted-zones/elev.js); signs/hero carried per §2.6: original-frame -> zone-frame via lat/lon chain (origToZone)"
+}

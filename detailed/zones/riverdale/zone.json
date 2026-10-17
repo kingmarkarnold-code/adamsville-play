@@ -1,0 +1,46 @@
+{
+ "id": "riverdale",
+ "name": "Riverdale",
+ "definition": {
+  "type": "rectangle",
+  "latlon": {
+   "latMin": 33.51549333333333,
+   "latMax": 33.7272824,
+   "lonMin": -84.45774545,
+   "lonMax": -84.37305500000001
+  },
+  "original_bounds": {
+   "xMin": 5398,
+   "xMax": 8200,
+   "zMin": 4218,
+   "zMax": 12200
+  },
+  "rebuild_m": {
+   "xMin": 6366.452354568785,
+   "xMax": 14214.225388698644,
+   "zMin": 1532.6163446075404,
+   "zMax": 25023.7714788162
+  }
+ },
+ "bounds": {
+  "xMin": 8377.129401408598,
+  "xMax": 16314.485035211088,
+  "zMin": 8266.53697183079,
+  "zMax": 30877.519366197153
+ },
+ "frame": "zone frame (split-zones rescale s=1609/568 about centre (3772.5, 2009); rebuilt data transformed via CONVERSION-DESIGN §1.4)",
+ "scale": 2.8327464788732395,
+ "is_start": false,
+ "counts": {
+  "roads": 20726,
+  "buildings": 52771,
+  "pins": 10238,
+  "lifts": 0,
+  "signs": 185,
+  "water": 424,
+  "places": 947
+ },
+ "generated": "2026-10-16",
+ "generator": "full-build/convert.js (CONVERSION-DESIGN.md, Stage 1 full conversion)",
+ "source": "rebuild gamemap (OSM capture 2026-10-14) + new DEM elev (converted-zones/elev.js); signs/hero carried per §2.6: original-frame -> zone-frame via lat/lon chain (origToZone)"
+}

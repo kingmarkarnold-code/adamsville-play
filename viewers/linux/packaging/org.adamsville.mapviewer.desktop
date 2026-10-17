@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Adamsville Map Viewer
+Comment=Reference map viewer for Surviving Adamsville
+Exec=map-viewer
+Icon=org.adamsville.mapviewer
+Terminal=false
+Categories=Graphics;
+StartupWMClass=org.adamsville.mapviewer

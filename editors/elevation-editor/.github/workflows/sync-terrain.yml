@@ -1,0 +1,90 @@
+# ============================================================================
+# Sync Terrain Edits → Game
+# ----------------------------------------------------------------------------
+# WHERE THIS FILE GOES:
+#   kingmarkarnold-code/adamsville-elevation-editor/.github/workflows/sync-terrain.yml
+#
+# WHAT IT DOES (Joshua's design):
+#   When terrain_edits.json is pushed to the elevation-editor repo,
+#   this workflow bakes the edits into the game's terrain lift data.
+#   The editor's changes become part of the game's new base terrain.
+#
+#   Terrain editor push → this workflow → game repo updated
+#
+# TRIGGER: push to main affecting terrain_edits.json
+#
+# SECRETS NEEDED:
+#   GAME_REPO_TOKEN — same token as sync-roads.yml (a GitHub Personal Access
+#   Token with `repo` scope for kingmarkarnold-code).
+#   Add as a repository secret in the elevation-editor repo.
+# ============================================================================
+
+name: Sync Terrain to Game
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'terrain_edits.json'
+
+jobs:
+  sync-terrain:
+    runs-on: ubuntu-latest
+
+    steps:
+      # -- Get the elevation-editor repo (this repo, the data source) ---------
+      - name: Checkout elevation-editor repo
+        uses: actions/checkout@v4
+        # (no `path:` — checks out to the workspace root, so this repo's
+        # own .github/workflows/ scripts are reachable at the repo-root
+        # relative path used below)
+
+      # -- Get the game repo (the destination) --------------------------------
+      - name: Checkout game repo
+        uses: actions/checkout@v4
+        with:
+          repository: kingmarkarnold-code/adamsville-play
+          token: ${{ secrets.GAME_REPO_TOKEN }}
+          path: game
+
+      # -- Bake terrain edits into the game's lift data -----------------------
+      - name: Bake terrain edits
+        run: |
+          python3 .github/workflows/bake_terrain.py \
+            --edits terrain_edits.json \
+            --game-dir game/detailed
+
+      # -- Commit to the game repo --------------------------------------------
+      - name: Commit baked terrain to game repo
+        run: |
+          cd game
+          git config user.name "Joshua Arnold"
+          git config user.email "joshua.arnold@adamsville.game"
+          git add detailed/zones/*/lifts.json
+          git add detailed/zones/*/lifts.js
+          git add detailed/terrain_lifts.js
+          git add detailed/map-manifest.json
+          if git diff --cached --quiet; then
+            echo "No terrain changes to bake — skipping commit."
+          else
+            # Bump map_version (format YYYY.MM.DD.N)
+            python3 - << 'PYEOF'
+          import json, datetime
+          mp = 'detailed/map-manifest.json'
+          with open(mp) as f:
+              m = json.load(f)
+          today = datetime.date.today().strftime('%Y.%m.%d')
+          ver = m.get('map_version', '')
+          if ver.startswith(today):
+              n = int(ver.rsplit('.', 1)[-1]) + 1
+              m['map_version'] = f'{today}.{n}'
+          else:
+              m['map_version'] = f'{today}.1'
+          with open(mp, 'w') as f:
+              json.dump(m, f, indent=2)
+          print(f"Bumped map_version to {m['map_version']}")
+          PYEOF
+            git add detailed/map-manifest.json
+            git commit -m "Bake terrain-editor edits into game (auto-sync)"
+            git push
+          fi

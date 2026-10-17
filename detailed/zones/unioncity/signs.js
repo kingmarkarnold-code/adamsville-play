@@ -1,0 +1,2 @@
+/* ZONE EXIT_SIGNS — Union City (unioncity) — FULL CONVERSION STAGING 2026-10-16. Carried per CONVERSION-DESIGN §2.6: original-frame -> zone-frame, re-filed geographically (signs-carry.js). */
+var EXIT_SIGNS = [{"x":-3022.13,"z":27947.89,"yaw":2.443,"hwy":"I- 85","exit":"City Laice Rd","text":"next exit City Laice Rd"},{"x":-6546.06,"z":30013.81,"yaw":2.443,"hwy":"I- 85","exit":"Gullatt Rd","text":"next exit Gullatt Rd"},{"x":-3760.62,"z":28336.83,"yaw":2.443,"hwy":"I- 85","exit":"Radford Loop","text":"next exit Radford Loop"}];

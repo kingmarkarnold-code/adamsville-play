@@ -1,0 +1,56 @@
+{
+  "version": "1.8.0",
+  "changelog": "The layout now has two faces: a Mobile layout and a Desktop layout. In the Layout tab, a new Device switch (next to the View dropdown) picks which face you are editing \u2014 Mobile shows the phone view, Desktop shows the big-screen view. Editing one face never changes the other, and the status bar tells you which face you are on. Saving still saves everything at once: both faces go to GitHub together and the editor reloads the GitHub copy as proof. Old layouts without faces are handled automatically \u2014 your current layout becomes the Mobile face and the Desktop face starts as a copy of it, so nothing you arranged is lost. The game picks the face that matches the screen it is running on.",
+  "files": [
+    {
+      "path": "about.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/ui-editor/about.py",
+      "sha256": "0b172aa3a3e94c80136473f95f42cef62f26927cfb9a8644f9aa14a4b3463140"
+    },
+    {
+      "path": "app.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/ui-editor/app.py",
+      "sha256": "80b55fa2bb937b9bd1335666934fdc23d756ecc64e5d7bb1d81ff0bf0d97ccb3"
+    },
+    {
+      "path": "data.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/ui-editor/data.py",
+      "sha256": "78a90ebcefef8183dd0dab6e1552b91c18b229a05b3a44793a9df1cc687435be"
+    },
+    {
+      "path": "github_sync.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/ui-editor/github_sync.py",
+      "sha256": "f18a2ef4c9223f9dabe37f1ef9afee9008775041cbb0cad3ad0218a54d76e060"
+    },
+    {
+      "path": "layout.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/ui-editor/layout.py",
+      "sha256": "e54623bdd01167dcbe24b2489a5a23536297d15da35c5b7e844e24f4d5fae89b"
+    },
+    {
+      "path": "menus.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/ui-editor/menus.py",
+      "sha256": "ffc8ea61a565337ee5aaf6c4e1e074c1da96b4a19d42c65b1353b4bb6a83e661"
+    },
+    {
+      "path": "mollie-icon.png",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/ui-editor/mollie-icon.png",
+      "sha256": "28990027fd79e03e2ef8416e8c1d3410ee284ec86383280968b245f08576e768"
+    },
+    {
+      "path": "preview.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/ui-editor/preview.py",
+      "sha256": "6809a81007aaf80593e52bf7bf19bd8b58150140bb01d925d481230929e74f94"
+    },
+    {
+      "path": "ui_layout_default.json",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/ui-editor/ui_layout_default.json",
+      "sha256": "e3835b82b6ce64cb6599c7b60f7e24658ea28290f3328106e5cea64667869583"
+    },
+    {
+      "path": "updater.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/ui-editor/updater.py",
+      "sha256": "0c36b000830e5661165ac9f636466cd6d8402bab410bcab7da10b3e1e13e3a92"
+    }
+  ]
+}
