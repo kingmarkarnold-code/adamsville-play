@@ -2372,10 +2372,110 @@ class MapEditorApp:
             # (download-on-open guard in data.download_roads), tell
             # the user their changes were kept once the load settles.
             self._surface_download_warning()
+            # 1.9.5 (ready-in-source 2026-10-17): a suite handoff
+            # from the Building Editor may be waiting — open at the
+            # street it names. See _consume_open_handoff.
+            try:
+                self._consume_open_handoff()
+            except Exception:
+                pass
         except FileNotFoundError:
             self.set_status("No local data. Use File → Download from GitHub.")
         except Exception as e:
             self._show_error("Load Error", f"Could not load road data:\n{e}")
+
+    def _consume_open_handoff(self):
+        """
+        Consume a suite "open in Map Editor" handoff, once.
+
+        Building Editor 1.7.2 (Joshua 2026-10-17, amendment 3):
+        picking a street in its 3D view (or a blocking street in
+        its Gas Station Review tab) writes
+        ~/.local/share/adamsville-suite/open-in-map-editor.json —
+        {zone, x, z, street, writtenBy, timestamp} — and launches
+        this app. On load, a FRESH handoff (< 48 hours old) is
+        applied once: switch to the zone, centre the view on the
+        point at street level, select the named street when it
+        resolves near the point — then the file is DELETED so the
+        jump happens once, not on every launch. A file that does
+        not parse is renamed .bad so it cannot loop; a stale one
+        is simply removed.
+        """
+        import json as _json
+        from datetime import datetime, timezone
+        from pathlib import Path as _Path
+
+        path = (_Path.home() / ".local" / "share" / "adamsville-suite"
+                / "open-in-map-editor.json")
+        if not path.exists():
+            return
+        try:
+            doc = _json.loads(path.read_text())
+            zone_id = str(doc["zone"])
+            x = float(doc["x"])
+            z = float(doc["z"])
+            street = doc.get("street") or ""
+            fresh = True
+            ts = doc.get("timestamp")
+            if ts:
+                when = datetime.fromisoformat(ts)
+                fresh = (datetime.now(timezone.utc)
+                         - when).total_seconds() < 48 * 3600
+        except Exception:
+            try:
+                path.rename(path.with_suffix(".json.bad"))
+            except Exception:
+                pass
+            return
+        # Consumed (or stale): the file never applies twice.
+        try:
+            path.unlink()
+        except Exception:
+            pass
+        if not fresh:
+            return
+        # Resolve the zone: handoff zones are game zone ids
+        # ("eastatlanta"); ZONES carry display names ("East
+        # Atlanta") — match on the squashed name.
+        idx = None
+        for j, zn in enumerate(ZONES):
+            squashed = (zn.get("name") or "").replace(" ", "").casefold()
+            if squashed == zone_id.casefold() \
+                    or (zn.get("name") or "") == zone_id:
+                idx = j
+                break
+        if idx is None:
+            return
+        self.zoom_to_zone(idx, ZONES[idx]["name"])
+        # Centre on the handed-off point, at street level.
+        self.canvas.cam_x = x
+        self.canvas.cam_y = z
+        alloc = self.canvas.get_allocation()
+        if alloc.width > 0:
+            self.canvas.zoom = max(self.canvas.zoom,
+                                   alloc.width / 700.0)
+        # Select the named street nearest the point (same zone).
+        if street and self.roads_data:
+            from overpass import _point_to_segment_dist
+            best = None  # (distance, cat, index)
+            for cat, records in self.roads_data.items():
+                for i, rec in enumerate(records or []):
+                    if (rec.get("name") or "") != street:
+                        continue
+                    if rec.get("_zone") not in (None, zone_id):
+                        continue
+                    pts = rec.get("pts") or []
+                    for a, b in zip(pts, pts[1:]):
+                        d, _closest = _point_to_segment_dist(
+                            x, z, a[0], a[1], b[0], b[1])
+                        if best is None or d < best[0]:
+                            best = (d, cat, i)
+            if best is not None:
+                self.canvas.selected_roads = [(best[1], best[2])]
+        self.canvas.queue_draw()
+        self.set_status(
+            f"Opened at {street or 'the marked spot'} in "
+            f"{ZONES[idx]['name']} (sent from the Building Editor).")
 
     def _surface_download_warning(self):
         """
