@@ -168,6 +168,9 @@ class AssetEditorWindow(Gtk.Window):
         # Populated by download-on-open in _load_zone_data().
         self.zone_store = None
         self.zone_tab = None
+        # Gas Station Review tab (staged for 1.7.2): added beside
+        # the Zone Buildings tab when the zone data lands.
+        self.gas_review_tab = None
         # Tabs: list of (building_dict,) currently open
         self.open_tabs = []
 
@@ -370,6 +373,25 @@ class AssetEditorWindow(Gtk.Window):
                 label = Gtk.Label(label="Zone Buildings (game data)")
                 self.notebook.append_page(self.zone_tab, label)
                 self.zone_tab.show_all()
+                # Gas Station Review tab (staged for 1.7.2, Joshua
+                # 2026-10-17): the problem gas stations as a review
+                # list, beside the Zone Buildings tab. Its data is
+                # the small bundled gas-station-review.json — no
+                # download and no zone data involved — so under the
+                # load-on-demand design it could equally appear at
+                # startup; it rides here to sit next to the other
+                # game-data tab. A failure building it must never
+                # take the zone tab (or the app) down: surface it in
+                # the status bar instead (the 1.7.0 tab lesson).
+                try:
+                    self.gas_review_tab = GasStationReviewTab(self)
+                    self.notebook.append_page(
+                        self.gas_review_tab,
+                        Gtk.Label(label="Gas Station Review"))
+                    self.gas_review_tab.show_all()
+                except Exception as e:
+                    self._set_status(
+                        f"Gas Station Review tab failed to open: {e}")
                 loaded = len(store.zones)
                 if errors:
                     # 1.6.1: surface the REAL failure — each error
@@ -2071,6 +2093,140 @@ class ZoneBuildingsTab(Gtk.Box):
         self.app_window._mark_unpublished()
         self.refresh()
         self.app_window._set_status(f"Building #{idx} deleted (unsaved).")
+
+
+# ---------------------------------------------------------------------------
+# Gas Station Review tab: the problem stations, listed for Joshua
+# ---------------------------------------------------------------------------
+
+class GasStationReviewTab(Gtk.Box):
+    """
+    Gas Station Review (staged for 1.7.2, Joshua 2026-10-17): the
+    problem gas stations, listed for HIS decision — the same role
+    the flagged buildings play in the Zone Buildings tab.
+
+    The game's placement rule leaves a station out when no part of
+    it can sit clear of the streets; Joshua ruled to keep that skip
+    rule for now and review the hurt stations here instead. The
+    list (zonedata.GasStationReview, from the bundled
+    gas-station-review.json) holds every station that under the
+    round-2 rules is left out entirely or has to move more than
+    2 units from its real spot, with the streets blocking it and a
+    plain-language note on what is in the way.
+
+    READ-ONLY by design: there are no edit controls in this tab at
+    all. Stations are not buildings — they are never edited from
+    this list; Joshua decides each one's fate and a future audit
+    regenerates the file.
+
+    Load-on-demand fit (Joshua 2026-10-17): the review file is a
+    small bundled list (dozens of entries). Building this tab
+    reads ONLY that file — it never touches the zone store — so
+    under the on-demand design it can appear from the light index
+    alone, without downloading any part of the map.
+
+    EDITOR UI RULE: the list is long, so it lives in a
+    Gtk.ScrolledWindow; long cell text ellipsizes (the selected
+    station's full note shows in the wrapping detail label under
+    the list instead).
+    """
+
+    def __init__(self, window):
+        """window: the AssetEditorWindow (kept for parity with the
+        other tabs; this tab reports nothing back — it is a pure
+        display of the bundled review list)."""
+        super().__init__(orientation=Gtk.Orientation.VERTICAL,
+                         spacing=6)
+        self.set_border_width(6)
+        self.app_window = window
+
+        # The bundled review list (an absent file or a missing
+        # zonedata module both mean an empty queue, never a crash).
+        if _ZONEDATA_AVAILABLE and zonedata is not None:
+            self.review = zonedata.GasStationReview.load()
+        else:
+            self.review = None
+        stations = self.review.stations if self.review else []
+
+        # --- Heading + plain-language explanation -----------------
+        head = Gtk.Label()
+        head.set_markup("<b>Gas stations awaiting Joshua's review</b>")
+        head.set_halign(Gtk.Align.START)
+        head.set_ellipsize(Pango.EllipsizeMode.END)
+        head.set_tooltip_text("Gas stations awaiting Joshua's review")
+        self.pack_start(head, False, False, 0)
+        intro = Gtk.Label(label=(
+            "The game still uses the skip rule: a station that "
+            "cannot sit clear of the streets is left out. These "
+            "stations either cannot be placed at all, or would have "
+            "to move more than 2 units from their real spot. They "
+            "are listed here for your decision - nothing in this "
+            "list changes the game."))
+        intro.set_line_wrap(True)
+        intro.set_halign(Gtk.Align.START)
+        self.pack_start(intro, False, False, 0)
+
+        # --- The review list ----------------------------------------
+        # Visible columns: Station | Zone | What happens | Blocking
+        # streets | Other blockers. Column 5 is hidden: the full
+        # detail text for the label under the list. Rows arrive
+        # worst-first from the audit (left-out stations first,
+        # then the biggest moves).
+        self.store = Gtk.ListStore(str, str, str, str, str, str)
+        for entry in stations:
+            if entry.get("outcome") == "skipped":
+                happens = "Left out of the game"
+            else:
+                happens = f"Moves {entry.get('moveUnits')} units"
+            detail = entry.get("issue") or ""
+            pos = entry.get("realPosition") or [0, 0]
+            detail += (f"  Real spot: {pos[0]}, {pos[1]} "
+                       f"({entry.get('zone')}).")
+            if entry.get("address"):
+                detail += f"  Address: {entry['address']}"
+            self.store.append([
+                entry.get("name") or "Unnamed station",
+                entry.get("zone") or "",
+                happens,
+                ", ".join(entry.get("blockingStreets") or []) or "-",
+                entry.get("otherBlockers") or "-",
+                detail])
+        self.tree = Gtk.TreeView(model=self.store)
+        for i, title in enumerate(("Station", "Zone", "What happens",
+                                   "Blocking streets",
+                                   "Other blockers")):
+            renderer = Gtk.CellRendererText()
+            renderer.set_property("ellipsize",
+                                    Pango.EllipsizeMode.END)
+            col = Gtk.TreeViewColumn(title, renderer, text=i)
+            col.set_resizable(True)
+            col.set_min_width(90)
+            self.tree.append_column(col)
+        self.tree.get_selection().connect("changed", self._on_select)
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_min_content_height(180)
+        scroll.add(self.tree)
+        # Kept as an attribute, same as the Zone Buildings list:
+        # the smoke tests assert long lists live in scrolled
+        # windows (EDITOR UI RULE - long content scrolls).
+        self.list_scroll = scroll
+        self.pack_start(scroll, True, True, 0)
+
+        # --- Detail line for the selected station -------------------
+        self.detail_label = Gtk.Label(label=(
+            "Select a station to see what is in its way."
+            if stations else
+            "No stations are waiting for review."))
+        self.detail_label.set_line_wrap(True)
+        self.detail_label.set_halign(Gtk.Align.START)
+        self.pack_start(self.detail_label, False, False, 0)
+
+    def _on_select(self, selection):
+        """Show the selected station's full note under the list."""
+        model, iter_ = selection.get_selected()
+        if iter_ is None:
+            return
+        self.detail_label.set_text(model[iter_][5])
 
 
 # ---------------------------------------------------------------------------
