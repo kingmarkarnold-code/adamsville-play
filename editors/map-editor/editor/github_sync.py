@@ -238,6 +238,20 @@ def _api_request(url, token, method="GET", payload=None, conn=None):
         one_shot.close()
 
 
+def _is_sha_conflict(err):
+    """
+    True when a PUT refusal is GitHub's SHA-mismatch answer (HTTP
+    409): the file changed between our SHA read and our PUT, so the
+    SHA we offered is stale. GitHub's own wording for it is
+    "<path> is at <current sha> but expected <our sha>" — the exact
+    message Joshua saw on 2026-10-16. Any OTHER refusal (bad token,
+    network, ...) is not this and must not be retried as if it were.
+    """
+    if not err:
+        return False
+    return "409" in err or ("is at" in err and "but expected" in err)
+
+
 def push_file(repo, path, content_bytes, message, token=None, conn=None):
     """
     Push a file to a GitHub repo via the Contents API (create or update).
@@ -250,6 +264,15 @@ def push_file(repo, path, content_bytes, message, token=None, conn=None):
     conn: optional GitHubConnection for this push leg (v1.7.8) — both
         requests (SHA read + PUT) ride it; without one, each request
         gets its own fresh one-shot connection.
+
+    1.9.4 SHA-CONFLICT RETRY: if the PUT is refused because the file
+    moved under us (409 — see _is_sha_conflict), the SHA is re-read
+    ONCE and the PUT retried ONCE with the fresh SHA and the SAME
+    content. Two racing saves in this app can no longer produce it
+    (the round-trip guard), but ANY writer to the repo can — a
+    second editor, a web-UI commit, an agent push — and one stale
+    SHA read should not fail a whole save when the remedy is a
+    single fresh read. A second refusal surfaces exactly as before.
 
     Returns (True, "ok") on success, (False, reason) on failure.
     """
@@ -269,18 +292,38 @@ def push_file(repo, path, content_bytes, message, token=None, conn=None):
         return False, err
     # else: 404 → new file, sha stays None.
 
-    # Step 2: PUT the new content (base64-encoded per the API).
-    payload = {
-        "message": message,
-        "content": base64.b64encode(content_bytes).decode("ascii"),
-    }
-    if sha:
-        payload["sha"] = sha
-    resp, err = _api_request(url, tok, method="PUT", payload=payload,
-                             conn=conn)
-    if resp is None:
-        return False, err
-    return True, "ok"
+    # Step 2: PUT the new content (base64-encoded per the API). On a
+    # SHA conflict, loop once through Step 1b and retry; the loop
+    # bound (2 attempts total) is the whole retry policy.
+    for attempt in (1, 2):
+        payload = {
+            "message": message,
+            "content": base64.b64encode(content_bytes).decode("ascii"),
+        }
+        if sha:
+            payload["sha"] = sha
+        resp, err = _api_request(url, tok, method="PUT", payload=payload,
+                                 conn=conn)
+        if resp is not None:
+            return True, "ok"
+        if attempt == 2 or not _is_sha_conflict(err):
+            # Final answer: a second refusal, or a refusal that was
+            # never about the SHA — surface it exactly as before.
+            return False, err
+        # Step 1b (retry only): re-read the CURRENT SHA once. The
+        # retry PUT below carries the same content with this fresh
+        # SHA. If the file vanished in the meantime (404), the retry
+        # simply creates it (sha stays None).
+        resp2, err2 = _api_request(url, tok, conn=conn)
+        if resp2 is not None:
+            sha = resp2.get("sha")
+        elif err2 and "404" in err2:
+            sha = None
+        else:
+            # Couldn't even refresh the SHA — report the ORIGINAL
+            # refusal, which is the failure the user actually hit.
+            return False, err
+    return False, err  # unreachable; the loop always returns
 
 
 def push_targets(targets, token=None, conn=None):
