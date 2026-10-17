@@ -387,12 +387,81 @@ def download_game_data(sync, conn=None, token=None):
     """
     model = GameModel()
 
+    # 1.9.5 (ready-in-source 2026-10-17; Building Editor 1.7.2
+    # amendment 4, Joshua): downloads route through the suite
+    # SHARED CACHE (~/.local/share/adamsville-suite/cache/ —
+    # standard written at editors/SHARED-CACHE.md in the repo,
+    # module shared_cache.py, identical in every suite app). If
+    # another suite app already downloaded this exact map, this
+    # editor reuses those bytes instead of downloading again.
+    # Freshness comes from the published map-manifest, fetched
+    # fresh and directly first (it is tiny); files the manifest
+    # does not cover download as before and are stored for the
+    # next app. Only the download-on-open path uses the cache: the
+    # round-trip save's PROOF downloads must come from GitHub
+    # itself, and perform_round_trip below still calls
+    # sync.fetch_file directly (unchanged). When a caller pins a
+    # connection (conn=), the pinned path is used exactly as
+    # before. Any failure setting the cache up falls back to the
+    # plain direct fetch — the cache can never block a download.
+    _cache_fetch = None
+    if conn is None:
+        try:
+            import shared_cache as _shared_cache
+
+            def _raw_fetch(repo, path):
+                return sync.fetch_file(repo, path, token=token)
+
+            _expected = {}
+            _manifest_version = None
+            _mraw, _merr = _raw_fetch(GAME_REPO,
+                                      "detailed/map-manifest.json")
+            if _mraw:
+                _mdoc = json.loads(_mraw.decode("utf-8"))
+                _manifest_version = _mdoc.get("map_version")
+                for _f in _mdoc.get("files") or []:
+                    if _f.get("name") and _f.get("sha256"):
+                        _expected["detailed/" + _f["name"]] = \
+                            _f["sha256"]
+
+            def _cache_fetch(path):
+                # Only manifest-covered paths may be SERVED from
+                # the cache (their freshness is verifiable against
+                # the manifest's sha). Uncovered paths — the
+                # editor's own overlay files — always download
+                # fresh, exactly as before the cache, and are then
+                # stored so other apps can reuse them. If the
+                # manifest itself could not be fetched, nothing is
+                # served from the cache at all this run.
+                if _manifest_version is None \
+                        or path not in _expected:
+                    data, err = _raw_fetch(GAME_REPO, path)
+                    if data is not None:
+                        try:
+                            _shared_cache.store(
+                                GAME_REPO, path, data,
+                                manifest_version=_manifest_version)
+                        except Exception:
+                            pass
+                    return data, err
+                data, status = _shared_cache.fetch_through(
+                    GAME_REPO, path, _raw_fetch,
+                    expected_sha256=_expected.get(path),
+                    manifest_version=_manifest_version)
+                if data is None:
+                    return None, status
+                return data, None
+        except Exception:
+            _cache_fetch = None
+
     def fetch(path, required=True):
         """One file's fetch (bounded fresh-connection retries)."""
         attempts = 1 if conn is not None else DOWNLOAD_ATTEMPTS
         blob, err = None, None
         for _attempt in range(attempts):
-            if conn is not None:
+            if _cache_fetch is not None:
+                blob, err = _cache_fetch(path)
+            elif conn is not None:
                 blob, err = sync.fetch_file(GAME_REPO, path,
                                             token=token, conn=conn)
             else:
