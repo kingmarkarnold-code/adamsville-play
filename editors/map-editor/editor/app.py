@@ -46,7 +46,7 @@ import overpass as overpass_mod  # noqa: E402
 
 # App version shown in the Help -> About dialog (bump with each release).
 # Joshua 2026-10-11: version number must be prominent in About.
-APP_VERSION = "1.9.0"
+APP_VERSION = "1.9.1"
 # Display name and icon-theme name for the About dialog.
 APP_NAME = "Adamsville Map Editor"
 APP_ICON = "adamsville-map-editor-native"
@@ -2198,6 +2198,14 @@ class MapEditorApp:
                             "Your saves will push when a connection "
                             "and token are available.")
                     else:
+                        # 1.9.1: carry the REAL failure reason into
+                        # the prompt (file + what GitHub said), not
+                        # just "data not found locally".
+                        import data as _data_mod
+                        detail = _data_mod.LAST_DOWNLOAD_ERROR
+                        if detail:
+                            reason += ("\n\nThe automatic download "
+                                       f"just failed — {detail}")
                         self._prompt_download(reason)
                 return False
             GLib.idle_add(done)
@@ -2260,10 +2268,17 @@ class MapEditorApp:
                     self._load_data()
                     self.set_status("Data downloaded successfully.")
                 else:
-                    self._show_error(
-                        "Download failed",
-                        "Could not download from GitHub. "
-                        "Check your internet connection.")
+                    # 1.9.1: show the REAL reason (the file and what
+                    # GitHub/the connection actually said) — in 1.9.0
+                    # this dialog flattened every failure into
+                    # "check your internet connection", which hid the
+                    # fault completely on Joshua's laptop.
+                    import data as _data_mod
+                    detail = _data_mod.LAST_DOWNLOAD_ERROR
+                    message = "Could not download from GitHub."
+                    if detail:
+                        message += f"\n\nWhat happened: {detail}"
+                    self._show_error("Download failed", message)
                 return False
             GLib.idle_add(done)
 
