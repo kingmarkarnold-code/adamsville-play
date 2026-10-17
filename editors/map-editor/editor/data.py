@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Adamsville Map Editor (Native) 1.9.0 — Data management module.
+Adamsville Map Editor (Native) 1.9.1 — Data management module.
 
 1.9.0 REPOINT (Joshua's Step-1 Editors Phase): the game's converted
 zone files in kingmarkarnold-code/adamsville-play are the source of
@@ -579,18 +579,32 @@ def save_local_sha(sha):
     return
 
 
+# 1.9.1: the REAL reason the most recent download failed, in the
+# exact words gamedata/github_sync produced ("<path>: <reason>").
+# The app shows this in its error dialog. Before 1.9.1 the reason
+# was only printed to stdout — invisible on a desktop launch — and
+# the dialog could only say "check your internet connection", which
+# hid the actual fault on Joshua's laptop (2026-10-16).
+LAST_DOWNLOAD_ERROR = None
+
+
 def download_roads(progress_callback=None):
     """
     Download-on-open via the Contents API (gamedata.download_game_
-    data — fresh connection, never a raw URL). On success the model
-    is adopted, cached locally, and True is returned. The optional
-    progress callback is invoked once per fetched file.
+    data — a fresh connection per file, never a raw URL). On success
+    the model is adopted, cached locally, and True is returned. On
+    failure the real error is kept in LAST_DOWNLOAD_ERROR for the
+    app's dialog. The optional progress callback is invoked once
+    per fetched file.
     """
+    global LAST_DOWNLOAD_ERROR
     import github_sync as _sync
     model, err = gamedata.download_game_data(_sync)
     if model is None:
+        LAST_DOWNLOAD_ERROR = err
         print(f"Download failed: {err}")
         return False
+    LAST_DOWNLOAD_ERROR = None
     set_game_model(model)
     ok, lerr = save_local_cache(model)
     if not ok:
