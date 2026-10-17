@@ -12,7 +12,10 @@ UI element on a canvas per view mode, and lets Joshua:
   * toggle visibility (e.g. remove the reports icon),
   * add new elements — but ONLY from the existing asset library
     (no uploading custom graphics, per Joshua's rule),
-  * save the layout, which stages ui_layout.json for the next push.
+  * save the layout — one action (v1.7.7 GLOBAL SAVE PROTOCOL,
+    Joshua 2026-10-16): save locally, push to GitHub, then reload
+    the GitHub copy and show that, so a successful save is visible
+    proof the push landed.
 
 View modes: Application (mobile), Web desktop, Web mobile. The two mobile
 views share the Size presets (Phone portrait / Phone landscape / Tablet);
@@ -35,7 +38,7 @@ from gi.repository import Gtk, Gdk
 
 from data import (
     anchor_to_left_top, left_top_to_xy, download_ui_layout, load_ui_layout,
-    stage_content, is_visual, load_manifest, LAYOUT_VIEWS,
+    stage_content, staged_bytes, is_visual, load_manifest, LAYOUT_VIEWS,
     WEB_MOBILE_PRESETS, ANCHORS, ANCHOR_LABELS, CANON_W, CANON_H,
     canon_scale, element_size_in_view,
 )
@@ -391,7 +394,8 @@ class LayoutTab:
                 ("remove", "Remove", Gtk.STOCK_REMOVE,
                  "Remove the selected element from the layout"),
                 ("save", "Save layout", Gtk.STOCK_SAVE,
-                 "Save the layout (staged for the next push to GitHub)")]:
+                 "Save the layout: saves here, pushes to GitHub, then "
+                 "reloads the GitHub copy so you can see it landed")]:
             btn = Gtk.ToolButton.new_from_stock(stock)
             btn.set_label(label)
             btn.set_is_important(True)
@@ -481,6 +485,14 @@ class LayoutTab:
         right_wrap.pack_start(self.right_toggle, False, False, 0)
         inner.pack2(right_wrap, resize=False, shrink=False)
         self.right_collapsed = False
+
+        # v1.7.7 (Joshua 2026-10-16): the side panels START COLLAPSED
+        # so the canvas gets the full width on open. The existing
+        # toggle methods do the collapse (they stash the divider
+        # positions, so the first F9/F10/click re-expands exactly as
+        # before) — we simply start in that state.
+        self.toggle_left_panel()
+        self.toggle_right_panel()
 
     @staticmethod
     def _make_collapse_button(label, tooltip, callback):
@@ -657,14 +669,36 @@ class LayoutTab:
 
     # -- data loading --------------------------------------------------------
     def _load_initial(self):
-        """Load the layout: download fresh, fall back to cache/default."""
-        # Try a fresh download first (non-blocking enough at ~5KB);
+        """
+        Load the layout for display.
+
+        v1.7.7 (Joshua 2026-10-16): the game's CURRENT repo file is
+        the source of truth — download_ui_layout() now fetches via
+        the Contents API, so what opens is the repo's layout, not a
+        stale cache, a CDN copy, or the shipped default. ONE
+        exception: a staged copy that differs from the repo is
+        Joshua's own unsaved work (a save whose push failed) — that
+        is shown instead, with the status bar saying so, because in
+        1.7.6 reopening silently hid his saved-but-unpushed edits.
+        """
+        # Try a fresh download first (API — current bytes);
         # fall back to whatever is cached or shipped.
         try:
             download_ui_layout()
         except Exception:
             pass
         self.doc = load_ui_layout()
+        # Unsaved-work guard: a differing staged copy wins, loudly.
+        self._staged_pending = False
+        staged = staged_bytes("ui_layout.json")
+        if staged is not None:
+            try:
+                staged_doc = json.loads(staged.decode("utf-8"))
+            except Exception:
+                staged_doc = None
+            if staged_doc is not None and staged_doc != self.doc:
+                self.doc = staged_doc
+                self._staged_pending = True
         if self.doc is None:
             self.doc = {"version": "2026.10.11.1", "views": {},
                         "elements": []}
@@ -678,10 +712,37 @@ class LayoutTab:
                 except Exception:
                     pass
         self.selected = None
-        self._dirty = False
+        # A staged working copy means there ARE unsaved changes.
+        self._dirty = self._staged_pending
+        if self._staged_pending:
+            self.app.set_status(
+                "Showing your unsaved local layout — Save layout "
+                "pushes it to GitHub")
         self.refresh_list()
         self.refresh_props()
         self.canvas.queue_draw()
+
+    def apply_github_layout(self, raw_bytes):
+        """
+        v1.7.7: replace the displayed layout with the exact bytes
+        just re-downloaded from GitHub (step 3 of the save protocol —
+        the user sees the GitHub copy, which is the proof the push
+        landed). Called by the app after a successful round trip.
+        """
+        try:
+            doc = json.loads(raw_bytes.decode("utf-8"))
+            if not isinstance(doc.get("elements"), list):
+                return False
+        except Exception:
+            return False
+        self.doc = doc
+        self._staged_pending = False
+        self._dirty = False
+        self.selected = None
+        self.refresh_list()
+        self.refresh_props()
+        self.canvas.queue_draw()
+        return True
 
     # -- selection ------------------------------------------------------------
     def select(self, el):
@@ -880,29 +941,52 @@ class LayoutTab:
 
     def on_save_layout(self):
         """
-        Save: serialize the layout and stage ui_layout.json for the next
-        push. The existing Resources-tab push dialog sends it to GitHub,
-        and the game fetches it at startup.
+        Save the layout — the GLOBAL SAVE PROTOCOL (v1.7.7, Joshua
+        2026-10-16), one action:
+          1. save locally (stage ui_layout.json),
+          2. push to GitHub,
+          3. reload from GitHub and display THAT copy.
+        If the push fails, the status bar says so plainly and the
+        view is NOT reloaded over — the local save stays on disk and
+        the layout stays marked unsaved.
         """
         try:
             payload = json.dumps(self.doc, indent=2)
         except Exception as e:
             self.app.set_status(f"Could not serialize layout: {e}")
             return
+        # Step 1: local save.
         staged = stage_content("ui_layout.json", payload.encode("utf-8"))
-        if staged:
-            self._dirty = False
-            # Mark for the close warning (Joshua 2026-10-11).
-            try:
-                self.app._unpublished = True
-            except Exception:
-                pass
-            self.app.set_status(
-                "Layout saved — open the Resources tab and Push to GitHub "
-                "to apply it to the game")
-            self.app.refresh_resources_list()
-        else:
-            self.app.set_status("Save failed — could not stage the file")
+        if not staged:
+            self.app.set_status("Save failed — could not save locally")
+            return
+        # The app runs steps 2+3 (push, then re-download) and calls
+        # back with the fresh GitHub bytes (or the failure reason).
+        self.app.set_status("Layout saved locally — pushing to GitHub…")
+        self.app.round_trip_save(["ui_layout.json"],
+                                 self._layout_save_done)
+
+    def _layout_save_done(self, ok, err, fresh):
+        """Round-trip callback for on_save_layout (GTK thread)."""
+        if ok and fresh and "ui_layout.json" in fresh:
+            # Step 3 happened in the app; show the GitHub copy.
+            if self.apply_github_layout(fresh["ui_layout.json"]):
+                # Refresh first: it sets its own status text, and
+                # the save confirmation must be what remains visible.
+                self.app.refresh_resources_list()
+                self.app.set_status(
+                    "Layout saved and pushed — now showing the "
+                    "GitHub copy ✓")
+                return
+            err = ("Layout was pushed to GitHub, but the copy that "
+                   "came back could not be read — reopen the Layout "
+                   "tab to see the GitHub copy.")
+        # Push or reload failed: say so plainly, keep the local save,
+        # keep the dirty flag, and leave the view exactly as it was.
+        # v1.7.8: err names the failed stage — a landed push is never
+        # reported as "did NOT reach GitHub".
+        self.app._unpublished = True
+        self.app.set_status(f"Layout saved locally. {err}")
 
     # -- list + props refresh ----------------------------------------------------------
     def refresh_list(self):
