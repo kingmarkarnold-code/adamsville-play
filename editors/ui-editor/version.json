@@ -1,6 +1,6 @@
 {
-  "version": "1.7.6",
-  "changelog": "Preview now mirrors the game exactly: UI coordinates are 1280x800 canonical pixels, scaled uniformly then anchored \u2014 Phone landscape (844x390) shows what the game renders. Drag/resize store canonical coords.",
+  "version": "1.7.8",
+  "changelog": "Save round trip now uses Joshua's close/reopen design: the push leg closes its connection, then a fresh connection is opened for the proof download (fixes 'Remote end closed connection without response'). Failure messages are stage-accurate \u2014 they say whether the push itself failed or the push landed but the proof copy could not be downloaded back. Menu groups gain a per-group 'starts expanded / starts collapsed' setting, stored in menu_layout.json and honored by the game. Also includes the 1.7.7 global save protocol (save locally, push to GitHub, re-download and display the GitHub copy as proof), since the channel was previously at 1.7.6.",
   "files": [
     {
       "path": "about.py",
@@ -10,27 +10,27 @@
     {
       "path": "app.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/ui-editor/app.py",
-      "sha256": "b58e25188eff342912ab2903b14e257ee1fcd863bb0fb30dbdffe3b05a55ba41"
+      "sha256": "e760f4da2ffb6b501c6be3cd19fe49ff26b9785656deed41275c898dd5726f21"
     },
     {
       "path": "data.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/ui-editor/data.py",
-      "sha256": "a7feaa6f20da9c0609b40159c0e07d04d0d7977ceb8465ec28301ffad6d25ff7"
+      "sha256": "d5fc131f8880f8b546bf3c6a979d1a38d2b43edfd581098254eafc619bf0cbe5"
     },
     {
       "path": "github_sync.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/ui-editor/github_sync.py",
-      "sha256": "e4289f5ae72f438a079d994a388d5a5751268886659aeb35f6492ea81b89a3a9"
+      "sha256": "f18a2ef4c9223f9dabe37f1ef9afee9008775041cbb0cad3ad0218a54d76e060"
     },
     {
       "path": "layout.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/ui-editor/layout.py",
-      "sha256": "027e6f08bc461fe14d40d9a649d96cf5711b31e9b99a0d54263872dfe0bba85f"
+      "sha256": "ce764e7203c0313872ef38913c18d0f3bbca168896e21d12455a2a72ab670975"
     },
     {
       "path": "menus.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/ui-editor/menus.py",
-      "sha256": "01e91e519fd260408833aaf8dd4b72e77c0476f04a871be1ce8494d0eb6d0508"
+      "sha256": "ffc8ea61a565337ee5aaf6c4e1e074c1da96b4a19d42c65b1353b4bb6a83e661"
     },
     {
       "path": "mollie-icon.png",
