@@ -15,7 +15,8 @@ import gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk
 
-from data import (ROAD_STYLE, WORLD_W, WORLD_H, save_zone_edit, zone_bbox,
+from data import (ROAD_STYLE, WORLD_W, WORLD_H, WORLD_X0, WORLD_Z0,
+                  save_zone_edit, zone_bbox,
                     normalize_category, CATEGORY_ORDER, CATEGORY_LABELS,
                     DIVIDABLE_CATEGORIES, DIVIDER_TYPES)
 
@@ -219,8 +220,9 @@ class MapCanvas(Gtk.DrawingArea):
         # so outside code (e.g. app.py) that reads/writes them directly
         # keeps working unchanged.
         self._camera = Camera2D(zoom=0.06, min_zoom=0.02, max_zoom=40.0)
-        self.cam_x = WORLD_W / 2
-        self.cam_y = WORLD_H / 2
+        # Centre of the converted world (its origin is no longer 0,0).
+        self.cam_x = WORLD_X0 + WORLD_W / 2
+        self.cam_y = WORLD_Z0 + WORLD_H / 2
         self.zoom = 0.06  # will be set by fit_view()
 
         # Interaction state
@@ -355,7 +357,9 @@ class MapCanvas(Gtk.DrawingArea):
         """Zoom to fit the entire world."""
         alloc = self.get_allocation()
         self._camera.fit_rect(alloc.width, alloc.height,
-                              0, 0, WORLD_W, WORLD_H, margin=1.05)
+                              WORLD_X0, WORLD_Z0,
+                              WORLD_X0 + WORLD_W, WORLD_Z0 + WORLD_H,
+                              margin=1.05)
         self.queue_draw()
 
     def zoom_at(self, sx, sy, factor):
@@ -2183,7 +2187,8 @@ class MapCanvas(Gtk.DrawingArea):
         self.refresh_cul_de_sac(cat_s, road_s)
         if self.refresh_cul_de_sac(cat_t, road_t):
             self.app.apply_road_modify(cat_t, road_t)
-        if self.app.apply_road_modify(cat_s, road_s):
+        # Merge moved a point — a geometry edit (1.9.0 re-drape).
+        if self.app.apply_road_modify(cat_s, road_s, geometry=True):
             self.app.set_status(f"Merged {name_s} \u2192 {name_t} ({action}).")
         else:
             self.app.set_status("Merge failed: could not save the change.")
@@ -2309,7 +2314,8 @@ class MapCanvas(Gtk.DrawingArea):
         # Re-check the turnaround bulb: the move may have connected or
         # disconnected a dead end (Joshua 2026-10-11).
         self.refresh_cul_de_sac(cat, road)
-        if self.app.apply_road_modify(cat, road):
+        # Moving the whole road is a geometry edit (1.9.0 re-drape).
+        if self.app.apply_road_modify(cat, road, geometry=True):
             msg = (f"Moved '{name}' by ({dx:.0f}, {dz:.0f}).")
             if snapped:
                 msg += f" {snapped} endpoint(s) snapped to nearby roads."
@@ -2426,7 +2432,8 @@ class MapCanvas(Gtk.DrawingArea):
             # touches another road, its turnaround bulb is removed.
             self.refresh_cul_de_sac(cat, road)
             name = road.get("name") or "Unnamed"
-            if self.app.apply_road_modify(cat, road):
+            # Extend is a geometry edit — re-drape on commit (1.9.0).
+            if self.app.apply_road_modify(cat, road, geometry=True):
                 self.app.set_status(
                     f"Extended {name} to ({wx:.0f}, {wz:.0f}).")
             else:
