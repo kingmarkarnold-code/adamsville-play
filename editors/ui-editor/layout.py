@@ -41,6 +41,9 @@ from data import (
     stage_content, staged_bytes, is_visual, load_manifest, LAYOUT_VIEWS,
     WEB_MOBILE_PRESETS, ANCHORS, ANCHOR_LABELS, CANON_W, CANON_H,
     canon_scale, element_size_in_view,
+    # v1.8.0 FACES: the layout has a Mobile face and a Desktop face;
+    # these helpers keep both faces (and the top-level mirror) straight.
+    LAYOUT_FACES, ensure_layout_faces, layout_face_elements,
 )
 
 # Element type -> (fill RGB, border RGB) used by the canvas mockup.
@@ -330,6 +333,10 @@ class LayoutTab:
         self.app = app
         self.doc = None          # full ui_layout.json dict
         self.selected = None     # currently selected element dict
+        # v1.8.0 FACES: which device face is being edited ("mobile" or
+        # "desktop"). The editor edits ONE face at a time; saving always
+        # writes the whole document, both faces included.
+        self.face = "mobile"
         self.view_key = "app"    # one of LAYOUT_VIEWS keys
         # v1.7.5 ORIENTATION (2026-10-12): index into WEB_MOBILE_PRESETS.
         # Defaults to 1 = "Phone landscape" because the game plays in
@@ -337,6 +344,9 @@ class LayoutTab:
         # Size dropdown, which is now enabled for the app view too.
         self.preset_idx = 1
         self._dirty = False      # unsaved changes?
+        # v1.8.0 FACES: which faces carry unsaved changes (set of face
+        # keys). Switching faces never adds to this — only editing does.
+        self._dirty_faces = set()
         self._custom_seq = 1     # counter for custom-N ids
         self._build_ui()
         self._load_initial()
@@ -370,15 +380,28 @@ class LayoutTab:
 
     def visible_elements(self):
         """
-        Elements relevant to the current view. Mobile-only elements are
-        skipped on the desktop view (mirrors the game's own behavior).
+        Elements relevant to the current view. v1.8.0: the base list is
+        the ACTIVE FACE's elements (the Mobile or Desktop face being
+        edited). Mobile-only elements are additionally skipped on the
+        desktop view (mirrors the game's own behavior).
         """
         if self.doc is None:
             return []
-        els = self.doc.get("elements", [])
+        els = layout_face_elements(self.doc, self.face)
         if self.view_key == "web_desktop":
             els = [e for e in els if not e.get("mobile_only")]
         return els
+
+    def _mark_dirty(self):
+        """
+        v1.8.0: record an unsaved change against the ACTIVE face.
+        Every edit path in this tab goes through here (instead of
+        setting _dirty directly) so the editor knows WHICH face the
+        unsaved work belongs to. Merely switching faces never calls
+        this — switching is not an edit.
+        """
+        self._dirty = True
+        self._dirty_faces.add(self.face)
 
     # -- UI construction ----------------------------------------------------
     def _build_ui(self):
@@ -417,6 +440,17 @@ class LayoutTab:
         self.view_combo.set_active_id("app")
         self.view_combo.connect("changed", self.on_view_changed)
         viewbar.pack_start(self.view_combo, False, False, 0)
+
+        # v1.8.0 FACES: device switch — edit the Mobile face or the
+        # Desktop face. (Set the active id BEFORE connecting, like the
+        # view combo above, so building the UI fires no handler.)
+        viewbar.pack_start(Gtk.Label(label="Device:"), False, False, 0)
+        self.face_combo = Gtk.ComboBoxText()
+        for key, label in LAYOUT_FACES:
+            self.face_combo.append(key, label)
+        self.face_combo.set_active_id("mobile")
+        self.face_combo.connect("changed", self.on_face_changed)
+        viewbar.pack_start(self.face_combo, False, False, 0)
 
         viewbar.pack_start(Gtk.Label(label="Size:"), False, False, 0)
         self.preset_combo = Gtk.ComboBoxText()
@@ -702,18 +736,30 @@ class LayoutTab:
         if self.doc is None:
             self.doc = {"version": "2026.10.11.1", "views": {},
                         "elements": []}
-        # Advance the custom-id counter past any existing custom-N ids.
-        for el in self.doc.get("elements", []):
-            eid = el.get("id", "")
-            if eid.startswith("custom-"):
-                try:
-                    self._custom_seq = max(self._custom_seq,
-                                           int(eid.split("-")[1]) + 1)
-                except Exception:
-                    pass
+        # v1.8.0 FACES: an old-format document (no "faces" section)
+        # migrates in memory here — its elements become its mobile
+        # face, the desktop face starts as a copy, and the top-level
+        # "elements" mirror is re-pointed at the mobile face's list.
+        ensure_layout_faces(self.doc)
+        # Advance the custom-id counter past any existing custom-N
+        # ids — in EITHER face (a desktop-only custom element must
+        # not have its id reused on the mobile face).
+        for face_key, _face_label in LAYOUT_FACES:
+            for el in layout_face_elements(self.doc, face_key):
+                eid = el.get("id", "")
+                if eid.startswith("custom-"):
+                    try:
+                        self._custom_seq = max(self._custom_seq,
+                                               int(eid.split("-")[1]) + 1)
+                    except Exception:
+                        pass
         self.selected = None
         # A staged working copy means there ARE unsaved changes.
         self._dirty = self._staged_pending
+        # v1.8.0: a staged copy could have touched either face (we
+        # cannot know which), so both faces count as dirty.
+        self._dirty_faces = ({"mobile", "desktop"}
+                             if self._staged_pending else set())
         if self._staged_pending:
             self.app.set_status(
                 "Showing your unsaved local layout — Save layout "
@@ -735,9 +781,13 @@ class LayoutTab:
                 return False
         except Exception:
             return False
+        # v1.8.0 FACES: a GitHub copy in the old format migrates in
+        # memory exactly like a local load (see _load_initial).
+        ensure_layout_faces(doc)
         self.doc = doc
         self._staged_pending = False
         self._dirty = False
+        self._dirty_faces = set()
         self.selected = None
         self.refresh_list()
         self.refresh_props()
@@ -775,7 +825,7 @@ class LayoutTab:
         treeiter = self.el_store.get_iter(path)
         el = self.el_store[treeiter][3]
         el["visible"] = not self.el_store[treeiter][0]
-        self._dirty = True
+        self._mark_dirty()
         self.refresh_list()
         self.refresh_props()
         self.canvas.queue_draw()
@@ -793,6 +843,40 @@ class LayoutTab:
             self.view_key in ("app", "web_mobile"))
         self.select(None)
         self.canvas.queue_draw()
+
+    def on_face_changed(self, combo):
+        """
+        v1.8.0 FACES: Device dropdown — switch which face is edited.
+
+        Switching faces is NOT an edit: the dirty state is left exactly
+        as it was. The canvas jumps to the face's natural view (Mobile
+        -> the app view, Desktop -> the web desktop view), the
+        selection clears, and the list/props/canvas refresh to show
+        the newly active face.
+        """
+        face = combo.get_active_id() or "mobile"
+        if face not in dict(LAYOUT_FACES):
+            face = "mobile"
+        self.face = face
+        # The face's natural view, set the same way on_view_changed
+        # leaves things (view key + combo + preset sensitivity). In
+        # real GTK, set_active_id also fires on_view_changed, which
+        # agrees with the values set here.
+        self.view_key = "app" if face == "mobile" else "web_desktop"
+        self.view_combo.set_active_id(self.view_key)
+        self.preset_combo.set_sensitive(
+            self.view_key in ("app", "web_mobile"))
+        # Clear the selection (this also refreshes props + canvas),
+        # then refresh the element list for the new face.
+        self.select(None)
+        self.refresh_list()
+        self.refresh_props()
+        self.canvas.queue_draw()
+        label = dict(LAYOUT_FACES)[face]
+        other = "Desktop" if face == "mobile" else "Mobile"
+        self.app.set_status(
+            f"Editing the {label} layout — the {other} layout is "
+            "untouched until you switch to it.")
 
     def on_preset_changed(self, combo):
         """Size preset changed (Phone portrait / Phone landscape / Tablet).
@@ -814,7 +898,7 @@ class LayoutTab:
         """
         if el is None:
             return
-        self._dirty = True
+        self._mark_dirty()
         if not live:
             self.refresh_list()
             self.refresh_props()
@@ -843,7 +927,7 @@ class LayoutTab:
         if self.selected is None:
             return
         self.selected["visible"] = not self.selected.get("visible", True)
-        self._dirty = True
+        self._mark_dirty()
         self.refresh_list()
         self.refresh_props()
         self.canvas.queue_draw()
@@ -907,8 +991,9 @@ class LayoutTab:
                     # each element does).
                     "description": f"Custom element using the '{asset}' asset",
                 }
-                self.doc.setdefault("elements", []).append(new_el)
-                self._dirty = True
+                # v1.8.0 FACES: new elements join the ACTIVE face.
+                layout_face_elements(self.doc, self.face).append(new_el)
+                self._mark_dirty()
         dialog.destroy()
         if new_el is not None:
             self.refresh_list()
@@ -932,9 +1017,10 @@ class LayoutTab:
         dlg.destroy()
         if not ok:
             return
-        self.doc["elements"].remove(el)
+        # v1.8.0 FACES: removal leaves the ACTIVE face only.
+        layout_face_elements(self.doc, self.face).remove(el)
         self.select(None)
-        self._dirty = True
+        self._mark_dirty()
         self.refresh_list()
         self.canvas.queue_draw()
         self.app.set_status(f"Removed '{el['id']}' — save the layout to apply")
@@ -950,6 +1036,11 @@ class LayoutTab:
         view is NOT reloaded over — the local save stays on disk and
         the layout stays marked unsaved.
         """
+        # v1.8.0 FACES: re-assert the mirror before serializing —
+        # cheap insurance that the saved file's top-level "elements"
+        # IS the mobile face's list. The save still writes the WHOLE
+        # document: both faces are always saved together.
+        ensure_layout_faces(self.doc)
         try:
             payload = json.dumps(self.doc, indent=2)
         except Exception as e:
@@ -971,6 +1062,11 @@ class LayoutTab:
         if ok and fresh and "ui_layout.json" in fresh:
             # Step 3 happened in the app; show the GitHub copy.
             if self.apply_github_layout(fresh["ui_layout.json"]):
+                # apply_github_layout already cleared the dirty state
+                # (both faces); restated here so the successful-save
+                # path visibly owns that clearing.
+                self._dirty = False
+                self._dirty_faces = set()
                 # Refresh first: it sets its own status text, and
                 # the save confirmation must be what remains visible.
                 self.app.refresh_resources_list()
@@ -1073,6 +1169,6 @@ class LayoutTab:
                 el[key] = max(8, el[key])
         else:
             return
-        self._dirty = True
+        self._mark_dirty()
         self.refresh_list()
         self.canvas.queue_draw()
