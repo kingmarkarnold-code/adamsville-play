@@ -8,6 +8,7 @@ local caching, version checking, and persistence of Joshua's edits.
 Joshua's rule: all code commented.
 """
 
+import hashlib
 import json
 import os
 import sys
@@ -43,15 +44,15 @@ except ImportError:
 # module's legacy backdrop helpers (roads/zones for the subdivision
 # map), which now read the adamsville zone files from the same repo.
 REPO = "kingmarkarnold-code/adamsville-play"
-# Raw URL for buildings.json — the single data file the app downloads
-BUILDINGS_URL = f"https://raw.githubusercontent.com/{REPO}/main/buildings.json"
-# GitHub API URL for version checking (returns blob SHA)
-API_URL = f"https://api.github.com/repos/{REPO}/contents/buildings.json"
+# v1.7.1: the design-building set's home in the one repo (see the
+# design-set section below). Before 1.7.1 the set had NO repo path:
+# the old constants here pointed at a repo-root buildings.json in a
+# retired repo, and the download/push code for it was stubbed out.
+DESIGN_REPO_PATH = "editors/building-editor/design-buildings.json"
 
 # Local data directory (XDG-compliant)
 DATA_DIR = Path.home() / ".local" / "share" / "adamsville-asset-editor-native"
 BUILDINGS_FILE = DATA_DIR / "buildings.json"
-VERSION_FILE = DATA_DIR / "version.json"
 WINDOW_FILE = DATA_DIR / "window.json"
 # Joshua's building edits are saved here so they survive restarts.
 # Maps building name -> full building dict (overrides shipped defaults).
@@ -739,130 +740,217 @@ def ensure_data_dir():
 
 
 # ---------------------------------------------------------------------------
-# GitHub download and version checking
+# The design-building set and its GitHub home (v1.7.1)
 # ---------------------------------------------------------------------------
-
-def get_remote_sha():
-    """
-    Get the current blob SHA of buildings.json on GitHub.
-    Returns None if offline or on error (non-blocking by design).
-    """
-    try:
-        req = urllib.request.Request(
-            API_URL,
-            headers={"User-Agent": "adamsville-asset-editor-native",
-                     "Accept": "application/vnd.github+json"})
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode())
-            return data.get("sha")
-    except Exception:
-        # Offline or API error — not fatal, caller handles None
-        return None
-
-
-def get_local_sha():
-    """Read the saved SHA of the locally cached buildings.json."""
-    try:
-        with open(VERSION_FILE) as f:
-            return json.load(f).get("sha")
-    except Exception:
-        return None
+# HISTORY: through 1.6.x the detailed design assets edited on the
+# design tabs (the built-in samples + the 535 hero house) were
+# LOCAL-ONLY by deliberate choice: needs_download() hard-returned
+# False, download_buildings() was a retired stub, and the window's
+# save round trip covered only the game zone files. The result,
+# proven live on 2026-10-16: Joshua changed a roof colour, chose
+# "Push & Close" at the quit prompt, and NOTHING reached GitHub —
+# the design set had no repo path in either direction, no error
+# was raised anywhere, and the app cleared its unpublished flag as
+# if the save had happened. (The 1.5.2-era helpers that used to
+# serve the retired remote — get_remote_sha / get_local_sha /
+# save_local_sha — went with the stub; nothing else used them.)
+#
+# 1.7.1 gives the design set a one-repo home — DESIGN_REPO_PATH in
+# adamsville-play — with the same treatment as every other editor
+# file: download on open, and saves follow Joshua's standing round
+# trip (save local -> push -> CLOSE the connection -> re-download
+# on a FRESH connection -> the re-downloaded copy is what the app
+# shows; nothing counts as saved until it has come back). The file
+# is a bare JSON list of building dicts — the same schema as the
+# local buildings.json cache — so load_buildings() below is
+# unchanged in shape: the downloaded copy becomes the base cache,
+# and EDITS_FILE stays the overlay for not-yet-pushed edits.
 
 
-def save_local_sha(sha):
-    """Save the SHA after a successful download."""
+def design_payload_bytes(buildings):
+    """Canonical bytes of the design set (what gets pushed)."""
+    return json.dumps(buildings, indent=2).encode()
+
+
+def design_hash(buildings):
+    """sha256 of the canonical payload — the window's dirty check
+    compares the live set's hash against the last synced set's."""
+    return hashlib.sha256(design_payload_bytes(buildings)).hexdigest()
+
+
+def _write_buildings_cache(raw_bytes):
+    """Atomically replace the local base cache (temp -> rename)."""
     ensure_data_dir()
-    with open(VERSION_FILE, "w") as f:
-        json.dump({"sha": sha, "source": "github"}, f)
+    tmp_path = BUILDINGS_FILE.with_suffix(".tmp")
+    with open(tmp_path, "wb") as f:
+        f.write(raw_bytes)
+    tmp_path.rename(BUILDINGS_FILE)
 
 
-def needs_download():
-    """
-    Check if we need to download buildings.json.
-    Returns (needed: bool, reason: str).
-
-    v1.6.0: the legacy buildings.json remote (retired map-editor
-    repo) no longer exists — game building data is downloaded by
-    zonedata.GameStore.download_on_open into the Zone Buildings
-    tab. The legacy detailed-asset set below is LOCAL-ONLY now
-    (local cache or built-in defaults), so no download is ever
-    "needed" here.
-    """
-    return False, ("v1.6.0: game building data loads in the Zone "
-                   "Buildings tab; legacy samples are local-only.")
-    if not BUILDINGS_FILE.exists():
-        return True, "Building data not found locally. Download from GitHub?"
-    local_sha = get_local_sha()
-    if not local_sha:
-        return True, "Local version unknown. Re-download from GitHub?"
-    remote_sha = get_remote_sha()
-    if remote_sha is None:
-        # Offline — use what we have
-        return False, "Offline — using local copy."
-    if remote_sha != local_sha:
-        return True, "A newer version is available on GitHub. Download?"
-    return False, "Local copy is up to date."
-
-
-def download_buildings(progress_callback=None):
-    """
-    Download buildings.json from GitHub to local cache.
-    progress_callback(downloaded_bytes, total_bytes) — called during download.
-    Returns True on success, False on failure.
-    Uses atomic write (temp file → rename) to avoid partial files.
-
-    v1.6.0: RETIRED — the remote this fetched (map-editor repo
-    buildings.json) is gone with the one-repo move; game data flows
-    through zonedata instead. Kept as a soft-failing stub so the
-    File -> Download menu item reports honestly instead of fetching
-    a dead URL.
-    """
-    print("download_buildings retired in v1.6.0 (see zonedata.py)")
-    return False
+def _clear_edits_overlay():
+    """Reset EDITS_FILE to empty. Used when the effective set (base
+    + overlay) has been folded into the base cache: the overlay
+    would otherwise double-apply the same edits on the next load."""
     ensure_data_dir()
+    with open(EDITS_FILE, "w") as f:
+        json.dump({}, f)
+
+
+def _parse_design_bytes(raw):
+    """Parse + default-fill a downloaded design set. Returns the
+    list of building dicts, or None when the bytes are not a JSON
+    list (a corrupt download must never replace good local data)."""
     try:
-        req = urllib.request.Request(
-            BUILDINGS_URL,
-            headers={"User-Agent": "adamsville-asset-editor-native"})
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            total = int(resp.headers.get("Content-Length", 0))
-            downloaded = 0
-            chunks = []
-            while True:
-                chunk = resp.read(65536)
-                if not chunk:
-                    break
-                chunks.append(chunk)
-                downloaded += len(chunk)
-                if progress_callback:
-                    progress_callback(downloaded, total)
+        buildings = json.loads(raw)
+    except Exception:
+        return None
+    if not isinstance(buildings, list):
+        return None
+    for b in buildings:
+        if isinstance(b, dict):
+            ensure_building_defaults(b)
+    return buildings
 
-        # Atomic write: temp file then rename
-        tmp_path = BUILDINGS_FILE.with_suffix(".tmp")
-        with open(tmp_path, "wb") as f:
-            for chunk in chunks:
-                f.write(chunk)
-        tmp_path.rename(BUILDINGS_FILE)
 
-        # Save the new SHA
-        remote_sha = get_remote_sha()
-        if remote_sha:
-            save_local_sha(remote_sha)
+def download_design_buildings(fetch_file):
+    """
+    Download-on-open for the design set.
 
-        # Share with the other suite apps (v1.2.0)
-        try:
-            save_shared_file("buildings.json",
-                             BUILDINGS_FILE.read_bytes())
-            if remote_sha:
-                _shared_sha_path("buildings.json").write_text(
-                    remote_sha)
-        except Exception as e:
-            print(f"Shared cache save failed: {e}")
-
-        return True
+    fetch_file(repo, path) -> (bytes, error) is github_sync's (each
+    call runs on its own fresh connection). On success the
+    downloaded bytes become the local base cache and (buildings,
+    None) is returned. On any failure (None, err) is returned and
+    the caller falls back to the local cache / built-in samples —
+    an unreachable GitHub must never stop the editor opening.
+    """
+    raw, err = fetch_file(REPO, DESIGN_REPO_PATH)
+    if err is not None or raw is None:
+        return None, err or "no data returned"
+    buildings = _parse_design_bytes(raw)
+    if buildings is None:
+        return None, (f"{DESIGN_REPO_PATH}: not a JSON list of "
+                      f"buildings — keeping the local copy")
+    try:
+        _write_buildings_cache(raw)
     except Exception as e:
-        print(f"Download failed: {e}")
-        return False
+        return None, f"could not cache the download: {e}"
+    return buildings, None
+
+
+def download_buildings(fetch_file=None):
+    """
+    File -> Download menu entry point: re-download the design set
+    from GitHub (see download_design_buildings). Returns True on
+    success, False on failure. fetch_file defaults to
+    github_sync.fetch_file (lazy import — github_sync does not
+    import this module, but the menu path predates the injection
+    pattern used elsewhere).
+
+    (Before 1.7.1 this was a retired stub that printed a message
+    and returned False — the menu item could only ever fail.)
+    """
+    if fetch_file is None:
+        import github_sync
+        fetch_file = github_sync.fetch_file
+    buildings, _err = download_design_buildings(fetch_file)
+    return buildings is not None
+
+
+def design_round_trip(buildings, open_connection, push_targets,
+                      fetch_file):
+    """
+    Joshua's standing save rule for the DESIGN set — the same four
+    stages as zonedata.GameStore.round_trip_save:
+
+      1. LOCAL SAVE: the payload (the effective set, edits overlay
+         included) becomes the local base cache and the overlay is
+         cleared — the edits now live in the base, so nothing is
+         lost even if the network stages fail.
+      2. PUSH: the design file goes to GitHub on ONE connection,
+         which is then closed.
+      3. PROOF: the file is re-downloaded on a FRESH connection.
+      4. VERIFY: the proof copy must parse to exactly the set that
+         was sent (canonical-payload comparison); the proof set
+         is returned for the window to adopt (merge_proof_into).
+
+    open_connection / push_targets / fetch_file are github_sync's,
+    injected so the harness can drive this with a stubbed GitHub.
+    Returns (ok, message, proof_buildings_or_None). On failure the
+    caller's in-memory set is left untouched.
+    """
+    payload = design_payload_bytes(buildings)
+    # ---- Stage 1: local save -------------------------------------
+    try:
+        _write_buildings_cache(payload)
+        _clear_edits_overlay()
+    except Exception as e:
+        return False, f"local-save-failed: {e}", None
+    # ---- Stage 2: push (one connection, then closed) -------------
+    targets = [(REPO, DESIGN_REPO_PATH, payload,
+                "Building editor: update design buildings "
+                "(editors/building-editor/design-buildings.json)")]
+    push_conn = open_connection()
+    try:
+        ok, msg = push_targets(targets, conn=push_conn)
+    finally:
+        # The push connection ALWAYS closes before the proof leg.
+        push_conn.close()
+    if not ok:
+        return False, f"Push to GitHub failed: {msg}", None
+    # ---- Stage 3: proof download (a FRESH connection) ------------
+    proof_conn = open_connection()
+    try:
+        raw, err = fetch_file(REPO, DESIGN_REPO_PATH, conn=proof_conn)
+    finally:
+        proof_conn.close()
+    if err is not None or raw is None:
+        return False, (f"push reached GitHub but downloading the "
+                       f"proof copy back failed: {err} — your save "
+                       f"DID reach GitHub"), None
+    # ---- Stage 4: verify; hand back the proof copy ---------------
+    proof = _parse_design_bytes(raw)
+    if proof is None:
+        return False, ("the proof copy from GitHub is not a valid "
+                       "design set — your save DID reach GitHub"), None
+    if design_payload_bytes(proof) != payload:
+        return False, ("GitHub's copy of the design set differs "
+                       "from what was just sent (did another save "
+                       "land first?). Your edits are still on this "
+                       "computer — save again to publish them."), proof
+    return True, "Design buildings saved to GitHub and verified.", proof
+
+
+def merge_proof_into(live, proof):
+    """
+    Adopt the re-downloaded proof set into the LIVE buildings list
+    in place: dicts are matched by name and updated in place (so a
+    design tab holding a building dict keeps editing the same
+    object), proof-only buildings are appended, live-only ones are
+    dropped. Returns (updated, added, removed) counts.
+    """
+    proof_by_name = {}
+    for b in proof:
+        if isinstance(b, dict) and b.get("name"):
+            proof_by_name.setdefault(b["name"], b)
+    updated = added = removed = 0
+    kept = []
+    for b in live:
+        pb = None
+        if isinstance(b, dict):
+            pb = proof_by_name.pop(b.get("name"), None)
+        if pb is None:
+            removed += 1
+            continue
+        if b is not pb:
+            b.clear()
+            b.update(pb)
+        updated += 1
+        kept.append(b)
+    for b in proof_by_name.values():
+        kept.append(b)
+        added += 1
+    live[:] = kept
+    return updated, added, removed
 
 
 def load_buildings():
