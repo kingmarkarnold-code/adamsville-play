@@ -475,6 +475,9 @@
     background:rgba(60,20,0,.6);border:2px solid #b35a00;border-radius:12px;
     padding:12px 18px;margin-bottom:12px;}
   #load-critbtns{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}
+  /* 2026-10-17: live download progress inside the critical-failure panel
+     (see __zoneFileProgress) — a slow load must read as loading. */
+  #load-critprog{color:#ffd28a;font-size:13px;margin:-2px 0 10px;line-height:1.4;min-height:1em;}
   #load-retry{padding:12px 22px;font-size:16px;font-weight:bold;border-radius:12px;border:none;
     background:#39ff6a;color:#062b0f;cursor:pointer;}
   #load-continue{padding:12px 22px;font-size:14px;font-weight:bold;border-radius:12px;
@@ -974,6 +977,7 @@
          failed to download). Shown by __showCriticalWarning(). -->
     <div id="load-critwarn" style="display:none">
       <div id="load-critmsg"></div>
+      <div id="load-critprog"></div>
       <div id="load-critbtns"><button id="load-retry">&#8635; RETRY</button><button id="load-continue">CONTINUE ANYWAY</button></div>
     </div>
   </div>
@@ -1253,6 +1257,13 @@ function __showCriticalWarning(){
       'Starting now would leave '+__criticalConsequence(fails)+'.'+detailHtml+'<br>'+
       '<span style="font-weight:normal;font-size:0.9em;">Check your connection, then tap RETRY for a fresh download.</span>';
     if(w) w.style.display='block';
+    /* 2026-10-17: if a critical file is STILL downloading (the player
+       reached the gate early), seed the panel's progress line from the
+       latest reported progress; __zoneFileProgress keeps it live. */
+    try{
+      var pe=document.getElementById('load-critprog');
+      if(pe && window.__zoneProgressText) pe.textContent='Still downloading - '+window.__zoneProgressText+'. A slow connection can take a few minutes; this is loading, not a failure.';
+    }catch(e){}
     var rb=document.getElementById('load-retry');
     if(rb && !rb.__wired){ rb.__wired=true; rb.addEventListener('click',function(){
       try{ window.location.reload(); }catch(e){}
@@ -1266,6 +1277,40 @@ function __showCriticalWarning(){
         if(typeof __tryStartGame==='function') __tryStartGame();
       }catch(e){}
     }); }
+  }catch(e){}
+}
+/* __zoneFileProgress(key, received, total) — LIVE DOWNLOAD PROGRESS
+   (2026-10-17, Joshua's streetless-world fix). While a zone file (above
+   all the 2.4MB roads data) is downloading or retrying, show how much
+   has arrived — "Road data: 1.2 MB of 2.4 MB" — in the loader's detail
+   line, and inside the critical-failure panel when it is on screen, so
+   a slow load reads as LOADING, not as a failure. received = -1 clears
+   the line when the transfer ends. Fed by __fetchTextWithProgress (the
+   zone JSON path below) and by mapdelivery.js's progress hook (the
+   startup map-delivery sync). */
+window.__zoneProgressText='';
+function __zoneFileProgress(key, received, total){
+  try{
+    var prog=document.getElementById('load-critprog');
+    if (received==null || received<0){
+      window.__zoneProgressText='';
+      if (prog) prog.textContent='';
+      var dtc=document.getElementById('load-detail');
+      if (dtc && dtc.getAttribute('data-zprog')==='1'){ dtc.textContent=''; dtc.removeAttribute('data-zprog'); }
+      return;
+    }
+    var name=(window.__criticalLoadKeys && window.__criticalLoadKeys[key]) || key || 'File';
+    var mb=function(b){ return (b/1048576).toFixed(1)+' MB'; };
+    var txt=(total>0)
+      ? name+': '+mb(received)+' of '+mb(total)+' ('+Math.floor(100*received/total)+'%)'
+      : name+': '+mb(received)+' downloaded...';
+    window.__zoneProgressText=txt;
+    var dt=document.getElementById('load-detail');
+    if (dt){ dt.textContent=txt; dt.setAttribute('data-zprog','1'); }
+    var w=document.getElementById('load-critwarn');
+    if (prog && w && w.style.display!=='none'){
+      prog.textContent='Still downloading - '+txt+'. A slow connection can take a few minutes; this is loading, not a failure.';
+    }
   }catch(e){}
 }
 /* show the first step right away so the single line is never generic */
@@ -1537,25 +1582,21 @@ function __injectZoneFiles(files, callback){
       }
     }
     if (isJson && attempt < 2){
-      /* --- JSON path (attempts 0-1): fetch + JSON.parse, off-thread --- */
-      var done = false;
-      var timer = setTimeout(function(){
-        if (done) return; done = true;
-        try{ console.warn('[deferred] Zone JSON timeout, '+(attempt<1?'retrying':'falling back to .js')+': '+f.src); }catch(e){}
-        loadZoneFile(f, attempt+1);
-      }, 45000);
-      fetch(bust(f.src)).then(function(r){
-        if (!r.ok){
-          /* v1.55: 404 means JSON isn't deployed — flag it so remaining files
-             skip JSON and go straight to .js fallback. */
-          if (r.status === 404){
-            try{ window.__zoneJsonMissing = true; }catch(e){}
-          }
-          throw new Error('HTTP '+r.status);
-        }
-        return r.text();
-      }).then(function(rawText){
-        if (done) return; done = true; clearTimeout(timer);
+      /* --- JSON path (attempts 0-1): fetch + JSON.parse, off-thread ---
+         PROGRESS-BASED TIMEOUT (2026-10-17 — Joshua's streetless-world
+         report): the old flat 45s cap killed the 2.4MB roads.json on
+         slow links on EVERY attempt (worse while the map-delivery sync
+         raced a second fetch of the same file), the roads step failed,
+         and CONTINUE ANYWAY started a world with no streets. The fetch
+         now streams under a 20s INACTIVITY watchdog — a slow download
+         that keeps making progress is allowed to finish — and reports
+         live progress to the loader. Retry/fallback semantics are
+         unchanged: attempt 0 retries, attempt 1 falls back to .js. */
+      var _capMs = __loadCapMs(__mapFileSize(f.src));
+      __fetchTextWithProgress(bust(f.src), {}, function(received, total){
+        try{ if (window.__zoneFileProgress) window.__zoneFileProgress(f.key, received, total); }catch(e){}
+      }, 20000, _capMs).then(function(rawText){
+        try{ if (window.__zoneFileProgress) window.__zoneFileProgress(f.key, -1, 0); }catch(e){}
         try {
           var data = JSON.parse(rawText);
           /* MAP DELIVERY (Joshua 2026-10-16): warm the local map store
@@ -1569,7 +1610,12 @@ function __injectZoneFiles(files, callback){
           loadZoneFile(f, attempt+1);
         }
       }).catch(function(err){
-        if (done) return; done = true; clearTimeout(timer);
+        try{ if (window.__zoneFileProgress) window.__zoneFileProgress(f.key, -1, 0); }catch(e){}
+        /* v1.55: 404 means JSON isn't deployed — flag it so remaining files
+           skip JSON and go straight to .js fallback. */
+        if (err && err.status === 404){
+          try{ window.__zoneJsonMissing = true; }catch(e){}
+        }
         /* v1.55: Record the specific failure reason for diagnostics. */
         try{
           if (!window.__zoneLoadErrors) window.__zoneLoadErrors = {};
@@ -1624,7 +1670,11 @@ function __injectZoneFiles(files, callback){
       }catch(e){}
       finishJs(false);
     };
-    setTimeout(function(){ if(!done){ try{ console.warn('[deferred] Zone script timeout: '+jsSrc); }catch(e){} finishJs(false); } }, 45000);
+    /* SIZE-SCALED CAP (2026-10-17): script tags expose no progress
+       events, so this watchdog stays a cap — but it scales with the
+       file's manifest size instead of the flat 45s that killed slow
+       downloads of the 2.4MB roads.js (see __loadCapMs). */
+    setTimeout(function(){ if(!done){ try{ console.warn('[deferred] Zone script timeout: '+jsSrc); }catch(e){} finishJs(false); } }, __loadCapMs(__mapFileSize(jsSrc)));
     s.src = bust(jsSrc);
     document.head.appendChild(s);
   }
@@ -1683,6 +1733,140 @@ function __hexToBase64(hex){
     return btoa(bin);
   }catch(e){ return ''; }
 }
+/* ============================================================================
+   2026-10-17 SLOW-LINK LOAD FIX (Joshua's streetless-world report)
+   ----------------------------------------------------------------------------
+   The loader's flat 45s caps killed healthy-but-slow downloads (the
+   2.4MB zones/<zone>/roads.json above all) on EVERY attempt; the step
+   was marked critically failed and CONTINUE ANYWAY then started a world
+   whose buildRoads() had no ROAD_DATA — no streets anywhere. (It was
+   worse while the startup map-delivery sync raced a second fetch of
+   the same file; mapdelivery.js now de-duplicates that — see its
+   in-flight registry.) Three mechanisms here:
+   1. __fetchTextWithProgress(): streaming fetch with an INACTIVITY
+      watchdog (20s of silence) instead of an absolute cap — progress,
+      however slow, keeps the load alive; live byte progress is
+      reported to __zoneFileProgress().
+   2. __loadCapMs(): for loads that expose no progress events (script
+      tags, non-streaming fetch), the cap scales with the file's size
+      from the manifests instead of a flat 45s.
+   3. __zoneFileProgress() (above, near __showCriticalWarning): the
+      progress line itself.
+   ============================================================================ */
+function __loadCapMs(sizeBytes){
+  /* Watchdog cap for progress-less loads: the historic 45s floor, plus
+     headroom at a pessimistic 16 KB/s for large files, capped at 10
+     minutes so a truly dead load still fails eventually. A 2.4MB zone
+     file gets ~150s instead of 45s. Fast connections never notice:
+     onload/onerror always wins the race on a healthy link. */
+  var cap = 45000;
+  if (sizeBytes && sizeBytes > 0){
+    var bySize = Math.ceil(sizeBytes / 16384) * 1000;
+    if (bySize > cap) cap = bySize;
+  }
+  return Math.min(cap, 600000);
+}
+function __mapFileSize(name){
+  /* Manifest size of a map file; map-manifest keys are full relative
+     paths ('zones/adamsville/roads.json'). 0 when unknown. */
+  try{
+    var m = window.__MAPSIZE || {};
+    var clean = String(name || '').split('?')[0];
+    if (typeof m[clean] === 'number') return m[clean];
+    var base = clean.split('/').pop();
+    return (typeof m[base] === 'number') ? m[base] : 0;
+  }catch(e){ return 0; }
+}
+function __uiFileSize(name){
+  /* Manifest size of a UI/game file; ui-manifest keys are base names,
+     so try the base name first, then the full path. 0 when unknown. */
+  try{
+    var m = window.__UISIZE || {};
+    var clean = String(name || '').split('?')[0];
+    var base = clean.split('/').pop();
+    if (typeof m[base] === 'number') return m[base];
+    return (typeof m[clean] === 'number') ? m[clean] : 0;
+  }catch(e){ return 0; }
+}
+function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
+  /* fetch() a text body under a progress-based (inactivity) watchdog.
+     Resolves with the body text. Rejects with an Error — err.status is
+     set for HTTP failures; the message reads 'download stalled...' when
+     the inactivity watchdog fires. Streaming path: every chunk resets
+     the watchdog and reports (receivedBytes, totalBytes) to onProgress.
+     Non-streaming fallback (no ReadableStream body): r.text() under the
+     size-scaled capMs. An AbortController cancels the transfer when the
+     watchdog fires, where the engine supports it. */
+  opts = opts || {};
+  var ctrl = null;
+  try{
+    if (typeof AbortController !== 'undefined' && !opts.signal){
+      ctrl = new AbortController();
+      opts.signal = ctrl.signal;
+    }
+  }catch(e){}
+  function abortQuietly(){ try{ if (ctrl) ctrl.abort(); }catch(e){} }
+  return fetch(url, opts).then(function(r){
+    if (!r.ok){
+      var herr = new Error('HTTP '+r.status);
+      herr.status = r.status;
+      throw herr;
+    }
+    if (!r.body || typeof r.body.getReader !== 'function' || typeof TextDecoder === 'undefined'){
+      return new Promise(function(resolve, reject){
+        var t = setTimeout(function(){
+          abortQuietly();
+          reject(new Error('download timed out'));
+        }, capMs || 45000);
+        r.text().then(function(tx){ clearTimeout(t); resolve(tx); },
+                      function(err){ clearTimeout(t); reject(err); });
+      });
+    }
+    var total = 0;
+    try{
+      var cl = (r.headers && typeof r.headers.get === 'function') ? parseInt(r.headers.get('content-length') || '0', 10) : 0;
+      if (cl > 0) total = cl;
+    }catch(e){}
+    var reader = r.body.getReader();
+    var decoder = new TextDecoder('utf-8');
+    var idle = idleMs || 20000;
+    return new Promise(function(resolve, reject){
+      var text = '', received = 0, finished = false, idleTimer = null;
+      function armIdle(){
+        if (idleTimer) clearTimeout(idleTimer);
+        idleTimer = setTimeout(function(){
+          if (finished) return; finished = true;
+          try{ reader.cancel(); }catch(e){}
+          abortQuietly();
+          reject(new Error('download stalled - no data for '+Math.round(idle/1000)+'s'));
+        }, idle);
+      }
+      function step(){
+        reader.read().then(function(res){
+          if (finished) return;
+          if (res.done){
+            finished = true;
+            if (idleTimer) clearTimeout(idleTimer);
+            text += decoder.decode();
+            resolve(text);
+            return;
+          }
+          received += (res.value && res.value.length) || 0;
+          text += decoder.decode(res.value, {stream:true});
+          if (onProgress){ try{ onProgress(received, total); }catch(e){} }
+          armIdle();
+          step();
+        }, function(err){
+          if (finished) return; finished = true;
+          if (idleTimer) clearTimeout(idleTimer);
+          reject(err);
+        });
+      }
+      armIdle();
+      step();
+    });
+  });
+}
 function __fetchLoadManifests(cb){
   /* Fetch both manifests in parallel with cache:'no-store'. Always calls cb
      (even on failure — missing versions just mean no cache-buster/integrity,
@@ -1698,12 +1882,16 @@ function __fetchLoadManifests(cb){
         if (m){
           window.__UIVER = m.ui_version || m.version || '';
           window.__UIHASH = {};
+          window.__UISIZE = {};
           var files = m.files || [];
           for (var i = 0; i < files.length; i++){
             var fl = files[i];
             var h = fl.sha256 || fl.hash || '';
             /* Full 64-hex-char hashes only — truncated ones can't do SRI. */
             if (fl.name && h && h.length >= 64) window.__UIHASH[fl.name] = h;
+            /* 2026-10-17: sizes feed the size-scaled load watchdogs
+               (__loadCapMs) via __uiFileSize(). */
+            if (fl.name && typeof fl.size === 'number') window.__UISIZE[fl.name] = fl.size;
           }
         }
       }catch(e){}
@@ -1713,7 +1901,22 @@ function __fetchLoadManifests(cb){
   try{
     fetch('map-manifest.json', {cache:'no-store'}).then(function(r){ return r.ok ? r.json() : null; })
     .then(function(m){
-      try{ if (m){ window.__MAPVER = m.map_version || m.version || ''; window.__LOCAL_MAP_MANIFEST = m; } }catch(e){}
+      try{
+        if (m){
+          window.__MAPVER = m.map_version || m.version || '';
+          window.__LOCAL_MAP_MANIFEST = m;
+          /* 2026-10-17: per-file sizes for the size-scaled load
+             watchdogs (__loadCapMs) via __mapFileSize() — the 2.4MB
+             roads.json needs far more than the old flat 45s when the
+             link is slow. */
+          window.__MAPSIZE = {};
+          var mfiles = m.files || [];
+          for (var mi = 0; mi < mfiles.length; mi++){
+            var mf = mfiles[mi];
+            if (mf && mf.name && typeof mf.size === 'number') window.__MAPSIZE[mf.name] = mf.size;
+          }
+        }
+      }catch(e){}
       one();
     }).catch(function(){ one(); });
   }catch(e){ one(); }
@@ -1798,7 +2001,11 @@ function __loadDeferredQueueInner(){
     }
     s.onload = function(){ finish(true); };
     s.onerror = function(){ finish(false); };
-    setTimeout(function(){ if(!done){ try{ console.warn('[deferred] Script timeout: '+src); }catch(e){} finish(false); } }, 45000);
+    /* SIZE-SCALED CAP (2026-10-17): same reasoning as the zone .js
+       fallback — the flat 45s becomes a floor under a size-scaled cap
+       (see __loadCapMs), so a big script on a slow link is not killed
+       mid-download. Healthy links still finish via onload/onerror. */
+    setTimeout(function(){ if(!done){ try{ console.warn('[deferred] Script timeout: '+src); }catch(e){} finish(false); } }, __loadCapMs(__uiFileSize(src)));
     /* v1.35 #35: cache-bust every script with the live ui_version, and set
        SRI integrity on the first attempt. If the hash mismatches (or the
        network fails), onerror fires and the retry below re-downloads WITHOUT
