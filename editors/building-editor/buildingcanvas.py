@@ -206,10 +206,17 @@ class BuildingCanvas(Gtk.DrawingArea):
         self._resize_handles = []
 
         self.set_can_focus(True)
+        # 1.7.0 CRASH FIX: Gdk.EventMask.BUTTON3_MASK does not exist in
+        # GTK3, so the old line raised AttributeError inside
+        # BuildingCanvas.__init__ and every building tab died silently
+        # (PyGObject only prints the traceback to stderr). The
+        # press/release masks above already deliver button-3 events;
+        # BUTTON3_MOTION_MASK is the valid GTK3 constant and adds
+        # right-button motion.
         self.add_events(Gdk.EventMask.BUTTON_PRESS_MASK |
                         Gdk.EventMask.BUTTON_RELEASE_MASK |
                         Gdk.EventMask.POINTER_MOTION_MASK |
-                        Gdk.EventMask.BUTTON3_MASK)
+                        Gdk.EventMask.BUTTON3_MOTION_MASK)
         self.connect("draw", self._on_draw)
         self.connect("button-press-event", self._on_button_press)
         self.connect("button-release-event", self._on_button_release)
