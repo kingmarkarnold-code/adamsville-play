@@ -126,9 +126,11 @@ def stage_content(name, data_bytes):
     """
     Stage raw bytes as a file (used for content Joshua edited in the
     visual editors). Same bookkeeping as stage_added_file: the file
-    lands in STAGING_DIR and is marked "added" so the next push
-    overwrites the same-named game file. Any pending removal of the
-    same name is cancelled (editing wins over removing).
+    lands in STAGING_DIR and is marked "added" — under the v1.7.7
+    save protocol the staging area is step 1 (local save) and the
+    same save action immediately pushes it and re-downloads the
+    GitHub copy. Any pending removal of the same name is cancelled
+    (editing wins over removing).
     Returns the staged file name, or None on failure.
     """
     ensure_data_dir()
@@ -149,6 +151,44 @@ def stage_content(name, data_bytes):
     return safe
 
 
+def staged_bytes(name):
+    """
+    v1.7.7: the staged (locally saved, not yet pushed) bytes for a
+    file name, or None if nothing is staged under that name.
+
+    The tabs check this on open: a staged copy that differs from the
+    repo is Joshua's unsaved work and must be what he sees — in 1.7.6
+    the tabs re-downloaded over it and his edits silently vanished
+    from view (the menu bug, 2026-10-16).
+    """
+    try:
+        p = STAGING_DIR / Path(name).name
+        if p.exists():
+            return p.read_bytes()
+    except Exception:
+        pass
+    return None
+
+
+def clear_staged(name):
+    """
+    v1.7.7: drop a staged copy after its content has been pushed to
+    GitHub AND re-downloaded (the save round trip is complete, so the
+    staged bytes and the repo bytes are the same thing). Also removes
+    the name from the pending "added" list. Safe to call when nothing
+    is staged.
+    """
+    safe = Path(name).name
+    try:
+        (STAGING_DIR / safe).unlink()
+    except Exception:
+        pass  # not staged — nothing to drop
+    changes = load_changes()
+    if safe in changes["added"]:
+        changes["added"].remove(safe)
+        save_changes(changes)
+
+
 # ---------------------------------------------------------------------------
 # UI layout editor (visual) — ui_layout.json
 # ---------------------------------------------------------------------------
@@ -162,6 +202,11 @@ CANON_W, CANON_H = 1280, 800
 
 LAYOUT_URL = RAW_PREFIX + "ui_layout.json"
 LAYOUT_FILE = DATA_DIR / "ui_layout.json"
+# Repo-relative paths (Contents API) for the documents this app edits.
+# v1.7.7: downloads go through the API first (see fetch_repo_bytes) so
+# the editor always opens on the repo's CURRENT bytes, never a CDN copy.
+LAYOUT_REPO_PATH = "detailed/ui_layout.json"
+MENU_REPO_PATH = "detailed/menu_layout.json"
 # Shipped fallback when GitHub is unreachable on first run.
 DEFAULT_LAYOUT_FILE = Path(__file__).parent / "ui_layout_default.json"
 
@@ -258,29 +303,78 @@ def left_top_to_xy(el, left, top, vw, vh):
     return round(left / s), round(top / s)  # "tl"
 
 
+def fetch_repo_bytes(repo_path):
+    """
+    v1.7.7: fetch a file's CURRENT bytes from the game repo.
+
+    Goes through the GitHub Contents API (via github_sync.fetch_file,
+    authenticated when the suite token is set). The API always serves
+    the repo's current blob, unlike raw.githubusercontent.com, whose
+    CDN cache can hand back a stale copy — the root cause of the
+    editor opening on an old layout (Joshua 2026-10-16).
+    Returns the raw bytes, or None if the fetch failed.
+    """
+    try:
+        import github_sync
+        data, err = github_sync.fetch_file(REPO, repo_path)
+        if data is not None:
+            return data
+        print(f"Repo fetch failed for {repo_path}: {err}")
+    except Exception as e:
+        print(f"Repo fetch unavailable for {repo_path}: {e}")
+    return None
+
+
+def _download_raw(url):
+    """Plain raw.githubusercontent download. Returns bytes or None."""
+    try:
+        req = urllib.request.Request(url,
+                                     headers={"User-Agent": USER_AGENT})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return resp.read()
+    except Exception as e:
+        print(f"Raw download failed ({url}): {e}")
+        return None
+
+
+def _store_doc_bytes(cache_file, data, key, expect):
+    """
+    Validate fetched document bytes and store them in the local cache.
+    key/expect: the top-level key that must exist and its type
+    ("elements"/list for layouts, "menus"/dict for menus) — the same
+    shape checks the downloads have always done, so a bad response can
+    never overwrite a good cache. Atomic write (temp file -> rename).
+    Returns True if the bytes were valid and stored.
+    """
+    try:
+        doc = json.loads(data.decode("utf-8"))
+        if not isinstance(doc.get(key), expect):
+            return False
+    except Exception:
+        return False
+    ensure_data_dir()
+    tmp_path = cache_file.with_suffix(".tmp")
+    tmp_path.write_bytes(data)
+    tmp_path.rename(cache_file)
+    return True
+
+
 def download_ui_layout():
     """
     Download ui_layout.json from the game repo into the local cache.
-    Returns True on success, False on failure (offline / missing).
-    Atomic write so a failed download never corrupts the cache.
+    v1.7.7: Contents API first (current bytes, guaranteed), the raw
+    URL only as a fallback. Returns True on success, False on failure.
     """
     ensure_data_dir()
-    try:
-        req = urllib.request.Request(LAYOUT_URL,
-                                     headers={"User-Agent": USER_AGENT})
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            data = resp.read()
-        # Must be valid JSON with an "elements" list, else ignore it.
-        doc = json.loads(data.decode("utf-8"))
-        if not isinstance(doc.get("elements"), list):
-            return False
-        tmp_path = LAYOUT_FILE.with_suffix(".tmp")
-        tmp_path.write_bytes(data)
-        tmp_path.rename(LAYOUT_FILE)
+    data = fetch_repo_bytes(LAYOUT_REPO_PATH)
+    if data is not None and _store_doc_bytes(LAYOUT_FILE, data,
+                                             "elements", list):
         return True
-    except Exception as e:
-        print(f"UI layout download failed: {e}")
-        return False
+    # Fallback: the raw URL (may be CDN-cached, but better than nothing).
+    data = _download_raw(LAYOUT_URL)
+    if data is not None:
+        return _store_doc_bytes(LAYOUT_FILE, data, "elements", list)
+    return False
 
 
 def load_ui_layout():
@@ -654,6 +748,9 @@ def load_window_state():
 #                         "ungrouped": [...]}},
 #    "version": N}
 # Group shape:  {"name": str, "items": [item, ...]}
+#               + optional "start": "expanded"|"collapsed" (v1.7.8 —
+#               written only when Joshua sets the group's start state;
+#               absent = today's behavior, honored by the game)
 # Item shape:   {"id", "label", "description", "action", "visible"}
 
 MENU_LAYOUT_URL = RAW_PREFIX + "menu_layout.json"
@@ -663,26 +760,20 @@ MENU_LAYOUT_FILE = DATA_DIR / "menu_layout.json"
 def download_menu_layout():
     """
     Download menu_layout.json from the game repo into the local cache.
+    v1.7.7: Contents API first (current bytes, guaranteed), the raw
+    URL only as a fallback — same fix as download_ui_layout.
     Returns True on success, False on failure (offline / missing).
-    Atomic write so a failed download never corrupts the cache.
     """
     ensure_data_dir()
-    try:
-        req = urllib.request.Request(MENU_LAYOUT_URL,
-                                     headers={"User-Agent": USER_AGENT})
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            data = resp.read()
-        # Must be valid JSON with a "menus" dict, else ignore it.
-        doc = json.loads(data.decode("utf-8"))
-        if not isinstance(doc.get("menus"), dict):
-            return False
-        tmp_path = MENU_LAYOUT_FILE.with_suffix(".tmp")
-        tmp_path.write_bytes(data)
-        tmp_path.rename(MENU_LAYOUT_FILE)
+    data = fetch_repo_bytes(MENU_REPO_PATH)
+    if data is not None and _store_doc_bytes(MENU_LAYOUT_FILE, data,
+                                             "menus", dict):
         return True
-    except Exception as e:
-        print(f"Menu layout download failed: {e}")
-        return False
+    # Fallback: the raw URL (may be CDN-cached, but better than nothing).
+    data = _download_raw(MENU_LAYOUT_URL)
+    if data is not None:
+        return _store_doc_bytes(MENU_LAYOUT_FILE, data, "menus", dict)
+    return False
 
 
 def load_menu_layout():
