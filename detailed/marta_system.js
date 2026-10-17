@@ -106,7 +106,7 @@ function trainsForLine(pathLen){
 var SPAWN_CHECK_INTERVAL  = 4;   // seconds between spawn checks (v1.2: was 8 — faster top-up for more frequent service)
 var EXTEND_STEP           = 100; // track extension step (units)
 var EXTEND_MAX            = 1500;// max overrun past terminal (units)
-var MAP_X0=60, MAP_X1=7940, MAP_Z0=60, MAP_Z1=11940; // map edge (WX=8000, WZ=12000)
+var MAP_X0=-7421, MAP_X1=16255, MAP_Z0=-4189, MAP_Z1=30818; // STEP2 stretch: stage rect (§6.2) inset 60 — track extension now runs to the stage edge, not the old core edge (was 60/7940/60/11940 for WX=8000, WZ=12000)
 
 var MT = { lines: [], trains: [], stations: [], ready: false, spawnT: SPAWN_CHECK_INTERVAL };
 

@@ -41,6 +41,17 @@
    says the phone can take it. */
 var N_PLANES=50;
 
+/* STEP2 sector grid (Joshua 2026-10-16): the 10x5 home-sector grid now
+   spans the §6.2 STAGE rect instead of the old 8000x12000 core rect.
+   Origin = (STAGE_X0, STAGE_Z0); the stage is 23796 wide (x) by 35127
+   deep (z), so each sector is 23796/10 = 2379.6 across by
+   35127/5 = 7025.4 deep. Still exactly 50 sectors, one plane each —
+   only the grid's footprint changed, not the assignment logic. */
+var SECTOR_ORIGIN_X=-7481, SECTOR_ORIGIN_Z=-4249;  // = STAGE_X0, STAGE_Z0 (§6.2)
+var SECTOR_COLS=10, SECTOR_ROWS=5;
+var SECTOR_W=23796/SECTOR_COLS;  // 2379.6u per sector column
+var SECTOR_H=35127/SECTOR_ROWS;  // 7025.4u per sector row
+
 /* Paint schemes for the fleet (fuselage color).
    Miniature RC-plane look: bright, high-visibility colors. One material for
    the whole airframe, so wings share the body color per instance — full
@@ -96,10 +107,10 @@ function mergeBoxParts(parts){
 
 /* initPlaneDrones() — builds the fleet.
    Each plane gets: a paint scheme (deterministic via seeded rng so the mix
-   is stable across loads), a home sector of a 10x5 grid (800x2400u sectors
-   over the 8000x12000 world = 50 sectors, one plane each), an elliptical
-   patrol path inside it, a cruise altitude above the local terrain, and
-   flight parameters. */
+   is stable across loads), a home sector of the 10x5 grid (STEP2: sectors
+   now tile the §6.2 stage rect — see SECTOR_* constants above — still 50
+   sectors, one plane each), an elliptical patrol path inside it, a cruise
+   altitude above the local terrain, and flight parameters. */
 function initPlaneDrones(){
   var rng=mulberry32(0xA1B5);   // fixed seed: same fleet every load
   // airframe geometry: fuselage + main wing + tailplane + fin, merged.
@@ -128,9 +139,11 @@ function initPlaneDrones(){
   var birds=[];   // kept named "birds" — priority_dispatch.js reads BD.birds
   for(var b=0;b<N_PLANES;b++){
     var scheme=PAINT_SCHEMES[b%PAINT_SCHEMES.length];
-    // home sector: plane b patrols sector (b%10, floor(b/10)) of the 10x5 grid
-    var col=b%10, row=Math.floor(b/10);
-    var scx=col*800+400, scz=row*2400+1200;
+    // home sector: plane b patrols sector (b%10, floor(b/10)) of the 10x5
+    // grid — STEP2: sector centre now offsets from the stage origin by
+    // the stretched sector size (same assignment shape as before).
+    var col=b%SECTOR_COLS, row=Math.floor(b/SECTOR_COLS);
+    var scx=SECTOR_ORIGIN_X+col*SECTOR_W+SECTOR_W/2, scz=SECTOR_ORIGIN_Z+row*SECTOR_H+SECTOR_H/2;
     var gy=30; try{ gy=heightAt(scx, scz); }catch(e){}
     birds.push({
       scheme:scheme,

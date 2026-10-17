@@ -183,6 +183,40 @@
   #gameplay .slot.empty { border-color:#333; color:#777; }
   #gameplay #gp-back { margin-top:12px; padding:10px 18px; font-size:15px; border-radius:10px; border:none;
     background:#ffd75e; color:#111; font-weight:bold; width:100%; }
+  /* STEP2 (Joshua 2026-10-16): Advanced Properties panel — cloned from
+     the #gameplay submenu so the zone-unlock UI matches the existing
+     menus. Zone rows reuse the shared .row look; the per-zone status
+     tag (#adv-zone-list .adv-status) floats right inside its row. */
+  #advprops { position:fixed; inset:0; z-index:40; display:none; align-items:center; justify-content:center;
+    background:rgba(0,0,0,.72); color:#fff; }
+  #advprops.show { display:flex; }
+  #advprops .card { background:#161b26; border-radius:14px; padding:20px 22px; max-width:430px; width:82%;
+    max-height:92vh; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+  #advprops h3 { margin:0 0 12px 0; color:#ffd75e; }
+  #advprops .row { display:block; width:100%; margin:8px 0; padding:12px 14px; font-size:16px; font-weight:bold;
+    border-radius:10px; border:2px solid #444; background:#222836; color:#fff; text-align:left; }
+  #advprops .row:active { background:#2d3547; }
+  #adv-zone-list .adv-status { float:right; font-size:13px; font-weight:normal; }
+  #advprops #adv-back { margin-top:12px; padding:10px 18px; font-size:15px; border-radius:10px; border:none;
+    background:#ffd75e; color:#111; font-weight:bold; width:100%; }
+  /* STEP2: zone password dialog — cloned from #adm-confirm. */
+  #advpass { position:fixed; inset:0; z-index:60; display:none; align-items:center; justify-content:center;
+    background:rgba(0,0,0,.78); color:#fff; }
+  #advpass.show { display:flex; }
+  #advpass .card { background:#161b26; border-radius:14px; padding:20px 22px; max-width:400px; width:84%;
+    border:2px solid #ffd75e; text-align:center; }
+  #advpass .msg { font-size:15px; line-height:1.5; margin:6px 0 18px 0; }
+  #advpass .btnrow { display:flex; gap:12px; }
+  #advpass .btnrow button { flex:1; padding:13px 0; font-size:16px; font-weight:bold; border-radius:10px;
+    border:2px solid #444; background:#222836; color:#fff; }
+  #advpass #advpass-ok { background:#39ff6a; border-color:#39ff6a; color:#111; }
+  #advpass #advpass-cancel { background:#3a3f4d; }
+  /* Password entry: full width, big PIN-style type with spaced digits. */
+  #advpass-input { width:100%; box-sizing:border-box; padding:12px 14px; margin:0 0 10px 0;
+    font-size:22px; letter-spacing:6px; text-align:center; border-radius:10px;
+    border:2px solid #444; background:#222836; color:#fff; }
+  /* Wrong-password line: red, reserved height so the card never jumps. */
+  #advpass-err { color:#ff6b6b; font-size:14px; min-height:20px; margin:0 0 10px 0; }
   /* v1.15: zone picker for New Game (Joshua 2026-10-10 demo). The zone list
      MUST scroll — zones won't all fit on a phone screen. */
   #zonepick { position:fixed; inset:0; z-index:50; display:none; align-items:center; justify-content:center;
@@ -588,6 +622,9 @@
   <!-- v1.12.10: "View report" button removed per Joshua — reports go to GitHub now. -->
   <button class="row" id="set-record">Record: OFF</button>
   <button class="row" id="set-gameplay">Gameplay &#9654;</button>
+  <!-- STEP2 (Joshua 2026-10-16): zone password unlocking lives under
+       Advanced Properties (panel + wiring below). -->
+  <button class="row" id="set-advprops">Advanced Properties &#9654;</button>
   <h3>Administrator</h3>
   <button class="row" id="adm-map">Re-download Map <span class="adm-tag" id="adm-map-tag"></span></button>
   <button class="row" id="adm-ui">Re-download UI <span class="adm-tag" id="adm-ui-tag"></span></button>
@@ -633,6 +670,31 @@
   <div id="gp-slots"></div>
   <button id="gp-back">Back</button>
   <button class="row" id="gp-exit">Exit</button>
+</div></div>
+<!-- STEP2 Advanced Properties (Joshua 2026-10-16): per-zone password
+     unlocking lives here (Settings -> Advanced Properties). One row per
+     zone from ZoneUnlock.zones is built into #adv-zone-list by
+     renderAdvZones(); locked rows open the #advpass password dialog,
+     and "Unlock All Zones" opens it in ALL mode. The passwords
+     themselves are checked ONLY inside zoneunlock.js — no password
+     text appears anywhere in this file. -->
+<div id="advprops"><div class="card">
+  <h3>Advanced Properties</h3>
+  <div id="adv-zone-list"></div>
+  <button class="row" id="adv-unlock-all">&#128275; Unlock All Zones</button>
+  <button id="adv-back">Back</button>
+</div></div>
+<!-- STEP2 zone password dialog (cloned from #adm-confirm): numeric
+     password entry for one zone (advPassTarget = zone id) or for
+     Unlock All (advPassTarget = 'ALL'). -->
+<div id="advpass"><div class="card">
+  <div class="msg" id="advpass-msg"></div>
+  <input id="advpass-input" type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Password">
+  <div id="advpass-err"></div>
+  <div class="btnrow">
+    <button id="advpass-ok">Unlock</button>
+    <button id="advpass-cancel">Cancel</button>
+  </div>
 </div></div>
 <!-- Zone picker for New Game (Joshua 2026-10-10, demo behavior):
      the very first game ever starts at 535 Dollar Mill Rd (Adamsville);
@@ -1541,7 +1603,7 @@ function __injectZoneFiles(files, callback){
    a phone ~30s). The deferred loader fetches it before any game script
    evaluates; buildTerrain() uses it when present, else synchronous compute.
    The ?v= cache-buster MUST match ui_version — the generator stamps it. */
-var TERR_PRE_URL='terrain_heights_adamsville_600x800.bin?v=2026.10.16.193';
+var TERR_PRE_URL='terrain_heights_adamsville_600x800.bin?v=2026.10.16.194';
 var TERR_PRE_LEN=(600+1)*(800+1);
 /* v1.35 #35: prefer the LIVE ui_version for the terrain binary cache-buster
    at fetch time. The generator stamps TERR_PRE_URL above (keep that line's
@@ -3142,6 +3204,23 @@ var Report=(function(){
    UNCHANGED by the stage extension; only what is DRAWN (buildTerrain apron)
    and what is CLIPPED (clipToWorld/clipToWorldY) widen to this rect. */
 var STAGE_X0=-7481, STAGE_X1=16315, STAGE_Z0=-4249, STAGE_Z1=30878;
+/* STEP2 outer wall (Joshua 2026-10-16): PLAY_EDGE_MARGIN is the safety
+   margin (units) inside the drawn ground's edge. clampToStage() below
+   is the ONLY outer clamp for the player/car now — it prefers
+   zoneunlock's EDGE_MARGIN when that module is loaded so the clamp and
+   the zone walls can never disagree about where the world ends.
+   Interior locked-zone walls are NOT this clamp's job: they are
+   zoneunlock's per-frame union wall (blockLockedMovement). */
+var PLAY_EDGE_MARGIN=60;
+/* clampToStage(e) — clamp any {x,z} entity into the stage rect shrunk
+   by the edge margin: [STAGE_X0+m, STAGE_X1-m] x [STAGE_Z0+m, STAGE_Z1-m].
+   Mutates and returns e. */
+function clampToStage(e){
+  var m=(window.ZONEUNLOCK&&ZONEUNLOCK.EDGE_MARGIN)||PLAY_EDGE_MARGIN;
+  e.x=Math.max(STAGE_X0+m, Math.min(STAGE_X1-m, e.x));
+  e.z=Math.max(STAGE_Z0+m, Math.min(STAGE_Z1-m, e.z));
+  return e;
+}
 // ---------- geo mapping ----------
 // World <-> lat/lon projection. The map is a flat local tangent plane:
 // lon maps linearly to +X (east), lat maps linearly to +Z with north = -Z
@@ -5162,10 +5241,13 @@ try{ __parseSet('Placing street furniture', '', 40); }catch(e){}
 /* ================= v1.5 BORDER VISUAL =================
    Joshua: the invisible map-edge wall works (stops the van, no damage) —
    keep that EXACTLY. This adds only a VISUAL: a translucent vertical
-   barrier following the map boundary (x/z = 60 .. WX-60 / WZ-60, the same
-   clamp lines), extending 150u up, with large red X marks in succession
-   (GTA/San Andreas style). Translucent so the player sees through to the
-   other side. Visual only — the clamp code is untouched. */
+   barrier following the map boundary, extending 150u up, with large
+   red X marks in succession (GTA/San Andreas style). Translucent so
+   the player sees through to the other side. Visual only.
+   STEP2 (Joshua 2026-10-16): the visual now follows the stage-edge
+   wall — the barrier traces the STAGE rect inset by B=60, exactly
+   where clampToStage() stops the player/car (it originally traced
+   the old core rect 60 .. WX-60 / WZ-60). */
 (function borderVisual(){
   try{
     var H=150;
@@ -5180,11 +5262,15 @@ try{ __parseSet('Placing street furniture', '', 40); }catch(e){}
     var xTex=new THREE.CanvasTexture(xc);
     xTex.wrapS=xTex.wrapT=THREE.RepeatWrapping;
     var B=60;
+    // STEP2: edges trace the STAGE rect (all seven zones) with the same
+    // B=60 inset clampToStage enforces. Texture repeat counts below
+    // derive from each edge's length, so they recompute from these new,
+    // longer edges automatically.
     var edges=[
-      {x1:B, z1:B, x2:WX-B, z2:B},
-      {x1:WX-B, z1:B, x2:WX-B, z2:WZ-B},
-      {x1:WX-B, z1:WZ-B, x2:B, z2:WZ-B},
-      {x1:B, z1:WZ-B, x2:B, z2:B}
+      {x1:STAGE_X0+B, z1:STAGE_Z0+B, x2:STAGE_X1-B, z2:STAGE_Z0+B},
+      {x1:STAGE_X1-B, z1:STAGE_Z0+B, x2:STAGE_X1-B, z2:STAGE_Z1-B},
+      {x1:STAGE_X1-B, z1:STAGE_Z1-B, x2:STAGE_X0+B, z2:STAGE_Z1-B},
+      {x1:STAGE_X0+B, z1:STAGE_Z1-B, x2:STAGE_X0+B, z2:STAGE_Z0+B}
     ];
     edges.forEach(function(e){
       var len=Math.hypot(e.x2-e.x1, e.z2-e.z1);
@@ -9115,6 +9201,22 @@ function loadSlot(n){
     // stop current driving state first
     if (car&&car.driving){ car.driving=false; car.speed=0; }
     var p=s.player;
+    /* STEP2 locked-save fallback (Joshua 2026-10-16): unlocks live in
+       localStorage only, so a save can point into a zone that is locked
+       in this profile. Loading it as-is would soft-lock the player
+       inside the union walls — instead relocate the save to the 535
+       spawn BEFORE applying it (same spawn startNewGame uses), park
+       the car in the 535 driveway, and drop any driving state. */
+    if (window.ZONEUNLOCK && ZONEUNLOCK.isPlayable && !ZONEUNLOCK.isPlayable(p.x,p.z)){
+      p.x=HOME.x-14; p.z=HOME.z+8; p.yaw=Math.PI/2;
+      p.inside=false; p.swimming=false; p.locIdx=-1;
+      if (s.car){
+        s.car.x=heroHouse.drivewayPark.x; s.car.z=heroHouse.drivewayPark.z;
+        s.car.yaw=0; s.car.sunk=false;
+      }
+      s.driving=false;
+      try{ showToast('That save was in a locked zone — started you at 535 Dollar Mill Rd.'); }catch(e){}
+    }
     player.x=p.x; player.z=p.z; player.yaw=p.yaw;
     player.inside=!!p.inside; player.swimming=!!p.swimming; player.speed=0;
     player.locIdx=(p.locIdx|0)||-1;
@@ -9369,25 +9471,126 @@ function startNewGame(spawnX, spawnZ){
     try{ Report.note('newgame',{x:Math.round(player.x),z:Math.round(player.z)}); Report.save(); }catch(e){}
   }catch(e){ try{ Report.noteError('newgame','startNewGame threw',String(e&&e.stack||e)); }catch(x){} }
 }
-/* ============ v1.15 ZONE PICKER (Joshua 2026-10-10, demo behavior) ============
-   Called from the New Game button when the player has started a game before.
-   Shows a scrollable popup listing every zone from ZONEUNLOCK.zones; the
-   player picks one and the new game spawns at that zone's center.
-   ALL zones are selectable for the demo (locked or not) — the chosen zone
-   is auto-unlocked so the zone-boundary enforcement won't push the player
-   back out. Adamsville is flagged as the Home Base. */
+/* ============ STEP2 Advanced Properties wiring (Joshua 2026-10-16) ============
+   Settings -> Advanced Properties is the ONLY place zones unlock by
+   password. This wiring never sees the passwords themselves: it hands
+   the typed value to window.ZoneUnlock (zoneunlock.js), which owns the
+   comparison. Everything is guarded — if the zone module failed to
+   load, the UI says so instead of throwing. */
+// advPassTarget: the zone id awaiting a password, or 'ALL' for Unlock All.
+var advPassTarget=null;
+/* renderAdvZones() — rebuild the #advprops zone list: one row per zone
+   from ZoneUnlock.zones with a right-side status tag. Locked rows open
+   the password prompt for that zone; unlocked rows do nothing. */
+function renderAdvZones(){
+  var list=document.getElementById('adv-zone-list');
+  if(!list) return;
+  list.innerHTML='';
+  if(!window.ZoneUnlock || !ZoneUnlock.zones){
+    try{ showToast('Zone system unavailable'); }catch(e){}
+    return;
+  }
+  ZoneUnlock.zones.forEach(function(z){
+    var unlocked=false;
+    try{ unlocked=ZoneUnlock.isUnlocked(z.id); }catch(e){}
+    var b=document.createElement('button');
+    b.className='row';
+    // Row label: zone name (+ home-base star) left, status tag floated right.
+    b.innerHTML=escapeHtml(z.name)+(z.start?' \u2605 Home Base':'')+
+      ' <span class="adv-status" style="color:'+(unlocked?'#7dff9e':'#ff9e9e')+'">'+
+      (unlocked?'\u2713 Unlocked':'\uD83D\uDD12 Locked')+'</span>';
+    if(unlocked){
+      // Already open: clicking does nothing — dim the row so it reads as done.
+      b.style.opacity='0.65';
+    } else {
+      b.addEventListener('click', function(){ openAdvPass(z.id); });
+    }
+    list.appendChild(b);
+  });
+}
+/* openAdvPass(target) — show the password dialog for one zone id, or for
+   every zone when target is 'ALL'. Clears the previous attempt first. */
+function openAdvPass(target){
+  advPassTarget=target;
+  var msg=document.getElementById('advpass-msg');
+  var input=document.getElementById('advpass-input');
+  var err=document.getElementById('advpass-err');
+  if(target==='ALL'){
+    if(msg) msg.textContent='Enter the password to unlock ALL zones.';
+  } else {
+    var zn=null;
+    try{ zn=window.ZoneUnlock?ZoneUnlock.zoneById(target):null; }catch(e){}
+    if(msg) msg.textContent='Enter the password to unlock '+(zn?zn.name:target)+'.';
+  }
+  if(input) input.value='';
+  if(err) err.textContent='';
+  document.getElementById('advpass').classList.add('show');
+  if(input){ try{ input.focus(); }catch(e){} }
+}
+// Settings row -> Advanced Properties (same show/hide pattern as the
+// Gameplay submenu: Settings hides, the submenu shows).
+document.getElementById('set-advprops').addEventListener('click', function(){
+  if(!window.ZoneUnlock){
+    try{ showToast('Zone system unavailable'); }catch(e){}
+    return;
+  }
+  document.getElementById('settings').classList.remove('show');
+  renderAdvZones();
+  document.getElementById('advprops').classList.add('show');
+});
+// Back: hide Advanced Properties, return to Settings (mirrors gp-back).
+document.getElementById('adv-back').addEventListener('click', function(){
+  document.getElementById('advprops').classList.remove('show');
+  document.getElementById('settings').classList.add('show');
+});
+// "Unlock All Zones" row -> password prompt in ALL mode.
+document.getElementById('adv-unlock-all').addEventListener('click', function(){
+  if(!window.ZoneUnlock){
+    try{ showToast('Zone system unavailable'); }catch(e){}
+    return;
+  }
+  openAdvPass('ALL');
+});
+// Password dialog Unlock: zoneunlock.js alone checks the value. Success
+// hides the dialog and re-renders the list (zoneunlock already fired
+// the unlock toast); failure flags the error line and clears the field.
+document.getElementById('advpass-ok').addEventListener('click', function(){
+  var input=document.getElementById('advpass-input');
+  var err=document.getElementById('advpass-err');
+  var v=input?input.value:'';
+  var ok=false;
+  try{
+    if(!window.ZoneUnlock) throw new Error('no zone module');
+    if(advPassTarget==='ALL') ok=ZoneUnlock.tryUnlockAllWithPassword(v);
+    else ok=ZoneUnlock.tryUnlockWithPassword(advPassTarget, v);
+  }catch(e){ ok=false; }
+  if(ok){
+    document.getElementById('advpass').classList.remove('show');
+    renderAdvZones();
+  } else {
+    if(err) err.textContent='Wrong password.';
+    if(input) input.value='';
+  }
+});
+// Password dialog Cancel: just hide it — no state changes.
+document.getElementById('advpass-cancel').addEventListener('click', function(){
+  document.getElementById('advpass').classList.remove('show');
+});
+/* ============ STEP2 ZONE PICKER (Joshua 2026-10-16) ============
+   Called from the New Game button when the player has started a game
+   before. Shows a scrollable popup listing EVERY zone from
+   ZoneUnlock.zones — the picker is a spawn chooser, not an unlock
+   screen. Unlocked zones spawn the new game at their centre as before;
+   LOCKED zones are labelled and cannot be picked: tapping one only
+   explains where unlocking happens, and the picker stays open.
+   The demo auto-unlock this picker used to perform is superseded by
+   Joshua's 2026-10-16 password unlocking — the picker must not be a
+   password bypass, so there is deliberately NO unlock call here. */
 function showZonePicker(){
   try{
     var list=document.getElementById('zonepick-list');
     list.innerHTML='';
-    var zones=[];
-    // Expert #25 (2026-10-11): only list zones compatible with the current
-    // map's scale. Showing old-scale zones in the rescaled Adamsville map
-    // (or vice versa) would offer destinations that don't exist here.
-    try{
-      if(window.ZONEUNLOCK && ZONEUNLOCK.compatibleZones) zones=ZONEUNLOCK.compatibleZones();
-      else zones=(window.ZONEUNLOCK && ZONEUNLOCK.zones) || [];
-    }catch(e){}
+    var zones=(window.ZoneUnlock && ZoneUnlock.zones) || [];
     if (!zones.length){
       // ZoneUnlock missing — fall back to the classic 535 spawn.
       startNewGame();
@@ -9397,10 +9600,17 @@ function showZonePicker(){
       var b=document.createElement('button');
       b.className='zrow';
       var isHome=!!z.start;
-      b.innerHTML=escapeHtml(z.name)+(isHome?' <span class="home">&#9733; Home Base</span>':'');
+      var locked=true;
+      try{ locked=!ZoneUnlock.isUnlocked(z.id); }catch(e){}
+      b.innerHTML=escapeHtml(z.name)+(isHome?' <span class="home">&#9733; Home Base</span>':'')+(locked?' \uD83D\uDD12 Locked':'');
       b.addEventListener('click', function(){
+        if (locked){
+          // Locked: explain where unlocking happens; do NOT close the
+          // picker, do NOT spawn, and above all do NOT unlock.
+          try{ showToast('\uD83D\uDD12 '+z.name+' is locked \u2014 unlock it in Settings \u2192 Advanced Properties.'); }catch(e){}
+          return;
+        }
         document.getElementById('zonepick').classList.remove('show');
-        try{ if (window.ZONEUNLOCK) ZONEUNLOCK.unlockZone(z.id); }catch(e){}
         var cx=(z.xMin+z.xMax)/2, cz=(z.zMin+z.zMax)/2;
         try{ Report.note('newgame-zone',{zone:z.id}); }catch(e){}
         startNewGame(cx, cz);
@@ -9655,9 +9865,11 @@ var fullMapOpen=false;
    drag-to-pan, tap or X to close. Player arrow stays visible (edge-clamped). */
 var fmView={cx:4000,cz:6000,sc:0.05,scFit:0.05,rot:0};  // v0.6: rot = two-finger map rotation (radians)
 function fmFitScale(W,H){
-  var xs=BORDER.map(function(p){return p.x;}), zs=BORDER.map(function(p){return p.z;});
-  var x0=Math.min.apply(0,xs)-200, x1=Math.max.apply(0,xs)+200;
-  var z0=Math.min.apply(0,zs)-200, z1=Math.max.apply(0,zs)+200;
+  // STEP2 stretch (Joshua 2026-10-16): fit the STAGE rect, not the old
+  // BORDER polygon, so the full map can zoom out over all seven zones.
+  // BORDER itself is unchanged — only this fit span moved.
+  var x0=STAGE_X0-200, x1=STAGE_X1+200;
+  var z0=STAGE_Z0-200, z1=STAGE_Z1+200;
   return Math.min(W/(x1-x0), H/(z1-z0))*0.94;
 }
 function openFullMap(){
@@ -10010,9 +10222,9 @@ function updatePlayer(dt){
     }
     player.speed=spd;
   } else player.speed=0;
-  // border clamp
-  player.x=Math.max(60,Math.min(WX-60,player.x));
-  player.z=Math.max(60,Math.min(WZ-60,player.z));
+  // STEP2: outer wall = stage edge via clampToStage (was the old core
+  // rect 60..WX-60). Locked-zone walls are zoneunlock's per-frame job.
+  clampToStage(player);
   resolveCollision(player, 0.5);
   /* v1.20 PLAYER-NPC COLLISION (Joshua 2026-10-09): the player cannot walk
      through NPCs. Push the player out of NPC body space (player r~0.5 +
@@ -10269,8 +10481,8 @@ function updateCar(dt){
     car.speed*=0.35;           // impact absorbs momentum
   }
   car.x=tmp.x; car.z=tmp.z;
-  car.x=Math.max(60,Math.min(WX-60,car.x));
-  car.z=Math.max(60,Math.min(WZ-60,car.z));
+  // STEP2: same stage-edge clamp as the player (was the old core rect).
+  clampToStage(car);
   // v1.6 VEHICLE-VEHICLE COLLISION: the driven van can't pass through other
   // cars. Oriented-box push-out against every other non-sunk car (same
   // approach as the v1.4 character-vs-van fix). Hard hits damage + slow.
@@ -11333,10 +11545,10 @@ function simTick(dt){
   updateSmoke(dt);
   updateStreetName(dt);
   drawMinimap(dt);
-  // v1.15 ZONE UNLOCK + CULLING (Joshua 2026-10-10): track player for zone
-  // exploration, enforce locked-zone boundaries, update culling state.
-  // Expert #25 (2026-10-11): per-frame invisible wall runs BEFORE the throttled
-  // tracker — snaps player/car back if they entered a locked zone this frame.
+  // STEP2 ZONE WALLS + CULLING (Joshua 2026-10-16): the per-frame union
+  // wall (blockLockedMovement) runs BEFORE the throttled 2Hz tracker
+  // (trackPlayer, zone-crossing duty only) — the wall resolves movement
+  // against the unlocked-zone union with an axis slide, never a snap-back.
   try{ if(window.ZONEUNLOCK&&window.ZONEUNLOCK.blockLockedMovement) window.ZONEUNLOCK.blockLockedMovement(); }catch(e){}
   try{ if(window.ZONEUNLOCK) window.ZONEUNLOCK.trackPlayer(dt); }catch(e){}
   try{ if(window.SATVIEW) window.SATVIEW.update(dt); }catch(e){}  // v1.16 SATELLITE VIEW per-frame camera/labels

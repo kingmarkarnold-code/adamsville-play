@@ -1,134 +1,138 @@
 /* ============================================================================
    FILE: zoneunlock.js — "Surviving Adamsville" MAP ZONES + DISTANCE CULLING
    ----------------------------------------------------------------------------
-   JOSHUA'S DIRECTIVE (2026-10-10):
-   Implement BOTH:
-   1. GTA/Saints Row-style map unlocking — full map not available until the
-      player explores. Player starts with ONLY Adamsville unlocked.
-   2. Distance-based culling — only render/simulate what's near the player,
-      for massive performance wins on low-end phones (TCL froze with full
-      map + 5x crews).
+   JOSHUA'S SPEC (2026-10-16, STEP 2 — replaces the original 2026-10-10
+   design in full):
 
-   PART 1 — ZONE UNLOCKING:
-   - Map divided into zones tiled around Joshua's real Adamsville
-     boundaries (approved 2026-10-10; extended north to map edge 2026-10-10).
-   - Adamsville home base zone (START, unlocked):
-       North: map edge (z=-200) — extended north 2026-10-10 per Joshua
-       South: Cascade Road (z=4218)
-       West:  Fulton Industrial Blvd, inclusive (x=2147)
-       East:  Hamilton E. Holmes Dr + 1/4 game-mile (x=5398)
-     Contains home base 535 Dollar Mill Rd (3130, 3705).
-     NOTE (2026-10-10): an earlier draft listed the south edge as z=395,
-     but Cascade Rd SW sits at z[4087,4350] in roads.js — z=395 would have
-     placed 535 OUTSIDE its own home zone. Corrected to z=4218.
-   - Mableton zone (added 2026-10-10 per Joshua, named by him): x[-200,2147],
-     z[-200,4218] — west of Fulton Industrial, southern border even with
-     Cascade, extended north to the map edge.
-   - Exploration unlocks adjacent zones: when 40% of an unlocked zone's
-     coarse grid cells have been visited, all touching zones unlock.
-   - Locked zones: grayed out on minimap, invisible walls block entry,
-     "Unlock by exploring [zone]" message on attempt.
-   - Unlock state persists in localStorage['sa_zoneunlock_v1'].
+   PART 1 — ZONE UNLOCKING (password + union walls):
+   - The 7 converted zones tile the stage rect with no gaps (bounds below
+     are the EXACT converted zone.json bounds).
+   - Zones unlock ONLY by password, entered in
+     Settings → Advanced Properties:
+       * per-zone password 5464 unlocks one tapped locked zone,
+       * Unlock All password 092020 unlocks every zone at once.
+   - In the future, completing a level's missions (Saints Row style) will
+     unlock its zone by calling the SAME entry point:
+         ZoneUnlock.unlock(id, 'mission')
+     There is deliberately no other unlock path.
+   - Unlock state persists in localStorage ONLY
+     (key 'sa.zones.unlocked.v1'). Adamsville (home base) is ALWAYS
+     unlocked and can never be re-locked.
+   - Walls gate the PLAYER only (on foot and in the player's car). NPCs
+     and traffic ignore the walls completely — nothing in this file ever
+     moves or blocks an NPC/vehicle that is not the player's.
+   - The playable area is a UNION: the stage rect shrunk by EDGE_MARGIN
+     (the outer wall sits at the drawn ground's edge minus the margin),
+     intersected with the union of the UNLOCKED zone rects. Movement
+     resolves against that union with an axis slide, so the player hugs
+     a locked zone's edge instead of teleporting or sticking.
 
-   PART 2 — DISTANCE CULLING:
-   - CULL_DIST (default 800 units): objects beyond this from the player get
-     AI paused and meshes hidden.
+   PART 2 — DISTANCE CULLING (unchanged from the original design):
+   - CULL_DIST (default 800 units): objects beyond this from the player
+     get AI paused and meshes hidden.
    - Applies to: NPCs, bird drones, vehicles, crew patrol units.
    - Static baked geometry (roads, buildings) is NOT culled per-object
      (it's merged into giant meshes) — the win comes from pausing AI and
      hiding dynamic objects.
    - Chunk grid: world divided into 400x400 cells for efficient queries.
-   - Minimap is NOT culled — shows full unlocked area.
+   - Minimap is NOT culled — locked zones draw as dark overlays instead.
 
-   PUBLIC API (window.ZONEUNLOCK):
-     zones, unlocked (Set of zone ids),
-     zoneAt(x,z), isUnlocked(zoneId), isLockedZone(x,z),
-     unlockZone(id), explorationPct(zoneId),
-     shouldCull(x,z) — true if beyond cull distance from player,
-     inActiveRange(x,z) — false if culled,
-     CULL_DIST, setCullDist(d),
-     log (activity array)
+   PUBLIC APIs:
+     window.ZoneUnlock — the STEP 2 API (passwords, isPlayable,
+       resolveMove, unlock / unlockAll, stageRect, ...).
+     window.ZONEUNLOCK — compatibility facade for existing callers
+       (satellite_view.js reads .zones/.isUnlocked; index.html calls
+       .trackPlayer/.blockLockedMovement/.drawZoneOverlay). Both names
+       share ONE state object — see the facade comment near the bottom.
 
-   STANDALONE MODULE. Include AFTER index.html core in index.html:
-       <script src="zoneunlock.js"></script>
-   All hooks are guarded — game works normally if this module is missing.
+   STANDALONE MODULE. Loaded deferred by index.html like the other late
+   systems. All hooks are guarded — the game works if this file is
+   missing (index.html falls back to the plain stage-edge clamp).
    ============================================================================ */
 (function(){
 'use strict';
-if (window.ZONEUNLOCK) return;  // single instance guard
+if (window.ZONEUNLOCK) return;  // single-instance guard (kept from v1)
 
 /* ---------------- zone definitions ----------------
-   Map bounds: x:[-200,8200], z:[-200,12200]
-   Zones tiled around Joshua's real Adamsville boundaries (approved
-   2026-10-10, extended north to map edge 2026-10-10). Grid lines run
-   through x=2147, x=5398, z=2202, z=4218 so zones tile with no gaps
-   and no overlaps, and edge-adjacency detection works exactly.
-   Adamsville (start) contains home base 535 Dollar Mill Rd (1953, 6813). // RESCALED 2026-10-10 */
+   The EXACT converted zone.json bounds (STEP 2). Together they tile the
+   stage rect STAGE_X0..X1 / STAGE_Z0..Z1 with no gaps and no overlaps.
+   Order is the spec order: home base first, then west/north row, then
+   the southern row. `start:true` marks Adamsville as the home base. */
 var ZONES=[
-  // Adamsville band — extends north to the map edge (Joshua 2026-10-10)
-  // SCALE (expert #25 fix, 2026-10-11): Adamsville was rescaled to true 1:1
-  // (scale 2.833) but other zones remain at scale 1.0. Zones at different
-  // scales use incompatible coordinate systems and cannot be mixed in one
-  // map. The zone system is now scale-aware: only zones matching the
-  // currently-loaded map's scale are considered for lock enforcement,
-  // minimap display, and the zone picker. This keeps the UI honest —
-  // it no longer shows "locked" zones that don't exist in the current map.
-  {id:'mableton',    name:'Mableton',      xMin:-200, xMax:2147, zMin:-200, zMax:4218, scale:1.0},
-  {id:'adamsville',name:'Adamsville',   xMin:-832, xMax:8377, zMin:-4249, zMax:8267, start:true, scale:2.833},  // RESCALED 2026-10-10: true 1:1 (was x[2147,5398] z[-200,4218])
-  {id:'downtown',  name:'Downtown',     xMin:5398, xMax:8200, zMin:-200, zMax:2202, scale:1.0},
-  {id:'eastatlanta',name:'East Atlanta',xMin:5398, xMax:8200, zMin:2202, zMax:4218, scale:1.0},
-  // Row 2 (south of Adamsville) — REVERTED 2026-10-10: Joshua asked to undo
-  // the 70/30 horizontal split; these three zones run Cascade to the
-  // south map edge again (z 4218 -> 12200). Renamed 2026-10-10 per Joshua:
-  // Union City, South Fulton, Riverdale. Boundaries to be readjusted later.
-  {id:'unioncity',  name:'Union City',    xMin:-200, xMax:2147, zMin:4218, zMax:12200, scale:1.0},
-  {id:'southfulton',name:'South Fulton',   xMin:2147, xMax:5398, zMin:4218, zMax:12200, scale:1.0},
-  {id:'riverdale',  name:'Riverdale',     xMin:5398, xMax:8200, zMin:4218, zMax:12200, scale:1.0},
+  {id:'adamsville', name:'Adamsville',   xMin:-832.1294014084006,  xMax:8377.129401408598,  zMin:-4248.536971831284, zMax:8266.53697183079,  start:true},
+  {id:'mableton',   name:'Mableton',     xMin:-7480.585387323972,  xMax:-832.1294014084006, zMin:-4248.536971831284, zMax:8266.53697183079},
+  {id:'downtown',   name:'Downtown',     xMin:8377.129401408598,   xMax:16314.485035211088, zMin:-4248.536971831284, zMax:2555.720070422735},
+  {id:'eastatlanta',name:'East Atlanta', xMin:8377.129401408598,   xMax:16314.485035211088, zMin:2555.720070422735,  zMax:8266.53697183079},
+  {id:'unioncity',  name:'Union City',   xMin:-7480.585387323972,  xMax:-832.1294014084006, zMin:8266.53697183079,   zMax:30877.519366197153},
+  {id:'southfulton',name:'South Fulton', xMin:-832.1294014084006,  xMax:8377.129401408598,  zMin:8266.53697183079,   zMax:30877.519366197153},
+  {id:'riverdale',  name:'Riverdale',    xMin:8377.129401408598,   xMax:16314.485035211088, zMin:8266.53697183079,   zMax:30877.519366197153}
 ];
 
-/* ---------------- scale awareness (expert #25, 2026-10-11) ----------------
-   Returns the scale of the currently-loaded map. Adamsville's zone files
-   were rescaled to true 1:1 (scale ~2.833); all other zones remain at 1.0.
-   Only zones matching the current map's scale are valid for lock
-   enforcement and UI display — mixing scales would compare coordinates
-   from incompatible systems and the locks could never trigger correctly. */
-function getCurrentScale(){
-  try{
-    // Prefer ZONELOADER's current zone lookup
-    if(typeof ZONELOADER!=='undefined' && ZONELOADER.currentZone){
-      var cz=ZONELOADER.currentZone;
-      for(var i=0;i<ZONES.length;i++){
-        if(ZONES[i].id===cz && ZONES[i].scale) return ZONES[i].scale;
-      }
-    }
-  }catch(e){}
-  // Default: Adamsville rescaled map (the map Joshua actually plays)
-  return 2.833;
-}
-/* Zones compatible with the currently-loaded map (same scale, within tolerance) */
-function compatibleZones(){
-  var s=getCurrentScale(), out=[];
-  for(var i=0;i<ZONES.length;i++){
-    var zsc=ZONES[i].scale||1.0;
-    if(Math.abs(zsc-s)<0.01) out.push(ZONES[i]);
-  }
-  return out;
-}
+/* ---------------- passwords (Joshua's spec, 2026-10-16) ----------------
+   These literals live ONLY in this file. index.html never hard-codes
+   them — the Settings UI calls tryUnlockWithPassword /
+   tryUnlockAllWithPassword and this module does the comparison.
+   ZONE_PASSWORD unlocks ONE zone; UNLOCK_ALL_PASSWORD unlocks all.
+   The per-zone password must NOT work for Unlock All (and vice versa
+   the two are simply different strings, compared exactly). */
+var ZONE_PASSWORD='5464';
+var UNLOCK_ALL_PASSWORD='092020';
 
-/* ---------------- persistence ---------------- */
-var LS_KEY='sa_zoneunlock_v1';
+/* ---------------- outer wall margin ----------------
+   EDGE_MARGIN (units): the outer wall sits this far INSIDE the drawn
+   ground's edge (the stage rect), so the player/car stop just before
+   the visible edge of the world. Confirmed by Joshua 2026-10-16.
+   index.html's clampToStage() reads this same value via the facade. */
+var EDGE_MARGIN=60;
+
+/* ---------------- persistence (localStorage ONLY) ----------------
+   Saved shape: {v:1, unlocked:[zoneId, ...], cullDist:<number>}.
+   Adamsville is forced unlocked on every load, whatever the save says,
+   so a corrupt or hand-edited save can never lock the home base. */
+var LS_KEY='sa.zones.unlocked.v1';
 var state={
   unlocked:{adamsville:true},  // zone id -> true
-  visited:{},                   // "cx,cz" cell key -> true (100-unit cells)
-  cullDist:800,                 // distance culling radius (units)
+  cullDist:800                 // distance culling radius (units)
 };
+function zoneById(id){
+  // Linear scan is fine: only 7 zones, called at UI/throttle rates
+  // (and once per frame by the wall — 7 comparisons is negligible).
+  for(var i=0;i<ZONES.length;i++) if(ZONES[i].id===id) return ZONES[i];
+  return null;
+}
 try{
   var raw=localStorage.getItem(LS_KEY);
-  if(raw){ var s=JSON.parse(raw); if(s&&s.unlocked) state.unlocked=s.unlocked; if(s&&s.visited) state.visited=s.visited; if(s&&s.cullDist) state.cullDist=s.cullDist; }
+  if(raw){
+    var saved=JSON.parse(raw);
+    if(saved){
+      // Current shape stores unlocked as an array of zone ids.
+      if(Object.prototype.toString.call(saved.unlocked)==='[object Array]'){
+        for(var li=0;li<saved.unlocked.length;li++){
+          if(zoneById(saved.unlocked[li])) state.unlocked[saved.unlocked[li]]=true;
+        }
+      }
+      if(typeof saved.cullDist==='number' && isFinite(saved.cullDist)) state.cullDist=saved.cullDist;
+    }
+  }
 }catch(e){}
-function save(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(state)); }catch(e){} }
+/* Adamsville is ALWAYS unlocked — enforced after any load, forever. */
+state.unlocked.adamsville=true;
+function unlockedIdsList(){
+  // Ids of every currently-unlocked zone, in ZONES (spec) order.
+  var out=[];
+  for(var i=0;i<ZONES.length;i++) if(isUnlocked(ZONES[i].id)) out.push(ZONES[i].id);
+  return out;
+}
+function save(){
+  try{
+    localStorage.setItem(LS_KEY, JSON.stringify({
+      v:1, unlocked:unlockedIdsList(), cullDist:state.cullDist
+    }));
+  }catch(e){}
+}
 
-/* ---------------- activity log ---------------- */
+/* ---------------- activity log ----------------
+   Small ring buffer surfaced as ZONEUNLOCK.log for diagnostics. */
 var activityLog=[];
 function dlog(msg){
   var entry='['+new Date().toLocaleTimeString()+'] '+msg;
@@ -136,241 +140,288 @@ function dlog(msg){
   if(activityLog.length>50) activityLog.shift();
 }
 
-/* ---------------- zone helpers ---------------- */
+/* ---------------- toast helper ----------------
+   Same notification pattern the old module used: the game's showToast
+   when the main script provides it, HR.toast as fallback, silence if
+   neither exists (headless/diagnostic contexts must not throw). */
+function notify(msg){
+  try{
+    if(typeof showToast==='function') showToast(msg);
+    else if(window.HR && HR.toast) HR.toast(msg);
+  }catch(e){}
+}
+
+/* ---------------- zone geometry helpers ---------------- */
 function zoneAt(x,z){
-  // Expert #25: only check zones compatible with the current map's scale.
-  // In the rescaled Adamsville map, the old-scale zones' bounds are
-  // meaningless (different coordinate system) — checking them would
-  // return phantom "locked" zones the player can never actually enter.
-  var czones=compatibleZones();
-  for(var i=0;i<czones.length;i++){
-    var zn=czones[i];
+  // Half-open test [xMin,xMax) x [zMin,zMax): because the zone rects
+  // tile exactly, every interior point belongs to exactly ONE zone —
+  // a point on a shared edge belongs to the zone east/south of it.
+  for(var i=0;i<ZONES.length;i++){
+    var zn=ZONES[i];
     if(x>=zn.xMin && x<zn.xMax && z>=zn.zMin && z<zn.zMax) return zn;
   }
   return null;
 }
-function isUnlocked(zoneId){ return !!state.unlocked[zoneId]; }
-function isLockedZone(x,z){
-  var zn=zoneAt(x,z);
-  return zn ? !isUnlocked(zn.id) : false;  // outside all zones = treat as locked
+function isUnlocked(zoneId){
+  // Adamsville (home base) is always unlocked, even if state is reset
+  // or a save somehow lists it as locked.
+  if(zoneId==='adamsville') return true;
+  return !!state.unlocked[zoneId];
 }
-// Zones touching the given zone (share an edge) — same map scale only
-// (expert #25: adjacency across incompatible scales is meaningless)
-function adjacentZones(zoneId){
-  var czones=compatibleZones();
-  var zn=null, i;
-  for(i=0;i<czones.length;i++) if(czones[i].id===zoneId) zn=czones[i];
-  if(!zn) return [];
-  var out=[];
-  for(i=0;i<czones.length;i++){
-    var o=czones[i];
-    if(o.id===zoneId) continue;
-    // share an edge: x-ranges overlap AND z-edges touch, or vice versa
-    var xOverlap = o.xMin < zn.xMax && o.xMax > zn.xMin;
-    var zOverlap = o.zMin < zn.zMax && o.zMax > zn.zMin;
-    var xTouch = (o.xMin===zn.xMax||o.xMax===zn.xMin) && zOverlap;
-    var zTouch = (o.zMin===zn.zMax||o.zMax===zn.zMin) && xOverlap;
-    if(xTouch||zTouch) out.push(o);
+function pointInZoneClosed(zn,x,z){
+  // Closed-rect test (edges included). Used for the playable UNION:
+  // a point exactly on the seam between a locked and an unlocked zone
+  // counts as inside the unlocked one, so the union has no hairline gap.
+  return x>=zn.xMin && x<=zn.xMax && z>=zn.zMin && z<=zn.zMax;
+}
+function stageRect(){
+  // The stage rect: prefer the live STAGE_* globals index.html defines
+  // (single source of truth for the drawn ground); fall back to the
+  // union of ZONES, which tiles the same rect by construction.
+  try{
+    if(typeof window.STAGE_X0==='number' && isFinite(window.STAGE_X0) &&
+       typeof window.STAGE_X1==='number' && isFinite(window.STAGE_X1) &&
+       typeof window.STAGE_Z0==='number' && isFinite(window.STAGE_Z0) &&
+       typeof window.STAGE_Z1==='number' && isFinite(window.STAGE_Z1)){
+      return {xMin:window.STAGE_X0, xMax:window.STAGE_X1,
+              zMin:window.STAGE_Z0, zMax:window.STAGE_Z1};
+    }
+  }catch(e){}
+  var r={xMin:Infinity, xMax:-Infinity, zMin:Infinity, zMax:-Infinity};
+  for(var i=0;i<ZONES.length;i++){
+    var zn=ZONES[i];
+    if(zn.xMin<r.xMin) r.xMin=zn.xMin;
+    if(zn.xMax>r.xMax) r.xMax=zn.xMax;
+    if(zn.zMin<r.zMin) r.zMin=zn.zMin;
+    if(zn.zMax>r.zMax) r.zMax=zn.zMax;
   }
-  return out;
+  return r;
+}
+function isPlayable(x,z){
+  // Playable = inside the stage rect shrunk by EDGE_MARGIN (the outer
+  // wall) AND inside at least one UNLOCKED zone rect (the union walls).
+  // This is the ONLY movement rule for the player/car — NPCs and
+  // traffic never call it.
+  if(!isFinite(x)||!isFinite(z)) return false;
+  var r=stageRect();
+  if(x<r.xMin+EDGE_MARGIN || x>r.xMax-EDGE_MARGIN ||
+     z<r.zMin+EDGE_MARGIN || z>r.zMax-EDGE_MARGIN) return false;
+  for(var i=0;i<ZONES.length;i++){
+    var zn=ZONES[i];
+    if(isUnlocked(zn.id) && pointInZoneClosed(zn,x,z)) return true;
+  }
+  return false;
+}
+function lockedZoneAt(x,z){
+  // The locked zone containing (x,z), or null when the point is not in
+  // a locked zone (unlocked zone, world edge, or outside every zone).
+  // Used only to NAME the blocker in the wall toast / resolveMove.
+  var zn=zoneAt(x,z);
+  if(zn) return isUnlocked(zn.id) ? null : zn;
+  // zoneAt is half-open, so points exactly on the outer max edges miss
+  // every zone; retry with the closed test before giving up.
+  for(var i=0;i<ZONES.length;i++){
+    if(pointInZoneClosed(ZONES[i],x,z) && !isUnlocked(ZONES[i].id)) return ZONES[i];
+  }
+  return null;
 }
 
-/* ---------------- exploration tracking ----------------
-   Coarse 200-unit grid cells. Each zone's total cells computed from its
-   rect. When 40% of an unlocked zone is visited, unlock its neighbors. */
-var CELL=200;
-function cellKey(x,z){ return Math.floor(x/CELL)+','+Math.floor(z/CELL); }
-function zoneCellCount(zn){
-  var w=Math.ceil((zn.xMax-zn.xMin)/CELL), h=Math.ceil((zn.zMax-zn.zMin)/CELL);
-  return w*h;
-}
-function explorationPct(zoneId){
-  var czones=compatibleZones();
-  var zn=null;
-  for(var i=0;i<czones.length;i++) if(czones[i].id===zoneId) zn=czones[i];
-  if(!zn) return 0;
-  var total=zoneCellCount(zn), visited=0;
-  // count visited cells in this zone (iterate state.visited keys)
-  for(var k in state.visited){
-    var parts=k.split(','), cx=parseInt(parts[0],10)*CELL, cz=parseInt(parts[1],10)*CELL;
-    if(cx>=zn.xMin&&cx<zn.xMax&&cz>=zn.zMin&&cz<zn.zMax) visited++;
-  }
-  return total>0 ? visited/total : 0;
-}
-function unlockZone(id){
-  if(state.unlocked[id]) return false;
+/* ---------------- unlocking ----------------
+   unlock() is THE unlock entry point: the password UI calls it via
+   tryUnlockWithPassword, and future mission completion (Saints Row
+   style) will call unlock(id, 'mission') directly. */
+function unlock(id, source){
+  var zn=zoneById(id);
+  if(!zn) return false;              // unknown zone id: nothing to do
+  if(isUnlocked(id)) return false;   // already unlocked: not "newly"
   state.unlocked[id]=true;
   save();
-  var czones=compatibleZones();
-  var zn=null;
-  for(var i=0;i<czones.length;i++) if(czones[i].id===id) zn=czones[i];
-  // fall back to full list for the name if not in this map's scale
-  if(!zn) for(var j=0;j<ZONES.length;j++) if(ZONES[j].id===id) zn=ZONES[j];
-  dlog('Zone unlocked: '+(zn?zn.name:id));
-  // notify player via toast if available
-  try{
-    if(typeof showToast==='function') showToast('🗺️ New area unlocked: '+(zn?zn.name:id));
-    else if(window.HR&&HR.toast) HR.toast('New area unlocked: '+(zn?zn.name:id));
-  }catch(e){}
+  dlog('Zone unlocked: '+zn.name+' (via '+(source||'api')+')');
+  notify('🗺️ Zone unlocked: '+zn.name);
   return true;
 }
-function checkUnlocks(){
-  // for each unlocked zone, if 40% explored, unlock all adjacent
-  var toUnlock=[];
-  for(var id in state.unlocked){
-    if(explorationPct(id)>=0.40){
-      var adj=adjacentZones(id);
-      for(var i=0;i<adj.length;i++){
-        if(!state.unlocked[adj[i].id]) toUnlock.push(adj[i].id);
-      }
-    }
-  }
-  for(var j=0;j<toUnlock.length;j++) unlockZone(toUnlock[j]);
+/* Quiet per-zone unlock for unlockAll: flips state WITHOUT saving or
+   toasting, so Unlock All produces exactly one save + one toast. */
+function unlockQuiet(id){
+  if(!zoneById(id)) return false;
+  if(isUnlocked(id)) return false;
+  state.unlocked[id]=true;
+  return true;
+}
+function tryUnlockWithPassword(id, pw){
+  // Exact string comparison against the per-zone password. A wrong
+  // password changes NOTHING (no state write, no toast) — returns false.
+  if(pw===null || pw===undefined || String(pw)!==ZONE_PASSWORD) return false;
+  unlock(id, 'password');
+  return true;  // password was right, even if the zone was already open
+}
+function unlockAll(source){
+  // Unlocks EVERY zone quietly, then saves once and fires ONE toast.
+  // Returns how many zones were newly unlocked by this call.
+  var newly=0;
+  for(var i=0;i<ZONES.length;i++) if(unlockQuiet(ZONES[i].id)) newly++;
+  save();
+  dlog('All zones unlocked (via '+(source||'api')+') — '+newly+' new');
+  notify('🗺️ All zones unlocked!');
+  return newly;
+}
+function tryUnlockAllWithPassword(pw){
+  // Exact string comparison against the UNLOCK ALL password ONLY.
+  // The per-zone password ('5464') must NOT work here.
+  if(pw===null || pw===undefined || String(pw)!==UNLOCK_ALL_PASSWORD) return false;
+  unlockAll('password');
+  return true;  // password was right, even if everything was already open
+}
+function resetUnlocks(){
+  // Back to a fresh game: only Adamsville unlocked. The cull distance
+  // is a display/performance preference, NOT progress — it is kept.
+  state.unlocked={adamsville:true};
+  save();
+  dlog('Zone unlocks reset — only Adamsville unlocked (cull distance kept)');
 }
 
-/* ---------------- player position tracking ----------------
-   Called each frame (throttled) from the game loop. Tracks visited cells
-   and enforces locked-zone boundaries. */
-var trackT=0;
-var lastBlockMsg=0;
-function trackPlayer(dt){
-  trackT-=dt; if(trackT>0) return; trackT=0.5;  // 2Hz
-  var px, pz;
+/* ---------------- movement resolution (PURE) ----------------
+   resolveMove(fromX,fromZ,toX,toZ) -> {x, z, blocked, blockedZone}
+   Pure: reads unlock state, changes nothing, moves nobody. Callers
+   (blockLockedMovement) apply the result. Rules:
+   - Destination playable        -> go there, blocked:false.
+   - Destination not playable    -> try sliding along X only
+     (toX,fromZ), then along Z only (fromX,toZ); the first playable
+     slide wins, blocked:true (the player hugs the wall).
+   - Neither slide playable      -> stay at the from-point, blocked:true.
+   blockedZone names the locked zone containing the DESTINATION
+   (or null when the world edge / a non-zone reason did the blocking),
+   so the UI can say WHICH zone is locked. */
+function resolveMove(fromX, fromZ, toX, toZ){
+  if(isPlayable(toX, toZ)){
+    return {x:toX, z:toZ, blocked:false, blockedZone:null};
+  }
+  var bz=lockedZoneAt(toX, toZ);
+  if(isPlayable(toX, fromZ)){
+    return {x:toX, z:fromZ, blocked:true, blockedZone:bz};
+  }
+  if(isPlayable(fromX, toZ)){
+    return {x:fromX, z:toZ, blocked:true, blockedZone:bz};
+  }
+  return {x:fromX, z:fromZ, blocked:true, blockedZone:bz};
+}
+
+/* ---------------- player position (guarded, old pattern) ----------------
+   The main script's `car`/`player` globals may not exist yet (or this
+   module may run headless), so every read is typeof-guarded and
+   try/caught exactly like the original module did. Returns
+   {x, z, driving} or null when no position is available. */
+function playerPos(){
   try{
-    if(typeof car!=='undefined'&&car&&car.driving){ px=car.x; pz=car.z; }
-    else if(typeof player!=='undefined'&&player){ px=player.x; pz=player.z; }
-    else return;
-  }catch(e){ return; }
-  if(!isFinite(px)||!isFinite(pz)) return;
-
-  // mark visited
-  var k=cellKey(px,pz);
-  if(!state.visited[k]){ state.visited[k]=true; save(); }
-
-  // check for unlocks (throttled by save frequency)
-  checkUnlocks();
-
-  // boundary enforcement: if player is in a locked zone, push them back
-  var zn=zoneAt(px,pz);
-  if(zn && !isUnlocked(zn.id)){
-    // find nearest unlocked zone boundary and push player back
-    var pushed=pushBackToUnlocked(px,pz);
-    if(pushed && Date.now()-lastBlockMsg>5000){
-      lastBlockMsg=Date.now();
-      try{
-        if(typeof showToast==='function') showToast('🔒 '+zn.name+' is locked — explore '+getUnlockHint(zn)+' to unlock it');
-      }catch(e){}
-      dlog('Blocked entry to locked zone: '+zn.name);
+    if(typeof car!=='undefined' && car && car.driving){
+      return {x:car.x, z:car.z, driving:true};
     }
-    return;  // Don't check zone crossing while being pushed back
-  }
-
-  // ZONE-SEPARATED MAPS (2026-10-10, Joshua's directive):
-  // Check if player has crossed into a different zone's map.
-  // If so, trigger a zone transition (page reload with new zone).
-  try {
-    if (typeof ZONELOADER !== 'undefined' && ZONELOADER.checkZoneCrossing){
-      var targetZone = ZONELOADER.checkZoneCrossing(px, pz);
-      if (targetZone){
-        dlog('Zone crossing detected: ' + ZONELOADER.currentZone + ' -> ' + targetZone);
-        // Only transition if target zone is unlocked
-        if (isUnlocked(targetZone)){
-          ZONELOADER.transitionTo(targetZone);
-        } else {
-          // Target is locked — push back instead
-          var pb = pushBackToUnlocked(px, pz);
-          if (pb && Date.now()-lastBlockMsg>5000){
-            lastBlockMsg=Date.now();
-            try{
-              if(typeof showToast==='function'){
-                var tzn=null;
-                for(var zi=0;zi<ZONES.length;zi++) if(ZONES[zi].id===targetZone) tzn=ZONES[zi];
-                showToast('🔒 '+(tzn?tzn.name:targetZone)+' is locked — explore to unlock it');
-              }
-            }catch(e){}
-          }
-        }
-      }
+    if(typeof player!=='undefined' && player){
+      return {x:player.x, z:player.z, driving:false};
     }
-  } catch(e){}
+  }catch(e){}
+  return null;
 }
-function getUnlockHint(lockedZone){
-  // find an unlocked adjacent zone to suggest
-  var adj=adjacentZones(lockedZone.id);
-  for(var i=0;i<adj.length;i++) if(isUnlocked(adj[i].id)) return adj[i].name;
-  return 'Adamsville';
+/* Adamsville spawn fallback for seeding the wall's last-good point:
+   the HOME global (535 Dollar Mill Rd) when the main script defined
+   it, else the Adamsville rect centre (3772.5, 2009.0). Either way the
+   point sits inside the always-unlocked home zone, so the wall can
+   never seed itself somewhere it would immediately reject. */
+function spawnFallback(){
+  try{
+    if(typeof HOME!=='undefined' && HOME && isFinite(HOME.x) && isFinite(HOME.z)){
+      return {x:HOME.x, z:HOME.z};
+    }
+  }catch(e){}
+  var a=zoneById('adamsville');
+  if(a) return {x:(a.xMin+a.xMax)/2, z:(a.zMin+a.zMax)/2};
+  return {x:3772.5, z:2009.0};
 }
-/* ---------------- per-frame invisible wall (expert #25, 2026-10-11) ----------------
-   trackPlayer() runs at 2Hz which is too slow to stop fast movement —
-   a car can cross deep into a locked zone between ticks. This runs every
-   frame: it remembers the last position that was NOT in a locked zone,
-   and if the player/car is now inside a locked zone, it snaps them back
-   to that last-good position (an invisible wall). Call it every frame
-   AFTER movement updates, BEFORE render. Cheap: one zoneAt() lookup. */
+
+/* ---------------- per-frame union wall ----------------
+   blockLockedMovement() — index.html calls this EVERY frame after
+   movement updates. It remembers the last playable position
+   (lastGood) and resolves the current position against the union via
+   resolveMove: free inside unlocked ground, axis-slide along locked
+   edges, full stop at corners/outer wall. Only the PLAYER (or the car
+   the player is driving) is ever written back — NPCs/traffic are not
+   the player's car and are never touched here. */
 var _lastGoodX=null, _lastGoodZ=null, _lastGoodDriving=false;
 var _wallMsgT=0;
 function blockLockedMovement(){
-  var px, pz, driving=false;
-  try{
-    if(typeof car!=='undefined'&&car&&car.driving){ px=car.x; pz=car.z; driving=true; }
-    else if(typeof player!=='undefined'&&player){ px=player.x; pz=player.z; }
-    else return;
-  }catch(e){ return; }
+  var pos=playerPos();
+  if(!pos) return;
+  var px=pos.x, pz=pos.z, driving=pos.driving;
   if(!isFinite(px)||!isFinite(pz)) return;
-  var zn;
-  try{ zn=zoneAt(px,pz); }catch(e){ return; }
-  if(zn && !isUnlocked(zn.id)){
-    // Inside a locked zone: revert to last good position (invisible wall)
-    if(_lastGoodX!==null && isFinite(_lastGoodX)){
-      try{
-        if(driving && typeof car!=='undefined'&&car){ car.x=_lastGoodX; car.z=_lastGoodZ; }
-        else if(typeof player!=='undefined'&&player){
-          player.x=_lastGoodX; player.z=_lastGoodZ;
-          if(player.mesh) player.mesh.position.set(_lastGoodX, player.mesh.position.y, _lastGoodZ);
-        }
-      }catch(e){}
-    }
-    // Throttled feedback message
+  // Seed lastGood when there is none yet, or when the remembered point
+  // is somehow no longer playable (e.g. unlocks were reset mid-game):
+  // prefer the current position if IT is playable, else fall back to
+  // the Adamsville spawn so the player is recovered, never soft-locked.
+  if(_lastGoodX===null || !isPlayable(_lastGoodX, _lastGoodZ)){
+    if(isPlayable(px, pz)){ _lastGoodX=px; _lastGoodZ=pz; }
+    else { var fb=spawnFallback(); _lastGoodX=fb.x; _lastGoodZ=fb.z; }
+  }
+  // Resolve lastGood -> current against the union walls.
+  var res=resolveMove(_lastGoodX, _lastGoodZ, px, pz);
+  // Write the resolved position back only when the wall actually
+  // changed it (blocked or slid) — free movement is left untouched.
+  if(res.x!==px || res.z!==pz){
+    try{
+      if(driving && typeof car!=='undefined' && car){
+        car.x=res.x; car.z=res.z;  // car: x/z only (y is terrain-driven)
+      } else if(typeof player!=='undefined' && player){
+        player.x=res.x; player.z=res.z;
+        if(player.mesh) player.mesh.position.set(res.x, player.mesh.position.y, res.z);
+      }
+    }catch(e){}
+  }
+  // Name the blocker, throttled to one toast per 4 seconds, and only
+  // when a specific LOCKED ZONE did the blocking (the plain world edge
+  // stays silent — the border visual already explains it).
+  if(res.blocked && res.blockedZone){
     var now=Date.now();
     if(now-_wallMsgT>4000){
       _wallMsgT=now;
-      try{
-        if(typeof showToast==='function') showToast('🔒 '+zn.name+' is locked — explore '+getUnlockHint(zn)+' to unlock it');
-      }catch(e){}
-      dlog('Invisible wall blocked entry to: '+zn.name);
+      notify('🔒 ' + res.blockedZone.name + ' is locked — unlock it in Settings → Advanced Properties.');
+      dlog('Wall blocked entry to locked zone: '+res.blockedZone.name);
     }
-    return;
   }
-  // Position is fine (unlocked zone or outside all zones): remember it
-  _lastGoodX=px; _lastGoodZ=pz; _lastGoodDriving=driving;
+  // The resolved point is by construction playable: it becomes the new
+  // last-good position for the next frame.
+  _lastGoodX=res.x; _lastGoodZ=res.z; _lastGoodDriving=driving;
 }
-function pushBackToUnlocked(px,pz){
-  // Search outward from player for the nearest unlocked position.
-  // Simple approach: try the 4 cardinal directions at increasing distances.
-  var dirs=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,-1],[1,-1],[-1,1]];
-  for(var d=50; d<=600; d+=50){
-    for(var i=0;i<dirs.length;i++){
-      var nx=px+dirs[i][0]*d, nz=pz+dirs[i][1]*d;
-      var zn=zoneAt(nx,nz);
-      if(zn && isUnlocked(zn.id)){
-        // teleport player/car to this position
-        try{
-          if(typeof car!=='undefined'&&car&&car.driving){ car.x=nx; car.z=nz; }
-          else if(typeof player!=='undefined'&&player){
-            player.x=nx; player.z=nz;
-            if(player.mesh) player.mesh.position.set(nx, player.mesh.position.y, nz);
-          }
-        }catch(e){}
-        return true;
+
+/* ---------------- zone-crossing tracker (slim, 2Hz) ----------------
+   trackPlayer(dt) — index.html calls this every frame; internally it
+   runs at 2Hz and does ONE job: zone-crossing duty for the zone
+   loader. When the loader reports the player has crossed into an
+   UNLOCKED zone, hand over to ZONELOADER.transitionTo (which loads
+   that zone's map). A LOCKED target needs no action here at all —
+   the per-frame wall above already keeps the player out of it, so a
+   locked crossing can never actually be reached. */
+var trackT=0;
+function trackPlayer(dt){
+  trackT-=dt; if(trackT>0) return; trackT=0.5;  // 2Hz
+  var pos=playerPos();
+  if(!pos) return;
+  if(!isFinite(pos.x)||!isFinite(pos.z)) return;
+  try{
+    if(typeof ZONELOADER!=='undefined' && ZONELOADER &&
+       typeof ZONELOADER.checkZoneCrossing==='function'){
+      var target=ZONELOADER.checkZoneCrossing(pos.x, pos.z);
+      if(target && isUnlocked(target)){
+        dlog('Zone crossing: -> '+target+' (unlocked, transitioning)');
+        ZONELOADER.transitionTo(target);
       }
+      // Locked target: do nothing — the wall already stops the player.
     }
-  }
-  return false;
+  }catch(e){}
 }
 
 /* ---------------- DISTANCE CULLING ----------------
    CULL_DIST: objects beyond this distance from player get AI paused
-   and meshes hidden. Chunk grid for efficient spatial queries. */
+   and meshes hidden. Chunk grid for efficient spatial queries.
+   (Functionally identical to the original module's Part 2.) */
 var CHUNK=400;  // chunk size for spatial partitioning
 function shouldCull(x,z){
   var px, pz;
@@ -393,15 +444,13 @@ function setCullDist(d){
 
 /* ---------------- minimap zone overlay ----------------
    Called from drawMinimap (patched in index.html). Draws locked zones
-   as dark overlays. Expects the minimap's toMap function and context. */
+   as dark overlays. Expects the minimap's toMap function and context.
+   STEP 2: iterates ALL zones — every zone is a real, same-stage rect
+   now, so every locked zone honestly belongs on the minimap. */
 function drawZoneOverlay(mm, toMap, px, pz, range, R){
   try{
-    // Expert #25: only draw zones compatible with the current map's scale.
-    // Drawing old-scale "locked" zones on the rescaled Adamsville minimap
-    // was the lie — those rectangles don't correspond to anything real.
-    var czones=compatibleZones();
-    for(var i=0;i<czones.length;i++){
-      var zn=czones[i];
+    for(var i=0;i<ZONES.length;i++){
+      var zn=ZONES[i];
       if(isUnlocked(zn.id)) continue;
       // draw locked zone as semi-transparent dark rect
       // only if any part is in view
@@ -424,41 +473,62 @@ function drawZoneOverlay(mm, toMap, px, pz, range, R){
   }catch(e){}
 }
 
-/* ---------------- crew zone awareness ----------------
-   Crews assigned to locked zones should wait. This helper lets crew
-   systems check if their target is in an accessible zone. */
-function canOperateAt(x,z){
-  var zn=zoneAt(x,z);
-  if(!zn) return false;
-  return isUnlocked(zn.id);
-}
+/* ---------------- public API: ZoneUnlock (STEP 2) ----------------
+   The canonical API for new code: Settings → Advanced Properties, the
+   zone picker, save-load checks, and (in the future) mission rewards
+   all go through window.ZoneUnlock. */
+window.ZoneUnlock={
+  PASSWORD:ZONE_PASSWORD,
+  UNLOCK_ALL_PASSWORD:UNLOCK_ALL_PASSWORD,
+  EDGE_MARGIN:EDGE_MARGIN,
+  zones:ZONES,
+  zoneAt:zoneAt,
+  zoneById:zoneById,
+  isUnlocked:isUnlocked,
+  unlock:unlock,
+  unlockAll:unlockAll,
+  tryUnlockWithPassword:tryUnlockWithPassword,
+  tryUnlockAllWithPassword:tryUnlockAllWithPassword,
+  isPlayable:isPlayable,
+  resolveMove:resolveMove,
+  stageRect:stageRect,
+  reset:resetUnlocks,
+  get unlockedIds(){ return unlockedIdsList(); }
+};
 
-/* ---------------- public API ---------------- */
+/* ---------------- compatibility facade: ZONEUNLOCK ----------------
+   Why this exists: the all-caps ZONEUNLOCK name predates STEP 2 and
+   existing callers still use it — satellite_view.js reads
+   .zones/.isUnlocked, index.html calls .trackPlayer /
+   .blockLockedMovement / .drawZoneOverlay / .zones, and the crew
+   systems call .shouldCull. The facade forwards every one of those to
+   the SAME functions and the SAME state above, so old and new callers
+   can never disagree about what is unlocked. unlockZone() is kept as
+   a thin alias of unlock(id, 'legacy') for the same reason. */
 window.ZONEUNLOCK={
   zones:ZONES,
-  get unlocked(){ var out=[]; for(var id in state.unlocked) out.push(id); return out; },
+  /* EDGE_MARGIN + isPlayable are forwarded too: index.html's
+     clampToStage() reads ZONEUNLOCK.EDGE_MARGIN and loadSlot() checks
+     ZONEUNLOCK.isPlayable, so the facade must carry both. */
+  EDGE_MARGIN:EDGE_MARGIN,
+  isPlayable:isPlayable,
+  get unlocked(){ return unlockedIdsList(); },
   zoneAt:zoneAt,
   isUnlocked:isUnlocked,
-  isLockedZone:isLockedZone,
-  unlockZone:unlockZone,
-  explorationPct:explorationPct,
-  adjacentZones:adjacentZones,
-  compatibleZones:compatibleZones,  // expert #25: zones valid in this map
-  getCurrentScale:getCurrentScale,  // expert #25: current map's scale
+  unlockZone:function(id){ return unlock(id, 'legacy'); },
+  compatibleZones:function(){ return ZONES.slice(); },
   shouldCull:shouldCull,
   inActiveRange:inActiveRange,
-  canOperateAt:canOperateAt,
   get CULL_DIST(){ return state.cullDist; },
   setCullDist:setCullDist,
   trackPlayer:trackPlayer,
-  blockLockedMovement:blockLockedMovement,  // expert #25: per-frame invisible wall
+  blockLockedMovement:blockLockedMovement,
   drawZoneOverlay:drawZoneOverlay,
-  get log(){ return activityLog.slice(); },
-  // debug/admin
-  unlockAll:function(){ var cz=compatibleZones(); for(var i=0;i<cz.length;i++) state.unlocked[cz[i].id]=true; save(); dlog('All zones unlocked (admin)'); },
-  reset:function(){ state.unlocked={adamsville:true}; state.visited={}; save(); dlog('Zone progress reset'); },
+  unlockAll:function(){ return unlockAll('admin'); },
+  reset:resetUnlocks,
+  get log(){ return activityLog.slice(); }
 };
 
 /* ---------------- boot ---------------- */
-dlog('ZoneUnlock v1.1 online — '+Object.keys(state.unlocked).length+' zone(s) unlocked, cull dist '+state.cullDist);
+dlog('ZoneUnlock v2 online — '+unlockedIdsList().length+' zone(s) unlocked, cull dist '+state.cullDist);
 })();

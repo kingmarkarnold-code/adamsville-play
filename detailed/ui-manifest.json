@@ -8,8 +8,8 @@
     },
     {
       "name": "bird_drones.js",
-      "size": 13692,
-      "sha256": "d037c7031559698beab5ebc22568bff59f752b370694a95a624568b0e437bba5"
+      "size": 14596,
+      "sha256": "577c19abc97aaf2bc9c75adda52f1a9e8511bd76fb53350d10c98fca0066b59d"
     },
     {
       "name": "blob_shadows.js",
@@ -76,9 +76,9 @@
     },
     {
       "name": "helicopter_system.js",
-      "size": 34806,
-      "sha256": "4aae28261508500e892fc551c9b495eaf7c97d2d3811273abb86f324730fdee7",
-      "hash": "4aae28261508500e892fc551c9b495eaf7c97d2d3811273abb86f324730fdee7"
+      "size": 35674,
+      "sha256": "f24adfe67fab25e62f44ba05f93460997820c7c7d528334ed26ea7ccb0d8031c",
+      "hash": "f24adfe67fab25e62f44ba05f93460997820c7c7d528334ed26ea7ccb0d8031c"
     },
     {
       "name": "hotreload.js",
@@ -100,9 +100,9 @@
     },
     {
       "name": "index.html",
-      "size": 927244,
-      "sha256": "35ba15fd80de2e28c64cf94a600b9d32c42d5d2caf466ae432493d326b4c64a1",
-      "hash": "35ba15fd80de2e28c64cf94a600b9d32c42d5d2caf466ae432493d326b4c64a1"
+      "size": 938393,
+      "sha256": "c0935b4877baea054f130da08db409b24f5956a1dc5957c572059270965a8dcc",
+      "hash": "c0935b4877baea054f130da08db409b24f5956a1dc5957c572059270965a8dcc"
     },
     {
       "name": "infracrew_system.js",
@@ -142,9 +142,9 @@
     },
     {
       "name": "marta_system.js",
-      "size": 36283,
-      "sha256": "40406ad726262ed1c25cbcd694c66c30b7816c9f23fe1ce82a992875d9778093",
-      "hash": "40406ad726262ed1c25cbcd694c66c30b7816c9f23fe1ce82a992875d9778093",
+      "size": 36419,
+      "sha256": "f9947ad6b9fb563bb141b5ec05f08e9464b038694f8137307a952badf333cf5a",
+      "hash": "f9947ad6b9fb563bb141b5ec05f08e9464b038694f8137307a952badf333cf5a",
       "md5": "ffaf377120eee165b605225e4649621b"
     },
     {
@@ -348,9 +348,9 @@
     },
     {
       "name": "zoneunlock.js",
-      "size": 20237,
-      "sha256": "2248743d8873d7545feea2ba6366d028dabc102ef434fe0785f74068aedbcc2e",
-      "hash": "2248743d8873d7545feea2ba6366d028dabc102ef434fe0785f74068aedbcc2e"
+      "size": 23892,
+      "sha256": "1832bc66f3cfc9cf80d915de0191bea4123ac20bfea00097a77202d813b53af0",
+      "hash": "1832bc66f3cfc9cf80d915de0191bea4123ac20bfea00097a77202d813b53af0"
     },
     {
       "name": "toon_mats.js",
@@ -441,6 +441,6 @@
       "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/collision_material.js"
     }
   ],
-  "ui_version": "2026.10.16.193",
-  "version": "2026.10.16.193"
+  "ui_version": "2026.10.16.194",
+  "version": "2026.10.16.194"
 }

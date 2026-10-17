@@ -8,9 +8,11 @@
      find real problems from the map data, and report them to dispatch.
 
    WHAT THIS DOES:
-     - "EAGLE 1" (North sector, z < 6000) and "EAGLE 2" (South sector,
-       z >= 6000) — two flyable-looking helicopters with spinning rotors,
-       visible flying patrol routes across the whole map.
+     - "EAGLE 1" (North sector, z < 13314) and "EAGLE 2" (South sector,
+       z >= 13314) — two flyable-looking helicopters with spinning rotors,
+       visible flying patrol routes across the whole map. (STEP2,
+       2026-10-16: the split moved from z=6000 to the §6.2 stage z
+       midpoint 13314 when the patrol grid stretched to the stage rect.)
      - Named pilot NPCs (James R., Maria S.) with a full daily schedule:
        wake at home → commute to helipad → preflight → morning patrol →
        lunch → afternoon patrol → postflight → commute home → sleep.
@@ -68,7 +70,7 @@ var LS_KEY       = 'sa_heli_v1';  // localStorage persistence key
 var ALT          = 70;            // cruise altitude above terrain (u)
 var CRUISE_SPEED = 48;           // cruise speed (u/s) — helicopters are fast
 var VERT_SPEED   = 16;           // takeoff/landing vertical speed (u/s)
-var SECTOR_SPLIT = 6000;         // Unit 1 North: z<6000, Unit 2 South: z>=6000
+var SECTOR_SPLIT = 13314;        // STEP2: stage z midpoint ((-4249+30878)/2) — Unit 1 North: z<13314, Unit 2 South: z>=13314 (was 6000, the old core-rect midpoint)
 var GRID_STEP    = 800;          // patrol lawnmower grid spacing (u)
 var DETECT_R     = 320;          // finding discovery radius (u)
 var FIND_CAP     = 40;           // max findings held (anti-spam)
@@ -417,12 +419,17 @@ function buildWaypoints(north){
     });
     return wps;
   }
-  var z0=north?200:SECTOR_SPLIT+200, z1=north?SECTOR_SPLIT-200:11800;
+  /* STEP2 stretch (Joshua 2026-10-16): the lawnmower grid now spans the
+     §6.2 stage rect inset by 200 (was the old core rect 200..8000 x
+     200..11800): x runs -7281..16115, z rows span -4049..30678, still
+     split north/south at SECTOR_SPLIT (the stage z midpoint) and still
+     flown boustrophedon (alternating rows reversed). */
+  var z0=north?-4049:SECTOR_SPLIT+200, z1=north?SECTOR_SPLIT-200:30678;
   var rows=[];
   for(var z=z0; z<=z1; z+=GRID_STEP) rows.push(z);
   rows.forEach(function(rz,ri){
     var xs=[];
-    for(var x=200;x<=8000;x+=GRID_STEP) xs.push(x);
+    for(var x=-7281;x<=16115;x+=GRID_STEP) xs.push(x);
     if(ri%2===1) xs.reverse();  /* boustrophedon */
     xs.forEach(function(wx){ wps.push({x:wx,z:rz}); });
   });
@@ -443,8 +450,12 @@ function pickHome(north){
       }
     }
   }catch(e){}
-  /* fallback: residential-feeling coordinates per sector */
-  return north ? {x:5200, z:3200} : {x:4300, z:7800};
+  /* fallback: residential-feeling coordinates per sector.
+     STEP2 fix: the south fallback must sit in the SOUTH sector — with
+     SECTOR_SPLIT moved to the stage z midpoint (13314), the old z=7800
+     landed in the north sector, so the south unit's fallback home is now
+     z=18000 (still inside South Fulton's residential band). */
+  return north ? {x:5200, z:3200} : {x:4300, z:18000};
 }
 
 /* ---------------- unit factory ---------------- */
