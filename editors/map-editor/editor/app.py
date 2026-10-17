@@ -46,7 +46,7 @@ import overpass as overpass_mod  # noqa: E402
 
 # App version shown in the Help -> About dialog (bump with each release).
 # Joshua 2026-10-11: version number must be prominent in About.
-APP_VERSION = "1.9.3"
+APP_VERSION = "1.9.4"
 # Display name and icon-theme name for the About dialog.
 APP_NAME = "Adamsville Map Editor"
 APP_ICON = "adamsville-map-editor-native"
@@ -132,6 +132,16 @@ class MapEditorApp:
         # local edits haven't been pushed to GitHub yet.
         self._unpublished = False
         self._token_prompted = False
+        # Round-trip re-entrancy guard (1.9.4 — see round_trip_save):
+        # _round_trip_in_flight is True while one save trip is running;
+        # _round_trip_followup remembers that another trigger arrived
+        # mid-trip (any number of them coalesce into this one flag);
+        # _trip_sent_snapshot holds the bytes the in-flight trip set
+        # out to push, so the finisher can tell whether the model
+        # actually changed while the trip was away.
+        self._round_trip_in_flight = False
+        self._round_trip_followup = False
+        self._trip_sent_snapshot = {}
         # Word-style auto-push: every 5 minutes if there are unpublished
         # changes and a GitHub token is set (Joshua 2026-10-11).
         from gi.repository import GLib as _GLib
@@ -2358,10 +2368,36 @@ class MapEditorApp:
                 self.canvas.drag_pin = None
             except Exception:
                 pass
+            # 1.9.4: if this load adopted staged unpublished edits
+            # (download-on-open guard in data.download_roads), tell
+            # the user their changes were kept once the load settles.
+            self._surface_download_warning()
         except FileNotFoundError:
             self.set_status("No local data. Use File → Download from GitHub.")
         except Exception as e:
             self._show_error("Load Error", f"Could not load road data:\n{e}")
+
+    def _surface_download_warning(self):
+        """
+        Show data.LAST_DOWNLOAD_WARNING (1.9.4) if the download-on-
+        open guard kept staged unpublished edits, and mark the
+        session unpublished — the kept edits ARE unpublished, so the
+        close warning and the Check-for-Updates guard must treat
+        them that way. The status is set from a queued idle callback
+        so it lands AFTER _load_data's own "Loaded … roads." status
+        instead of being overwritten by it. Consumes the warning.
+        """
+        import data as _data_mod
+        warn = getattr(_data_mod, "LAST_DOWNLOAD_WARNING", None)
+        if not warn:
+            return
+        _data_mod.LAST_DOWNLOAD_WARNING = None
+        self._unpublished = True
+
+        def _show():
+            self.set_status(warn)
+            return False
+        GLib.idle_add(_show)
 
     def _build_index_idle(self):
         """Build spatial index (called via idle_add after load)."""
@@ -2427,8 +2463,32 @@ class MapEditorApp:
         """
         Run one round-trip save on a worker thread.
         on_done(ok, err, fresh) runs on the GTK thread; fresh maps
-        repo path -> re-downloaded bytes. Returns True if it started.
+        repo path -> re-downloaded bytes. Returns True if it started
+        (or if a trip already in flight will cover the request).
+
+        1.9.4 RE-ENTRANCY GUARD: three different triggers can ask for
+        a save — File → Push, the 5-minute auto-push tick, and the
+        Settings dialog's key-changed callback (which fires the moment
+        a key is saved, exactly when a user is also likely to hit
+        Push). Before 1.9.4 nothing stopped two trips from running AT
+        ONCE: their GET-sha → PUT sequences interleaved, and GitHub
+        refused the loser with a 409 sha mismatch ("… is at X but
+        expected Y") — Joshua hit exactly this on 2026-10-16 after
+        re-adding his key with a road join unpublished: his own Push
+        raced the Settings auto-push and the save failed. Now only
+        ONE trip is ever in flight. A trigger that arrives mid-trip
+        just sets the follow-up flag (any number of them coalesce
+        into the one flag); when the trip lands, _round_trip_finished
+        runs AT MOST one follow-up trip, and only if the model
+        actually changed while the trip was away.
         """
+        if getattr(self, "_round_trip_in_flight", False):
+            # A trip is already running: coalesce this trigger into
+            # the single follow-up flag and let the finisher decide
+            # whether a second trip is actually needed. Nothing else
+            # to do — starting a rival trip here is the 409 race.
+            self._round_trip_followup = True
+            return True
         if on_done is None:
             on_done = self._round_trip_default_done
         if not github_sync.has_token():
@@ -2448,21 +2508,77 @@ class MapEditorApp:
         if self.roads_data is not None:
             self.game_model.adopt_merged_roads(self.roads_data)
         import gamedata as _gd
-        if not _gd.GameModel.dirty_paths(self.game_model):
+        dirty = _gd.GameModel.dirty_paths(self.game_model)
+        if not dirty:
             if not silent:
                 self.set_status("Nothing to push — no changes.")
                 GLib.idle_add(self._fire_done, on_done, True, None, {})
             return False
         if not silent:
             self.set_status("Pushing to GitHub…")
+        # 1.9.4: claim the single flight slot BEFORE the worker
+        # starts, and snapshot the exact bytes this trip sets out to
+        # push. The finisher compares the model against this snapshot
+        # to decide whether a queued follow-up trip is warranted
+        # (model changed mid-trip) or would just re-push the same
+        # bytes (trigger spam — the trip that just landed covers it).
+        self._round_trip_in_flight = True
+        self._trip_sent_snapshot = {
+            path: self.game_model.current_bytes(path) for path in dirty}
 
         def worker():
             ok, err, fresh = _gd.perform_round_trip(
                 self.game_model, github_sync, save_local_cache)
-            GLib.idle_add(self._fire_done, on_done, ok, err, fresh)
+            GLib.idle_add(self._round_trip_finished, on_done, ok, err,
+                          fresh)
 
         threading.Thread(target=worker, daemon=True).start()
         return True
+
+    def _round_trip_finished(self, on_done, ok, err, fresh):
+        """
+        GTK-thread finisher for one round-trip save (1.9.4): release
+        the flight slot, run the caller's completion, then honour a
+        coalesced follow-up trigger — at most one extra trip, and
+        only when the model changed while the trip was in flight.
+
+        The slot is released BEFORE on_done runs, so a completion
+        that itself asks for a save starts a fresh trip instead of
+        queueing behind the one that just ended.
+        """
+        self._round_trip_in_flight = False
+        on_done(ok, err, fresh)
+        if getattr(self, "_round_trip_followup", False):
+            self._round_trip_followup = False
+            if self._model_changed_during_trip():
+                # One follow-up trip for everything that arrived
+                # mid-flight — never a queue of them.
+                self.round_trip_save()
+        return False  # GLib.idle_add one-shot
+
+    def _model_changed_during_trip(self):
+        """
+        True when the model now holds bytes the in-flight trip did
+        NOT set out to push: a still-dirty path whose current bytes
+        differ from the trip's snapshot, or a path that became dirty
+        only while the trip was away. A path that is dirty with the
+        SAME bytes as the snapshot (e.g. the trip failed before
+        pushing) is not a mid-trip change — the queued trigger is
+        already answered by that trip's own result, so no follow-up.
+        """
+        if self.game_model is None:
+            return False
+        # Fold the canvas working copy in first, exactly as a fresh
+        # save would, so edits made during the push are visible here
+        # even if they never touched the model directly.
+        if self.roads_data is not None:
+            self.game_model.adopt_merged_roads(self.roads_data)
+        import gamedata as _gd
+        snapshot = getattr(self, "_trip_sent_snapshot", {})
+        for path in _gd.GameModel.dirty_paths(self.game_model):
+            if snapshot.get(path) != self.game_model.current_bytes(path):
+                return True
+        return False
 
     @staticmethod
     def _fire_done(on_done, ok, err, fresh):
