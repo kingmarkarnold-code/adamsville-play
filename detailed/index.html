@@ -10685,8 +10685,20 @@ function updateCar(dt){
   // v1.12 FUEL (simple sim): drains with driving; refuel at any pump
   /* v1.31 FUEL (Joshua): idle sips slowly; running dry stalls the van and notifies. */
   var _fuelBefore=car.fuel;
-  car.fuel=Math.max(0, car.fuel-Math.abs(car.speed)*dt*0.02);
-  if (car.driving && Math.abs(car.speed)<0.5) car.fuel=Math.max(0, car.fuel-0.12*dt);  // idle sip: ~14 min idling per tank
+  /* FUEL RATE (Joshua, 2026-10-17): burn keys to GAME time, at a real-life rate --
+     "the gas should run out at about the rate of real life depending on hour
+     travel; you should be able to go about five to six game hours without gas."
+     Game clock (sim_core.js): 24 game hours = 124 real minutes, so 1 game hour
+     = 310 real seconds. Driving drain stays speed-aware (per-mile, like a real
+     tank): at a typical mixed cruise (~38 mph = ~17.6 u/s) the 0.0034
+     coefficient burns ~18.6 units per game hour, so a full 100-unit tank lasts
+     ~5.4 game hours of driving (~28 real min). The old rate (0.02) emptied the
+     tank in ~2-4 real minutes -- roughly 10x too fast. Idle sip below is a
+     small fraction (~1/12) of the driving burn, as in real life: ~1.55 units
+     per game hour, ~64 game hours (~2.7 game days) per tank at idle alone --
+     well over a full game day. */
+  car.fuel=Math.max(0, car.fuel-Math.abs(car.speed)*dt*0.0034);
+  if (car.driving && Math.abs(car.speed)<0.5) car.fuel=Math.max(0, car.fuel-0.005*dt);  // idle sip: ~64 game hours (~2.7 game days) per tank
   if (_fuelBefore>0 && car.fuel<=0 && !car._outOfGasWarned){
     car._outOfGasWarned=true;
     try{ showToast('OUT OF GAS - the van stalled', 4000); }catch(e){}
