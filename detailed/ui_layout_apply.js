@@ -12,6 +12,13 @@
  *     (e.g. context-sensitive buttons). Only hides what the layout
  *     marks invisible, and only positions/sizes elements that exist.
  *   - Mobile-only elements are hidden on non-mobile viewports.
+ *   - Layout "faces" (2026-10-17): ui_layout.json carries two faces
+ *     under "faces" — "mobile" and "desktop" — each with its own
+ *     full element list. The face matching this screen is applied;
+ *     if that face is missing, the other face is used, then the
+ *     top-level "elements" list (the legacy mirror of the mobile
+ *     face) as a final fallback. Older files with no "faces" at all
+ *     apply their top-level "elements" exactly as before.
  *
  * Coordinate model (matches the UI editor):
  *   Each element stores (anchor, x, y, width, height) in canonical
@@ -122,6 +129,37 @@
   }
 
   /**
+   * Pick the element list for this viewport from a layout document.
+   *
+   * Faces (2026-10-17): when doc.faces is an object, return the
+   * matching face's element list ("mobile" on a mobile viewport,
+   * "desktop" otherwise) when that face carries an array. If the
+   * matching face is missing, fall back to the other face's list.
+   * When neither face is usable — or the file is an older one with
+   * no faces at all — fall back to the top-level element list.
+   * Returns null when no usable list exists, so the caller can
+   * no-op defensively exactly as it did before faces existed.
+   */
+  function pickLayoutElements(doc, mobile) {
+    if (!doc || typeof doc !== "object") return null;
+    if (doc.faces && typeof doc.faces === "object") {
+      // The face that matches this screen comes first.
+      var wanted = mobile ? doc.faces.mobile : doc.faces.desktop;
+      if (wanted && Array.isArray(wanted.elements)) {
+        return wanted.elements;
+      }
+      // Matching face missing — use the other face rather than nothing.
+      var other = mobile ? doc.faces.desktop : doc.faces.mobile;
+      if (other && Array.isArray(other.elements)) {
+        return other.elements;
+      }
+    }
+    // Final fallback: the legacy top-level list (mirror of mobile).
+    if (Array.isArray(doc.elements)) return doc.elements;
+    return null;
+  }
+
+  /**
    * Fetch ui_layout.json and apply every element it defines.
    * Idempotent — safe to re-run (e.g. after resize or hot-reload).
    */
@@ -148,8 +186,11 @@
         return resp.json();
       })
       .then(function (doc) {
-        if (!doc || !Array.isArray(doc.elements)) return;
-        doc.elements.forEach(function (def) {
+        // Pick the face for this screen (with fallbacks); a null
+        // list means a missing/corrupt layout — no-op as before.
+        var list = pickLayoutElements(doc, mobile);
+        if (!list) return;
+        list.forEach(function (def) {
           try {
             applyElement(def, vw, vh, mobile);
           } catch (e) { /* one bad element must not break the rest */ }
