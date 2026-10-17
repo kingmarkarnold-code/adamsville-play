@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0",
-  "changelog": "Repointed to the game's actual building files in adamsville-play: per-zone converted buildings.json + buildings_detail.json + buildings.js twin, downloaded on open via the Contents API. Full round-trip save (local save -> push -> close connection -> fresh connection -> re-download proof copy -> refresh view) with stage-accurate failure messages; only dirty zones are pushed. 1,532 conversion-flagged buildings are displayed FLAGGED and locked against move/resize/delete pending Joshua's decision. Hero buildings (535 Dollar Mill) are listed per zone, read-only. Subdivisions persist to editors/building-editor/subdivisions.json in this repo, and Generate Houses now bakes houses into the zone building files. New modules: zonedata.py, flagged_buildings.json.",
+  "version": "1.6.1",
+  "changelog": "Two fixes. (1) Download-on-open could never finish: zone building files over 1 MB (riverdale, southfulton and others) come back EMPTY from GitHub's file API, and the editor tried to load the empty reply. Large files are now fetched through GitHub's blob API by their fingerprint, every file downloads on its own fresh connection with retries on network errors, and a failure now shows the real reason (which file, and GitHub's own message) instead of only 'check your connection'. Verified live from a clean machine state with no key: all 7 zones, 166,444 buildings. (2) Packaging: the 1.6.0 installer was built with restrictive file permissions (launcher 'permission denied', invisible menu entry); rebuilt with standard permissions (folders 755, files 644, launcher 755, owner root) plus a build-time permissions check so it cannot ship that way again.",
   "files": [
     {
       "path": "about.py",
@@ -10,7 +10,7 @@
     {
       "path": "app.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/app.py",
-      "sha256": "13b8ba3ef311eecb84cb18a6e3bb3eb2088f11e87b2060f44b1d485165ed5a53"
+      "sha256": "9bd90f03e97462e98208c6d5dc0ebf00fa930ec7592e5c6998983524ebd1c837"
     },
     {
       "path": "buildingcanvas.py",
@@ -30,7 +30,7 @@
     {
       "path": "github_sync.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/github_sync.py",
-      "sha256": "f18a2ef4c9223f9dabe37f1ef9afee9008775041cbb0cad3ad0218a54d76e060"
+      "sha256": "4c2e4ba405a55d5d88c66a9ac8db3322a3637b5b2c43a307e9191f8c7bdc599a"
     },
     {
       "path": "mollie-icon.png",
@@ -50,7 +50,7 @@
     {
       "path": "zonedata.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/zonedata.py",
-      "sha256": "a649ab35224fd21ff583cdcd4cc7fe72946dc837743435ab3c07dc28b694a824"
+      "sha256": "06befaeb2fff39396ef17daefc0de9882224858b3c0fa0069958ebcb9809689c"
     }
   ]
 }
