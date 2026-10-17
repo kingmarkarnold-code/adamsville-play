@@ -95,8 +95,8 @@
       "type": "label",
       "visible": true,
       "width": 200,
-      "x": 0,
-      "y": 8,
+      "x": 397,
+      "y": 670,
       "description": "Small text showing the current game version number"
     },
     {
@@ -123,8 +123,8 @@
       "type": "button",
       "visible": true,
       "width": 90,
-      "x": 137,
-      "y": 126,
+      "x": 153,
+      "y": 350,
       "description": "The main context-sensitive button: grab items, enter/exit buildings and vehicles"
     },
     {
@@ -165,8 +165,8 @@
       "type": "panel",
       "visible": true,
       "width": 90,
-      "x": 135,
-      "y": 518,
+      "x": 145,
+      "y": 279,
       "description": "Speedometer: shows how fast the player's vehicle is going"
     },
     {
@@ -179,8 +179,8 @@
       "type": "bar",
       "visible": true,
       "width": 200,
-      "x": 0,
-      "y": 26,
+      "x": 399,
+      "y": 700,
       "description": "Vehicle damage meter: fills up as the vehicle takes damage"
     },
     {
@@ -235,8 +235,8 @@
       "type": "panel",
       "visible": true,
       "width": 1256,
-      "x": 10,
-      "y": 479,
+      "x": -12,
+      "y": 70,
       "description": "Speech bubble panel where NPC conversation text appears"
     },
     {
