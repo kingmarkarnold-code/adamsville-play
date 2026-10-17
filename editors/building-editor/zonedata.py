@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Adamsville Building Editor 1.7.0 — GAME ZONE DATA LAYER (new in 1.6.0).
+Adamsville Building Editor 1.7.1 — GAME ZONE DATA LAYER (new in 1.6.0).
 
 WHY THIS MODULE EXISTS
 ----------------------
@@ -60,7 +60,7 @@ VERSION CONVENTION (cache-busting)
 The game's cache keys off buildings.json "version" (mirrored into
 buildings.js as OSM_BLDG_VERSION), so ANY content change must change
 it. On save, a dirty zone's version becomes
-    "<YYYY.MM.DD>-building-editor-1.7.0-<zone>"
+    "<YYYY.MM.DD>-building-editor-1.7.1-<zone>"
 using the save date. realCount is rewritten to len(buildings).
 
 SAVE = ONE ROUND TRIP (Joshua's standing rule for ALL editors)
@@ -124,7 +124,7 @@ ZONES = ["adamsville", "downtown", "eastatlanta", "mableton",
 SUBDIVISIONS_REPO_PATH = "editors/building-editor/subdivisions.json"
 
 # This editor's version — stamped into zone version strings on save.
-EDITOR_VERSION = "1.7.0"
+EDITOR_VERSION = "1.7.1"
 
 # 1.6.1: attempts per file when the failure is a NETWORK error (a
 # dropped or refused connection) — every attempt runs on a brand-new
