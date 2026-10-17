@@ -1,6 +1,6 @@
 {
-  "version": "1.7.8",
-  "changelog": "Save round trip now uses Joshua's close/reopen design: the push leg closes its connection, then a fresh connection is opened for the proof download (fixes 'Remote end closed connection without response'). Failure messages are stage-accurate \u2014 they say whether the push itself failed or the push landed but the proof copy could not be downloaded back. Menu groups gain a per-group 'starts expanded / starts collapsed' setting, stored in menu_layout.json and honored by the game. Also includes the 1.7.7 global save protocol (save locally, push to GitHub, re-download and display the GitHub copy as proof), since the channel was previously at 1.7.6.",
+  "version": "1.8.0",
+  "changelog": "The layout now has two faces: a Mobile layout and a Desktop layout. In the Layout tab, a new Device switch (next to the View dropdown) picks which face you are editing \u2014 Mobile shows the phone view, Desktop shows the big-screen view. Editing one face never changes the other, and the status bar tells you which face you are on. Saving still saves everything at once: both faces go to GitHub together and the editor reloads the GitHub copy as proof. Old layouts without faces are handled automatically \u2014 your current layout becomes the Mobile face and the Desktop face starts as a copy of it, so nothing you arranged is lost. The game picks the face that matches the screen it is running on.",
   "files": [
     {
       "path": "about.py",
@@ -10,12 +10,12 @@
     {
       "path": "app.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/ui-editor/app.py",
-      "sha256": "e760f4da2ffb6b501c6be3cd19fe49ff26b9785656deed41275c898dd5726f21"
+      "sha256": "80b55fa2bb937b9bd1335666934fdc23d756ecc64e5d7bb1d81ff0bf0d97ccb3"
     },
     {
       "path": "data.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/ui-editor/data.py",
-      "sha256": "d5fc131f8880f8b546bf3c6a979d1a38d2b43edfd581098254eafc619bf0cbe5"
+      "sha256": "78a90ebcefef8183dd0dab6e1552b91c18b229a05b3a44793a9df1cc687435be"
     },
     {
       "path": "github_sync.py",
@@ -25,7 +25,7 @@
     {
       "path": "layout.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/ui-editor/layout.py",
-      "sha256": "ce764e7203c0313872ef38913c18d0f3bbca168896e21d12455a2a72ab670975"
+      "sha256": "e54623bdd01167dcbe24b2489a5a23536297d15da35c5b7e844e24f4d5fae89b"
     },
     {
       "path": "menus.py",
@@ -45,7 +45,7 @@
     {
       "path": "ui_layout_default.json",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/ui-editor/ui_layout_default.json",
-      "sha256": "62d22bd5feaf01906203fdedca58be592b36933ba2e3a73174062aeecf0e293d"
+      "sha256": "e3835b82b6ce64cb6599c7b60f7e24658ea28290f3328106e5cea64667869583"
     },
     {
       "path": "updater.py",
