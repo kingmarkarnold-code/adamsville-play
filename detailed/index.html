@@ -12147,19 +12147,22 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <script data-dsrc="ui_layout_apply.js" data-dkey=""></script> <!-- MENU LAYOUT (Joshua 2026-10-11) — applies menu_layout.json (menus edited visually in the UI Menu Editor). Defensive: no-op if the file is missing. --> <script data-dsrc="menu_layout_apply.js" data-dkey=""></script> <script data-dsrc="water_render.js" data-dkey=""></script>
 <script data-dsrc="traffic_assist.js" data-dkey="trafficassist"></script>
 <script data-dsrc="residential_detail.js" data-dkey=""></script>
-<!-- BUILDING SPAWNER v1.0 (2026-10-11): map-editor buildings.json (walkable
-     hand-placed buildings) + subdivisions.json (street-facing house fill).
-     Complementary to residential_detail.js (OSM data) — separate data source,
-     no overlap. -->
-<script data-dsrc="building_spawner.js" data-dkey="">
-<script data-dsrc="road_sync.js" data-dkey=""></script>
+<!-- RETIRED 2026-10-16 (Joshua): building_spawner.js + road_sync.js no longer
+     load. They fetched the RETIRED adamsville-map-editor repo's data
+     (old-frame hand-placed buildings, the old "Subdivision 1" house fill,
+     and old roads) and layered it over the converted map, which is the
+     single source of truth now. The .js files stay on disk; only the
+     loading stopped. Bridges-retirement checklist, step: runtime overlays. -->
 <!-- TRUCK RESTRICTIONS (Joshua 2026-10-11): 18-wheelers avoid low-clearance overpasses. -->
 <script data-dsrc="truck_restrictions.js" data-dkey="">
 <!-- AIRPORT (Joshua 2026-10-11): Hartsfield-Jackson runways, terminals,
      concourses, and the I-85 connector road. Defensive: no-op if the
      data file is missing. -->
-<script data-dsrc="airport.js" data-dkey="">
-<script data-dsrc="terrain_sync.js" data-dkey=""></script>
+<script data-dsrc="airport.js" data-dkey=""></script>
+<!-- RETIRED 2026-10-16 (Joshua): terrain_sync.js no longer loads. It fetched
+     terrain edits from the RETIRED adamsville-elevation-editor repo and
+     wrapped heightAt() with them; the converted map's terrain is the
+     single source of truth now. The .js file stays on disk. -->
 <script data-dsrc="semi_system.js" data-dkey="semis"></script>
 <script data-dsrc="school_plaza.js" data-dkey=""></script>
 <script data-dsrc="mlk_fairburn.js" data-dkey=""></script>
