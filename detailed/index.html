@@ -4385,10 +4385,22 @@ function ribbonGeomY(pts, width, ys, drape, rail){
       if (nS>0){
         var pb=(nS-1)*V, cb=nS*V;
         for (var rs=0; rs<strips; rs++){
-          /* Same UP winding as the legacy two-vertex ribbon, per strip
-             quad: (P_s, C_s, P_{s+1}) + (P_{s+1}, C_s, C_{s+1}) -- at
-             V=2 this is exactly idx.push(b,b+2,b+1, b+1,b+2,b+3). */
-          idxS.push(pb+rs, cb+rs, pb+rs+1,  pb+rs+1, cb+rs, cb+rs+1);
+          /* Winding -- 2026-10-17 FIX (Joshua's invisible-roads report):
+             the old comment here claimed this order matched the legacy
+             ribbon's UP winding. It did not. The rail fractions run from
+             the RIGHT edge (frac -1) to the LEFT edge (frac +1) -- the
+             mirror of the legacy branch's vertex order (left vertex
+             first) -- so the legacy index order on this layout wound
+             every strip triangle DOWN (normals -1.000), and bake()'s
+             FrontSide material culled the whole converted road network
+             from above: street names rendered, but no asphalt. Each
+             triangle is now emitted REVERSED -- (P_s, P_{s+1}, C_s) +
+             (P_{s+1}, C_{s+1}, C_s) -- so strip triangles face UP like
+             the legacy branch. Same P_{s+1}-C_s diagonal (stripQuadY's
+             surface math is unchanged), same vertices, same heights;
+             only the winding changed. Do NOT "simplify" this back to
+             the legacy order. */
+          idxS.push(pb+rs, pb+rs+1, cb+rs,  pb+rs+1, cb+rs+1, cb+rs);
         }
       }
       nS++;
@@ -5136,38 +5148,78 @@ try{ Object.keys(ROAD_DATA||{}).forEach(function(c){ if(ROAD_DATA[c]) roadSegsTo
     var roadMeshList=aMeshes.concat([mMesh,cMesh,lMesh].filter(Boolean));
     var inScene=0;
     scene.children.forEach(function(o){ if(roadMeshList.indexOf(o)>=0) inScene++; });
-    var windOk='?', ySamples=[];
+    var windOk='?', windUp=0, windDown=0, windMeshCat=null, ySamples=[];
     try{
-      var pa=aMesh.geometry.attributes.position.array;
-      var ia=aMesh.geometry.index.array;
-      if(pa.length>=9&&ia.length>=3){
-        // v1.0 FIX: the old check read verts 0,1,2 sequentially, but the
-        // real first triangle is (ia[0],ia[1],ia[2]) = (0,2,1) — the old
-        // check measured the REVERSED triangle and falsely cried "DOWN"
-        // on device while the shipped winding was UP all along.
-        function _v(i){return [pa[i*3],pa[i*3+1],pa[i*3+2]];}
-        var t0=_v(ia[0]),t1=_v(ia[1]),t2=_v(ia[2]);
-        var e1x=t1[0]-t0[0],e1y=t1[1]-t0[1],e1z=t1[2]-t0[2];
-        var e2x=t2[0]-t0[0],e2y=t2[1]-t0[1],e2z=t2[2]-t0[2];
-        var ny=e1z*e2x-e1x*e2z;  // Y of (e1 x e2)
-        windOk = ny>0 ? 'up' : 'DOWN';
+      /* v1.68 WINDING GUARD REPAIR (2026-10-17): the old check sampled
+         aMesh -- the FIRST baked mesh, which is the 'interstate'
+         category. Post-conversion that category is EMPTY (converted
+         interstates fold into 'highway' -- see normRoadCat), so bake()
+         handed it an empty geometry, the length guard never passed,
+         and the verdict stayed '?' forever while the real roads went
+         unmeasured: the guard was blind exactly when the strip-winding
+         bug shipped. The check now finds the first POPULATED asphalt
+         mesh and measures the winding over a spread of up to 24 of its
+         triangles (the game's own ny test, per triangle). */
+      var sampleMesh=null;
+      for (var wmi=0; wmi<aMeshes.length; wmi++){
+        var _wg=aMeshes[wmi].geometry;
+        if (_wg && _wg.attributes && _wg.attributes.position
+            && _wg.attributes.position.array.length>=9
+            && _wg.index && _wg.index.array.length>=3){
+          sampleMesh=aMeshes[wmi]; windMeshCat=ROAD_CATS[wmi]; break;
+        }
       }
-      // sample up to 12 road verts: roadY vs terrain heightAt at same XZ
-      var n=Math.min(12,(pa.length/3)|0), step=Math.max(1,((pa.length/3)/12)|0);
-      for(var vi=0; vi<pa.length && ySamples.length<12; vi+=step*3){
-        var vx=pa[vi], vy=pa[vi+1], vz=pa[vi+2];
-        ySamples.push({roadY:+vy.toFixed(2), terrY:+heightAt(vx,vz).toFixed(2),
-          d:+((vy-heightAt(vx,vz))).toFixed(2)});
+      if (sampleMesh){
+        var pa=sampleMesh.geometry.attributes.position.array;
+        var ia=sampleMesh.geometry.index.array;
+        function _v(i){return [pa[i*3],pa[i*3+1],pa[i*3+2]];}
+        var triTotal=(ia.length/3)|0, triStep=Math.max(1,(triTotal/24)|0);
+        for (var ti2=0; ti2<triTotal; ti2+=triStep){
+          var t0=_v(ia[ti2*3]),t1=_v(ia[ti2*3+1]),t2=_v(ia[ti2*3+2]);
+          var e1x=t1[0]-t0[0],e1z=t1[2]-t0[2];
+          var e2x=t2[0]-t0[0],e2z=t2[2]-t0[2];
+          var ny=e1z*e2x-e1x*e2z;  // Y of (e1 x e2)
+          if (ny>1e-9) windUp++; else if (ny<-1e-9) windDown++;
+        }
+        /* Verdict by majority: the failure this guards against is GLOBAL
+           inversion (~100% down). A rare self-folding hairpin quad can
+           legitimately face the other way, so a small minority of down
+           triangles (<=1 in 10 sampled) still reads 'up' -- the raw
+           counts ride along in the report either way. Without this, the
+           guard would false-alarm on healthy roads (the v1.0 lesson). */
+        windOk = windUp===0 ? (windDown>0?'DOWN':'?')
+               : windDown===0 ? 'up'
+               : windDown>windUp ? 'DOWN'
+               : (windDown*10<=windUp+windDown ? 'up' : 'mixed');
+        // sample up to 12 road verts: roadY vs terrain heightAt at same XZ
+        var n=Math.min(12,(pa.length/3)|0), step=Math.max(1,((pa.length/3)/12)|0);
+        for(var vi=0; vi<pa.length && ySamples.length<12; vi+=step*3){
+          var vx=pa[vi], vy=pa[vi+1], vz=pa[vi+2];
+          ySamples.push({roadY:+vy.toFixed(2), terrY:+heightAt(vx,vz).toFixed(2),
+            d:+((vy-heightAt(vx,vz))).toFixed(2)});
+        }
       }
     }catch(ye){ windOk='check-threw'; }
     var matType='?';
-    try{ matType=aMesh.material.type+':'+(aMesh.material.side===0?'front':(aMesh.material.side===2?'double':'back')); }catch(me){}
+    try{ var _mm=sampleMesh||aMesh; matType=_mm.material.type+':'+(_mm.material.side===0?'front':(_mm.material.side===2?'double':'back')); }catch(me){}
     Report.setSys('streets',{segmentsIn:roadSegsTotal,segmentsBuilt:roadSegsBuilt,
       byClass:roadBuiltByClass,
       meshesBuilt:roadMeshesBuilt,meshesInScene:inScene,verts:roadVerts,
-      winding:windOk, material:matType, ySamples:ySamples,
+      winding:windOk, windingUp:windUp, windingDown:windDown, windingMesh:windMeshCat,
+      material:matType, ySamples:ySamples,
       status:(roadSegsBuilt>0&&inScene>=2&&windOk==='up')?'ok':'BROKEN',  /* v2.1: >=2 (5 asphalt meshes possible) */
       highways:auditHighways()});
+    /* v1.68: a broken winding verdict must be VISIBLE in-session, not
+       buried in a report payload: warn on the console AND put a line on
+       the load screen's critical-progress area. A healthy verdict gets
+       one quiet console line. */
+    if (windOk==='DOWN'||windOk==='mixed'){
+      try{ console.warn('[ROADTEST] ROAD WINDING '+windOk+': '+windDown+' of '+(windUp+windDown)+' sampled triangles face DOWN ('+windMeshCat+' mesh) -- roads will be INVISIBLE from above.'); }catch(ce){}
+      try{ var _cp=document.getElementById('load-critprog');
+        if (_cp) _cp.textContent='!! Road check failed: winding '+windOk+' - roads may be invisible. Please report this.'; }catch(de){}
+    } else if (windOk==='up'){
+      try{ console.log('[ROADTEST] road winding OK: '+windUp+' up / '+windDown+' down sampled ('+windMeshCat+' mesh).'); }catch(ce){}
+    }
     /* v1.3 VERIFICATIONS */
     try{
       // (a) smoothing: mean roughness before vs after, over sampled runs
