@@ -189,6 +189,33 @@ class GitHubConnection:
         except Exception as e:
             return None, f"Unreadable response from GitHub: {e}"
 
+    def request_stream(self, url, token):
+        """
+        Start one request on THIS connection WITHOUT reading the
+        body (v1.7.2): returns (status, response, None) so the
+        caller can stream response.read() in chunks (the progress
+        download), or (None, None, error_message). The caller owns
+        reading the response to the end.
+        """
+        if self.closed:
+            return None, None, "Connection already closed."
+        headers = {
+            "User-Agent": "adamsville-suite-native",
+            "Accept": "application/vnd.github+json",
+        }
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        parts = urllib.parse.urlsplit(url)
+        target = parts.path
+        if parts.query:
+            target += "?" + parts.query
+        try:
+            self._conn.request("GET", target, headers=headers)
+            resp = self._conn.getresponse()
+            return resp.status, resp, None
+        except Exception as e:
+            return None, None, f"Network error: {e}"
+
     def close(self):
         """Close the underlying socket. Idempotent."""
         try:
@@ -422,6 +449,118 @@ def delete_file(repo, path, message, **kwargs):
     if resp is None:
         return False, err
     return True, "ok"
+
+
+# ---------------------------------------------------------------------------
+# Metadata + progress downloads (v1.7.2 — load on demand)
+# ---------------------------------------------------------------------------
+# 1.7.2 (Joshua 2026-10-17): downloads must SHOW their size as they
+# happen ("a progress bar showing the download MBs"), and the suite
+# shared cache needs each file's blob SHA to decide freshness
+# without downloading the file. fetch_file_meta() is the cheap
+# metadata read; fetch_file_progress() is fetch_file() plus a
+# progress callback: progress(done_bytes, total_bytes), where the
+# total is the file's real size from its Contents metadata.
+
+def fetch_file_meta(repo, path, **kwargs):
+    """
+    Read one file's Contents API METADATA (no content download):
+    returns (meta_dict, None) — meta carries "sha" (the git blob
+    SHA) and "size" — or (None, error_message). Same connection
+    rules as fetch_file (conn= rides the caller's leg; otherwise a
+    fresh one-shot connection).
+    """
+    url = f"https://api.github.com/repos/{repo}/contents/{path}"
+    tok = kwargs.get("token") or get_token()
+    conn = kwargs.get("conn")
+    resp, err = _api_request(url, tok, conn=conn)
+    if resp is None:
+        return None, err
+    return resp, None
+
+
+def fetch_file_progress(repo, path, progress=None, **kwargs):
+    """
+    fetch_file() with download progress (v1.7.2).
+
+    progress(done_bytes, total_bytes) is called as bytes arrive
+    (for files over the Contents API's 1 MB inline limit, the blob
+    body is streamed and progress is reported against the file's
+    real size from its metadata; it lands exactly on the total when
+    the download completes). Returns (bytes, None) or
+    (None, error_message) — the same contract as fetch_file.
+    """
+    url = f"https://api.github.com/repos/{repo}/contents/{path}"
+    tok = kwargs.get("token") or get_token()
+    conn = kwargs.get("conn")
+    resp, err = _api_request(url, tok, conn=conn)
+    if resp is None:
+        return None, err
+    total = int(resp.get("size") or 0)
+    content = resp.get("content") or ""
+    if content:
+        try:
+            data = base64.b64decode(content)
+        except Exception as e:
+            return None, f"Fetch failed: undecodable content ({e})"
+        if progress:
+            progress(len(data), total or len(data))
+        return data, None
+    if not (total and resp.get("sha")):
+        # No content, no size: an empty file is a legitimate answer.
+        if progress:
+            progress(0, 0)
+        return b"", None
+    # Over the 1 MB inline limit: stream the blob body in chunks so
+    # the progress callback sees the download grow. The blob body
+    # is base64 JSON (~4/3 the file size); progress maps the bytes
+    # received onto the file's real size and lands exactly on it.
+    blob_url = (f"https://api.github.com/repos/{repo}"
+                f"/git/blobs/{resp['sha']}")
+    one_shot = None
+    use_conn = conn
+    if use_conn is None:
+        one_shot = open_connection()
+        use_conn = one_shot
+    try:
+        status, raw_resp, rerr = use_conn.request_stream(
+            blob_url, tok)
+        if raw_resp is None:
+            return None, (f"Fetch failed: {path} is over the "
+                          f"Contents API's 1 MB inline limit, and "
+                          f"the follow-up blob download failed: {rerr}")
+        if status >= 400:
+            raw_resp.read()
+            return None, (f"Fetch failed: blob download answered "
+                          f"HTTP {status} for {path}")
+        body_len = raw_resp.getheader("Content-Length")
+        body_total = int(body_len) if body_len else 0
+        chunks = []
+        got = 0
+        while True:
+            chunk = raw_resp.read(65536)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            got += len(chunk)
+            if progress and body_total:
+                progress(min(total, got * total // body_total), total)
+        raw = b"".join(chunks)
+    finally:
+        if one_shot is not None:
+            one_shot.close()
+    try:
+        blob = json.loads(raw.decode("utf-8"))
+        data = base64.b64decode(blob.get("content") or "")
+    except Exception as e:
+        return None, f"Fetch failed: undecodable blob ({e})"
+    if not data and total:
+        # Same 10 MB Blobs ceiling guard as fetch_file.
+        return None, (f"Fetch failed: {path} is too large for the "
+                      f"GitHub API to return (over 10 MB).")
+    if progress:
+        progress(len(data), total or len(data))
+    return data, None
 
 
 # ---------------------------------------------------------------------------
