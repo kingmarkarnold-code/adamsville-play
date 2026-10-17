@@ -42,7 +42,7 @@
 <button id="orbitBtn" aria-pressed="false" title="Toggle orbit mode">🔄 Orbit</button>
 <div id="info">
   <h3>What am I looking at?</h3>
-  <p>Same hill, two addresses. The WEB copy puts the Dollar Mill entrance hill where the road really is; the DEV copy still has it at the old spot ~1,300 u east / 2,300 u south. Where the ground bulges in DEV, roads sink into it; where the hill is missing, roads float.</p>
+  <p>Same hill, two addresses. The WEB copy puts the Dollar Mill entrance hill where the road really is; the DEV copy still has it at the old spot ~1,300 u east / 2,300 u south. Each pane's roads are drawn the way that copy's game draws them — laid over its own ground — so in WEB the Dollar Mill road climbs the entrance hill, while in DEV the same road runs flat there and climbs a phantom hill on Fulton Industrial Boulevard instead. The red tint marks where the two grounds disagree.</p>
   <table class="roTable">
     <tr><td>Position (x, z)</td><td><span id="roX">…</span>, <span id="roZ">…</span></td></tr>
     <tr><td>Street here (WEB pane)</td><td id="roStreetWeb">…</td></tr>
@@ -112,7 +112,10 @@
   // ---- The character (one logical character, drawn once per pane) ----
   GC.char = {
     x: GC.grounds.play.HOME.x, z: GC.grounds.play.HOME.z,
-    heading: 0, phase: 0, moving: false, speed: 0, swing: 0, amp: 0
+    heading: 0, phase: 0, moving: false, speed: 0, swing: 0, amp: 0,
+    // Smoothed standing height per pane (see GC.surfaceY / GC.standY):
+    // null = not yet sampled (standY falls back to the exact surface).
+    stand: { play: null, www: null }
   };
   // World-space movement intent: unit vector (x, z) + run flag. The render
   // script fills this from joystick/keys (camera-relative); a test harness
@@ -153,11 +156,191 @@
       c.amp += (0 - c.amp) * ease;
     }
     c.swing = Math.sin(c.phase) * c.amp;
+    // Standing height, per pane: ease toward the drawn surface (drawn
+    // ground or road surface, whichever is higher — GC.surfaceY) so
+    // stepping on/off a road never snaps or pops. A null stand (spawn,
+    // or just after a jump) snaps straight to the surface.
+    ['play', 'www'].forEach(function (side) {
+      var target = GC.surfaceY(side, c.x, c.z);
+      var cur = c.stand[side];
+      c.stand[side] = (cur === null || cur === undefined) ? target
+        : cur + (target - cur) * Math.min(1, dt * 12);
+    });
   };
 
   // Ground height under the character on one side ('play' or 'www').
   GC.charY = function (side) {
     return GC.grounds[side].heightAt(GC.char.x, GC.char.z);
+  };
+
+  // ---- The DRAWN ground (terrainMeshY equivalent), per pane ----
+  // The game's terrainMeshY() bilinear-samples the heightfield lattice its
+  // terrain mesh is built from: nodes at (ix * WX/600, iz * WZ/800) filled
+  // with heightAt, clamped at the edges. GC.meshY reproduces that lattice
+  // from ONE pane's own heightAt, so "drawn ground" here is the ground
+  // that pane's game actually draws — the surface roads are laid on and
+  // the surface the character must stand on. (Analytic heightAt — GC
+  // .charY — can sit up to ~0.42 u away from it; the readout keeps
+  // reporting the analytic ground, unchanged.)
+  GC.LATT = { cx: 8000 / 600, cz: 12000 / 800 };
+  GC._latt = {};
+  GC.latticeFor = function (side) {
+    if (GC._latt[side]) return GC._latt[side];
+    var g = GC.grounds[side], V = GC.VIEW;
+    var ix0 = Math.floor(V.x0 / GC.LATT.cx), ix1 = Math.ceil(V.x1 / GC.LATT.cx);
+    var iz0 = Math.floor(V.z0 / GC.LATT.cz), iz1 = Math.ceil(V.z1 / GC.LATT.cz);
+    var nx = ix1 - ix0 + 1, nz = iz1 - iz0 + 1;
+    var h = new Float32Array(nx * nz);
+    for (var iz = 0; iz < nz; iz++)
+      for (var ix = 0; ix < nx; ix++)
+        h[iz * nx + ix] = g.heightAt((ix0 + ix) * GC.LATT.cx, (iz0 + iz) * GC.LATT.cz);
+    var L = { ix0: ix0, iz0: iz0, nx: nx, nz: nz, h: h };
+    GC._latt[side] = L;
+    return L;
+  };
+  GC.meshY = function (side, x, z) {
+    var L = GC.latticeFor(side);
+    var fx = Math.max(0, Math.min(L.nx - 1.001, x / GC.LATT.cx - L.ix0));
+    var fz = Math.max(0, Math.min(L.nz - 1.001, z / GC.LATT.cz - L.iz0));
+    var ix = Math.floor(fx), iz = Math.floor(fz), u = fx - ix, v = fz - iz;
+    var i00 = iz * L.nx + ix;
+    var a = L.h[i00], b = L.h[i00 + 1], c = L.h[i00 + L.nx], d = L.h[i00 + L.nx + 1];
+    // The game's own bilinear formula (terrainMeshY, verbatim shape).
+    return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+  };
+
+  // ---- Road strips (the game's road construction, per pane) ----
+  // Stage 2 ribbonGeomY rail mode: a road is built as N strips across its
+  // width (3/4/5 by the width rule below); vertices sit at every strip
+  // boundary and EVERY vertex height is SET to terrainMeshY(vertex xz)
+  // + 0.01 — the surface follows the ground across the width, not just
+  // along it. GC.stripsFor(side) reproduces that construction for one
+  // pane: per station, the plan coords of the strip-boundary rails and
+  // their heights on THAT pane's drawn ground.
+  GC.stripCount = function (w) { return w <= 10 ? 3 : (w <= 20 ? 4 : 5); };
+  GC.stripFracs = function (strips) {
+    var f = [];
+    for (var k = 0; k <= strips; k++) f.push(-1 + 2 * k / strips);
+    return f;
+  };
+  // Per-station unit perpendiculars (shared by both panes; the same
+  // neighbour-direction rule the ribbon builders use).
+  GC._perp = null;
+  GC.perpsFor = function () {
+    if (GC._perp) return GC._perp;
+    GC._perp = GC.ROADS.map(function (rec) {
+      var n = rec.pts.length, out = [];
+      for (var i = 0; i < n; i++) {
+        var p0 = rec.pts[Math.max(0, i - 1)], p1 = rec.pts[Math.min(n - 1, i + 1)];
+        var dx = p1[0] - p0[0], dz = p1[1] - p0[1];
+        var len = Math.hypot(dx, dz) || 1;
+        out.push([-dz / len, dx / len]);
+      }
+      return out;
+    });
+    return GC._perp;
+  };
+  GC._strips = {};
+  GC.stripsFor = function (side) {
+    if (GC._strips[side]) return GC._strips[side];
+    var perps = GC.perpsFor();
+    var out = GC.ROADS.map(function (rec, ri) {
+      var n = rec.pts.length, w = GC.roadWidth(rec.c, rec.n), hw = w / 2;
+      var strips = GC.stripCount(w), fracs = GC.stripFracs(strips);
+      var plan = [], hs = [];
+      for (var i = 0; i < n; i++) {
+        var px = perps[ri][i][0], pz = perps[ri][i][1];
+        var x = rec.pts[i][0], z = rec.pts[i][1];
+        var row = [], hrow = [];
+        for (var r = 0; r < fracs.length; r++) {
+          var qx = x + px * fracs[r] * hw, qz = z + pz * fracs[r] * hw;
+          row.push([qx, qz]);
+          hrow.push(GC.meshY(side, qx, qz) + 0.01);
+        }
+        plan.push(row); hs.push(hrow);
+      }
+      return { rec: rec, w: w, hw: hw, strips: strips, fracs: fracs, plan: plan, hs: hs };
+    });
+    GC._strips[side] = out;
+    return out;
+  };
+
+  // One strip quad's drawn surface height at (t along, u across the strip
+  // interval) — the game's stripQuadY, verbatim: two triangles split by
+  // the P_{s+1}-C_s diagonal; the formulas agree on the diagonal.
+  GC.stripQuadY = function (h00, h01, h10, h11, t, u) {
+    if (t + u <= 1) return h00 * (1 - t - u) + h10 * t + h01 * u;
+    return h01 * (1 - t) + h10 * (1 - u) + h11 * (t + u - 1);
+  };
+
+  // The DRAWN road surface height at (x, z) on one pane, or null when the
+  // point is not on a road — a faithful port of the game's roadSurfaceY +
+  // bakedStripSurfaceY pair: the containing segment is gated by its
+  // half-width, rails are re-sampled from the pane's drawn ground + 0.01
+  // exactly as the ribbon draws them, the across coordinate is recovered
+  // in the lerped station-perpendicular frame, and overlapping segments
+  // prefer the surface closest to drawn ground + 0.01 (the game's baked
+  // preference rule).
+  GC.roadSurfaceY = function (side, x, z) {
+    var perps = GC.perpsFor(), boxes = gcRoadBBox();
+    var terr = GC.meshY(side, x, z);
+    var best = null, bestScore = Infinity;
+    for (var ri = 0; ri < GC.ROADS.length; ri++) {
+      var rec = GC.ROADS[ri], n = rec.pts.length;
+      if (n < 2) continue;
+      var w = GC.roadWidth(rec.c, rec.n), hw = w / 2;
+      var b = boxes[ri];
+      if (x < b[0] - hw || x > b[2] + hw || z < b[1] - hw || z > b[3] + hw) continue;
+      var strips = GC.stripCount(w), fracs = GC.stripFracs(strips);
+      for (var i = 0; i + 1 < n; i++) {
+        var ax = rec.pts[i][0], az = rec.pts[i][1], bx = rec.pts[i + 1][0], bz = rec.pts[i + 1][1];
+        var vx = bx - ax, vz = bz - az, len2 = vx * vx + vz * vz;
+        var t = len2 > 0 ? ((x - ax) * vx + (z - az) * vz) / len2 : 0;
+        t = Math.max(0, Math.min(1, t));
+        var cxp = ax + vx * t, czp = az + vz * t;
+        var ddx = x - cxp, ddz = z - czp;
+        if (ddx * ddx + ddz * ddz > hw * hw) continue; // the game's gate
+        // Across coordinate in the lerped station-perpendicular frame.
+        var pa = perps[ri][i], pb = perps[ri][i + 1];
+        var pTx = pa[0] + (pb[0] - pa[0]) * t, pTz = pa[1] + (pb[1] - pa[1]) * t;
+        var pt2 = pTx * pTx + pTz * pTz, f;
+        if (pt2 > 0.25) { f = ((x - cxp) * pTx + (z - czp) * pTz) / (hw * pt2); }
+        else {
+          var ln = Math.sqrt(len2) || 1;
+          f = ((x - cxp) * (-vz / ln) + (z - czp) * (vx / ln)) / hw;
+        }
+        f = Math.max(-1, Math.min(1, f));
+        var k = 0; while (k < strips - 1 && f > fracs[k + 1]) k++;
+        var f0 = fracs[k], f1 = fracs[k + 1];
+        var u = (f1 > f0) ? (f - f0) / (f1 - f0) : 0;
+        u = Math.max(0, Math.min(1, u));
+        function railY(ex, ez, epx, epz, frac) {
+          return GC.meshY(side, ex + epx * frac * hw, ez + epz * frac * hw) + 0.01;
+        }
+        var y = GC.stripQuadY(
+          railY(ax, az, pa[0], pa[1], f0), railY(ax, az, pa[0], pa[1], f1),
+          railY(bx, bz, pb[0], pb[1], f0), railY(bx, bz, pb[0], pb[1], f1), t, u);
+        var score = Math.abs((y - terr) - 0.01);
+        if (score < bestScore) { bestScore = score; best = y; }
+      }
+    }
+    return best;
+  };
+
+  // The surface the character stands on, per pane: the drawn road surface
+  // when on a road, never below the drawn ground (the v13 surfaceAt rule:
+  // the ride height IS what is drawn); off-road, the drawn ground itself.
+  GC.surfaceY = function (side, x, z) {
+    var gy = GC.meshY(side, x, z);
+    var ry = GC.roadSurfaceY(side, x, z);
+    return ry === null ? gy : Math.max(gy, ry);
+  };
+
+  // The character's standing height on one pane: the smoothed value once
+  // stepping has sampled it, else the exact surface (spawn / post-jump).
+  GC.standY = function (side) {
+    var s = GC.char.stand[side];
+    return (s === null || s === undefined) ? GC.surfaceY(side, GC.char.x, GC.char.z) : s;
   };
 
   // ---- Street lookup (per pane, from that pane's own scene data) ----
@@ -266,11 +449,12 @@
   };
 
   // Where the camera looks: the character (+ pan offset), at eye height
-  // averaged over the two grounds (4.8 u is about 1.7 m at this scale).
+  // averaged over the two panes' STANDING heights (so he stays framed
+  // when the two surfaces disagree; 4.8 u is about 1.7 m at this scale).
   GC.camTarget = function () {
     return {
       x: GC.char.x + GC.cam.panX,
-      y: (GC.charY('play') + GC.charY('www')) / 2 + 4.8,
+      y: (GC.standY('play') + GC.standY('www')) / 2 + 4.8,
       z: GC.char.z + GC.cam.panZ
     };
   };
@@ -310,6 +494,10 @@
     GC.char.z = Math.max(V.z0 + 30, Math.min(V.z1 - 30, z));
     GC.cam.panX = 0;
     GC.cam.panZ = 0;
+    // Standing heights re-sample at the landing spot (no glide across
+    // the map from the previous surface).
+    GC.char.stand.play = null;
+    GC.char.stand.www = null;
   };
 
   // Expose for Node harnesses that eval this script (no-op in the page,
@@ -344,39 +532,31 @@
   }
 
   // ---------- Terrain height pass (shared by both scenes) ----------
-  // Grid over the view at 20 u spacing: 146 x 266 vertices. Both grounds are
-  // sampled ONCE here; each scene's mesh and difference tint read from these
-  // two arrays, so the tint compares exactly the heights that are drawn.
-  var STEP = 20, GX = 146, GZ = 266;
-  var heights = { play: new Float32Array(GX * GZ), www: new Float32Array(GX * GZ) };
-  (function sampleHeights() {
-    for (var iz = 0; iz < GZ; iz++) {
-      var z = VIEW.z0 + iz * STEP;
-      for (var ix = 0; ix < GX; ix++) {
-        var x = VIEW.x0 + ix * STEP, k = iz * GX + ix;
-        heights.play[k] = GC.grounds.play.heightAt(x, z);
-        heights.www[k] = GC.grounds.www.heightAt(x, z);
-      }
-    }
-  })();
+  // Both scenes' terrain meshes are built from the SAME lattice nodes
+  // GC.meshY samples (the game's heightfield lattice: nodes at
+  // ix * 8000/600, iz * 12000/800), so the drawn ground and GC.meshY —
+  // the surface the roads are laid on and the character stands on —
+  // agree by construction. The difference tint reads the same nodes.
+  var LATT = { play: GC.latticeFor('play'), www: GC.latticeFor('www') };
 
   // Base ground colour: soft green-gray height shading, lowland to high.
   var LOW = [0.435, 0.620, 0.341], HIGH = [0.612, 0.541, 0.439]; // #6f9e57 -> #9c8a70
   var TINT_RGB = [1.0, 0.25, 0.15]; // difference tint target (red)
   function buildTerrain(side) {
-    var own = heights[side], other = heights[side === 'play' ? 'www' : 'play'];
+    var own = LATT[side], other = LATT[side === 'play' ? 'www' : 'play'];
+    var GX = own.nx, GZ = own.nz;
     var pos = new Float32Array(GX * GZ * 3);
     var base = new Float32Array(GX * GZ * 3);
     var tinted = new Float32Array(GX * GZ * 3);
     for (var iz = 0; iz < GZ; iz++) {
       for (var ix = 0; ix < GX; ix++) {
-        var k = iz * GX + ix, x = VIEW.x0 + ix * STEP, z = VIEW.z0 + iz * STEP, h = own[k];
+        var k = iz * GX + ix, x = (own.ix0 + ix) * GC.LATT.cx, z = (own.iz0 + iz) * GC.LATT.cz, h = own.h[k];
         pos[k * 3] = x; pos[k * 3 + 1] = h; pos[k * 3 + 2] = z;
         var t = Math.max(0, Math.min(1, h / 70));
         var r = lerp(LOW[0], HIGH[0], t), g = lerp(LOW[1], HIGH[1], t), b = lerp(LOW[2], HIGH[2], t);
         base[k * 3] = r; base[k * 3 + 1] = g; base[k * 3 + 2] = b;
         // Difference tint: lean toward red as |other - own| grows (full at 12 u).
-        var f = Math.min(1, Math.abs(other[k] - h) / 12) * 0.75;
+        var f = Math.min(1, Math.abs(other.h[k] - h) / 12) * 0.75;
         tinted[k * 3] = lerp(r, TINT_RGB[0], f);
         tinted[k * 3 + 1] = lerp(g, TINT_RGB[1], f);
         tinted[k * 3 + 2] = lerp(b, TINT_RGB[2], f);
@@ -400,37 +580,32 @@
     return { mesh: mesh, baseAttr: baseAttr, tintAttr: tintAttr };
   }
 
-  // ---------- Roads (one shared geometry; the heights come from the data's
-  // own ys, identical in both scenes — the ground difference shows through
-  // or above the ribbon, which is exactly what Joshua needs to see) ----------
-  function buildRoads() {
+  // ---------- Roads (PER PANE, the game's STRIPS construction) ----------
+  // Each pane builds its roads exactly the way that copy's game builds
+  // them (GC.stripsFor): strips across the width, every rail height SET
+  // to the pane's drawn ground + 0.01. The road CENTRELINE (plan) is the
+  // shared data; the surface each pane draws follows its own ground —
+  // so where the grounds disagree, the same road visibly takes a
+  // different shape (the Dollar Mill climb exists in WEB, not in DEV).
+  function buildRoads(side) {
     var pos = [], idx = [];
-    GC.ROADS.forEach(function (rec) {
-      var n = rec.pts.length;
+    GC.stripsFor(side).forEach(function (st) {
+      var n = st.rec.pts.length;
       if (n < 2) return;
-      var w = GC.roadWidth(rec.c, rec.n) / 2;
-      var base = pos.length / 3;
-      for (var i = 0; i < n; i++) {
-        // Segment direction from neighbours; perpendicular in the XZ plane.
-        var p0 = rec.pts[Math.max(0, i - 1)], p1 = rec.pts[Math.min(n - 1, i + 1)];
-        var dx = p1[0] - p0[0], dz = p1[1] - p0[1];
-        var len = Math.hypot(dx, dz) || 1; dx /= len; dz /= len;
-        var px = -dz, pz = dx;
-        var x = rec.pts[i][0], z = rec.pts[i][1], y = (rec.ys[i] || 0) + 0.03;
-        pos.push(x - px * w, y, z - pz * w, x + px * w, y, z + pz * w);
-      }
-      for (var s = 0; s < n - 1; s++) {
-        var a = base + s * 2, b = a + 1, c = a + 2, d = a + 3;
-        idx.push(a, b, c, b, d, c);
-      }
+      var R = st.plan[0].length, base = pos.length / 3;
+      for (var i = 0; i < n; i++)
+        for (var r = 0; r < R; r++)
+          pos.push(st.plan[i][r][0], st.hs[i][r], st.plan[i][r][1]);
+      for (var s = 0; s < n - 1; s++)
+        for (var k = 0; k < R - 1; k++) {
+          var a = base + s * R + k, b = a + 1, c = a + R, d = c + 1;
+          idx.push(a, b, c, b, d, c);
+        }
     });
     var geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    // Flat ribbons: every normal straight up.
-    var nrm = new Float32Array(pos.length);
-    for (var i = 0; i < pos.length; i += 3) { nrm[i] = 0; nrm[i + 1] = 1; nrm[i + 2] = 0; }
-    geo.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
     geo.setIndex(idx);
+    geo.computeVertexNormals();
     return geo;
   }
 
@@ -514,7 +689,11 @@
     return { group: grp, legL: legL, legR: legR, armL: armL, armR: armR };
   }
   function placeCharacter(parts, side) {
-    parts.group.position.set(GC.char.x, GC.charY(side), GC.char.z);
+    // Standing height: the drawn surface of THIS pane (road if on one,
+    // else drawn ground), smoothed in GC.stepCharacter — never the raw
+    // analytic terrain, which left him sunk through roads whose drawn
+    // surface rides above heightAt.
+    parts.group.position.set(GC.char.x, GC.standY(side), GC.char.z);
     parts.group.rotation.y = GC.char.heading;
     var sw = GC.char.swing;
     parts.legL.rotation.x = sw * 0.6;
@@ -524,7 +703,6 @@
   }
 
   // ---------- Scene assembly (identical setup both sides) ------------------
-  var roadGeo = buildRoads();
   function buildScene(side) {
     var scene = new THREE.Scene();
     scene.background = new THREE.Color(0x87b5d9);
@@ -535,7 +713,9 @@
     scene.add(sun);
     var terr = buildTerrain(side);
     scene.add(terr.mesh);
-    scene.add(new THREE.Mesh(roadGeo, new THREE.MeshLambertMaterial({ color: 0x33373d })));
+    scene.add(new THREE.Mesh(buildRoads(side), new THREE.MeshLambertMaterial({
+      color: 0x33373d, side: THREE.DoubleSide,
+      polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })));
     scene.add(buildBuildings(side));
     scene.add(buildHomeMarker(side));
     var chr = buildCharacter();
