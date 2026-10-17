@@ -15,8 +15,8 @@ The token is NEVER logged, printed, or included in any push payload.
 
 import json
 import base64
-import urllib.request
-import urllib.error
+import http.client
+import urllib.parse
 from pathlib import Path
 
 import gi
@@ -81,48 +81,164 @@ def clear_token():
 # GitHub Contents API push
 # ---------------------------------------------------------------------------
 
-def _api_request(url, token, method="GET", payload=None):
+# ---------------------------------------------------------------------------
+# Connections (v1.7.8 — Joshua's close/reopen design)
+# ---------------------------------------------------------------------------
+# In 1.7.7 the save round trip pushed and then re-downloaded as one
+# undivided flow of urllib calls. On Joshua's laptop the push LANDED
+# (two commits) but the re-download died with "Remote end closed
+# connection without response" — a half-dead connection being reused
+# for work it could no longer do.
+#
+# Joshua's fix (2026-10-16, supersedes any retry idea): "Instead of
+# retrying what it should do is after it's pushed close the connection
+# then reopen the connection to download."
+#
+# GitHubConnection makes connections explicit objects: one instance
+# == one real HTTPS connection to api.github.com. A "leg" of work —
+# all the pushes of a save, or all the proof downloads after it —
+# runs on ONE connection; when the leg ends the caller CLOSES it, and
+# the next leg OPENS A NEW ONE. A download therefore never rides the
+# connection the push used, so a socket the server quietly dropped
+# after the push cannot kill the download.
+
+API_HOST = "api.github.com"
+
+
+class GitHubConnection:
+    """
+    One explicit HTTPS connection to api.github.com.
+
+    request() keeps the long-standing suite contract: it returns
+    (parsed_json, None) on success or (None, error_message) on any
+    failure, and the token only ever travels in the Authorization
+    header. close() shuts the underlying socket for real — after
+    close(), this object refuses further requests, so a stale
+    connection can never be reused by accident.
+    """
+
+    def __init__(self):
+        """Open the underlying HTTPS connection (socket connects on
+        first request; the object represents ONE connection either
+        way and is never shared between legs)."""
+        self._conn = http.client.HTTPSConnection(API_HOST, timeout=30)
+        self.closed = False
+
+    def request(self, url, token, method="GET", payload=None):
+        """
+        Make one authenticated GitHub API request on THIS connection.
+        Returns (parsed JSON, None) or (None, error_message).
+        """
+        if self.closed:
+            # Programming error, not a network state: a closed leg's
+            # connection must never silently come back to life.
+            return None, "Connection already closed."
+        headers = {
+            "User-Agent": "adamsville-suite-native",
+            "Accept": "application/vnd.github+json",
+        }
+        # NOTE: token is only ever sent in the Authorization header,
+        # never in URLs, logs, or payloads. No header at all when no
+        # token is set (public-repo reads still work unauthenticated).
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        body = None
+        if payload is not None:
+            body = json.dumps(payload).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+        # http.client speaks in path+query, not full URLs.
+        parts = urllib.parse.urlsplit(url)
+        target = parts.path
+        if parts.query:
+            target += "?" + parts.query
+        try:
+            self._conn.request(method, target, body=body,
+                               headers=headers)
+            resp = self._conn.getresponse()
+            raw = resp.read()
+            status = resp.status
+        except Exception as e:
+            # Includes http.client.RemoteDisconnected — the exact
+            # "Remote end closed connection without response" failure
+            # from the laptop: THIS connection is dead. Report it as a
+            # network error; the caller's leg structure (fresh
+            # connection per leg) is what keeps it from stranding a
+            # save whose push already landed.
+            return None, f"Network error: {e}"
+        if status >= 400:
+            # Read the error body for a useful message (no token in it).
+            try:
+                err_body = json.loads(raw.decode("utf-8"))
+                msg = err_body.get("message", f"HTTP {status}")
+            except Exception:
+                msg = f"HTTP {status}"
+            if status == 401:
+                msg = "Bad token (401). Check your GitHub token."
+            elif status == 403:
+                msg = ("Forbidden (403). Token may lack 'repo' scope "
+                       "or be rate-limited.")
+            elif status == 404:
+                msg = ("Not found (404). Check the repo name and "
+                       "file path.")
+            return None, msg
+        if not raw:
+            # e.g. a bare 200/204 with no body — success, nothing in it.
+            return {}, None
+        try:
+            return json.loads(raw.decode("utf-8")), None
+        except Exception as e:
+            return None, f"Unreadable response from GitHub: {e}"
+
+    def close(self):
+        """Close the underlying socket. Idempotent."""
+        try:
+            self._conn.close()
+        except Exception:
+            pass
+        self.closed = True
+
+    # Context-manager sugar so a leg can be written as a with-block.
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+        return False
+
+
+def open_connection():
+    """
+    Open a NEW GitHubConnection (v1.7.8).
+
+    Every leg of a save round trip calls this for itself: the push
+    leg gets one connection, it is closed, and the download leg gets
+    another. Never module-level cached, never reused across legs.
+    """
+    return GitHubConnection()
+
+
+def _api_request(url, token, method="GET", payload=None, conn=None):
     """
     Make an authenticated GitHub API request.
     Returns the parsed JSON response, or (None, error_message) on failure.
+
+    v1.7.8: conn= runs the request on the caller's open
+    GitHubConnection (one leg of a save round trip). Without conn, a
+    FRESH connection is opened for this single request and closed
+    right after — a request never rides a connection left over from
+    earlier work.
     """
-    headers = {
-        "User-Agent": "adamsville-suite-native",
-        "Accept": "application/vnd.github+json",
-        # NOTE: token is only ever sent in the Authorization header,
-        # never in URLs, logs, or payloads.
-        "Authorization": f"Bearer {token}",
-    }
-    data = None
-    if payload is not None:
-        data = json.dumps(payload).encode("utf-8")
-        headers["Content-Type"] = "application/json"
-    req = urllib.request.Request(url, data=data, headers=headers,
-                                 method=method)
+    if conn is not None:
+        return conn.request(url, token, method=method, payload=payload)
+    one_shot = open_connection()
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            return json.loads(resp.read().decode()), None
-    except urllib.error.HTTPError as e:
-        # Read the error body for a useful message (no token in it).
-        try:
-            err_body = json.loads(e.read().decode())
-            msg = err_body.get("message", f"HTTP {e.code}")
-        except Exception:
-            msg = f"HTTP {e.code}"
-        if e.code == 401:
-            msg = "Bad token (401). Check your GitHub token."
-        elif e.code == 403:
-            msg = "Forbidden (403). Token may lack 'repo' scope or be rate-limited."
-        elif e.code == 404:
-            msg = "Not found (404). Check the repo name and file path."
-        return None, msg
-    except urllib.error.URLError as e:
-        return None, f"Network error: {e.reason}"
-    except Exception as e:
-        return None, f"Push failed: {e}"
+        return one_shot.request(url, token, method=method,
+                                payload=payload)
+    finally:
+        one_shot.close()
 
 
-def push_file(repo, path, content_bytes, message, token=None):
+def push_file(repo, path, content_bytes, message, token=None, conn=None):
     """
     Push a file to a GitHub repo via the Contents API (create or update).
 
@@ -131,6 +247,9 @@ def push_file(repo, path, content_bytes, message, token=None):
     content_bytes: the new file content
     message: commit message
     token: GitHub token (uses stored token if None)
+    conn: optional GitHubConnection for this push leg (v1.7.8) — both
+        requests (SHA read + PUT) ride it; without one, each request
+        gets its own fresh one-shot connection.
 
     Returns (True, "ok") on success, (False, reason) on failure.
     """
@@ -141,7 +260,7 @@ def push_file(repo, path, content_bytes, message, token=None):
     # Step 1: get the current blob SHA (needed for updates).
     # If the file doesn't exist yet (404), we create it without a SHA.
     url = f"https://api.github.com/repos/{repo}/contents/{path}"
-    resp, err = _api_request(url, tok)
+    resp, err = _api_request(url, tok, conn=conn)
     sha = None
     if resp is not None:
         sha = resp.get("sha")
@@ -157,25 +276,120 @@ def push_file(repo, path, content_bytes, message, token=None):
     }
     if sha:
         payload["sha"] = sha
-    resp, err = _api_request(url, tok, method="PUT", payload=payload)
+    resp, err = _api_request(url, tok, method="PUT", payload=payload,
+                             conn=conn)
     if resp is None:
         return False, err
     return True, "ok"
 
 
-def push_targets(targets, token=None):
+def push_targets(targets, token=None, conn=None):
     """
     Push multiple (repo, path, content_bytes, message) targets.
     Returns (True, "ok") if all succeeded, else (False, first_error).
     Stops at the first failure.
+
+    v1.7.8: with conn=, every target rides the caller's push-leg
+    connection. Without one, push_targets opens its OWN connection
+    for the whole push leg and closes it when the leg ends — a bare
+    push never leaves a half-dead connection behind for the next
+    leg (e.g. a proof download) to trip over.
     """
     tok = token or get_token()
     if not tok:
         return False, "No GitHub token set."
-    for repo, path, content, message in targets:
-        ok, msg = push_file(repo, path, content, message, tok)
-        if not ok:
-            return False, f"{path}: {msg}"
+    own = conn is None
+    if own:
+        conn = open_connection()
+    try:
+        for repo, path, content, message in targets:
+            ok, msg = push_file(repo, path, content, message, tok,
+                                conn=conn)
+            if not ok:
+                return False, f"{path}: {msg}"
+        return True, "ok"
+    finally:
+        if own:
+            conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Fetch + delete (v1.7.7 — GLOBAL SAVE PROTOCOL support)
+# ---------------------------------------------------------------------------
+# v1.7.7 (Joshua 2026-10-16): every save in the suite now ends by
+# RE-DOWNLOADING the pushed file from GitHub and showing that copy, so a
+# save is only "done" once the GitHub state is what the user sees.
+# fetch_file() is that re-download; it goes through the Contents API
+# (never raw.githubusercontent.com, whose CDN can serve stale bytes).
+# delete_file() completes the round trip for removals.
+# v1.7.8: both take an optional conn= GitHubConnection so a round trip
+# can run each leg on its own fresh connection (see above).
+
+def fetch_file(repo, path, **kwargs):
+    """
+    Download one file from a GitHub repo via the Contents API.
+
+    repo: "owner/repo"; path: repo-relative path.
+    Optional kwargs:
+      token: defaults to the stored suite token.
+      conn: a GitHubConnection for this download leg (v1.7.8) — the
+        caller owns it (opened fresh for the leg, closed after);
+        without one, the fetch runs on its own one-shot connection.
+    Returns (bytes, None) on success, (None, error_message) on failure.
+    Works without a token for public repos (unauthenticated read); when
+    a token is available it is used (higher rate limit, same content).
+    """
+    url = f"https://api.github.com/repos/{repo}/contents/{path}"
+    tok = kwargs.get("token") or get_token()
+    conn = kwargs.get("conn")
+    # v1.7.8: BOTH the authenticated and the unauthenticated read go
+    # through _api_request / GitHubConnection now, so every download
+    # — token or not — runs on an explicit connection instead of a
+    # urllib one-off whose state nobody owns.
+    resp, err = _api_request(url, tok, conn=conn)
+    if resp is None:
+        return None, err
+    try:
+        # Contents API returns the file base64-encoded (with newlines).
+        return base64.b64decode(resp["content"]), None
+    except Exception as e:
+        return None, f"Fetch failed: undecodable content ({e})"
+
+
+def delete_file(repo, path, message, **kwargs):
+    """
+    Delete one file from a GitHub repo via the Contents API.
+
+    repo: "owner/repo"; path: repo-relative path; message: commit text.
+    Optional kwargs:
+      token: defaults to the stored suite token.
+      conn: a GitHubConnection for this push leg (v1.7.8) — deletes
+        are mutations, so in a save round trip they ride the PUSH
+        connection, never the proof-download one.
+    Returns (True, "ok") on success, (False, reason) on failure —
+    including (False, "...404...") if the file is already gone, so the
+    caller can decide whether that counts as removed.
+    """
+    tok = kwargs.get("token") or get_token()
+    conn = kwargs.get("conn")
+    if not tok:
+        return False, "No GitHub token set."
+
+    # Step 1: the delete call needs the current blob SHA.
+    url = f"https://api.github.com/repos/{repo}/contents/{path}"
+    resp, err = _api_request(url, tok, conn=conn)
+    if resp is None:
+        return False, err
+    sha = resp.get("sha")
+    if not sha:
+        return False, "Could not read the file's SHA for deletion."
+
+    # Step 2: DELETE with {message, sha}.
+    payload = {"message": message, "sha": sha}
+    resp, err = _api_request(url, tok, method="DELETE", payload=payload,
+                             conn=conn)
+    if resp is None:
+        return False, err
     return True, "ok"
 
 
