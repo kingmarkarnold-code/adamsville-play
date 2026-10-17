@@ -46,7 +46,7 @@ import overpass as overpass_mod  # noqa: E402
 
 # App version shown in the Help -> About dialog (bump with each release).
 # Joshua 2026-10-11: version number must be prominent in About.
-APP_VERSION = "1.9.1"
+APP_VERSION = "1.9.2"
 # Display name and icon-theme name for the About dialog.
 APP_NAME = "Adamsville Map Editor"
 APP_ICON = "adamsville-map-editor-native"
@@ -1654,20 +1654,40 @@ class MapEditorApp:
     def _rebuild_zones_menu(self):
         """
         (Re)build the Zones menu entries from data.ZONES.
-        Called at startup and after Fill Unzoned Area creates new zones.
+        Called at startup, after _load_data adopts a model (1.9.2),
+        and after Fill Unzoned Area creates new zones.
         """
         # Remove old children
         for child in self.zones_menu.get_children():
             self.zones_menu.remove(child)
         for i, zone in enumerate(ZONES):
             zi = Gtk.MenuItem(label=zone["name"])
-            # Use default arg to capture loop variable
-            zi.connect("activate", lambda w, idx=i: self.zoom_to_zone(idx))
+            # Use default args to capture the loop variables. The item
+            # hands zoom_to_zone BOTH its position and the name it
+            # displays (1.9.2): ZONES is rebuilt in place when a model
+            # is adopted, so a position captured earlier can silently
+            # point at a different zone — the displayed name is the
+            # ground truth for what the user picked.
+            zi.connect("activate",
+                       lambda w, idx=i, name=zone["name"]:
+                       self.zoom_to_zone(idx, name))
             self.zones_menu.append(zi)
         self.zones_menu.show_all()
 
-    def zoom_to_zone(self, idx):
+    def zoom_to_zone(self, idx, name=None):
         """Zoom the canvas to fit a zone's polygon bounds, and select it."""
+        # 1.9.2: if the caller's index no longer points at the zone it
+        # named (data.ZONES was rebuilt in place after the caller
+        # captured the index — the wrong-zone jump Joshua hit on
+        # 2026-10-16), resolve by name instead. The label the user
+        # clicked must always win over a stale position.
+        if name is not None and (not (0 <= idx < len(ZONES))
+                                 or ZONES[idx]["name"] != name):
+            match = [j for j, z in enumerate(ZONES)
+                     if z["name"] == name]
+            if not match:
+                return
+            idx = match[0]
         zone = ZONES[idx]
         alloc = self.canvas.get_allocation()
         if alloc.width <= 0:
@@ -2316,6 +2336,28 @@ class MapEditorApp:
             # all history — snapshots reference the old dataset.
             self.undo_manager.clear()
             self._refresh_undo_ui()
+            # 1.9.2: adopting a model rebuilds data.ZONES IN PLACE in
+            # ZONE_IDS order (data.rebuild_zones_from_model), while the
+            # Zones menu was built at startup from the pre-download
+            # fallback list in a DIFFERENT order, its items resolving
+            # by position. Without a rebuild here, every menu entry
+            # jumps to the wrong zone (Joshua 2026-10-16: "Adamsville"
+            # landed on Downtown, "Mableton" on Adamsville). Every
+            # adoption path (download-on-open, offline cache, File ->
+            # Download, Check for Updates) funnels through _load_data,
+            # so the menu is resynced here, next to the load itself.
+            try:
+                self._rebuild_zones_menu()
+            except Exception:
+                pass
+            # Zone indices may have shifted with the rebuild: drop any
+            # stale zone selection rather than point it at another
+            # zone's pins.
+            try:
+                self.canvas.selected_zone = None
+                self.canvas.drag_pin = None
+            except Exception:
+                pass
         except FileNotFoundError:
             self.set_status("No local data. Use File → Download from GitHub.")
         except Exception as e:
