@@ -19,6 +19,8 @@ Joshua's rule: all code commented.
 
 import json
 import math
+import shutil
+import subprocess
 import gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk, GLib, Pango
@@ -45,6 +47,16 @@ try:
 except Exception:
     zonedata = None
     _ZONEDATA_AVAILABLE = False
+# v1.7.2: the suite shared download cache (Joshua 2026-10-17: all
+# editors share one downloaded copy of the map). Soft import for
+# the same reason as zonedata's: downloads must fail open to plain
+# fetches, never stop the editor opening.
+try:
+    import shared_cache  # noqa: E402
+    _SHARED_CACHE_AVAILABLE = True
+except Exception:
+    shared_cache = None
+    _SHARED_CACHE_AVAILABLE = False
 from data import (BUILDING_TYPES, WALL_MATERIALS, ROOF_TEXTURES,
                   WINDOW_TYPES, DOOR_TYPES, FLOOR_PLAN_TEMPLATES,
                   HOUSE_STYLES, DRIVEWAY_MATERIALS, GARAGE_SIDES,
@@ -58,7 +70,7 @@ from subdivisioncanvas import SubdivisionCanvas
 
 # App version shown in the Help -> About dialog (bump with each release).
 # Joshua 2026-10-11: version number must be prominent in About.
-APP_VERSION = "1.7.1"
+APP_VERSION = "1.7.2"
 
 # ---------------------------------------------------------------------------
 # THE EDITOR UI RULE (Joshua, 2026-10-16 — standing suite principle):
@@ -164,13 +176,26 @@ class AssetEditorWindow(Gtk.Window):
 
         # All loaded buildings (list of dicts)
         self.buildings = []
-        # v1.6.0: game zone store (zonedata.GameStore) + its tab.
-        # Populated by download-on-open in _load_zone_data().
-        self.zone_store = None
+        # v1.7.2 LOAD ON DEMAND (Joshua 2026-10-17): the zone store
+        # exists from the start but starts EMPTY — startup downloads
+        # only the light lists (flagged list, gas-station review,
+        # station edits, one zone's light index); a zone's full
+        # building records download when Joshua selects a building
+        # in it (see _load_lists_on_open / ensure_zone_detail). The
+        # tabs are built immediately so the window opens fast.
+        self.zone_store = zonedata.GameStore() \
+            if _ZONEDATA_AVAILABLE else None
         self.zone_tab = None
-        # Gas Station Review tab (staged for 1.7.2): added beside
-        # the Zone Buildings tab when the zone data lands.
         self.gas_review_tab = None
+        # The one download door (1.7.2): every download this app
+        # makes goes through the suite shared cache (see
+        # shared_cache.py and editors/SHARED-CACHE.md).
+        self._fetcher = self._build_fetcher()
+        # In-flight zone loads: zone -> [done callbacks].
+        self._zone_loads = {}
+        self._index_loads = {}
+        # Download progress bar state (see _dl_progress).
+        self._progress_state = {}
         # Tabs: list of (building_dict,) currently open
         self.open_tabs = []
 
@@ -199,10 +224,40 @@ class AssetEditorWindow(Gtk.Window):
         self.notebook.set_scrollable(True)  # scroll tabs if many open
         vbox.pack_start(self.notebook, True, True, 0)
 
+        # --- Download progress (1.7.2, Joshua: "a progress bar
+        # showing the download MBs") — visible only while a download
+        # runs; its text names the file and the MB done of total.
+        self.progress_bar = Gtk.ProgressBar()
+        self.progress_bar.set_show_text(True)
+        self.progress_bar.set_no_show_all(True)
+        self.progress_bar.hide()
+        vbox.pack_start(self.progress_bar, False, False, 0)
+
         # --- Status bar ---
         self.status = Gtk.Statusbar()
         self.status_ctx = self.status.get_context_id("main")
         vbox.pack_start(self.status, False, False, 0)
+
+        # --- The game-data tabs exist from the start (1.7.2) ---
+        # They fill in as the light lists land; building the Gas
+        # Station Review tab is guarded so a failure there can
+        # never take the window down (the 1.7.0 tab lesson) — it
+        # surfaces in the status bar instead.
+        if _ZONEDATA_AVAILABLE:
+            self.zone_tab = ZoneBuildingsTab(self)
+            self.notebook.append_page(
+                self.zone_tab,
+                Gtk.Label(label="Zone Buildings (game data)"))
+            try:
+                self.gas_review_tab = GasStationReviewTab(self)
+                self.notebook.append_page(
+                    self.gas_review_tab,
+                    Gtk.Label(label="Gas Station Review"))
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                self._set_status(
+                    f"Gas Station Review tab failed to open: {e}")
 
         # --- Window geometry: restore, then track changes ---
         self._restore_geometry()
@@ -211,10 +266,12 @@ class AssetEditorWindow(Gtk.Window):
 
         # --- Load building data (download prompt on first launch) ---
         self._load_data()
-        # v1.6.0: download the game's per-zone building files and add
-        # the Zone Buildings tab (runs on a worker thread; the tab
-        # appears when the download lands).
-        self._load_zone_data()
+        # v1.7.2: download the LIGHT lists only (flagged list, gas
+        # review, station edits, subdivisions, the first zone's
+        # light index) on a worker thread. Zone building records
+        # load later, one zone at a time, when Joshua selects a
+        # building — never all seven zones up front.
+        self._load_lists_on_open()
 
     # -- menus ----------------------------------------------------------
 
@@ -307,8 +364,10 @@ class AssetEditorWindow(Gtk.Window):
         """
         downloaded, err = None, None
         try:
+            # 1.7.2: through the suite shared cache, like every
+            # download this app makes.
             downloaded, err = data.download_design_buildings(
-                github_sync.fetch_file)
+                self._fetcher.fetch)
         except Exception as e:
             # A transport-level blowup must never stop the app
             # opening — the local copy is the fallback.
@@ -337,84 +396,390 @@ class AssetEditorWindow(Gtk.Window):
         except Exception:
             pass  # offline or failed — collision checks just skip
 
-    # -- v1.6.0 game zone data -------------------------------------------
+    # -- v1.7.2 downloads: light lists on open, zones on demand ------
 
-    def _load_zone_data(self):
+    def _build_fetcher(self):
         """
-        Download-on-open for the GAME's building files (Joshua's
-        standing rule): every zone's buildings/detail/hero/zone/
-        roads files plus the editor subdivisions file are fetched
-        from adamsville-play. 1.6.1: NO single pinned connection —
-        each file is fetched on its own fresh connection (opened
-        and closed by github_sync per request, with bounded retries
-        on network errors inside zonedata.download_on_open), the
-        design that fixed the Map Editor's download-on-open; one
-        shared keep-alive connection could die mid-download and
-        take every zone with it. Runs on a worker thread; the Zone
-        Buildings tab is added on the GTK thread when it lands.
+        The app's one download door: a shared_cache.CachedFetcher
+        over github_sync's transport, so EVERY download (zone
+        files, light indexes, the flagged/review/station lists, the
+        design set) goes through the suite shared cache — one copy
+        of the map on this machine, shared by all the editors. If
+        shared_cache failed to import, fall back to plain github
+        fetches behind the same two callables (downloads must fail
+        open, never stop the editor opening).
+        """
+        if _SHARED_CACHE_AVAILABLE:
+            return shared_cache.CachedFetcher(
+                github_sync.fetch_file,
+                fetch_meta=github_sync.fetch_file_meta,
+                fetch_file_progress=github_sync.fetch_file_progress)
+
+        class _PlainFetcher:
+            """Cache-less fallback with the CachedFetcher shape."""
+            paths_served_stale = []
+
+            def register_manifest(self, raw):
+                pass
+
+            def fetch(self, repo, path, **kwargs):
+                return github_sync.fetch_file(repo, path)
+
+            def fetch_progress(self, repo, path, progress=None,
+                               **kwargs):
+                return github_sync.fetch_file_progress(
+                    repo, path, progress=progress)
+        return _PlainFetcher()
+
+    # -- download progress (worker thread -> GTK thread) --------------
+
+    def _dl_progress(self, done, total, path):
+        """
+        Progress callback handed to the store's downloads: called
+        from worker threads with (bytes done, bytes total, repo
+        path). Posts to the GTK thread, throttled so a fast
+        download cannot flood the main loop with redraws.
+        """
+        st = self._progress_state
+        key = path
+        last = st.get(key, -1)
+        pct = int(100 * done / total) if total else 100
+        if done < total and pct == last:
+            return
+        st[key] = pct
+        label = path.rsplit("/", 1)[-1]
+        text = (f"Downloading {label} — {done / 1048576:.1f} of "
+                f"{total / 1048576:.1f} MB")
+        frac = (done / total) if total else 1.0
+        GLib.idle_add(self._show_progress, frac, text)
+
+    def _show_progress(self, frac, text):
+        """GTK thread: move the progress bar (hide at completion)."""
+        if frac >= 1.0:
+            self.progress_bar.hide()
+            self._progress_state.clear()
+        else:
+            self.progress_bar.set_fraction(frac)
+            self.progress_bar.set_text(text)
+            self.progress_bar.show()
+        return False
+
+    def _hide_progress(self):
+        self.progress_bar.hide()
+        self._progress_state.clear()
+        return False
+
+    def _note_stale(self, what):
+        """Name any files the shared cache served stale (offline)
+        since the last note, in the status bar — the view is marked
+        stale honestly, per the shared-cache standard."""
+        stale = self._fetcher.paths_served_stale
+        if stale:
+            names = ", ".join(p.rsplit("/", 1)[-1] for p in stale)
+            self._set_status(
+                f"{what} (offline — showing the last downloaded "
+                f"copy of: {names}; it may be out of date.)")
+            stale.clear()
+
+    # -- the light lists on open ---------------------------------------
+
+    def _load_lists_on_open(self):
+        """
+        Download-on-open, 1.7.2 style (Joshua's load-on-demand +
+        all-lists-from-GitHub rules): the map manifest (freshness
+        for the shared cache), the flagged-buildings list, the
+        gas-station review list, the station-edits overlay, the
+        subdivisions file, and ONE zone's light index (adamsville,
+        the home zone) — a few hundred KB to ~2 MB total, never the
+        ~55 MB of zone building records. The other zones' indexes
+        download when Joshua picks those zones; a zone's full
+        records download when he selects a building in it.
+
+        Each list: GitHub first; a per-app cache file under the
+        app-data dir is the offline fallback (a cache of a previous
+        successful download — the only local copy the rules allow);
+        a failure with no cache is named in the status bar with the
+        real reason. Runs on a worker thread.
         """
         if not _ZONEDATA_AVAILABLE:
             return
         import threading
-        from gi.repository import GLib
+
+        store = self.zone_store
+        fetcher = self._fetcher
+        repo = zonedata.REPO
+
+        def fetch_list(path, cache_name):
+            """Download one list; fall back to its cache file.
+            Returns (raw_bytes_or_None, note_or_None)."""
+            raw, err = fetcher.fetch(repo, path)
+            cache_path = data.DATA_DIR / cache_name
+            if raw is not None:
+                try:
+                    data.DATA_DIR.mkdir(parents=True, exist_ok=True)
+                    cache_path.write_bytes(raw)
+                except Exception:
+                    pass  # a cache write failure is not fatal
+                return raw, None
+            if cache_path.exists():
+                try:
+                    return cache_path.read_bytes(), \
+                        f"{path}: download failed ({err}) — using " \
+                        f"the last downloaded copy."
+                except Exception:
+                    pass
+            return None, f"{path}: download failed ({err})."
 
         def worker():
-            store = zonedata.GameStore()
-            try:
-                # No conn= kwarg: github_sync.fetch_file runs each
-                # request on its own fresh one-shot connection.
-                errors = store.download_on_open(github_sync.fetch_file)
-            except Exception as e:
-                errors = {"all zones": str(e)}
+            notes = []
+            # The manifest: always fetched fresh (it is tiny) — it
+            # is the shared cache's freshness source for map files.
+            mraw, merr = github_sync.fetch_file(
+                repo, "detailed/map-manifest.json")
+            if mraw is not None:
+                fetcher.register_manifest(mraw)
+
+            raw, note = fetch_list(zonedata.FLAGGED_REPO_PATH,
+                                   "flagged-list-cache.json")
+            if raw is not None:
+                store.set_flagged(zonedata.FlaggedIndex.from_bytes(raw))
+            if note:
+                notes.append(note)
+
+            raw, note = fetch_list(zonedata.REVIEW_REPO_PATH,
+                                   "gas-review-cache.json")
+            if raw is not None:
+                store.review = zonedata.GasStationReview.from_bytes(raw)
+            if note:
+                notes.append(note)
+
+            # Station-edits overlay: a 404 is the normal first run
+            # (nobody has flipped a station yet) — start empty.
+            raw, err = fetcher.fetch(
+                repo, zonedata.STATION_EDITS_REPO_PATH)
+            if raw is not None:
+                store.station_edits = \
+                    zonedata.StationEdits.from_bytes(raw)
+            elif err and "404" not in err:
+                notes.append(
+                    f"{zonedata.STATION_EDITS_REPO_PATH}: {err}")
+
+            err = store.fetch_subdivisions(fetcher.fetch)
+            if err:
+                notes.append(err)
+
+            err = store.ensure_index(
+                "adamsville", fetcher.fetch, fetcher.fetch_progress,
+                progress=self._dl_progress)
+            if err:
+                notes.append(err)
 
             def done():
-                self.zone_store = store
-                self.zone_tab = ZoneBuildingsTab(self)
-                label = Gtk.Label(label="Zone Buildings (game data)")
-                self.notebook.append_page(self.zone_tab, label)
-                self.zone_tab.show_all()
-                # Gas Station Review tab (staged for 1.7.2, Joshua
-                # 2026-10-17): the problem gas stations as a review
-                # list, beside the Zone Buildings tab. Its data is
-                # the small bundled gas-station-review.json — no
-                # download and no zone data involved — so under the
-                # load-on-demand design it could equally appear at
-                # startup; it rides here to sit next to the other
-                # game-data tab. A failure building it must never
-                # take the zone tab (or the app) down: surface it in
-                # the status bar instead (the 1.7.0 tab lesson).
-                try:
-                    self.gas_review_tab = GasStationReviewTab(self)
-                    self.notebook.append_page(
-                        self.gas_review_tab,
-                        Gtk.Label(label="Gas Station Review"))
-                    self.gas_review_tab.show_all()
-                except Exception as e:
-                    self._set_status(
-                        f"Gas Station Review tab failed to open: {e}")
-                loaded = len(store.zones)
-                if errors:
-                    # 1.6.1: surface the REAL failure — each error
-                    # names the repo path and GitHub's own message
-                    # (zonedata records "<path>: <reason>") — never
-                    # a bare "check your connection".
-                    detail = "; ".join(
-                        f"{zone} — {errors[zone]}"
-                        for zone in sorted(errors))
-                    self._set_status(
-                        f"Zone data: {loaded} zones loaded; "
-                        f"failed: {detail}")
-                else:
-                    total = sum(len(z.boxes) for z in store.zones.values())
-                    self._set_status(
-                        f"Zone data loaded from GitHub: {loaded} zones, "
-                        f"{total} buildings.")
-                # Subdivisions from the game repo replace the local
-                # working copy when a subdivisions tab exists.
+                import gc
+                gc.collect()
+                if self.zone_tab is not None:
+                    self.zone_tab.refresh()
+                if self.gas_review_tab is not None:
+                    self.gas_review_tab.set_review(
+                        store.review, store.station_edits)
+                idx = store.indexes.get("adamsville")
+                n = len(idx.entries) if idx else 0
+                msg = (f"Ready. Adamsville's building list is loaded "
+                       f"({n} buildings) — pick any building and "
+                       f"just its zone downloads.")
+                if notes:
+                    msg += " Problems: " + "; ".join(notes)
+                self._set_status(msg)
+                self._note_stale("Lists loaded from the shared cache")
                 return False
             GLib.idle_add(done)
 
         threading.Thread(target=worker, daemon=True).start()
+
+    # -- one zone's index / detail, on demand ---------------------------
+
+    def ensure_zone_index(self, zone, done=None):
+        """Make sure one zone's light index is in memory (downloading
+        it with progress if not). done(ok) runs on the GTK thread."""
+        store = self.zone_store
+        if store is None or zone in store.indexes:
+            if done:
+                done(True)
+            return
+        if zone in self._index_loads:
+            if done:
+                self._index_loads[zone].append(done)
+            return
+        self._index_loads[zone] = [done] if done else []
+        import threading
+
+        def worker():
+            err = store.ensure_index(
+                zone, self._fetcher.fetch,
+                self._fetcher.fetch_progress,
+                progress=self._dl_progress)
+
+            def finish():
+                cbs = self._index_loads.pop(zone, [])
+                GLib.idle_add(self._hide_progress)
+                if err:
+                    self._set_status(
+                        f"Could not load the {zone} building list: "
+                        f"{err}")
+                elif self.zone_tab is not None:
+                    self.zone_tab.refresh()
+                for cb in cbs:
+                    cb(not err)
+                return False
+            GLib.idle_add(finish)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def ensure_zone_detail(self, zone, done=None):
+        """
+        Make sure one zone's FULL building records are in memory —
+        the selection-triggered download of the load-on-demand
+        design. Shows MB progress; on success the previously loaded
+        clean zones are unloaded (a zone with unsaved edits is
+        NEVER unloaded) and the freed memory is returned. done(ok)
+        runs on the GTK thread.
+        """
+        store = self.zone_store
+        if store is None or zone in store.zones:
+            if done:
+                done(True)
+            return
+        if zone in self._zone_loads:
+            if done:
+                self._zone_loads[zone].append(done)
+            return
+        self._zone_loads[zone] = [done] if done else []
+        import threading
+
+        def worker():
+            err = store.ensure_zone(
+                zone, self._fetcher.fetch,
+                self._fetcher.fetch_progress,
+                progress=self._dl_progress)
+
+            def finish():
+                import gc
+                cbs = self._zone_loads.pop(zone, [])
+                GLib.idle_add(self._hide_progress)
+                if err:
+                    self._set_status(
+                        f"Could not load the {zone} zone: {err}")
+                else:
+                    # Memory diet: drop other CLEAN zones' detail
+                    # (their light indexes stay, so their lists
+                    # still browse). Dirty zones are never dropped.
+                    for other in list(store.zones):
+                        if other != zone:
+                            store.unload_zone(other)
+                    gc.collect()
+                    # Return freed memory to the OS where possible.
+                    try:
+                        import ctypes
+                        ctypes.CDLL("libc.so.6").malloc_trim(0)
+                    except Exception:
+                        pass
+                    zd = store.zones.get(zone)
+                    self._set_status(
+                        f"{zone} loaded from GitHub: "
+                        f"{len(zd.boxes) if zd else 0} buildings.")
+                    self._note_stale("Zone loaded")
+                    if self.zone_tab is not None:
+                        self.zone_tab.refresh()
+                for cb in cbs:
+                    cb(not err)
+                return False
+            GLib.idle_add(finish)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def ensure_all_zones(self, done=None):
+        """Load EVERY zone's full records — only for actions that
+        genuinely need the whole map (baking a subdivision). Joshua's
+        rule: whole-map loads happen only when he explicitly does
+        something that needs them. done(ok) on the GTK thread."""
+        store = self.zone_store
+        missing = [z for z in zonedata.ZONES if z not in store.zones]
+        if not missing:
+            if done:
+                done(True)
+            return
+        import threading
+
+        def worker():
+            errs = []
+            for zone in missing:
+                err = store.ensure_zone(
+                    zone, self._fetcher.fetch,
+                    self._fetcher.fetch_progress,
+                    progress=self._dl_progress)
+                if err:
+                    errs.append(err)
+
+            def finish():
+                GLib.idle_add(self._hide_progress)
+                if errs:
+                    self._set_status(
+                        "Could not load every zone: "
+                        + "; ".join(errs))
+                if done:
+                    done(not errs)
+                return False
+            GLib.idle_add(finish)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    # -- Open in Map Editor (1.7.2, Joshua 2026-10-17) -------------------
+
+    def open_in_map_editor(self, zone, x, z, street_name):
+        """
+        Hand a location to the Map Editor: write the suite handoff
+        file (~/.local/share/adamsville-suite/open-in-map-editor.
+        json — {zone, x, z, street, writtenBy, timestamp}) and, if
+        the Map Editor is installed, launch it. The Map Editor
+        learns to read the file in its 1.9.5 update (the reader is
+        built into its source now); until then the honest status
+        says the location is saved and the jump lands with that
+        update.
+        """
+        from datetime import datetime, timezone
+        payload = {
+            "zone": zone,
+            "x": round(float(x), 2),
+            "z": round(float(z), 2),
+            "street": street_name or "",
+            "writtenBy": f"building-editor-{APP_VERSION}",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        try:
+            github_sync.SHARED_DIR.mkdir(parents=True, exist_ok=True)
+            path = github_sync.SHARED_DIR / "open-in-map-editor.json"
+            path.write_text(json.dumps(payload, indent=1))
+        except Exception as e:
+            self._set_status(
+                f"Could not save the Map Editor location: {e}")
+            return
+        where = f"{street_name} in {zone}" if street_name \
+            else f"that spot in {zone}"
+        exe = shutil.which("adamsville-map-editor-native")
+        if exe:
+            try:
+                subprocess.Popen([exe])
+                self._set_status(
+                    f"Map Editor location saved ({where}) and the "
+                    f"Map Editor is starting — it will open there "
+                    f"once its 1.9.5 update is installed.")
+                return
+            except Exception:
+                pass
+        self._set_status(
+            f"Map Editor location saved ({where}). The Map Editor "
+            f"update that reads it (1.9.5) is ready — once it's "
+            f"installed, the Map Editor opens right there.")
 
     # -- THE SAVE: zone data + the design set --------------------------
 
@@ -438,14 +803,15 @@ class AssetEditorWindow(Gtk.Window):
         save worker thread, and synchronously on the quit path
         (see _on_close). Returns (ok, message, design_proof).
 
-        TWO legs, each a full standing-rule round trip:
+        THREE legs, each a full standing-rule round trip:
           1. the game zone store (zonedata.GameStore — dirty zones
              + the subdivisions file), as since 1.6.0;
           2. the DESIGN set (data.design_round_trip) — NEW in
              1.7.1. Before this, design edits were in NO target
              list: "Push & Close" after a roof-colour change ran
              leg 1 only, found nothing to do, and reported success
-             while the design edit never left the laptop.
+             while the design edit never left the laptop;
+          3. the station-edits overlay (1.7.2), when dirty.
         The design leg runs only when the zone leg succeeded (or
         there is no zone store): a half-save must read as one
         honest failure, not two confusing halves.
@@ -454,13 +820,23 @@ class AssetEditorWindow(Gtk.Window):
         ok_all = True
         proof = None
         if self.zone_store is not None:
-            ok, msg, _fresh = self.zone_store.round_trip_save(
+            ok, msg, fresh = self.zone_store.round_trip_save(
                 data.DATA_DIR / "zone-cache",
                 github_sync.open_connection,
                 github_sync.push_targets,
                 github_sync.fetch_file)
             msgs.append(msg)
             ok_all = ok
+            if ok and fresh and _SHARED_CACHE_AVAILABLE:
+                # The proof copies ARE the freshest known bytes —
+                # file them in the suite shared cache so every
+                # editor (and this one's next open) can reuse them
+                # without downloading again.
+                for path, raw in fresh.items():
+                    try:
+                        shared_cache.store(zonedata.REPO, path, raw)
+                    except Exception:
+                        pass
         if self._design_dirty():
             if ok_all:
                 ok2, msg2, proof = data.design_round_trip(
@@ -474,6 +850,33 @@ class AssetEditorWindow(Gtk.Window):
                 msgs.append(
                     "Design buildings were NOT pushed (the zone "
                     "save failed first — fix that and save again).")
+                ok_all = False
+        # Leg 3 (1.7.2): the editable-station overlay, when it has
+        # unsaved changes — same standing-rule round trip, its own
+        # file (editors/building-editor/station-edits.json).
+        if self.zone_store is not None \
+                and self.zone_store.station_edits.dirty:
+            if ok_all:
+                ok3, msg3, sproof = \
+                    self.zone_store.station_edits.round_trip_save(
+                        data.DATA_DIR / "zone-cache",
+                        github_sync.open_connection,
+                        github_sync.push_targets,
+                        github_sync.fetch_file)
+                msgs.append(msg3)
+                ok_all = ok_all and ok3
+                if ok3 and sproof is not None \
+                        and _SHARED_CACHE_AVAILABLE:
+                    try:
+                        shared_cache.store(
+                            zonedata.REPO,
+                            zonedata.STATION_EDITS_REPO_PATH, sproof)
+                    except Exception:
+                        pass
+            else:
+                msgs.append(
+                    "Station edits were NOT pushed (an earlier "
+                    "part of the save failed first).")
                 ok_all = False
         if not msgs:
             msgs.append("Nothing to save — no changes.")
@@ -490,6 +893,8 @@ class AssetEditorWindow(Gtk.Window):
             self._unpublished = False
             if self.zone_tab is not None:
                 self.zone_tab.refresh()
+            if self.gas_review_tab is not None:
+                self.gas_review_tab.refresh_station_states()
         self._set_status(msg if ok else f"Save failed: {msg}")
 
     def round_trip_save(self):
@@ -503,8 +908,8 @@ class AssetEditorWindow(Gtk.Window):
         True when a round trip started.
         """
         if self.zone_store is None and not self._design_dirty():
-            self._set_status("Nothing to save yet — data is "
-                             "still loading.")
+            self._set_status("Zone data is unavailable — zonedata "
+                             "failed to load.")
             return False
         if not github_sync.has_token():
             self._set_status(
@@ -1000,189 +1405,207 @@ class AssetEditorWindow(Gtk.Window):
 # ---------------------------------------------------------------------------
 # v1.7.0: ZoneInspectorPanel — the selected zone building, in 3D
 # ---------------------------------------------------------------------------
+# ZoneInspectorPanel — the selected building (or station), in 3D
+# ---------------------------------------------------------------------------
 
 class ZoneInspectorPanel(Gtk.Box):
     """
-    Visual inspector for one zone building, shown in the RIGHT pane
-    of the Zone Buildings tab's split view (Joshua's design, as
-    corrected 2026-10-16): selecting a building makes the tab a
-    split pane — the data column stays fully present and editable
-    on the left (NOTHING is hidden or collapsed), and this panel
-    shows the building itself on the right.
+    The right pane of the split view (Joshua's design, 1.7.0): when
+    a building is selected in the Zone Buildings list, this panel
+    shows it IN 3D, in its current location — the building drawn
+    from its real footprint ring, the roads around it as context,
+    and its FRONT derived from the data: the footprint edge nearest
+    a road is the front; that wall is always painted warm orange
+    and labelled FRONT, with a ground arrow pointing out of it.
 
-    THE VIEW IS 3D, software-rendered with cairo (no OpenGL — this
-    is a low-resource GTK app):
-      * the building is a shaded EXTRUSION of its real footprint
-        ring (the detail ring) up to its real height;
-      * it sits IN ITS CURRENT LOCATION: a ground plane under it
-        carries the neighbouring road polylines from zd.roads,
-        projected onto the ground;
-      * side faces are shaded by a simple fixed light according to
-        each face's orientation; the roof is the ring polygon at
-        full height, in its own tone;
-      * the FRONT wall (the extruded face over the front edge from
-        zonedata.building_front) is ALWAYS warm orange — a permanent
-        colour property of that face, whatever the camera angle —
-        plus a "FRONT" label and a ground-level arrow pointing at
-        the front face, so the front is identifiable while orbiting.
+    1.7.2 changes (Joshua, 2026-10-17):
+      * CAMERA: opens as if standing in FRONT of the building —
+        eye level, straight at the front wall, framed close on the
+        building alone (the roads are context, they no longer set
+        the framing). "Face front" returns to exactly this view.
+      * DIRECT MANIPULATION: grab the ROOF and drag to MOVE the
+        building; grab a LEFT/RIGHT edge to change WIDTH; a
+        FRONT/BACK edge for DEPTH; the FRONT FACE (orange wall)
+        dragged up/down for HEIGHT. Typing numbers and dragging
+        are the same values, synced both ways through the tab.
+      * STATUS LABEL (amendment 2): bold coloured text at the
+        BOTTOM LEFT of the 3D view — red "Flagged", yellow
+        "Skipped", green "Placed" — describing how the GAME treats
+        this object today (a station flipped editable still shows
+        its game status).
+      * SELECTABLE STREETS (amendment 3): clicking a drawn street
+        selects it (highlighted, named); the "Open in Map Editor"
+        button then hands that street's location to the Map
+        Editor.
+      * STATIONS: an editable gas station opens here too, drawn as
+        the game's own station cluster (pad, canopy, kiosk, pumps,
+        columns at their real offsets) as one editable object.
+      * The backdrop roads are the segments near the building only
+        (zonedata keeps the zone's parsed roads only transiently —
+        the 1.7.1 panel re-scanned all of them on every draw and
+        the store retained them all).
 
-    CAMERA (Joshua's amendment, 2026-10-16):
-      * NO AUTO-ROTATION, EVER: no timer, no idle animation, no
-        turntable. The camera moves ONLY when Joshua drags on the
-        view. `auto_rotate` is False and `_rotate_timer_id` is None
-        — permanently; the smoke test asserts both.
-      * FRONT-ON DEFAULT: on every show_building() the azimuth is
-        reset to `front_azimuth`, computed from the front edge's
-        OUTWARD NORMAL (away from the ring centroid), so the front
-        wall faces the viewer, with an oblique elevation (~30°) so
-        the front wall, the roof, and one side are all visible.
-        When no front can be derived, the fallback is a documented
-        default: the camera sits to the SOUTH of the building
-        (azimuth = +pi/2 in the x/z plane, i.e. looking north).
-      * MANUAL ORBIT: drag on the drawing area — horizontal drag
-        changes the azimuth, vertical drag changes the elevation,
-        clamped to 10°..60°. A "Face front" button snaps back to
-        the front-on view.
-      * Projection is a hand-rolled orthographic oblique
-        projection: for a ground point (dx, dz) relative to the
-        footprint centroid and height h, with camera azimuth A
-        (radians, in the x/z plane, atan2(z, x) convention) and
-        elevation E (radians):
-            along  = dx*cos(A) + dz*sin(A)   (toward the camera)
-            across = dx*sin(A) - dz*cos(A)   (screen-right)
-            screen_x = cx + scale * across
-            screen_y = cy + scale * (along*sin(E) - h*cos(E))
-        Painter's algorithm: ground, roads, front arrow, then wall
-        faces sorted by average view depth (farthest first), roof
-        last among the building faces.
-
-    Documented state for the smoke test: `view_mode` ("3d"),
-    `index`, `front_info` (the zonedata.building_front dict),
-    `front_edge`, `azimuth` and `front_azimuth` (radians),
-    `elevation` (radians), `auto_rotate` (False),
-    `_rotate_timer_id` (None).
+    The view never rotates on its own (auto_rotate stays False and
+    no timer exists): orbit is by dragging empty space, elevation
+    clamped, exactly as Joshua set it in 1.7.0.
     """
 
-    # The view is a 3D view (asserted by the smoke test).
     view_mode = "3d"
-    # No auto-rotation exists in this panel — ever (see class docs).
     auto_rotate = False
+    _rotate_timer_id = None
 
-    # Default oblique elevation when a building is shown (~30°).
-    DEFAULT_ELEVATION = math.radians(30.0)
-    # Fallback azimuth when no front can be derived: the camera
-    # sits due SOUTH of the building (in the x/z plane the south
-    # direction is +z, whose atan2(z, x) angle is +pi/2).
-    DEFAULT_AZIMUTH = math.radians(90.0)
-    # Elevation clamp for manual orbiting (10°..60°).
-    MIN_ELEVATION = math.radians(10.0)
-    MAX_ELEVATION = math.radians(60.0)
+    # 1.7.2 camera: eye level (was an elevated 30 degrees in
+    # 1.7.0/1.7.1 — superseded by Joshua's "standing in front of
+    # the building" rule). The clamp lets him go a little lower
+    # than eye level and up to the old working angles.
+    DEFAULT_ELEVATION = math.radians(12)
+    DEFAULT_AZIMUTH = math.radians(90)   # south fallback (no road)
+    MIN_ELEVATION = math.radians(5)
+    MAX_ELEVATION = math.radians(60)
+
+    FRONT_RGB = (1.0, 0.55, 0.15)        # the warm orange front wall
+    STREET_HILITE_RGB = (0.05, 0.65, 0.85)
+
+    # The status label's words + colours (Joshua's exact spec).
+    STATUS_STYLE = {
+        "Flagged": "#ff0000",
+        "Skipped": "#ffff00",
+        "Placed": "#00cc00",
+    }
 
     def __init__(self, tab):
-        """tab: the ZoneBuildingsTab that owns this panel."""
+        """tab: the owning tab (ZoneBuildingsTab or
+        GasStationReviewTab) — provides manip_values/manip_apply
+        and app_window access."""
         super().__init__(orientation=Gtk.Orientation.VERTICAL,
-                         spacing=6)
-        self.set_border_width(8)
-        # 1.7.1 LAYOUT FIX (EDITOR UI RULE): 1.7.0 gave this panel a
-        # hard 400px width request and the split packed it
-        # shrink=False — with the data column's own minimum added,
-        # the divider had ZERO travel and the window's minimum width
-        # measured 1527px on a 1366px screen (see the rule block at
-        # the top of this file). The panel now requests only a
-        # modest 240px floor; the paned (shrink=True) and Joshua's
-        # drag decide its real size (default ~320px when it opens —
-        # see ZoneBuildingsTab._position_inspector).
+                         spacing=4)
+        self.set_border_width(6)
+        # Shrinkable + a modest request: the split divider decides
+        # the real width (EDITOR UI RULE — adjustable panes).
         self.set_size_request(240, -1)
-        # Back-reference to the owning tab (zone + store access).
         self.tab = tab
+        self.app_window = tab.app_window
 
-        # --- Documented view state (see the class docstring) ------
-        self.index = None            # zone building index shown
-        self.zd = None               # the ZoneData it belongs to
-        self.box = None              # [x, z, w, d, h, type_code]
-        self.detail = None           # the detail dict (ring etc.)
-        self.flagged_entry = None    # flagged entry, or None
-        self.front_info = None       # zonedata.building_front dict
-        self.front_edge = None       # (p1, p2) or None
-        # Camera: azimuth/elevation in RADIANS (see class docstring
-        # for the projection and the azimuth convention).
-        self.azimuth = self.DEFAULT_AZIMUTH
+        # -- viewed-object state -----------------------------------
+        self.mode = None            # "building" | "station"
+        self.zd = None              # ZoneData (backdrop / front)
+        self.index = None           # building index (building mode)
+        self.box = None
+        self.detail = None
+        self.flagged_entry = None
+        self.front_info = None
         self.front_azimuth = self.DEFAULT_AZIMUTH
+        self.azimuth = self.DEFAULT_AZIMUTH
         self.elevation = self.DEFAULT_ELEVATION
-        # No auto-rotation timer exists; this stays None forever.
-        self._rotate_timer_id = None
-        # Drag-orbit state: (start_x, start_y, start_az, start_el)
-        # while a drag is in progress, else None.
+        self.zone = None            # zone name (handoff + backdrop)
+        # station mode:
+        self.station = None         # the station record dict
+        self.station_edit = None    # its StationEdits entry
+        self.station_anchor = (0.0, 0.0)
+        self.station_facing = 0.0   # game face angle (L2W convention)
+        self.station_parts = []
+        # shared view state:
+        self._roads_near = []       # [(name, pts)] backdrop, cached
+        self._view = None           # last draw's transform (inverse)
         self._drag = None
+        self._cur_values = None     # {x, z, w, d, h} being viewed
+        self.selected_street = None  # {"name", "x", "z", "zone"}
+        self.status_word = None
+        self.status_color = None
 
-        # --- Header row: title + close button ----------------------
+        # -- header: title + close ----------------------------------
         header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
-                         spacing=6)
-        self.title_label = Gtk.Label()
-        self.title_label.set_markup("<b>Building</b>")
+                         spacing=4)
+        self.title_label = Gtk.Label(label="")
         self.title_label.set_halign(Gtk.Align.START)
-        # A long building name must ellipsize, not widen the panel
-        # (EDITOR UI RULE); the full name is on the tooltip.
         self.title_label.set_ellipsize(Pango.EllipsizeMode.END)
         header.pack_start(self.title_label, True, True, 0)
         close_btn = Gtk.Button(label="✕")
         close_btn.set_relief(Gtk.ReliefStyle.NONE)
-        # Closing only hides THIS panel; the data column never hid.
-        close_btn.connect("clicked",
-                          lambda w: self.tab.hide_inspector())
+        close_btn.set_tooltip_text("Close the 3D view")
+        close_btn.connect("clicked", lambda w: tab.hide_inspector())
         header.pack_start(close_btn, False, False, 0)
         self.pack_start(header, False, False, 0)
 
-        # --- FLAGGED badge (visible only for flagged buildings) -----
+        # -- flagged badge (buildings only) --------------------------
         self.badge_label = Gtk.Label()
         self.badge_label.set_markup(
-            '<span foreground="#b00000"><b>⚠ FLAGGED — locked, '
-            'awaiting Joshua\'s decision</b></span>')
+            "<b><span foreground=\"#c00000\">⚠ FLAGGED — locked, "
+            "awaiting Joshua's decision</span></b>")
         self.badge_label.set_halign(Gtk.Align.START)
+        self.badge_label.set_line_wrap(True)
+        self.badge_label.set_no_show_all(True)
+        self.badge_label.hide()
         self.pack_start(self.badge_label, False, False, 0)
 
-        # --- The 3D drawing area ------------------------------------
+        # -- the 3D view, with the status label overlaid -------------
+        # DrawingArea (cairo, software-rendered — the laptop has no
+        # real GPU). It EXPANDS with the pane; the status label is a
+        # Gtk.Overlay child at the bottom left (amendment 2).
         self.drawing = Gtk.DrawingArea()
-        # Minimum height ~320 via the size request (DrawingArea has
-        # no set_min_content_height — that is a ScrolledWindow API).
-        # The width request is a small floor only: as a graphical
-        # pane its real width is the split divider's business
-        # (EDITOR UI RULE), and the drawing rescales to whatever
-        # space it is given.
         self.drawing.set_size_request(160, 320)
-        # Drag-to-orbit needs press / release / motion events.
         self.drawing.add_events(
             Gdk.EventMask.BUTTON_PRESS_MASK
             | Gdk.EventMask.BUTTON_RELEASE_MASK
             | Gdk.EventMask.POINTER_MOTION_MASK)
-        self.drawing.connect("draw", self._on_draw_3d)
-        self.drawing.connect("button-press-event",
-                             self._on_drag_press)
+        self.drawing.connect("button-press-event", self._on_drag_press)
         self.drawing.connect("button-release-event",
                              self._on_drag_release)
-        self.drawing.connect("motion-notify-event",
-                             self._on_drag_motion)
-        self.pack_start(self.drawing, True, True, 0)
+        self.drawing.connect("motion-notify-event", self._on_drag_motion)
+        self.drawing.connect("draw", self._on_draw_3d)
+        self.status_label = Gtk.Label()
+        self.status_label.set_halign(Gtk.Align.START)
+        self.status_label.set_valign(Gtk.Align.END)
+        self.status_label.set_margin_start(6)
+        self.status_label.set_margin_bottom(6)
+        self.status_label.set_no_show_all(True)
+        self.status_label.hide()
+        overlay = Gtk.Overlay()
+        overlay.add(self.drawing)
+        overlay.add_overlay(self.status_label)
+        self.view_overlay = overlay
+        self.pack_start(overlay, True, True, 0)
 
-        # --- Controls hint + Face front ------------------------------
-        ctrl = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
-                       spacing=6)
+        # -- controls -------------------------------------------------
+        controls = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
+                           spacing=4)
         hint = Gtk.Label(
-            label="Drag to rotate — the orange wall is the front")
+            label="Drag empty space to look around. Drag the roof "
+                  "to move, an edge to resize, the orange wall for "
+                  "height. Click a street to select it.")
         hint.set_halign(Gtk.Align.START)
-        # Ellipsize rather than force the panel wide (EDITOR UI RULE).
         hint.set_ellipsize(Pango.EllipsizeMode.END)
-        ctrl.pack_start(hint, True, True, 0)
+        hint.set_tooltip_text(
+            "Drag empty space to look around. Drag the roof to "
+            "move the building, a left/right edge for width, a "
+            "front/back edge for depth, the orange front wall up "
+            "or down for height. Click a street to select it.")
+        controls.pack_start(hint, True, True, 0)
         face_btn = Gtk.Button(label="Face front")
-        # Snap back to the front-on azimuth computed at show time.
+        face_btn.set_tooltip_text(
+            "Return to the front view: eye level, straight at the "
+            "front wall")
         face_btn.connect("clicked", self._on_face_front)
-        ctrl.pack_start(face_btn, False, False, 0)
-        self.pack_start(ctrl, False, False, 0)
+        controls.pack_start(face_btn, False, False, 0)
+        self.pack_start(controls, False, False, 0)
 
-        # --- Readout labels -------------------------------------------
-        # Name / type / size / position, then the road lines. The
-        # front line and the flagged line are separate labels so a
-        # disagreement between them is shown honestly, not merged.
+        # -- selected street + the Map Editor handoff -----------------
+        street_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
+                             spacing=4)
+        self.street_label = Gtk.Label(label="")
+        self.street_label.set_halign(Gtk.Align.START)
+        self.street_label.set_ellipsize(Pango.EllipsizeMode.END)
+        street_row.pack_start(self.street_label, True, True, 0)
+        self.map_btn = Gtk.Button(label="Open in Map Editor")
+        self.map_btn.set_no_show_all(True)
+        self.map_btn.hide()
+        self.map_btn.connect("clicked", self._on_open_in_map_editor)
+        street_row.pack_start(self.map_btn, False, False, 0)
+        self.pack_start(street_row, False, False, 0)
+
+        # -- readouts (scrollable: long content scrolls, UI rule) -----
+        readout = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
+                          spacing=2)
         self.name_label = Gtk.Label(label="")
         self.type_label = Gtk.Label(label="")
         self.size_label = Gtk.Label(label="")
@@ -1192,456 +1615,993 @@ class ZoneInspectorPanel(Gtk.Box):
         for lbl in (self.name_label, self.type_label, self.size_label,
                     self.pos_label, self.front_line, self.flagged_line):
             lbl.set_halign(Gtk.Align.START)
-            # 1.7.1 (EDITOR UI RULE): a long single-line fact (a
-            # long name, a long road in "Flagged against: ...")
-            # ellipsizes inside a narrow pane instead of forcing
-            # the panel — and the window — wider. show_building()
-            # puts each label's full text on its tooltip.
             lbl.set_ellipsize(Pango.EllipsizeMode.END)
             lbl.set_line_wrap(True)
-            self.pack_start(lbl, False, False, 0)
-
-        # --- Footnote: the honest front-derivation note ---------------
-        self.footnote = Gtk.Label(
-            label="How the front is worked out: converted zone data "
-                  "doesn't record a front (or a parking lot), so the "
-                  "front shown here is the footprint edge nearest "
-                  "to a road — the editor's derivation from "
-                  "Joshua's rule that a building's front faces its "
-                  "street, not recorded fact.")
-        self.footnote.set_line_wrap(True)
+            lbl.set_max_width_chars(48)
+            readout.pack_start(lbl, False, False, 0)
+        self.footnote = Gtk.Label(label="")
         self.footnote.set_halign(Gtk.Align.START)
-        # Cap the wrapped label's natural width (a wrapping label
-        # still reports its full unwrapped text as NATURAL width —
-        # measured 1549px in 1.7.0 — which inflates the panel's
-        # natural size for no benefit).
+        self.footnote.set_line_wrap(True)
         self.footnote.set_max_width_chars(48)
-        self.pack_start(self.footnote, False, False, 4)
+        readout.pack_start(self.footnote, False, False, 2)
+        readout_scroll = Gtk.ScrolledWindow()
+        readout_scroll.set_policy(Gtk.PolicyType.NEVER,
+                                  Gtk.PolicyType.AUTOMATIC)
+        readout_scroll.set_min_content_height(70)
+        readout_scroll.add(readout)
+        self.readout_scroll = readout_scroll
+        self.pack_start(readout_scroll, False, True, 0)
 
-    # -- showing a building ----------------------------------------------
+    # -- status label (amendment 2) ------------------------------------
+
+    def set_status(self, word):
+        """Show the game-status word at the bottom left of the 3D
+        view, in Joshua's colours (red Flagged, yellow Skipped,
+        green Placed) — or hide the label when word is None. The
+        word describes the GAME's treatment of the object, never
+        the editor's: a station flipped editable still reads
+        Skipped until the game itself places it."""
+        self.status_word = word
+        self.status_color = self.STATUS_STYLE.get(word) \
+            if word else None
+        if not word:
+            self.status_label.hide()
+            return
+        color = self.STATUS_STYLE[word]
+        # A dark backing keeps the yellow word readable against
+        # the pale sky wash (the word and its colour are the spec;
+        # the backing is presentation only).
+        self.status_label.set_markup(
+            f"<span font_weight=\"bold\" size=\"large\" "
+            f"foreground=\"{color}\" background=\"#333333\">"
+            f" {word} </span>")
+        self.status_label.show()
+
+    def _game_status(self):
+        """The status word for the currently viewed object:
+        Flagged wins first (Joshua's list), then a station the
+        live game does not place is Skipped, else Placed."""
+        if self.mode == "building":
+            return "Flagged" if self.flagged_entry else "Placed"
+        if self.mode == "station":
+            store = self.app_window.zone_store
+            review = store.review if store else None
+            idx = (self.station or {}).get("stationIndex")
+            if review is not None and idx is not None:
+                live = review.live_status(idx)
+                if live == "skipped":
+                    return "Skipped"
+                if live == "placed":
+                    return "Placed"
+            return None
+        return None
+
+    # -- showing a building ---------------------------------------------
 
     def show_building(self, tab, zd, index, flagged_entry):
-        """
-        Show zone building `index` from ZoneData `zd`.
-        tab: the owning ZoneBuildingsTab. flagged_entry: the
-        store.flagged.match() result for this building, or None.
-        Recomputes the front, resets the camera FRONT-ON (azimuth =
-        front_azimuth), fills the readouts, and queues a redraw.
-        """
-        # Store the state the draw handler and the test rely on.
+        """Point the panel at zone building `index` of ZoneData
+        `zd`. The front is derived from the roads near the building
+        (parsed transiently, then dropped); the camera opens at eye
+        level in front of the front wall, framed close."""
+        self.mode = "building"
         self.tab = tab
         self.zd = zd
+        self.zone = zd.zone if zd else None
         self.index = index
         self.box = zd.boxes[index]
         self.detail = zd.details[index]
         self.flagged_entry = flagged_entry
-        # The front derivation (zonedata, pure geometry).
+        self.station = None
+        self.station_edit = None
+        self.selected_street = None
+        self.map_btn.hide()
+        self.street_label.set_text("")
+        # One transient parse serves the front + the backdrop.
+        roads = zd.transient_roads()
         self.front_info = zonedata.building_front(
-            zd, index, flagged_entry)
-        self.front_edge = self.front_info.get("front_edge")
+            zd, index, flagged_entry, roads=roads)
+        ring = (self.front_info or {}).get("ring") \
+            or self.detail.get("ring") or []
+        self._roads_near = zd.nearby_segments(ring, margin=60.0,
+                                              roads=roads)
+        roads = None  # the parse is dropped here, on purpose
+        self._reset_camera_to_front()
+        self._cur_values = {
+            "x": self.box[0], "z": self.box[1], "w": self.box[2],
+            "d": self.box[3], "h": self.box[4]}
+        self.badge_label.set_visible(bool(flagged_entry))
+        self.set_status(self._game_status())
+        self._update_readouts()
+        self.drawing.queue_draw()
 
-        # --- Front-on camera (recomputed on EVERY show) -------------
-        # The front edge's outward normal points away from the ring
-        # centroid; the camera sits along that normal, so its
-        # azimuth is the normal's atan2(z, x) angle.
-        if self.front_edge is not None:
-            ring = self.detail.get("ring") or []
-            cx, cz = zonedata.ring_centroid(ring)
-            (x1, z1), (x2, z2) = self.front_edge
-            nx = (x1 + x2) / 2.0 - cx
-            nz = (z1 + z2) / 2.0 - cz
-            if nx or nz:
-                self.front_azimuth = math.atan2(nz, nx)
+    # -- showing a station (amendment 1) ---------------------------------
+
+    def show_station(self, tab, station, edit, zd):
+        """Point the panel at a gas station: the game's station
+        cluster (zonedata.station_parts) as one editable object,
+        anchored at the station's editor position (real position +
+        the overlay's offset), facing its nearest road like the
+        game faces it. `zd` may be None (zone not loaded): the
+        cluster still draws, without the roads backdrop."""
+        self.mode = "station"
+        self.tab = tab
+        self.station = station
+        self.station_edit = edit or {}
+        self.zd = zd
+        self.zone = station.get("zone")
+        self.index = None
+        self.box = None
+        self.detail = None
+        self.flagged_entry = None
+        self.selected_street = None
+        self.map_btn.hide()
+        self.street_label.set_text("")
+        self._station_geometry()
+        self._reset_camera_to_front()
+        self.badge_label.hide()
+        self.set_status(self._game_status())
+        self._update_readouts()
+        self.drawing.queue_draw()
+
+    def _station_geometry(self):
+        """(Re)compute the station's anchor, facing and parts from
+        its record + edit overlay + the current values."""
+        edit = self.station_edit or {}
+        vals = self._cur_values
+        if vals is None:
+            ax, az = zonedata.station_anchor(self.station, edit)
+            vals = {
+                "x": ax, "z": az,
+                "w": edit.get("w") or zonedata.STATION_DEFAULT_W,
+                "d": edit.get("d") or zonedata.STATION_DEFAULT_D,
+                "h": edit.get("h") or zonedata.STATION_DEFAULT_H}
+            self._cur_values = vals
+        self.station_anchor = (vals["x"], vals["z"])
+        self.station_parts = zonedata.station_parts(
+            vals["w"], vals["d"], vals["h"])
+        # Facing: the approach side (+z local) aims at the nearest
+        # road point, exactly the game's gasFaceAngle rule. Without
+        # road data the station faces south (local +z -> world +z).
+        self.station_facing = 0.0
+        self.front_info = None
+        ring = self._station_ring()
+        self._roads_near = []
+        if self.zd is not None:
+            roads = self.zd.transient_roads()
+            self._roads_near = self.zd.nearby_segments(
+                ring, margin=80.0, roads=roads)
+            best = None
+            ax, az = self.station_anchor
+            for _name, pts in self._roads_near:
+                for p in pts:
+                    d2 = (p[0] - ax) ** 2 + (p[1] - az) ** 2
+                    if best is None or d2 < best[0]:
+                        best = (d2, p)
+            if best is not None:
+                p = best[1]
+                self.station_facing = math.atan2(p[0] - ax, p[1] - az)
+            roads = None
+        # The manipulation/camera frame: front = local +z in world.
+        a = self.station_facing
+        fx, fz = math.sin(a), math.cos(a)
+        self.front_azimuth = math.atan2(fz, fx)
+
+    def _station_ring(self):
+        """The station footprint's ground ring (rotated rectangle),
+        for backdrop queries and the ground quad."""
+        vals = self._cur_values or {
+            "x": 0, "z": 0, "w": zonedata.STATION_DEFAULT_W,
+            "d": zonedata.STATION_DEFAULT_D}
+        ax, az = vals["x"], vals["z"]
+        a = self.station_facing
+        ca, sa = math.cos(a), math.sin(a)
+        ring = []
+        for lx, lz in ((-vals["w"] / 2, -vals["d"] / 2),
+                       (vals["w"] / 2, -vals["d"] / 2),
+                       (vals["w"] / 2, vals["d"] / 2),
+                       (-vals["w"] / 2, vals["d"] / 2)):
+            ring.append([ax + lx * ca + lz * sa,
+                         az - lx * sa + lz * ca])
+        return ring
+
+    def _station_part_corners(self, part):
+        """A part's 4 ground corners in world coordinates (its
+        local rectangle rotated by the station facing)."""
+        ax, az = self.station_anchor
+        a = self.station_facing
+        ca, sa = math.cos(a), math.sin(a)
+        hw, hd = part["w"] / 2, part["d"] / 2
+        out = []
+        for lx, lz in ((-hw, -hd), (hw, -hd), (hw, hd), (-hw, hd)):
+            x = part["lx"] + lx
+            z = part["lz"] + lz
+            out.append((ax + x * ca + z * sa, az - x * sa + z * ca))
+        return out
+
+    # -- camera -----------------------------------------------------------
+
+    def _reset_camera_to_front(self):
+        """The 1.7.2 default view: eye level, straight at the front
+        wall. For a building the front comes from its derived front
+        edge (outward normal); for a station, its facing."""
+        if self.mode == "station":
+            self.azimuth = self.front_azimuth
+        else:
+            fi = self.front_info or {}
+            ring = fi.get("ring") or []
+            fe = fi.get("front_edge")
+            azimuth = self.DEFAULT_AZIMUTH
+            if fe is not None and len(ring) >= 2:
+                a, b = fi["edges"][fe]
+                mx, mz = (a[0] + b[0]) / 2, (a[1] + b[1]) / 2
+                cx, cz = zonedata.ring_centroid(ring)
+                nx, nz = mx - cx, mz - cz
+                if nx or nz:
+                    azimuth = math.atan2(nz, nx)
+            self.front_azimuth = azimuth
+            self.azimuth = azimuth
+        self.elevation = self.DEFAULT_ELEVATION
+
+    def _on_face_front(self, _widget):
+        """Face front: exactly the default view again."""
+        self._reset_camera_to_front()
+        self.drawing.queue_draw()
+
+    def _frame(self):
+        """The manipulation frame: (front_dir, right_dir) unit
+        vectors in world (x, z). Right is the viewer's right when
+        standing in front looking at the front wall."""
+        fa = self.front_azimuth
+        f = (math.cos(fa), math.sin(fa))
+        r = (f[1], -f[0])
+        return f, r
+
+    # -- readouts -----------------------------------------------------------
+
+    def _update_readouts(self):
+        """Full readout refresh (selection / external edit)."""
+        if self.mode == "building":
+            det, box = self.detail or {}, self.box or [0] * 6
+            name = det.get("name") or "Unnamed building"
+            self.title_label.set_text(name)
+            self.name_label.set_text(f"Name: {name}")
+            self.type_label.set_text(
+                f"Type: {det.get('osm_type') or '?'} "
+                f"({zonedata.CODE_LABELS.get(box[5], '?')})")
+            fi = self.front_info or {}
+            if fi.get("front_road"):
+                self.front_line.set_text(
+                    f"Fronts onto: {fi['front_road']} "
+                    f"(≈ {fi.get('front_distance') or 0:.1f} units)")
             else:
-                # Degenerate: midpoint ON the centroid — fall back.
-                self.front_azimuth = self.DEFAULT_AZIMUTH
-        else:
-            # No front derivable — documented south fallback.
-            self.front_azimuth = self.DEFAULT_AZIMUTH
-        # The initial view IS the front view; elevation is oblique.
-        self.azimuth = self.front_azimuth
-        self.elevation = self.DEFAULT_ELEVATION
-        self._drag = None
-
-        # --- Header, badge, readouts ----------------------------------
-        box, det = self.box, self.detail
-        name = det.get("name") or f"Building #{index}"
-        self.title_label.set_markup(f"<b>{name}</b>")
-        # The badge shows only when this building is flagged.
-        self.badge_label.set_visible(flagged_entry is not None)
-        self.name_label.set_text(f"Name: {name}")
-        code_label = zonedata.CODE_LABELS.get(box[5], "?")
-        self.type_label.set_text(
-            f"Type: {code_label} (OSM: {det.get('osm_type') or '?'})")
-        # Height: the box height and the detail height agree in
-        # valid data; show the box height as the building's height.
-        self.size_label.set_text(
-            f"Size: {box[2]:.1f} × {box[3]:.1f} — "
-            f"height ≈ {box[4]:.1f} m")
-        self.pos_label.set_text(
-            f"Position: x {box[0]:.1f}, z {box[1]:.1f}")
-        # Front road line (the derived front), or the honest
-        # can't-be-determined state.
-        front_road = self.front_info.get("front_road")
-        front_dist = self.front_info.get("front_distance")
-        if front_road is not None and front_dist is not None:
+                self.front_line.set_text(
+                    "Front can't be determined — no road data nearby.")
+            if self.flagged_entry:
+                self.flagged_line.set_text(
+                    f"Flagged against: "
+                    f"{self.flagged_entry.get('nearestRoad') or '?'} "
+                    f"— locked, awaiting Joshua's decision.")
+            else:
+                self.flagged_line.set_text("")
+            self.footnote.set_text(
+                "The orange wall is the front: the footprint edge "
+                "nearest a road. The status word at the bottom left "
+                "of the picture is how the game treats this "
+                "building today.")
+        elif self.mode == "station":
+            s = self.station or {}
+            name = s.get("name") or "Unnamed station"
+            self.title_label.set_text(f"{name} (gas station)")
+            self.name_label.set_text(
+                f"Name: {name}"
+                + (f" — {s.get('address')}" if s.get("address")
+                   else ""))
+            self.type_label.set_text(
+                f"Type: Gas station ({s.get('zone') or ''})")
+            live = self._game_status()
             self.front_line.set_text(
-                f"Fronts onto: {front_road} (≈ {front_dist:.1f})")
-        else:
-            self.front_line.set_text(
-                "Front can't be determined — no road data nearby.")
-        # Flagged road line: only for flagged buildings; shown
-        # alongside the front line even when the two disagree.
-        if flagged_entry is not None:
+                "In the game today: "
+                + ("this station is placed." if live == "Placed"
+                   else "this station is left out (skipped)." if live
+                   == "Skipped" else "unknown."))
             self.flagged_line.set_text(
-                f"Flagged against: "
-                f"{flagged_entry.get('nearestRoad') or '?'}")
-            self.flagged_line.set_visible(True)
-        else:
-            self.flagged_line.set_visible(False)
-        # 1.7.1: the readout labels ellipsize in a narrow pane (see
-        # __init__) — mirror each full text onto its tooltip so
-        # nothing is ever actually hidden from Joshua.
-        self.title_label.set_tooltip_text(name)
-        for lbl in (self.name_label, self.type_label, self.size_label,
-                    self.pos_label, self.front_line, self.flagged_line):
-            lbl.set_tooltip_text(lbl.get_text())
+                "Walkable: " + ("yes — people can walk in."
+                                if (self.station_edit or {}).get(
+                                    "walkable")
+                                else "no."))
+            self.footnote.set_text(
+                "The orange edge is the drive-in side (faces the "
+                "nearest road). Your edits save to the editor's "
+                "station-edits file — the game itself does not "
+                "change until a game update reads them.")
+        self._update_size_pos_labels()
 
-        # Become visible and draw the building.
-        self.set_visible(True)
+    def _update_size_pos_labels(self):
+        """Size/position lines only (cheap; used during drags)."""
+        v = self._cur_values
+        if not v:
+            return
+        self.size_label.set_text(
+            f"Size: Width {v['w']:.1f} × Depth {v['d']:.1f} — "
+            f"Height ≈ {v['h']:.1f}")
+        self.size_label.set_tooltip_text(self.size_label.get_text())
+        self.pos_label.set_text(
+            f"Position: East–West (X) {v['x']:.1f}, "
+            f"North–South (Z) {v['z']:.1f}")
+        self.pos_label.set_tooltip_text(self.pos_label.get_text())
+
+    def refresh_view(self):
+        """Re-derive everything after an edit made elsewhere (the
+        tab's number fields, a place/delete): front, backdrop,
+        readouts and picture refresh, CAMERA UNTOUCHED (Joshua's
+        place in the scene is his own while he works)."""
+        if self.mode == "building" and self.zd is not None \
+                and self.index is not None \
+                and self.index < len(self.zd.boxes):
+            self.box = self.zd.boxes[self.index]
+            self.detail = self.zd.details[self.index]
+            roads = self.zd.transient_roads()
+            self.front_info = zonedata.building_front(
+                self.zd, self.index, self.flagged_entry, roads=roads)
+            ring = (self.front_info or {}).get("ring") \
+                or self.detail.get("ring") or []
+            self._roads_near = self.zd.nearby_segments(
+                ring, margin=60.0, roads=roads)
+            roads = None
+            self._cur_values = {
+                "x": self.box[0], "z": self.box[1], "w": self.box[2],
+                "d": self.box[3], "h": self.box[4]}
+            self.set_status(self._game_status())
+            self._update_readouts()
+        elif self.mode == "station":
+            self._cur_values = None
+            self._station_geometry()
+            self.set_status(self._game_status())
+            self._update_readouts()
         self.drawing.queue_draw()
 
-    # -- manual orbit (the ONLY way the camera ever moves) -----------------
-
-    def _on_face_front(self, widget):
-        """'Face front' button: snap back to the front-on view."""
-        # Azimuth back to the front, elevation back to the default.
-        self.azimuth = self.front_azimuth
-        self.elevation = self.DEFAULT_ELEVATION
-        self.drawing.queue_draw()
-
-    def _on_drag_press(self, widget, event):
-        """Start a drag-orbit: remember where the drag began and
-        what the camera was at that moment."""
-        # Only the primary button orbits.
-        if event.button != 1:
-            return False
-        self._drag = (event.x, event.y, self.azimuth, self.elevation)
-        return True
-
-    def _on_drag_release(self, widget, event):
-        """End a drag-orbit."""
-        self._drag = None
-        return False
-
-    def _on_drag_motion(self, widget, event):
-        """
-        Drag-orbit: horizontal movement turns the azimuth, vertical
-        movement raises/lowers the elevation (drag up = higher
-        camera), clamped to 10°..60°. Redraw on every change. This
-        handler — plus the Face front button — is the ONLY code
-        that ever changes the camera; there is no timer or idle
-        animation anywhere in this panel.
-        """
-        if self._drag is None:
-            return False
-        x0, y0, az0, el0 = self._drag
-        # ~0.01 rad per pixel feels right for a building-sized view.
-        self.azimuth = az0 + (event.x - x0) * 0.01
-        self.elevation = max(
-            self.MIN_ELEVATION,
-            min(self.MAX_ELEVATION, el0 + (y0 - event.y) * 0.01))
-        self.drawing.queue_draw()
-        return True
-
-    # -- the 3D renderer -----------------------------------------------------
+    # -- projection -----------------------------------------------------
 
     def _project(self, dx, dz, h, az, el):
-        """
-        Orthographic oblique projection (see the class docstring):
-        returns (across, vertical, depth) in unscaled world units —
-        across/depth from the ground plane, vertical including the
-        height contribution. `depth` (toward the camera) is the
-        painter's-algorithm sort key.
-        """
-        # Rotate the ground point into camera space.
-        along = dx * math.cos(az) + dz * math.sin(az)
-        across = dx * math.sin(az) - dz * math.cos(az)
-        # Vertical: ground recedes upward at sin(elevation); height
-        # rises at cos(elevation).
+        """Oblique projection, as 1.7.0: returns (across, vertical,
+        depth) for a point offset (dx, dz) at height h."""
+        ca_, sa_ = math.cos(az), math.sin(az)
+        along = dx * ca_ + dz * sa_
+        across = dx * sa_ - dz * ca_
         vertical = along * math.sin(el) - h * math.cos(el)
-        # View depth: how far toward the camera the point sits.
         depth = along * math.cos(el) + h * math.sin(el)
         return across, vertical, depth
 
-    def _on_draw_3d(self, widget, cr):
-        """
-        Draw the 3D view: ground plane + nearby roads, the front
-        arrow, the extruded footprint (walls sorted back-to-front,
-        front wall orange), the roof, and the FRONT label.
-        All math is guarded against degenerate rings / no roads.
-        """
-        # Canvas size; nothing sensible to draw at zero size.
-        width = widget.get_allocated_width()
-        height = widget.get_allocated_height()
-        if width < 10 or height < 10:
-            return
-        # Background: a soft sky-grey wash.
-        cr.set_source_rgb(0.92, 0.94, 0.96)
-        cr.paint()
-        # Without a building there is nothing else to draw.
-        if self.zd is None or self.detail is None or self.box is None:
-            return
-
-        # --- Gather the geometry --------------------------------------
-        # Distinct footprint vertices (drop the closing duplicate).
-        ring = self.detail.get("ring") or []
-        pts = [list(p) for p in ring if len(p) >= 2]
-        if len(pts) > 1 and pts[0] == pts[-1]:
-            pts = pts[:-1]
-        # Building height (box height; detail height as fallback).
-        bheight = float(self.box[4] or self.detail.get("height_m")
-                        or 0.0)
-        # Road context near the footprint (may be empty).
-        nearby = []
-        if zonedata is not None:
-            nearby = zonedata.nearby_road_segments(
-                self.zd, ring, margin=60.0)
-
-        if len(pts) < 2:
-            # Degenerate footprint: say so instead of dividing by
-            # zero or drawing nonsense.
-            cr.set_source_rgb(0.2, 0.2, 0.2)
-            cr.set_font_size(13)
-            cr.move_to(12, 24)
-            cr.show_text("This building has no usable footprint "
-                         "to draw.")
-            return
-
-        # Local coordinates are relative to the footprint centroid,
-        # so the building stays centred whatever its world position.
-        cx, cz = zonedata.ring_centroid(ring)
+    def _fit_view(self, ctx, points, width, height):
+        """Fit `points` [(dx, dz, h)] into the canvas: returns a
+        to_screen(dx, dz, h) closure and records the transform in
+        self._view for the inverse mapping (manipulation/picking).
+        Framing is from these points ONLY (the building/station
+        itself — close-up per Joshua's camera rule)."""
         az, el = self.azimuth, self.elevation
-
-        # Context points for the fit: footprint corners (ground and
-        # roof) + nearby road points (ground only).
-        context = [(p[0] - cx, p[1] - cz, 0.0) for p in pts]
-        context += [(p[0] - cx, p[1] - cz, bheight) for p in pts]
-        for _name, road_pts in nearby:
-            for p in road_pts:
-                if len(p) >= 2:
-                    context.append((p[0] - cx, p[1] - cz, 0.0))
-
-        # --- Fit transform (uniform scale + centring, guarded) --------
         proj = [self._project(dx, dz, h, az, el)
-                for dx, dz, h in context]
-        xs = [q[0] for q in proj]
-        ys = [q[1] for q in proj]
-        span_x = max(xs) - min(xs)
-        span_y = max(ys) - min(ys)
-        # Guard zero-size spans (a single point / a flat line).
-        span_x = span_x if span_x > 1e-6 else 1.0
-        span_y = span_y if span_y > 1e-6 else 1.0
-        pad = 28.0
-        scale = min((width - 2 * pad) / span_x,
-                    (height - 2 * pad) / span_y)
-        # Centre the projected bounds in the drawing area.
-        mid_x = (max(xs) + min(xs)) / 2.0
-        mid_y = (max(ys) + min(ys)) / 2.0
+                for dx, dz, h in points]
+        if not proj:
+            self._view = None
+            return lambda dx, dz, h: (0, 0)
+        acs = [p[0] for p in proj]
+        vts = [p[1] for p in proj]
+        ac_mid = (min(acs) + max(acs)) / 2
+        vt_mid = (min(vts) + max(vts)) / 2
+        span_a = max(max(acs) - min(acs), 1.0)
+        span_v = max(max(vts) - min(vts), 1.0)
+        pad = 28
+        scale = min((width - 2 * pad) / span_a,
+                    (height - 2 * pad) / span_v)
+        scale = max(scale, 0.05)
+        self._view = {"scale": scale, "ac_mid": ac_mid,
+                      "vt_mid": vt_mid, "w": width, "h": height,
+                      "az": az, "el": el}
 
         def to_screen(dx, dz, h):
-            """Project a local point to screen coordinates."""
-            across, vertical, _depth = self._project(dx, dz, h,
-                                                     az, el)
-            return (width / 2.0 + (across - mid_x) * scale,
-                    height / 2.0 + (vertical - mid_y) * scale)
+            across, vertical, _d = self._project(dx, dz, h, az, el)
+            return (width / 2 + (across - ac_mid) * scale,
+                    height / 2 + (vertical - vt_mid) * scale)
+        return to_screen
 
-        # --- Ground plane ------------------------------------------------
-        # A quad through the context bounds' corners at h=0, so the
-        # building and its roads sit on visible ground.
-        gx = [c[0] for c in context]
-        gz = [c[1] for c in context]
-        # Pad the ground a little past the context.
-        gpad_x = max(4.0, 0.08 * (max(gx) - min(gx) or 1.0))
-        gpad_z = max(4.0, 0.08 * (max(gz) - min(gz) or 1.0))
-        corners = [(min(gx) - gpad_x, min(gz) - gpad_z),
-                   (max(gx) + gpad_x, min(gz) - gpad_z),
-                   (max(gx) + gpad_x, max(gz) + gpad_z),
-                   (min(gx) - gpad_x, max(gz) + gpad_z)]
-        ground = [to_screen(dx, dz, 0.0) for dx, dz in corners]
-        cr.set_source_rgb(0.78, 0.82, 0.72)
-        cr.move_to(*ground[0])
-        for s in ground[1:]:
-            cr.line_to(*s)
-        cr.close_path()
-        cr.fill()
+    def _screen_to_ground(self, sx, sy):
+        """Inverse of the last draw's transform, onto the ground
+        plane: screen point -> (dx, dz) relative offsets."""
+        v = self._view
+        if not v:
+            return None
+        scale = v["scale"]
+        across = (sx - v["w"] / 2) / scale + v["ac_mid"]
+        vertical = (sy - v["h"] / 2) / scale + v["vt_mid"]
+        el = v["el"]
+        if abs(math.sin(el)) < 1e-6:
+            return None
+        along = vertical / math.sin(el)
+        az = v["az"]
+        ca_, sa_ = math.cos(az), math.sin(az)
+        dx = along * ca_ + across * sa_
+        dz = along * sa_ - across * ca_
+        return (dx, dz)
 
-        # --- Roads on the ground plane -----------------------------------
-        # Light-grey thick polylines; the front road's name is drawn
-        # near it when that road is among the nearby ones.
-        front_road = (self.front_info or {}).get("front_road")
-        for name, road_pts in nearby:
-            screen_pts = [to_screen(p[0] - cx, p[1] - cz, 0.0)
-                          for p in road_pts if len(p) >= 2]
-            if len(screen_pts) < 2:
+    # -- drawing -----------------------------------------------------------
+
+    def _on_draw_3d(self, _widget, ctx):
+        width = self.drawing.get_allocated_width()
+        height = self.drawing.get_allocated_height()
+        # Sky wash.
+        ctx.set_source_rgb(0.92, 0.94, 0.96)
+        ctx.rectangle(0, 0, width, height)
+        ctx.fill()
+        if self.mode == "building":
+            self._draw_building(ctx, width, height)
+        elif self.mode == "station":
+            self._draw_station(ctx, width, height)
+        else:
+            ctx.set_source_rgb(0.3, 0.3, 0.3)
+            ctx.select_font_face("Sans")
+            ctx.set_font_size(12)
+            ctx.move_to(12, 24)
+            ctx.show_text("Select a building to see it here.")
+        return False
+
+    def _draw_roads(self, ctx, to_screen, cx, cz):
+        """The backdrop streets (+ the selected street highlighted,
+        amendment 3; the front road named)."""
+        selected = (self.selected_street or {}).get("name")
+        front_name = None
+        if self.mode == "building":
+            front_name = (self.front_info or {}).get("front_road")
+        for name, pts in self._roads_near:
+            if len(pts) < 2:
                 continue
-            cr.set_source_rgb(0.62, 0.62, 0.62)
-            cr.set_line_width(5)
-            cr.move_to(*screen_pts[0])
-            for s in screen_pts[1:]:
-                cr.line_to(*s)
-            cr.stroke()
-            # Label the front road near its closest drawn point.
-            if name == front_road:
-                lx, ly = screen_pts[len(screen_pts) // 2]
-                cr.set_source_rgb(0.25, 0.25, 0.25)
-                cr.set_font_size(11)
-                cr.move_to(lx + 4, ly - 4)
-                cr.show_text(name)
-
-        # --- Front ground arrow -------------------------------------------
-        # From the footprint centroid (ground) out past the front
-        # edge midpoint: a ground-level arrow pointing AT the front.
-        if self.front_edge is not None:
-            (x1, z1), (x2, z2) = self.front_edge
-            mx, mz = (x1 + x2) / 2.0, (z1 + z2) / 2.0
-            # Outward direction (centroid -> edge midpoint).
-            ox, oz = mx - cx, mz - cz
-            olen = math.hypot(ox, oz) or 1.0
-            # The arrow tip sits a little beyond the front edge.
-            tip = (mx - cx + ox / olen * max(3.0, 0.15 * olen),
-                   mz - cz + oz / olen * max(3.0, 0.15 * olen))
-            a0 = to_screen(0.0, 0.0, 0.0)
-            a1 = to_screen(tip[0], tip[1], 0.0)
-            cr.set_source_rgb(0.95, 0.45, 0.05)
-            cr.set_line_width(2.5)
-            cr.move_to(*a0)
-            cr.line_to(*a1)
-            cr.stroke()
-            # Arrowhead: two short barbs at the tip, angled back
-            # along the arrow direction in screen space.
-            ang = math.atan2(a1[1] - a0[1], a1[0] - a0[0])
-            for da in (2.6, -2.6):
-                cr.move_to(*a1)
-                cr.line_to(a1[0] + 9 * math.cos(ang + da),
-                           a1[1] + 9 * math.sin(ang + da))
-            cr.stroke()
-
-        # --- Wall faces (painter's algorithm) ------------------------------
-        # One extruded face per footprint edge. Faces are sorted by
-        # average view depth, farthest first, so nearer faces paint
-        # over farther ones. The FRONT face is always warm orange;
-        # the others are blue-grey tones shaded by orientation
-        # against a fixed light direction.
-        light = (-0.45, -0.89)  # fixed light, from the north-west
-        faces = []
-        n = len(pts)
-        for i in range(n):
-            p1 = pts[i]
-            p2 = pts[(i + 1) % n]
-            if p1 == p2:
-                continue  # zero-length edge — no face to draw
-            # The face's four corners in local coordinates.
-            quad_local = [(p1[0] - cx, p1[1] - cz, 0.0),
-                          (p2[0] - cx, p2[1] - cz, 0.0),
-                          (p2[0] - cx, p2[1] - cz, bheight),
-                          (p1[0] - cx, p1[1] - cz, bheight)]
-            depths = [self._project(dx, dz, h, az, el)[2]
-                      for dx, dz, h in quad_local]
-            faces.append({
-                "edge": (p1, p2),
-                "quad": [to_screen(dx, dz, h)
-                         for dx, dz, h in quad_local],
-                "depth": sum(depths) / len(depths),
-            })
-        # Farthest first.
-        faces.sort(key=lambda f: f["depth"])
-        for face in faces:
-            p1, p2 = face["edge"]
-            is_front = (self.front_edge is not None
-                        and (p1, p2) == tuple(self.front_edge))
-            if is_front:
-                # The front wall: warm orange, ALWAYS (see header).
-                cr.set_source_rgb(1.0, 0.55, 0.15)
+            if selected and name == selected:
+                ctx.set_source_rgb(*self.STREET_HILITE_RGB)
+                ctx.set_line_width(7)
+            elif front_name and name == front_name:
+                ctx.set_source_rgb(0.45, 0.45, 0.45)
+                ctx.set_line_width(5)
             else:
-                # Orientation shading: the edge's outward normal
-                # (pointing away from the centroid) dotted with the
-                # fixed light sets the tone.
-                ex, ez = p2[0] - p1[0], p2[1] - p1[1]
-                # A perpendicular of the edge direction.
-                nx_, nz_ = ez, -ex
-                mx, mz = (p1[0] + p2[0]) / 2.0 - cx, \
-                    (p1[1] + p2[1]) / 2.0 - cz
-                if nx_ * mx + nz_ * mz < 0:
-                    nx_, nz_ = -nx_, -nz_
-                nlen = math.hypot(nx_, nz_) or 1.0
-                shade = 0.55 + 0.40 * max(
-                    0.0, (nx_ / nlen) * light[0]
-                    + (nz_ / nlen) * light[1])
-                cr.set_source_rgb(0.45 * shade + 0.25,
-                                  0.52 * shade + 0.25,
-                                  0.62 * shade + 0.25)
-            quad = face["quad"]
-            cr.move_to(*quad[0])
-            for s in quad[1:]:
-                cr.line_to(*s)
-            cr.close_path()
-            cr.fill_preserve()
-            cr.set_source_rgb(0.25, 0.28, 0.32)
-            cr.set_line_width(1.2)
-            cr.stroke()
+                ctx.set_source_rgb(0.62, 0.62, 0.62)
+                ctx.set_line_width(5)
+            for i, p in enumerate(pts):
+                sx, sy = to_screen(p[0] - cx, p[1] - cz, 0)
+                if i == 0:
+                    ctx.move_to(sx, sy)
+                else:
+                    ctx.line_to(sx, sy)
+            ctx.stroke()
+        # Name the front road beside its nearest point.
+        if front_name:
+            ring = (self.front_info or {}).get("ring") or []
+            if ring:
+                ccx, ccz = zonedata.ring_centroid(ring)
+                best = None
+                for name, pts in self._roads_near:
+                    if name != front_name:
+                        continue
+                    for p in pts:
+                        d2 = (p[0] - ccx) ** 2 + (p[1] - ccz) ** 2
+                        if best is None or d2 < best[0]:
+                            best = (d2, p)
+                if best is not None:
+                    sx, sy = to_screen(best[1][0] - cx,
+                                       best[1][1] - cz, 0)
+                    ctx.set_source_rgb(0.25, 0.25, 0.25)
+                    ctx.select_font_face("Sans")
+                    ctx.set_font_size(11)
+                    ctx.move_to(sx + 6, sy - 6)
+                    ctx.show_text(front_name)
 
-        # --- Roof (the ring polygon at full height, drawn last) -----------
-        roof = [to_screen(p[0] - cx, p[1] - cz, bheight)
-                for p in pts]
-        cr.set_source_rgb(0.55, 0.42, 0.36)
-        cr.move_to(*roof[0])
-        for s in roof[1:]:
-            cr.line_to(*s)
-        cr.close_path()
-        cr.fill_preserve()
-        cr.set_source_rgb(0.3, 0.24, 0.2)
-        cr.set_line_width(1.2)
-        cr.stroke()
+    def _draw_building(self, ctx, width, height):
+        det = self.detail or {}
+        ring = det.get("ring") or []
+        if len(ring) < 2 or not self.box:
+            ctx.set_source_rgb(0.3, 0.3, 0.3)
+            ctx.select_font_face("Sans")
+            ctx.set_font_size(12)
+            ctx.move_to(12, 24)
+            ctx.show_text("This building has no footprint to draw.")
+            return
+        cx, cz = zonedata.ring_centroid(ring)
+        hgt = self.box[4]
+        points = [(p[0] - cx, p[1] - cz, 0) for p in ring]
+        points += [(p[0] - cx, p[1] - cz, hgt) for p in ring]
+        to_screen = self._fit_view(ctx, points, width, height)
+        # Ground quad under the building (footprint grown a little).
+        xs = [p[0] for p in ring]
+        zs = [p[1] for p in ring]
+        gx0, gx1 = min(xs) - 6, max(xs) + 6
+        gz0, gz1 = min(zs) - 6, max(zs) + 6
+        ctx.set_source_rgb(0.78, 0.82, 0.72)
+        for i, (px, pz) in enumerate(((gx0, gz0), (gx1, gz0),
+                                      (gx1, gz1), (gx0, gz1))):
+            sx, sy = to_screen(px - cx, pz - cz, 0)
+            if i == 0:
+                ctx.move_to(sx, sy)
+            else:
+                ctx.line_to(sx, sy)
+        ctx.close_path()
+        ctx.fill()
+        self._draw_roads(ctx, to_screen, cx, cz)
+        # Walls, painter-sorted by depth; the front wall is orange.
+        fi = self.front_info or {}
+        front_edge = fi.get("front_edge")
+        faces = []
+        n = len(ring)
+        for i in range(n):
+            a = ring[i]
+            b = ring[(i + 1) % n]
+            depth = 0.0
+            for p in (a, b):
+                depth += self._project(p[0] - cx, p[1] - cz, 0,
+                                       self.azimuth,
+                                       self.elevation)[2]
+            faces.append((depth / 2, i, a, b))
+        faces.sort()
+        light = (-0.45, -0.89)
+        for _depth, i, a, b in faces:
+            is_front = (front_edge is not None and i == front_edge)
+            quad = [to_screen(a[0] - cx, a[1] - cz, 0),
+                    to_screen(b[0] - cx, b[1] - cz, 0),
+                    to_screen(b[0] - cx, b[1] - cz, hgt),
+                    to_screen(a[0] - cx, a[1] - cz, hgt)]
+            if is_front:
+                ctx.set_source_rgb(*self.FRONT_RGB)
+            else:
+                mx, mz = (a[0] + b[0]) / 2 - cx, (a[1] + b[1]) / 2 - cz
+                norm = math.hypot(mx, mz) or 1.0
+                shade = 0.62 + 0.25 * (mx * light[0] + mz * light[1]) \
+                    / norm
+                ctx.set_source_rgb(shade * 0.85, shade * 0.9, shade)
+            for j, (sx, sy) in enumerate(quad):
+                if j == 0:
+                    ctx.move_to(sx, sy)
+                else:
+                    ctx.line_to(sx, sy)
+            ctx.close_path()
+            ctx.fill()
+        # Roof.
+        ctx.set_source_rgb(0.55, 0.42, 0.36)
+        for i, p in enumerate(ring):
+            sx, sy = to_screen(p[0] - cx, p[1] - cz, hgt)
+            if i == 0:
+                ctx.move_to(sx, sy)
+            else:
+                ctx.line_to(sx, sy)
+        ctx.close_path()
+        ctx.fill()
+        # FRONT label + ground arrow out of the front edge.
+        if front_edge is not None:
+            a, b = fi["edges"][front_edge]
+            mx, mz = (a[0] + b[0]) / 2, (a[1] + b[1]) / 2
+            sx, sy = to_screen(mx - cx, mz - cz, hgt)
+            ctx.set_source_rgb(0.85, 0.35, 0.0)
+            ctx.select_font_face("Sans", 0, 1)  # bold
+            ctx.set_font_size(13)
+            ctx.move_to(sx - 18, sy - 8)
+            ctx.show_text("FRONT")
+            nx, nz = mx - cx, mz - cz
+            norm = math.hypot(nx, nz) or 1.0
+            ex, ez = mx + nx / norm * 8, mz + nz / norm * 8
+            sx2, sy2 = to_screen(ex - cx, ez - cz, 0)
+            sx1, sy1 = to_screen(mx - cx, mz - cz, 0)
+            ctx.set_source_rgb(0.95, 0.45, 0.05)
+            ctx.set_line_width(3)
+            ctx.move_to(sx1, sy1)
+            ctx.line_to(sx2, sy2)
+            ctx.stroke()
 
-        # --- FRONT label ------------------------------------------------------
-        # Above the front edge's midpoint at roof height.
-        if self.front_edge is not None:
-            (x1, z1), (x2, z2) = self.front_edge
-            fx, fy = to_screen((x1 + x2) / 2.0 - cx,
-                               (z1 + z2) / 2.0 - cz, bheight)
-            cr.set_source_rgb(0.85, 0.35, 0.0)
-            cr.set_font_size(13)
-            # Centre the word roughly on the front edge midpoint.
-            cr.move_to(fx - 18, fy - 8)
-            cr.show_text("FRONT")
-        elif not (self.front_info or {}).get("front_road"):
-            # No front could be derived: say so on the view too
-            # (the readout line carries the same message).
-            cr.set_source_rgb(0.3, 0.3, 0.3)
-            cr.set_font_size(12)
-            cr.move_to(12, height - 12)
-            cr.show_text("Front can't be determined — no road "
-                         "data nearby.")
+    _STATION_COLORS = {
+        "pad": (0.45, 0.47, 0.49),
+        "canopy": (0.92, 0.92, 0.92),
+        "kiosk": (0.85, 0.82, 0.77),
+        "roof": (0.29, 0.31, 0.33),
+        "column": (0.95, 0.95, 0.95),
+        "pump": (0.69, 0.19, 0.19),
+    }
+
+    def _draw_station(self, ctx, width, height):
+        ax, az = self.station_anchor
+        ring = self._station_ring()
+        points = [(p[0] - ax, p[1] - az, 0) for p in ring]
+        top_h = max((p["y1"] for p in self.station_parts),
+                    default=8.5)
+        points += [(p[0] - ax, p[1] - az, top_h) for p in ring]
+        to_screen = self._fit_view(ctx, points, width, height)
+        # Ground quad.
+        xs = [p[0] for p in ring]
+        zs = [p[1] for p in ring]
+        gx0, gx1 = min(xs) - 8, max(xs) + 8
+        gz0, gz1 = min(zs) - 8, max(zs) + 8
+        ctx.set_source_rgb(0.78, 0.82, 0.72)
+        for i, (px, pz) in enumerate(((gx0, gz0), (gx1, gz0),
+                                      (gx1, gz1), (gx0, gz1))):
+            sx, sy = to_screen(px - ax, pz - az, 0)
+            if i == 0:
+                ctx.move_to(sx, sy)
+            else:
+                ctx.line_to(sx, sy)
+        ctx.close_path()
+        ctx.fill()
+        self._draw_roads(ctx, to_screen, ax, az)
+        # The cluster's parts as boxes, painter-sorted by depth.
+        boxes = []
+        for part in self.station_parts:
+            corners = self._station_part_corners(part)
+            dcx = sum(p[0] for p in corners) / 4 - ax
+            dcz = sum(p[1] for p in corners) / 4 - az
+            depth = self._project(dcx, dcz, 0, self.azimuth,
+                                  self.elevation)[2]
+            boxes.append((depth, part, corners))
+        boxes.sort(key=lambda t: t[0])
+        for _depth, part, corners in boxes:
+            base = self._STATION_COLORS.get(part["kind"],
+                                            (0.7, 0.7, 0.7))
+            # Side faces (two, chosen by view side) then the top.
+            n = len(corners)
+            for i in range(n):
+                a = corners[i]
+                b = corners[(i + 1) % n]
+                mx, mz = (a[0] + b[0]) / 2 - ax, (a[1] + b[1]) / 2 - az
+                facing = mx * math.cos(self.azimuth) \
+                    + mz * math.sin(self.azimuth)
+                if facing < -0.001:
+                    continue  # back face — the far side draws it
+                quad = [to_screen(a[0] - ax, a[1] - az, part["y0"]),
+                        to_screen(b[0] - ax, b[1] - az, part["y0"]),
+                        to_screen(b[0] - ax, b[1] - az, part["y1"]),
+                        to_screen(a[0] - ax, a[1] - az, part["y1"])]
+                ctx.set_source_rgb(base[0] * 0.8, base[1] * 0.8,
+                                   base[2] * 0.8)
+                for j, (sx, sy) in enumerate(quad):
+                    if j == 0:
+                        ctx.move_to(sx, sy)
+                    else:
+                        ctx.line_to(sx, sy)
+                ctx.close_path()
+                ctx.fill()
+            ctx.set_source_rgb(*base)
+            for i, p in enumerate(corners):
+                sx, sy = to_screen(p[0] - ax, p[1] - az, part["y1"])
+                if i == 0:
+                    ctx.move_to(sx, sy)
+                else:
+                    ctx.line_to(sx, sy)
+            ctx.close_path()
+            ctx.fill()
+        # The drive-in (front) edge of the pad, orange, + label.
+        f, _r = self._frame()
+        vals = self._cur_values or {}
+        hd = (vals.get("d") or zonedata.STATION_DEFAULT_D) / 2
+        hw = (vals.get("w") or zonedata.STATION_DEFAULT_W) / 2
+        cxw, czw = ax + f[0] * hd, az + f[1] * hd
+        rx, rz = _r
+        a_pt = (cxw - rx * hw, czw - rz * hw)
+        b_pt = (cxw + rx * hw, czw + rz * hw)
+        ctx.set_source_rgb(0.95, 0.45, 0.05)
+        ctx.set_line_width(4)
+        sx1, sy1 = to_screen(a_pt[0] - ax, a_pt[1] - az, 0.35)
+        sx2, sy2 = to_screen(b_pt[0] - ax, b_pt[1] - az, 0.35)
+        ctx.move_to(sx1, sy1)
+        ctx.line_to(sx2, sy2)
+        ctx.stroke()
+        sx, sy = to_screen(cxw - ax, czw - az, top_h)
+        ctx.set_source_rgb(0.85, 0.35, 0.0)
+        ctx.select_font_face("Sans", 0, 1)
+        ctx.set_font_size(13)
+        ctx.move_to(sx - 18, sy - 8)
+        ctx.show_text("FRONT")
+
+    # -- picking streets (amendment 3) --------------------------------------
+
+    def pick_street(self, sx, sy):
+        """
+        The picking function (also driven directly by the smoke
+        tests): find the drawn street nearest the screen point
+        (sx, sy) within tolerance; select it and return its record
+        {"name", "x", "z", "zone"} — the clicked point projected
+        onto the segment — or None when no street is close.
+        """
+        if not self._view or not self._roads_near:
+            return None
+        cx, cz = self._centre()
+        best = None  # (screen distance, name, world point)
+        for name, pts in self._roads_near:
+            for i in range(len(pts) - 1):
+                a, b = pts[i], pts[i + 1]
+                sax, say = self._to_screen_now(a[0] - cx, a[1] - cz)
+                sbx, sby = self._to_screen_now(b[0] - cx, b[1] - cz)
+                d, t = self._point_seg_dist(sx, sy, sax, say,
+                                             sbx, sby)
+                if best is None or d < best[0]:
+                    wx = a[0] + (b[0] - a[0]) * t
+                    wz = a[1] + (b[1] - a[1]) * t
+                    best = (d, name, (wx, wz))
+        if best is None or best[0] > 10:
+            self.selected_street = None
+            self.map_btn.hide()
+            self.street_label.set_text("")
+            self.drawing.queue_draw()
+            return None
+        self.selected_street = {
+            "name": best[1], "x": best[2][0], "z": best[2][1],
+            "zone": self.zone}
+        self.street_label.set_text(
+            f"Street selected: {best[1]}")
+        self.street_label.set_tooltip_text(
+            f"Street selected: {best[1]} (in {self.zone})")
+        self.map_btn.show()
+        self.drawing.queue_draw()
+        return self.selected_street
+
+    @staticmethod
+    def _point_seg_dist(px, py, ax, ay, bx, by):
+        """(distance, t) from point to segment (screen space)."""
+        vx, vy = bx - ax, by - ay
+        len2 = vx * vx + vy * vy
+        t = 0.0 if len2 == 0 else max(
+            0.0, min(1.0, ((px - ax) * vx + (py - ay) * vy) / len2))
+        dx = px - (ax + vx * t)
+        dy = py - (ay + vy * t)
+        return (dx * dx + dy * dy) ** 0.5, t
+
+    def _centre(self):
+        """The world point the current view is centred on."""
+        if self.mode == "station":
+            return self.station_anchor
+        ring = (self.detail or {}).get("ring") or []
+        if ring:
+            return zonedata.ring_centroid(ring)
+        return (0.0, 0.0)
+
+    def _to_screen_now(self, dx, dz):
+        """Project with the LAST draw's transform (picking space)."""
+        v = self._view
+        across, vertical, _d = self._project(
+            dx, dz, 0, v["az"], v["el"])
+        return (v["w"] / 2 + (across - v["ac_mid"]) * v["scale"],
+                v["h"] / 2 + (vertical - v["vt_mid"]) * v["scale"])
+
+    def _on_open_in_map_editor(self, _widget):
+        """Hand the selected street's location to the Map Editor."""
+        s = self.selected_street
+        if s:
+            self.app_window.open_in_map_editor(
+                s["zone"], s["x"], s["z"], s["name"])
+
+    # -- dragging: orbit, manipulation, click-to-pick -----------------------
+
+    def _classify_grab(self, sx, sy):
+        """
+        What a press at (sx, sy) grabs, by the manipulation rules:
+        ("width"|"depth", side) near a roof edge, "move" inside the
+        roof, "height" inside the front face, else None (orbit /
+        click). Uses the viewed object's BOX rectangle (the same
+        rectangle the number fields describe).
+        """
+        v = self._cur_values
+        if not v or not self._view:
+            return None
+        f, r = self._frame()
+        cx, cz = v["x"], v["z"]
+        hw, hd = v["w"] / 2, v["d"] / 2
+
+        def corner(sr, sf, h):
+            return (cx + r[0] * sr + f[0] * sf,
+                    cz + r[1] * sr + f[1] * sf, h)
+
+        ccx, ccz = self._centre()
+        # The roof rectangle's corners on screen (projected with
+        # the last draw's transform, at the building's height).
+        roof = []
+        for sr, sf in ((-hw, -hd), (hw, -hd), (hw, hd), (-hw, hd)):
+            wx, wz, hh = corner(sr, sf, v["h"])
+            roof.append(self._project_screen(wx - ccx, wz - ccz, hh))
+        # Edges: 0=back (sf=-hd), 1=right (sr=+hw), 2=front, 3=left.
+        edges = [(3, 0, "width", -1), (0, 1, "depth", -1),
+                 (1, 2, "width", +1), (2, 3, "depth", +1)]
+        for i0, i1, kind, side in edges:
+            d, _t = self._point_seg_dist(
+                sx, sy, roof[i0][0], roof[i0][1],
+                roof[i1][0], roof[i1][1])
+            if d <= 9:
+                return (kind, side)
+        if self._point_in_poly(sx, sy, roof):
+            return ("move", 0)
+        # The front face: front roof edge down to the ground.
+        gx1, gz1, _gh = corner(hw, hd, 0)
+        gx0, gz0, _gh = corner(-hw, hd, 0)
+        fr0 = self._project_screen(gx1 - ccx, gz1 - ccz, 0)
+        fr1 = self._project_screen(gx0 - ccx, gz0 - ccz, 0)
+        face = [roof[2], roof[3], fr1, fr0]
+        if self._point_in_poly(sx, sy, face):
+            return ("height", 0)
+        return None
+
+    def _project_screen(self, dx, dz, h):
+        """Project with the last draw's transform, at height h."""
+        v = self._view
+        across, vertical, _d = self._project(dx, dz, h,
+                                             v["az"], v["el"])
+        return (v["w"] / 2 + (across - v["ac_mid"]) * v["scale"],
+                v["h"] / 2 + (vertical - v["vt_mid"]) * v["scale"])
+
+    @staticmethod
+    def _point_in_poly(px, py, poly):
+        inside = False
+        n = len(poly)
+        for i in range(n):
+            x1, y1 = poly[i]
+            x2, y2 = poly[(i + 1) % n]
+            if (y1 > py) != (y2 > py):
+                xin = x1 + (py - y1) * (x2 - x1) / (y2 - y1)
+                if px < xin:
+                    inside = not inside
+        return inside
+
+    def _on_drag_press(self, _widget, event):
+        if event.button != 1 or self.mode is None:
+            return False
+        # Fresh values first: the grab classification works on the
+        # same numbers the tab's fields currently show.
+        values = None
+        if self.tab is not None:
+            try:
+                values = self.tab.manip_values()
+            except Exception:
+                values = None
+        if values:
+            self._cur_values = dict(values)
+        grab = self._classify_grab(event.x, event.y)
+        self._drag = {
+            "kind": grab[0] if grab else "orbit",
+            "side": grab[1] if grab else 0,
+            "sx": event.x, "sy": event.y,
+            "x": event.x, "y": event.y,
+            "az0": self.azimuth, "el0": self.elevation,
+            "start": dict(self._cur_values) if self._cur_values
+            else None,
+            # The view frame's centre, frozen at press time
+            # (2026-10-17, manipulation-gate find): the ground
+            # offsets _screen_to_ground returns are relative to
+            # the centre the view was FIT on, but _centre() moves
+            # mid-drag as the object itself is moved/resized —
+            # using the live centre corrupted every width/depth
+            # step after the first.
+            "centre": self._centre(),
+            "moved": False,
+        }
+        return True
+
+    def _on_drag_motion(self, _widget, event):
+        d = self._drag
+        if d is None:
+            return False
+        dx = event.x - d["x"]
+        dy = event.y - d["y"]
+        if abs(event.x - d["sx"]) + abs(event.y - d["sy"]) > 4:
+            d["moved"] = True
+        kind = d["kind"]
+        if kind == "orbit":
+            self.azimuth = d["az0"] + (event.x - d["sx"]) * 0.01
+            self.elevation = max(
+                self.MIN_ELEVATION,
+                min(self.MAX_ELEVATION,
+                    d["el0"] + (d["sy"] - event.y) * 0.01))
+            self.drawing.queue_draw()
+            return True
+        if d["start"] is None or self.tab is None:
+            return True
+        start = d["start"]
+        cand = dict(start)
+        f, r = self._frame()
+        if kind == "move":
+            # Ground-plane deltas are centre-independent (the
+            # inverse mapping returns centre-relative offsets).
+            g0 = self._screen_to_ground(d["sx"], d["sy"])
+            g1 = self._screen_to_ground(event.x, event.y)
+            if g0 and g1:
+                cand["x"] = start["x"] + (g1[0] - g0[0])
+                cand["z"] = start["z"] + (g1[1] - g0[1])
+        elif kind in ("width", "depth"):
+            g = self._screen_to_ground(event.x, event.y)
+            if not g:
+                return True
+            # Frozen fit-time centre (see _on_drag_press): the
+            # ground offsets live in the fitted view's frame.
+            ccx, ccz = d.get("centre") or self._centre()
+            px, pz = ccx + g[0], ccz + g[1]
+            axis = r if kind == "width" else f
+            dim = "w" if kind == "width" else "d"
+            u = (px - start["x"]) * axis[0] + (pz - start["z"]) * axis[1]
+            u0 = d["side"] * start[dim] / 2
+            delta = u - u0
+            cand[dim] = max(1.0, min(1000.0,
+                                     start[dim] + d["side"] * delta))
+            shift = delta / 2
+            cand["x"] = start["x"] + axis[0] * shift
+            cand["z"] = start["z"] + axis[1] * shift
+        elif kind == "height":
+            scale = (self._view or {}).get("scale", 1.0)
+            dh = (d["sy"] - event.y) / max(
+                scale * math.cos(self.elevation), 0.01)
+            cand["h"] = max(1.0, min(200.0, start["h"] + dh))
+        try:
+            ok = self.tab.manip_apply(cand)
+        except Exception:
+            ok = False
+        if not ok:
+            # Refused (e.g. a flagged building): end the drag; the
+            # tab has said why in the status bar.
+            self._drag = None
+            return True
+        self._cur_values = cand
+        if self.mode == "station":
+            self.station_anchor = (cand["x"], cand["z"])
+            self.station_parts = zonedata.station_parts(
+                cand["w"], cand["d"], cand["h"])
+        self._update_size_pos_labels()
+        self.drawing.queue_draw()
+        return True
+
+    def _on_drag_release(self, _widget, event):
+        d = self._drag
+        self._drag = None
+        if d is not None and d["kind"] == "orbit" and not d["moved"]:
+            # A click, not a drag: it may be a street pick.
+            self.pick_street(event.x, event.y)
+        elif d is not None and d["kind"] in (
+                "move", "width", "depth", "height"):
+            # A manipulation drag ended: let the tab re-derive the
+            # front + backdrop at the object's new spot.
+            hook = getattr(self.tab, "on_manip_end", None)
+            if hook is not None:
+                hook()
+        return True
 
 
 # ---------------------------------------------------------------------------
-# v1.6.0: Zone Buildings tab — the game's actual building data
+# Zone Buildings tab — light index browsing, on-demand zone detail
 # ---------------------------------------------------------------------------
 
 class ZoneBuildingsTab(Gtk.Box):
     """
     Zone-by-zone view of the game's converted building files
-    (zonedata.GameStore). Shows, per zone: building count, the
-    read-only hero buildings list, and the buildings themselves
-    (first rows + FLAGGED markers). Placement / move / resize /
-    delete go through zonedata, so zone attribution (bounds),
-    box/detail alignment, and the flagged lock are enforced by the
-    same code the harness tests. Saving is the window's round trip.
+    (zonedata.GameStore), 1.7.2 style:
+
+    * The LIST comes from the zone's LIGHT INDEX (downloaded from
+      GitHub): name, type, position, size for every building —
+      enough to browse, search and sort with only ~2–4 MB per zone
+      in memory. Clicking Name / Type / Flagged column headers
+      sorts the whole list (1.7.2).
+    * Selecting a building downloads ONLY its zone's full records
+      (the window's ensure_zone_detail, with the MB progress bar),
+      fills the number fields, and opens the 3D inspector.
+    * The edit fields are spelled out in plain words (1.7.2):
+      East–West position (X), North–South position (Z), Width (W),
+      Depth (D), Height (H). Typing a number applies it at once —
+      the same values the 3D drag handles use, synced both ways.
+    * FLAG STATE: the list's FLAGGED marker is centre-based while
+      only the index is loaded; the LOCK always re-checks against
+      the building's real footprint once its zone is loaded
+      (zonedata's ring match), so a flagged building can never be
+      edited from the list alone.
+    * LAYOUT (EDITOR UI RULE + 1.7.2 vertical adjustment): the data
+      column is split VERTICALLY — hero list / buildings list above,
+      the edit + place rows below — with draggable dividers, so
+      Joshua can pull the details below up into view or give the
+      list the whole column; the wide number rows ride in
+      horizontal scrollers whose rows are tall enough that text
+      never clips.
+
+    Placement / move / resize / delete go through zonedata, so
+    zone attribution, box/detail alignment and the flagged lock
+    are enforced by the same code the harness tests. Saving is the
+    window's round trip.
     """
 
-    # Rows shown in the list (zones hold tens of thousands of
-    # buildings; the list is a working window, not a full dump).
+    # Rows materialised in the Gtk list at once (the full filtered
+    # set is held as light row dicts; the widget shows a window).
     ROW_CAP = 1000
 
     def __init__(self, window):
@@ -1650,15 +2610,16 @@ class ZoneBuildingsTab(Gtk.Box):
         self.set_border_width(8)
         self.app_window = window
         self._zone = "adamsville"
+        self._filter_id = "all"        # the ONE filter state (below)
+        self._sort_key = None          # None | "name" | "type" | "flag"
+        self._sort_asc = True
+        self._rows = []                # full filtered row dicts
+        self._spins_loading = False    # guard: programmatic spin sets
+        self._place_retry = False      # place-after-load retry flag
 
-        # 1.7.0 SPLIT-PANE LAYOUT (Joshua's design correction,
-        # 2026-10-16): everything this tab has always shown lives in
-        # the LEFT data column (self.data_box); the visual inspector
-        # panel is the RIGHT pane of a Gtk.Paned packed below at the
-        # end of __init__. Selecting a building opens the inspector
-        # — NOTHING in the data column is hidden or collapsed, ever:
-        # Joshua adjusts values on the data side while looking at
-        # the building, and the paned divider stays draggable.
+        # The left data column: everything this tab shows lives
+        # here; the inspector is the right pane of the horizontal
+        # split packed at the end of __init__.
         self.data_box = Gtk.Box(
             orientation=Gtk.Orientation.VERTICAL, spacing=6)
 
@@ -1677,40 +2638,36 @@ class ZoneBuildingsTab(Gtk.Box):
         top.pack_start(save_btn, False, False, 6)
         self.info_label = Gtk.Label(label="")
         self.info_label.set_halign(Gtk.Align.START)
-        # 1.7.1 LAYOUT FIX (EDITOR UI RULE): this one-line status
-        # text ("adamsville: N buildings, ... showing first 1000
-        # rows") measured 834px of the data column's minimum width
-        # in 1.7.0 — a label must never set the window's width. It
-        # ellipsizes now; refresh() keeps the full text on its
-        # tooltip so it stays fully readable on hover.
+        # A label must never set the window's width (1.7.1): it
+        # ellipsizes; refresh() keeps the full text on its tooltip.
         self.info_label.set_ellipsize(Pango.EllipsizeMode.END)
         self.info_label.set_max_width_chars(48)
         top.pack_start(self.info_label, True, True, 6)
         self.data_box.pack_start(top, False, False, 0)
 
-        # --- Hero buildings (read-only listing) ----------------------
+        # --- Upper block: hero list + buildings list ----------------
+        # Hero buildings (read-only listing).
+        hero_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
+                           spacing=2)
         hero_lbl = Gtk.Label()
         hero_lbl.set_markup("<b>Hero buildings (read-only)</b>")
         hero_lbl.set_halign(Gtk.Align.START)
-        # Kept as attributes: the smoke test asserts the hero list
-        # is STILL VISIBLE while the inspector is open.
         self.hero_label = hero_lbl
-        self.data_box.pack_start(hero_lbl, False, False, 2)
+        hero_box.pack_start(hero_lbl, False, False, 2)
         self.hero_store = Gtk.ListStore(str, str, str)
         hero_tree = Gtk.TreeView(model=self.hero_store)
         for i, title in enumerate(("ID", "Name", "Address")):
             hero_tree.append_column(Gtk.TreeViewColumn(
                 title, Gtk.CellRendererText(), text=i))
         hero_scroll = Gtk.ScrolledWindow()
-        hero_scroll.set_min_content_height(60)
+        hero_scroll.set_min_content_height(48)
         hero_scroll.add(hero_tree)
         self.hero_scroll = hero_scroll
-        self.data_box.pack_start(hero_scroll, False, False, 0)
+        hero_box.pack_start(hero_scroll, True, True, 0)
 
-        # --- Category filter (1.7.0) -----------------------------------
-        # Filters the buildings list below by game type code, or to
-        # flagged buildings only. Column 0 of the list store stays
-        # the real building index whatever the filter (see refresh).
+        # Buildings list block: filter row + heading + the list.
+        list_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
+                           spacing=2)
         filter_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
                              spacing=6)
         filter_row.pack_start(Gtk.Label(label="Category:"),
@@ -1718,8 +2675,7 @@ class ZoneBuildingsTab(Gtk.Box):
         self.filter_combo = Gtk.ComboBoxText()
         # Entry order is part of the panel's contract (the smoke
         # test selects "Flagged only" by this index): All, the four
-        # CODE_LABELS in code order, then Flagged only. The parallel
-        # _filter_values list maps an active index to its filter id.
+        # CODE_LABELS in code order, then Flagged only.
         self._filter_labels = (
             ["All categories"]
             + [zonedata.CODE_LABELS[c] for c in (0, 1, 2, 3)]
@@ -1731,83 +2687,111 @@ class ZoneBuildingsTab(Gtk.Box):
         for lbl in self._filter_labels:
             self.filter_combo.append_text(lbl)
         self.filter_combo.set_active(0)
-        self.filter_combo.connect("changed",
-                                  lambda c: self.refresh())
+        self.filter_combo.connect("changed", self._on_filter_changed)
         filter_row.pack_start(self.filter_combo, False, False, 0)
-        self.data_box.pack_start(filter_row, False, False, 2)
-
-        # --- Buildings list -------------------------------------------
+        list_box.pack_start(filter_row, False, False, 2)
         b_lbl = Gtk.Label()
         b_lbl.set_markup("<b>Buildings</b> (FLAGGED = locked, awaiting "
                          "Joshua's decision)")
         b_lbl.set_halign(Gtk.Align.START)
-        # Same rule as the info label: ellipsize, full text on the
-        # tooltip — a heading never widens the window.
         b_lbl.set_ellipsize(Pango.EllipsizeMode.END)
         b_lbl.set_tooltip_text(
             "Buildings (FLAGGED = locked, awaiting Joshua's decision)")
-        self.data_box.pack_start(b_lbl, False, False, 2)
+        list_box.pack_start(b_lbl, False, False, 2)
         self.store = Gtk.ListStore(int, str, str, str)
         self.tree = Gtk.TreeView(model=self.store)
-        for i, title in enumerate(("#", "Name", "Type", "Flagged")):
-            self.tree.append_column(Gtk.TreeViewColumn(
-                title, Gtk.CellRendererText(), text=i))
-        self.tree.get_selection().connect("changed",
-                                          self._on_select)
+        # 1.7.2 SORTING: Name / Type / Flagged headers are clickable
+        # and sort the WHOLE list (the rows are light dicts, so a
+        # full sort is cheap); clicking again reverses direction.
+        self._columns = {}
+        for i, (title, key) in enumerate(
+                (("#", None), ("Name", "name"), ("Type", "type"),
+                 ("Flagged", "flag"))):
+            col = Gtk.TreeViewColumn(title, Gtk.CellRendererText(),
+                                     text=i)
+            if key is not None:
+                col.set_clickable(True)
+                col.connect("clicked",
+                            lambda c, k=key: self._on_header_clicked(k))
+            self._columns[key] = col
+            self.tree.append_column(col)
+        self.tree.get_selection().connect("changed", self._on_select)
         scroll = Gtk.ScrolledWindow()
-        scroll.set_min_content_height(180)
+        scroll.set_min_content_height(120)
         scroll.add(self.tree)
         # Kept as an attribute: the smoke test asserts the long
         # buildings list lives inside a scrolled window (EDITOR UI
         # RULE — long content scrolls, never clips).
         self.list_scroll = scroll
-        self.data_box.pack_start(scroll, True, True, 0)
+        list_box.pack_start(scroll, True, True, 0)
 
-        # --- Edit selected: move / resize / delete ---------------------
+        # The hero block and the list block share the upper area
+        # through a VERTICAL divider Joshua can drag.
+        self.upper_paned = Gtk.Paned(
+            orientation=Gtk.Orientation.VERTICAL)
+        self.upper_paned.set_wide_handle(True)
+        self.upper_paned.pack1(hero_box, True, True)
+        self.upper_paned.pack2(list_box, True, True)
+
+        # --- Lower block: edit + place rows ---------------------------
+        lower_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
+                            spacing=2)
+        edit_lbl = Gtk.Label()
+        edit_lbl.set_markup("<b>Edit selected building</b> "
+                            "(typing a number applies it at once)")
+        edit_lbl.set_halign(Gtk.Align.START)
+        edit_lbl.set_ellipsize(Pango.EllipsizeMode.END)
+        lower_box.pack_start(edit_lbl, False, False, 2)
         edit = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
-        self.mx = Gtk.SpinButton.new_with_range(-20000, 20000, 1)
-        self.mz = Gtk.SpinButton.new_with_range(-20000, 20000, 1)
+        self.mx = Gtk.SpinButton.new_with_range(-30000, 30000, 1)
+        self.mz = Gtk.SpinButton.new_with_range(-30000, 30000, 1)
         self.mw = Gtk.SpinButton.new_with_range(1, 1000, 1)
         self.md = Gtk.SpinButton.new_with_range(1, 1000, 1)
         self.mh = Gtk.SpinButton.new_with_range(1, 200, 1)
-        for label, spin in (("x", self.mx), ("z", self.mz),
-                            ("w", self.mw), ("d", self.md),
-                            ("h", self.mh)):
+        # 1.7.2 spelled-out labels (Joshua): plain words first, the
+        # letter kept in parentheses for reference.
+        for label, spin in (
+                ("East–West position (X)", self.mx),
+                ("North–South position (Z)", self.mz),
+                ("Width (W)", self.mw),
+                ("Depth (D)", self.md),
+                ("Height (H)", self.mh)):
             edit.pack_start(Gtk.Label(label=label), False, False, 0)
             edit.pack_start(spin, False, False, 0)
+            spin.connect("value-changed",
+                         lambda s: self._on_spin_changed())
         move_btn = Gtk.Button(label="Move / Resize Selected")
         move_btn.connect("clicked", self._on_move_resize)
         edit.pack_start(move_btn, False, False, 4)
         del_btn = Gtk.Button(label="Delete Selected")
         del_btn.connect("clicked", self._on_delete)
         edit.pack_start(del_btn, False, False, 0)
-        # 1.7.1 LAYOUT FIX (EDITOR UI RULE — long content SCROLLS):
-        # this row is intrinsically ~1080px wide (five spin buttons
-        # whose minimums GTK computes from their ranges — measured
-        # 120-136px each and NOT reducible via width_chars or size
-        # requests — plus two buttons), and it alone set the data
-        # column's minimum in 1.7.0. It now rides in a horizontal
-        # scroller: at full width it looks exactly as before; when
-        # Joshua narrows the data pane, the row scrolls sideways
-        # and every control stays reachable.
+        # Horizontal scroller (the row is wide; at full width it
+        # looks as before, narrowed it scrolls — 1.7.1 pattern).
         self.edit_scroll = Gtk.ScrolledWindow()
         self.edit_scroll.set_policy(Gtk.PolicyType.AUTOMATIC,
                                     Gtk.PolicyType.NEVER)
         self.edit_scroll.set_shadow_type(Gtk.ShadowType.NONE)
         self.edit_scroll.add(edit)
-        self.data_box.pack_start(self.edit_scroll, False, False, 2)
+        lower_box.pack_start(self.edit_scroll, False, False, 2)
 
-        # --- Place a new building ---------------------------------------
+        place_lbl = Gtk.Label()
+        place_lbl.set_markup("<b>Place a new building</b>")
+        place_lbl.set_halign(Gtk.Align.START)
+        lower_box.pack_start(place_lbl, False, False, 2)
         place = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
-        self.px = Gtk.SpinButton.new_with_range(-20000, 20000, 1)
-        self.pz = Gtk.SpinButton.new_with_range(-20000, 20000, 1)
+        self.px = Gtk.SpinButton.new_with_range(-30000, 30000, 1)
+        self.pz = Gtk.SpinButton.new_with_range(-30000, 30000, 1)
         self.pw = Gtk.SpinButton.new_with_range(1, 1000, 1)
         self.pd = Gtk.SpinButton.new_with_range(1, 1000, 1)
         self.ph = Gtk.SpinButton.new_with_range(1, 200, 1)
         self.pw.set_value(24); self.pd.set_value(18); self.ph.set_value(5)
-        for label, spin in (("x", self.px), ("z", self.pz),
-                            ("w", self.pw), ("d", self.pd),
-                            ("h", self.ph)):
+        for label, spin in (
+                ("East–West position (X)", self.px),
+                ("North–South position (Z)", self.pz),
+                ("Width (W)", self.pw),
+                ("Depth (D)", self.pd),
+                ("Height (H)", self.ph)):
             place.pack_start(Gtk.Label(label=label), False, False, 0)
             place.pack_start(spin, False, False, 0)
         self.ptype = Gtk.ComboBoxText()
@@ -1818,48 +2802,42 @@ class ZoneBuildingsTab(Gtk.Box):
         place.pack_start(self.ptype, False, False, 0)
         self.pname = Gtk.Entry()
         self.pname.set_placeholder_text("Name (optional)")
-        # The name entry expands into free space, but its MINIMUM
-        # stays small (12 chars) so it never widens the window.
         self.pname.set_width_chars(12)
         place.pack_start(self.pname, True, True, 0)
         place_btn = Gtk.Button(label="Place Building")
         place_btn.connect("clicked", self._on_place)
         place.pack_start(place_btn, False, False, 0)
-        # Same horizontal scroller as the edit row above (this row
-        # measured 1112px in 1.7.0 — the widest thing in the tab).
         self.place_scroll = Gtk.ScrolledWindow()
         self.place_scroll.set_policy(Gtk.PolicyType.AUTOMATIC,
                                      Gtk.PolicyType.NEVER)
         self.place_scroll.set_shadow_type(Gtk.ShadowType.NONE)
         self.place_scroll.add(place)
-        self.data_box.pack_start(self.place_scroll, False, False, 2)
+        lower_box.pack_start(self.place_scroll, False, False, 2)
+
+        # The data column's VERTICAL split (1.7.2): lists above,
+        # edit/place rows below, divider draggable — the flagged
+        # list's window is adjustable vertically and the details
+        # below can be pulled up into view (Joshua's report).
+        self.vpaned = Gtk.Paned(orientation=Gtk.Orientation.VERTICAL)
+        self.vpaned.set_wide_handle(True)
+        self.vpaned.pack1(self.upper_paned, True, True)
+        self.vpaned.pack2(lower_box, True, True)
+        self.data_box.pack_start(self.vpaned, True, True, 0)
 
         # --- Split pane: data column (left) + inspector (right) ----
         # The inspector starts hidden; selecting a building shows
-        # it (see show_inspector). The data column is pack1 and is
-        # NEVER hidden — the split is the whole design.
+        # it. The data column is pack1 and is NEVER hidden.
         self.inspector = ZoneInspectorPanel(self)
         self.inspector.set_visible(False)
         self.paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
         self.paned.set_wide_handle(True)
-        # 1.7.1 LAYOUT FIX (EDITOR UI RULE — graphical panes are
-        # ADJUSTABLE): 1.7.0 packed BOTH children shrink=False, so
-        # GtkPaned clamped the divider to [data minimum, width −
-        # inspector minimum] = a 1px range once the minimums summed
-        # past the window width (measured: set_position(250/754/
-        # 1259) ALL left the divider at 1108 — it could not move at
-        # all, exactly as Joshua reported). shrink=True on both
-        # children lets either pane go below its request size, so
-        # the divider travels the full width; the panes' contents
-        # are built to stay usable small (scrolled lists, capped
-        # spin buttons, ellipsized labels — see above).
+        # shrink=True on both children (1.7.1): the divider travels
+        # the full width; contents stay usable small.
         self.paned.pack1(self.data_box, True, True)
         self.paned.pack2(self.inspector, False, True)
         self.pack_start(self.paned, True, True, 0)
-        # Divider memory (session): once Joshua drags the divider,
-        # his position — not the default — is restored every time
-        # the inspector reopens. _split_guard keeps show_inspector's
-        # own programmatic positioning from overwriting his choice.
+        # Divider memory (session): Joshua's dragged position is
+        # restored every time the inspector reopens.
         self._split_pos = None
         self._split_guard = False
         self.paned.connect("notify::position", self._on_split_moved)
@@ -1873,9 +2851,13 @@ class ZoneBuildingsTab(Gtk.Box):
 
     # -- helpers ---------------------------------------------------------
 
+    def _store(self):
+        return self.app_window.zone_store
+
     def _zd(self):
-        """The current zone's ZoneData, or None."""
-        store = self.app_window.zone_store
+        """The current zone's FULL ZoneData, or None when only its
+        light index is loaded (the normal browsing state, 1.7.2)."""
+        store = self._store()
         return store.zones.get(self._zone) if store else None
 
     def _selected_index(self):
@@ -1886,103 +2868,190 @@ class ZoneBuildingsTab(Gtk.Box):
             return None
         return model.get_value(it, 0)
 
+    def _set_spins(self, x, z, w, d, h):
+        """Fill the edit fields WITHOUT triggering live-apply."""
+        self._spins_loading = True
+        try:
+            self.mx.set_value(x); self.mz.set_value(z)
+            self.mw.set_value(w); self.md.set_value(d)
+            self.mh.set_value(h)
+        finally:
+            self._spins_loading = False
+
+    # -- the list: rows from the index (or the loaded detail) -----------
+
+    def _build_rows(self):
+        """The full row set for the current zone + filter, sorted
+        per the active sort. Row: {i, name, code, flagged}."""
+        store = self._store()
+        if store is None:
+            return [], 0, 0
+        zd = self._zd()
+        rows = []
+        flagged_n = 0
+        if zd is not None:
+            for i, (box, det) in enumerate(zip(zd.boxes, zd.details)):
+                is_flag = store.flagged.match(
+                    self._zone, det.get("ring") or []) is not None
+                flagged_n += 1 if is_flag else 0
+                rows.append({"i": i, "name": det.get("name") or "",
+                             "code": int(box[5]), "flagged": is_flag})
+            total = len(zd.boxes)
+        else:
+            idx = store.indexes.get(self._zone)
+            if idx is None:
+                return [], 0, 0
+            for i, e in enumerate(idx.entries):
+                is_flag = store.flagged.match_point(
+                    self._zone, e["x"], e["z"]) is not None
+                flagged_n += 1 if is_flag else 0
+                rows.append({"i": i, "name": e.get("n") or "",
+                             "code": int(e.get("c", 0)),
+                             "flagged": is_flag})
+            total = len(idx.entries)
+        filt = self._filter_id
+        if filt == "flagged":
+            rows = [r for r in rows if r["flagged"]]
+        elif filt != "all":
+            rows = [r for r in rows if r["code"] == int(filt)]
+        if self._sort_key == "name":
+            rows.sort(key=lambda r: (r["name"].casefold(), r["i"]),
+                      reverse=not self._sort_asc)
+        elif self._sort_key == "type":
+            rows.sort(key=lambda r: (r["code"], r["name"].casefold(),
+                                     r["i"]),
+                      reverse=not self._sort_asc)
+        elif self._sort_key == "flag":
+            rows.sort(key=lambda r: (not r["flagged"], r["i"]),
+                      reverse=not self._sort_asc)
+        return rows, total, flagged_n
+
     def refresh(self):
         """
-        Repopulate hero + building lists from the store, honouring
-        the category filter (1.7.0): a row is included only when the
-        filter is All, or the box's type code matches the chosen
-        category, or the filter is "Flagged only" and the building
-        has a flagged match. Column 0 ALWAYS stays the real building
-        index — _selected_index and the edit handlers depend on it.
+        Repopulate hero + building lists. The filter state is read
+        ONLY from self._filter_id (set solely by the combo's own
+        handler) — 1.7.2's fix for the stuck category filter: in
+        1.7.1 every refresh re-derived the filter from the widget,
+        and any refresh triggered while the combo was mid-change
+        (a selection change during repopulation, a save refresh, a
+        zone switch) could snap the visible list back; now the
+        combo sets state, and refresh() only ever READS state, so
+        switching category works in every state, flagged view
+        included.
         """
         self.hero_store.clear()
         self.store.clear()
-        zd = self._zd()
-        if zd is None:
-            self.info_label.set_text("Zone data not loaded.")
+        store = self._store()
+        if store is None:
+            self.info_label.set_text("Zone data unavailable.")
             return
-        store = self.app_window.zone_store
-        # The active filter id ("all" during __init__, before the
-        # combo exists, refresh is only called after it is built).
-        filt = "all"
-        if hasattr(self, "filter_combo"):
-            active = self.filter_combo.get_active()
-            if 0 <= active < len(self._filter_values):
-                filt = self._filter_values[active]
-        flagged_n = 0
-        for hb in zd.hero_list():
-            self.hero_store.append([hb["id"] or "", hb["name"] or "",
-                                    hb["address"] or ""])
-        shown = 0
-        for i, (box, det) in enumerate(zip(zd.boxes, zd.details)):
-            if shown >= self.ROW_CAP:
-                break
-            is_flag = store.flagged.match(
-                self._zone, det.get("ring") or []) is not None
-            flagged_n += 1 if is_flag else 0
-            # --- the 1.7.0 category filter ----------------------------
-            if filt == "flagged":
-                if not is_flag:
-                    continue
-            elif filt != "all":
-                if box[5] != int(filt):
-                    continue
-            self.store.append([i, det.get("name") or "",
-                               zonedata.CODE_LABELS.get(box[5], "?"),
-                               "FLAGGED" if is_flag else ""])
-            shown += 1
-        info = (
-            f"{self._zone}: {len(zd.boxes)} buildings, "
-            f"{len(zd.hero_list())} hero, "
-            f"{store.flagged.count(self._zone)} flagged in zone "
-            f"(showing first {min(self.ROW_CAP, len(zd.boxes))} rows)"
-            + (" — UNSAVED CHANGES" if zd.dirty else ""))
-        if filt != "all":
-            # Name the active filter and how many rows it leaves.
+        zd = self._zd()
+        # Hero list: from the full data when loaded, else the index.
+        heroes = []
+        if zd is not None:
+            heroes = zd.hero_list()
+        else:
+            idx = store.indexes.get(self._zone)
+            if idx is not None:
+                heroes = idx.heroes
+        for hb in heroes:
+            self.hero_store.append([hb.get("id") or "",
+                                    hb.get("name") or "",
+                                    hb.get("address") or ""])
+        self._rows, total, flagged_n = self._build_rows()
+        for r in self._rows[:self.ROW_CAP]:
+            self.store.append([r["i"], r["name"],
+                               zonedata.CODE_LABELS.get(r["code"], "?"),
+                               "FLAGGED" if r["flagged"] else ""])
+        state = "full records loaded" if zd is not None \
+            else "list only — pick a building to load its zone"
+        info = (f"{self._zone}: {total} buildings, {len(heroes)} hero, "
+                f"{store.flagged.count(self._zone)} flagged in zone "
+                f"({state}; showing {min(self.ROW_CAP, len(self._rows))} "
+                f"of {len(self._rows)} rows)")
+        if zd is not None and zd.dirty:
+            info += " — UNSAVED CHANGES"
+        if self._filter_id != "all":
             label = self._filter_labels[
-                self._filter_values.index(filt)]
-            info += f" — filter: {label}: {shown} rows shown"
+                self._filter_values.index(self._filter_id)]
+            info += f" — filter: {label}"
+        if self._sort_key:
+            info += (f" — sorted by {self._sort_key} "
+                     f"({'A→Z' if self._sort_asc else 'Z→A'})")
         self.info_label.set_text(info)
-        # The label ellipsizes (1.7.1) — full text stays on hover.
         self.info_label.set_tooltip_text(info)
 
-    # -- inspector show/hide (1.7.0) --------------------------------------
+    def _update_row(self, index):
+        """Refresh one visible row in place (after an edit) and its
+        light row dict — the list never needs a full rebuild for a
+        single building's change."""
+        zd = self._zd()
+        if zd is None or not (0 <= index < len(zd.boxes)):
+            return
+        store = self._store()
+        box, det = zd.boxes[index], zd.details[index]
+        is_flag = store.flagged.match(
+            self._zone, det.get("ring") or []) is not None
+        for r in self._rows:
+            if r["i"] == index:
+                r["name"] = det.get("name") or ""
+                r["code"] = int(box[5])
+                r["flagged"] = is_flag
+                break
+        for row in self.store:
+            if row[0] == index:
+                row[1] = det.get("name") or ""
+                row[2] = zonedata.CODE_LABELS.get(int(box[5]), "?")
+                row[3] = "FLAGGED" if is_flag else ""
+                break
+
+    # -- filter + sort -----------------------------------------------------
+
+    def _on_filter_changed(self, combo):
+        """The combo's ONLY job: record the chosen filter, then
+        refresh. (See refresh() for why state lives here.)"""
+        active = combo.get_active()
+        if 0 <= active < len(self._filter_values):
+            self._filter_id = self._filter_values[active]
+        self.refresh()
+
+    def _on_header_clicked(self, key):
+        """Sort by a column; clicking the same column again
+        reverses the direction."""
+        if self._sort_key == key:
+            self._sort_asc = not self._sort_asc
+        else:
+            self._sort_key = key
+            self._sort_asc = True
+        for k, col in self._columns.items():
+            if k is not None:
+                col.set_sort_indicator(k == key)
+                if k == key:
+                    col.set_sort_order(
+                        Gtk.SortType.ASCENDING if self._sort_asc
+                        else Gtk.SortType.DESCENDING)
+        self.refresh()
+
+    # -- inspector show/hide ------------------------------------------------
 
     def show_inspector(self, index):
-        """
-        Open the visual inspector on building `index` (right pane).
-        The data column stays fully visible and editable — only the
-        inspector appears and the paned divider moves so it gets
-        its share (~320px by default, or the position Joshua last
-        dragged it to this session). Called from _on_select on a
-        valid selection.
-        """
+        """Open the 3D inspector on building `index` (right pane).
+        The data column stays fully visible and editable."""
         zd = self._zd()
-        store = self.app_window.zone_store
+        store = self._store()
         if zd is None or store is None \
                 or not (0 <= index < len(zd.boxes)):
             return
-        # The flagged entry for this building, if any.
         flagged_entry = store.flagged.match(
             self._zone, zd.details[index].get("ring") or [])
         self.inspector.show_building(self, zd, index, flagged_entry)
         self.inspector.set_visible(True)
         self._position_inspector()
-        # The paned may not have its final width yet on the first
-        # selection; re-position once the GTK loop has allocated it.
         GLib.idle_add(self._position_inspector_idle)
 
     def _position_inspector(self):
-        """Place the split divider for the inspector.
-
-        1.7.1: Joshua's dragged position wins (remembered by
-        _on_split_moved for the whole session); before he has
-        dragged anything, the inspector gets ~320px. Either way the
-        position is clamped so the data column keeps >=240px and
-        the inspector >=200px — and because both panes are packed
-        shrink=True now, the clamp is a courtesy, not a wall: he
-        can drag past it afterwards.
-        """
+        """Place the split divider: Joshua's dragged position wins;
+        before he drags, the inspector gets ~320px."""
         width = self.paned.get_allocated_width()
         if width <= 0:
             return
@@ -1998,7 +3067,6 @@ class ZoneBuildingsTab(Gtk.Box):
             self._split_guard = False
 
     def _position_inspector_idle(self):
-        """idle_add wrapper for _position_inspector (one-shot)."""
         self._position_inspector()
         return False
 
@@ -2008,39 +3076,143 @@ class ZoneBuildingsTab(Gtk.Box):
         if hasattr(self, "inspector"):
             self.inspector.set_visible(False)
 
-    # -- callbacks ---------------------------------------------------------
+    # -- selection ---------------------------------------------------------
 
     def _on_zone_changed(self, combo):
-        """Switch the working zone."""
+        """Switch the working zone: its list comes from its light
+        index (downloading the index first if needed)."""
         self._zone = combo.get_active_text() or self._zone
-        # The inspector was showing the old zone's building.
         self.hide_inspector()
+        self.app_window.ensure_zone_index(self._zone)
         self.refresh()
 
     def _on_select(self, selection):
         """
-        Load the selected building's numbers into the edit spins,
-        and (1.7.0) open the visual inspector on it. An empty
-        selection hides the inspector again.
+        Fill the edit fields from the selected row, and open the
+        3D inspector. When the zone's full records are not loaded
+        yet, the fields fill from the light index at once and the
+        zone downloads (progress bar); the inspector opens when it
+        lands, if the selection is still this building.
         """
         idx = self._selected_index()
-        zd = self._zd()
-        if idx is None or zd is None or idx >= len(zd.boxes):
-            # No valid row selected — the inspector closes.
+        if idx is None:
             self.hide_inspector()
             return
+        zd = self._zd()
+        if zd is not None and idx < len(zd.boxes):
+            box = zd.boxes[idx]
+            self._set_spins(box[0], box[1], box[2], box[3], box[4])
+            self.show_inspector(idx)
+            return
+        store = self._store()
+        index = store.indexes.get(self._zone) if store else None
+        if index is not None and idx < len(index.entries):
+            e = index.entries[idx]
+            self._set_spins(e["x"], e["z"], e["w"], e["d"], e["h"])
+        zone = self._zone
+
+        def done(ok, _idx=idx, _zone=zone):
+            if ok and self._zone == _zone \
+                    and self._selected_index() == _idx:
+                zd2 = self._zd()
+                if zd2 is not None and _idx < len(zd2.boxes):
+                    box = zd2.boxes[_idx]
+                    self._set_spins(box[0], box[1], box[2], box[3],
+                                    box[4])
+                    self.show_inspector(_idx)
+        self.app_window.ensure_zone_detail(zone, done=done)
+
+    # -- applying edits (numbers <-> drags, one path) ------------------------
+
+    def manip_values(self):
+        """The inspector's current building as {x, z, w, d, h}
+        (the panel's manipulation starting point)."""
+        zd = self._zd()
+        idx = self.inspector.index
+        if zd is None or idx is None or idx >= len(zd.boxes):
+            return None
         box = zd.boxes[idx]
-        self.mx.set_value(box[0]); self.mz.set_value(box[1])
-        self.mw.set_value(box[2]); self.md.set_value(box[3])
-        self.mh.set_value(box[4])
-        # Show the building in the 3D inspector (right pane).
-        self.show_inspector(idx)
+        return {"x": box[0], "z": box[1], "w": box[2], "d": box[3],
+                "h": box[4]}
+
+    def manip_apply(self, values):
+        """Apply {x, z, w, d, h} from a 3D drag: the model changes,
+        the number fields follow, the row updates — same values,
+        both directions. Returns False when the edit is refused
+        (flagged), so the panel ends the drag."""
+        return self._apply_values(values, from_drag=True)
+
+    def on_manip_end(self):
+        """A drag finished: re-derive the inspector's front and
+        backdrop at the building's new spot."""
+        if self.inspector.get_visible():
+            self.inspector.refresh_view()
+
+    def _apply_values(self, values, from_drag=False):
+        zd = self._zd()
+        store = self._store()
+        idx = self.inspector.index \
+            if self.inspector.get_visible() else self._selected_index()
+        if store is None or zd is None or idx is None \
+                or idx >= len(zd.boxes):
+            return False
+        try:
+            zd.move(idx, values["x"], values["z"],
+                    flagged=store.flagged)
+            zd.resize(idx, values["w"], values["d"], values["h"],
+                      flagged=store.flagged)
+        except Exception as e:
+            self.app_window._set_status(str(e))
+            # Restore the fields to the real (unchanged) values.
+            box = zd.boxes[idx]
+            self._set_spins(box[0], box[1], box[2], box[3], box[4])
+            return False
+        self.app_window._mark_unpublished()
+        self._set_spins(values["x"], values["z"], values["w"],
+                        values["d"], values["h"])
+        self._update_row(idx)
+        if not from_drag and self.inspector.get_visible() \
+                and self.inspector.index == idx:
+            self.inspector.refresh_view()
+        self.app_window._set_status(
+            f"Building #{idx} updated (unsaved until save).")
+        return True
+
+    def _on_spin_changed(self):
+        """Typing a number applies it at once (1.7.2 two-way
+        sizing) — unless the fields are being filled by code."""
+        if self._spins_loading:
+            return
+        idx = self._selected_index()
+        zd = self._zd()
+        if idx is None or zd is None:
+            return
+        self._apply_values({
+            "x": self.mx.get_value(), "z": self.mz.get_value(),
+            "w": self.mw.get_value(), "d": self.md.get_value(),
+            "h": self.mh.get_value()})
+
+    def _on_move_resize(self, widget):
+        """Move + resize the selected building from the fields
+        (the same apply path as typing and dragging)."""
+        self._on_spin_changed()
 
     def _on_place(self, widget):
         """Place a building; zonedata attributes it to its zone and
-        refuses placements outside all zones."""
-        store = self.app_window.zone_store
+        refuses placements outside all zones. If the current zone's
+        records are not loaded yet, load them first, then place."""
+        store = self._store()
         if store is None:
+            return
+        if self._zd() is None and not self._place_retry:
+            self._place_retry = True
+            zone = self._zone
+
+            def done(ok):
+                self._place_retry = False
+                if ok:
+                    self._on_place(widget)
+            self.app_window.ensure_zone_detail(zone, done=done)
             return
         try:
             zone, idx = store.place_building(
@@ -2053,34 +3225,16 @@ class ZoneBuildingsTab(Gtk.Box):
             self.app_window._set_status(str(e))
             return
         self.app_window._mark_unpublished()
-        self._zone = zone
-        self.zone_combo.set_active(zonedata.ZONES.index(zone))
+        if zone != self._zone:
+            self._zone = zone
+            self.zone_combo.set_active(zonedata.ZONES.index(zone))
         self.refresh()
         self.app_window._set_status(
             f"Placed building #{idx} in {zone} (unsaved until save).")
 
-    def _on_move_resize(self, widget):
-        """Move + resize the selected building (flagged = refused)."""
-        store = self.app_window.zone_store
-        zd = self._zd()
-        idx = self._selected_index()
-        if store is None or zd is None or idx is None:
-            return
-        try:
-            zd.move(idx, self.mx.get_value(), self.mz.get_value(),
-                    flagged=store.flagged)
-            zd.resize(idx, self.mw.get_value(), self.md.get_value(),
-                      self.mh.get_value(), flagged=store.flagged)
-        except Exception as e:
-            self.app_window._set_status(str(e))
-            return
-        self.app_window._mark_unpublished()
-        self.refresh()
-        self.app_window._set_status(f"Building #{idx} updated (unsaved).")
-
     def _on_delete(self, widget):
         """Delete the selected building (flagged = refused)."""
-        store = self.app_window.zone_store
+        store = self._store()
         zd = self._zd()
         idx = self._selected_index()
         if store is None or zd is None or idx is None:
@@ -2091,6 +3245,7 @@ class ZoneBuildingsTab(Gtk.Box):
             self.app_window._set_status(str(e))
             return
         self.app_window._mark_unpublished()
+        self.hide_inspector()
         self.refresh()
         self.app_window._set_status(f"Building #{idx} deleted (unsaved).")
 
@@ -2101,136 +3256,528 @@ class ZoneBuildingsTab(Gtk.Box):
 
 class GasStationReviewTab(Gtk.Box):
     """
-    Gas Station Review (staged for 1.7.2, Joshua 2026-10-17): the
-    problem gas stations, listed for HIS decision — the same role
-    the flagged buildings play in the Zone Buildings tab.
+    Gas Station Review (Joshua 2026-10-17): the problem gas
+    stations, listed for HIS decision — the same role the flagged
+    buildings play in the Zone Buildings tab.
 
-    The game's placement rule leaves a station out when no part of
-    it can sit clear of the streets; Joshua ruled to keep that skip
-    rule for now and review the hurt stations here instead. The
-    list (zonedata.GasStationReview, from the bundled
-    gas-station-review.json) holds every station that under the
-    round-2 rules is left out entirely or has to move more than
-    2 units from its real spot, with the streets blocking it and a
-    plain-language note on what is in the way.
+    The game still uses the skip rule: a station that cannot sit
+    clear of the streets is left out. This list is every station
+    that under the round-2 rules is left out entirely or has to
+    move more than 2 units from its real spot, with the streets
+    blocking it and a plain-language note on what is in the way.
+    A toggle shows ALL 109 stations with their live in-game status
+    (placed / skipped under the game's current gate) — Joshua
+    named Marathon, Valero and Chevron: all three read Skipped.
 
-    READ-ONLY by design: there are no edit controls in this tab at
-    all. Stations are not buildings — they are never edited from
-    this list; Joshua decides each one's fate and a future audit
-    regenerates the file.
+    1.7.2 (Joshua's rules): the list is DOWNLOADED FROM GITHUB on
+    open (editors/building-editor/gas-station-review.json) — never
+    bundled. And stations can be made EDITABLE here (amendment 1):
+    flip a station's "Make editable" switch and it opens in the 3D
+    inspector like a building — the game's station cluster as one
+    object at its real location, with the manipulation tools, the
+    spelled-out fields, and a Walkable flag. Edits live in the
+    editor's own station-edits.json in the repo and save by the
+    same round-trip rule; the game's station file is never edited.
 
-    Load-on-demand fit (Joshua 2026-10-17): the review file is a
-    small bundled list (dozens of entries). Building this tab
-    reads ONLY that file — it never touches the zone store — so
-    under the on-demand design it can appear from the light index
-    alone, without downloading any part of the map.
+    The status word in the 3D view (Flagged / Skipped / Placed)
+    describes the GAME's treatment of the station today — flipping
+    a station editable does not change it.
 
     EDITOR UI RULE: the list is long, so it lives in a
-    Gtk.ScrolledWindow; long cell text ellipsizes (the selected
-    station's full note shows in the wrapping detail label under
-    the list instead).
+    Gtk.ScrolledWindow; the list and the details below it share a
+    VERTICAL draggable divider; long cell text ellipsizes with the
+    full note in the wrapping detail label.
     """
 
     def __init__(self, window):
-        """window: the AssetEditorWindow (kept for parity with the
-        other tabs; this tab reports nothing back — it is a pure
-        display of the bundled review list)."""
+        """window: the AssetEditorWindow (store + status access)."""
         super().__init__(orientation=Gtk.Orientation.VERTICAL,
                          spacing=6)
         self.set_border_width(6)
         self.app_window = window
+        self.review = None          # zonedata.GasStationReview
+        self.edits = None           # zonedata.StationEdits
+        self._current = None        # selected station record
+        self._show_all = False      # list toggle state
+        self._spins_loading = False
 
-        # The bundled review list (an absent file or a missing
-        # zonedata module both mean an empty queue, never a crash).
-        if _ZONEDATA_AVAILABLE and zonedata is not None:
-            self.review = zonedata.GasStationReview.load()
-        else:
-            self.review = None
-        stations = self.review.stations if self.review else []
-
-        # --- Heading + plain-language explanation -----------------
+        # The left column: heading, intro, toggle, list, details.
+        self.data_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
+                                spacing=6)
         head = Gtk.Label()
         head.set_markup("<b>Gas stations awaiting Joshua's review</b>")
         head.set_halign(Gtk.Align.START)
         head.set_ellipsize(Pango.EllipsizeMode.END)
         head.set_tooltip_text("Gas stations awaiting Joshua's review")
-        self.pack_start(head, False, False, 0)
+        self.data_box.pack_start(head, False, False, 0)
         intro = Gtk.Label(label=(
             "The game still uses the skip rule: a station that "
             "cannot sit clear of the streets is left out. These "
             "stations either cannot be placed at all, or would have "
             "to move more than 2 units from their real spot. They "
-            "are listed here for your decision - nothing in this "
-            "list changes the game."))
+            "are listed here for your decision. Flip “Make "
+            "editable” on a station to open it in the 3D view and "
+            "adjust it — your edits save to the editor's own "
+            "station file; the game does not change until a game "
+            "update reads them."))
         intro.set_line_wrap(True)
         intro.set_halign(Gtk.Align.START)
-        self.pack_start(intro, False, False, 0)
+        self.data_box.pack_start(intro, False, False, 0)
 
-        # --- The review list ----------------------------------------
-        # Visible columns: Station | Zone | What happens | Blocking
-        # streets | Other blockers. Column 5 is hidden: the full
-        # detail text for the label under the list. Rows arrive
-        # worst-first from the audit (left-out stations first,
-        # then the biggest moves).
-        self.store = Gtk.ListStore(str, str, str, str, str, str)
-        for entry in stations:
-            if entry.get("outcome") == "skipped":
-                happens = "Left out of the game"
-            else:
-                happens = f"Moves {entry.get('moveUnits')} units"
-            detail = entry.get("issue") or ""
-            pos = entry.get("realPosition") or [0, 0]
-            detail += (f"  Real spot: {pos[0]}, {pos[1]} "
-                       f"({entry.get('zone')}).")
-            if entry.get("address"):
-                detail += f"  Address: {entry['address']}"
-            self.store.append([
-                entry.get("name") or "Unnamed station",
-                entry.get("zone") or "",
-                happens,
-                ", ".join(entry.get("blockingStreets") or []) or "-",
-                entry.get("otherBlockers") or "-",
-                detail])
+        # List source toggle: the 53 problems, or all 109 stations.
+        toggle_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
+                             spacing=6)
+        toggle_row.pack_start(Gtk.Label(label="Show:"),
+                              False, False, 0)
+        self.source_combo = Gtk.ComboBoxText()
+        self.source_combo.append_text("Problem stations (53)")
+        self.source_combo.append_text("All stations (109)")
+        self.source_combo.set_active(0)
+        self.source_combo.connect("changed", self._on_source_changed)
+        toggle_row.pack_start(self.source_combo, False, False, 0)
+        self.data_box.pack_start(toggle_row, False, False, 0)
+
+        # The list: Station | Zone | What happens | Blocking
+        # streets | Other blockers, plus hidden columns (detail
+        # text, stationIndex).
+        self.store = Gtk.ListStore(str, str, str, str, str, str, int)
         self.tree = Gtk.TreeView(model=self.store)
         for i, title in enumerate(("Station", "Zone", "What happens",
-                                   "Blocking streets",
-                                   "Other blockers")):
+                                    "Blocking streets",
+                                    "Other blockers")):
             renderer = Gtk.CellRendererText()
             renderer.set_property("ellipsize",
-                                    Pango.EllipsizeMode.END)
+                                  Pango.EllipsizeMode.END)
             col = Gtk.TreeViewColumn(title, renderer, text=i)
             col.set_resizable(True)
             col.set_min_width(90)
             self.tree.append_column(col)
         self.tree.get_selection().connect("changed", self._on_select)
         scroll = Gtk.ScrolledWindow()
-        scroll.set_min_content_height(180)
+        scroll.set_min_content_height(150)
         scroll.add(self.tree)
-        # Kept as an attribute, same as the Zone Buildings list:
-        # the smoke tests assert long lists live in scrolled
-        # windows (EDITOR UI RULE - long content scrolls).
         self.list_scroll = scroll
-        self.pack_start(scroll, True, True, 0)
 
-        # --- Detail line for the selected station -------------------
+        # Details below the list: note, live status, and the
+        # editable controls (visible when a station is selected).
+        detail_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
+                             spacing=4)
         self.detail_label = Gtk.Label(label=(
-            "Select a station to see what is in its way."
-            if stations else
-            "No stations are waiting for review."))
+            "The station list is downloading from GitHub…"))
         self.detail_label.set_line_wrap(True)
         self.detail_label.set_halign(Gtk.Align.START)
-        self.pack_start(self.detail_label, False, False, 0)
+        detail_box.pack_start(self.detail_label, False, False, 0)
+
+        btn_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
+                          spacing=4)
+        self.make_btn = Gtk.Button(label="Make editable")
+        self.make_btn.connect("clicked", self._on_make_editable)
+        btn_row.pack_start(self.make_btn, False, False, 0)
+        self.unedit_btn = Gtk.Button(label="Back to review-only")
+        self.unedit_btn.connect("clicked", self._on_unedit)
+        btn_row.pack_start(self.unedit_btn, False, False, 0)
+        self.open3d_btn = Gtk.Button(label="Open in 3D view")
+        self.open3d_btn.connect("clicked", self._on_open_3d)
+        btn_row.pack_start(self.open3d_btn, False, False, 0)
+        self.map_btn = Gtk.Button(
+            label="Open blocking street in Map Editor")
+        self.map_btn.connect("clicked", self._on_open_blocking_street)
+        btn_row.pack_start(self.map_btn, False, False, 0)
+        self.walk_check = Gtk.CheckButton(
+            label="Walkable — people can walk in")
+        self.walk_check.connect("toggled", self._on_walk_toggled)
+        btn_row.pack_start(self.walk_check, False, False, 4)
+        btn_scroll = Gtk.ScrolledWindow()
+        btn_scroll.set_policy(Gtk.PolicyType.AUTOMATIC,
+                              Gtk.PolicyType.NEVER)
+        btn_scroll.set_shadow_type(Gtk.ShadowType.NONE)
+        btn_scroll.add(btn_row)
+        detail_box.pack_start(btn_scroll, False, False, 0)
+
+        # The station's number fields (spelled out, two-way with
+        # the 3D drags — same as the buildings').
+        spin_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
+                           spacing=4)
+        self.sx = Gtk.SpinButton.new_with_range(-30000, 30000, 1)
+        self.sz = Gtk.SpinButton.new_with_range(-30000, 30000, 1)
+        self.sw = Gtk.SpinButton.new_with_range(1, 1000, 1)
+        self.sd = Gtk.SpinButton.new_with_range(1, 1000, 1)
+        self.sh = Gtk.SpinButton.new_with_range(1, 200, 1)
+        for label, spin in (
+                ("East–West position (X)", self.sx),
+                ("North–South position (Z)", self.sz),
+                ("Width (W)", self.sw),
+                ("Depth (D)", self.sd),
+                ("Height (H)", self.sh)):
+            spin_row.pack_start(Gtk.Label(label=label), False, False, 0)
+            spin_row.pack_start(spin, False, False, 0)
+            spin.connect("value-changed",
+                         lambda s: self._on_spin_changed())
+        self.spin_scroll = Gtk.ScrolledWindow()
+        self.spin_scroll.set_policy(Gtk.PolicyType.AUTOMATIC,
+                                    Gtk.PolicyType.NEVER)
+        self.spin_scroll.set_shadow_type(Gtk.ShadowType.NONE)
+        self.spin_scroll.add(spin_row)
+        detail_box.pack_start(self.spin_scroll, False, False, 0)
+
+        # List above, details below, one draggable VERTICAL divider
+        # (the Editor UI rule's vertical adjustment).
+        self.vpaned = Gtk.Paned(orientation=Gtk.Orientation.VERTICAL)
+        self.vpaned.set_wide_handle(True)
+        self.vpaned.pack1(scroll, True, True)
+        self.vpaned.pack2(detail_box, True, True)
+        self.data_box.pack_start(self.vpaned, True, True, 0)
+
+        # The 3D inspector (station mode) on the right.
+        self.inspector = ZoneInspectorPanel(self)
+        self.inspector.set_visible(False)
+        self.paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
+        self.paned.set_wide_handle(True)
+        self.paned.pack1(self.data_box, True, True)
+        self.paned.pack2(self.inspector, False, True)
+        self.pack_start(self.paned, True, True, 0)
+        self._split_pos = None
+        self._split_guard = False
+        self.paned.connect("notify::position", self._on_split_moved)
+
+        self._refresh_controls()
+
+    def _on_split_moved(self, paned, _param):
+        if not self._split_guard and self.inspector.get_visible():
+            self._split_pos = paned.get_position()
+
+    # -- data in ---------------------------------------------------------
+
+    def set_review(self, review, edits):
+        """Adopt the downloaded review list + station-edits overlay
+        (called by the window when the open-downloads land)."""
+        self.review = review
+        self.edits = edits
+        if review is None:
+            self.detail_label.set_text(
+                "The gas station list could not be downloaded — "
+                "see the status bar for the reason.")
+        self.refresh_list()
+        self._refresh_controls()
+
+    def refresh_station_states(self):
+        """After a save round trip: the overlay object now holds
+        the proof copy — re-read the current station's state."""
+        store = self.app_window.zone_store
+        if store is not None:
+            self.edits = store.station_edits
+        self._refresh_controls()
+        if self._current is not None:
+            self._fill_spins()
+
+    def refresh_list(self):
+        """Rebuild the list from the active source (problems or
+        all stations)."""
+        self.store.clear()
+        if self.review is None:
+            return
+        entries = self.review.all_stations if self._show_all \
+            else self.review.stations
+        for entry in entries:
+            if self._show_all:
+                live = entry.get("liveStatus")
+                happens = ("Placed in the game" if live == "placed"
+                           else "Left out of the game")
+                blocking = ""
+                other = ""
+                detail = (f"In the game today: {happens.lower()}.")
+            else:
+                if entry.get("outcome") == "skipped":
+                    happens = "Left out of the game"
+                else:
+                    happens = f"Moves {entry.get('moveUnits')} units"
+                blocking = ", ".join(
+                    entry.get("blockingStreets") or []) or "-"
+                other = entry.get("otherBlockers") or "-"
+                detail = entry.get("issue") or ""
+            pos = entry.get("realPosition") or [0, 0]
+            detail += (f"  Real spot: {pos[0]}, {pos[1]} "
+                       f"({entry.get('zone')}).")
+            if entry.get("address"):
+                detail += f"  Address: {entry['address']}"
+            live = self.review.live_status(entry.get("stationIndex"))
+            if not self._show_all and live:
+                detail += ("  In the game today: "
+                           + ("placed." if live == "placed"
+                              else "left out (skipped)."))
+            edit = self.edits.get(entry.get("stationIndex")) \
+                if self.edits else {}
+            if edit.get("editable"):
+                detail += "  EDITABLE in the editor."
+            if edit.get("walkable"):
+                detail += "  Marked walkable."
+            self.store.append([
+                entry.get("name") or "Unnamed station",
+                entry.get("zone") or "",
+                happens,
+                blocking,
+                other,
+                detail,
+                int(entry.get("stationIndex") or 0)])
+
+    # -- selection + controls ----------------------------------------------
+
+    def _on_source_changed(self, combo):
+        self._show_all = combo.get_active() == 1
+        self._current = None
+        self.hide_inspector()
+        self.refresh_list()
+        self._refresh_controls()
+
+    def _selected_station(self):
+        """The full record for the selected row, from the active
+        source list (matched by stationIndex)."""
+        sel = self.tree.get_selection()
+        model, it = sel.get_selected()
+        if it is None or self.review is None:
+            return None
+        sid = model.get_value(it, 6)
+        source = self.review.all_stations if self._show_all \
+            else self.review.stations
+        for entry in source:
+            if entry.get("stationIndex") == sid:
+                return entry
+        # A problem-station row opened from the problems list also
+        # resolves against all-stations data when needed.
+        return self.review.station(sid)
 
     def _on_select(self, selection):
-        """Show the selected station's full note under the list."""
+        """Show the selected station's full note + its controls."""
         model, iter_ = selection.get_selected()
         if iter_ is None:
+            self._current = None
+            self._refresh_controls()
             return
+        self._current = self._selected_station()
         self.detail_label.set_text(model[iter_][5])
+        self._fill_spins()
+        self._refresh_controls()
+
+    def _edit(self):
+        """The current station's edit dict ({} when none)."""
+        if self.edits is None or self._current is None:
+            return {}
+        return self.edits.get(self._current.get("stationIndex"))
+
+    def _refresh_controls(self):
+        """Button/field states follow the selection + its edit
+        state: nothing works until a station is chosen; the 3D
+        view and fields only for editable stations."""
+        cur = self._current is not None
+        editable = cur and bool(self._edit().get("editable"))
+        self.make_btn.set_sensitive(cur and not editable)
+        self.unedit_btn.set_sensitive(editable)
+        self.open3d_btn.set_sensitive(editable)
+        self.walk_check.set_sensitive(editable)
+        blocking = (self._current or {}).get("blockingStreets") or []
+        self.map_btn.set_sensitive(cur and bool(blocking))
+        for spin in (self.sx, self.sz, self.sw, self.sd, self.sh):
+            spin.set_sensitive(editable)
+        if cur:
+            self._spins_loading = True
+            try:
+                self.walk_check.set_active(
+                    bool(self._edit().get("walkable")))
+            finally:
+                self._spins_loading = False
+
+    def _fill_spins(self):
+        """The station's fields: its editor anchor + size (real
+        position + overlay offset; game defaults when unset)."""
+        if self._current is None:
+            return
+        edit = self._edit()
+        ax, az = zonedata.station_anchor(self._current, edit)
+        self._spins_loading = True
+        try:
+            self.sx.set_value(ax)
+            self.sz.set_value(az)
+            self.sw.set_value(
+                edit.get("w") or zonedata.STATION_DEFAULT_W)
+            self.sd.set_value(
+                edit.get("d") or zonedata.STATION_DEFAULT_D)
+            self.sh.set_value(
+                edit.get("h") or zonedata.STATION_DEFAULT_H)
+        finally:
+            self._spins_loading = False
+
+    # -- editing ------------------------------------------------------------
+
+    def _on_make_editable(self, _widget):
+        """Flip the selected station to editable (Joshua's
+        per-station choice; the default is review-only)."""
+        if self._current is None or self.edits is None:
+            return
+        sid = self._current.get("stationIndex")
+        self.edits.set_edit(sid, editable=True)
+        self.app_window._mark_unpublished()
+        self._refresh_controls()
+        self.refresh_list()
+        self.app_window._set_status(
+            f"{self._current.get('name') or 'Station'} is now "
+            f"editable — open it in the 3D view to adjust it. "
+            f"(Unsaved until the next save.)")
+
+    def _on_unedit(self, _widget):
+        """Back to review-only (the station's saved edit values are
+        kept in the overlay, but it no longer opens for editing)."""
+        if self._current is None or self.edits is None:
+            return
+        self.edits.set_edit(
+            self._current.get("stationIndex"), editable=False)
+        self.app_window._mark_unpublished()
+        self.hide_inspector()
+        self._refresh_controls()
+        self.refresh_list()
+        self.app_window._set_status(
+            "Station is review-only again. (Unsaved until save.)")
+
+    def _on_walk_toggled(self, _widget):
+        """The Walkable flag — the editor's existing walkable
+        machinery, applied to a station."""
+        if self._spins_loading or self._current is None \
+                or self.edits is None:
+            return
+        self.edits.set_edit(
+            self._current.get("stationIndex"),
+            walkable=self.walk_check.get_active())
+        self.app_window._mark_unpublished()
+        if self.inspector.get_visible():
+            self.inspector.refresh_view()
+        self.app_window._set_status(
+            "Walkable " + ("on" if self.walk_check.get_active()
+                           else "off")
+            + " for this station. (Unsaved until save.)")
+
+    def _on_open_3d(self, _widget):
+        """Open the station in the 3D inspector at its real
+        location. Its zone's records download on demand for the
+        roads backdrop; without them the station still opens."""
+        if self._current is None:
+            return
+        station = self._current
+        zone = station.get("zone")
+
+        def show(zd):
+            self.inspector.show_station(
+                self, station, self._edit(), zd)
+            self.inspector.set_visible(True)
+            self._position_inspector()
+            GLib.idle_add(self._position_inspector_idle)
+
+        store = self.app_window.zone_store
+        if store is not None and zone in store.zones:
+            show(store.zones[zone])
+        elif zone:
+            def done(ok, _station=station):
+                store2 = self.app_window.zone_store
+                zd = store2.zones.get(_station.get("zone")) \
+                    if store2 else None
+                if self._current is _station:
+                    show(zd)
+            self.app_window.ensure_zone_detail(zone, done=done)
+        else:
+            show(None)
+
+    def _position_inspector(self):
+        width = self.paned.get_allocated_width()
+        if width <= 0:
+            return
+        pos = self._split_pos if self._split_pos is not None \
+            else width - 340
+        pos = max(240, min(pos, width - 200))
+        self._split_guard = True
+        try:
+            self.paned.set_position(pos)
+        finally:
+            self._split_guard = False
+
+    def _position_inspector_idle(self):
+        self._position_inspector()
+        return False
+
+    def hide_inspector(self):
+        if hasattr(self, "inspector"):
+            self.inspector.set_visible(False)
+
+    def _on_open_blocking_street(self, _widget):
+        """Amendment 3 from the review side: a named blocking
+        street hands its location (the station's real spot + the
+        street's name + zone) to the Map Editor."""
+        cur = self._current or {}
+        streets = cur.get("blockingStreets") or []
+        if not streets:
+            return
+        pos = cur.get("realPosition") or [0, 0]
+        self.app_window.open_in_map_editor(
+            cur.get("zone"), pos[0], pos[1], streets[0])
+
+    # -- manipulation / fields (the panel's contract) ------------------------
+
+    def manip_values(self):
+        """The current station as {x, z, w, d, h} (editor anchor +
+        size) — the drags' starting point."""
+        if self._current is None:
+            return None
+        edit = self._edit()
+        ax, az = zonedata.station_anchor(self._current, edit)
+        return {"x": ax, "z": az,
+                "w": edit.get("w") or zonedata.STATION_DEFAULT_W,
+                "d": edit.get("d") or zonedata.STATION_DEFAULT_D,
+                "h": edit.get("h") or zonedata.STATION_DEFAULT_H}
+
+    def manip_apply(self, values):
+        """Apply {x, z, w, d, h} from a drag or the fields: the
+        overlay records the offset from the station's real spot
+        plus the size; the fields follow. Always succeeds for an
+        editable station."""
+        if self._current is None or self.edits is None:
+            return False
+        real = self._current.get("realPosition") or [0, 0]
+        self.edits.set_edit(
+            self._current.get("stationIndex"),
+            dx=round(values["x"] - real[0], 2),
+            dz=round(values["z"] - real[1], 2),
+            w=values["w"], d=values["d"], h=values["h"])
+        self.app_window._mark_unpublished()
+        self._spins_loading = True
+        try:
+            self.sx.set_value(values["x"])
+            self.sz.set_value(values["z"])
+            self.sw.set_value(values["w"])
+            self.sd.set_value(values["d"])
+            self.sh.set_value(values["h"])
+        finally:
+            self._spins_loading = False
+        return True
+
+    def on_manip_end(self):
+        """Drag finished: refresh the inspector's backdrop at the
+        station's new spot."""
+        if self.inspector.get_visible():
+            self.inspector.station_edit = self._edit()
+            self.inspector.refresh_view()
+
+    def _on_spin_changed(self):
+        """Typing a station number applies it at once."""
+        if self._spins_loading or self._current is None:
+            return
+        if not self._edit().get("editable"):
+            return
+        self.manip_apply({
+            "x": self.sx.get_value(), "z": self.sz.get_value(),
+            "w": self.sw.get_value(), "d": self.sd.get_value(),
+            "h": self.sh.get_value()})
+        if self.inspector.get_visible():
+            self.inspector.station_edit = self._edit()
+            self.inspector.refresh_view()
 
 
-# ---------------------------------------------------------------------------
-# One building tab: preview (left) + properties (right)
 # ---------------------------------------------------------------------------
 
 class BuildingTab(Gtk.Box):
@@ -3855,6 +5402,20 @@ class SubdivisionTab(Gtk.Box):
             self.app_window._set_status("Zone data has not loaded yet.")
             return
         sub = self.subdivisions[idx]
+        # 1.7.2 load-on-demand: baking writes into whichever zones
+        # the lots land in, so it is one of the few actions that
+        # legitimately needs the whole map. If no zone's records
+        # are loaded yet, load them all first (with progress), then
+        # bake — an explicit whole-map load for an explicit
+        # whole-map action, never a silent one.
+        if len(store.zones) < len(zonedata.ZONES):
+            self.app_window._set_status(
+                "Loading every zone first — baking a subdivision "
+                "needs the whole map…")
+            self.app_window.ensure_all_zones(
+                done=lambda ok: self._on_generate_houses(widget)
+                if ok else None)
+            return
         try:
             n = store.bake_subdivision(sub)
         except Exception as e:
