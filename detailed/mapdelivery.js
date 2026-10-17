@@ -68,6 +68,16 @@
    are only fallbacks for the .json primaries, so the running map is
    fully covered in practice.
 
+   2026-10-17 HARDENING (Joshua's streetless-world report): three changes
+   below — (1) downloads STREAM with an inactivity watchdog (20s of
+   silence) instead of starving under absolute caps; (2) every download
+   is registered in-flight, so when the loader needs a file the startup
+   sync is already downloading, serveText() hands over THAT download's
+   bytes instead of the loader starting a second, competing fetch of
+   the same file; (3) remember() verifies the text's sha256 against the
+   manifest on record before warming the store (downloadOne()'s own
+   discipline), so unverified bytes can never be served forever.
+
    TESTABILITY: the factory (create) takes its environment (fetch,
    caches, storage, bridge, clock, sha) by injection, and the pure
    diffManifests() is exported — the Node verification harness drives
@@ -149,6 +159,7 @@ function entryUrl(e){ return (e && e.url) || (PUBLISHED_BASE + (e && e.name)); }
      sha256Hex:  (text) -> Promise<hex string> or null   (integrity check)
      now:        () -> ms timestamp                      (cache-busting)
      log:        (msg) -> void                           (diagnostics)
+     progress:   (name, receivedBytes, totalBytes) -> void (optional)
    } */
 function create(env){
   env=env || {};
@@ -159,6 +170,20 @@ function create(env){
   var sha256Hex=env.sha256Hex || null;
   var nowFn=env.now || function(){ return Date.now(); };
   var logFn=env.log || function(){};
+  var progressFn=env.progress || null;
+
+  /* PROGRESS-BASED TIMEOUT (2026-10-17 — Joshua's streetless-world fix):
+     a download is abandoned only after this long with NO bytes arriving.
+     A slow download that keeps making progress is allowed to finish —
+     flat absolute caps are what starved the 2.4MB zone files on slow
+     links when the loader raced this module's sync. */
+  var DOWNLOAD_IDLE_MS=20000;
+
+  /* In-flight download registry (2026-10-17 de-dup): entry name ->
+     {settled, text, error, lastActivity}. downloadOne() registers BEFORE
+     its fetch starts; serveText() waits on the record and returns its
+     bytes instead of a second, competing fetch of the same file. */
+  var inflight={};
 
   function log(m){ try{ logFn('[MAPDELIVERY] '+m); }catch(e){} }
 
@@ -246,6 +271,60 @@ function create(env){
     });
   }
 
+  /* ----- streaming body reader with an inactivity watchdog -----
+     Reads a fetch Response's body as text, reporting (received, total)
+     progress per chunk. The watchdog is PROGRESS-BASED: it fires only
+     after DOWNLOAD_IDLE_MS with no bytes arriving, so a slow-but-alive
+     download always finishes. Falls back to r.text() when streaming
+     reads are unavailable (older engines, harness stubs) — behaviour
+     there is unchanged from the original downloadOne(). */
+  function readBodyText(r, onProgress){
+    if (!r || typeof r.text!=='function' || !r.body || typeof r.body.getReader!=='function' || typeof TextDecoder==='undefined'){
+      return r.text();
+    }
+    var total=0;
+    try{
+      var cl=r.headers && typeof r.headers.get==='function' ? parseInt(r.headers.get('content-length')||'0', 10) : 0;
+      if (cl>0) total=cl;
+    }catch(e){}
+    var reader=r.body.getReader();
+    var decoder=new TextDecoder('utf-8');
+    return new Promise(function(resolve, reject){
+      var text='', received=0, finished=false, idleTimer=null;
+      function armIdle(){
+        if (idleTimer) clearTimeout(idleTimer);
+        idleTimer=setTimeout(function(){
+          if (finished) return; finished=true;
+          try{ reader.cancel(); }catch(e){}
+          reject(new Error('download stalled - no data for '+Math.round(DOWNLOAD_IDLE_MS/1000)+'s'));
+        }, DOWNLOAD_IDLE_MS);
+      }
+      function step(){
+        reader.read().then(function(res){
+          if (finished) return;
+          if (res.done){
+            finished=true;
+            if (idleTimer) clearTimeout(idleTimer);
+            text+=decoder.decode();
+            resolve(text);
+            return;
+          }
+          received+=(res.value && res.value.length) || 0;
+          text+=decoder.decode(res.value, {stream:true});
+          if (onProgress){ try{ onProgress(received, total); }catch(e){} }
+          armIdle();
+          step();
+        }, function(err){
+          if (finished) return; finished=true;
+          if (idleTimer) clearTimeout(idleTimer);
+          reject(err);
+        });
+      }
+      armIdle();
+      step();
+    });
+  }
+
   /* ----- one changed file, downloaded into the local store -----
      Browser mode: network fetch -> integrity check -> Cache Storage.
      Bridge mode: the bridge downloads into the ACTIVE map dir (the
@@ -260,10 +339,21 @@ function create(env){
       });
     }
     if (!fetchFn) return Promise.reject(new Error('no fetch available'));
-    return fetchFn(url+(url.indexOf('?')===-1?'?':'&')+'cb='+nowFn(), {cache:'no-store'})
+    /* IN-FLIGHT REGISTRY (2026-10-17 de-dup): record this download
+       BEFORE the fetch starts, so a serveText() arriving mid-download
+       waits for THESE bytes instead of racing a second fetch of the
+       same file (on a slow link the two copies split the bandwidth and
+       both starved — part of the streetless-world failure). Progress
+       callbacks keep rec.lastActivity honest for the waiter's watchdog. */
+    var rec={ settled:false, text:null, error:null, lastActivity:nowFn() };
+    inflight[entry.name]=rec;
+    var textP=fetchFn(url+(url.indexOf('?')===-1?'?':'&')+'cb='+nowFn(), {cache:'no-store'})
       .then(function(r){
         if (!r || !r.ok) throw new Error('HTTP '+(r && r.status)+' for '+entry.name);
-        return r.text();
+        return readBodyText(r, function(received, total){
+          rec.lastActivity=nowFn();
+          if (progressFn){ try{ progressFn(entry.name, received, total); }catch(e){} }
+        });
       })
       .then(function(text){
         /* Integrity: when a sha function is available and the manifest
@@ -278,9 +368,21 @@ function create(env){
         return verify.then(function(){ return cachePut(entry.name, text); })
           .then(function(stored){
             if (!stored) throw new Error('cache store failed for '+entry.name);
-            return text.length;
+            return text;
           });
       });
+    /* Settle bookkeeping: waiters already holding rec keep it; the
+       registry entry itself is dropped once settled, so LATER
+       serveText() calls go straight to Cache Storage (the bytes are
+       stored by the time textP settles — cachePut precedes it). */
+    textP.then(function(text){
+      rec.settled=true; rec.text=text;
+      if (inflight[entry.name]===rec) delete inflight[entry.name];
+    }, function(err){
+      rec.settled=true; rec.error=err;
+      if (inflight[entry.name]===rec) delete inflight[entry.name];
+    });
+    return textP.then(function(text){ return text.length; });
   }
 
   /* ----- THE STARTUP CHECK (Joshua's discipline) -----
@@ -375,7 +477,26 @@ function create(env){
   function serveText(name){
     if (nativeBridge()) return Promise.resolve(null);
     if (!name) return Promise.resolve(null);
-    return cacheGetText(name);
+    return cacheGetText(name).then(function(text){
+      if (text!=null) return text;
+      var rec=inflight[name];
+      if (!rec) return null;
+      /* DE-DUP (2026-10-17): the startup sync is downloading THIS file
+         right now — wait for its bytes instead of starting a competing
+         fetch. The wait is progress-based, mirroring the download's own
+         watchdog: it gives up only after DOWNLOAD_IDLE_MS with no bytes
+         moving, after which serveText returns null and the loader runs
+         its own fetch with its own inactivity watchdog. */
+      return new Promise(function(resolve){
+        var iv=setInterval(function(){
+          if (rec.settled){ clearInterval(iv); resolve(rec.error ? null : rec.text); }
+          else if (nowFn()-rec.lastActivity>DOWNLOAD_IDLE_MS){ clearInterval(iv); resolve(null); }
+        }, 250);
+        if (rec.settled){ clearInterval(iv); resolve(rec.error ? null : rec.text); }
+      }).then(function(t){
+        return t!=null ? t : cacheGetText(name);
+      });
+    });
   }
 
   /* Warm the cache with bytes the loader already fetched from the
@@ -385,7 +506,31 @@ function create(env){
   function remember(name, text){
     if (nativeBridge()) return Promise.resolve(false);
     if (!name || !isFetchCovered(name) || typeof text!=='string') return Promise.resolve(false);
-    return cachePut(name, text);
+    /* INTEGRITY (2026-10-17 hardening): never warm the store with bytes
+       that fail verification — the same discipline downloadOne() applies
+       to its own downloads. The manifest ON RECORD (the stored manifest:
+       the last published manifest this copy applied) is the reference;
+       when it carries a sha256 for this file and a sha function is
+       available, the text must match it or the store is refused. A
+       refusal costs nothing — the next launch fetches the file again —
+       while a poisoned entry would be served on EVERY launch. When no
+       reference hash exists the bytes are stored as before. */
+    var stored=readStoredManifest();
+    var entry=null;
+    if (stored && stored.files){
+      for (var i=0;i<stored.files.length;i++){
+        if (stored.files[i] && stored.files[i].name===name){ entry=stored.files[i]; break; }
+      }
+    }
+    var want=entrySha(entry);
+    if (!want || !sha256Hex) return cachePut(name, text);
+    return Promise.resolve(sha256Hex(text)).then(function(h){
+      if (h && h!==want){
+        log('remember refused '+name+': sha256 does not match the manifest on record.');
+        return false;
+      }
+      return cachePut(name, text);
+    }).catch(function(){ return false; });
   }
 
   return {
@@ -435,7 +580,18 @@ if (typeof window!=='undefined'){
     bridge: function(){ try{ return window.MapDownload || null; }catch(e){ return null; } },
     sha256Hex: browserSha256Hex,
     now: function(){ return Date.now(); },
-    log: function(m){ try{ console.log(m); }catch(e){} }
+    log: function(m){ try{ console.log(m); }catch(e){} },
+    /* Live download progress -> the loader's progress line in index.html
+       (window.__zoneFileProgress), so a slow map sync reads as loading.
+       The progress key is the loader's step key: the file's base name
+       minus .json ('zones/adamsville/roads.json' -> 'roads'). */
+    progress: function(name, received, total){
+      try{
+        if (typeof window.__zoneFileProgress==='function'){
+          window.__zoneFileProgress(String(name).split('/').pop().replace(/\.json$/i,''), received, total);
+        }
+      }catch(e){}
+    }
   });
   api.runStartupCheck=defaultInstance.runStartupCheck;
   api.serveText=defaultInstance.serveText;
