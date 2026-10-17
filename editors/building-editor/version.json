@@ -1,6 +1,6 @@
 {
-  "version": "1.5.2",
-  "changelog": "Crash fix: editor now opens even if updater.py is missing/broken (soft import); startup crashes are logged to ~/.cache/adamsville-building-editor-native/crash.log for diagnosis.",
+  "version": "1.6.0",
+  "changelog": "Repointed to the game's actual building files in adamsville-play: per-zone converted buildings.json + buildings_detail.json + buildings.js twin, downloaded on open via the Contents API. Full round-trip save (local save -> push -> close connection -> fresh connection -> re-download proof copy -> refresh view) with stage-accurate failure messages; only dirty zones are pushed. 1,532 conversion-flagged buildings are displayed FLAGGED and locked against move/resize/delete pending Joshua's decision. Hero buildings (535 Dollar Mill) are listed per zone, read-only. Subdivisions persist to editors/building-editor/subdivisions.json in this repo, and Generate Houses now bakes houses into the zone building files. New modules: zonedata.py, flagged_buildings.json.",
   "files": [
     {
       "path": "about.py",
@@ -10,7 +10,7 @@
     {
       "path": "app.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/app.py",
-      "sha256": "34440dcf393cf808cd07fb562d06663f6076a1e3a9fb69cea0492428af97ec2f"
+      "sha256": "13b8ba3ef311eecb84cb18a6e3bb3eb2088f11e87b2060f44b1d485165ed5a53"
     },
     {
       "path": "buildingcanvas.py",
@@ -20,12 +20,22 @@
     {
       "path": "data.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/data.py",
-      "sha256": "951ebcfc859d4da3a6b4e4c40316078c4bcee7d1f7570883af84b67018856200"
+      "sha256": "8e68a5d177bdc32f2e6c43e402e9f3b41eb510477bb3538cb559e3ce7ffca231"
+    },
+    {
+      "path": "flagged_buildings.json",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/flagged_buildings.json",
+      "sha256": "474648618cfbb6a65c51774064150126782b0807a881c316bab4ee3b1ae1b9ab"
     },
     {
       "path": "github_sync.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/github_sync.py",
-      "sha256": "e4289f5ae72f438a079d994a388d5a5751268886659aeb35f6492ea81b89a3a9"
+      "sha256": "f18a2ef4c9223f9dabe37f1ef9afee9008775041cbb0cad3ad0218a54d76e060"
+    },
+    {
+      "path": "mollie-icon.png",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/mollie-icon.png",
+      "sha256": "28990027fd79e03e2ef8416e8c1d3410ee284ec86383280968b245f08576e768"
     },
     {
       "path": "subdivisioncanvas.py",
@@ -36,6 +46,11 @@
       "path": "updater.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/updater.py",
       "sha256": "0c36b000830e5661165ac9f636466cd6d8402bab410bcab7da10b3e1e13e3a92"
+    },
+    {
+      "path": "zonedata.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/zonedata.py",
+      "sha256": "a649ab35224fd21ff583cdcd4cc7fe72946dc837743435ab3c07dc28b694a824"
     }
   ]
 }
