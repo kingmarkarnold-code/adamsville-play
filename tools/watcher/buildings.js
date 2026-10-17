@@ -1,6 +1,8 @@
 /* Adamsville Watcher — Buildings Studio.
    3D preview + parametric editing for the game's buildings.
-   Buildings come from osm_buildings.js: [x, z, width, depth, height, type]
+   Buildings come from the game's converted per-zone buildings.json files
+   (merged live by GameSync.loadZoneBuildings; the old osm_buildings.js is
+   only the fail-open fallback): [x, z, width, depth, height, type]
    type: 0 house, 1 commercial, 2 large/apt, 3 other.
    The preview rebuilds the game's construction (box body + pyramid roof)
    with adjustable numbers. The JSON recipe from "Submit building feedback"
@@ -968,9 +970,11 @@ window.BldgStudio = (function () {
     if(loaded) return Promise.resolve();
     if(loading) return loading;
     loading=loadScript('three.min.js')
-      .then(function(){ return (typeof GameSync!=='undefined'
-          ? GameSync.load('osm_buildings.js','osm_buildings.js')
-          : loadScript('osm_buildings.js')); })
+      .then(function(){ return (typeof GameSync!=='undefined' && GameSync.loadZoneBuildings
+          ? GameSync.loadZoneBuildings()   // converted per-zone buildings.json, merged (fail-open to the old files inside GameSync)
+          : (typeof GameSync!=='undefined'
+            ? GameSync.load('osm_buildings.js','osm_buildings.js')
+            : loadScript('osm_buildings.js'))); })
       .then(function(){ init(); loaded=true; })
       .catch(function(err){
         var p=document.getElementById('bldgpanel');
