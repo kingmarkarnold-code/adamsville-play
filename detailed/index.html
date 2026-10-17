@@ -41,8 +41,11 @@
                               on-load placement check)
 
      JOSHUA'S STANDING RULES ENCODED IN THIS FILE:
-       - Map updates apply ONLY on New Game (MAPVER.applyOnNewGame). A newer
-         downloaded map NEVER hot-swaps a live session.
+       - Map updates download at STARTUP (Joshua's 2026-10-16 map-delivery
+         design, mapdelivery.js): the published manifest is checked fresh,
+         only sha-changed files download into the local store, THEN the
+         game runs local. A publish landing MID-session never hot-swaps
+         the live world; MAPVER.applyOnNewGame is its safety net.
        - UI / vehicle / music updates auto-apply at EVERY LAUNCH
          (ASSETVER.autoApplyBootUpdates) - no manual download, no New Game.
        - Update dot on the settings gear: RED = update available (pending);
@@ -1507,6 +1510,32 @@ function __injectZoneFiles(files, callback){
       try{ console.warn('[deferred] JSON not deployed, using .js directly: '+f.src); }catch(e){}
       isJson = false;
     }
+    /* MAP DELIVERY (Joshua 2026-10-16): local-store first. On the first
+       attempt, ask MapDelivery for this file's cached bytes — if the
+       startup check downloaded a newer copy, THOSE are the bytes the
+       game must parse. A miss or any error falls through to the normal
+       network fetch below (f.__mdTried guards the re-entry). */
+    if (isJson && attempt === 0 && !f.__mdTried && !window.__zoneJsonMissing){
+      f.__mdTried = true;
+      var _mdServe = null;
+      try{ if (window.MapDelivery && MapDelivery.serveText) _mdServe = MapDelivery.serveText(f.src); }catch(e){}
+      if (_mdServe && typeof _mdServe.then === 'function'){
+        _mdServe.then(function(cachedText){
+          if (cachedText != null){
+            try {
+              assignZoneGlobals(f, JSON.parse(cachedText));
+              try{ console.log('[deferred] Zone file served from local map store: '+f.src); }catch(e){}
+              finish(true);
+              return;
+            } catch(e){
+              try{ console.warn('[deferred] Cached zone file unusable, fetching fresh: '+f.src); }catch(ee){}
+            }
+          }
+          loadZoneFile(f, 0);
+        }).catch(function(){ loadZoneFile(f, 0); });
+        return;
+      }
+    }
     if (isJson && attempt < 2){
       /* --- JSON path (attempts 0-1): fetch + JSON.parse, off-thread --- */
       var done = false;
@@ -1524,10 +1553,15 @@ function __injectZoneFiles(files, callback){
           }
           throw new Error('HTTP '+r.status);
         }
-        return r.json();
-      }).then(function(data){
+        return r.text();
+      }).then(function(rawText){
         if (done) return; done = true; clearTimeout(timer);
         try {
+          var data = JSON.parse(rawText);
+          /* MAP DELIVERY (Joshua 2026-10-16): warm the local map store
+             with the bytes just fetched, so later launches can serve
+             this file locally (see mapdelivery.js remember()). */
+          try{ if (window.MapDelivery && MapDelivery.remember) MapDelivery.remember(f.src, rawText); }catch(e){}
           assignZoneGlobals(f, data);
           finish(true);
         } catch(e){
@@ -1603,7 +1637,7 @@ function __injectZoneFiles(files, callback){
    a phone ~30s). The deferred loader fetches it before any game script
    evaluates; buildTerrain() uses it when present, else synchronous compute.
    The ?v= cache-buster MUST match ui_version — the generator stamps it. */
-var TERR_PRE_URL='terrain_heights_adamsville_600x800.bin?v=2026.10.16.194';
+var TERR_PRE_URL='terrain_heights_adamsville_600x800.bin?v=2026.10.16.195';
 var TERR_PRE_LEN=(600+1)*(800+1);
 /* v1.35 #35: prefer the LIVE ui_version for the terrain binary cache-buster
    at fetch time. The generator stamps TERR_PRE_URL above (keep that line's
@@ -1679,7 +1713,7 @@ function __fetchLoadManifests(cb){
   try{
     fetch('map-manifest.json', {cache:'no-store'}).then(function(r){ return r.ok ? r.json() : null; })
     .then(function(m){
-      try{ if (m) window.__MAPVER = m.map_version || m.version || ''; }catch(e){}
+      try{ if (m){ window.__MAPVER = m.map_version || m.version || ''; window.__LOCAL_MAP_MANIFEST = m; } }catch(e){}
       one();
     }).catch(function(){ one(); });
   }catch(e){ one(); }
@@ -1735,6 +1769,25 @@ function __loadDeferredQueueInner(){
         return;
       }
       try{ if (key) __loadStep(key, !ok); }catch(e){}
+      /* MAP DELIVERY (Joshua 2026-10-16): mapdelivery.js just loaded — run
+         the startup map check NOW, before zoneloader and the zone files
+         load, so changed map files land in the local store first and
+         the game then runs local. Fail-open with a 30s cap: a failed or
+         hung check NEVER blocks the queue. Runs once per page load. */
+      if (src.indexOf('mapdelivery.js') !== -1 && ok && !window.__mapDeliveryChecked){
+        window.__mapDeliveryChecked = true;
+        var _mdDone = false;
+        var _mdGo = function(){ if (!_mdDone){ _mdDone = true; next(); } };
+        setTimeout(_mdGo, 30000);
+        try{
+          if (window.MapDelivery && MapDelivery.runStartupCheck){
+            MapDelivery.runStartupCheck(window.__LOCAL_MAP_MANIFEST || null)
+              .then(function(res){ try{ window.__MAPDELIVERY_RESULT = res; if (res && res.to) window.__MAPVER = res.to; }catch(e){} _mdGo(); })
+              .catch(_mdGo);
+          } else _mdGo();
+        }catch(e){ _mdGo(); }
+        return;
+      }
       /* zoneloader.js exposes zone files; inject them next in order. */
       if (src.indexOf('zoneloader.js') !== -1 && window.__zoneScriptFiles && !window.__zoneScriptsInjected){
         window.__zoneScriptsInjected = true;
@@ -2010,6 +2063,10 @@ window.__applyCrewMaster = function(on){
      zoneloader.js reads ?zone= from URL (default 'adamsville') and
      injects the correct zone's data scripts via document.write.
      To enter a different zone, the page reloads with ?zone=<id>. -->
+<!-- MAP DELIVERY (Joshua 2026-10-16): startup map check + local store
+     (mapdelivery.js). Loads before zoneloader.js so the deferred queue
+     can run the check before any zone data is fetched. -->
+<script data-dsrc="mapdelivery.js"></script>
 <script data-dsrc="zoneloader.js" data-dkey="zoneloader"></script>
 <script data-dsrc="terrainfix.js" data-dkey=""></script>
 <script data-dsrc="vehicle_meshes.js" data-dkey="vehmeshes"></script>
@@ -2272,6 +2329,11 @@ var MAPVER=(function(){
           var rv=m.map_version||m.version||'';
           if (rv && active && rv!==active && rv!=='unknown' && !pending){
             pending=rv; maybeNotice();
+            /* MAP DELIVERY (2026-10-16): stage the new map into the local
+               store now, so the New Game reload (and the next launch)
+               serve the new bytes. The RUNNING session is untouched —
+               staging fills the store, it never swaps the live world. */
+            try{ if (window.MapDelivery && MapDelivery.runStartupCheck) MapDelivery.runStartupCheck(null); }catch(e){}
             try{ if(typeof ASSETVER!=='undefined') ASSETVER.updateGearBadge(); }catch(e){}
             try{ if(typeof ASSETVER!=='undefined') ASSETVER.refreshAdmTags(); }catch(e){}
           }
@@ -2287,8 +2349,12 @@ var MAPVER=(function(){
     noticeShown=true;
     try{ showToast('Map update available — applies on new game', 3500); }catch(e){}
   }
-  /* MAPVER.applyOnNewGame - THE map apply point (Joshua's rule: map updates
-     apply ONLY on New Game). Called from the Gameplay menu's "New game"
+  /* MAPVER.applyOnNewGame - the MID-SESSION safety net. Since 2026-10-16
+     (Joshua's map-delivery design) the primary apply point is the STARTUP
+     check in mapdelivery.js: changed files download before the game
+     loads, so `pending` is normally null here. This still runs when a
+     publish landed mid-session (checkPending staged it into the local
+     store). Called from the Gameplay menu's "New game"
      button. If no map update is pending, returns false and the normal
      in-place reset proceeds. If pending: tells the native bridge to apply
      (APK) or just records the new version (web - a reload picks up the newly
@@ -2412,8 +2478,11 @@ var ASSETVER=(function(){
           game is NEVER touched mid-session. A red dot appears on the
           settings gear, and per-type status tags in the Administrator
           panel show "vCurrent -> vPending".
-       3. Map updates apply ONLY on New Game (MAPVER.applyOnNewGame()).
-          UI/vehicle/music updates auto-apply at launch
+       3. Map updates download at STARTUP (2026-10-16 map-delivery
+          design, mapdelivery.js): fresh manifest check, sha-diffed
+          downloads into the local store, then the game runs local.
+          MAPVER.applyOnNewGame() remains only for a publish that lands
+          mid-session. UI/vehicle/music updates auto-apply at launch
           (autoApplyBootUpdates()) or on New Game; a page reload then
           parses the fresh files.
        4. Downloads NEVER hot-swap a running world — Joshua's standing rule.
