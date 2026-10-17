@@ -39,8 +39,8 @@
       "type": "button",
       "visible": true,
       "width": 44,
-      "x": 12,
-      "y": 10,
+      "x": 136,
+      "y": 7,
       "description": "Gear icon that opens the help and instructions panel"
     },
     {
@@ -53,8 +53,8 @@
       "type": "button",
       "visible": true,
       "width": 44,
-      "x": 117,
-      "y": 72,
+      "x": 112,
+      "y": 96,
       "description": "Button that toggles background music on and off"
     },
     {
@@ -81,8 +81,8 @@
       "type": "label",
       "visible": true,
       "width": 300,
-      "x": 502,
-      "y": 93,
+      "x": 722,
+      "y": 74,
       "description": "Shows the name of the street the player is currently on"
     },
     {
@@ -123,8 +123,8 @@
       "type": "button",
       "visible": true,
       "width": 90,
-      "x": 12,
-      "y": 64,
+      "x": 137,
+      "y": 126,
       "description": "The main context-sensitive button: grab items, enter/exit buildings and vehicles"
     },
     {
@@ -137,8 +137,8 @@
       "type": "image",
       "visible": true,
       "width": 148,
-      "x": 10,
-      "y": 103,
+      "x": 14,
+      "y": 200,
       "description": "Small overhead map showing the player's location and nearby streets"
     },
     {
@@ -151,8 +151,8 @@
       "type": "label",
       "visible": true,
       "width": 100,
-      "x": 18,
-      "y": 290,
+      "x": 137,
+      "y": 242,
       "description": "Text label showing the current game mode"
     },
     {
@@ -165,8 +165,8 @@
       "type": "panel",
       "visible": true,
       "width": 90,
-      "x": 21,
-      "y": 324,
+      "x": 135,
+      "y": 518,
       "description": "Speedometer: shows how fast the player's vehicle is going"
     },
     {
@@ -193,20 +193,20 @@
       "type": "bar",
       "visible": true,
       "width": 120,
-      "x": 18,
-      "y": 200,
+      "x": 141,
+      "y": 205,
       "description": "Fuel gauge: shows how much gas the vehicle has left"
     },
     {
       "anchor": "tl",
       "asset": null,
-      "height": 44,
+      "height": 62,
       "id": "satview-btn",
       "label": "\ud83d\udef0",
       "mobile_only": false,
       "type": "button",
       "visible": true,
-      "width": 44,
+      "width": 42,
       "x": 13,
       "y": 80,
       "description": "Button that toggles satellite/aerial view on the minimap"
@@ -221,8 +221,8 @@
       "type": "button",
       "visible": true,
       "width": 44,
-      "x": 67,
-      "y": 79,
+      "x": 61,
+      "y": 94,
       "description": "Button that opens GPS navigation to a destination"
     },
     {
@@ -277,8 +277,8 @@
       "type": "panel",
       "visible": true,
       "width": 170,
-      "x": 20,
-      "y": 20,
+      "x": 197,
+      "y": 16,
       "description": "On-screen joystick base for moving the player on mobile"
     },
     {
@@ -291,8 +291,8 @@
       "type": "image",
       "visible": true,
       "width": 86,
-      "x": 62,
-      "y": 62,
+      "x": 234,
+      "y": 66,
       "description": "The movable knob part of the on-screen joystick"
     },
     {
@@ -333,8 +333,8 @@
       "type": "button",
       "visible": true,
       "width": 80,
-      "x": 18,
-      "y": 170,
+      "x": 144,
+      "y": 25,
       "description": "Mobile gas pedal for driving vehicles"
     },
     {
@@ -347,8 +347,8 @@
       "type": "button",
       "visible": true,
       "width": 80,
-      "x": 110,
-      "y": 170,
+      "x": 234,
+      "y": 25,
       "description": "Mobile brake pedal for driving vehicles"
     },
     {
@@ -361,22 +361,22 @@
       "type": "button",
       "visible": true,
       "width": 80,
-      "x": 18,
-      "y": 262,
+      "x": 146,
+      "y": 128,
       "description": "Mobile handbrake button for sharp turns and drifting"
     },
     {
       "anchor": "tl",
       "asset": null,
-      "height": 40,
+      "height": 61,
       "id": "cam-btn",
       "label": "\ud83d\udcf7",
       "mobile_only": true,
       "type": "button",
       "visible": true,
-      "width": 70,
-      "x": 8,
-      "y": 52,
+      "width": 65,
+      "x": 169,
+      "y": 92,
       "description": "Mobile button to switch between camera views"
     },
     {
