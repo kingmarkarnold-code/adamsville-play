@@ -1,0 +1,391 @@
+[
+  {
+    "name": "Suburban House",
+    "type": "House",
+    "wall_material": "Vinyl Siding",
+    "wall_color": "#d4c5a0",
+    "roof_color": "#5a3a2a",
+    "roof_texture": "Shingle",
+    "floors": 1,
+    "walkable": false,
+    "floor_plan": "",
+    "position": [
+      3000,
+      2000
+    ],
+    "rotation": 0.0,
+    "front_face": "front",
+    "width": 40.0,
+    "depth": 40.0,
+    "windows": [
+      {
+        "face": "front",
+        "x": 0.25,
+        "y": 0.55,
+        "w": 0.15,
+        "h": 0.25,
+        "type": "Standard"
+      },
+      {
+        "face": "front",
+        "x": 0.6,
+        "y": 0.55,
+        "w": 0.15,
+        "h": 0.25,
+        "type": "Standard"
+      }
+    ],
+    "doors": [
+      {
+        "face": "front",
+        "x": 0.45,
+        "y": 0.0,
+        "type": "Wood Door"
+      }
+    ],
+    "sidewalk": {
+      "enabled": false,
+      "width": 4.0,
+      "curved": false
+    },
+    "driveway": {
+      "enabled": false,
+      "material": "Concrete"
+    },
+    "garage": {
+      "enabled": false,
+      "side": "Right",
+      "width": 20.0,
+      "door_type": "Garage Door"
+    },
+    "sallyport": {
+      "enabled": false
+    },
+    "fence": {
+      "enabled": false,
+      "style": "Wood",
+      "points": []
+    },
+    "floor_types": [],
+    "decorations": [],
+    "parking": []
+  },
+  {
+    "name": "Downtown Store",
+    "type": "Store",
+    "wall_material": "Brick",
+    "wall_color": "#a0522d",
+    "roof_color": "#3a3a3a",
+    "roof_texture": "Flat",
+    "floors": 2,
+    "walkable": true,
+    "floor_plan": "Store",
+    "position": [
+      6000,
+      1500
+    ],
+    "rotation": 0.0,
+    "front_face": "front",
+    "width": 40.0,
+    "depth": 40.0,
+    "windows": [
+      {
+        "face": "front",
+        "x": 0.15,
+        "y": 0.5,
+        "w": 0.25,
+        "h": 0.35,
+        "type": "Large"
+      },
+      {
+        "face": "front",
+        "x": 0.6,
+        "y": 0.5,
+        "w": 0.25,
+        "h": 0.35,
+        "type": "Large"
+      }
+    ],
+    "doors": [
+      {
+        "face": "front",
+        "x": 0.45,
+        "y": 0.0,
+        "type": "Glass Door"
+      }
+    ],
+    "sidewalk": {
+      "enabled": false,
+      "width": 4.0,
+      "curved": false
+    },
+    "driveway": {
+      "enabled": false,
+      "material": "Concrete"
+    },
+    "garage": {
+      "enabled": false,
+      "side": "Right",
+      "width": 20.0,
+      "door_type": "Garage Door"
+    },
+    "sallyport": {
+      "enabled": false
+    },
+    "fence": {
+      "enabled": false,
+      "style": "Wood",
+      "points": []
+    },
+    "floor_types": [],
+    "decorations": [],
+    "parking": []
+  },
+  {
+    "name": "Corner Restaurant",
+    "type": "Restaurant",
+    "wall_material": "Stucco",
+    "wall_color": "#e8dcc0",
+    "roof_color": "#7a2a1a",
+    "roof_texture": "Tile",
+    "floors": 1,
+    "walkable": true,
+    "floor_plan": "Restaurant",
+    "position": [
+      6500,
+      2500
+    ],
+    "rotation": 90.0,
+    "front_face": "front",
+    "width": 40.0,
+    "depth": 40.0,
+    "windows": [
+      {
+        "face": "front",
+        "x": 0.2,
+        "y": 0.55,
+        "w": 0.2,
+        "h": 0.3,
+        "type": "Bay Window"
+      }
+    ],
+    "doors": [
+      {
+        "face": "front",
+        "x": 0.55,
+        "y": 0.0,
+        "type": "Double Door"
+      }
+    ],
+    "sidewalk": {
+      "enabled": false,
+      "width": 4.0,
+      "curved": false
+    },
+    "driveway": {
+      "enabled": false,
+      "material": "Concrete"
+    },
+    "garage": {
+      "enabled": false,
+      "side": "Right",
+      "width": 20.0,
+      "door_type": "Garage Door"
+    },
+    "sallyport": {
+      "enabled": false
+    },
+    "fence": {
+      "enabled": false,
+      "style": "Wood",
+      "points": []
+    },
+    "floor_types": [],
+    "decorations": [],
+    "parking": []
+  },
+  {
+    "name": "Ranch House",
+    "type": "House",
+    "wall_material": "Wood Siding",
+    "wall_color": "#8b7355",
+    "roof_color": "#4a4a4a",
+    "roof_texture": "Shingle",
+    "floors": 1,
+    "walkable": false,
+    "floor_plan": "",
+    "position": [
+      2500,
+      3000
+    ],
+    "rotation": 180.0,
+    "front_face": "front",
+    "width": 40.0,
+    "depth": 40.0,
+    "windows": [
+      {
+        "face": "front",
+        "x": 0.3,
+        "y": 0.55,
+        "w": 0.15,
+        "h": 0.25,
+        "type": "Standard"
+      }
+    ],
+    "doors": [
+      {
+        "face": "front",
+        "x": 0.5,
+        "y": 0.0,
+        "type": "Wood Door"
+      }
+    ],
+    "sidewalk": {
+      "enabled": false,
+      "width": 4.0,
+      "curved": false
+    },
+    "driveway": {
+      "enabled": false,
+      "material": "Concrete"
+    },
+    "garage": {
+      "enabled": false,
+      "side": "Right",
+      "width": 20.0,
+      "door_type": "Garage Door"
+    },
+    "sallyport": {
+      "enabled": false
+    },
+    "fence": {
+      "enabled": false,
+      "style": "Wood",
+      "points": []
+    },
+    "floor_types": [],
+    "decorations": [],
+    "parking": []
+  },
+  {
+    "doors": [
+      {
+        "face": "front",
+        "type": "Wood Door",
+        "x": 0.5,
+        "y": 0.0
+      },
+      {
+        "face": "back",
+        "type": "Wood Door",
+        "x": 0.5,
+        "y": 0.0
+      },
+      {
+        "face": "back",
+        "type": "Basement Walkout",
+        "x": 0.62,
+        "y": 0.0
+      }
+    ],
+    "floor_plan": "Two-story with full basement",
+    "floors": 2,
+    "name": "535 Dollar Mill Rd",
+    "notes": "Hero house \u2014 Joshua's home base. Two-level: full basement (walkout door on south face at ground level) + main floor above. Garage converted to living space. Porch with shutters and hip roof. Colors verified against StreetView 2026-10-10. Baked into game data at zones/adamsville/hero_buildings.json.",
+    "position": [
+      1938.0,
+      6791.3
+    ],
+    "roof_color": "#35322e",
+    "roof_texture": "Hip",
+    "rotation": 0.0,
+    "type": "House",
+    "walkable": true,
+    "wall_color": "#a05c42",
+    "wall_material": "Brick",
+    "windows": [
+      {
+        "face": "front",
+        "h": 0.25,
+        "type": "Standard with Shutters",
+        "w": 0.15,
+        "x": 0.25,
+        "y": 0.55
+      },
+      {
+        "face": "front",
+        "h": 0.25,
+        "type": "Standard with Shutters",
+        "w": 0.15,
+        "x": 0.35,
+        "y": 0.55
+      },
+      {
+        "face": "front",
+        "h": 0.25,
+        "type": "Standard with Shutters",
+        "w": 0.15,
+        "x": 0.65,
+        "y": 0.55
+      },
+      {
+        "face": "front",
+        "h": 0.25,
+        "type": "Standard with Shutters",
+        "w": 0.15,
+        "x": 0.75,
+        "y": 0.55
+      },
+      {
+        "face": "back",
+        "h": 0.25,
+        "type": "Standard",
+        "w": 0.15,
+        "x": 0.3,
+        "y": 0.55
+      },
+      {
+        "face": "back",
+        "h": 0.25,
+        "type": "Standard",
+        "w": 0.15,
+        "x": 0.5,
+        "y": 0.55
+      },
+      {
+        "face": "back",
+        "h": 0.25,
+        "type": "Standard",
+        "w": 0.15,
+        "x": 0.7,
+        "y": 0.55
+      }
+    ],
+    "sidewalk": {
+      "enabled": false,
+      "width": 4.0,
+      "curved": false
+    },
+    "driveway": {
+      "enabled": false,
+      "material": "Concrete"
+    },
+    "garage": {
+      "enabled": false,
+      "side": "Right",
+      "width": 20.0,
+      "door_type": "Garage Door"
+    },
+    "sallyport": {
+      "enabled": false
+    },
+    "fence": {
+      "enabled": false,
+      "style": "Wood",
+      "points": []
+    },
+    "floor_types": [],
+    "decorations": [],
+    "parking": []
+  }
+]
