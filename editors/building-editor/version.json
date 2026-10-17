@@ -1,6 +1,6 @@
 {
- "version": "1.7.1",
- "changelog": "Layout fixed so nothing can hide off-screen, and design buildings really save now. (1) The Zone Buildings split divider actually drags both ways \u2014 make the data side or the 3D building view as wide as you want; it remembers where you left it while the app is open. (2) The whole window fits a 1366-wide screen maximized: the wide control rows now scroll sideways instead of pushing content off the edge, and long labels shorten with the full text on hover. (3) The Open Building box splits evenly between Categories and Buildings, and both sides can be dragged. The Building design tabs and the Subdivisions tab got the same adjustable splits (drag between the picture and its panel). (4) DESIGN BUILDINGS NOW SAVE TO GITHUB: your design buildings (the samples and the 535 house) download from GitHub when the editor opens, and saving \u2014 including Push & Close at the quit prompt \u2014 sends them to GitHub, then downloads them back to prove they arrived. Before this fix, a design edit such as a roof colour never left the laptop even when the app said the push succeeded; any roof-colour edit still sitting on your laptop will be picked up and published by your next save.",
+ "version": "1.7.2",
+ "changelog": "Loads fast, edits by dragging, and the gas stations join in. (1) NO MORE LONG WAIT OR FREEZE: the editor opens with just a light list of building names (about 2 MB) and downloads a zone's full records only when you pick a building in it, with a progress bar showing the megabytes. Memory drops from about 550 MB to under 200 MB with the biggest zone open. (2) DRAG TO EDIT in the 3D view: drag the roof to move a building, its left/right edges for width, front/back edges for depth, and the orange front wall up or down for height \u2014 the number boxes and the dragging now change each other live. Field labels are spelled out (East\u2013West position, Width, Depth, Height). The camera now opens at eye level, straight at the front wall. (3) Click the Name, Type or Flagged column headers to sort the building list; switching category while looking at flagged buildings works again. (4) The Flagged list pane drags vertically, so the details below it can be pulled into view. (5) GAS STATION REVIEW tab: the problem stations are listed for your decision; flip 'Make editable' on one to open it in the 3D view, move/size it, and mark it Walkable \u2014 edits save to the editor's own station-edits file (the game itself does not change yet). A toggle shows all 109 stations. (6) A word at the bottom left of the 3D view says how the game treats what you're looking at: red Flagged, yellow Skipped, green Placed. (7) Click a street in the 3D view to select it, then 'Open in Map Editor' sends that spot to the Map Editor (its side of the jump arrives with Map Editor 1.9.5). (8) All editors now share one download cache, so a map one app downloads is reused by the others. Lists (buildings, flagged, gas stations) now come from GitHub every open \u2014 nothing is baked into the app, so they can be changed any time.",
  "files": [
   {
    "path": "about.py",
@@ -10,7 +10,7 @@
   {
    "path": "app.py",
    "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/app.py",
-   "sha256": "bf0a14c30f7890be40ef78fc34fc7e8a3a1e8d2cdfe1a0b47fb02775891ce542"
+   "sha256": "8e56b972bc2c410afdb3555a8f83cdd40bf100b7b08f467669392f9a0493eb2b"
   },
   {
    "path": "buildingcanvas.py",
@@ -23,19 +23,19 @@
    "sha256": "308da8deeca061fd7318c6d1d1ed3938f12a951cbbfffd3d6714ab61c03704f4"
   },
   {
-   "path": "flagged_buildings.json",
-   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/flagged_buildings.json",
-   "sha256": "474648618cfbb6a65c51774064150126782b0807a881c316bab4ee3b1ae1b9ab"
-  },
-  {
    "path": "github_sync.py",
    "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/github_sync.py",
-   "sha256": "4c2e4ba405a55d5d88c66a9ac8db3322a3637b5b2c43a307e9191f8c7bdc599a"
+   "sha256": "09abb8f7c6ad2fc004fb83a22b04f44346b99fbd52b9e28c929c93ba5bc1bcba"
   },
   {
    "path": "mollie-icon.png",
    "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/mollie-icon.png",
    "sha256": "28990027fd79e03e2ef8416e8c1d3410ee284ec86383280968b245f08576e768"
+  },
+  {
+   "path": "shared_cache.py",
+   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/shared_cache.py",
+   "sha256": "86e16770fdea09e684c882870f730a794e2d64a807c3f06195dcd3254dedbde5"
   },
   {
    "path": "subdivisioncanvas.py",
@@ -50,7 +50,7 @@
   {
    "path": "zonedata.py",
    "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/zonedata.py",
-   "sha256": "0856e03354fd872b770be5e23819ba1637b803874a442311336115a187658cf8"
+   "sha256": "2234d61d5899d14682f9aa4e84641998e6312695a571b929248cb88ce7b55ec1"
   }
  ]
 }
