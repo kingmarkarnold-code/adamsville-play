@@ -1,26 +1,30 @@
 #!/usr/bin/env python3
 """
-Adamsville Map Editor (Native) — Data management module.
+Adamsville Map Editor (Native) 1.9.0 — Data management module.
 
-Handles downloading road data from GitHub, local caching, version checking,
-and spatial indexing for fast viewport culling.
+1.9.0 REPOINT (Joshua's Step-1 Editors Phase): the game's converted
+zone files in kingmarkarnold-code/adamsville-play are the source of
+truth. On open the editor downloads (Contents API, fresh connection)
+all 7 zones' zone.json + roads.json, detailed/overpasses.json and
+detailed/elev.json — see gamedata.py for the model and the round-trip
+save. The old adamsville-map-editor repo, its raw-URL downloads and
+the road_edits.json overlay are GONE: local edits live in a per-zone
+local cache and reach the game only through the round-trip save.
+
+This module keeps the editor-facing surface the rest of the app was
+built on (ZONES, SpatialIndex, window state, zone overlay helpers,
+overpass cache helpers) and re-bases it on the game model.
 
 Joshua's rule: all code commented.
 """
 
 import json
-import os
 import sys
-import urllib.request
-import urllib.error
 from pathlib import Path
 
-# Shared suite module (Joshua 2026-10-11): common utilities (GitHub push,
-# token storage, shared file cache) live in one place so all suite apps
-# use the same code. Falls back to local implementations if not present.
-# Shared suite module locations: system-wide (installed by .deb) first,
-# then per-user (for development/testing). Falls back to None if neither
-# exists, in which case the app uses its local implementations.
+# Shared suite module (Joshua 2026-10-11): common utilities live in one
+# place so all suite apps use the same code. Falls back to local
+# implementations if not present.
 for _suite_path in ("/usr/share/adamsville-suite",
                     str(Path.home() / ".local" / "share" / "adamsville-suite")):
     if _suite_path not in sys.path:
@@ -30,38 +34,82 @@ try:
 except ImportError:
     suite = None  # fall back to local implementations
 
+# The 1.9.0 game-data model (zones, dirty tracking, round trip).
+import gamedata
+from gamedata import GAME_REPO, ZONE_IDS  # noqa: F401  (re-exported)
+
 
 # ---------------------------------------------------------------------------
-# Constants
+# Local cache layout
 # ---------------------------------------------------------------------------
+# The local save leg of every round trip writes the model's files here
+# (per-zone, mirroring the repo layout) BEFORE anything is pushed, so
+# Joshua's edits survive crashes and offline restarts. A fresh
+# download-on-open overwrites the cache with the GitHub copies.
 
-# GitHub repo containing the map data
-REPO = "kingmarkarnold-code/adamsville-map-editor"
-# Raw URL for roads.json — the single data file the app downloads
-ROADS_URL = f"https://raw.githubusercontent.com/{REPO}/main/roads.json"
-# GitHub API URL for version checking (returns blob SHA)
-API_URL = f"https://api.github.com/repos/{REPO}/contents/roads.json"
-
-# Local data directory (XDG-compliant)
 DATA_DIR = Path.home() / ".local" / "share" / "adamsville-map-editor-native"
-ROADS_FILE = DATA_DIR / "roads.json"
+ZONES_CACHE_DIR = DATA_DIR / "zones"
+OVERPASSES_FILE = DATA_DIR / "overpasses.json"
+ELEV_FILE = DATA_DIR / "elev.json"
 VERSION_FILE = DATA_DIR / "version.json"
 WINDOW_FILE = DATA_DIR / "window.json"
-# Joshua's zone boundary edits (dragged/added pins) are saved here so they
-# survive restarts. Maps zone name -> {"points": [[x, z], ...]}
 ZONE_EDITS_FILE = DATA_DIR / "zone_edits.json"
-# Joshua's road edits (joins, merges, extends, deletes) are saved here.
-# Format: {"base_sha": "<sha of roads.json these apply to>",
-#          "replaced": {category: [full road list for that category]}}
-# Full-category replacement is simple and robust: on load, the saved
-# categories overwrite the downloaded ones (only if base_sha matches,
-# so a fresh download doesn't get stale edits applied).
+CUSTOM_ZONES_FILE = DATA_DIR / "custom_zones.json"
+# Legacy 1.8.x files, kept as names only so old code paths that mention
+# them fail soft instead of crashing; 1.9.0 never reads or writes them.
+ROADS_FILE = DATA_DIR / "roads.json"
 ROAD_EDITS_FILE = DATA_DIR / "road_edits.json"
 
-# The 7 predefined game zones (same as web editor).
-# Zones are arbitrary polygons: "points" is a list of [x, z] vertices
-# in winding order (the polygon auto-closes back to the first point).
-# Colors are RGB 0-1.
+# The live game model (gamedata.GameModel), set by the app once the
+# download-on-open (or the local-cache load) completes. Zone overlay
+# helpers below mirror their changes into it so the round trip sees
+# them as dirty working files.
+GAME_MODEL = None
+
+
+def set_game_model(model):
+    """
+    Adopt a downloaded/loaded GameModel as the live model and rebuild
+    the editor's ZONES list from its zone.json bounds + overlays.
+    """
+    global GAME_MODEL
+    GAME_MODEL = model
+    rebuild_zones_from_model()
+
+
+def ensure_data_dir():
+    """Create the local data directory (and zone cache) if missing."""
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    ZONES_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# Zones for the canvas
+# ---------------------------------------------------------------------------
+# Zone names/bounds now come from the 7 zone.json files. zone.json's
+# definition is a lat/lon RECTANGLE — it has no polygon — so the
+# canvas polygons are the bounds rectangles (gamedata.zone_polygon_
+# from_bounds). Joshua's dragged-boundary polygons and custom zones
+# CANNOT be represented in zone.json; they remain editor overlays,
+# round-tripped to editors/map-editor/zone_edits.json and
+# custom_zones.json in adamsville-play (working data, not game data).
+
+# Display colors per game zone (presentation only — the game data has
+# no zone colors; these are the 1.8.x palette, matched by zone name).
+_ZONE_COLORS = {
+    "Mableton": (0.29, 0.56, 0.85),
+    "Adamsville": (0.49, 0.83, 0.13),
+    "Downtown": (0.96, 0.65, 0.14),
+    "East Atlanta": (0.74, 0.06, 0.88),
+    "Union City": (0.31, 0.89, 0.76),
+    "South Fulton": (0.72, 0.91, 0.53),
+    "Riverdale": (1.0, 0.42, 0.42),
+}
+
+# Fallback zone list used only before the first successful download
+# (the 1.8.x rectangles in the OLD stage frame). As soon as a model is
+# adopted, rebuild_zones_from_model() replaces these with the real
+# converted bounds — nothing may save against the fallbacks.
 ZONES = [
     {"name": "Mableton",
      "points": [[-200, -200], [2147, -200], [2147, 4218], [-200, 4218]],
@@ -90,9 +138,9 @@ ZONES = [
 def rect_to_points(x0, x1, z0, z1):
     """
     Convert an old rectangle-style zone (x0/x1/z0/z1) into a 4-point
-    polygon. Used for backward compatibility with zone_edits.json files
-    saved before zones became arbitrary polygons.
-    Winding: top-left → top-right → bottom-right → bottom-left.
+    polygon. Used for backward compatibility with zone_edits.json
+    files saved before zones became arbitrary polygons.
+    Winding: top-left -> top-right -> bottom-right -> bottom-left.
     """
     return [[float(x0), float(z0)], [float(x1), float(z0)],
             [float(x1), float(z1)], [float(x0), float(z1)]]
@@ -111,39 +159,77 @@ def zone_bbox(zone):
 
 def _normalize_zone(zone):
     """
-    Ensure a zone dict has polygon-style "points".
-    Auto-converts the old rectangle format (x0/x1/z0/z1) if found,
-    so older code or data keeps working without manual migration.
+    Ensure a zone dict has polygon-style "points" (auto-converts the
+    old rectangle format if found).
     """
     if "points" not in zone and "x0" in zone:
         zone["points"] = rect_to_points(
             zone["x0"], zone["x1"], zone["z0"], zone["z1"])
 
 
-# Normalize the shipped defaults (no-op for the polygon definitions above,
-# but keeps this robust if the format ever regresses).
 for _z in ZONES:
     _normalize_zone(_z)
 del _z
 
-# Road rendering properties by category
-# width: world units for the road ribbon; color: RGB 0-1
-# (Joshua 2026-10-11: "arterial" split into minor/major artery;
-# "interstate" added above highway.)
+
+def rebuild_zones_from_model():
+    """
+    Rebuild ZONES (in place — mapcanvas holds the list object) from
+    the live model's zone.json bounds, then re-apply the model's
+    overlay working data (boundary edits + custom zones).
+    """
+    if GAME_MODEL is None:
+        return
+    fresh = []
+    for zid in ZONE_IDS:
+        zdata = GAME_MODEL.zones.get(zid)
+        if not zdata:
+            continue
+        meta = zdata["meta"]
+        name = meta.get("name", zid)
+        fresh.append({
+            "name": name,
+            "zone_id": zid,
+            "points": gamedata.zone_polygon_from_bounds(meta["bounds"]),
+            "color": _ZONE_COLORS.get(name, (0.6, 0.6, 0.6)),
+        })
+    ZONES[:] = fresh
+    # Overlay: Joshua's dragged boundary polygons.
+    for zone in ZONES:
+        ov = GAME_MODEL.zone_edits.get(zone["name"])
+        if ov and "points" in ov:
+            zone["points"] = [[float(p[0]), float(p[1])]
+                              for p in ov["points"]]
+    # Overlay: Joshua's custom zones.
+    for entry in GAME_MODEL.custom_zones:
+        try:
+            name = entry["name"]
+            points = [[float(p[0]), float(p[1])] for p in entry["points"]]
+            color = tuple(entry.get("color", (0.6, 0.6, 0.6)))
+            if len(points) < 3:
+                continue
+            if any(z["name"] == name for z in ZONES):
+                continue
+            ZONES.append({"name": name, "points": points, "color": color})
+        except Exception:
+            continue
+
+
+# ---------------------------------------------------------------------------
+# Road styles / categories (unchanged presentation layer)
+# ---------------------------------------------------------------------------
+
 ROAD_STYLE = {
-    "interstate":   {"width": 28, "color": (0.72, 0.12, 0.12)},  # dark red
-    "highway":      {"width": 24, "color": (1.0, 0.27, 0.27)},   # red
-    "major_artery": {"width": 20, "color": (1.0, 0.45, 0.10)},   # orange-red
-    "minor_artery": {"width": 16, "color": (1.0, 0.67, 0.0)},     # orange
-    "local":        {"width": 10, "color": (0.53, 0.53, 0.53)},   # gray
+    "interstate":   {"width": 28, "color": (0.72, 0.12, 0.12)},
+    "highway":      {"width": 24, "color": (1.0, 0.27, 0.27)},
+    "major_artery": {"width": 20, "color": (1.0, 0.45, 0.10)},
+    "minor_artery": {"width": 16, "color": (1.0, 0.67, 0.0)},
+    "local":        {"width": 10, "color": (0.53, 0.53, 0.53)},
 }
 
-# Category hierarchy, widest/highest-priority first. Used for draw
-# order (wider roads on top) and pick preference (wider roads win ties).
 CATEGORY_ORDER = ("interstate", "highway", "major_artery",
                   "minor_artery", "local")
 
-# Human-readable labels for the category radio buttons.
 CATEGORY_LABELS = {
     "interstate": "Interstate",
     "highway": "Highway",
@@ -152,19 +238,14 @@ CATEGORY_LABELS = {
     "local": "Local",
 }
 
-# Categories that support segmented median/divider sections
-# (Joshua 2026-10-11).
 DIVIDABLE_CATEGORIES = ("interstate", "highway", "major_artery")
-
-# Valid divider types for a divided section.
 DIVIDER_TYPES = ("median", "divider")
 
 
 def normalize_category(cat):
     """
     Map legacy/unknown category strings to the current 5-category set.
-    "arterial" (the old single category) becomes "minor_artery" so old
-    roads.json data keeps working with no visual change except the label.
+    "arterial" (the old single category) becomes "minor_artery".
     Unknown values fall back to "local" rather than crashing lookups.
     """
     if cat == "arterial":
@@ -173,42 +254,65 @@ def normalize_category(cat):
         return cat
     return "local"
 
-# World extent (game coordinates)
-WORLD_W = 8000
-WORLD_H = 12000
+
+# World extent of the CONVERTED map (union of the 7 zone bounds):
+# x -7480.59..16314.49, z -4248.54..30877.52. WORLD_X0/Z0 are the
+# origin offsets the canvas fit math needs now that the world no
+# longer starts at (0, 0).
+WORLD_X0 = -7480.59
+WORLD_Z0 = -4248.54
+WORLD_W = 23795.08
+WORLD_H = 35126.06
 
 
 # ---------------------------------------------------------------------------
-# Zone boundary persistence
+# Zone overlay persistence (editor working data)
 # ---------------------------------------------------------------------------
-# Joshua edits zone boundaries by dragging pins in the app (and can add new
-# pins by clicking a boundary edge). Those edits are stored as
-# name -> {"points": [[x, z], ...]} so the shipped defaults above are never
-# overwritten and edits survive restarts and reinstalls.
+# Locally these still land in ZONE_EDITS_FILE / CUSTOM_ZONES_FILE on
+# every edit (the local save leg); the same content is mirrored into
+# GAME_MODEL.zone_edits / custom_zones, whose baseline diff against
+# editors/map-editor/*.json on GitHub is what makes the round trip
+# push them. Undo snapshots read/restore the local files exactly as
+# before, and the app re-syncs the model from them after a restore.
+
+def _sync_overlays_to_model():
+    """Copy the local overlay files' content into the live model."""
+    if GAME_MODEL is None:
+        return
+    try:
+        GAME_MODEL.zone_edits = (
+            json.loads(ZONE_EDITS_FILE.read_text())
+            if ZONE_EDITS_FILE.exists() else {})
+    except Exception:
+        GAME_MODEL.zone_edits = {}
+    try:
+        GAME_MODEL.custom_zones = (
+            json.loads(CUSTOM_ZONES_FILE.read_text())
+            if CUSTOM_ZONES_FILE.exists() else [])
+    except Exception:
+        GAME_MODEL.custom_zones = []
+
 
 def load_zone_edits():
     """
     Read saved zone boundary edits and apply them onto ZONES in place.
-    Called once at import time. Missing/corrupt file = no edits.
-    Accepts both the old rectangle format (x0/x1/z0/z1) and the new
-    polygon format (points) — old entries are auto-converted.
+    Missing/corrupt file = no edits. Accepts the old rectangle format
+    and the polygon format.
     """
     try:
         if not ZONE_EDITS_FILE.exists():
             return
         edits = json.loads(ZONE_EDITS_FILE.read_text())
     except Exception:
-        return  # corrupt file — ignore rather than crash
+        return
     for zone in ZONES:
         ov = edits.get(zone["name"])
         if not ov:
             continue
         if "points" in ov:
-            # New polygon format: list of [x, z] vertices
             zone["points"] = [[float(p[0]), float(p[1])]
                               for p in ov["points"]]
         elif "x0" in ov:
-            # Old rectangle format: convert to a 4-point polygon
             zone["points"] = rect_to_points(
                 ov["x0"], ov["x1"], ov["z0"], ov["z1"])
         _normalize_zone(zone)
@@ -216,18 +320,15 @@ def load_zone_edits():
 
 def save_zone_edit(name, points):
     """
-    Persist one zone's polygon boundary edit.
-    points: list of [x, z] vertices.
-    Updates ZONES in memory AND the JSON overlay file on disk.
+    Persist one zone's polygon boundary edit (local file + live ZONES
+    + the game model, so the next round trip pushes it to
+    editors/map-editor/zone_edits.json in adamsville-play).
     """
-    # Normalize to plain float pairs (JSON-safe)
     clean = [[float(p[0]), float(p[1])] for p in points]
-    # Update the live zone dict
     for zone in ZONES:
         if zone["name"] == name:
             zone["points"] = [list(p) for p in clean]
             break
-    # Merge into the overlay file (keep other zones' edits)
     ensure_data_dir()
     try:
         edits = json.loads(ZONE_EDITS_FILE.read_text()) \
@@ -236,36 +337,22 @@ def save_zone_edit(name, points):
         edits = {}
     edits[name] = {"points": clean}
     ZONE_EDITS_FILE.write_text(json.dumps(edits, indent=2))
+    _sync_overlays_to_model()
 
 
-# Apply any previously saved boundary edits on top of the defaults.
+# Apply any previously saved boundary edits on top of the defaults
+# (before a model is adopted these are the local-cache overlays; the
+# model adoption rebuild re-applies the GitHub overlays on top).
 load_zone_edits()
 
-
-# ---------------------------------------------------------------------------
-# Custom zones (created via "Fill Unzoned Area" or future new-zone tools)
-# ---------------------------------------------------------------------------
-# User-created zones are stored separately from boundary edits so they
-# survive as full zone definitions (name + polygon + color).
-
-CUSTOM_ZONES_FILE = DATA_DIR / "custom_zones.json"
-
-# Default colors cycled for auto-created zones (RGB 0-1)
 CUSTOM_ZONE_COLORS = [
-    (0.80, 0.40, 0.20),  # burnt orange
-    (0.20, 0.60, 0.80),  # steel blue
-    (0.60, 0.20, 0.70),  # purple
-    (0.20, 0.75, 0.45),  # teal green
-    (0.85, 0.65, 0.15),  # gold
-    (0.55, 0.35, 0.85),  # violet
+    (0.80, 0.40, 0.20), (0.20, 0.60, 0.80), (0.60, 0.20, 0.70),
+    (0.20, 0.75, 0.45), (0.85, 0.65, 0.15), (0.55, 0.35, 0.85),
 ]
 
 
 def load_custom_zones():
-    """
-    Load Joshua's custom-created zones and append them to ZONES.
-    Called once at import time, after load_zone_edits().
-    """
+    """Load custom-created zones from the local file into ZONES."""
     try:
         if not CUSTOM_ZONES_FILE.exists():
             return
@@ -281,7 +368,6 @@ def load_custom_zones():
             color = tuple(entry.get("color", (0.6, 0.6, 0.6)))
             if len(points) < 3:
                 continue
-            # Skip if a zone with this name already exists
             if any(z["name"] == name for z in ZONES):
                 continue
             ZONES.append({"name": name, "points": points, "color": color})
@@ -291,8 +377,9 @@ def load_custom_zones():
 
 def save_custom_zone(name, points, color):
     """
-    Persist a newly created zone and add it to the live ZONES list.
-    name: str, points: [[x, z], ...], color: (r, g, b).
+    Persist a newly created zone (local file + live ZONES + the game
+    model, so the next round trip pushes it to
+    editors/map-editor/custom_zones.json in adamsville-play).
     """
     ensure_data_dir()
     clean_points = [[float(p[0]), float(p[1])] for p in points]
@@ -304,22 +391,19 @@ def save_custom_zone(name, points, color):
             custom = []
     except Exception:
         custom = []
-    # Replace any existing entry with the same name
     custom = [c for c in custom if c.get("name") != name]
     custom.append({"name": name, "points": clean_points,
                    "color": clean_color})
     CUSTOM_ZONES_FILE.write_text(json.dumps(custom, indent=2))
-    # Add to live list if not already there
     if not any(z["name"] == name for z in ZONES):
         ZONES.append({"name": name, "points": [list(p) for p in clean_points],
                       "color": tuple(clean_color)})
+    _sync_overlays_to_model()
 
 
 def next_custom_zone_name():
-    """
-    Auto-name for new zones: "Zone 1", "Zone 2", ... skipping names
-    already in use (by predefined or custom zones).
-    """
+    """Auto-name for new zones: "Zone 1", "Zone 2", ... skipping
+    names already in use."""
     used = {z["name"] for z in ZONES}
     i = 1
     while f"Zone {i}" in used:
@@ -327,191 +411,226 @@ def next_custom_zone_name():
     return f"Zone {i}"
 
 
-# Load custom zones after boundary edits so both apply cleanly.
 load_custom_zones()
 
 
 # ---------------------------------------------------------------------------
-# Road edit persistence (Join / Merge / Extend / Delete)
+# Legacy road-edit overlay — RETIRED in 1.9.0
 # ---------------------------------------------------------------------------
-# Road edits are stored as full-category replacements plus the base SHA of
-# the roads.json they were made against. This is simple and robust: no
-# fragile index bookkeeping, and a fresh download (new SHA) cleanly
-# invalidates stale edits instead of corrupting data.
-
+# 1.8.x stored road edits as full-category replacements in
+# road_edits.json against the old repo's roads.json SHA. That file's
+# data belonged to the OLD map; applying it to the converted zones
+# would corrupt them, so the functions below are deliberate no-ops
+# kept only so any stray caller fails soft. Road edits now live in
+# the per-zone local cache and ship via the round-trip save.
 
 def load_road_edits():
-    """
-    Load saved road edits.
-    Returns (base_sha, replaced) where replaced is
-    {category: [road dicts]}. Returns (None, {}) if none/corrupt.
-    """
-    try:
-        if not ROAD_EDITS_FILE.exists():
-            return None, {}
-        data = json.loads(ROAD_EDITS_FILE.read_text())
-        replaced = data.get("replaced", {})
-        if not isinstance(replaced, dict):
-            return None, {}
-        return data.get("base_sha"), replaced
-    except Exception:
-        return None, {}
+    """Retired (see above): always (None, {})."""
+    return None, {}
 
 
 def save_road_edits(base_sha, replaced):
+    """Retired (see above): road edits persist via save_local_cache."""
+    return
+
+
+# ---------------------------------------------------------------------------
+# Local cache: save / load the whole game model
+# ---------------------------------------------------------------------------
+
+def _atomic_write(path, blob):
+    """Write bytes via a temp file + rename (no partial files)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_bytes(blob)
+    tmp.rename(path)
+
+
+def save_local_cache(model):
     """
-    Persist road edits.
-    base_sha: SHA of the roads.json the edits apply to.
-    replaced: {category: [full road list]} for each modified category.
-    """
-    ensure_data_dir()
-    ROAD_EDITS_FILE.write_text(json.dumps(
-        {"base_sha": base_sha, "replaced": replaced}))
-
-
-# ---------------------------------------------------------------------------
-# Data directory setup
-# ---------------------------------------------------------------------------
-
-def ensure_data_dir():
-    """Create the local data directory if it doesn't exist."""
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-
-
-# ---------------------------------------------------------------------------
-# GitHub download and version checking
-# ---------------------------------------------------------------------------
-
-def get_remote_sha():
-    """
-    Get the current blob SHA of roads.json on GitHub.
-    Returns None if offline or on error (non-blocking by design).
+    The LOCAL SAVE leg of the round trip: write every model file to
+    the local cache (per-zone roads.json + zone.json, overpasses,
+    elev, overlays). Returns (True, None) or (False, error) — the
+    round trip reports that as "local-save-failed: <error>" and
+    pushes nothing.
     """
     try:
-        req = urllib.request.Request(
-            API_URL,
-            headers={"User-Agent": "adamsville-map-editor-native",
-                     "Accept": "application/vnd.github+json"})
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode())
-            return data.get("sha")
-    except Exception:
-        # Offline or API error — not fatal, caller handles None
+        ensure_data_dir()
+        for zid in ZONE_IDS:
+            zdata = model.zones.get(zid)
+            if not zdata:
+                continue
+            zdir = ZONES_CACHE_DIR / zid
+            _atomic_write(zdir / "roads.json",
+                          gamedata.serialize_roads(zdata["roads"]))
+            _atomic_write(zdir / "zone.json",
+                          gamedata.serialize_json_compact(zdata["meta"]))
+        _atomic_write(OVERPASSES_FILE,
+                      gamedata.serialize_json_compact(model.overpass_doc))
+        if model.elev is not None:
+            _atomic_write(ELEV_FILE,
+                          gamedata.serialize_json_compact(model.elev))
+        _atomic_write(ZONE_EDITS_FILE,
+                      json.dumps(model.zone_edits, indent=2).encode("utf-8"))
+        _atomic_write(CUSTOM_ZONES_FILE,
+                      json.dumps(model.custom_zones, indent=2).encode("utf-8"))
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+
+def load_local_model():
+    """
+    Build a GameModel from the local cache (offline fallback when the
+    download-on-open fails). Baselines are the cache bytes themselves,
+    so an offline session's edits still diff — and push — correctly
+    once a token/connection is available. Returns None if the cache
+    has no zone data.
+    """
+    model = gamedata.GameModel()
+    found = False
+    for zid in ZONE_IDS:
+        rpath = ZONES_CACHE_DIR / zid / "roads.json"
+        mpath = ZONES_CACHE_DIR / zid / "zone.json"
+        try:
+            if not (rpath.exists() and mpath.exists()):
+                continue
+            roads_blob = rpath.read_bytes()
+            meta = json.loads(mpath.read_bytes().decode("utf-8"))
+            model.zones[zid] = {"meta": meta, "roads": {}}
+            model._load_zone_roads(zid, roads_blob)
+            # Offline: we don't know GitHub's current bytes, so the
+            # baseline is the cache copy — edits made offline will
+            # push on the next successful round trip, and a no-edit
+            # offline open still pushes nothing.
+            model.baselines[gamedata.zone_roads_path(zid)] = roads_blob
+            found = True
+        except Exception:
+            continue
+    if not found:
         return None
-
-
-def get_local_sha():
-    """Read the saved SHA of the locally cached roads.json."""
     try:
-        with open(VERSION_FILE) as f:
-            return json.load(f).get("sha")
+        if OVERPASSES_FILE.exists():
+            blob = OVERPASSES_FILE.read_bytes()
+            model.overpass_doc = json.loads(blob.decode("utf-8"))
+            model.baselines[gamedata.OVERPASSES_PATH] = blob
     except Exception:
-        return None
+        pass
+    try:
+        if ELEV_FILE.exists():
+            model.elev = json.loads(ELEV_FILE.read_bytes().decode("utf-8"))
+    except Exception:
+        pass
+    _model_overlays_from_local(model)
+    return model
 
 
-def save_local_sha(sha):
-    """Save the SHA after a successful download."""
-    ensure_data_dir()
-    with open(VERSION_FILE, "w") as f:
-        json.dump({"sha": sha, "source": "github"}, f)
+def _model_overlays_from_local(model):
+    """Fill a model's overlay working data from the local files."""
+    try:
+        if ZONE_EDITS_FILE.exists():
+            blob = ZONE_EDITS_FILE.read_bytes()
+            model.zone_edits = json.loads(blob.decode("utf-8"))
+            model.baselines[gamedata.ZONE_EDITS_PATH] = blob
+    except Exception:
+        pass
+    try:
+        if CUSTOM_ZONES_FILE.exists():
+            blob = CUSTOM_ZONES_FILE.read_bytes()
+            model.custom_zones = json.loads(blob.decode("utf-8"))
+            model.baselines[gamedata.CUSTOM_ZONES_PATH] = blob
+    except Exception:
+        pass
 
+
+# ---------------------------------------------------------------------------
+# Download-on-open + version checks (1.9.0 semantics)
+# ---------------------------------------------------------------------------
 
 def needs_download():
     """
-    Check if we need to download roads.json.
-    Returns (needed: bool, reason: str).
+    (needed, reason): a download is needed when the local cache has
+    no zone data at all. (1.9.0 downloads fresh from GitHub on EVERY
+    open when a connection is available — the app attempts it first
+    and only falls back to this cache offline.)
     """
-    if not ROADS_FILE.exists():
-        return True, "Road data not found locally. Download from GitHub?"
-    local_sha = get_local_sha()
-    if not local_sha:
-        return True, "Local version unknown. Re-download from GitHub?"
-    remote_sha = get_remote_sha()
-    if remote_sha is None:
-        # Offline — use what we have
-        return False, "Offline — using local copy."
-    if remote_sha != local_sha:
-        return True, "A newer version is available on GitHub. Download?"
-    return False, "Local copy is up to date."
+    for zid in ZONE_IDS:
+        if (ZONES_CACHE_DIR / zid / "roads.json").exists():
+            return False, "Local cache present."
+    return True, "Road data not found locally. Download from GitHub?"
+
+
+def get_remote_sha():
+    """
+    Retired: there is no single roads.json SHA anymore (15+ files,
+    each with its own Contents-API SHA, handled inside github_sync).
+    Kept returning None so legacy callers read it as "unknown".
+    """
+    return None
+
+
+def get_local_sha():
+    """Retired with get_remote_sha(); always None in 1.9.0."""
+    return None
+
+
+def save_local_sha(sha):
+    """Retired with get_remote_sha(); a deliberate no-op in 1.9.0."""
+    return
 
 
 def download_roads(progress_callback=None):
     """
-    Download roads.json from GitHub to local cache.
-    progress_callback(downloaded_bytes, total_bytes) — called during download.
-    Returns True on success, False on failure.
-    Uses atomic write (temp file → rename) to avoid partial files.
+    Download-on-open via the Contents API (gamedata.download_game_
+    data — fresh connection, never a raw URL). On success the model
+    is adopted, cached locally, and True is returned. The optional
+    progress callback is invoked once per fetched file.
     """
-    ensure_data_dir()
-    try:
-        req = urllib.request.Request(
-            ROADS_URL,
-            headers={"User-Agent": "adamsville-map-editor-native"})
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            total = int(resp.headers.get("Content-Length", 0))
-            downloaded = 0
-            chunks = []
-            while True:
-                chunk = resp.read(65536)
-                if not chunk:
-                    break
-                chunks.append(chunk)
-                downloaded += len(chunk)
-                if progress_callback:
-                    progress_callback(downloaded, total)
-
-        # Atomic write: temp file then rename
-        tmp_path = ROADS_FILE.with_suffix(".tmp")
-        with open(tmp_path, "wb") as f:
-            for chunk in chunks:
-                f.write(chunk)
-        tmp_path.rename(ROADS_FILE)
-
-        # Save the new SHA
-        remote_sha = get_remote_sha()
-        if remote_sha:
-            save_local_sha(remote_sha)
-
-        return True
-    except Exception as e:
-        print(f"Download failed: {e}")
+    import github_sync as _sync
+    model, err = gamedata.download_game_data(_sync)
+    if model is None:
+        print(f"Download failed: {err}")
         return False
+    set_game_model(model)
+    ok, lerr = save_local_cache(model)
+    if not ok:
+        print(f"Download ok but local cache failed: {lerr}")
+        return False
+    if progress_callback:
+        progress_callback(1, 1)
+    return True
 
 
 def load_roads():
     """
-    Load roads from local cache.
-    Returns dict: {"interstate": [...], "highway": [...],
-                   "major_artery": [...], "minor_artery": [...], "local": [...]}
-    (Old files may still use "arterial"; callers should run
-    normalize_category() or migrate at load. See app._load_data.)
-    Each road: {"name": str, "pts": [[x, z], ...]}
+    The merged {category: [roads]} working copy from the live model
+    (or, before a model exists, from the local cache). Each road
+    carries its "_zone" attribution.
     """
-    with open(ROADS_FILE) as f:
-        return json.load(f)
+    if GAME_MODEL is not None:
+        return GAME_MODEL.merged_roads()
+    model = load_local_model()
+    if model is None:
+        raise FileNotFoundError("No local map data cached yet.")
+    set_game_model(model)
+    return model.merged_roads()
 
 
 # ---------------------------------------------------------------------------
-# Spatial index for fast viewport culling
+# Spatial index for fast viewport culling (unchanged from 1.8.x)
 # ---------------------------------------------------------------------------
 
 class SpatialIndex:
     """
     Grid-based spatial index for roads.
-    Divides the world into cells; each cell lists road indices that overlap it.
-    Query with a viewport rect to get candidate roads quickly.
+    Divides the world into cells; each cell lists road indices that
+    overlap it. Query with a viewport rect to get candidates quickly.
     """
 
     def __init__(self, cell_size=500):
-        """
-        cell_size: world units per grid cell.
-        500u gives ~16x24 = 384 cells for the 8000x12000 world.
-        """
+        """cell_size: world units per grid cell."""
         self.cell_size = cell_size
-        # (cx, cz) -> list of (category, road_index)
         self.cells = {}
-        # Flat list of all roads with precomputed bboxes
-        # Each entry: (category, road_dict, x0, z0, x1, z1)
         self.roads = []
 
     def _cell_range(self, x0, z0, x1, z1):
@@ -531,11 +650,8 @@ class SpatialIndex:
         zs = [p[1] for p in pts]
         x0, x1 = min(xs), max(xs)
         z0, z1 = min(zs), max(zs)
-
         idx = len(self.roads)
         self.roads.append((category, road, x0, z0, x1, z1))
-
-        # Add to all overlapping cells
         cx0, cz0, cx1, cz1 = self._cell_range(x0, z0, x1, z1)
         for cx in range(cx0, cx1 + 1):
             for cz in range(cz0, cz1 + 1):
@@ -546,8 +662,6 @@ class SpatialIndex:
 
     def build(self, roads_data):
         """Build the index from the loaded roads dict."""
-        # Legacy "arterial" roads are indexed under "minor_artery"
-        # (Joshua 2026-10-11) so old data keeps rendering.
         for category in CATEGORY_ORDER:
             for road in roads_data.get(category, []):
                 self.add_road(category, road)
@@ -568,7 +682,6 @@ class SpatialIndex:
                 for idx in self.cells.get((cx, cz), []):
                     if idx not in seen:
                         seen.add(idx)
-                        # Double-check bbox overlap (cell may over-cover)
                         _, _, rx0, rz0, rx1, rz1 = self.roads[idx]
                         if rx1 >= x0 and rx0 <= x1 and rz1 >= z0 and rz0 <= z1:
                             result.append(idx)
@@ -576,7 +689,7 @@ class SpatialIndex:
 
 
 # ---------------------------------------------------------------------------
-# Window state persistence
+# Window state persistence (unchanged from 1.8.x)
 # ---------------------------------------------------------------------------
 
 def save_window_state(x, y, width, height, maximized):
@@ -596,44 +709,29 @@ def load_window_state():
         return None
 
 
-
 # ---------------------------------------------------------------------------
-# Full-file export for GitHub push (Joshua 2026-10-11)
+# Full-file exports (kept for compatibility; the round trip in
+# gamedata.py is what actually pushes in 1.9.0)
 # ---------------------------------------------------------------------------
-# These build the complete file contents to push, merging the shipped
-# base data with Joshua's local edits.
 
 def export_full_roads():
     """
-    Build the complete roads.json content (base + local edits applied).
-    Returns the JSON as UTF-8 bytes, ready to push to GitHub.
+    The merged working copy as one compact JSON document.
+    (1.9.0 pushes PER-ZONE files via gamedata; this merged export is
+    kept only for diagnostics/legacy callers.)
     """
-    try:
-        with open(ROADS_FILE) as f:
-            roads = json.load(f)
-    except Exception:
-        roads = {"interstate": [], "highway": [], "major_artery": [],
-                 "minor_artery": [], "local": []}
-    # Migrate legacy "arterial" to "minor_artery" in the export so the
-    # pushed file always uses the current 5-category schema
-    # (Joshua 2026-10-11).
-    if "arterial" in roads:
-        legacy = roads.pop("arterial")
-        if isinstance(legacy, list) and legacy:
-            roads.setdefault("minor_artery", []).extend(legacy)
-    _base_sha, replaced = load_road_edits()
-    for cat, road_list in replaced.items():
-        if isinstance(road_list, list):
-            roads[cat] = road_list
-    return json.dumps(roads, indent=1).encode("utf-8")
+    if GAME_MODEL is None:
+        return b"{}"
+    merged = GAME_MODEL.merged_roads()
+    clean = {}
+    for cat, roads in merged.items():
+        clean[cat] = [{k: v for k, v in r.items()
+                       if not k.startswith("_")} for r in roads]
+    return gamedata.serialize_json_compact(clean)
 
 
 def export_full_zones():
-    """
-    Build the complete zones.json content (all zones with edits applied).
-    Returns the JSON as UTF-8 bytes, ready to push to GitHub.
-    ZONES already has edits and custom zones applied at import time.
-    """
+    """All canvas zones (with overlay edits applied) as JSON bytes."""
     out = []
     for z in ZONES:
         out.append({
@@ -645,52 +743,62 @@ def export_full_zones():
 
 
 # ---------------------------------------------------------------------------
-# Overpass persistence (Joshua 2026-10-11)
+# Overpass persistence (1.9.0: the game's detailed/overpasses.json)
 # ---------------------------------------------------------------------------
-# Overpasses are bridge structures that roads can link to. Stored in
-# overpasses.json in the map-editor repo. Local cache + shared suite
-# cache so the 3D viewers and terrain editor can read them.
+# The document is kept WHOLE ({"_note": ..., "overpasses": [...]}) so
+# the note and any unknown keys round-trip untouched; the editor edits
+# only the list. Locally the whole document is cached; a save pushes
+# it via the round trip only when it actually changed.
 
-# Local cache file for overpasses.
-OVERPASSES_FILE = DATA_DIR / "overpasses.json"
-# Shared suite cache (other apps read from here).
 SHARED_OVERPASSES_FILE = (Path.home() / ".local" / "share"
                           / "adamsville-suite" / "overpasses.json")
-# GitHub raw URL for overpasses.json.
-OVERPASSES_URL = (f"https://raw.githubusercontent.com/{REPO}"
-                  f"/main/overpasses.json")
 
 
 def load_overpasses():
     """
-    Load overpasses from local cache (shared suite cache first, then
-    app-local). Returns a list of overpass dicts. Empty list if none.
+    The overpass list from the live model (or the local cache before
+    a model exists). Empty list if none.
     """
-    for path in (SHARED_OVERPASSES_FILE, OVERPASSES_FILE):
-        try:
-            if path.exists():
-                doc = json.loads(path.read_text())
-                if isinstance(doc, list):
-                    return doc
-                if isinstance(doc, dict) and "overpasses" in doc:
-                    return doc["overpasses"]
-        except Exception:
-            continue  # corrupt — try the next location
+    if GAME_MODEL is not None:
+        return GAME_MODEL.overpass_doc.get("overpasses", [])
+    try:
+        if OVERPASSES_FILE.exists():
+            doc = json.loads(OVERPASSES_FILE.read_text())
+            if isinstance(doc, list):
+                return doc
+            if isinstance(doc, dict):
+                return doc.get("overpasses", [])
+    except Exception:
+        pass
     return []
 
 
 def save_overpasses(overpasses):
     """
-    Persist overpasses to both the app-local cache and the shared
-    suite cache so other apps (terrain editor, 3D viewers) can read
-    them without re-downloading.
+    Persist the overpass list locally (whole document preserved) and
+    into the live model, so the next round trip pushes
+    detailed/overpasses.json if it changed. Also mirrors to the
+    shared suite cache other apps read.
     """
     ensure_data_dir()
-    text = json.dumps({"overpasses": overpasses}, indent=2)
+    if GAME_MODEL is not None:
+        GAME_MODEL.overpass_doc["overpasses"] = overpasses
+        doc = GAME_MODEL.overpass_doc
+    else:
+        doc = {"overpasses": overpasses}
+        try:
+            if OVERPASSES_FILE.exists():
+                old = json.loads(OVERPASSES_FILE.read_text())
+                if isinstance(old, dict):
+                    doc = dict(old)
+                    doc["overpasses"] = overpasses
+        except Exception:
+            pass
+    text = json.dumps(doc, indent=2)
     try:
         OVERPASSES_FILE.write_text(text)
     except Exception:
-        pass  # non-fatal — shared cache is the important one
+        pass
     try:
         SHARED_OVERPASSES_FILE.parent.mkdir(parents=True, exist_ok=True)
         SHARED_OVERPASSES_FILE.write_text(text)
@@ -700,32 +808,30 @@ def save_overpasses(overpasses):
 
 def download_overpasses():
     """
-    Download overpasses.json from GitHub to local cache.
-    Returns True on success, False on failure (non-fatal — the app
-    works fine with an empty overpass list).
+    Retired as a separate flow in 1.9.0: overpasses download WITH the
+    rest of the game data on open (download_roads). Returns True when
+    a model with overpass data is already available.
     """
-    ensure_data_dir()
-    try:
-        req = urllib.request.Request(
-            OVERPASSES_URL,
-            headers={"User-Agent": "adamsville-map-editor-native"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            content = resp.read()
-        OVERPASSES_FILE.write_bytes(content)
-        try:
-            SHARED_OVERPASSES_FILE.parent.mkdir(parents=True,
-                                                exist_ok=True)
-            SHARED_OVERPASSES_FILE.write_bytes(content)
-        except Exception:
-            pass
-        return True
-    except Exception:
-        return False
+    return GAME_MODEL is not None
 
 
 def export_overpasses(overpasses):
     """
-    Build the overpasses.json content for pushing to GitHub.
-    Returns the JSON as UTF-8 bytes.
+    Build the detailed/overpasses.json bytes for a push: the whole
+    document (note preserved) with the given list inside it, compact
+    like the shipped game file.
     """
-    return json.dumps({"overpasses": overpasses}, indent=2).encode("utf-8")
+    doc = {"overpasses": overpasses}
+    if GAME_MODEL is not None:
+        doc = dict(GAME_MODEL.overpass_doc)
+        doc["overpasses"] = overpasses
+    else:
+        try:
+            if OVERPASSES_FILE.exists():
+                old = json.loads(OVERPASSES_FILE.read_text())
+                if isinstance(old, dict):
+                    doc = dict(old)
+                    doc["overpasses"] = overpasses
+        except Exception:
+            pass
+    return gamedata.serialize_json_compact(doc)
