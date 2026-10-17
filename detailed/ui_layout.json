@@ -137,8 +137,8 @@
       "type": "image",
       "visible": true,
       "width": 148,
-      "x": 14,
-      "y": 200,
+      "x": 8,
+      "y": 484,
       "description": "Small overhead map showing the player's location and nearby streets"
     },
     {
