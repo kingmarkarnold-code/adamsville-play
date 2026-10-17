@@ -12,7 +12,7 @@
       "visible": true,
       "width": 220,
       "x": 12,
-      "y": 10,
+      "y": 9,
       "description": "The game's title text shown at the top of the screen"
     },
     {
@@ -53,8 +53,8 @@
       "type": "button",
       "visible": true,
       "width": 44,
-      "x": 12,
-      "y": 160,
+      "x": 117,
+      "y": 72,
       "description": "Button that toggles background music on and off"
     },
     {
@@ -81,8 +81,8 @@
       "type": "label",
       "visible": true,
       "width": 300,
-      "x": 1163,
-      "y": 15,
+      "x": 502,
+      "y": 93,
       "description": "Shows the name of the street the player is currently on"
     },
     {
@@ -109,8 +109,8 @@
       "type": "button",
       "visible": true,
       "width": 52,
-      "x": 126,
-      "y": 8,
+      "x": 9,
+      "y": 17,
       "description": "Backpack icon that opens the player's inventory"
     },
     {
@@ -137,8 +137,8 @@
       "type": "image",
       "visible": true,
       "width": 148,
-      "x": 161,
-      "y": 329,
+      "x": 10,
+      "y": 103,
       "description": "Small overhead map showing the player's location and nearby streets"
     },
     {
@@ -165,8 +165,8 @@
       "type": "panel",
       "visible": true,
       "width": 90,
-      "x": 18,
-      "y": 236,
+      "x": 21,
+      "y": 324,
       "description": "Speedometer: shows how fast the player's vehicle is going"
     },
     {
@@ -207,8 +207,8 @@
       "type": "button",
       "visible": true,
       "width": 44,
-      "x": 16,
-      "y": 70,
+      "x": 13,
+      "y": 80,
       "description": "Button that toggles satellite/aerial view on the minimap"
     },
     {
@@ -221,8 +221,8 @@
       "type": "button",
       "visible": true,
       "width": 44,
-      "x": 16,
-      "y": 126,
+      "x": 67,
+      "y": 79,
       "description": "Button that opens GPS navigation to a destination"
     },
     {
@@ -235,8 +235,8 @@
       "type": "panel",
       "visible": true,
       "width": 1256,
-      "x": 12,
-      "y": 14,
+      "x": 10,
+      "y": 479,
       "description": "Speech bubble panel where NPC conversation text appears"
     },
     {
@@ -256,15 +256,15 @@
     {
       "anchor": "tl",
       "asset": null,
-      "height": 24,
+      "height": 35,
       "id": "rec-ind",
       "label": "\u25cf REC",
       "mobile_only": false,
       "type": "label",
       "visible": false,
-      "width": 80,
-      "x": 14,
-      "y": 12,
+      "width": 97,
+      "x": 245,
+      "y": 13,
       "description": "Recording indicator shown when gameplay is being recorded"
     },
     {
