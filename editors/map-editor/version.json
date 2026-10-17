@@ -1,6 +1,6 @@
 {
-  "version": "1.9.0",
-  "changelog": "Repointed to the game's converted zone files in adamsville-play: on open it downloads all 7 zones' roads + zone data from the game repo (Contents API); saves are one round trip (local save, push, close, fresh-connection proof download, view refresh) and write per-zone roads.json + roads.js twins only for zones that changed; geometry edits re-drape roads onto the game's ground (rename/category edits leave heights untouched); overpasses now save to the game's detailed/overpasses.json; zone boundary/custom zones persist as editor working data in editors/map-editor/.",
+  "version": "1.9.1",
+  "changelog": "Fixes download-on-open failing on the real map (the 'Could not download from GitHub' error): every file is now fetched on its own fresh connection with bounded retries on network errors; files over GitHub's 1 MB Contents-API inline limit (four zones' roads.json/roads.js) are fetched via the Git Blobs API instead of arriving empty; and the download error dialog now shows the real reason (file + GitHub's message) instead of only 'check your internet connection'.",
   "files": [
     {
       "path": "about.py",
@@ -10,22 +10,22 @@
     {
       "path": "app.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/app.py",
-      "sha256": "764df992484e063fdb90f3122322827c4d980b91b3f72bdaa7fc99e4c94dbfd6"
+      "sha256": "66284bbc6db2e039e9314cab0c552d7fb26db5274d1e0398d5d9eb200a9e1345"
     },
     {
       "path": "data.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/data.py",
-      "sha256": "560e23ad44f28dc4704b02d301773097000690cf84e60ac3cff39a5a0b0a5cf2"
+      "sha256": "b645fd33870cc0c87a4d7b54c7d3d2e63c318fe9f5e69a689dba06fe7e1ef357"
     },
     {
       "path": "gamedata.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/gamedata.py",
-      "sha256": "234ccd33eb522003a33419aa939ae81e3f668c3a8e738933c19838d44401ed96"
+      "sha256": "69d1c85f8aa7e4295406e87eaf022105ee8bef628dbed37f49280ed62a0ca568"
     },
     {
       "path": "github_sync.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/github_sync.py",
-      "sha256": "f18a2ef4c9223f9dabe37f1ef9afee9008775041cbb0cad3ad0218a54d76e060"
+      "sha256": "719ad6c31432a4019e5e90d866e7698c65f12c697c87988364a12db89d1b749a"
     },
     {
       "path": "ground.py",
