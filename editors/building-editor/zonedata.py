@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Adamsville Building Editor 1.6.1 — GAME ZONE DATA LAYER (new in 1.6.0).
+Adamsville Building Editor 1.7.0 — GAME ZONE DATA LAYER (new in 1.6.0).
 
 WHY THIS MODULE EXISTS
 ----------------------
@@ -60,7 +60,7 @@ VERSION CONVENTION (cache-busting)
 The game's cache keys off buildings.json "version" (mirrored into
 buildings.js as OSM_BLDG_VERSION), so ANY content change must change
 it. On save, a dirty zone's version becomes
-    "<YYYY.MM.DD>-building-editor-1.6.1-<zone>"
+    "<YYYY.MM.DD>-building-editor-1.7.0-<zone>"
 using the save date. realCount is rewritten to len(buildings).
 
 SAVE = ONE ROUND TRIP (Joshua's standing rule for ALL editors)
@@ -124,7 +124,7 @@ ZONES = ["adamsville", "downtown", "eastatlanta", "mableton",
 SUBDIVISIONS_REPO_PATH = "editors/building-editor/subdivisions.json"
 
 # This editor's version — stamped into zone version strings on save.
-EDITOR_VERSION = "1.6.1"
+EDITOR_VERSION = "1.7.0"
 
 # 1.6.1: attempts per file when the failure is a NETWORK error (a
 # dropped or refused connection) — every attempt runs on a brand-new
@@ -214,6 +214,168 @@ def point_in_polygon(x, z, polygon):
             if x < xin:
                 inside = not inside
     return inside
+
+
+# ---------------------------------------------------------------------------
+# Road proximity + building-front derivation (new in 1.7.0)
+# ---------------------------------------------------------------------------
+# Pure geometry only — NO Gtk imports here (the headless data harness
+# imports this module). These helpers feed the Zone Buildings tab's
+# visual inspector panel: which roads sit near a building, and which
+# side of the building is its front.
+
+
+def _point_segment_distance(p, a, b):
+    """
+    Distance from point p to the segment a-b (standard projection:
+    clamp the projection parameter to [0, 1], then measure to the
+    closest point on the segment). All points are [x, z] pairs.
+    A degenerate (zero-length) segment measures to its only point.
+    """
+    # Vector along the segment and from a to the point.
+    abx, abz = b[0] - a[0], b[1] - a[1]
+    apx, apz = p[0] - a[0], p[1] - a[1]
+    # Squared segment length; zero means a == b.
+    denom = abx * abx + abz * abz
+    if denom <= 0.0:
+        # Degenerate segment: the closest point is a itself.
+        return math.hypot(apx, apz)
+    # Projection parameter of p onto the segment, clamped to the
+    # segment's ends so we measure to the segment, not its line.
+    s = max(0.0, min(1.0, (apx * abx + apz * abz) / denom))
+    # Closest point on the segment, then the plain distance to it.
+    cx, cz = a[0] + s * abx, a[1] + s * abz
+    return math.hypot(p[0] - cx, p[1] - cz)
+
+
+def _distinct_ring_points(ring):
+    """
+    The ring's distinct vertices: converter rings repeat the first
+    point at the end to close the polygon, so drop that duplicate
+    (and any empty/short input simply yields what is usable).
+    """
+    # Copy so callers can never mutate the stored detail ring.
+    pts = [list(pt) for pt in (ring or []) if len(pt) >= 2]
+    # Drop the duplicated closing point when present.
+    if len(pts) > 1 and pts[0] == pts[-1]:
+        pts = pts[:-1]
+    return pts
+
+
+def nearby_road_segments(zd, ring, margin=60.0):
+    """
+    Roads near a footprint: a list of (name, pts) for every road
+    record in zd.roads that has at least one point inside the
+    ring's bounding box expanded by `margin` game units on all
+    sides. zd.roads is the parsed roads.json dict (category ->
+    [{name, pts, ys}, ...]) kept as a reference backdrop.
+    Returns [] when there is no roads data or no usable ring.
+    """
+    # No roads backdrop downloaded -> no context to return.
+    if not zd.roads:
+        return []
+    # No usable footprint -> no bounding box to test against.
+    pts = _distinct_ring_points(ring)
+    if not pts:
+        return []
+    # The ring bounding box, expanded by the margin.
+    xs = [pt[0] for pt in pts]
+    zs = [pt[1] for pt in pts]
+    x0, x1 = min(xs) - margin, max(xs) + margin
+    z0, z1 = min(zs) - margin, max(zs) + margin
+    out = []
+    # Walk every category's road records in file order.
+    for _category, records in zd.roads.items():
+        for rec in records or []:
+            road_pts = rec.get("pts") or []
+            # A road qualifies when ANY of its points falls inside
+            # the expanded box (cheap point test, good enough for a
+            # context backdrop — the front math below is exact).
+            if any(x0 <= pt[0] <= x1 and z0 <= pt[1] <= z1
+                   for pt in road_pts if len(pt) >= 2):
+                out.append((rec.get("name") or "Unnamed road",
+                            road_pts))
+    return out
+
+
+def _nearest_road_distance(zd, point):
+    """
+    (name, distance) of the road polyline segment nearest to
+    `point`, scanning every segment of every road in zd.roads.
+    Returns (None, None) when there are no usable road segments.
+    """
+    best_name, best_dist = None, None
+    # Scan all categories / records / consecutive point pairs.
+    for _category, records in (zd.roads or {}).items():
+        for rec in records or []:
+            pts = [pt for pt in (rec.get("pts") or []) if len(pt) >= 2]
+            for a, b in zip(pts, pts[1:]):
+                d = _point_segment_distance(point, a, b)
+                if best_dist is None or d < best_dist:
+                    best_name = rec.get("name") or "Unnamed road"
+                    best_dist = d
+    return best_name, best_dist
+
+
+def building_front(zd, index, flagged_entry=None):
+    """
+    Derive which side of zone building `index` is its FRONT.
+
+    DERIVATION (Joshua's standing QA rule): a building's front faces
+    the street — or its parking lot when it has one. Converted zone
+    data records no parking lots (only hero buildings carry
+    driveway/parking data, and heroes are listed separately in the
+    editor), so for zone buildings the front is derived as the
+    footprint edge NEAREST TO A ROAD: for each edge of the detail
+    ring, measure the distance from the edge's midpoint to the
+    nearest road polyline segment; the smallest distance wins.
+    This is a derivation, not recorded data — the inspector panel
+    says so in its footnote.
+
+    Returns a dict:
+      ring:           the detail ring (as stored, may be []),
+      edges:          [(p1, p2), ...] consecutive distinct pairs,
+      front_edge:     (p1, p2) of the winning edge, or None,
+      front_road:     name of the road that edge fronts, or None,
+      front_distance: that distance in game units, or None,
+      flagged_road:   the flagged entry's nearestRoad when a
+                      flagged entry is passed in, else None.
+    front_* are None when there are no roads or no usable ring.
+    """
+    # Pull the building's detail ring (guard a bad index plainly).
+    detail = zd.details[index] if 0 <= index < len(zd.details) else {}
+    ring = detail.get("ring") or []
+    # The flagged entry (when the caller has one) names the road
+    # the building was flagged against — reported alongside, never
+    # substituted for, the derived front road.
+    flagged_road = (flagged_entry or {}).get("nearestRoad")
+    # Build the edge list from distinct vertices, wrapping the last
+    # vertex back to the first so every side is a candidate.
+    pts = _distinct_ring_points(ring)
+    edges = []
+    if len(pts) >= 2:
+        for i in range(len(pts)):
+            p1, p2 = pts[i], pts[(i + 1) % len(pts)]
+            # Skip zero-length edges (duplicated vertices).
+            if p1 != p2:
+                edges.append((p1, p2))
+    result = {"ring": ring, "edges": edges, "front_edge": None,
+              "front_road": None, "front_distance": None,
+              "flagged_road": flagged_road}
+    # Without roads or edges there is nothing to derive from.
+    if not zd.roads or not edges:
+        return result
+    # Score every edge by its midpoint's distance to the nearest
+    # road segment; the smallest distance is the front.
+    for p1, p2 in edges:
+        mid = [(p1[0] + p2[0]) / 2.0, (p1[1] + p2[1]) / 2.0]
+        name, dist = _nearest_road_distance(zd, mid)
+        if dist is not None and (result["front_distance"] is None
+                                 or dist < result["front_distance"]):
+            result["front_edge"] = (p1, p2)
+            result["front_road"] = name
+            result["front_distance"] = dist
+    return result
 
 
 # ---------------------------------------------------------------------------
