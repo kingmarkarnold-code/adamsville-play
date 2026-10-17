@@ -11939,15 +11939,17 @@ window.addEventListener('keydown', function(e){
     var ab=document.getElementById('action-btn');
     if (ab && ab.style.display!=='none') ab.click();
   }
-  /* v1.43 DESKTOP DRIVING (expert report #1, Marcus Chen): WASD / arrow keys
-     drive the van on PC. Only active while driving so on-foot WASD movement
+  /* v1.43 DESKTOP DRIVING (expert report #1, Marcus Chen): WASD drives
+     the van on PC. Only active while driving so on-foot WASD movement
      (which reads the separate keys[] object) is unaffected. Space = handbrake.
-     preventDefault stops arrows/space from scrolling the page. */
+     v1.67 (Joshua 2026-10-17): the ARROW keys no longer drive -- they LOOK
+     (see the keyboard-look block below); WASD keeps the driving job alone.
+     preventDefault stops space from scrolling the page. */
   else if (car && car.driving){
-    if (k==='w'||k==='arrowup'){ drive.gas=true; e.preventDefault(); }
-    else if (k==='s'||k==='arrowdown'){ drive.brake=true; e.preventDefault(); }
-    else if (k==='a'||k==='arrowleft'){ drive.left=true; e.preventDefault(); }
-    else if (k==='d'||k==='arrowright'){ drive.right=true; e.preventDefault(); }
+    if (k==='w'){ drive.gas=true; e.preventDefault(); }
+    else if (k==='s'){ drive.brake=true; e.preventDefault(); }
+    else if (k==='a'){ drive.left=true; e.preventDefault(); }
+    else if (k==='d'){ drive.right=true; e.preventDefault(); }
     else if (k===' '){ drive.hb=true; e.preventDefault(); }
   }
   /* v1.21 NPC KILL SWITCH: Shift+N toggles all NPCs paused/resumed (diagnostic). */
@@ -11959,12 +11961,88 @@ window.addEventListener('keyup', function(e){
   var k=e.key.toLowerCase(); keys[k]=false;
   /* v1.43 DESKTOP DRIVING (expert report #1, Marcus Chen): release the driving
      key so the van stops accelerating/turning when the key is lifted. */
-  if (k==='w'||k==='arrowup') drive.gas=false;
-  else if (k==='s'||k==='arrowdown') drive.brake=false;
-  else if (k==='a'||k==='arrowleft') drive.left=false;
-  else if (k==='d'||k==='arrowright') drive.right=false;
+  if (k==='w') drive.gas=false;
+  else if (k==='s') drive.brake=false;
+  else if (k==='a') drive.left=false;
+  else if (k==='d') drive.right=false;
   else if (k===' ') drive.hb=false;
 });
+
+/* ============ v1.67 KEYBOARD LOOK (ARROWS) + ENTER = ACTION ============
+   Joshua 2026-10-17: on the laptop/desktop player the ARROW KEYS control
+   LOOKING (the view), and ENTER works the ACTION button.
+
+   LOOK: while an arrow is held, this block feeds window.LookInput.add()
+   every animation frame at the SAME rates the gamepad right stick uses
+   (yaw 2.4 rad/s, pitch 1.8 rad/s -- see gamepad_input.js LOOK_*_SPEED),
+   with the same sign conventions (Right = turn right, Down = pitch down,
+   so Up = look up). LookInput is the one shared look path -- mouse drag,
+   right stick and now arrows all rotate the same state, so behaviour is
+   identical on foot, indoors and while driving (driving look = yawOff).
+   CHANGE FROM v1.43: arrows used to gas/brake/steer while driving; per
+   Joshua's spec they look instead. WASD still drives (and walks), the
+   stick and touch controls are untouched.
+
+   ENTER: one press (auto-repeat ignored) clicks #action-btn when it is
+   on screen -- the exact pathway the game's own 'e' handler and the
+   gamepad Action mapping use, so Enter inherits every context action
+   (enter/exit car, doors, pick up, tow...) for free.
+
+   TYPING IS SACRED (same rule as keyboard_remap.js): events aimed at an
+   INPUT / TEXTAREA / SELECT / contentEditable -- the zone-unlock
+   password box is one -- are never touched, so typing a password or a
+   settings value can never swing the camera or fire the action. Arrow
+   presses are preventDefaulted so the page never scrolls under play. */
+(function keyboardLook(){
+  var YAW_SPEED = 2.4, PITCH_SPEED = 1.8;   // rad/s -- match the right stick
+  var held = {};                            // arrow key name -> true while held
+  function typingTarget(e){
+    var t = e && e.target;
+    if (!t) return false;
+    var tag = (t.tagName || '').toUpperCase();
+    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || !!t.isContentEditable;
+  }
+  window.addEventListener('keydown', function(e){
+    if (typingTarget(e)) return;
+    var k = (e.key || '').toLowerCase();
+    if (k === 'enter'){
+      if (e.repeat) return;               // one action per physical press
+      var ab = document.getElementById('action-btn');
+      if (ab && ab.style.display !== 'none'){ ab.click(); e.preventDefault(); }
+      return;
+    }
+    if (k === 'arrowleft' || k === 'arrowright' || k === 'arrowup' || k === 'arrowdown'){
+      held[k] = true;
+      e.preventDefault();                 // never scroll the page mid-game
+    }
+  });
+  window.addEventListener('keyup', function(e){
+    var k = (e.key || '').toLowerCase();
+    if (held[k]) held[k] = false;
+  });
+  window.addEventListener('blur', function(){ held = {}; });  // no stuck look if focus leaves
+  /* Per-frame feed: held arrows become a steady LookInput delta, exactly
+     like the gamepad poll. dt is clamped so a backgrounded tab cannot
+     whip the camera on return. */
+  var lastTs = 0;
+  function tick(ts){
+    requestAnimationFrame(tick);
+    var dt = 1 / 60;
+    if (typeof ts === 'number' && isFinite(ts)){
+      if (lastTs > 0){ dt = (ts - lastTs) / 1000; if (dt < 0) dt = 0; if (dt > 0.1) dt = 0.1; }
+      lastTs = ts;
+    }
+    var dYaw = 0, dPitch = 0;
+    if (held['arrowleft'])  dYaw   -= YAW_SPEED * dt;
+    if (held['arrowright']) dYaw   += YAW_SPEED * dt;
+    if (held['arrowup'])    dPitch -= PITCH_SPEED * dt;   // add() pitches down on +, so up key is -
+    if (held['arrowdown'])  dPitch += PITCH_SPEED * dt;
+    if ((dYaw || dPitch) && window.LookInput && typeof window.LookInput.add === 'function'){
+      try { window.LookInput.add(dYaw, dPitch); } catch(e){}
+    }
+  }
+  requestAnimationFrame(tick);
+})();
 
 // init camera behind player
 (function(){
