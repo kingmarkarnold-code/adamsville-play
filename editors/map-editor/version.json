@@ -1,6 +1,6 @@
 {
-  "version": "1.9.2",
-  "changelog": "Fixes the Zones menu jumping to the wrong zone (choosing Adamsville landed on Downtown, Mableton on Adamsville): the menu is now rebuilt every time game data loads \u2014 it previously kept the pre-download zone order while the loaded data had been rebuilt in game order, so each entry's position pointed at a different zone \u2014 and a menu entry now resolves by the zone name it displays, so a stale position can never send you to a different zone. A stale zone selection is also cleared on reload.",
+  "version": "1.9.3",
+  "changelog": "Packaging fix only \u2014 the editor's code is identical to 1.9.2. The 1.9.2 installer package itself was built with restrictive file permissions (app files readable only by root's group, the menu entry unreadable, the launcher not executable for a normal user), so on a regular account the Map Editor vanished from the menu and could not start. This package is rebuilt with standard permissions (folders 755, files 644, launcher 755, owner root) and the build now runs a permissions check that fails the package if they are ever wrong again.",
   "files": [
     {
       "path": "about.py",
@@ -10,17 +10,17 @@
     {
       "path": "app.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/app.py",
-      "sha256": "59a3190b3178c572d37ab7a3dea05c0ad613074a9daf0a35754eced069ca950c"
+      "sha256": "0d3898e251402229bf40f54fca6683935c8d5ae6188a23931ad584a3ddeaa63d"
     },
     {
       "path": "data.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/data.py",
-      "sha256": "5a4f2423eb587b8218db533d430323eddf28fcac3069a046c491a41b8eb0c25b"
+      "sha256": "cbbf4731f409fb074293005d78b89097085280c090547eef89a86f9b2df5d898"
     },
     {
       "path": "gamedata.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/gamedata.py",
-      "sha256": "247f58e9362ae94acca21ddf38350157988caa7bd662ad17ddbd7a964bb8addc"
+      "sha256": "eb30b01dfdd91dd42bdb88a0fbd8925c9b5168526157c672fae2ab9b186cc4e2"
     },
     {
       "path": "github_sync.py",
