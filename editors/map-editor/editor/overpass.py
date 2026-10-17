@@ -42,9 +42,14 @@ except ImportError:
 # Constants
 # ---------------------------------------------------------------------------
 
-# GitHub repo containing the map data (overpasses live alongside roads).
-REPO = "kingmarkarnold-code/adamsville-map-editor"
-OVERPASSES_URL = f"https://raw.githubusercontent.com/{REPO}/main/overpasses.json"
+# 1.9.0 REPOINT: overpasses live in the GAME's repo, at the path the
+# game loads at startup — detailed/overpasses.json in
+# kingmarkarnold-code/adamsville-play. Downloads/pushes go through
+# data.py + gamedata.py (Contents API, round-trip save); there is no
+# raw-URL download anymore (raw serves stale bytes). The constants
+# below are kept for reference by legacy callers.
+REPO = "kingmarkarnold-code/adamsville-play"
+OVERPASSES_REPO_PATH = "detailed/overpasses.json"
 
 # Local data directory (XDG-compliant, same as the map editor).
 DATA_DIR = Path.home() / ".local" / "share" / "adamsville-map-editor-native"
@@ -118,33 +123,24 @@ def save_overpasses(overpasses):
 
 def export_overpasses(overpasses):
     """
-    Build the JSON bytes for pushing overpasses.json to GitHub.
-    Returns bytes ready for the Contents API.
+    Build the detailed/overpasses.json bytes for a push: the WHOLE
+    game document (its "_note" and any unknown keys preserved) with
+    the given list inside — delegated to data.py (1.9.0).
     """
-    return json.dumps({"overpasses": overpasses}, indent=2).encode("utf-8")
+    import data as _data
+    return _data.export_overpasses(overpasses)
 
 
 def download_overpasses():
     """
-    Download overpasses.json from GitHub to local cache.
-    Returns True on success, False on failure (non-fatal).
+    Download overpasses from GitHub (1.9.0: as part of the whole
+    game-data download-on-open via data.download_roads — Contents
+    API, never a raw URL). Returns True on success, False on
+    failure (non-fatal).
     """
-    _ensure_data_dir()
     try:
-        import urllib.request
-        req = urllib.request.Request(
-            OVERPASSES_URL,
-            headers={"User-Agent": "adamsville-map-editor-native"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            content = resp.read()
-        OVERPASSES_FILE.write_bytes(content)
-        # Also populate the shared cache.
-        try:
-            SHARED_DIR.mkdir(parents=True, exist_ok=True)
-            SHARED_OVERPASSES.write_bytes(content)
-        except Exception:
-            pass
-        return True
+        import data as _data
+        return _data.download_roads()
     except Exception:
         return False
 
