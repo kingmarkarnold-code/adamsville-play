@@ -1,56 +1,56 @@
 {
-  "version": "1.6.1",
-  "changelog": "Two fixes. (1) Download-on-open could never finish: zone building files over 1 MB (riverdale, southfulton and others) come back EMPTY from GitHub's file API, and the editor tried to load the empty reply. Large files are now fetched through GitHub's blob API by their fingerprint, every file downloads on its own fresh connection with retries on network errors, and a failure now shows the real reason (which file, and GitHub's own message) instead of only 'check your connection'. Verified live from a clean machine state with no key: all 7 zones, 166,444 buildings. (2) Packaging: the 1.6.0 installer was built with restrictive file permissions (launcher 'permission denied', invisible menu entry); rebuilt with standard permissions (folders 755, files 644, launcher 755, owner root) plus a build-time permissions check so it cannot ship that way again.",
-  "files": [
-    {
-      "path": "about.py",
-      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/about.py",
-      "sha256": "0b172aa3a3e94c80136473f95f42cef62f26927cfb9a8644f9aa14a4b3463140"
-    },
-    {
-      "path": "app.py",
-      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/app.py",
-      "sha256": "9bd90f03e97462e98208c6d5dc0ebf00fa930ec7592e5c6998983524ebd1c837"
-    },
-    {
-      "path": "buildingcanvas.py",
-      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/buildingcanvas.py",
-      "sha256": "0449c5d56102d8ce2a87c6f2cec5e5e64dd4af8e58f23367970ea8ddd849e3e4"
-    },
-    {
-      "path": "data.py",
-      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/data.py",
-      "sha256": "8e68a5d177bdc32f2e6c43e402e9f3b41eb510477bb3538cb559e3ce7ffca231"
-    },
-    {
-      "path": "flagged_buildings.json",
-      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/flagged_buildings.json",
-      "sha256": "474648618cfbb6a65c51774064150126782b0807a881c316bab4ee3b1ae1b9ab"
-    },
-    {
-      "path": "github_sync.py",
-      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/github_sync.py",
-      "sha256": "4c2e4ba405a55d5d88c66a9ac8db3322a3637b5b2c43a307e9191f8c7bdc599a"
-    },
-    {
-      "path": "mollie-icon.png",
-      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/mollie-icon.png",
-      "sha256": "28990027fd79e03e2ef8416e8c1d3410ee284ec86383280968b245f08576e768"
-    },
-    {
-      "path": "subdivisioncanvas.py",
-      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/subdivisioncanvas.py",
-      "sha256": "d76123adcee302159e2316fdeedadb3b3dfee5c0ea6482a0000b4067017a5340"
-    },
-    {
-      "path": "updater.py",
-      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/updater.py",
-      "sha256": "0c36b000830e5661165ac9f636466cd6d8402bab410bcab7da10b3e1e13e3a92"
-    },
-    {
-      "path": "zonedata.py",
-      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/zonedata.py",
-      "sha256": "06befaeb2fff39396ef17daefc0de9882224858b3c0fa0069958ebcb9809689c"
-    }
-  ]
+ "version": "1.7.0",
+ "changelog": "Tabs fixed, and the Zone Buildings tab can now show you the building. (1) Opening a building crashed silently \u2014 every building tab died before it appeared; that is fixed, and if a tab ever fails to open again the editor now says why in the status bar instead of hiding it. Opened tabs also come to the front properly, and closing a tab from the menu can no longer close the wrong tab. (2) The Open Building picker is now a two-pane browser: pick a subcategory on the left (residential, commercial, multi-unit/institutional, other, or walkable/enterable buildings), then the building on the right. (3) The Zone Buildings list gains a category filter, including a 'Flagged only' view. (4) Clicking a building in the Zone Buildings list now opens a visual side panel in a split view \u2014 the data stays on screen and editable on the left \u2014 showing the building as a 3D model standing in its real location with its roads around it. The view starts facing the building's front, never rotates on its own, and you drag it to look around; the front wall is always orange so you can tell which way is front, and the panel names the road the front faces (and, for flagged buildings, the road it was flagged against).",
+ "files": [
+  {
+   "path": "about.py",
+   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/about.py",
+   "sha256": "0b172aa3a3e94c80136473f95f42cef62f26927cfb9a8644f9aa14a4b3463140"
+  },
+  {
+   "path": "app.py",
+   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/app.py",
+   "sha256": "87445b07ccaf2e87b15cb9a773de37bd95c3d012ea1b13bddfe077add6a12cef"
+  },
+  {
+   "path": "buildingcanvas.py",
+   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/buildingcanvas.py",
+   "sha256": "63ff24720818a7ff990651d539641cb893a132775af56ac6fcfacf666d0a4add"
+  },
+  {
+   "path": "data.py",
+   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/data.py",
+   "sha256": "8e68a5d177bdc32f2e6c43e402e9f3b41eb510477bb3538cb559e3ce7ffca231"
+  },
+  {
+   "path": "flagged_buildings.json",
+   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/flagged_buildings.json",
+   "sha256": "474648618cfbb6a65c51774064150126782b0807a881c316bab4ee3b1ae1b9ab"
+  },
+  {
+   "path": "github_sync.py",
+   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/github_sync.py",
+   "sha256": "4c2e4ba405a55d5d88c66a9ac8db3322a3637b5b2c43a307e9191f8c7bdc599a"
+  },
+  {
+   "path": "mollie-icon.png",
+   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/mollie-icon.png",
+   "sha256": "28990027fd79e03e2ef8416e8c1d3410ee284ec86383280968b245f08576e768"
+  },
+  {
+   "path": "subdivisioncanvas.py",
+   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/subdivisioncanvas.py",
+   "sha256": "d76123adcee302159e2316fdeedadb3b3dfee5c0ea6482a0000b4067017a5340"
+  },
+  {
+   "path": "updater.py",
+   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/updater.py",
+   "sha256": "0c36b000830e5661165ac9f636466cd6d8402bab410bcab7da10b3e1e13e3a92"
+  },
+  {
+   "path": "zonedata.py",
+   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/zonedata.py",
+   "sha256": "a40acedc3a724ac0eeda51495d0d909107edb4d907560d19fcf27debe4822d9c"
+  }
+ ]
 }
