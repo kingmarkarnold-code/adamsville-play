@@ -1,6 +1,6 @@
 {
-  "version": "1.9.3",
-  "changelog": "Packaging fix only \u2014 the editor's code is identical to 1.9.2. The 1.9.2 installer package itself was built with restrictive file permissions (app files readable only by root's group, the menu entry unreadable, the launcher not executable for a normal user), so on a regular account the Map Editor vanished from the menu and could not start. This package is rebuilt with standard permissions (folders 755, files 644, launcher 755, owner root) and the build now runs a permissions check that fails the package if they are ever wrong again.",
+  "version": "1.9.4",
+  "changelog": "Save-race fixes. (1) Push, the 5-minute auto-push, and the Settings key-saved callback could start two round-trip saves at once; their reads and writes interleaved and GitHub refused the loser with a '…is at X but expected Y' mismatch — the save that failed on 2026-10-16. Now only one save trip runs at a time; extra triggers fold into at most one follow-up trip, and only when the map actually changed during the push. (2) If a push is refused because the file changed between the editor's read and its write (any writer can cause that, not just this app), the editor re-reads the file's current fingerprint once and retries once with the same content. (3) Reopening the editor no longer overwrites locally saved-but-unpushed edits with the fresh download: if this computer holds unpublished changes, the editor loads those, says so in plain language, and keeps them pushable.",
   "files": [
     {
       "path": "about.py",
@@ -10,22 +10,22 @@
     {
       "path": "app.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/app.py",
-      "sha256": "0d3898e251402229bf40f54fca6683935c8d5ae6188a23931ad584a3ddeaa63d"
+      "sha256": "9841ec0a4d27404108e37069c2f5c7d7db3d9c51bee0d598949128a0f80a1617"
     },
     {
       "path": "data.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/data.py",
-      "sha256": "cbbf4731f409fb074293005d78b89097085280c090547eef89a86f9b2df5d898"
+      "sha256": "6829d22d73e8789c59a332d33cc88c3aa97e9528f28cbee0bec767f600cb8f27"
     },
     {
       "path": "gamedata.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/gamedata.py",
-      "sha256": "eb30b01dfdd91dd42bdb88a0fbd8925c9b5168526157c672fae2ab9b186cc4e2"
+      "sha256": "4bf5817dcad540895996924215e6e24b0a6513f4922e00cdf1a7ec8842a87bb1"
     },
     {
       "path": "github_sync.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/github_sync.py",
-      "sha256": "719ad6c31432a4019e5e90d866e7698c65f12c697c87988364a12db89d1b749a"
+      "sha256": "00727441d1d9d66d0fd17d774aae47a6b94063e67f2e379f668a313cc333cc9e"
     },
     {
       "path": "ground.py",
