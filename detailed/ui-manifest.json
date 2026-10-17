@@ -100,9 +100,9 @@
   },
   {
    "name": "index.html",
-   "size": 957625,
-   "sha256": "c86c54a04ab2738ea54ebd5bef7401c16fb4211162f211ed173275b569d6f9db",
-   "hash": "c86c54a04ab2738ea54ebd5bef7401c16fb4211162f211ed173275b569d6f9db"
+   "size": 961025,
+   "sha256": "4384965fd320e4c3ffbb75f1145c3d82fc3a394307cee1c02ebe7b02ab55cc96",
+   "hash": "4384965fd320e4c3ffbb75f1145c3d82fc3a394307cee1c02ebe7b02ab55cc96"
   },
   {
    "name": "infracrew_system.js",
@@ -453,6 +453,6 @@
    "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/collision_material.js"
   }
  ],
- "ui_version": "2026.10.16.202",
- "version": "2026.10.16.202"
+ "ui_version": "2026.10.16.203",
+ "version": "2026.10.16.203"
 }
