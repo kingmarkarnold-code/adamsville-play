@@ -35,8 +35,14 @@ except ImportError:
 # Constants
 # ---------------------------------------------------------------------------
 
-# GitHub repo containing the building asset data
-REPO = "kingmarkarnold-code/adamsville-map-editor"
+# GitHub repo containing the building asset data.
+# v1.6.0 REPOINT (Joshua's one-repo decision, 2026-10-16): the game's
+# own repo is the single source of truth. The AUTHORITATIVE building
+# data path is zonedata.py (per-zone Contents-API downloads from
+# detailed/zones/<zone>/); the constants below only serve this
+# module's legacy backdrop helpers (roads/zones for the subdivision
+# map), which now read the adamsville zone files from the same repo.
+REPO = "kingmarkarnold-code/adamsville-play"
 # Raw URL for buildings.json — the single data file the app downloads
 BUILDINGS_URL = f"https://raw.githubusercontent.com/{REPO}/main/buildings.json"
 # GitHub API URL for version checking (returns blob SHA)
@@ -247,20 +253,24 @@ def garage_space_ok(building):
 
 # Subdivision data: areas of the map where houses of one style spawn.
 # Raw URL for subdivisions.json in the map editor repo.
-SUBDIVISIONS_URL = f"https://raw.githubusercontent.com/{REPO}/main/subdivisions.json"
-SUB_API_URL = f"https://api.github.com/repos/{REPO}/contents/subdivisions.json"
+# v1.6.0: subdivisions are editor working data inside the ONE repo,
+# at editors/building-editor/subdivisions.json, saved through the
+# zonedata round trip. These URLs remain only for the legacy local
+# cache helpers below.
+SUBDIVISIONS_URL = f"https://raw.githubusercontent.com/{REPO}/main/editors/building-editor/subdivisions.json"
+SUB_API_URL = f"https://api.github.com/repos/{REPO}/contents/editors/building-editor/subdivisions.json"
 # Local cache + version tracking for subdivisions
 SUBDIVISIONS_FILE = DATA_DIR / "subdivisions.json"
 SUB_VERSION_FILE = DATA_DIR / "subdivisions_version.json"
 
 # Zone reference data (drawn on the subdivision map as a guide).
 # Raw URL for zones.json in the map editor repo.
-ZONES_URL = f"https://raw.githubusercontent.com/{REPO}/main/zones.json"
-ZONES_API_URL = f"https://api.github.com/repos/{REPO}/contents/zones.json"
+ZONES_URL = f"https://raw.githubusercontent.com/{REPO}/main/detailed/zones/adamsville/zone.json"
+ZONES_API_URL = f"https://api.github.com/repos/{REPO}/contents/detailed/zones/adamsville/zone.json"
 ZONES_FILE = DATA_DIR / "zones.json"
 
 # Road data for the nearby-roads context + collision checks.
-ROADS_API_URL = f"https://api.github.com/repos/{REPO}/contents/roads.json"
+ROADS_API_URL = f"https://api.github.com/repos/{REPO}/contents/detailed/zones/adamsville/roads.json"
 
 
 # ---------------------------------------------------------------------------
@@ -389,7 +399,7 @@ WORLD_X1, WORLD_Z1 = 8200.0, 12200.0
 # ---------------------------------------------------------------------------
 # Roads come from the map editor repo's roads.json:
 # {"highway": [{"name", "pts": [[x,z],...]}], "arterial": [...], "local": [...]}
-ROADS_URL = f"https://raw.githubusercontent.com/{REPO}/main/roads.json"
+ROADS_URL = f"https://raw.githubusercontent.com/{REPO}/main/detailed/zones/adamsville/roads.json"
 ROADS_FILE = DATA_DIR / "roads.json"
 # Road ribbon widths in world units (same as the map editor)
 ROAD_WIDTHS = {"highway": 24.0, "arterial": 16.0, "local": 10.0}
@@ -421,6 +431,10 @@ def load_roads():
         for cat in raw:
             if isinstance(data.get(cat), list):
                 raw[cat] = data[cat]
+        # v1.6.0: game roads.json splits arterials into major/minor.
+        for cat in ("major_artery", "minor_artery"):
+            if isinstance(data.get(cat), list):
+                raw["arterial"] = raw["arterial"] + data[cat]
     except Exception as e:
         print(f"Roads load failed: {e}")
     return raw
@@ -766,7 +780,16 @@ def needs_download():
     """
     Check if we need to download buildings.json.
     Returns (needed: bool, reason: str).
+
+    v1.6.0: the legacy buildings.json remote (retired map-editor
+    repo) no longer exists — game building data is downloaded by
+    zonedata.GameStore.download_on_open into the Zone Buildings
+    tab. The legacy detailed-asset set below is LOCAL-ONLY now
+    (local cache or built-in defaults), so no download is ever
+    "needed" here.
     """
+    return False, ("v1.6.0: game building data loads in the Zone "
+                   "Buildings tab; legacy samples are local-only.")
     if not BUILDINGS_FILE.exists():
         return True, "Building data not found locally. Download from GitHub?"
     local_sha = get_local_sha()
@@ -787,7 +810,15 @@ def download_buildings(progress_callback=None):
     progress_callback(downloaded_bytes, total_bytes) — called during download.
     Returns True on success, False on failure.
     Uses atomic write (temp file → rename) to avoid partial files.
+
+    v1.6.0: RETIRED — the remote this fetched (map-editor repo
+    buildings.json) is gone with the one-repo move; game data flows
+    through zonedata instead. Kept as a soft-failing stub so the
+    File -> Download menu item reports honestly instead of fetching
+    a dead URL.
     """
+    print("download_buildings retired in v1.6.0 (see zonedata.py)")
+    return False
     ensure_data_dir()
     try:
         req = urllib.request.Request(
