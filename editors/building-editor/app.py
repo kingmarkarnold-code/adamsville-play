@@ -58,7 +58,7 @@ from subdivisioncanvas import SubdivisionCanvas
 
 # App version shown in the Help -> About dialog (bump with each release).
 # Joshua 2026-10-11: version number must be prominent in About.
-APP_VERSION = "1.6.0"
+APP_VERSION = "1.6.1"
 # Display name and icon-theme name for the About dialog.
 APP_NAME = "Adamsville Building Editor"
 APP_ICON = "adamsville-building-editor-native"
@@ -244,10 +244,15 @@ class AssetEditorWindow(Gtk.Window):
     def _load_zone_data(self):
         """
         Download-on-open for the GAME's building files (Joshua's
-        standing rule): one fresh GitHub connection fetches every
-        zone's buildings/detail/hero/zone/roads files plus the
-        editor subdivisions file from adamsville-play, then the
-        connection is closed. Runs on a worker thread; the Zone
+        standing rule): every zone's buildings/detail/hero/zone/
+        roads files plus the editor subdivisions file are fetched
+        from adamsville-play. 1.6.1: NO single pinned connection —
+        each file is fetched on its own fresh connection (opened
+        and closed by github_sync per request, with bounded retries
+        on network errors inside zonedata.download_on_open), the
+        design that fixed the Map Editor's download-on-open; one
+        shared keep-alive connection could die mid-download and
+        take every zone with it. Runs on a worker thread; the Zone
         Buildings tab is added on the GTK thread when it lands.
         """
         if not _ZONEDATA_AVAILABLE:
@@ -257,15 +262,12 @@ class AssetEditorWindow(Gtk.Window):
 
         def worker():
             store = zonedata.GameStore()
-            conn = github_sync.open_connection()
             try:
-                def fetch(repo, path, conn=conn):
-                    return github_sync.fetch_file(repo, path, conn=conn)
-                errors = store.download_on_open(fetch)
+                # No conn= kwarg: github_sync.fetch_file runs each
+                # request on its own fresh one-shot connection.
+                errors = store.download_on_open(github_sync.fetch_file)
             except Exception as e:
                 errors = {"all zones": str(e)}
-            finally:
-                conn.close()
 
             def done():
                 self.zone_store = store
@@ -275,9 +277,16 @@ class AssetEditorWindow(Gtk.Window):
                 self.zone_tab.show_all()
                 loaded = len(store.zones)
                 if errors:
+                    # 1.6.1: surface the REAL failure — each error
+                    # names the repo path and GitHub's own message
+                    # (zonedata records "<path>: <reason>") — never
+                    # a bare "check your connection".
+                    detail = "; ".join(
+                        f"{zone} — {errors[zone]}"
+                        for zone in sorted(errors))
                     self._set_status(
-                        f"Zone data: {loaded} zones loaded; failed: "
-                        + ", ".join(sorted(errors)))
+                        f"Zone data: {loaded} zones loaded; "
+                        f"failed: {detail}")
                 else:
                     total = sum(len(z.boxes) for z in store.zones.values())
                     self._set_status(
