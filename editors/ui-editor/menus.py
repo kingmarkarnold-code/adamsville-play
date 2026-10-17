@@ -15,7 +15,15 @@ at startup via menu_layout_apply.js) and lets Joshua:
   * move items between groups ("Move to Group"),
   * rename / delete groups (deleting returns items to the ungrouped list),
   * toggle item visibility,
-  * save the menu layout, which stages menu_layout.json for the next push.
+  * choose whether a group STARTS EXPANDED or COLLAPSED the first
+    time its menu is shown in the game (v1.7.8 feature, Joshua
+    2026-10-16) — stored as "start": "expanded"/"collapsed" on the
+    group, written only when set; the game's menu_layout_apply.js
+    honors it, and groups without it behave exactly as before,
+  * save the menu layout — one action (v1.7.7 GLOBAL SAVE PROTOCOL,
+    Joshua 2026-10-16): save locally, push to GitHub, then reload
+    the GitHub copy and show that, so a successful save is visible
+    proof the push landed.
 
 Document shape (see data.py):
   {"menus": {menu_key: {"title", "description",
@@ -23,6 +31,7 @@ Document shape (see data.py):
                         "ungrouped": [...]}},
    "version": N}
   Item: {"id", "label", "description", "action", "visible"}
+  Group (optional key): {"start": "expanded" | "collapsed"}
 
 Pure Python + GTK3. NO webview, NO HTML, NO JavaScript.
 
@@ -37,13 +46,25 @@ from gi.repository import Gtk, Gdk
 
 from data import (
     download_menu_layout, load_menu_layout, validate_menu_doc,
-    stage_content,
+    stage_content, staged_bytes,
 )
 
 # TreeStore columns: (display text, row kind, payload)
 # Row kinds: "menu" (menu key), "grouphdr" (section header, not selectable
 # for editing), "group" (group dict), "item" (item dict).
 _COL_TEXT, _COL_KIND, _COL_REF = 0, 1, 2
+
+# v1.7.8 (Joshua 2026-10-16): per-group START STATE. The field name
+# stored in menu_layout.json and the two values the game understands.
+# The key is written ONLY when Joshua makes a choice — a group
+# without it serializes exactly as it did before this feature, and
+# the game treats a missing key as today's behavior.
+START_FIELD = "start"
+START_EXPANDED = "expanded"
+START_COLLAPSED = "collapsed"
+# Combo entries in the properties panel, in order; index 0 = unset.
+_START_CHOICES = ("Default (no setting saved)",
+                  "Starts expanded", "Starts collapsed")
 
 
 class MenuTab:
@@ -69,20 +90,67 @@ class MenuTab:
     # -- data loading ------------------------------------------------------
 
     def _load_initial(self):
-        """Load the menu layout: download fresh, fall back to cache."""
+        """
+        Load the menu layout for display.
+
+        v1.7.7 (Joshua 2026-10-16): download_menu_layout() now
+        fetches via the Contents API, so the tab opens on the repo's
+        CURRENT menus. ONE exception: a staged copy that differs
+        from the repo is Joshua's own unsaved work (in 1.7.6 a save
+        only staged the file, the push never included it, and this
+        loader then re-downloaded over it — his edits vanished from
+        view). A differing staged copy is shown instead, with the
+        status bar saying so; Save pushes it for real.
+        """
         # Try a fresh download first so Joshua always sees the latest.
         try:
             download_menu_layout()
         except Exception:
             pass  # offline — the cache load below still works
         self.doc = validate_menu_doc(load_menu_layout())
-        if self.doc and self.doc.get("menus"):
+        # Unsaved-work guard: a differing staged copy wins, loudly.
+        self._staged_pending = False
+        staged = staged_bytes("menu_layout.json")
+        if staged is not None:
+            try:
+                staged_doc = validate_menu_doc(
+                    json.loads(staged.decode("utf-8")))
+            except Exception:
+                staged_doc = None
+            if staged_doc is not None and staged_doc != self.doc:
+                self.doc = staged_doc
+                self._staged_pending = True
+                self._dirty = True
+        if self._staged_pending:
+            self.app.set_status(
+                "Showing your unsaved local menus — Save Menus "
+                "pushes them to GitHub")
+        elif self.doc and self.doc.get("menus"):
             self.app.set_status(
                 f"Loaded {len(self.doc['menus'])} menus.")
         else:
             self.app.set_status(
                 "No menu data yet — it downloads from GitHub on first run.")
         self.refresh_all()
+
+    def apply_github_menus(self, raw_bytes):
+        """
+        v1.7.7: replace the displayed menus with the exact bytes
+        just re-downloaded from GitHub (step 3 of the save protocol —
+        the user sees the GitHub copy, which is the proof the push
+        landed). Called by the app after a successful round trip.
+        """
+        try:
+            doc = json.loads(raw_bytes.decode("utf-8"))
+            if not isinstance(doc.get("menus"), dict):
+                return False
+        except Exception:
+            return False
+        self.doc = validate_menu_doc(doc)
+        self._staged_pending = False
+        self._dirty = False
+        self.refresh_all()
+        return True
 
     # -- UI construction ----------------------------------------------------
 
@@ -141,7 +209,8 @@ class MenuTab:
 
         self.btn_save = Gtk.Button(label="Save Menus")
         self.btn_save.set_tooltip_text(
-            "Save menu changes — stages menu_layout.json for the next push")
+            "Save menus: saves here, pushes to GitHub, then reloads "
+            "the GitHub copy so you can see it landed")
         self.btn_save.connect("clicked", self.on_save)
         toolbar.pack_start(self.btn_save, False, False, 0)
 
@@ -265,6 +334,27 @@ class MenuTab:
         self.visible_check.connect("toggled", self.on_visible_toggled)
         right_box.pack_start(self.visible_check, False, False, 0)
 
+        # Start state (v1.7.8 — groups only): whether the group starts
+        # expanded or collapsed the first time its menu is shown in
+        # the game. "Default" saves NOTHING on the group, so menus
+        # Joshua never touches keep serializing exactly as before.
+        start_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
+                            spacing=2)
+        start_header = Gtk.Label()
+        start_header.set_markup("<b>Group start state</b>")
+        start_header.set_halign(Gtk.Align.START)
+        start_box.pack_start(start_header, False, False, 0)
+        self.start_combo = Gtk.ComboBoxText()
+        for choice in _START_CHOICES:
+            self.start_combo.append_text(choice)
+        self.start_combo.set_tooltip_text(
+            "Applies to a selected group: how it starts the first "
+            "time the menu is shown in the game. 'Default' stores no "
+            "setting — the group behaves as it always has.")
+        self.start_combo.connect("changed", self.on_start_changed)
+        start_box.pack_start(self.start_combo, False, False, 0)
+        right_box.pack_start(start_box, False, False, 0)
+
         right_scroll = Gtk.ScrolledWindow()
         right_scroll.set_policy(Gtk.PolicyType.NEVER,
                                 Gtk.PolicyType.AUTOMATIC)
@@ -339,8 +429,16 @@ class MenuTab:
         # Groups first (each expandable with its items underneath).
         for grp in menu.get("groups", []):
             gname = grp.get("name", "Group")
+            # v1.7.8: the group's start state is visible AT A GLANCE
+            # in its tree row — no marker when unset (the default).
+            marker = ""
+            if grp.get(START_FIELD) == START_COLLAPSED:
+                marker = "  ▸ starts collapsed"
+            elif grp.get(START_FIELD) == START_EXPANDED:
+                marker = "  ▾ starts expanded"
             giter = self.tree_store.append(
-                None, [f"📁 {gname} ({len(grp.get('items', []))})",
+                None, [f"📁 {gname} ({len(grp.get('items', []))})"
+                       f"{marker}",
                        "group", grp])
             for item in grp.get("items", []):
                 self._append_item_row(giter, item)
@@ -407,6 +505,9 @@ class MenuTab:
                 self.visible_check.set_active(bool(ref.get("visible",
                                                            True)))
                 self.visible_check.set_sensitive(True)
+                # Start state is a group-only setting (v1.7.8).
+                self.start_combo.set_active(-1)
+                self.start_combo.set_sensitive(False)
             elif kind == "group" and isinstance(ref, dict):
                 self.kind_label.set_markup(
                     "<small><i>Group</i></small>")
@@ -421,6 +522,13 @@ class MenuTab:
                 self.action_label.set_text("—")
                 self.id_label.set_text("—")
                 self.visible_check.set_sensitive(False)
+                # v1.7.8: show the group's saved start state (or
+                # "Default" when the key is absent).
+                current = ref.get(START_FIELD)
+                idx = 1 if current == START_EXPANDED else \
+                    2 if current == START_COLLAPSED else 0
+                self.start_combo.set_active(idx)
+                self.start_combo.set_sensitive(True)
             else:
                 self.kind_label.set_markup(
                     "<small><i>Select a menu item</i></small>")
@@ -432,6 +540,8 @@ class MenuTab:
                 self.action_label.set_text("—")
                 self.id_label.set_text("—")
                 self.visible_check.set_sensitive(False)
+                self.start_combo.set_active(-1)
+                self.start_combo.set_sensitive(False)
         finally:
             self._updating = False
 
@@ -483,6 +593,30 @@ class MenuTab:
             ref["visible"] = check.get_active()
             self._mark_dirty()
             self._rebuild_tree_keep_selection()
+
+    def on_start_changed(self, combo):
+        """
+        Start-state combo (v1.7.8): write the choice onto the
+        selected GROUP. "Default" REMOVES the key entirely — the
+        field is only ever present when Joshua explicitly set it,
+        so untouched groups serialize byte-identically to before.
+        """
+        if self._updating:
+            return
+        kind, ref = self._selected_row()
+        if kind != "group" or not isinstance(ref, dict):
+            return
+        idx = combo.get_active()
+        if idx == 1:
+            ref[START_FIELD] = START_EXPANDED
+        elif idx == 2:
+            ref[START_FIELD] = START_COLLAPSED
+        else:
+            # Default (or nothing selected): no setting stored.
+            ref.pop(START_FIELD, None)
+        self._mark_dirty()
+        # Rebuild so the tree row's at-a-glance marker updates.
+        self._rebuild_tree_keep_selection()
 
     def _mark_dirty(self):
         """Flag unsaved changes and notify the app (close warning)."""
@@ -687,21 +821,50 @@ class MenuTab:
 
     def on_save(self, _btn):
         """
-        Save: serialize the menu document and stage menu_layout.json for
-        the next push. The existing Resources-tab push dialog sends it to
-        GitHub, and the game fetches it at startup.
+        Save the menus — the GLOBAL SAVE PROTOCOL (v1.7.7, Joshua
+        2026-10-16), one action:
+          1. save locally (stage menu_layout.json),
+          2. push to GitHub,
+          3. reload from GitHub and display THAT copy.
+        In 1.7.6 this only staged the file and the app's push never
+        included menu_layout.json at all, so menu saves never
+        reached the game. If the push fails now, the status bar
+        says so plainly and the view is NOT reloaded over — the
+        local save stays on disk, marked unsaved.
         """
         try:
             payload = json.dumps(self.doc, indent=2)
         except Exception as e:
             self.app.set_status(f"Could not serialize menus: {e}")
             return
+        # Step 1: local save.
         staged = stage_content("menu_layout.json", payload.encode("utf-8"))
-        if staged:
-            self._dirty = False
-            try:
-                self.app._unpublished = True
-            except Exception:
-                pass
-            self.app.set_status(
-                "Menus saved — push from the Resources tab to go live")
+        if not staged:
+            self.app.set_status("Save failed — could not save locally")
+            return
+        # The app runs steps 2+3 (push, then re-download) and calls
+        # back with the fresh GitHub bytes (or the failure reason).
+        self.app.set_status("Menus saved locally — pushing to GitHub…")
+        self.app.round_trip_save(["menu_layout.json"],
+                                 self._menus_save_done)
+
+    def _menus_save_done(self, ok, err, fresh):
+        """Round-trip callback for on_save (GTK thread)."""
+        if ok and fresh and "menu_layout.json" in fresh:
+            # Step 3 happened in the app; show the GitHub copy.
+            if self.apply_github_menus(fresh["menu_layout.json"]):
+                self.app.set_status(
+                    "Menus saved and pushed — now showing the "
+                    "GitHub copy ✓")
+                return
+            err = ("Menus were pushed to GitHub, but the copy that "
+                   "came back could not be read — reopen the Menus "
+                   "tab to see the GitHub copy.")
+        # Push or reload failed: say so plainly, keep the local
+        # save, keep the dirty flag, leave the view as it was.
+        # v1.7.8: err names the failed stage (see app._round_trip_run)
+        # — in 1.7.7 this message claimed the save "did NOT reach
+        # GitHub" even when the push had landed and only the proof
+        # download died; that wording is gone.
+        self._mark_dirty()
+        self.app.set_status(f"Menus saved locally. {err}")
