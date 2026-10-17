@@ -12,6 +12,7 @@ Joshua's rule: all code commented.
 """
 
 import base64
+import copy
 import json
 import os
 import shutil
@@ -209,6 +210,98 @@ LAYOUT_REPO_PATH = "detailed/ui_layout.json"
 MENU_REPO_PATH = "detailed/menu_layout.json"
 # Shipped fallback when GitHub is unreachable on first run.
 DEFAULT_LAYOUT_FILE = Path(__file__).parent / "ui_layout_default.json"
+
+# ---------------------------------------------------------------------------
+# Layout faces (v1.8.0) — one layout document, two device faces
+# ---------------------------------------------------------------------------
+# The layout document now carries TWO element lists ("faces"): one for
+# Mobile screens and one for Desktop screens. The game applies the face
+# that matches the screen it is running on. The top-level "elements"
+# list stays in the document as a legacy mirror of the MOBILE face, so
+# older readers (and the download shape checks below, which require a
+# top-level "elements" list) keep working unchanged.
+#
+# (key, label) pairs for the two faces, in editor display order.
+LAYOUT_FACES = [("mobile", "Mobile"), ("desktop", "Desktop")]
+
+
+def ensure_layout_faces(doc):
+    """
+    Guarantee a layout document has a well-formed "faces" section.
+
+    Rules (v1.8.0):
+      * If there is no usable faces section at all, build one: the
+        mobile face takes the document's current top-level "elements"
+        list OBJECT itself (not a copy), and the desktop face starts
+        as a deep copy of it — so an old-format document migrates with
+        its elements becoming its mobile face verbatim.
+      * If faces exist but one face is missing or partial, that face
+        is filled from the other face (deep copy); if neither face is
+        usable, both are built from the top-level elements as above.
+      * The function ALWAYS finishes by pointing the top-level
+        "elements" mirror at the mobile face's list (the same object),
+        so inside the editor the mirror and the mobile face can never
+        drift apart.
+    Returns the (possibly fixed) doc.
+    """
+    if not isinstance(doc, dict):
+        return doc
+    # The legacy top-level list: the migration source when no usable
+    # face exists. A missing/invalid one behaves as an empty layout.
+    top = doc.get("elements")
+    if not isinstance(top, list):
+        top = []
+    faces = doc.get("faces")
+    if not isinstance(faces, dict):
+        faces = {}
+        doc["faces"] = faces
+
+    def _face_elements(key):
+        """Usable elements list for one face, or None if unusable."""
+        face = faces.get(key)
+        if isinstance(face, dict) and isinstance(face.get("elements"),
+                                                 list):
+            return face["elements"]
+        return None
+
+    mobile_els = _face_elements("mobile")
+    desktop_els = _face_elements("desktop")
+    if mobile_els is None and desktop_els is None:
+        # No usable face: migrate from the top-level elements. The
+        # mobile face adopts that list object itself; the desktop
+        # face gets an independent deep copy.
+        mobile_els = top
+        desktop_els = copy.deepcopy(top)
+    elif mobile_els is None:
+        # One face missing/partial: fill it from the other face.
+        mobile_els = copy.deepcopy(desktop_els)
+    elif desktop_els is None:
+        desktop_els = copy.deepcopy(mobile_els)
+    # Write the lists back, keeping a valid face dict where one exists
+    # (and any extra keys it carries).
+    for key, els in (("mobile", mobile_els), ("desktop", desktop_els)):
+        face = faces.get(key)
+        if not isinstance(face, dict):
+            face = {}
+            faces[key] = face
+        face["elements"] = els
+    # The mirror rule: top-level "elements" IS the mobile face's list
+    # (same object), never a separate copy that could drift.
+    doc["elements"] = faces["mobile"]["elements"]
+    return doc
+
+
+def layout_face_elements(doc, face):
+    """
+    The elements list of one face ("mobile" or "desktop"), after
+    ensure_layout_faces() has run. Unknown face keys fall back to the
+    mobile face. The returned list is the document's own list object —
+    editing it edits the document.
+    """
+    ensure_layout_faces(doc)
+    if face not in dict(LAYOUT_FACES):
+        face = "mobile"
+    return doc["faces"][face]["elements"]
 
 # View modes Joshua can preview: (key, label, width, height).
 # "web_mobile" expands into size presets in the UI.
