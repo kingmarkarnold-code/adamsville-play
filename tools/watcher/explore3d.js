@@ -42,10 +42,13 @@ function ensure() {
       else if (typeof HEIGHTFIELD !== 'undefined') HF = HEIGHTFIELD;
       else throw new Error('no elevation data');
     })
-    .then(function () { return GameSync.load('osm_buildings.js', 'osm_buildings.js'); })
-    .then(function () { return GameSync.load('exit_signs.js', 'exit_signs.js'); })
-    .then(function () { return GameSync.load('roads.js', null); })
+    .then(function () { return GameSync.loadZoneData(); })
     .then(function () {
+      /* Zone sync (2026-10-16): loadZoneData has already set the live
+         globals from the converted per-zone JSON the game loads —
+         OSM_BUILDINGS (buildBuildings), EXIT_SIGNS (buildSigns) and
+         ROAD_DATA. Any kind whose zone fetch failed totally has already
+         fallen back inside GameSync to the old root/local files. */
       if (typeof ROAD_DATA !== 'undefined' && typeof WORLD !== 'undefined') {
         var wr = GameSync.roadsToWorld();
         if (wr.length) WORLD.roads = wr;   // live game roads replace the snapshot
