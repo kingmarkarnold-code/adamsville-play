@@ -36,6 +36,15 @@ except Exception:
     updater = None
     _UPDATER_AVAILABLE = False
 import data
+# v1.6.0: the game zone data layer (per-zone converted building files
+# in adamsville-play + the round-trip save). Soft import like the
+# updater's: a broken zonedata must never stop the editor opening.
+try:
+    import zonedata  # noqa: E402
+    _ZONEDATA_AVAILABLE = True
+except Exception:
+    zonedata = None
+    _ZONEDATA_AVAILABLE = False
 from data import (BUILDING_TYPES, WALL_MATERIALS, ROOF_TEXTURES,
                   WINDOW_TYPES, DOOR_TYPES, FLOOR_PLAN_TEMPLATES,
                   HOUSE_STYLES, DRIVEWAY_MATERIALS, GARAGE_SIDES,
@@ -49,7 +58,7 @@ from subdivisioncanvas import SubdivisionCanvas
 
 # App version shown in the Help -> About dialog (bump with each release).
 # Joshua 2026-10-11: version number must be prominent in About.
-APP_VERSION = "1.5.2"
+APP_VERSION = "1.6.0"
 # Display name and icon-theme name for the About dialog.
 APP_NAME = "Adamsville Building Editor"
 APP_ICON = "adamsville-building-editor-native"
@@ -76,6 +85,10 @@ class AssetEditorWindow(Gtk.Window):
 
         # All loaded buildings (list of dicts)
         self.buildings = []
+        # v1.6.0: game zone store (zonedata.GameStore) + its tab.
+        # Populated by download-on-open in _load_zone_data().
+        self.zone_store = None
+        self.zone_tab = None
         # Tabs: list of (building_dict,) currently open
         self.open_tabs = []
 
@@ -110,6 +123,10 @@ class AssetEditorWindow(Gtk.Window):
 
         # --- Load building data (download prompt on first launch) ---
         self._load_data()
+        # v1.6.0: download the game's per-zone building files and add
+        # the Zone Buildings tab (runs on a worker thread; the tab
+        # appears when the download lands).
+        self._load_zone_data()
 
     # -- menus ----------------------------------------------------------
 
@@ -221,6 +238,97 @@ class AssetEditorWindow(Gtk.Window):
                     f"{len(self.road_index)} roads.")
         except Exception:
             pass  # offline or failed — collision checks just skip
+
+    # -- v1.6.0 game zone data -------------------------------------------
+
+    def _load_zone_data(self):
+        """
+        Download-on-open for the GAME's building files (Joshua's
+        standing rule): one fresh GitHub connection fetches every
+        zone's buildings/detail/hero/zone/roads files plus the
+        editor subdivisions file from adamsville-play, then the
+        connection is closed. Runs on a worker thread; the Zone
+        Buildings tab is added on the GTK thread when it lands.
+        """
+        if not _ZONEDATA_AVAILABLE:
+            return
+        import threading
+        from gi.repository import GLib
+
+        def worker():
+            store = zonedata.GameStore()
+            conn = github_sync.open_connection()
+            try:
+                def fetch(repo, path, conn=conn):
+                    return github_sync.fetch_file(repo, path, conn=conn)
+                errors = store.download_on_open(fetch)
+            except Exception as e:
+                errors = {"all zones": str(e)}
+            finally:
+                conn.close()
+
+            def done():
+                self.zone_store = store
+                self.zone_tab = ZoneBuildingsTab(self)
+                label = Gtk.Label(label="Zone Buildings (game data)")
+                self.notebook.append_page(self.zone_tab, label)
+                self.zone_tab.show_all()
+                loaded = len(store.zones)
+                if errors:
+                    self._set_status(
+                        f"Zone data: {loaded} zones loaded; failed: "
+                        + ", ".join(sorted(errors)))
+                else:
+                    total = sum(len(z.boxes) for z in store.zones.values())
+                    self._set_status(
+                        f"Zone data loaded from GitHub: {loaded} zones, "
+                        f"{total} buildings.")
+                # Subdivisions from the game repo replace the local
+                # working copy when a subdivisions tab exists.
+                return False
+            GLib.idle_add(done)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def round_trip_save(self):
+        """
+        THE save for zone data + subdivisions (v1.6.0): Joshua's
+        standing round trip, delegated to zonedata.GameStore —
+        local save -> push on one connection -> close -> re-download
+        on a fresh connection -> refresh the view from the proof
+        copy. Stage-accurate failure messages come back verbatim.
+        Returns True when a round trip started.
+        """
+        if self.zone_store is None:
+            self._set_status("Zone data has not loaded yet.")
+            return False
+        if not github_sync.has_token():
+            self._set_status(
+                "No GitHub token — changes are saved on this computer "
+                "only. Set one in File → Settings to push.")
+            return False
+        import threading
+        from gi.repository import GLib
+        self._set_status("Saving to GitHub…")
+
+        def worker():
+            ok, msg, _fresh = self.zone_store.round_trip_save(
+                data.DATA_DIR / "zone-cache",
+                github_sync.open_connection,
+                github_sync.push_targets,
+                github_sync.fetch_file)
+
+            def done():
+                if ok:
+                    self._unpublished = False
+                    if self.zone_tab is not None:
+                        self.zone_tab.refresh()
+                self._set_status(msg if ok else f"Save failed: {msg}")
+                return False
+            GLib.idle_add(done)
+
+        threading.Thread(target=worker, daemon=True).start()
+        return True
 
     def _on_download(self, widget):
         """Menu action: force a re-download from GitHub."""
@@ -529,26 +637,20 @@ class AssetEditorWindow(Gtk.Window):
     def _push_targets(self):
         """
         Build (repo, path, bytes, message) list.
-        Building editor pushes buildings.json and subdivisions.json.
+        v1.6.0: ONLY game zone targets (dirty zones only, from the
+        zonedata store) + the editor subdivisions file in
+        adamsville-play. The 1.5.2 targets (buildings.json /
+        subdivisions.json in the retired adamsville-map-editor repo)
+        are GONE — that repo is no longer the source of truth, and
+        the legacy detailed-asset sample set is never pushed over
+        game data.
         """
-        import json as _json
-        repo = "kingmarkarnold-code/adamsville-map-editor"
-        targets = []
+        if self.zone_store is None:
+            return []
         try:
-            buildings = data.load_buildings()
-            targets.append((repo, "buildings.json",
-                           _json.dumps(buildings, indent=1).encode("utf-8"),
-                           "Building editor: update buildings.json"))
+            return self.zone_store.build_targets()
         except Exception:
-            pass
-        try:
-            subs = data.load_subdivisions()
-            targets.append((repo, "subdivisions.json",
-                           _json.dumps(subs, indent=1).encode("utf-8"),
-                           "Building editor: update subdivisions.json"))
-        except Exception:
-            pass
-        return targets
+            return []
 
     def _auto_push_tick(self):
         """5-minute auto-push timer. Returns True to keep running."""
@@ -557,30 +659,16 @@ class AssetEditorWindow(Gtk.Window):
         return True
 
     def _do_push(self, silent=True):
-        """Push building data via the GitHub API."""
+        """
+        Save via the v1.6.0 round trip (see round_trip_save). The
+        1.5.2 one-way push is replaced: a save is only done once the
+        proof copy has been re-downloaded and shown.
+        """
         if not github_sync.has_token():
             if not silent:
                 self._set_status("No GitHub token — set one in File → Settings.")
             return False
-        targets = self._push_targets()
-        if not targets:
-            self._set_status("Nothing to push.")
-            return False
-        self._set_status("Pushing to GitHub…")
-        import threading
-        from gi.repository import GLib
-        def worker():
-            ok, msg = github_sync.push_targets(targets)
-            def done():
-                if ok:
-                    self._unpublished = False
-                    self._set_status("Pushed to GitHub ✓")
-                else:
-                    self._set_status(f"Push failed: {msg}")
-                return False
-            GLib.idle_add(done)
-        threading.Thread(target=worker, daemon=True).start()
-        return True
+        return self.round_trip_save()
 
     def on_settings_clicked(self, widget):
         """
@@ -595,6 +683,254 @@ class AssetEditorWindow(Gtk.Window):
             else:
                 self._set_status("GitHub API key removed — manual push only.")
         github_sync.show_settings_dialog(self, on_key_changed)
+
+
+
+# ---------------------------------------------------------------------------
+# v1.6.0: Zone Buildings tab — the game's actual building data
+# ---------------------------------------------------------------------------
+
+class ZoneBuildingsTab(Gtk.Box):
+    """
+    Zone-by-zone view of the game's converted building files
+    (zonedata.GameStore). Shows, per zone: building count, the
+    read-only hero buildings list, and the buildings themselves
+    (first rows + FLAGGED markers). Placement / move / resize /
+    delete go through zonedata, so zone attribution (bounds),
+    box/detail alignment, and the flagged lock are enforced by the
+    same code the harness tests. Saving is the window's round trip.
+    """
+
+    # Rows shown in the list (zones hold tens of thousands of
+    # buildings; the list is a working window, not a full dump).
+    ROW_CAP = 1000
+
+    def __init__(self, window):
+        """window: the AssetEditorWindow (store + status access)."""
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self.set_border_width(8)
+        self.app_window = window
+        self._zone = "adamsville"
+
+        # --- Zone picker + save -------------------------------------
+        top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        top.pack_start(Gtk.Label(label="Zone:"), False, False, 0)
+        self.zone_combo = Gtk.ComboBoxText()
+        if _ZONEDATA_AVAILABLE:
+            for z in zonedata.ZONES:
+                self.zone_combo.append_text(z)
+        self.zone_combo.set_active(0)
+        self.zone_combo.connect("changed", self._on_zone_changed)
+        top.pack_start(self.zone_combo, False, False, 0)
+        save_btn = Gtk.Button(label="Save to GitHub (round trip)")
+        save_btn.connect("clicked", lambda w: window.round_trip_save())
+        top.pack_start(save_btn, False, False, 6)
+        self.info_label = Gtk.Label(label="")
+        self.info_label.set_halign(Gtk.Align.START)
+        top.pack_start(self.info_label, True, True, 6)
+        self.pack_start(top, False, False, 0)
+
+        # --- Hero buildings (read-only listing) ----------------------
+        hero_lbl = Gtk.Label()
+        hero_lbl.set_markup("<b>Hero buildings (read-only)</b>")
+        hero_lbl.set_halign(Gtk.Align.START)
+        self.pack_start(hero_lbl, False, False, 2)
+        self.hero_store = Gtk.ListStore(str, str, str)
+        hero_tree = Gtk.TreeView(model=self.hero_store)
+        for i, title in enumerate(("ID", "Name", "Address")):
+            hero_tree.append_column(Gtk.TreeViewColumn(
+                title, Gtk.CellRendererText(), text=i))
+        hero_scroll = Gtk.ScrolledWindow()
+        hero_scroll.set_min_content_height(60)
+        hero_scroll.add(hero_tree)
+        self.pack_start(hero_scroll, False, False, 0)
+
+        # --- Buildings list -------------------------------------------
+        b_lbl = Gtk.Label()
+        b_lbl.set_markup("<b>Buildings</b> (FLAGGED = locked, awaiting "
+                         "Joshua's decision)")
+        b_lbl.set_halign(Gtk.Align.START)
+        self.pack_start(b_lbl, False, False, 2)
+        self.store = Gtk.ListStore(int, str, str, str)
+        self.tree = Gtk.TreeView(model=self.store)
+        for i, title in enumerate(("#", "Name", "Type", "Flagged")):
+            self.tree.append_column(Gtk.TreeViewColumn(
+                title, Gtk.CellRendererText(), text=i))
+        self.tree.get_selection().connect("changed",
+                                          self._on_select)
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_min_content_height(180)
+        scroll.add(self.tree)
+        self.pack_start(scroll, True, True, 0)
+
+        # --- Edit selected: move / resize / delete ---------------------
+        edit = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        self.mx = Gtk.SpinButton.new_with_range(-20000, 20000, 1)
+        self.mz = Gtk.SpinButton.new_with_range(-20000, 20000, 1)
+        self.mw = Gtk.SpinButton.new_with_range(1, 1000, 1)
+        self.md = Gtk.SpinButton.new_with_range(1, 1000, 1)
+        self.mh = Gtk.SpinButton.new_with_range(1, 200, 1)
+        for label, spin in (("x", self.mx), ("z", self.mz),
+                            ("w", self.mw), ("d", self.md),
+                            ("h", self.mh)):
+            edit.pack_start(Gtk.Label(label=label), False, False, 0)
+            edit.pack_start(spin, False, False, 0)
+        move_btn = Gtk.Button(label="Move / Resize Selected")
+        move_btn.connect("clicked", self._on_move_resize)
+        edit.pack_start(move_btn, False, False, 4)
+        del_btn = Gtk.Button(label="Delete Selected")
+        del_btn.connect("clicked", self._on_delete)
+        edit.pack_start(del_btn, False, False, 0)
+        self.pack_start(edit, False, False, 2)
+
+        # --- Place a new building ---------------------------------------
+        place = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        self.px = Gtk.SpinButton.new_with_range(-20000, 20000, 1)
+        self.pz = Gtk.SpinButton.new_with_range(-20000, 20000, 1)
+        self.pw = Gtk.SpinButton.new_with_range(1, 1000, 1)
+        self.pd = Gtk.SpinButton.new_with_range(1, 1000, 1)
+        self.ph = Gtk.SpinButton.new_with_range(1, 200, 1)
+        self.pw.set_value(24); self.pd.set_value(18); self.ph.set_value(5)
+        for label, spin in (("x", self.px), ("z", self.pz),
+                            ("w", self.pw), ("d", self.pd),
+                            ("h", self.ph)):
+            place.pack_start(Gtk.Label(label=label), False, False, 0)
+            place.pack_start(spin, False, False, 0)
+        self.ptype = Gtk.ComboBoxText()
+        if _ZONEDATA_AVAILABLE:
+            for t in zonedata.EDITOR_TYPE_MAP:
+                self.ptype.append_text(t)
+        self.ptype.set_active(0)
+        place.pack_start(self.ptype, False, False, 0)
+        self.pname = Gtk.Entry()
+        self.pname.set_placeholder_text("Name (optional)")
+        place.pack_start(self.pname, True, True, 0)
+        place_btn = Gtk.Button(label="Place Building")
+        place_btn.connect("clicked", self._on_place)
+        place.pack_start(place_btn, False, False, 0)
+        self.pack_start(place, False, False, 2)
+
+        self.refresh()
+
+    # -- helpers ---------------------------------------------------------
+
+    def _zd(self):
+        """The current zone's ZoneData, or None."""
+        store = self.app_window.zone_store
+        return store.zones.get(self._zone) if store else None
+
+    def _selected_index(self):
+        """Index (into the zone's arrays) of the selected row."""
+        sel = self.tree.get_selection()
+        model, it = sel.get_selected()
+        if it is None:
+            return None
+        return model.get_value(it, 0)
+
+    def refresh(self):
+        """Repopulate hero + building lists from the store."""
+        self.hero_store.clear()
+        self.store.clear()
+        zd = self._zd()
+        if zd is None:
+            self.info_label.set_text("Zone data not loaded.")
+            return
+        store = self.app_window.zone_store
+        flagged_n = 0
+        for hb in zd.hero_list():
+            self.hero_store.append([hb["id"] or "", hb["name"] or "",
+                                    hb["address"] or ""])
+        for i, (box, det) in enumerate(zip(zd.boxes, zd.details)):
+            if i >= self.ROW_CAP:
+                break
+            is_flag = store.flagged.match(
+                self._zone, det.get("ring") or []) is not None
+            flagged_n += 1 if is_flag else 0
+            self.store.append([i, det.get("name") or "",
+                               zonedata.CODE_LABELS.get(box[5], "?"),
+                               "FLAGGED" if is_flag else ""])
+        self.info_label.set_text(
+            f"{self._zone}: {len(zd.boxes)} buildings, "
+            f"{len(zd.hero_list())} hero, "
+            f"{store.flagged.count(self._zone)} flagged in zone "
+            f"(showing first {min(self.ROW_CAP, len(zd.boxes))} rows)"
+            + (" — UNSAVED CHANGES" if zd.dirty else ""))
+
+    # -- callbacks ---------------------------------------------------------
+
+    def _on_zone_changed(self, combo):
+        """Switch the working zone."""
+        self._zone = combo.get_active_text() or self._zone
+        self.refresh()
+
+    def _on_select(self, selection):
+        """Load the selected building's numbers into the edit spins."""
+        idx = self._selected_index()
+        zd = self._zd()
+        if idx is None or zd is None or idx >= len(zd.boxes):
+            return
+        box = zd.boxes[idx]
+        self.mx.set_value(box[0]); self.mz.set_value(box[1])
+        self.mw.set_value(box[2]); self.md.set_value(box[3])
+        self.mh.set_value(box[4])
+
+    def _on_place(self, widget):
+        """Place a building; zonedata attributes it to its zone and
+        refuses placements outside all zones."""
+        store = self.app_window.zone_store
+        if store is None:
+            return
+        try:
+            zone, idx = store.place_building(
+                self.px.get_value(), self.pz.get_value(),
+                self.pw.get_value(), self.pd.get_value(),
+                self.ph.get_value(),
+                self.ptype.get_active_text() or "House",
+                self.pname.get_text().strip() or None)
+        except Exception as e:
+            self.app_window._set_status(str(e))
+            return
+        self.app_window._mark_unpublished()
+        self._zone = zone
+        self.zone_combo.set_active(zonedata.ZONES.index(zone))
+        self.refresh()
+        self.app_window._set_status(
+            f"Placed building #{idx} in {zone} (unsaved until save).")
+
+    def _on_move_resize(self, widget):
+        """Move + resize the selected building (flagged = refused)."""
+        store = self.app_window.zone_store
+        zd = self._zd()
+        idx = self._selected_index()
+        if store is None or zd is None or idx is None:
+            return
+        try:
+            zd.move(idx, self.mx.get_value(), self.mz.get_value(),
+                    flagged=store.flagged)
+            zd.resize(idx, self.mw.get_value(), self.md.get_value(),
+                      self.mh.get_value(), flagged=store.flagged)
+        except Exception as e:
+            self.app_window._set_status(str(e))
+            return
+        self.app_window._mark_unpublished()
+        self.refresh()
+        self.app_window._set_status(f"Building #{idx} updated (unsaved).")
+
+    def _on_delete(self, widget):
+        """Delete the selected building (flagged = refused)."""
+        store = self.app_window.zone_store
+        zd = self._zd()
+        idx = self._selected_index()
+        if store is None or zd is None or idx is None:
+            return
+        try:
+            zd.delete(idx, flagged=store.flagged)
+        except Exception as e:
+            self.app_window._set_status(str(e))
+            return
+        self.app_window._mark_unpublished()
+        self.refresh()
+        self.app_window._set_status(f"Building #{idx} deleted (unsaved).")
 
 
 # ---------------------------------------------------------------------------
@@ -2005,6 +2341,14 @@ class SubdivisionTab(Gtk.Box):
         del_btn.connect("clicked", self._on_delete)
         right.pack_start(del_btn, False, False, 4)
 
+        # v1.6.0: bake generated houses into the game zone files.
+        gen_btn = Gtk.Button(label="Generate Houses into Zone Buildings")
+        gen_btn.set_tooltip_text(
+            "Fill the selected subdivision's polygon with houses and "
+            "bake them into the game's zone building files")
+        gen_btn.connect("clicked", self._on_generate_houses)
+        right.pack_start(gen_btn, False, False, 4)
+
         self.pack_start(right, False, False, 6)
 
         # Load data into the canvas; the canvas fits the view itself
@@ -2125,12 +2469,51 @@ class SubdivisionTab(Gtk.Box):
             self.app_window._set_status("Showing the full map.")
 
     def _save(self):
-        """Persist subdivisions locally."""
+        """
+        Persist subdivisions locally AND mark the game-repo copy
+        dirty (v1.6.0): the round trip pushes them to
+        editors/building-editor/subdivisions.json in adamsville-play.
+        """
         data.save_subdivisions(self.subdivisions)
         try:
+            store = self.app_window.zone_store
+            if store is not None:
+                store.subdivisions = list(self.subdivisions)
+                store.subdivisions_dirty = True
             self.app_window._mark_unpublished()
         except Exception:
             pass
+
+    def _on_generate_houses(self, widget):
+        """
+        Bake this subdivision's houses into the zone building files
+        (v1.6.0): generated houses become real placed buildings in
+        whichever zone contains them, saved by the same round trip
+        as any other placement. (Up to 1.5.2 subdivisions were only
+        definitions the game was expected to spawn from — Joshua's
+        rule now is that placed/generated buildings are BAKED into
+        game data permanently.)
+        """
+        idx = self._selected_index()
+        store = self.app_window.zone_store
+        if idx is None or idx >= len(self.subdivisions):
+            self.app_window._set_status("Select a subdivision first.")
+            return
+        if store is None:
+            self.app_window._set_status("Zone data has not loaded yet.")
+            return
+        sub = self.subdivisions[idx]
+        try:
+            n = store.bake_subdivision(sub)
+        except Exception as e:
+            self.app_window._set_status(f"Generate failed: {e}")
+            return
+        self.app_window._mark_unpublished()
+        if self.app_window.zone_tab is not None:
+            self.app_window.zone_tab.refresh()
+        self.app_window._set_status(
+            f"Baked {n} houses from '{sub.get('name', '')}' into the "
+            f"zone building data (unsaved until the next save).")
 
     def _selected_index(self):
         """Index of the selected subdivision, or None."""
