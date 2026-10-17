@@ -40,11 +40,13 @@ except Exception:
     _UPDATER_AVAILABLE = False
 from data import (
     ensure_data_dir, needs_download, download_manifest, download_resource,
-    load_manifest, load_changes, pending_count, stage_added_file,
-    stage_content, mark_removed, undo_pending_for, export_payload,
+    load_manifest, load_changes, save_changes, pending_count,
+    stage_added_file, stage_content, staged_bytes, clear_staged,
+    mark_removed, undo_pending_for, export_payload,
     clear_changes_after_push, save_window_state, load_window_state,
     read_text_preview, resource_type, is_image, is_text, is_visual,
-    format_size, STAGING_DIR,
+    format_size, STAGING_DIR, PREVIEW_DIR, MANIFEST_FILE,
+    save_local_sha, get_remote_sha,
 )
 from layout import LayoutTab
 from menus import MenuTab
@@ -52,7 +54,7 @@ from menus import MenuTab
 
 # App version shown in the Help -> About dialog (bump with each release).
 # Joshua 2026-10-11: version number must be prominent in About.
-APP_VERSION = "1.7.6"
+APP_VERSION = "1.7.8"
 # Display name and icon-theme name for the About dialog.
 APP_NAME = "Adamsville UI Editor"
 APP_ICON = "adamsville-ui-editor-native"
@@ -259,8 +261,9 @@ class UIEditorApp:
             "LAYOUT tab (main tool): see the game's interface visually, "
             "drag buttons and icons where you want them, resize them, "
             "hide ones you don't want (like the reports button), or add "
-            "new ones from the game's own graphics. Save stages your "
-            "layout; push it from the Resources tab to update the game.\n\n"
+            "new ones from the game's own graphics. Saving a layout "
+            "or menus saves it here, pushes it to GitHub, and then "
+            "reloads the GitHub copy so you can see it landed.\n\n"
             "RESOURCES tab: every UI file the game uses. Add files from "
             "your computer, remove ones you don't want, refresh the list "
             "from GitHub, and push your changes.")
@@ -351,7 +354,8 @@ class UIEditorApp:
             ("refresh", "Refresh", Gtk.STOCK_REFRESH,
              "Check GitHub for a newer resource list"),
             ("push", "Push to GitHub", Gtk.STOCK_GO_UP,
-             "Package your changes to send to the game repo"),
+             "Push pending changes to GitHub, then reload the "
+             "GitHub copies"),
         ]
         self.toolbar_buttons = {}
         for btn_id, label, stock, tooltip in buttons:
@@ -693,7 +697,8 @@ class UIEditorApp:
                            spacing=8)
         save_btn = Gtk.Button(label="Save")
         save_btn.set_tooltip_text(
-            "Save changes — staged for the next push to GitHub")
+            "Save changes: saves here, pushes to GitHub, then shows "
+            "the GitHub copy")
         save_btn.connect("clicked", self.on_edit_save)
         cancel_btn = Gtk.Button(label="Cancel")
         cancel_btn.set_tooltip_text("Discard changes")
@@ -712,8 +717,11 @@ class UIEditorApp:
 
     def on_edit_save(self, widget):
         """
-        Save the edited text: stage it so the next push overwrites the
-        same-named game file, then rebuild the list and preview.
+        Save the edited text — GLOBAL SAVE PROTOCOL (v1.7.7): stage
+        it locally, push the same-named game file to GitHub, then
+        rebuild the preview from the re-downloaded GitHub copy. A
+        failed push says so plainly and leaves the edit staged —
+        nothing claims to be in the game when it isn't.
         """
         st = self.edit_state
         if not st or not st["editing"]:
@@ -724,10 +732,36 @@ class UIEditorApp:
         if stage_content(name, text.encode("utf-8")) is None:
             self.set_status(f"Could not save '{name}'")
             return
-        self.set_status(f"Saved '{name}' — staged for the next push")
         self._unpublished = True
-        self.refresh_list()
-        self._select_by_name(name)  # rebuilds the preview in view mode
+        self.set_status(f"Saved '{name}' locally — pushing to GitHub…")
+
+        def done(ok, err, fresh):
+            # Round-trip callback (GTK thread).
+            if ok:
+                # Point the preview at the GitHub copy that was just
+                # re-downloaded, then rebuild it.
+                if fresh and name in fresh:
+                    try:
+                        # The preview cache dir normally exists by
+                        # now (the edit started from a download), but
+                        # never let the round trip depend on that.
+                        PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
+                        (PREVIEW_DIR / name).write_bytes(fresh[name])
+                    except Exception:
+                        pass
+                self.refresh_list()
+                self._select_by_name(name)  # rebuilds preview
+                self.set_status(
+                    f"Saved '{name}' and pushed — showing the "
+                    f"GitHub copy ✓")
+            else:
+                self.refresh_list()
+                self._select_by_name(name)
+                # v1.7.8: err names the failed stage (see
+                # _round_trip_run) — a landed push is never reported
+                # as "did NOT reach GitHub".
+                self.set_status(f"'{name}' saved locally. {err}")
+        self.round_trip_save([name], done)
 
     def on_edit_cancel(self, widget):
         """Discard edits and return to the read-only preview."""
@@ -867,8 +901,10 @@ class UIEditorApp:
 
     def on_add(self):
         """
-        Add: let Joshua pick files from disk, stage them for the game.
-        Multiple files can be selected at once.
+        Add: let Joshua pick files from disk — then (v1.7.7 GLOBAL
+        SAVE PROTOCOL) they are saved locally, pushed to GitHub and
+        the Resources list is reloaded from the GitHub manifest, all
+        as this one action. Multiple files can be selected at once.
         """
         chooser = Gtk.FileChooserDialog(
             title="Add files to the game", parent=self.window,
@@ -881,9 +917,14 @@ class UIEditorApp:
             for path in chooser.get_filenames():
                 if stage_added_file(path):
                     staged += 1
-            self.set_status(f"Staged {staged} file(s) to add")
             if staged > 0:
-                self._mark_unpublished()
+                self._unpublished = True
+                self.set_status(
+                    f"Added {staged} file(s) locally — pushing to "
+                    f"GitHub…")
+                self.round_trip_save()
+            else:
+                self.set_status("No files were added")
             self.refresh_list()
         chooser.destroy()
 
@@ -931,14 +972,19 @@ class UIEditorApp:
             type=Gtk.MessageType.WARNING, buttons=Gtk.ButtonsType.OK_CANCEL,
             message_format=f"Remove '{name}' from the game?")
         dlg.format_secondary_text(
-            "It will be marked for removal and taken out when you push "
-            "your changes to GitHub. You can cancel this any time before "
-            "pushing by selecting it and choosing Remove again.")
+            "It will be removed from GitHub right away when you "
+            "confirm, and this editor then reloads the game's file "
+            "list from GitHub so you can see it is gone. If the "
+            "removal cannot reach GitHub, it stays marked here "
+            "instead — nothing pretends to be removed when it isn't.")
         if dlg.run() == Gtk.ResponseType.OK:
             mark_removed(name)
-            self.set_status(f"Marked '{name}' for removal")
-            self._mark_unpublished()
+            self.set_status(f"Removing '{name}' from GitHub…")
+            self._unpublished = True
             self.refresh_list()
+            # v1.7.7 GLOBAL SAVE PROTOCOL: the removal is pushed
+            # (deleted) now, not at some later manual push.
+            self.round_trip_save()
         dlg.destroy()
 
     # ------------------------------------------------------------------
@@ -1017,27 +1063,9 @@ class UIEditorApp:
     # ------------------------------------------------------------------
     # Push to GitHub
     # ------------------------------------------------------------------
-
-    def _push_targets(self):
-        """
-        Build (repo, path, bytes, message) list.
-        UI editor pushes ui_layout.json to the game repo.
-        Reads the staged file if present.
-        """
-        from pathlib import Path as _Path
-        staged = _Path.home() / ".local" / "share" / \
-            "adamsville-ui-editor-native" / "staging" / "ui_layout.json"
-        # Also check the shared suite dir
-        if not staged.exists():
-            staged = _Path.home() / ".local" / "share" / \
-                "adamsville-suite" / "ui_layout.json"
-        try:
-            data_bytes = staged.read_bytes()
-        except Exception:
-            return []
-        repo = "kingmarkarnold-code/adamsville-play"
-        return [(repo, "detailed/ui_layout.json", data_bytes,
-                 "UI editor: update ui_layout.json")]
+    # v1.7.7: the old _push_targets() (which only ever pushed
+    # detailed/ui_layout.json) is gone — round_trip_save() below
+    # builds its targets from ALL pending staged files instead.
 
     def _mark_unpublished(self):
         """Mark that local edits haven't been pushed yet."""
@@ -1045,39 +1073,326 @@ class UIEditorApp:
         if not github_sync.has_token() and not self._token_prompted:
             self._token_prompted = True
             if github_sync.show_first_save_prompt(self.window):
-                self._do_push()
+                # Token just set: run the full round trip over
+                # everything pending (v1.7.7 save protocol).
+                self.round_trip_save()
 
     def _auto_push_tick(self):
         """5-minute auto-push timer. Returns True to keep running."""
         if self._unpublished and github_sync.has_token():
-            self._do_push(silent=True)
+            # v1.7.7: the auto-push is the same round trip a manual
+            # save uses (push, then re-download), just silent.
+            self.round_trip_save(silent=True)
         return True
 
-    def _do_push(self, silent=True):
-        """Push UI layout via the GitHub API."""
-        if not github_sync.has_token():
-            if not silent:
-                self.set_status("No GitHub token — set one in File → Settings.")
-            return False
-        targets = self._push_targets()
-        if not targets:
-            self.set_status("No UI layout to push — save the layout first.")
-            return False
-        self.set_status("Pushing to GitHub…")
+    # ------------------------------------------------------------------
+    # GLOBAL SAVE PROTOCOL (v1.7.7, Joshua 2026-10-16)
+    # ------------------------------------------------------------------
+    # EVERY save in this app is ONE action:
+    #   1. the file is saved locally (staged),
+    #   2. it is pushed to GitHub,
+    #   3. it is re-downloaded from GitHub and that copy is what the
+    #      app displays — visible proof the save landed.
+    # This replaces the 1.7.6 staged/two-step design, whose push only
+    # ever contained detailed/ui_layout.json: menu edits staged by
+    # "Save Menus" were never pushed at all, and the Menus tab then
+    # re-downloaded over them on the next open.
+    GAME_REPO = "kingmarkarnold-code/adamsville-play"
+
+    def round_trip_save(self, names=None, on_done=None, silent=False):
+        """
+        Push pending work to GitHub, then re-download the pushed
+        files and hand their fresh GitHub bytes to the callback.
+
+        names: staged file names to include, or None for EVERYTHING
+            pending (all staged adds/edits + all pending removals,
+            with the ui-manifest.json entries kept in step).
+        on_done(ok, err, fresh): called on the GTK thread. `fresh`
+            maps file name -> the exact bytes re-downloaded from
+            GitHub after the push. On failure ok is False, err is a
+            complete stage-accurate sentence (see _round_trip_run:
+            v1.7.8 two-connection legs + stage naming), and NOTHING
+            is reloaded over the user's view.
+        Returns True if a round trip started.
+        """
         import threading
         from gi.repository import GLib
-        def worker():
-            ok, msg = github_sync.push_targets(targets)
-            def done():
-                if ok:
-                    self._unpublished = False
-                    self.set_status("Pushed to GitHub ✓")
-                else:
-                    self.set_status(f"Push failed: {msg}")
+
+        if on_done is None:
+            on_done = self._round_trip_default_done
+        if not github_sync.has_token():
+            err = ("No GitHub token set — changes are saved on this "
+                   "computer only. Set one in File → Settings to push.")
+            if silent:
                 return False
-            GLib.idle_add(done)
+            self.set_status(err)
+            GLib.idle_add(self._fire_done, on_done, False, err, None)
+            return False
+        plan = self._round_trip_plan(names)
+        if plan is None:
+            if silent:
+                return False
+            GLib.idle_add(self._fire_done, on_done, False,
+                          "Nothing to push.", None)
+            return False
+        if not silent:
+            self.set_status("Pushing to GitHub…")
+
+        def worker():
+            ok, err, fresh = self._round_trip_run(plan)
+            GLib.idle_add(self._fire_done, on_done, ok, err, fresh)
+
         threading.Thread(target=worker, daemon=True).start()
         return True
+
+    @staticmethod
+    def _fire_done(on_done, ok, err, fresh):
+        """GLib.idle_add adapter: run the callback once."""
+        on_done(ok, err, fresh)
+        return False
+
+    def _round_trip_plan(self, names):
+        """
+        Snapshot what a round trip will push (called on the GTK
+        thread; the staged files are small). Returns
+        {"push": [(name, bytes)], "delete": [name], "full": bool}
+        or None when there is nothing to do.
+        """
+        if names is None:
+            changes = load_changes()
+            push_names = list(changes["added"])
+            delete_names = list(changes["removed"])
+            full = True
+        else:
+            push_names = list(names)
+            delete_names = []
+            full = False
+        push = []
+        for n in push_names:
+            b = staged_bytes(n)
+            if b is not None:
+                push.append((n, b))
+        if not push and not delete_names:
+            return None
+        return {"push": push, "delete": delete_names, "full": full}
+
+    def _round_trip_run(self, plan):
+        """
+        Execute a round-trip plan on a worker thread (network + file
+        IO only, no GTK). Returns (ok, err, fresh).
+
+        v1.7.8 — TWO CONNECTION LEGS (Joshua's design, 2026-10-16):
+        in 1.7.7 the push and the proof download ran as one undivided
+        flow; on Joshua's laptop the push LANDED but the download died
+        with "Remote end closed connection without response". Now the
+        PUSH leg (file pushes + removals + the manifest update) runs
+        on ONE connection, which is then CLOSED, and the DOWNLOAD leg
+        (the proof re-download) runs on a brand-NEW connection. The
+        download never inherits the push's socket.
+
+        v1.7.8 — STAGE-ACCURATE ERRORS: err names the stage that
+        failed. A push-stage failure says the push failed; a
+        download-stage failure says the file WAS pushed and only the
+        proof download failed — it never claims the save "did not
+        reach GitHub" when the push landed.
+        """
+        import hashlib
+
+        repo = self.GAME_REPO
+        tok = github_sync.get_token()
+
+        # ---- PUSH LEG: one connection for every mutation. --------
+        push_conn = github_sync.open_connection()
+        try:
+            # Step 2a: push every staged file in the plan.
+            targets = [(repo, f"detailed/{n}", b,
+                        f"UI editor: update {n}")
+                       for n, b in plan["push"]]
+            if targets:
+                ok, msg = github_sync.push_targets(
+                    targets, token=tok, conn=push_conn)
+                if not ok:
+                    return False, f"Push to GitHub failed: {msg}", None
+            # Step 2b: apply pending removals (only in a full push).
+            # A 404 means the file is already gone from GitHub, which
+            # is the state a removal wants — count it as removed.
+            deleted = []
+            for n in plan["delete"]:
+                ok, msg = github_sync.delete_file(
+                    repo, f"detailed/{n}", f"UI editor: remove {n}",
+                    token=tok, conn=push_conn)
+                if not ok and "404" not in msg:
+                    return False, (f"Push to GitHub failed: "
+                                   f"{n}: {msg}"), None
+                deleted.append(n)
+            pushed_names = [n for n, _b in plan["push"]]
+            # Full pushes keep detailed/ui-manifest.json truthful
+            # (entry size + sha256 for pushed files, entries dropped
+            # for removals) so the game's file list matches what was
+            # saved. The manifest read+write is part of the PUSH leg
+            # (it prepares and lands a mutation), so it rides the
+            # push connection too.
+            manifest_touched = bool(plan["full"]
+                                    and (pushed_names or deleted))
+            if manifest_touched:
+                ok, msg = self._update_manifest(
+                    pushed_names, deleted, conn=push_conn)
+                if not ok:
+                    return False, msg, None
+        finally:
+            # Joshua's rule: the push connection is CLOSED before any
+            # download happens — even when the push failed, so no leg
+            # ever leaves a half-dead socket behind for the next one.
+            push_conn.close()
+
+        # ---- DOWNLOAD LEG: a brand-new connection. ---------------
+        # Opened only now, after the push connection is closed — the
+        # proof download can never die on the push's stale socket.
+        dl_conn = github_sync.open_connection()
+        try:
+            # Step 3: re-download everything that was pushed. What
+            # comes back IS the new repo state — callers display
+            # exactly this.
+            fresh = {}
+            for n in pushed_names:
+                b, err = github_sync.fetch_file(
+                    repo, f"detailed/{n}", token=tok, conn=dl_conn)
+                if b is None:
+                    return False, (
+                        f"{n} was pushed to GitHub, but downloading "
+                        f"the proof copy back failed: {err} — the "
+                        f"save DID reach GitHub; reopen the tab to "
+                        f"see the GitHub copy."), None
+                fresh[n] = b
+            if manifest_touched:
+                mb, err = github_sync.fetch_file(
+                    repo, "detailed/ui-manifest.json",
+                    token=tok, conn=dl_conn)
+                if mb is None:
+                    return False, (
+                        "ui-manifest.json was pushed to GitHub, but "
+                        f"downloading the proof copy back failed: "
+                        f"{err} — the save DID reach GitHub."), None
+                fresh["ui-manifest.json"] = mb
+                # Cache the GitHub manifest (+ its SHA) so the
+                # Resources tab shows the GitHub list, not the
+                # pre-push one.
+                try:
+                    MANIFEST_FILE.write_bytes(mb)
+                    sha = get_remote_sha()
+                    if sha:
+                        save_local_sha(sha)
+                except Exception:
+                    pass
+        finally:
+            dl_conn.close()
+        # The round trip completed for these names: their staged
+        # copies now equal the repo bytes, so drop them.
+        for n in pushed_names:
+            clear_staged(n)
+        if deleted:
+            changes = load_changes()
+            for n in deleted:
+                if n in changes["removed"]:
+                    changes["removed"].remove(n)
+            save_changes(changes)
+        return True, None, fresh
+
+    def _update_manifest(self, pushed_names, deleted, conn=None):
+        """
+        Worker-thread helper: refresh detailed/ui-manifest.json on
+        GitHub after a resource push — entries for pushed files get
+        their real size + sha256 (from the staged bytes), entries
+        for removed files are dropped, everything else (including
+        the version fields) stays exactly as the repo has it.
+        Returns (ok, err).
+
+        v1.7.8: rides the caller's push-leg connection (conn=), and
+        its errors are stage-tagged as PUSH-stage failures — both its
+        read and its write belong to landing the push.
+        """
+        import hashlib
+
+        repo = self.GAME_REPO
+        raw, err = github_sync.fetch_file(
+            repo, "detailed/ui-manifest.json", conn=conn)
+        if raw is None:
+            return False, (f"Push to GitHub failed: could not read "
+                           f"ui-manifest.json ({err})")
+        try:
+            doc = _json.loads(raw.decode("utf-8"))
+            files = [e for e in doc.get("files", [])
+                     if isinstance(e, dict)]
+        except Exception as e:
+            return False, (f"Push to GitHub failed: ui-manifest.json "
+                           f"is unreadable ({e})")
+        by_name = {e.get("name"): e for e in files}
+        for n in deleted:
+            by_name.pop(n, None)
+        for n in pushed_names:
+            if n == "ui-manifest.json":
+                continue  # the manifest never lists itself
+            b = staged_bytes(n)
+            if b is None:
+                continue
+            digest = hashlib.sha256(b).hexdigest()
+            entry = by_name.get(n, {})
+            entry.update({"name": n, "size": len(b),
+                          "sha256": digest, "hash": digest})
+            by_name[n] = entry
+        # Preserve the repo's entry order; append genuinely new
+        # files at the end, in push order.
+        ordered, seen = [], set()
+        for e in files:
+            name = e.get("name")
+            if name in by_name and name not in seen:
+                ordered.append(by_name[name])
+                seen.add(name)
+        for n in pushed_names:
+            if n in by_name and n not in seen:
+                ordered.append(by_name[n])
+                seen.add(n)
+        doc["files"] = ordered
+        payload = _json.dumps(doc, indent=2).encode("utf-8")
+        ok, msg = github_sync.push_file(
+            repo, "detailed/ui-manifest.json", payload,
+            "UI editor: update ui-manifest.json", conn=conn)
+        if not ok:
+            return False, f"Push to GitHub failed: ui-manifest.json: {msg}"
+        return True, None
+
+    def _round_trip_default_done(self, ok, err, fresh):
+        """
+        Default round-trip completion (app-level pushes and the
+        auto-push): update the status bar, refresh the Resources
+        list, and show the GitHub copies in the Layout/Menus tabs —
+        unless a tab has unsaved edits in progress, in which case
+        its view is left alone (its cache already holds the GitHub
+        bytes; the tab itself says what it is showing).
+        """
+        if not ok:
+            # v1.7.8: err is already a complete stage-accurate
+            # sentence from _round_trip_run (it names whether the
+            # PUSH failed or the push landed and only the proof
+            # download failed) — show it as-is; wrapping it in
+            # "Push failed:" would mislabel the download case.
+            self.set_status(err)
+            return
+        if pending_count() == 0:
+            self._unpublished = False
+        if fresh:
+            layout_tab = getattr(self, "layout_tab", None)
+            if (layout_tab is not None
+                    and "ui_layout.json" in fresh
+                    and not layout_tab._dirty):
+                layout_tab.apply_github_layout(fresh["ui_layout.json"])
+            menu_tab = getattr(self, "menu_tab", None)
+            if (menu_tab is not None
+                    and "menu_layout.json" in fresh
+                    and not menu_tab._dirty):
+                menu_tab.apply_github_menus(fresh["menu_layout.json"])
+        self.refresh_list()
+        self.set_status("Pushed to GitHub ✓ — showing the GitHub copies")
 
     def on_settings_clicked(self, widget):
         """
@@ -1088,7 +1403,8 @@ class UIEditorApp:
             if key_set:
                 self.set_status("GitHub API key saved — auto-push enabled.")
                 if self._unpublished:
-                    self._do_push(silent=False)
+                    # Token just set with work pending: round trip it.
+                    self.round_trip_save()
             else:
                 self.set_status("GitHub API key removed — manual push only.")
         github_sync.show_settings_dialog(self.window, on_key_changed)
@@ -1121,17 +1437,21 @@ class UIEditorApp:
 
     def on_push_github(self, widget):
         """
-        Package add/remove changes as JSON and show the push dialog.
+        Push everything pending to GitHub (GLOBAL SAVE PROTOCOL
+        step 2+3, v1.7.7): with a token set this runs the round
+        trip — push all staged files and removals, then re-download
+        and display the GitHub state.
 
-        A desktop app cannot hold Joshua's GitHub token securely, so the
-        dialog shows the payload with Copy/Download options — Joshua sends
-        it to Mollie, who applies it to the game repo. Same protocol as
-        the map and terrain editors.
+        Without a token the app cannot push itself, so it falls
+        back to the manual package dialog: the payload is shown
+        with Copy/Download options — Joshua sends it to Mollie,
+        who applies it to the game repo. Same protocol as the map
+        and terrain editors.
         """
 
-        # Word-style: try API push first if token is set.
+        # API round trip first if a token is set.
         if github_sync.has_token():
-            self._do_push(silent=False)
+            self.round_trip_save()
             return
         # No token: fall through to the manual copy/download dialog.
 
@@ -1153,8 +1473,9 @@ class UIEditorApp:
             f"<b>{n_add}</b> file(s) to add, "
             f"<b>{n_rem}</b> file(s) to remove.\n\n"
             "Copy the package below and send it to Mollie — she applies "
-            "it to the game repo (updates ui-manifest.json and "
-            "ui_layout.json).")
+            "it to the game repo (updates ui-manifest.json, "
+            "ui_layout.json, menu_layout.json, and any other edited "
+            "files).")
         info.set_line_wrap(True)
         content.pack_start(info, False, False, 8)
 
