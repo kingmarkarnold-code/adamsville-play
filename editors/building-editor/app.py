@@ -21,7 +21,7 @@ import json
 import math
 import gi
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gtk, Gdk, GLib
+from gi.repository import Gtk, Gdk, GLib, Pango
 
 import github_sync  # noqa: E402 -- suite auto-push + close warning
 from about import show_about_dialog
@@ -58,7 +58,26 @@ from subdivisioncanvas import SubdivisionCanvas
 
 # App version shown in the Help -> About dialog (bump with each release).
 # Joshua 2026-10-11: version number must be prominent in About.
-APP_VERSION = "1.7.0"
+APP_VERSION = "1.7.1"
+
+# ---------------------------------------------------------------------------
+# THE EDITOR UI RULE (Joshua, 2026-10-16 — standing suite principle):
+#   * any pane whose content is LONG must be SCROLLABLE;
+#   * any GRAPHICAL pane must be ADJUSTABLE (he can drag a divider
+#     and resize its space himself);
+#   * nothing is ever clipped out of reach: if a layout comes out
+#     wrong, he can always scroll or drag his way to the hidden part.
+# 1.7.1 exists because 1.7.0 broke this rule three ways at once: the
+# Zone Buildings split divider was mathematically pinned (both panes
+# packed shrink=False with minimums summing past a 1366px screen —
+# measured 0px of divider travel and a 1527px window minimum), the
+# maximized window overflowed his screen, and the Open Building
+# dialog gave its Categories pane 46px. Every layout built below
+# follows the rule: lists/text live in Gtk.ScrolledWindow, graphical
+# panes live in Gtk.Paned with shrink=True on both children, and
+# labels that carry long single-line text ellipsize (full text on
+# the tooltip) instead of forcing the window wider.
+# ---------------------------------------------------------------------------
 # Display name and icon-theme name for the About dialog.
 APP_NAME = "Adamsville Building Editor"
 APP_ICON = "adamsville-building-editor-native"
@@ -155,6 +174,12 @@ class AssetEditorWindow(Gtk.Window):
         # Unpublished-changes tracking (Joshua 2026-10-11).
         self._unpublished = False
         self._token_prompted = False
+        # 1.7.1: design-set sync baseline — design_hash() of the
+        # design set GitHub is known to hold (set by the
+        # download-on-open in _load_data and by every verified
+        # save). None until the first successful sync; the dirty
+        # check (_design_dirty) treats that case separately.
+        self._design_remote_hash = None
         # Word-style auto-push: every 5 minutes if unpublished + token.
         from gi.repository import GLib as _GLib
         _GLib.timeout_add_seconds(300, self._auto_push_tick)
@@ -263,30 +288,40 @@ class AssetEditorWindow(Gtk.Window):
 
     def _load_data(self):
         """
-        Load buildings: check if a download is needed, prompt Joshua
-        on first launch, then load from cache (or built-in defaults).
+        Load buildings: download-on-open for the design set
+        (1.7.1), then load the effective set (downloaded base +
+        local edits overlay) from the local cache.
+
+        1.7.1: the design set has a GitHub home again (data.py —
+        editors/building-editor/design-buildings.json), so opening
+        the app downloads it first, silently, like the zone data.
+        The old first-launch prompt is gone with the retired remote
+        it belonged to (its needs_download() stub had made it
+        unreachable anyway). A failed download falls back to the
+        local cache / built-in samples with an honest status; a
+        successful one sets the sync baseline (_design_remote_hash)
+        the save dirty-check compares against.
         """
-        needed, reason = data.needs_download()
-        if needed:
-            # Ask Joshua whether to download now
-            dlg = Gtk.MessageDialog(
-                transient_for=self,
-                message_type=Gtk.MessageType.QUESTION,
-                buttons=Gtk.ButtonsType.YES_NO,
-                text="Download building data?")
-            dlg.format_secondary_text(reason)
-            resp = dlg.run()
-            dlg.destroy()
-            if resp == Gtk.ResponseType.YES:
-                if data.download_buildings():
-                    self._set_status("Downloaded buildings from GitHub.")
-                else:
-                    self._set_status(
-                        "Download failed — using built-in samples.")
-            else:
-                self._set_status("Using local/built-in building data.")
+        downloaded, err = None, None
+        try:
+            downloaded, err = data.download_design_buildings(
+                github_sync.fetch_file)
+        except Exception as e:
+            # A transport-level blowup must never stop the app
+            # opening — the local copy is the fallback.
+            err = str(e)
+        # The download outcome rides on the Loaded status below
+        # (a status set here would be overwritten by it instantly).
+        dl_note = ""
+        if downloaded is not None:
+            self._design_remote_hash = data.design_hash(downloaded)
+            dl_note = " Design set downloaded from GitHub."
+        elif err:
+            dl_note = (f" Design set download failed ({err}) — "
+                       f"local copy in use.")
         self.buildings = data.load_buildings()
-        self._set_status(f"Loaded {len(self.buildings)} buildings.")
+        self._set_status(
+            f"Loaded {len(self.buildings)} buildings.{dl_note}")
         # Road data for collision checks + preview context (Joshua
         # 2026-10-11). Silent download on first run — auxiliary data.
         self.road_index = []
@@ -295,7 +330,7 @@ class AssetEditorWindow(Gtk.Window):
             if self.road_index:
                 self._set_status(
                     f"Loaded {len(self.buildings)} buildings, "
-                    f"{len(self.road_index)} roads.")
+                    f"{len(self.road_index)} roads.{dl_note}")
         except Exception:
             pass  # offline or failed — collision checks just skip
 
@@ -359,17 +394,95 @@ class AssetEditorWindow(Gtk.Window):
 
         threading.Thread(target=worker, daemon=True).start()
 
+    # -- THE SAVE: zone data + the design set --------------------------
+
+    def _design_dirty(self):
+        """
+        True when the live design set differs from the set GitHub
+        is known to hold. The comparison hashes the canonical
+        payload (data.design_hash) — the exact bytes a push would
+        send — so formatting can never fake or hide a change.
+        Before the first successful sync this session, only the
+        local edits overlay can hold unpublished design work.
+        """
+        if self._design_remote_hash is None:
+            return bool(data.load_edits())
+        return (data.design_hash(self.buildings)
+                != self._design_remote_hash)
+
+    def _round_trip_work(self):
+        """
+        Run the whole save. NO GTK calls in here — it runs on the
+        save worker thread, and synchronously on the quit path
+        (see _on_close). Returns (ok, message, design_proof).
+
+        TWO legs, each a full standing-rule round trip:
+          1. the game zone store (zonedata.GameStore — dirty zones
+             + the subdivisions file), as since 1.6.0;
+          2. the DESIGN set (data.design_round_trip) — NEW in
+             1.7.1. Before this, design edits were in NO target
+             list: "Push & Close" after a roof-colour change ran
+             leg 1 only, found nothing to do, and reported success
+             while the design edit never left the laptop.
+        The design leg runs only when the zone leg succeeded (or
+        there is no zone store): a half-save must read as one
+        honest failure, not two confusing halves.
+        """
+        msgs = []
+        ok_all = True
+        proof = None
+        if self.zone_store is not None:
+            ok, msg, _fresh = self.zone_store.round_trip_save(
+                data.DATA_DIR / "zone-cache",
+                github_sync.open_connection,
+                github_sync.push_targets,
+                github_sync.fetch_file)
+            msgs.append(msg)
+            ok_all = ok
+        if self._design_dirty():
+            if ok_all:
+                ok2, msg2, proof = data.design_round_trip(
+                    self.buildings,
+                    github_sync.open_connection,
+                    github_sync.push_targets,
+                    github_sync.fetch_file)
+                msgs.append(msg2)
+                ok_all = ok_all and ok2
+            else:
+                msgs.append(
+                    "Design buildings were NOT pushed (the zone "
+                    "save failed first — fix that and save again).")
+                ok_all = False
+        if not msgs:
+            msgs.append("Nothing to save — no changes.")
+        return ok_all, " ".join(msgs), proof
+
+    def _round_trip_apply(self, ok, msg, proof):
+        """GTK-thread half of the save: adopt the proof copies,
+        refresh the views, set the status. The app shows what
+        GitHub holds — that is the point of the round trip."""
+        if proof is not None:
+            data.merge_proof_into(self.buildings, proof)
+            self._design_remote_hash = data.design_hash(proof)
+        if ok:
+            self._unpublished = False
+            if self.zone_tab is not None:
+                self.zone_tab.refresh()
+        self._set_status(msg if ok else f"Save failed: {msg}")
+
     def round_trip_save(self):
         """
-        THE save for zone data + subdivisions (v1.6.0): Joshua's
-        standing round trip, delegated to zonedata.GameStore —
+        THE save (v1.6.0 zone round trip + 1.7.1 design-set leg):
         local save -> push on one connection -> close -> re-download
         on a fresh connection -> refresh the view from the proof
-        copy. Stage-accurate failure messages come back verbatim.
-        Returns True when a round trip started.
+        copy — for BOTH data sets this editor edits. Stage-accurate
+        failure messages come back verbatim. Runs on a worker
+        thread; the result is applied on the GTK thread. Returns
+        True when a round trip started.
         """
-        if self.zone_store is None:
-            self._set_status("Zone data has not loaded yet.")
+        if self.zone_store is None and not self._design_dirty():
+            self._set_status("Nothing to save yet — data is "
+                             "still loading.")
             return False
         if not github_sync.has_token():
             self._set_status(
@@ -381,18 +494,10 @@ class AssetEditorWindow(Gtk.Window):
         self._set_status("Saving to GitHub…")
 
         def worker():
-            ok, msg, _fresh = self.zone_store.round_trip_save(
-                data.DATA_DIR / "zone-cache",
-                github_sync.open_connection,
-                github_sync.push_targets,
-                github_sync.fetch_file)
+            result = self._round_trip_work()
 
             def done():
-                if ok:
-                    self._unpublished = False
-                    if self.zone_tab is not None:
-                        self.zone_tab.refresh()
-                self._set_status(msg if ok else f"Save failed: {msg}")
+                self._round_trip_apply(*result)
                 return False
             GLib.idle_add(done)
 
@@ -432,7 +537,10 @@ class AssetEditorWindow(Gtk.Window):
                          flags=0)
         dlg.add_button("Cancel", Gtk.ResponseType.CANCEL)
         dlg.add_button("Open", Gtk.ResponseType.OK)
-        dlg.set_default_size(540, 420)
+        # 1.7.1: bigger default and explicitly resizable, so the two
+        # panes below have room to share evenly (EDITOR UI RULE).
+        dlg.set_default_size(640, 440)
+        dlg.set_resizable(True)
 
         # --- Left pane: the subcategory list -------------------------
         # Rows are (label, category_id); see the module-level
@@ -473,15 +581,33 @@ class AssetEditorWindow(Gtk.Window):
         cat_tree.get_selection().connect("changed", on_category_changed)
 
         # --- Lay the two panes out side by side -----------------------
+        # 1.7.1 LAYOUT FIX (Joshua live report, 2026-10-16): 1.7.0
+        # packed the Categories pane resize=False/shrink=False, so
+        # GtkPaned gave it exactly its bare minimum request —
+        # measured 46px against the Buildings pane's 489px, leaving
+        # the category text "barely readable". Per the EDITOR UI
+        # RULE both panes are graphical/list space he adjusts: both
+        # pack resize=True/shrink=True on a draggable divider, and
+        # the divider starts at an EVEN 50/50 split (set once the
+        # dialog has its real width — see the idle callback below).
         paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
+        paned.set_wide_handle(True)
         cat_scroll = Gtk.ScrolledWindow()
         cat_scroll.add(cat_tree)
-        paned.pack1(cat_scroll, False, False)
+        paned.pack1(cat_scroll, True, True)
         bld_scroll = Gtk.ScrolledWindow()
         bld_scroll.add(bld_tree)
-        paned.pack2(bld_scroll, True, False)
+        paned.pack2(bld_scroll, True, True)
         dlg.get_content_area().pack_start(paned, True, True, 0)
         dlg.show_all()
+
+        def _even_split():
+            """One-shot idle: start the divider at half the width."""
+            width = paned.get_allocated_width()
+            if width > 0:
+                paned.set_position(width // 2)
+            return False
+        GLib.idle_add(_even_split)
         # Start on "All buildings" (always the first category row).
         cat_tree.get_selection().select_path(Gtk.TreePath.new_first())
 
@@ -632,10 +758,10 @@ class AssetEditorWindow(Gtk.Window):
 
     def _on_push(self, widget):
         """
-        Show the push dialog with the export payload as JSON.
-        Joshua copies it or downloads it; Mollie applies it to the repo.
-        (No GitHub token is stored in the app — same protocol as the
-        sibling editors.)
+        File -> Push to GitHub…: with a suite token this runs the
+        real round-trip save (zones + design set, 1.7.1). Only
+        without a token does it fall back to the manual export
+        dialog below (copy/download the payload JSON by hand).
         """
 
         # Word-style: try API push first if token is set.
@@ -753,7 +879,21 @@ class AssetEditorWindow(Gtk.Window):
             if choice == "cancel":
                 return True  # don't close
             if choice == "push":
-                self._on_push(None)
+                # 1.7.1: push SYNCHRONOUSLY, before the window is
+                # allowed to close. The old code called _on_push,
+                # which (with a token) merely STARTED the threaded
+                # round trip and let the close proceed — process
+                # exit could kill the push mid-flight, and (before
+                # the 1.7.1 design leg) the design set was not in
+                # the save at all. "Push & Close" must mean the
+                # push FINISHED; the quit path pays the few seconds
+                # the round trip takes. Without a token there is no
+                # API push to wait for — fall back to the manual
+                # export dialog, as before.
+                if github_sync.has_token():
+                    self._round_trip_apply(*self._round_trip_work())
+                else:
+                    self._on_push(None)
         try:
             maximized = self.is_maximized()
             x, y = self.get_position()
@@ -796,23 +936,10 @@ class AssetEditorWindow(Gtk.Window):
             return "close"
         return "cancel"
 
-    def _push_targets(self):
-        """
-        Build (repo, path, bytes, message) list.
-        v1.6.0: ONLY game zone targets (dirty zones only, from the
-        zonedata store) + the editor subdivisions file in
-        adamsville-play. The 1.5.2 targets (buildings.json /
-        subdivisions.json in the retired adamsville-map-editor repo)
-        are GONE — that repo is no longer the source of truth, and
-        the legacy detailed-asset sample set is never pushed over
-        game data.
-        """
-        if self.zone_store is None:
-            return []
-        try:
-            return self.zone_store.build_targets()
-        except Exception:
-            return []
+    # (The 1.6.0-era _push_targets() helper is gone in 1.7.1: it
+    # had no callers since the GameStore took over target building,
+    # and its "design set is never pushed" rationale is exactly
+    # what the design leg in _round_trip_work reverses.)
 
     def _auto_push_tick(self):
         """5-minute auto-push timer. Returns True to keep running."""
@@ -934,9 +1061,16 @@ class ZoneInspectorPanel(Gtk.Box):
         super().__init__(orientation=Gtk.Orientation.VERTICAL,
                          spacing=6)
         self.set_border_width(8)
-        # The panel asks for ~400px; the paned position also gives
-        # it that when it opens (see ZoneBuildingsTab.show_inspector).
-        self.set_size_request(400, -1)
+        # 1.7.1 LAYOUT FIX (EDITOR UI RULE): 1.7.0 gave this panel a
+        # hard 400px width request and the split packed it
+        # shrink=False — with the data column's own minimum added,
+        # the divider had ZERO travel and the window's minimum width
+        # measured 1527px on a 1366px screen (see the rule block at
+        # the top of this file). The panel now requests only a
+        # modest 240px floor; the paned (shrink=True) and Joshua's
+        # drag decide its real size (default ~320px when it opens —
+        # see ZoneBuildingsTab._position_inspector).
+        self.set_size_request(240, -1)
         # Back-reference to the owning tab (zone + store access).
         self.tab = tab
 
@@ -965,6 +1099,9 @@ class ZoneInspectorPanel(Gtk.Box):
         self.title_label = Gtk.Label()
         self.title_label.set_markup("<b>Building</b>")
         self.title_label.set_halign(Gtk.Align.START)
+        # A long building name must ellipsize, not widen the panel
+        # (EDITOR UI RULE); the full name is on the tooltip.
+        self.title_label.set_ellipsize(Pango.EllipsizeMode.END)
         header.pack_start(self.title_label, True, True, 0)
         close_btn = Gtk.Button(label="✕")
         close_btn.set_relief(Gtk.ReliefStyle.NONE)
@@ -986,7 +1123,11 @@ class ZoneInspectorPanel(Gtk.Box):
         self.drawing = Gtk.DrawingArea()
         # Minimum height ~320 via the size request (DrawingArea has
         # no set_min_content_height — that is a ScrolledWindow API).
-        self.drawing.set_size_request(-1, 320)
+        # The width request is a small floor only: as a graphical
+        # pane its real width is the split divider's business
+        # (EDITOR UI RULE), and the drawing rescales to whatever
+        # space it is given.
+        self.drawing.set_size_request(160, 320)
         # Drag-to-orbit needs press / release / motion events.
         self.drawing.add_events(
             Gdk.EventMask.BUTTON_PRESS_MASK
@@ -1007,6 +1148,8 @@ class ZoneInspectorPanel(Gtk.Box):
         hint = Gtk.Label(
             label="Drag to rotate — the orange wall is the front")
         hint.set_halign(Gtk.Align.START)
+        # Ellipsize rather than force the panel wide (EDITOR UI RULE).
+        hint.set_ellipsize(Pango.EllipsizeMode.END)
         ctrl.pack_start(hint, True, True, 0)
         face_btn = Gtk.Button(label="Face front")
         # Snap back to the front-on azimuth computed at show time.
@@ -1027,6 +1170,12 @@ class ZoneInspectorPanel(Gtk.Box):
         for lbl in (self.name_label, self.type_label, self.size_label,
                     self.pos_label, self.front_line, self.flagged_line):
             lbl.set_halign(Gtk.Align.START)
+            # 1.7.1 (EDITOR UI RULE): a long single-line fact (a
+            # long name, a long road in "Flagged against: ...")
+            # ellipsizes inside a narrow pane instead of forcing
+            # the panel — and the window — wider. show_building()
+            # puts each label's full text on its tooltip.
+            lbl.set_ellipsize(Pango.EllipsizeMode.END)
             lbl.set_line_wrap(True)
             self.pack_start(lbl, False, False, 0)
 
@@ -1040,6 +1189,11 @@ class ZoneInspectorPanel(Gtk.Box):
                   "street, not recorded fact.")
         self.footnote.set_line_wrap(True)
         self.footnote.set_halign(Gtk.Align.START)
+        # Cap the wrapped label's natural width (a wrapping label
+        # still reports its full unwrapped text as NATURAL width —
+        # measured 1549px in 1.7.0 — which inflates the panel's
+        # natural size for no benefit).
+        self.footnote.set_max_width_chars(48)
         self.pack_start(self.footnote, False, False, 4)
 
     # -- showing a building ----------------------------------------------
@@ -1123,6 +1277,13 @@ class ZoneInspectorPanel(Gtk.Box):
             self.flagged_line.set_visible(True)
         else:
             self.flagged_line.set_visible(False)
+        # 1.7.1: the readout labels ellipsize in a narrow pane (see
+        # __init__) — mirror each full text onto its tooltip so
+        # nothing is ever actually hidden from Joshua.
+        self.title_label.set_tooltip_text(name)
+        for lbl in (self.name_label, self.type_label, self.size_label,
+                    self.pos_label, self.front_line, self.flagged_line):
+            lbl.set_tooltip_text(lbl.get_text())
 
         # Become visible and draw the building.
         self.set_visible(True)
@@ -1494,6 +1655,14 @@ class ZoneBuildingsTab(Gtk.Box):
         top.pack_start(save_btn, False, False, 6)
         self.info_label = Gtk.Label(label="")
         self.info_label.set_halign(Gtk.Align.START)
+        # 1.7.1 LAYOUT FIX (EDITOR UI RULE): this one-line status
+        # text ("adamsville: N buildings, ... showing first 1000
+        # rows") measured 834px of the data column's minimum width
+        # in 1.7.0 — a label must never set the window's width. It
+        # ellipsizes now; refresh() keeps the full text on its
+        # tooltip so it stays fully readable on hover.
+        self.info_label.set_ellipsize(Pango.EllipsizeMode.END)
+        self.info_label.set_max_width_chars(48)
         top.pack_start(self.info_label, True, True, 6)
         self.data_box.pack_start(top, False, False, 0)
 
@@ -1550,6 +1719,11 @@ class ZoneBuildingsTab(Gtk.Box):
         b_lbl.set_markup("<b>Buildings</b> (FLAGGED = locked, awaiting "
                          "Joshua's decision)")
         b_lbl.set_halign(Gtk.Align.START)
+        # Same rule as the info label: ellipsize, full text on the
+        # tooltip — a heading never widens the window.
+        b_lbl.set_ellipsize(Pango.EllipsizeMode.END)
+        b_lbl.set_tooltip_text(
+            "Buildings (FLAGGED = locked, awaiting Joshua's decision)")
         self.data_box.pack_start(b_lbl, False, False, 2)
         self.store = Gtk.ListStore(int, str, str, str)
         self.tree = Gtk.TreeView(model=self.store)
@@ -1561,6 +1735,10 @@ class ZoneBuildingsTab(Gtk.Box):
         scroll = Gtk.ScrolledWindow()
         scroll.set_min_content_height(180)
         scroll.add(self.tree)
+        # Kept as an attribute: the smoke test asserts the long
+        # buildings list lives inside a scrolled window (EDITOR UI
+        # RULE — long content scrolls, never clips).
+        self.list_scroll = scroll
         self.data_box.pack_start(scroll, True, True, 0)
 
         # --- Edit selected: move / resize / delete ---------------------
@@ -1581,7 +1759,21 @@ class ZoneBuildingsTab(Gtk.Box):
         del_btn = Gtk.Button(label="Delete Selected")
         del_btn.connect("clicked", self._on_delete)
         edit.pack_start(del_btn, False, False, 0)
-        self.data_box.pack_start(edit, False, False, 2)
+        # 1.7.1 LAYOUT FIX (EDITOR UI RULE — long content SCROLLS):
+        # this row is intrinsically ~1080px wide (five spin buttons
+        # whose minimums GTK computes from their ranges — measured
+        # 120-136px each and NOT reducible via width_chars or size
+        # requests — plus two buttons), and it alone set the data
+        # column's minimum in 1.7.0. It now rides in a horizontal
+        # scroller: at full width it looks exactly as before; when
+        # Joshua narrows the data pane, the row scrolls sideways
+        # and every control stays reachable.
+        self.edit_scroll = Gtk.ScrolledWindow()
+        self.edit_scroll.set_policy(Gtk.PolicyType.AUTOMATIC,
+                                    Gtk.PolicyType.NEVER)
+        self.edit_scroll.set_shadow_type(Gtk.ShadowType.NONE)
+        self.edit_scroll.add(edit)
+        self.data_box.pack_start(self.edit_scroll, False, False, 2)
 
         # --- Place a new building ---------------------------------------
         place = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
@@ -1604,11 +1796,21 @@ class ZoneBuildingsTab(Gtk.Box):
         place.pack_start(self.ptype, False, False, 0)
         self.pname = Gtk.Entry()
         self.pname.set_placeholder_text("Name (optional)")
+        # The name entry expands into free space, but its MINIMUM
+        # stays small (12 chars) so it never widens the window.
+        self.pname.set_width_chars(12)
         place.pack_start(self.pname, True, True, 0)
         place_btn = Gtk.Button(label="Place Building")
         place_btn.connect("clicked", self._on_place)
         place.pack_start(place_btn, False, False, 0)
-        self.data_box.pack_start(place, False, False, 2)
+        # Same horizontal scroller as the edit row above (this row
+        # measured 1112px in 1.7.0 — the widest thing in the tab).
+        self.place_scroll = Gtk.ScrolledWindow()
+        self.place_scroll.set_policy(Gtk.PolicyType.AUTOMATIC,
+                                     Gtk.PolicyType.NEVER)
+        self.place_scroll.set_shadow_type(Gtk.ShadowType.NONE)
+        self.place_scroll.add(place)
+        self.data_box.pack_start(self.place_scroll, False, False, 2)
 
         # --- Split pane: data column (left) + inspector (right) ----
         # The inspector starts hidden; selecting a building shows
@@ -1617,11 +1819,35 @@ class ZoneBuildingsTab(Gtk.Box):
         self.inspector = ZoneInspectorPanel(self)
         self.inspector.set_visible(False)
         self.paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
-        self.paned.pack1(self.data_box, True, False)
-        self.paned.pack2(self.inspector, False, False)
+        self.paned.set_wide_handle(True)
+        # 1.7.1 LAYOUT FIX (EDITOR UI RULE — graphical panes are
+        # ADJUSTABLE): 1.7.0 packed BOTH children shrink=False, so
+        # GtkPaned clamped the divider to [data minimum, width −
+        # inspector minimum] = a 1px range once the minimums summed
+        # past the window width (measured: set_position(250/754/
+        # 1259) ALL left the divider at 1108 — it could not move at
+        # all, exactly as Joshua reported). shrink=True on both
+        # children lets either pane go below its request size, so
+        # the divider travels the full width; the panes' contents
+        # are built to stay usable small (scrolled lists, capped
+        # spin buttons, ellipsized labels — see above).
+        self.paned.pack1(self.data_box, True, True)
+        self.paned.pack2(self.inspector, False, True)
         self.pack_start(self.paned, True, True, 0)
+        # Divider memory (session): once Joshua drags the divider,
+        # his position — not the default — is restored every time
+        # the inspector reopens. _split_guard keeps show_inspector's
+        # own programmatic positioning from overwriting his choice.
+        self._split_pos = None
+        self._split_guard = False
+        self.paned.connect("notify::position", self._on_split_moved)
 
         self.refresh()
+
+    def _on_split_moved(self, paned, _param):
+        """Remember a user-dragged divider position (this session)."""
+        if not self._split_guard and self.inspector.get_visible():
+            self._split_pos = paned.get_position()
 
     # -- helpers ---------------------------------------------------------
 
@@ -1695,6 +1921,8 @@ class ZoneBuildingsTab(Gtk.Box):
                 self._filter_values.index(filt)]
             info += f" — filter: {label}: {shown} rows shown"
         self.info_label.set_text(info)
+        # The label ellipsizes (1.7.1) — full text stays on hover.
+        self.info_label.set_tooltip_text(info)
 
     # -- inspector show/hide (1.7.0) --------------------------------------
 
@@ -1703,7 +1931,9 @@ class ZoneBuildingsTab(Gtk.Box):
         Open the visual inspector on building `index` (right pane).
         The data column stays fully visible and editable — only the
         inspector appears and the paned divider moves so it gets
-        its ~400px. Called from _on_select on a valid selection.
+        its share (~320px by default, or the position Joshua last
+        dragged it to this session). Called from _on_select on a
+        valid selection.
         """
         zd = self._zd()
         store = self.app_window.zone_store
@@ -1721,13 +1951,29 @@ class ZoneBuildingsTab(Gtk.Box):
         GLib.idle_add(self._position_inspector_idle)
 
     def _position_inspector(self):
-        """Give the inspector ~420px: divider at width - 420, when
-        that leaves the data column a sane >200px."""
+        """Place the split divider for the inspector.
+
+        1.7.1: Joshua's dragged position wins (remembered by
+        _on_split_moved for the whole session); before he has
+        dragged anything, the inspector gets ~320px. Either way the
+        position is clamped so the data column keeps >=240px and
+        the inspector >=200px — and because both panes are packed
+        shrink=True now, the clamp is a courtesy, not a wall: he
+        can drag past it afterwards.
+        """
         width = self.paned.get_allocated_width()
-        if width > 0:
-            pos = width - 420
-            if pos > 200:
-                self.paned.set_position(pos)
+        if width <= 0:
+            return
+        if self._split_pos is not None:
+            pos = self._split_pos
+        else:
+            pos = width - 320
+        pos = max(240, min(pos, width - 200))
+        self._split_guard = True
+        try:
+            self.paned.set_position(pos)
+        finally:
+            self._split_guard = False
 
     def _position_inspector_idle(self):
         """idle_add wrapper for _position_inspector (one-shot)."""
@@ -1894,25 +2140,60 @@ class BuildingTab(Gtk.Box):
             self.mode_buttons[mode_id] = btn
             mode_bar.pack_start(btn, False, False, 0)
         self.mode_buttons["view"].set_active(True)
-        left.pack_start(mode_bar, False, False, 4)
+        # 1.7.1 (EDITOR UI RULE): the mode bar rides in a
+        # horizontal scroller — if the canvas pane is dragged
+        # narrow, the buttons SCROLL into reach instead of being
+        # clipped off the edge.
+        mode_scroll = Gtk.ScrolledWindow()
+        mode_scroll.set_policy(Gtk.PolicyType.AUTOMATIC,
+                               Gtk.PolicyType.NEVER)
+        mode_scroll.set_shadow_type(Gtk.ShadowType.NONE)
+        mode_scroll.add(mode_bar)
+        left.pack_start(mode_scroll, False, False, 4)
 
         hint = Gtk.Label(
             label="Drag empty space to rotate — drag a window/door/"
                   "decoration to move it. Click a window to resize it.")
         hint.set_halign(Gtk.Align.START)
+        # Wrap so the hint's minimum is its longest word, not the
+        # whole sentence (EDITOR UI RULE).
+        hint.set_line_wrap(True)
         left.pack_start(hint, False, False, 0)
-        self.pack_start(left, True, True, 6)
 
         # --- Right: properties panel (scrollable) ---
         scrolled = Gtk.ScrolledWindow()
         scrolled.set_policy(Gtk.PolicyType.NEVER,
                             Gtk.PolicyType.AUTOMATIC)
-        scrolled.set_min_content_width(300)
+        # 1.7.1: floor lowered 300 -> 260 (rows are label 110px +
+        # control; 260 stays usable) — the paned's shrink below
+        # handles the rest.
+        scrolled.set_min_content_width(260)
         props = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         props.set_border_width(10)
         scrolled.add(props)
         self._build_properties(props)
-        self.pack_start(scrolled, False, False, 6)
+        self.props_scroll = scrolled
+
+        # 1.7.1 LAYOUT (EDITOR UI RULE): the preview canvas is a
+        # GRAPHICAL pane, so it sits in an adjustable split like
+        # the Zone tab's inspector — 1.7.0 used a plain box, where
+        # the properties column's width was whatever its content
+        # demanded and neither side could be resized. Both children
+        # pack shrink=True; the divider starts with the properties
+        # at ~330px (see _position_paned_idle).
+        self.paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
+        self.paned.set_wide_handle(True)
+        self.paned.pack1(left, True, True)
+        self.paned.pack2(scrolled, False, True)
+        self.pack_start(self.paned, True, True, 6)
+        GLib.idle_add(self._position_paned_idle)
+
+    def _position_paned_idle(self):
+        """One-shot idle: initial divider — properties get ~330px."""
+        width = self.paned.get_allocated_width()
+        if width > 500:
+            self.paned.set_position(width - 330)
+        return False
 
     # -- properties panel -------------------------------------------------
 
@@ -3180,12 +3461,16 @@ class SubdivisionTab(Gtk.Box):
         hint.set_halign(Gtk.Align.START)
         hint.set_line_wrap(True)
         left.pack_start(hint, False, False, 0)
-        self.pack_start(left, True, True, 6)
+        # `left` is packed into the split at the END of __init__
+        # (1.7.1: Gtk.Paned — see below), once `right` exists.
 
         # --- Right: subdivision list + editor panel ---
         right = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         right.set_border_width(10)
-        right.set_size_request(280, -1)
+        # 1.7.1: 240px floor (was a hard 280 request); the split's
+        # shrink lets it go narrower still (EDITOR UI RULE).
+        right.set_size_request(240, -1)
+        self.right_panel = right
 
         lbl = Gtk.Label()
         lbl.set_markup("<b>Subdivisions</b>")
@@ -3243,11 +3528,28 @@ class SubdivisionTab(Gtk.Box):
         gen_btn.connect("clicked", self._on_generate_houses)
         right.pack_start(gen_btn, False, False, 4)
 
-        self.pack_start(right, False, False, 6)
+        # 1.7.1 LAYOUT (EDITOR UI RULE): the map canvas is a
+        # GRAPHICAL pane — it belongs in an adjustable split, not a
+        # fixed box beside a hard-width side panel (the 1.7.0
+        # arrangement). Both children shrink=True; the divider
+        # starts with the side panel at ~290px.
+        self.paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
+        self.paned.set_wide_handle(True)
+        self.paned.pack1(left, True, True)
+        self.paned.pack2(right, False, True)
+        self.pack_start(self.paned, True, True, 6)
+        GLib.idle_add(self._position_paned_idle)
 
         # Load data into the canvas; the canvas fits the view itself
         # on its first real size allocation (v1.2.0 fix).
         self._refresh()
+
+    def _position_paned_idle(self):
+        """One-shot idle: initial divider — side panel gets ~290px."""
+        width = self.paned.get_allocated_width()
+        if width > 500:
+            self.paned.set_position(width - 290)
+        return False
 
     # -- data / refresh ---------------------------------------------------
 
