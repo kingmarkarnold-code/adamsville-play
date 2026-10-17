@@ -349,9 +349,40 @@ def fetch_file(repo, path, **kwargs):
     resp, err = _api_request(url, tok, conn=conn)
     if resp is None:
         return None, err
+    # 1.6.1 FIELD FIX (Joshua's laptop, 2026-10-16; ported from the
+    # Map Editor's proven 1.9.1 fix): the Contents API returns NO
+    # inline content for files larger than 1 MB — the response is
+    # metadata only ("encoding": "none", "content": ""). The pre-fix
+    # code decoded that empty string to b"" and every zone whose
+    # buildings file is over the limit failed to load (riverdale's
+    # buildings.json is 1,884,155 bytes, southfulton's 1,631,095, and
+    # several buildings_detail.json / roads.json files are over too),
+    # so download-on-open could NEVER fully succeed. When the
+    # metadata says the file has bytes but carries no content, fetch
+    # the same bytes from the Git Blobs API by the blob SHA the
+    # metadata gives us — content-addressed (never stale), same
+    # host, same connection, one extra request, only for files that
+    # need it.
+    content = resp.get("content") or ""
+    if not content and resp.get("size", 0) and resp.get("sha"):
+        blob_url = (f"https://api.github.com/repos/{repo}"
+                    f"/git/blobs/{resp['sha']}")
+        blob, berr = _api_request(blob_url, tok, conn=conn)
+        if blob is None:
+            return None, (f"Fetch failed: {path} is over the "
+                          f"Contents API's 1 MB inline limit, and "
+                          f"the follow-up blob download failed: "
+                          f"{berr}")
+        content = blob.get("content") or ""
+        if not content:
+            # The Blobs API itself caps at 10 MB; an empty blob body
+            # for a non-empty file means we hit that ceiling — say
+            # so plainly instead of returning empty bytes upstream.
+            return None, (f"Fetch failed: {path} is too large for "
+                          f"the GitHub API to return (over 10 MB).")
     try:
         # Contents API returns the file base64-encoded (with newlines).
-        return base64.b64decode(resp["content"]), None
+        return base64.b64decode(content), None
     except Exception as e:
         return None, f"Fetch failed: undecodable content ({e})"
 
