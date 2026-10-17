@@ -436,8 +436,8 @@
   },
   {
    "name": "ui_layout.json",
-   "sha256": "d2b5329497b29ac0191b7e10d8545ec16128a6c3f97ad4568c0b3980e080c619",
-   "size": 10025,
+   "sha256": "7e106c80c0e3b10e5a419f51756dd01e5b4d4e8d854f91890462d3820fb63e94",
+   "size": 10031,
    "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/ui_layout.json"
   },
   {
@@ -447,6 +447,6 @@
    "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/collision_material.js"
   }
  ],
- "ui_version": "2026.10.16.197",
- "version": "2026.10.16.197"
+ "ui_version": "2026.10.16.198",
+ "version": "2026.10.16.198"
 }
