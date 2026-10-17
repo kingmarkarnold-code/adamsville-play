@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Adamsville Building Editor 1.6.0 — GAME ZONE DATA LAYER (new in 1.6.0).
+Adamsville Building Editor 1.6.1 — GAME ZONE DATA LAYER (new in 1.6.0).
 
 WHY THIS MODULE EXISTS
 ----------------------
@@ -60,7 +60,7 @@ VERSION CONVENTION (cache-busting)
 The game's cache keys off buildings.json "version" (mirrored into
 buildings.js as OSM_BLDG_VERSION), so ANY content change must change
 it. On save, a dirty zone's version becomes
-    "<YYYY.MM.DD>-building-editor-1.6.0-<zone>"
+    "<YYYY.MM.DD>-building-editor-1.6.1-<zone>"
 using the save date. realCount is rewritten to len(buildings).
 
 SAVE = ONE ROUND TRIP (Joshua's standing rule for ALL editors)
@@ -124,7 +124,14 @@ ZONES = ["adamsville", "downtown", "eastatlanta", "mableton",
 SUBDIVISIONS_REPO_PATH = "editors/building-editor/subdivisions.json"
 
 # This editor's version — stamped into zone version strings on save.
-EDITOR_VERSION = "1.6.0"
+EDITOR_VERSION = "1.6.1"
+
+# 1.6.1: attempts per file when the failure is a NETWORK error (a
+# dropped or refused connection) — every attempt runs on a brand-new
+# connection (see download_on_open). Any other failure (an API
+# refusal such as 401/404) is final and never retried. Ported from
+# the Map Editor's proven 1.9.1 download design.
+DOWNLOAD_ATTEMPTS = 3
 
 # Repo-relative path templates for a zone's files.
 ZONE_DIR = "detailed/zones/{zone}"
@@ -514,29 +521,50 @@ class GameStore:
     def download_on_open(self, fetch_file):
         """
         Download every zone's files + the subdivisions file through
-        the Contents API (fetch_file(repo, path, conn=...) -> (bytes,
-        err), as in github_sync). The CALLER owns the connection: it
-        opens ONE fresh connection for the open-download, passes it
-        via fetch_file's conn kwarg, and closes it afterwards.
+        the Contents API (fetch_file(repo, path) -> (bytes, err), as
+        in github_sync).
+
+        1.6.1 download design (ported from the Map Editor's proven
+        1.9.1 fix): the injected fetch_file must NOT pin a shared
+        connection — github_sync then opens a FRESH connection for
+        each file and closes it right after, so the download never
+        depends on one keep-alive connection surviving ~36 requests
+        (a field failure on Joshua's laptop). A file that fails with
+        a NETWORK error is retried on another fresh connection, up
+        to DOWNLOAD_ATTEMPTS attempts; any other failure is final.
 
         A zone whose buildings/detail pair fails to download is
-        skipped with its error recorded; hero_buildings.json is
-        optional (only adamsville ships one — a 404 there is normal,
-        not an error). A missing subdivisions file (404) means
-        "start empty; it is created on first save".
+        skipped with its error recorded AS "<repo path>: <GitHub's
+        message>" so the failure surface names the file and the real
+        reason; hero_buildings.json is optional (only adamsville
+        ships one — a 404 there is normal, not an error). A missing
+        subdivisions file (404) means "start empty; it is created
+        on first save".
         Returns {zone: error_string} for zones that failed to load.
         """
+        def fetch(path):
+            """One file's fetch (bounded fresh-connection retries)."""
+            raw, err = None, None
+            for _attempt in range(DOWNLOAD_ATTEMPTS):
+                raw, err = fetch_file(REPO, path)
+                if err is None:
+                    return raw, None
+                if not (err or "").startswith("Network error:"):
+                    break  # an API refusal, not a dead connection
+            return raw, err
+
         errors = {}
         for zone in ZONES:
             files = {}
             zone_error = None
             for fname in ZONE_FILES:
-                raw, err = fetch_file(REPO, zone_repo_path(zone, fname))
+                path = zone_repo_path(zone, fname)
+                raw, err = fetch(path)
                 if err is not None:
                     if fname == "hero_buildings.json" and "404" in err:
                         raw = None  # zone simply has no hero file
                     else:
-                        zone_error = err
+                        zone_error = f"{path}: {err}"
                         break
                 files[fname] = raw
             if zone_error is not None:
@@ -547,7 +575,7 @@ class GameStore:
             except Exception as e:
                 errors[zone] = str(e)
         # Editor workspace subdivisions (may not exist yet).
-        raw, err = fetch_file(REPO, SUBDIVISIONS_REPO_PATH)
+        raw, err = fetch(SUBDIVISIONS_REPO_PATH)
         if err is None and raw:
             try:
                 parsed = json.loads(raw)
