@@ -1,6 +1,6 @@
 {
- "version": "1.7.0",
- "changelog": "Tabs fixed, and the Zone Buildings tab can now show you the building. (1) Opening a building crashed silently \u2014 every building tab died before it appeared; that is fixed, and if a tab ever fails to open again the editor now says why in the status bar instead of hiding it. Opened tabs also come to the front properly, and closing a tab from the menu can no longer close the wrong tab. (2) The Open Building picker is now a two-pane browser: pick a subcategory on the left (residential, commercial, multi-unit/institutional, other, or walkable/enterable buildings), then the building on the right. (3) The Zone Buildings list gains a category filter, including a 'Flagged only' view. (4) Clicking a building in the Zone Buildings list now opens a visual side panel in a split view \u2014 the data stays on screen and editable on the left \u2014 showing the building as a 3D model standing in its real location with its roads around it. The view starts facing the building's front, never rotates on its own, and you drag it to look around; the front wall is always orange so you can tell which way is front, and the panel names the road the front faces (and, for flagged buildings, the road it was flagged against).",
+ "version": "1.7.1",
+ "changelog": "Layout fixed so nothing can hide off-screen, and design buildings really save now. (1) The Zone Buildings split divider actually drags both ways \u2014 make the data side or the 3D building view as wide as you want; it remembers where you left it while the app is open. (2) The whole window fits a 1366-wide screen maximized: the wide control rows now scroll sideways instead of pushing content off the edge, and long labels shorten with the full text on hover. (3) The Open Building box splits evenly between Categories and Buildings, and both sides can be dragged. The Building design tabs and the Subdivisions tab got the same adjustable splits (drag between the picture and its panel). (4) DESIGN BUILDINGS NOW SAVE TO GITHUB: your design buildings (the samples and the 535 house) download from GitHub when the editor opens, and saving \u2014 including Push & Close at the quit prompt \u2014 sends them to GitHub, then downloads them back to prove they arrived. Before this fix, a design edit such as a roof colour never left the laptop even when the app said the push succeeded; any roof-colour edit still sitting on your laptop will be picked up and published by your next save.",
  "files": [
   {
    "path": "about.py",
@@ -10,7 +10,7 @@
   {
    "path": "app.py",
    "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/app.py",
-   "sha256": "87445b07ccaf2e87b15cb9a773de37bd95c3d012ea1b13bddfe077add6a12cef"
+   "sha256": "bf0a14c30f7890be40ef78fc34fc7e8a3a1e8d2cdfe1a0b47fb02775891ce542"
   },
   {
    "path": "buildingcanvas.py",
@@ -20,7 +20,7 @@
   {
    "path": "data.py",
    "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/data.py",
-   "sha256": "8e68a5d177bdc32f2e6c43e402e9f3b41eb510477bb3538cb559e3ce7ffca231"
+   "sha256": "308da8deeca061fd7318c6d1d1ed3938f12a951cbbfffd3d6714ab61c03704f4"
   },
   {
    "path": "flagged_buildings.json",
@@ -50,7 +50,7 @@
   {
    "path": "zonedata.py",
    "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/zonedata.py",
-   "sha256": "a40acedc3a724ac0eeda51495d0d909107edb4d907560d19fcf27debe4822d9c"
+   "sha256": "0856e03354fd872b770be5e23819ba1637b803874a442311336115a187658cf8"
   }
  ]
 }
