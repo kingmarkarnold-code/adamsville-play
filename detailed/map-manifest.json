@@ -1,487 +1,487 @@
 {
-  "version": "2.0.0",
-  "map_version": "2026.10.16.9",
-  "files": [
-    {
-      "name": "elev.js",
-      "sha256": "c73c3f11c5882ff0539bed5071dbb0c9ce72f7c610e7138dd4afe1a7972a2a04",
-      "size": 451620,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/elev.js"
-    },
-    {
-      "name": "gas_stations_real.js",
-      "sha256": "1c8f8464c00624a83ce550e778e4bd6342f91dfbe91ae1c24ec0e73699b33ba4",
-      "size": 9670,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/gas_stations_real.js"
-    },
-    {
-      "name": "zones/mableton/roads.js",
-      "sha256": "54ebb0ee231165af33c78109bd60916608fae4b15fd9c0879e06bd85a505003a",
-      "size": 501935,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/mableton/roads.js"
-    },
-    {
-      "name": "zones/mableton/buildings.js",
-      "sha256": "1724301aadda48c60fc229c341836e611bbdfd2d00294c142d9648fb30ab5970",
-      "size": 126148,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/mableton/buildings.js"
-    },
-    {
-      "name": "zones/mableton/pins.js",
-      "sha256": "cf9ea72137aaf767db26de6fc6fb21f1a6552198ff2d59f724a50dbb7a463907",
-      "size": 76294,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/mableton/pins.js"
-    },
-    {
-      "name": "zones/mableton/lifts.js",
-      "sha256": "36b01a8515a776323dd56ae124f78424414676542b1e15ba2fe75c709f291ea2",
-      "size": 190,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/mableton/lifts.js"
-    },
-    {
-      "name": "zones/mableton/signs.js",
-      "sha256": "845b585cc152495dbbfe5bb103c943358316a16a4c9dcf55c525bbe98d83fd47",
-      "size": 1090,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/mableton/signs.js"
-    },
-    {
-      "name": "zones/adamsville/roads.js",
-      "sha256": "d12c0b6abfe90c64b26fd66c5a819eefac3617a83deecb282cf77c61efbe04d9",
-      "size": 2448224,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/adamsville/roads.js"
-    },
-    {
-      "name": "zones/adamsville/buildings.js",
-      "sha256": "b555f0e30df301b6750966cdcc5fed58e6aecde32dc2f0eaec83b3742bbc833c",
-      "size": 836656,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/adamsville/buildings.js"
-    },
-    {
-      "name": "zones/adamsville/pins.js",
-      "sha256": "88a1ccd59ddcd43e2d89c4baf45679cd2bf91f398caf184ed915cd62e14df457",
-      "size": 271396,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/adamsville/pins.js",
-      "hash": "88a1ccd59ddcd43e2d89c4baf45679cd2bf91f398caf184ed915cd62e14df457"
-    },
-    {
-      "name": "zones/adamsville/lifts.js",
-      "sha256": "35c77bf49fc74086375ad9c085627d58430526f2768bae883c3f166b0040b70c",
-      "size": 194,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/adamsville/lifts.js"
-    },
-    {
-      "name": "zones/adamsville/signs.js",
-      "sha256": "99e369423bd0c8ce6a959e58fb43258a0df401391add352904bde8d80ff32042",
-      "size": 7524,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/adamsville/signs.js"
-    },
-    {
-      "name": "zones/downtown/roads.js",
-      "sha256": "b826910620da6c4ee0ade028da3370bb63463bb5282fe07142d663939e5adaf8",
-      "size": 902309,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/downtown/roads.js"
-    },
-    {
-      "name": "zones/downtown/buildings.js",
-      "sha256": "97f25eac3fa580298e3bf0d19b94a15403801b2b98a702a407645c77d739487a",
-      "size": 234258,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/downtown/buildings.js"
-    },
-    {
-      "name": "zones/downtown/pins.js",
-      "sha256": "d200dcb4e8e632b877bd9b5bdfcddd2af52209fd37b0f64e74a68ba7d14022d1",
-      "size": 151156,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/downtown/pins.js"
-    },
-    {
-      "name": "zones/downtown/lifts.js",
-      "sha256": "db32b8a9fb71618943058a85cf8dd4a7b27356732ef6630f835a3787ef1b17a6",
-      "size": 190,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/downtown/lifts.js"
-    },
-    {
-      "name": "zones/downtown/signs.js",
-      "sha256": "a387a911c6d5b51bd2d46447e227cb4eb2f5e0bbf7a3357aa305d9b679087517",
-      "size": 4512,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/downtown/signs.js"
-    },
-    {
-      "name": "zones/eastatlanta/roads.js",
-      "sha256": "b80e4123ddd76ad08186f2185b52d3cfc626f1b50df45619fc19c477c631ffa5",
-      "size": 1891147,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/eastatlanta/roads.js"
-    },
-    {
-      "name": "zones/eastatlanta/buildings.js",
-      "sha256": "8daa9d5e93101c561bee2f56203d448ffbbecf7f833c870e036b0376441e5b43",
-      "size": 889042,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/eastatlanta/buildings.js"
-    },
-    {
-      "name": "zones/eastatlanta/pins.js",
-      "sha256": "568ad0831c059d48612725069c4ba36b77419ec84213529401b44ff5cfaae154",
-      "size": 347795,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/eastatlanta/pins.js"
-    },
-    {
-      "name": "zones/eastatlanta/lifts.js",
-      "sha256": "ecf436597fee6c4692d34f90d8fe1a3ad1515bf0db92b272a5ee8af94a6ac566",
-      "size": 197,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/eastatlanta/lifts.js"
-    },
-    {
-      "name": "zones/eastatlanta/signs.js",
-      "sha256": "bc952738e37c9edc73f499fd20925c43212ca7b8dd32f223beeffb2ae518bf15",
-      "size": 11774,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/eastatlanta/signs.js"
-    },
-    {
-      "name": "zones/unioncity/roads.js",
-      "sha256": "f1d1e18ec2897704cb239c4d4333d9544da43c8ddda767b1d9dac045fe5497f9",
-      "size": 271663,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/unioncity/roads.js"
-    },
-    {
-      "name": "zones/unioncity/buildings.js",
-      "sha256": "c252ed5e7a756c5417e45deb93e519fda56169d370b9ec188db93128c91784d3",
-      "size": 289225,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/unioncity/buildings.js"
-    },
-    {
-      "name": "zones/unioncity/pins.js",
-      "sha256": "2950ff7015d5287d97b64e086a8a65a11db348fd9300359375c9054348ac92aa",
-      "size": 39999,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/unioncity/pins.js"
-    },
-    {
-      "name": "zones/unioncity/lifts.js",
-      "sha256": "8148258cbe3bdcf166238f4de81524e3e6f7fe490ed9389682b68dcff3c3c230",
-      "size": 193,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/unioncity/lifts.js"
-    },
-    {
-      "name": "zones/unioncity/signs.js",
-      "sha256": "1236e53b153f2d76c30081ed292491c0b41a2b255aa311e931ed0f1f6aaf2a35",
-      "size": 540,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/unioncity/signs.js"
-    },
-    {
-      "name": "zones/southfulton/roads.js",
-      "sha256": "f739778b909e9cd3010b80da6fc9fed73f8cafbff46c34d5df35400ecb6a3e34",
-      "size": 3892278,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/southfulton/roads.js"
-    },
-    {
-      "name": "zones/southfulton/buildings.js",
-      "sha256": "78aa1969b48c611bdfd3fc9e3477e68c29095ab6c92ff14e68a938190ccf1586",
-      "size": 1631296,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/southfulton/buildings.js"
-    },
-    {
-      "name": "zones/southfulton/pins.js",
-      "sha256": "29f7c45d79a19eaf11b460ec0d144cc460eaf5070b6b2bb329da51d88b909dbb",
-      "size": 440556,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/southfulton/pins.js"
-    },
-    {
-      "name": "zones/southfulton/lifts.js",
-      "sha256": "dfc3e9ea56b3b46018b4e4a597331ee1ae1c838913d81211b664e38f67c51d33",
-      "size": 197,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/southfulton/lifts.js"
-    },
-    {
-      "name": "zones/southfulton/signs.js",
-      "sha256": "b18f81617d06b298fa731be33ea8a0d41edc2fadf1b269771d08a6179c930440",
-      "size": 10248,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/southfulton/signs.js"
-    },
-    {
-      "name": "zones/riverdale/roads.js",
-      "sha256": "5693929b3dd0072e2143df84b136cbfbd9f097c77a7cfd072adbecde6c905f8b",
-      "size": 2394240,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/riverdale/roads.js"
-    },
-    {
-      "name": "zones/riverdale/buildings.js",
-      "sha256": "2ae3ef58aadfe045e48385d35f898dd7352abe01d8ed1012964bdeb876edd7f1",
-      "size": 1884351,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/riverdale/buildings.js"
-    },
-    {
-      "name": "zones/riverdale/pins.js",
-      "sha256": "47e1b31e4b4907169d588abf2a4ca2567f00bd984690b150c51c89a39a726751",
-      "size": 537177,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/riverdale/pins.js"
-    },
-    {
-      "name": "zones/riverdale/lifts.js",
-      "sha256": "1555de376d61f874175718655eb71c55e36a6a35b0fce7abc808ceb91bc1a1d8",
-      "size": 192,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/riverdale/lifts.js"
-    },
-    {
-      "name": "zones/riverdale/signs.js",
-      "sha256": "e59cd23d08c56c8f5133045f14732ede3b3dac186305237c181d12b45b24850f",
-      "size": 20488,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/riverdale/signs.js"
-    },
-    {
-      "name": "zones/adamsville/roads.json",
-      "sha256": "8f0fd91d98d344c56ca815d1747bc342f78a936bc1b54a3e94003ea43251edec",
-      "size": 2448044,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/adamsville/roads.json"
-    },
-    {
-      "name": "zones/adamsville/buildings.json",
-      "sha256": "d542859fc919f157d91cf02ed9236dd151fcb64740b731e79b692b7aff1f7a11",
-      "size": 836458,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/adamsville/buildings.json"
-    },
-    {
-      "name": "zones/adamsville/pins.json",
-      "sha256": "472a0d5f17d630efbca4b743be823c247bc81f6d5ace148d722c29c1eabb4acc",
-      "size": 271204,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/adamsville/pins.json"
-    },
-    {
-      "name": "zones/adamsville/lifts.json",
-      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-      "size": 2,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/adamsville/lifts.json"
-    },
-    {
-      "name": "zones/adamsville/signs.json",
-      "sha256": "6ec907a40163a3de42196d5ad3b418d76ccd64372ad947e739eb51e0693acac3",
-      "size": 7131,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/adamsville/signs.json"
-    },
-    {
-      "name": "zones/adamsville/zone.json",
-      "sha256": "73ba92d7f08cb18085f9bcef6114ee5b069027ffea209d394bfd2cd2fb4d4ede",
-      "size": 1029,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/adamsville/zone.json"
-    },
-    {
-      "name": "zones/adamsville/hero_buildings.json",
-      "sha256": "88354e44ee7223407ce7f15d6d7f9e887740936b142702918a8a73bb31064ef0",
-      "size": 1399,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/adamsville/hero_buildings.json"
-    },
-    {
-      "name": "zones/downtown/roads.json",
-      "sha256": "eaaa61d6e281015b54bcea159678476f13e8b3596dd7f177e18c7989c5739c51",
-      "size": 902133,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/downtown/roads.json"
-    },
-    {
-      "name": "zones/downtown/buildings.json",
-      "sha256": "652ece7a432daae591fa19e776c402365bc6eac1cfa4fe22cd52b06a7f555905",
-      "size": 234064,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/downtown/buildings.json"
-    },
-    {
-      "name": "zones/downtown/pins.json",
-      "sha256": "5c1028ac06c41644fa59f44844192096a7b13b0b51f5cb230b411134d6670fc9",
-      "size": 150968,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/downtown/pins.json"
-    },
-    {
-      "name": "zones/downtown/lifts.json",
-      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-      "size": 2,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/downtown/lifts.json"
-    },
-    {
-      "name": "zones/downtown/signs.json",
-      "sha256": "23fde3ce625753a3e915ccd7f707a4534f0eb2d4c26f54c76b77b3e3bc35b1b0",
-      "size": 4298,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/downtown/signs.json"
-    },
-    {
-      "name": "zones/downtown/zone.json",
-      "sha256": "7f2c98b3c7e181315c667d60469e5b84511ee0836642648b68e1730c9c74054c",
-      "size": 1222,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/downtown/zone.json"
-    },
-    {
-      "name": "zones/eastatlanta/roads.json",
-      "sha256": "7f8913b4ee471a692e065c2601564930747cd6999c230bdd45ff407afb38ad7c",
-      "size": 1890964,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/eastatlanta/roads.json"
-    },
-    {
-      "name": "zones/eastatlanta/buildings.json",
-      "sha256": "f127562ca55354b4568f9165c3c8bc638ed369ea6e067c9071534ce9a58b241d",
-      "size": 888841,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/eastatlanta/buildings.json"
-    },
-    {
-      "name": "zones/eastatlanta/pins.json",
-      "sha256": "50ef488324f842ffab6fda8064c6c82a85e12a3d5dd054bce3556c3a573c3ca5",
-      "size": 347600,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/eastatlanta/pins.json"
-    },
-    {
-      "name": "zones/eastatlanta/lifts.json",
-      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-      "size": 2,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/eastatlanta/lifts.json"
-    },
-    {
-      "name": "zones/eastatlanta/signs.json",
-      "sha256": "993e248a0554b6e623ce99894072687b1a490a9b540631d43dde34fcdfe8edc3",
-      "size": 11553,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/eastatlanta/signs.json"
-    },
-    {
-      "name": "zones/eastatlanta/zone.json",
-      "sha256": "70fc908a0d21cb9f649e662c585957faca8db0c9351c2f69f519c1d4e70a7833",
-      "size": 1223,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/eastatlanta/zone.json"
-    },
-    {
-      "name": "zones/mableton/roads.json",
-      "sha256": "ca19a28c7f444ba9c0b4f52813be45a2acce4c0c21eff722a4fb5dcd14f07d92",
-      "size": 501759,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/mableton/roads.json"
-    },
-    {
-      "name": "zones/mableton/buildings.json",
-      "sha256": "5451cbbc267a32b3665612c04df96e3222fb07a8903928e541b7a03741c0a74d",
-      "size": 125954,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/mableton/buildings.json"
-    },
-    {
-      "name": "zones/mableton/pins.json",
-      "sha256": "5c338362d6628d6b3ba4164fdfda28846fb76d00b77e66d82423de53bfd06be2",
-      "size": 76106,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/mableton/pins.json"
-    },
-    {
-      "name": "zones/mableton/lifts.json",
-      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-      "size": 2,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/mableton/lifts.json"
-    },
-    {
-      "name": "zones/mableton/signs.json",
-      "sha256": "4c93f922bc15d005ea39bc173f4fa353db9653d759fee2447e4346914b990903",
-      "size": 876,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/mableton/signs.json"
-    },
-    {
-      "name": "zones/mableton/zone.json",
-      "sha256": "dcd3860333c8292de62b7440d89e9b603b96fd48b3d223310d5bb0c7b802bc3c",
-      "size": 1209,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/mableton/zone.json"
-    },
-    {
-      "name": "zones/riverdale/roads.json",
-      "sha256": "8a044bff2b57f73b85d50db63c28e8dd20b7139b3940ff2462e30e570791f78d",
-      "size": 2394062,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/riverdale/roads.json"
-    },
-    {
-      "name": "zones/riverdale/buildings.json",
-      "sha256": "fa0b113d0af005f9515d3a332f377fa4e3c25936bfa3b6633f81dcd6e2a72be4",
-      "size": 1884155,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/riverdale/buildings.json"
-    },
-    {
-      "name": "zones/riverdale/pins.json",
-      "sha256": "36410f01c635628a3226e515e0453392d014993da0abc4613a7db6b0dff16cf1",
-      "size": 536987,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/riverdale/pins.json"
-    },
-    {
-      "name": "zones/riverdale/lifts.json",
-      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-      "size": 2,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/riverdale/lifts.json"
-    },
-    {
-      "name": "zones/riverdale/signs.json",
-      "sha256": "771b7a11d3ad2593ac414533b0f7317319b78c3f15aa8ddca605b37dd3fecee2",
-      "size": 20272,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/riverdale/signs.json"
-    },
-    {
-      "name": "zones/riverdale/zone.json",
-      "sha256": "23f3bb3ee56b54a8824ed80fb99122650dda90ae6d0a3caac413d3bb02960f99",
-      "size": 1220,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/riverdale/zone.json"
-    },
-    {
-      "name": "zones/southfulton/roads.json",
-      "sha256": "387f36e650d30b16cb43850afe3791d4c8bfac96091bbc24fc749def80cbab1b",
-      "size": 3892095,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/southfulton/roads.json"
-    },
-    {
-      "name": "zones/southfulton/buildings.json",
-      "sha256": "66a6310e364c9b38c731515406a24a7404ed1c195d4b28017142119c259fdec5",
-      "size": 1631095,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/southfulton/buildings.json"
-    },
-    {
-      "name": "zones/southfulton/pins.json",
-      "sha256": "060ffb8dd5498f19cb78b7caa0684f7fe985c9eb5a7987e86d81b3ccaaa0ae25",
-      "size": 440361,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/southfulton/pins.json"
-    },
-    {
-      "name": "zones/southfulton/lifts.json",
-      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-      "size": 2,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/southfulton/lifts.json"
-    },
-    {
-      "name": "zones/southfulton/signs.json",
-      "sha256": "9065abf9976f5b7a4478992ddfd8cf4a462cc798ad0198ff7e8c2c9c116e16c2",
-      "size": 10027,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/southfulton/signs.json"
-    },
-    {
-      "name": "zones/southfulton/zone.json",
-      "sha256": "65f2b9ca8775f43e24f5e1c2d0d332c0e94dc0c812d075ff3594daa549e86779",
-      "size": 1219,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/southfulton/zone.json"
-    },
-    {
-      "name": "zones/unioncity/roads.json",
-      "sha256": "7ad0f4bb04cc114e9c2ef9a2007aa7d81cea61889e6537ce3202aae7c6e77e37",
-      "size": 271484,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/unioncity/roads.json"
-    },
-    {
-      "name": "zones/unioncity/buildings.json",
-      "sha256": "a289d5a1f64739d7b768f75ba48896d72ce433e67fbe4a32895e7600477ff504",
-      "size": 289028,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/unioncity/buildings.json"
-    },
-    {
-      "name": "zones/unioncity/pins.json",
-      "sha256": "82dde5e75ca969b10a4224509369c40f55639b51af5bd60a2bfb05de7a43b4c8",
-      "size": 39808,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/unioncity/pins.json"
-    },
-    {
-      "name": "zones/unioncity/lifts.json",
-      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-      "size": 2,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/unioncity/lifts.json"
-    },
-    {
-      "name": "zones/unioncity/signs.json",
-      "sha256": "e8d65b9be43788c0188217a3dac769255ecbf92b9e67e83e3da55c22b69fc9eb",
-      "size": 323,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/unioncity/signs.json"
-    },
-    {
-      "name": "zones/unioncity/zone.json",
-      "sha256": "58b3db4effd007793d11c86990624acf4c2e0fc7d207700f85aad53cc764a764",
-      "size": 1210,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/unioncity/zone.json"
-    }
-  ]
+ "version": "2.0.0",
+ "map_version": "2026.10.16.10",
+ "files": [
+  {
+   "name": "elev.js",
+   "sha256": "c73c3f11c5882ff0539bed5071dbb0c9ce72f7c610e7138dd4afe1a7972a2a04",
+   "size": 451620,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/elev.js"
+  },
+  {
+   "name": "gas_stations_real.js",
+   "sha256": "1c8f8464c00624a83ce550e778e4bd6342f91dfbe91ae1c24ec0e73699b33ba4",
+   "size": 9670,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/gas_stations_real.js"
+  },
+  {
+   "name": "zones/mableton/roads.js",
+   "sha256": "54ebb0ee231165af33c78109bd60916608fae4b15fd9c0879e06bd85a505003a",
+   "size": 501935,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/mableton/roads.js"
+  },
+  {
+   "name": "zones/mableton/buildings.js",
+   "sha256": "1724301aadda48c60fc229c341836e611bbdfd2d00294c142d9648fb30ab5970",
+   "size": 126148,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/mableton/buildings.js"
+  },
+  {
+   "name": "zones/mableton/pins.js",
+   "sha256": "cf9ea72137aaf767db26de6fc6fb21f1a6552198ff2d59f724a50dbb7a463907",
+   "size": 76294,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/mableton/pins.js"
+  },
+  {
+   "name": "zones/mableton/lifts.js",
+   "sha256": "36b01a8515a776323dd56ae124f78424414676542b1e15ba2fe75c709f291ea2",
+   "size": 190,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/mableton/lifts.js"
+  },
+  {
+   "name": "zones/mableton/signs.js",
+   "sha256": "845b585cc152495dbbfe5bb103c943358316a16a4c9dcf55c525bbe98d83fd47",
+   "size": 1090,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/mableton/signs.js"
+  },
+  {
+   "name": "zones/adamsville/roads.js",
+   "sha256": "d12c0b6abfe90c64b26fd66c5a819eefac3617a83deecb282cf77c61efbe04d9",
+   "size": 2448224,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/adamsville/roads.js"
+  },
+  {
+   "name": "zones/adamsville/buildings.js",
+   "sha256": "b555f0e30df301b6750966cdcc5fed58e6aecde32dc2f0eaec83b3742bbc833c",
+   "size": 836656,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/adamsville/buildings.js"
+  },
+  {
+   "name": "zones/adamsville/pins.js",
+   "sha256": "88a1ccd59ddcd43e2d89c4baf45679cd2bf91f398caf184ed915cd62e14df457",
+   "size": 271396,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/adamsville/pins.js",
+   "hash": "88a1ccd59ddcd43e2d89c4baf45679cd2bf91f398caf184ed915cd62e14df457"
+  },
+  {
+   "name": "zones/adamsville/lifts.js",
+   "sha256": "35c77bf49fc74086375ad9c085627d58430526f2768bae883c3f166b0040b70c",
+   "size": 194,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/adamsville/lifts.js"
+  },
+  {
+   "name": "zones/adamsville/signs.js",
+   "sha256": "99e369423bd0c8ce6a959e58fb43258a0df401391add352904bde8d80ff32042",
+   "size": 7524,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/adamsville/signs.js"
+  },
+  {
+   "name": "zones/downtown/roads.js",
+   "sha256": "b826910620da6c4ee0ade028da3370bb63463bb5282fe07142d663939e5adaf8",
+   "size": 902309,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/downtown/roads.js"
+  },
+  {
+   "name": "zones/downtown/buildings.js",
+   "sha256": "97f25eac3fa580298e3bf0d19b94a15403801b2b98a702a407645c77d739487a",
+   "size": 234258,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/downtown/buildings.js"
+  },
+  {
+   "name": "zones/downtown/pins.js",
+   "sha256": "d200dcb4e8e632b877bd9b5bdfcddd2af52209fd37b0f64e74a68ba7d14022d1",
+   "size": 151156,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/downtown/pins.js"
+  },
+  {
+   "name": "zones/downtown/lifts.js",
+   "sha256": "db32b8a9fb71618943058a85cf8dd4a7b27356732ef6630f835a3787ef1b17a6",
+   "size": 190,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/downtown/lifts.js"
+  },
+  {
+   "name": "zones/downtown/signs.js",
+   "sha256": "a387a911c6d5b51bd2d46447e227cb4eb2f5e0bbf7a3357aa305d9b679087517",
+   "size": 4512,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/downtown/signs.js"
+  },
+  {
+   "name": "zones/eastatlanta/roads.js",
+   "sha256": "b80e4123ddd76ad08186f2185b52d3cfc626f1b50df45619fc19c477c631ffa5",
+   "size": 1891147,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/eastatlanta/roads.js"
+  },
+  {
+   "name": "zones/eastatlanta/buildings.js",
+   "sha256": "8daa9d5e93101c561bee2f56203d448ffbbecf7f833c870e036b0376441e5b43",
+   "size": 889042,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/eastatlanta/buildings.js"
+  },
+  {
+   "name": "zones/eastatlanta/pins.js",
+   "sha256": "568ad0831c059d48612725069c4ba36b77419ec84213529401b44ff5cfaae154",
+   "size": 347795,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/eastatlanta/pins.js"
+  },
+  {
+   "name": "zones/eastatlanta/lifts.js",
+   "sha256": "ecf436597fee6c4692d34f90d8fe1a3ad1515bf0db92b272a5ee8af94a6ac566",
+   "size": 197,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/eastatlanta/lifts.js"
+  },
+  {
+   "name": "zones/eastatlanta/signs.js",
+   "sha256": "bc952738e37c9edc73f499fd20925c43212ca7b8dd32f223beeffb2ae518bf15",
+   "size": 11774,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/eastatlanta/signs.js"
+  },
+  {
+   "name": "zones/unioncity/roads.js",
+   "sha256": "f1d1e18ec2897704cb239c4d4333d9544da43c8ddda767b1d9dac045fe5497f9",
+   "size": 271663,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/unioncity/roads.js"
+  },
+  {
+   "name": "zones/unioncity/buildings.js",
+   "sha256": "c252ed5e7a756c5417e45deb93e519fda56169d370b9ec188db93128c91784d3",
+   "size": 289225,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/unioncity/buildings.js"
+  },
+  {
+   "name": "zones/unioncity/pins.js",
+   "sha256": "2950ff7015d5287d97b64e086a8a65a11db348fd9300359375c9054348ac92aa",
+   "size": 39999,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/unioncity/pins.js"
+  },
+  {
+   "name": "zones/unioncity/lifts.js",
+   "sha256": "8148258cbe3bdcf166238f4de81524e3e6f7fe490ed9389682b68dcff3c3c230",
+   "size": 193,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/unioncity/lifts.js"
+  },
+  {
+   "name": "zones/unioncity/signs.js",
+   "sha256": "1236e53b153f2d76c30081ed292491c0b41a2b255aa311e931ed0f1f6aaf2a35",
+   "size": 540,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/unioncity/signs.js"
+  },
+  {
+   "name": "zones/southfulton/roads.js",
+   "sha256": "f739778b909e9cd3010b80da6fc9fed73f8cafbff46c34d5df35400ecb6a3e34",
+   "size": 3892278,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/southfulton/roads.js"
+  },
+  {
+   "name": "zones/southfulton/buildings.js",
+   "sha256": "78aa1969b48c611bdfd3fc9e3477e68c29095ab6c92ff14e68a938190ccf1586",
+   "size": 1631296,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/southfulton/buildings.js"
+  },
+  {
+   "name": "zones/southfulton/pins.js",
+   "sha256": "29f7c45d79a19eaf11b460ec0d144cc460eaf5070b6b2bb329da51d88b909dbb",
+   "size": 440556,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/southfulton/pins.js"
+  },
+  {
+   "name": "zones/southfulton/lifts.js",
+   "sha256": "dfc3e9ea56b3b46018b4e4a597331ee1ae1c838913d81211b664e38f67c51d33",
+   "size": 197,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/southfulton/lifts.js"
+  },
+  {
+   "name": "zones/southfulton/signs.js",
+   "sha256": "b18f81617d06b298fa731be33ea8a0d41edc2fadf1b269771d08a6179c930440",
+   "size": 10248,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/southfulton/signs.js"
+  },
+  {
+   "name": "zones/riverdale/roads.js",
+   "sha256": "5693929b3dd0072e2143df84b136cbfbd9f097c77a7cfd072adbecde6c905f8b",
+   "size": 2394240,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/riverdale/roads.js"
+  },
+  {
+   "name": "zones/riverdale/buildings.js",
+   "sha256": "2ae3ef58aadfe045e48385d35f898dd7352abe01d8ed1012964bdeb876edd7f1",
+   "size": 1884351,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/riverdale/buildings.js"
+  },
+  {
+   "name": "zones/riverdale/pins.js",
+   "sha256": "47e1b31e4b4907169d588abf2a4ca2567f00bd984690b150c51c89a39a726751",
+   "size": 537177,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/riverdale/pins.js"
+  },
+  {
+   "name": "zones/riverdale/lifts.js",
+   "sha256": "1555de376d61f874175718655eb71c55e36a6a35b0fce7abc808ceb91bc1a1d8",
+   "size": 192,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/riverdale/lifts.js"
+  },
+  {
+   "name": "zones/riverdale/signs.js",
+   "sha256": "e59cd23d08c56c8f5133045f14732ede3b3dac186305237c181d12b45b24850f",
+   "size": 20488,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/riverdale/signs.js"
+  },
+  {
+   "name": "zones/adamsville/roads.json",
+   "sha256": "8f0fd91d98d344c56ca815d1747bc342f78a936bc1b54a3e94003ea43251edec",
+   "size": 2448044,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/adamsville/roads.json"
+  },
+  {
+   "name": "zones/adamsville/buildings.json",
+   "sha256": "d542859fc919f157d91cf02ed9236dd151fcb64740b731e79b692b7aff1f7a11",
+   "size": 836458,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/adamsville/buildings.json"
+  },
+  {
+   "name": "zones/adamsville/pins.json",
+   "sha256": "472a0d5f17d630efbca4b743be823c247bc81f6d5ace148d722c29c1eabb4acc",
+   "size": 271204,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/adamsville/pins.json"
+  },
+  {
+   "name": "zones/adamsville/lifts.json",
+   "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+   "size": 2,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/adamsville/lifts.json"
+  },
+  {
+   "name": "zones/adamsville/signs.json",
+   "sha256": "6ec907a40163a3de42196d5ad3b418d76ccd64372ad947e739eb51e0693acac3",
+   "size": 7131,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/adamsville/signs.json"
+  },
+  {
+   "name": "zones/adamsville/zone.json",
+   "sha256": "73ba92d7f08cb18085f9bcef6114ee5b069027ffea209d394bfd2cd2fb4d4ede",
+   "size": 1029,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/adamsville/zone.json"
+  },
+  {
+   "name": "zones/adamsville/hero_buildings.json",
+   "sha256": "88354e44ee7223407ce7f15d6d7f9e887740936b142702918a8a73bb31064ef0",
+   "size": 1399,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/adamsville/hero_buildings.json"
+  },
+  {
+   "name": "zones/downtown/roads.json",
+   "sha256": "eaaa61d6e281015b54bcea159678476f13e8b3596dd7f177e18c7989c5739c51",
+   "size": 902133,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/downtown/roads.json"
+  },
+  {
+   "name": "zones/downtown/buildings.json",
+   "sha256": "652ece7a432daae591fa19e776c402365bc6eac1cfa4fe22cd52b06a7f555905",
+   "size": 234064,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/downtown/buildings.json"
+  },
+  {
+   "name": "zones/downtown/pins.json",
+   "sha256": "5c1028ac06c41644fa59f44844192096a7b13b0b51f5cb230b411134d6670fc9",
+   "size": 150968,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/downtown/pins.json"
+  },
+  {
+   "name": "zones/downtown/lifts.json",
+   "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+   "size": 2,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/downtown/lifts.json"
+  },
+  {
+   "name": "zones/downtown/signs.json",
+   "sha256": "23fde3ce625753a3e915ccd7f707a4534f0eb2d4c26f54c76b77b3e3bc35b1b0",
+   "size": 4298,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/downtown/signs.json"
+  },
+  {
+   "name": "zones/downtown/zone.json",
+   "sha256": "7f2c98b3c7e181315c667d60469e5b84511ee0836642648b68e1730c9c74054c",
+   "size": 1222,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/downtown/zone.json"
+  },
+  {
+   "name": "zones/eastatlanta/roads.json",
+   "sha256": "7f8913b4ee471a692e065c2601564930747cd6999c230bdd45ff407afb38ad7c",
+   "size": 1890964,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/eastatlanta/roads.json"
+  },
+  {
+   "name": "zones/eastatlanta/buildings.json",
+   "sha256": "f127562ca55354b4568f9165c3c8bc638ed369ea6e067c9071534ce9a58b241d",
+   "size": 888841,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/eastatlanta/buildings.json"
+  },
+  {
+   "name": "zones/eastatlanta/pins.json",
+   "sha256": "50ef488324f842ffab6fda8064c6c82a85e12a3d5dd054bce3556c3a573c3ca5",
+   "size": 347600,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/eastatlanta/pins.json"
+  },
+  {
+   "name": "zones/eastatlanta/lifts.json",
+   "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+   "size": 2,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/eastatlanta/lifts.json"
+  },
+  {
+   "name": "zones/eastatlanta/signs.json",
+   "sha256": "993e248a0554b6e623ce99894072687b1a490a9b540631d43dde34fcdfe8edc3",
+   "size": 11553,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/eastatlanta/signs.json"
+  },
+  {
+   "name": "zones/eastatlanta/zone.json",
+   "sha256": "70fc908a0d21cb9f649e662c585957faca8db0c9351c2f69f519c1d4e70a7833",
+   "size": 1223,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/eastatlanta/zone.json"
+  },
+  {
+   "name": "zones/mableton/roads.json",
+   "sha256": "ca19a28c7f444ba9c0b4f52813be45a2acce4c0c21eff722a4fb5dcd14f07d92",
+   "size": 501759,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/mableton/roads.json"
+  },
+  {
+   "name": "zones/mableton/buildings.json",
+   "sha256": "5451cbbc267a32b3665612c04df96e3222fb07a8903928e541b7a03741c0a74d",
+   "size": 125954,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/mableton/buildings.json"
+  },
+  {
+   "name": "zones/mableton/pins.json",
+   "sha256": "5c338362d6628d6b3ba4164fdfda28846fb76d00b77e66d82423de53bfd06be2",
+   "size": 76106,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/mableton/pins.json"
+  },
+  {
+   "name": "zones/mableton/lifts.json",
+   "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+   "size": 2,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/mableton/lifts.json"
+  },
+  {
+   "name": "zones/mableton/signs.json",
+   "sha256": "4c93f922bc15d005ea39bc173f4fa353db9653d759fee2447e4346914b990903",
+   "size": 876,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/mableton/signs.json"
+  },
+  {
+   "name": "zones/mableton/zone.json",
+   "sha256": "dcd3860333c8292de62b7440d89e9b603b96fd48b3d223310d5bb0c7b802bc3c",
+   "size": 1209,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/mableton/zone.json"
+  },
+  {
+   "name": "zones/riverdale/roads.json",
+   "sha256": "8a044bff2b57f73b85d50db63c28e8dd20b7139b3940ff2462e30e570791f78d",
+   "size": 2394062,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/riverdale/roads.json"
+  },
+  {
+   "name": "zones/riverdale/buildings.json",
+   "sha256": "fa0b113d0af005f9515d3a332f377fa4e3c25936bfa3b6633f81dcd6e2a72be4",
+   "size": 1884155,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/riverdale/buildings.json"
+  },
+  {
+   "name": "zones/riverdale/pins.json",
+   "sha256": "36410f01c635628a3226e515e0453392d014993da0abc4613a7db6b0dff16cf1",
+   "size": 536987,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/riverdale/pins.json"
+  },
+  {
+   "name": "zones/riverdale/lifts.json",
+   "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+   "size": 2,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/riverdale/lifts.json"
+  },
+  {
+   "name": "zones/riverdale/signs.json",
+   "sha256": "771b7a11d3ad2593ac414533b0f7317319b78c3f15aa8ddca605b37dd3fecee2",
+   "size": 20272,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/riverdale/signs.json"
+  },
+  {
+   "name": "zones/riverdale/zone.json",
+   "sha256": "23f3bb3ee56b54a8824ed80fb99122650dda90ae6d0a3caac413d3bb02960f99",
+   "size": 1220,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/riverdale/zone.json"
+  },
+  {
+   "name": "zones/southfulton/roads.json",
+   "sha256": "387f36e650d30b16cb43850afe3791d4c8bfac96091bbc24fc749def80cbab1b",
+   "size": 3892095,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/southfulton/roads.json"
+  },
+  {
+   "name": "zones/southfulton/buildings.json",
+   "sha256": "66a6310e364c9b38c731515406a24a7404ed1c195d4b28017142119c259fdec5",
+   "size": 1631095,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/southfulton/buildings.json"
+  },
+  {
+   "name": "zones/southfulton/pins.json",
+   "sha256": "060ffb8dd5498f19cb78b7caa0684f7fe985c9eb5a7987e86d81b3ccaaa0ae25",
+   "size": 440361,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/southfulton/pins.json"
+  },
+  {
+   "name": "zones/southfulton/lifts.json",
+   "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+   "size": 2,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/southfulton/lifts.json"
+  },
+  {
+   "name": "zones/southfulton/signs.json",
+   "sha256": "9065abf9976f5b7a4478992ddfd8cf4a462cc798ad0198ff7e8c2c9c116e16c2",
+   "size": 10027,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/southfulton/signs.json"
+  },
+  {
+   "name": "zones/southfulton/zone.json",
+   "sha256": "65f2b9ca8775f43e24f5e1c2d0d332c0e94dc0c812d075ff3594daa549e86779",
+   "size": 1219,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/southfulton/zone.json"
+  },
+  {
+   "name": "zones/unioncity/roads.json",
+   "sha256": "7ad0f4bb04cc114e9c2ef9a2007aa7d81cea61889e6537ce3202aae7c6e77e37",
+   "size": 271484,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/unioncity/roads.json"
+  },
+  {
+   "name": "zones/unioncity/buildings.json",
+   "sha256": "a289d5a1f64739d7b768f75ba48896d72ce433e67fbe4a32895e7600477ff504",
+   "size": 289028,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/unioncity/buildings.json"
+  },
+  {
+   "name": "zones/unioncity/pins.json",
+   "sha256": "82dde5e75ca969b10a4224509369c40f55639b51af5bd60a2bfb05de7a43b4c8",
+   "size": 39808,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/unioncity/pins.json"
+  },
+  {
+   "name": "zones/unioncity/lifts.json",
+   "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+   "size": 2,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/unioncity/lifts.json"
+  },
+  {
+   "name": "zones/unioncity/signs.json",
+   "sha256": "e8d65b9be43788c0188217a3dac769255ecbf92b9e67e83e3da55c22b69fc9eb",
+   "size": 323,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/unioncity/signs.json"
+  },
+  {
+   "name": "zones/unioncity/zone.json",
+   "sha256": "58b3db4effd007793d11c86990624acf4c2e0fc7d207700f85aad53cc764a764",
+   "size": 1210,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/unioncity/zone.json"
+  }
+ ]
 }
