@@ -36,7 +36,7 @@ from data import (
     normalize_category, CATEGORY_ORDER, CATEGORY_LABELS,
     DIVIDABLE_CATEGORIES, DIVIDER_TYPES,
     load_overpasses, save_overpasses, download_overpasses,
-    export_overpasses,
+    export_overpasses, save_local_cache,
 )
 from mapcanvas import MapCanvas, _direction_words
 from roadinspect import RoadInspectorPanel  # noqa: E402 -- 3D road inspector
@@ -46,7 +46,7 @@ import overpass as overpass_mod  # noqa: E402
 
 # App version shown in the Help -> About dialog (bump with each release).
 # Joshua 2026-10-11: version number must be prominent in About.
-APP_VERSION = "1.8.4"
+APP_VERSION = "1.9.0"
 # Display name and icon-theme name for the About dialog.
 APP_NAME = "Adamsville Map Editor"
 APP_ICON = "adamsville-map-editor-native"
@@ -54,7 +54,7 @@ APP_PACKAGE = "adamsville-map-editor-native"
 # In-place updater (Joshua 2026-10-12): Help -> Check for
 # Updates downloads new editor files from GitHub and applies
 # them in place, so reinstalling the .deb is not needed.
-UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-map-editor/main/version.json"
+UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/version.json"
 UPDATE_SLUG = "map-editor"
 
 
@@ -99,6 +99,12 @@ class MapEditorApp:
         """Build the UI and initialize state."""
         self.spatial_index = None
         self.roads_data = None
+        # 1.9.0: the game-data model (gamedata.GameModel) adopted by
+        # _load_data() after the download-on-open, and the ground port
+        # used to re-drape geometry edits (ground.GroundModel). Both
+        # stay None until data loads.
+        self.game_model = None
+        self._ground = None
         # Overpasses (Joshua 2026-10-11): bridge structures that roads
         # can link to. Loaded in _load_data(); empty until then.
         self.overpasses = []
@@ -864,7 +870,9 @@ class MapEditorApp:
 
         # --- Step 8: Persist everything.
         save_overpasses(self.overpasses)
-        self.apply_road_modify(cat, road)  # persists + rebuilds index
+        # Linking moved the road's endpoint onto the overpass — a
+        # geometry edit, so the road re-drapes (1.9.0).
+        self.apply_road_modify(cat, road, geometry=True)
         self._mark_unpublished()
         # Undo (Joshua 2026-10-12): commit the link as one undo step.
         self.undo_commit()
@@ -1793,19 +1801,57 @@ class MapEditorApp:
         if insp is not None:
             insp.refresh()
 
+    def _ground_model(self):
+        """
+        The ground port for re-draping (ground.GroundModel over the
+        downloaded elev.json), built lazily. None when no elevation
+        data is available (re-drape is then skipped, never faked).
+        """
+        if self._ground is None and self.game_model is not None \
+                and self.game_model.elev is not None:
+            try:
+                import ground as _ground_mod
+                self._ground = _ground_mod.GroundModel(
+                    self.game_model.elev)
+            except Exception:
+                self._ground = None
+        return self._ground
+
+    def redrape_road(self, road):
+        """
+        Re-drape ONE road after a GEOMETRY edit (1.9.0): resample to
+        <=2.5u stations and reset ys = terrainMeshY + 0.01 via the
+        ground port. NON-geometry edits (rename, category, appearance,
+        divided sections) never call this — their ys stay
+        byte-identical. See ground.py for the full rule.
+        """
+        gm = self._ground_model()
+        if gm is None:
+            return
+        try:
+            import ground as _ground_mod
+            _ground_mod.redrape_road(road, gm)
+        except Exception:
+            pass  # a failed re-drape must never lose the edit itself
+
     def persist_road_edits(self):
         """
-        Save dirty road categories to road_edits.json so joins, merges,
-        extends, and deletes survive restarts. Only writes categories
-        that actually changed.
+        Persist the working copy LOCALLY (1.9.0): the merged canvas
+        roads are adopted back into the per-zone game model and the
+        whole model is written to the per-zone local cache, so joins,
+        merges, extends and deletes survive restarts. Dirtiness for
+        the GitHub round trip is computed from the model itself
+        (serialization vs the downloaded baseline) — categories here
+        only drive the unpublished flag.
         """
         if not self._dirty_road_cats:
             return
-        from data import save_road_edits, get_local_sha
-        replaced = {cat: self.roads_data[cat]
-                    for cat in self._dirty_road_cats
-                    if cat in self.roads_data}
-        save_road_edits(get_local_sha(), replaced)
+        if self.game_model is not None and self.roads_data is not None:
+            self.game_model.adopt_merged_roads(self.roads_data)
+            ok, err = save_local_cache(self.game_model)
+            if not ok:
+                self.set_status(f"local-save-failed: {err}")
+                return
         # Mark for the close warning (Joshua 2026-10-11).
         self._mark_unpublished()
 
@@ -1885,6 +1931,13 @@ class MapEditorApp:
         self._write_text_file(ZONE_EDITS_FILE, snap["zone_edits_text"])
         self._write_text_file(CUSTOM_ZONES_FILE,
                               snap["custom_zones_text"])
+        # 1.9.0: the restored overlay files are the model's working
+        # data too — re-sync so the next round trip diffs correctly.
+        try:
+            import data as _data_mod
+            _data_mod._sync_overlays_to_model()
+        except Exception:
+            pass
         # Zone list may have gained/lost entries (fill tool) — rebuild
         # the Zones menu so it matches.
         try:
@@ -2049,6 +2102,12 @@ class MapEditorApp:
         ok_b = self._remove_road_from_working_copy(cat_b, road_b)
         if not (ok_a and ok_b):
             return False
+        # 1.9.0: a join creates NEW geometry — re-drape it onto the
+        # ground, and keep road_a's zone attribution (the joined road
+        # is written back to road_a's zone file).
+        if "_zone" in road_a:
+            new_road["_zone"] = road_a["_zone"]
+        self.redrape_road(new_road)
         self.roads_data.setdefault(cat_a, []).append(new_road)
         self._dirty_road_cats.add(cat_a)
         if cat_b != cat_a:
@@ -2057,14 +2116,22 @@ class MapEditorApp:
         self._rebuild_road_index()
         return True
 
-    def apply_road_modify(self, cat, road):
+    def apply_road_modify(self, cat, road, geometry=False):
         """
         Merge/Extend commit: the road dict was already mutated in place
         (pts updated). Mark dirty, persist, rebuild index.
         Returns True on success.
+
+        1.9.0: geometry=True marks a GEOMETRY edit (points moved /
+        inserted / deleted, whole road moved, endpoint snapped) — the
+        road is re-draped (see redrape_road). Callers committing
+        non-geometry changes (appearance, category, divided sections,
+        cul-de-sac flags) use the default and leave ys untouched.
         """
         if self.roads_data is None:
             return False
+        if geometry:
+            self.redrape_road(road)
         self._dirty_road_cats.add(cat)
         self.persist_road_edits()
         self._rebuild_road_index()
@@ -2106,16 +2173,36 @@ class MapEditorApp:
     def _initial_setup(self):
         """
         Called once after window is shown.
-        Checks for road data, prompts download if needed, then loads.
+
+        1.9.0 (Joshua's standing rule): on open, DOWNLOAD the game's
+        current files from GitHub first (Contents API, fresh
+        connection), then load. If the download fails (offline), fall
+        back to the local cache; only when there is no cache at all do
+        we prompt.
         """
         self.canvas.fit_view()
-        needed, reason = needs_download()
-        if needed:
-            self._prompt_download(reason)
-        else:
-            self._load_data()
-            if "newer version" in reason.lower():
-                self.set_status(reason)
+        self.set_status("Downloading game data from GitHub…")
+
+        def worker():
+            ok = download_roads()
+
+            def done():
+                if ok:
+                    self._load_data()
+                else:
+                    needed, reason = needs_download()
+                    if not needed:
+                        self._load_data()
+                        self.set_status(
+                            "Offline — using the local copy. "
+                            "Your saves will push when a connection "
+                            "and token are available.")
+                    else:
+                        self._prompt_download(reason)
+                return False
+            GLib.idle_add(done)
+
+        threading.Thread(target=worker, daemon=True).start()
         return False  # don't repeat
 
     def _prompt_download(self, reason):
@@ -2184,55 +2271,26 @@ class MapEditorApp:
         thread.start()
 
     def _load_data(self):
-        """Load roads from local cache and build spatial index."""
+        """
+        Load the working copy from the game model (adopted by the
+        download-on-open, or built from the local cache offline) and
+        build the spatial index. The canvas edits ONE merged view;
+        every road keeps its "_zone" attribution for per-zone saving.
+        """
         try:
             self.set_status("Loading roads…")
-            self.roads_data = load_roads()
-            # Load overpasses (Joshua 2026-10-11). Empty list if none
-            # cached yet — the app works fine without overpasses.
+            import data as _data_mod
+            if _data_mod.GAME_MODEL is None:
+                # Raises FileNotFoundError when nothing is cached.
+                load_roads()
+            self.game_model = _data_mod.GAME_MODEL
+            self._ground = None  # rebuilt lazily from the model's elev
+            self.roads_data = self.game_model.merged_roads()
+            # Overpasses: the model's list (the game's
+            # detailed/overpasses.json content, taken as-is).
             self.overpasses = load_overpasses()
-            if not self.overpasses:
-                # Try downloading once (silent if it fails).
-                try:
-                    if download_overpasses():
-                        self.overpasses = load_overpasses()
-                except Exception:
-                    pass
             self._dirty_road_cats = set()
-            # Re-apply saved road edits (joins/merges/extends/deletes)
-            # on top of the downloaded data, if the base SHA still matches.
-            from data import load_road_edits, get_local_sha
-            saved_sha, replaced = load_road_edits()
-            if replaced and saved_sha and saved_sha == get_local_sha():
-                # Saved edits may use the legacy "arterial" key from
-                # before the 2026-10-11 category split — translate it.
-                if "arterial" in replaced:
-                    legacy_edits = replaced.pop("arterial")
-                    if isinstance(legacy_edits, list):
-                        replaced["minor_artery"] = (
-                            replaced.get("minor_artery", []) +
-                            legacy_edits)
-                applied = 0
-                for cat, roads in replaced.items():
-                    if cat in self.roads_data and isinstance(roads, list):
-                        self.roads_data[cat] = roads
-                        applied += 1
-                if applied:
-                    self._dirty_road_cats.update(
-                        c for c in replaced if c in self.roads_data)
-                    self.set_status(
-                        f"Loading roads (with {applied} edited "
-                        "categories)…")
-            # Migrate legacy "arterial" roads to "minor_artery" in the
-            # working copy (Joshua 2026-10-11: arterial split into
-            # minor/major artery). Not marked dirty here — the migration
-            # piggybacks on the next real edit's push via
-            # export_full_roads(), so Joshua isn't nagged about
-            # "unpublished changes" he didn't make.
-            legacy = self.roads_data.pop("arterial", None)
-            if isinstance(legacy, list) and legacy:
-                self.roads_data.setdefault("minor_artery", []).extend(legacy)
-            # Guarantee all five category lists exist.
+            # Guarantee all five category lists exist for the canvas.
             for _cat in ("interstate", "highway", "major_artery",
                          "minor_artery", "local"):
                 self.roads_data.setdefault(_cat, [])
@@ -2261,22 +2319,28 @@ class MapEditorApp:
         self._prompt_download("Download the latest road data from GitHub?")
 
     def on_check_updates(self, widget):
-        """View → Check for Updates. Compare local SHA with GitHub."""
-        self.set_status("Checking for updates…")
+        """
+        View → Check for Updates (1.9.0): re-download the game data
+        from GitHub (the same download-on-open) and reload from it.
+        There is no single file SHA to compare anymore — the fresh
+        download IS the check.
+        """
+        if getattr(self, "_unpublished", False):
+            self.set_status(
+                "You have unpublished changes — push them first "
+                "(File → Push to GitHub) so a refresh can't hide them.")
+            return
+        self.set_status("Downloading the latest game data…")
 
         def worker():
-            remote = get_remote_sha()
+            ok = download_roads()
+
             def done():
-                if remote is None:
-                    self.set_status("Offline — using local copy.")
+                if ok:
+                    self._load_data()
+                    self.set_status("Game data refreshed from GitHub.")
                 else:
-                    from data import get_local_sha
-                    local = get_local_sha()
-                    if local != remote:
-                        self._prompt_download(
-                            "A newer version is available on GitHub.")
-                    else:
-                        self.set_status("Already up to date.")
+                    self.set_status("Offline — using local copy.")
                 return False
             GLib.idle_add(done)
 
@@ -2288,27 +2352,98 @@ class MapEditorApp:
     # Safety net: if Joshua hits X with unpushed edits, ask what to do.
     # No auto-push — the manual push flow is unchanged.
 
-    def _push_targets(self):
+    # ------------------------------------------------------------------
+    # THE ROUND-TRIP SAVE (1.9.0 — Joshua's standing rule, same design
+    # as UI Editor 1.7.8): EVERY save point in this app is this one
+    # action — local save -> PUSH on one connection -> CLOSE it ->
+    # fresh connection -> RE-DOWNLOAD every pushed file -> refresh the
+    # view from the re-downloaded copies. Only files that actually
+    # changed are pushed (per-zone dirty tracking in gamedata.py).
+    # Stage-accurate failures (gamedata.perform_round_trip):
+    # local-save-failed / "Push to GitHub failed: ..." / "push reached
+    # GitHub but downloading the proof copy back failed: ... — your
+    # save DID reach GitHub". On failure, local edits stay exactly as
+    # they are and the view is NOT reloaded over them.
+    # ------------------------------------------------------------------
+
+    def round_trip_save(self, on_done=None, silent=False):
         """
-        Build the list of (repo, path, bytes, message) to push.
-        Map editor pushes roads.json, zones.json, and overpasses.json
-        to the map repo.
+        Run one round-trip save on a worker thread.
+        on_done(ok, err, fresh) runs on the GTK thread; fresh maps
+        repo path -> re-downloaded bytes. Returns True if it started.
         """
-        from data import export_full_roads, export_full_zones
-        repo = "kingmarkarnold-code/adamsville-map-editor"
-        targets = [
-            (repo, "roads.json", export_full_roads(),
-             "Map editor: update roads.json"),
-            (repo, "zones.json", export_full_zones(),
-             "Map editor: update zones.json"),
-        ]
-        # Overpasses (Joshua 2026-10-11): only push if there are any.
-        overpasses = getattr(self, "overpasses", [])
-        if overpasses:
-            targets.append(
-                (repo, "overpasses.json", export_overpasses(overpasses),
-                 "Map editor: update overpasses.json"))
-        return targets
+        if on_done is None:
+            on_done = self._round_trip_default_done
+        if not github_sync.has_token():
+            err = ("No GitHub token set — changes are saved on this "
+                   "computer only. Set one in File → Settings to push.")
+            if silent:
+                return False
+            self.set_status(err)
+            GLib.idle_add(self._fire_done, on_done, False, err, None)
+            return False
+        if self.game_model is None:
+            if not silent:
+                self.set_status("Nothing to push — no data loaded.")
+            return False
+        # Adopt the canvas working copy into the model on THIS (GTK)
+        # thread; the worker then only touches the model + network.
+        if self.roads_data is not None:
+            self.game_model.adopt_merged_roads(self.roads_data)
+        import gamedata as _gd
+        if not _gd.GameModel.dirty_paths(self.game_model):
+            if not silent:
+                self.set_status("Nothing to push — no changes.")
+                GLib.idle_add(self._fire_done, on_done, True, None, {})
+            return False
+        if not silent:
+            self.set_status("Pushing to GitHub…")
+
+        def worker():
+            ok, err, fresh = _gd.perform_round_trip(
+                self.game_model, github_sync, save_local_cache)
+            GLib.idle_add(self._fire_done, on_done, ok, err, fresh)
+
+        threading.Thread(target=worker, daemon=True).start()
+        return True
+
+    @staticmethod
+    def _fire_done(on_done, ok, err, fresh):
+        """GLib.idle_add adapter: run the callback once."""
+        on_done(ok, err, fresh)
+        return False
+
+    def _round_trip_default_done(self, ok, err, fresh):
+        """
+        Default completion: on success, refresh the view FROM THE
+        RE-DOWNLOADED copies (the model was already re-parsed from
+        the proof bytes inside the round trip) and clear the
+        unpublished flag if nothing remains dirty. On failure, show
+        the stage-accurate message as-is and touch nothing.
+        """
+        if not ok:
+            self.set_status(err)
+            return
+        if fresh:
+            # Rebuild the working copy + view from the GitHub copies.
+            self.roads_data = self.game_model.merged_roads()
+            for _cat in ("interstate", "highway", "major_artery",
+                         "minor_artery", "local"):
+                self.roads_data.setdefault(_cat, [])
+            self.overpasses = load_overpasses()
+            self._dirty_road_cats = set()
+            import data as _data_mod
+            _data_mod.rebuild_zones_from_model()
+            try:
+                self._rebuild_zones_menu()
+            except Exception:
+                pass
+            self._rebuild_road_index()
+            self.canvas.queue_draw()
+        import gamedata as _gd
+        if not _gd.GameModel.dirty_paths(self.game_model):
+            self._unpublished = False
+        self.set_status("Pushed to GitHub ✓ — showing the GitHub copies")
 
     def _mark_unpublished(self):
         """Mark that local edits haven't been pushed yet."""
@@ -2317,43 +2452,21 @@ class MapEditorApp:
         if not github_sync.has_token() and not self._token_prompted:
             self._token_prompted = True
             if github_sync.show_first_save_prompt(self.window):
-                self._do_push()
+                self.round_trip_save()
 
     def _auto_push_tick(self):
         """
         Word-style auto-push timer: every 5 minutes, if there are
-        unpublished changes and a token is set, push them.
+        unpublished changes and a token is set, run the round trip.
         Returns True to keep the timer running.
         """
         if self._unpublished and github_sync.has_token():
-            self._do_push(silent=True)
+            self.round_trip_save(silent=True)
         return True  # keep the timer alive
 
     def _do_push(self, silent=True):
-        """
-        Push local edits to GitHub via the Contents API.
-        On success clears the unpublished flag.
-        """
-        if not github_sync.has_token():
-            if not silent:
-                self.set_status("No GitHub token — set one in File → Settings.")
-            return False
-        self.set_status("Pushing to GitHub…")
-        targets = self._push_targets()
-        import threading
-        from gi.repository import GLib
-        def worker():
-            ok, msg = github_sync.push_targets(targets)
-            def done():
-                if ok:
-                    self._unpublished = False
-                    self.set_status("Pushed to GitHub ✓")
-                else:
-                    self.set_status(f"Push failed: {msg}")
-                return False
-            GLib.idle_add(done)
-        threading.Thread(target=worker, daemon=True).start()
-        return True
+        """Legacy name kept for stray callers: the round-trip save."""
+        return self.round_trip_save(silent=silent)
 
     def on_settings_clicked(self, widget):
         """
@@ -2364,7 +2477,7 @@ class MapEditorApp:
             if key_set:
                 self.set_status("GitHub API key saved — auto-push enabled.")
                 if self._unpublished:
-                    self._do_push(silent=False)
+                    self.round_trip_save()
             else:
                 self.set_status("GitHub API key removed — manual push only.")
         github_sync.show_settings_dialog(self.window, on_key_changed)
@@ -2396,18 +2509,18 @@ class MapEditorApp:
 
     def on_push_clicked(self, widget):
         """
-        File → Push to GitHub: manual on-demand push.
-        If a token is set, pushes via the API. Otherwise shows the
-        manual copy/download instructions (fallback).
+        File → Push to GitHub: the round-trip save (local save, push,
+        close, fresh-connection proof download, view refresh). With
+        no token set, offer the token dialog first, then the manual
+        note as a last resort.
         """
-        # Make sure in-memory road edits are persisted first.
+        # Make sure in-memory road edits are persisted locally first.
         self.persist_road_edits()
         if github_sync.has_token():
-            self._do_push(silent=False)
+            self.round_trip_save()
             return
-        # No token: fall back to the manual flow.
         if github_sync.show_token_dialog(self.window):
-            self._do_push(silent=False)
+            self.round_trip_save()
             return
         dialog = Gtk.MessageDialog(
             transient_for=self.window,
@@ -2417,9 +2530,7 @@ class MapEditorApp:
             text="Push to GitHub")
         dialog.format_secondary_text(
             "Your edits are saved locally.\n\n"
-            "To push them: use the web editor's 'Push to GitHub' button, "
-            "or send your edits to Mollie and she'll push them.\n\n"
-            "Tip: set a GitHub token in File → Settings to push "
+            "Set a GitHub token in File → Settings to push "
             "directly from here.")
         dialog.run()
         dialog.destroy()
