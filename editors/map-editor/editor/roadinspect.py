@@ -956,7 +956,8 @@ class ControlPointViewer(Gtk.DrawingArea):
         # Undo (Joshua 2026-10-12): snapshot before moving the endpoint.
         app.undo_begin("Snap Endpoint (3D Inspector)")
         pts[end_idx] = [twx, twz]  # move the endpoint in place
-        ok = app.apply_road_modify(cat, road)
+        # Snapping an endpoint is a geometry edit (1.9.0 re-drape).
+        ok = app.apply_road_modify(cat, road, geometry=True)
         app.undo_commit()
         if ok:
             app.set_status(
