@@ -1,36 +1,61 @@
 {
-  "version": "2.0.2",
-  "changelog": "Crash fix: ADDED THE MISSING LAUNCH CODE \u2014 the editor previously defined its window class but never started it, so nothing opened. Also: soft updater import, crash log at ~/.cache/adamsville-terrain-editor-native/crash.log.",
-  "files": [
-    {
-      "path": "about.py",
-      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-elevation-editor/main/editor/about.py",
-      "sha256": "0b172aa3a3e94c80136473f95f42cef62f26927cfb9a8644f9aa14a4b3463140"
-    },
-    {
-      "path": "app.py",
-      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-elevation-editor/main/editor/app.py",
-      "sha256": "29f071847dd1a521a85be93ec0a337128d647f348ee72641640e0e54405501dd"
-    },
-    {
-      "path": "data.py",
-      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-elevation-editor/main/editor/data.py",
-      "sha256": "6aabd9cd2da1b4aa7c731dddc777a8d944806027d8f8014b450c36882a120178"
-    },
-    {
-      "path": "github_sync.py",
-      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-elevation-editor/main/editor/github_sync.py",
-      "sha256": "e4289f5ae72f438a079d994a388d5a5751268886659aeb35f6492ea81b89a3a9"
-    },
-    {
-      "path": "terraincanvas.py",
-      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-elevation-editor/main/editor/terraincanvas.py",
-      "sha256": "089196cb89f88be2a22917614cb7df43fede3fb4b7a6afd3cdb59161ed76f669"
-    },
-    {
-      "path": "updater.py",
-      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-elevation-editor/main/editor/updater.py",
-      "sha256": "0c36b000830e5661165ac9f636466cd6d8402bab410bcab7da10b3e1e13e3a92"
-    }
-  ]
+ "version": "1.0.0",
+ "changelog": "First release of the NEW Elevation Editor (Joshua's 2026-10-17 design \u2014 replaces the parked 2.0.x line, whose source stays in editor/ untouched). A 3D viewport shows a road standing in its terrain. Click the road's two ends to mark a stretch, press Change elevation (the stretch segments itself), drag up or down to lift the TERRAIN \u2014 the road follows, forming a smooth hill \u2014 then Submit resolidifies the edit into the game data: terrain lifts appended to the zone's lifts file and every touched road re-draped, pushed to GitHub and verified by re-download, with the map version bumped so phones pick it up. Only what changed is ever written. Built on the shared suite core (3D viewport, ground math, GitHub round-trip, shared download cache) \u2014 no code copied per-app. Refinement layer still to come: Android-style selection handles with the magnifier.",
+ "files": [
+  {
+   "path": "app.py",
+   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/elevation-editor/app/app.py",
+   "sha256": "3d2afaf69b66350aa22389975d4ea75b8241afb43229631b1d28a6665e5de064"
+  },
+  {
+   "path": "elevdata.py",
+   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/elevation-editor/app/elevdata.py",
+   "sha256": "e9177a15b1e5f71eac76179562b586a9e50e3d4fd7e290aa990e69ed6d3edb29"
+  },
+  {
+   "path": "mollie-icon.png",
+   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/elevation-editor/app/mollie-icon.png",
+   "sha256": "28990027fd79e03e2ef8416e8c1d3410ee284ec86383280968b245f08576e768"
+  },
+  {
+   "path": "suite_core/__init__.py",
+   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/elevation-editor/app/suite_core/__init__.py",
+   "sha256": "3c46604934a428ca6f2ef922ed2f28a850c93093a56a34a24913849b58637625"
+  },
+  {
+   "path": "suite_core/about.py",
+   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/elevation-editor/app/suite_core/about.py",
+   "sha256": "7d3d6ceb37bb4c83c5be662f5e32e2cdf3fa4415891445e4154202a6bc9c8fd5"
+  },
+  {
+   "path": "suite_core/github_sync.py",
+   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/elevation-editor/app/suite_core/github_sync.py",
+   "sha256": "af679c2dde11bcff9aecd2e15981bf8da5023e72967416f63085be3bf80324ac"
+  },
+  {
+   "path": "suite_core/ground.py",
+   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/elevation-editor/app/suite_core/ground.py",
+   "sha256": "ca1a6f43297766f41516fb9e00e76e2bb63981d051801bbac409e504083124d6"
+  },
+  {
+   "path": "suite_core/layout.py",
+   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/elevation-editor/app/suite_core/layout.py",
+   "sha256": "b8f2b887bf53487320411d25281de34fdff977d45e14ac667a06c4a6517a9b10"
+  },
+  {
+   "path": "suite_core/shared_cache.py",
+   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/elevation-editor/app/suite_core/shared_cache.py",
+   "sha256": "ce91dd4e9950db9ccc299d2104d96455a8bc1fe237bd0bbc205eaedfd8e7f454"
+  },
+  {
+   "path": "suite_core/updater.py",
+   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/elevation-editor/app/suite_core/updater.py",
+   "sha256": "7a4938e659f6506887637d4dcb0a9bbf8f33bf4f89e89b6ebb980e81f13f3791"
+  },
+  {
+   "path": "suite_core/viewport3d.py",
+   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/elevation-editor/app/suite_core/viewport3d.py",
+   "sha256": "c3f38bc09ab7b852e368a6189cf17556a9b02e2102ec3d3a2abee0f73306d5fc"
+  }
+ ]
 }
