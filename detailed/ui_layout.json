@@ -44,6 +44,20 @@
       "description": "Gear icon that opens the help and instructions panel"
     },
     {
+      "anchor": "tr",
+      "asset": null,
+      "height": 44,
+      "id": "pause-btn",
+      "label": "\u23f8",
+      "mobile_only": false,
+      "type": "button",
+      "visible": true,
+      "width": 44,
+      "x": 76,
+      "y": 7,
+      "description": "Button that pauses the game - freezes the simulation and the music (Escape key does the same on keyboard)"
+    },
+    {
       "anchor": "tl",
       "asset": null,
       "height": 44,
@@ -468,6 +482,20 @@
           "description": "Gear icon that opens the help and instructions panel"
         },
         {
+          "anchor": "tr",
+          "asset": null,
+          "height": 44,
+          "id": "pause-btn",
+          "label": "\u23f8",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 76,
+          "y": 7,
+          "description": "Button that pauses the game - freezes the simulation and the music (Escape key does the same on keyboard)"
+        },
+        {
           "anchor": "tl",
           "asset": null,
           "height": 44,
@@ -862,6 +890,20 @@
           "x": 136,
           "y": 7,
           "description": "Gear icon that opens the help and instructions panel"
+        },
+        {
+          "anchor": "tr",
+          "asset": null,
+          "height": 44,
+          "id": "pause-btn",
+          "label": "\u23f8",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 76,
+          "y": 7,
+          "description": "Button that pauses the game - freezes the simulation and the music (Escape key does the same on keyboard)"
         },
         {
           "anchor": "tl",

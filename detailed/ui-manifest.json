@@ -7,6 +7,18 @@
       "hash": "ed5017309e3f077ed4797d923409e4ae2ee5de91fd5a34c52ccc03742824eee3"
     },
     {
+      "name": "airport.js",
+      "size": 12422,
+      "sha256": "0c1e4431e3c6b6d72cc948e6b8d028f8073690ff5f46558ce6c0232e0c8a3876",
+      "hash": "0c1e4431e3c6b6d72cc948e6b8d028f8073690ff5f46558ce6c0232e0c8a3876"
+    },
+    {
+      "name": "ambient_audio.js",
+      "size": 14143,
+      "sha256": "7885e8a6a851d9dd1bf11a01b676b1a71fd37d121fcd938af00f570b0704814e",
+      "hash": "7885e8a6a851d9dd1bf11a01b676b1a71fd37d121fcd938af00f570b0704814e"
+    },
+    {
       "name": "bird_drones.js",
       "size": 14596,
       "sha256": "577c19abc97aaf2bc9c75adda52f1a9e8511bd76fb53350d10c98fca0066b59d"
@@ -24,6 +36,12 @@
       "hash": "a60b991f7c43225949d34ab2d4f5f237dda1ad54c7570640a778fd961795c362"
     },
     {
+      "name": "clothing_system.js",
+      "size": 26943,
+      "sha256": "b808eaeac7894a3129820d2af9d0c4c2d2f550e7ebbc7364ee71ff575fd5e30b",
+      "hash": "b808eaeac7894a3129820d2af9d0c4c2d2f550e7ebbc7364ee71ff575fd5e30b"
+    },
+    {
       "name": "clubs_diners.js",
       "size": 13479,
       "sha256": "0d47a4491f345772b1ba6efd78353eeccfacdcd1644e933bdd077e1723805c56",
@@ -35,6 +53,18 @@
       "sha256": "b31a14cd82f74b079d9f8e2a7a5986f36ea729e7274b039d17df5a53c4384a7e",
       "hash": "b31a14cd82f74b079d9f8e2a7a5986f36ea729e7274b039d17df5a53c4384a7e",
       "md5": "b283f39474ebdc04515ab58cbf860f13"
+    },
+    {
+      "name": "collision_material.js",
+      "sha256": "c5e4d0107ef0f1780a44c8e0d177dc02d9c6ed4548cad9347a2fff9113fa3456",
+      "size": 31828,
+      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/collision_material.js"
+    },
+    {
+      "name": "crashlog.js",
+      "size": 39718,
+      "sha256": "18bf986d5d6a385cc128b177433c9f2f9a4cb009b19f40b07fd933d7eb5824c3",
+      "hash": "18bf986d5d6a385cc128b177433c9f2f9a4cb009b19f40b07fd933d7eb5824c3"
     },
     {
       "name": "daycycle.js",
@@ -49,6 +79,12 @@
       "hash": "4aa23a05a41b336e3660000c13ed9ffd3eb8ec2f565acd4363bbf9d0bb8b9c67"
     },
     {
+      "name": "engine_sounds.js",
+      "size": 22821,
+      "sha256": "8058d96d5ed000d73f16fe03f53bee161f5fec1765bbea4dedd5e85ec990e7e8",
+      "hash": "8058d96d5ed000d73f16fe03f53bee161f5fec1765bbea4dedd5e85ec990e7e8"
+    },
+    {
       "name": "face_platform.js",
       "size": 3878,
       "sha256": "e73af808dc0fb1958032975ee4ea2a56e74b5c00cea38a5293c1df8464b141ac",
@@ -59,18 +95,6 @@
       "sha256": "44b1e53bb6759cd8202932aef51b7b88538deb8001b22e9f51ee72265309add2",
       "size": 44470,
       "hash": "44b1e53bb6759cd8202932aef51b7b88538deb8001b22e9f51ee72265309add2"
-    },
-    {
-      "name": "keyboard_remap.js",
-      "size": 35299,
-      "sha256": "0fbedc5c2f25f5e05f61d130af394a82331c31cfaa2433381d0bc1ee64095e3d",
-      "hash": "0fbedc5c2f25f5e05f61d130af394a82331c31cfaa2433381d0bc1ee64095e3d"
-    },
-    {
-      "name": "input_diag.js",
-      "size": 23571,
-      "sha256": "6bd687896bcc4fe3eef579757ba940c1b73119572f8764daeceff211340514de",
-      "hash": "6bd687896bcc4fe3eef579757ba940c1b73119572f8764daeceff211340514de"
     },
     {
       "name": "github-config.js",
@@ -85,6 +109,12 @@
       "sha256": "91806c24b2f1beddd3bd859fb2960ef60b03f42647cd0966bb0ea52f82011c87",
       "hash": "91806c24b2f1beddd3bd859fb2960ef60b03f42647cd0966bb0ea52f82011c87",
       "md5": "2c2b3a3eb8844da4922af709f35628e5"
+    },
+    {
+      "name": "gps_system.js",
+      "size": 25920,
+      "sha256": "be6880d5b2fafb4b6424a5ee1ee7eb59c40786900d70baa5766f76e04d7e6a43",
+      "hash": "be6880d5b2fafb4b6424a5ee1ee7eb59c40786900d70baa5766f76e04d7e6a43"
     },
     {
       "name": "helicopter_system.js",
@@ -112,9 +142,9 @@
     },
     {
       "name": "index.html",
-      "size": 961696,
-      "sha256": "7d5d1ca2f8950a592c0b619aa0a66ebb62fd71d6d93954f5c0ddcdddac5324dc",
-      "hash": "7d5d1ca2f8950a592c0b619aa0a66ebb62fd71d6d93954f5c0ddcdddac5324dc"
+      "size": 973410,
+      "sha256": "4949036d11040a362682bcce9121de0e8e3bb1448d333b0b46e18fe327f55343",
+      "hash": "4949036d11040a362682bcce9121de0e8e3bb1448d333b0b46e18fe327f55343"
     },
     {
       "name": "infracrew_system.js",
@@ -124,9 +154,27 @@
       "md5": "70fc117796afd2ca861ecd504101a767"
     },
     {
+      "name": "input_diag.js",
+      "size": 23571,
+      "sha256": "6bd687896bcc4fe3eef579757ba940c1b73119572f8764daeceff211340514de",
+      "hash": "6bd687896bcc4fe3eef579757ba940c1b73119572f8764daeceff211340514de"
+    },
+    {
       "name": "inspector_crew.js",
       "size": 23001,
       "sha256": "1484932740e1a14c7f381386bc9927ac229aca934124e4cdd3cfbb0c6408bf30"
+    },
+    {
+      "name": "interior_system.js",
+      "size": 40276,
+      "sha256": "d664ff9514f8d5e00d64e68a4da8d1f7058f522d0c0d725da00ba550fcee9a3d",
+      "hash": "d664ff9514f8d5e00d64e68a4da8d1f7058f522d0c0d725da00ba550fcee9a3d"
+    },
+    {
+      "name": "keyboard_remap.js",
+      "size": 35299,
+      "sha256": "0fbedc5c2f25f5e05f61d130af394a82331c31cfaa2433381d0bc1ee64095e3d",
+      "hash": "0fbedc5c2f25f5e05f61d130af394a82331c31cfaa2433381d0bc1ee64095e3d"
     },
     {
       "name": "mapdelivery.js",
@@ -166,6 +214,18 @@
       "md5": "631f61b2da27b720c1125865f1c970eb"
     },
     {
+      "name": "menu_layout.json",
+      "size": 11017,
+      "sha256": "969c6dd7c46ff1e0632e9c0c3aad34956ea62b88a72726c1a30e9937ea96bb2b",
+      "hash": "969c6dd7c46ff1e0632e9c0c3aad34956ea62b88a72726c1a30e9937ea96bb2b"
+    },
+    {
+      "name": "menu_layout_apply.js",
+      "size": 7842,
+      "sha256": "96805d61146feeef999ece522c0cc2487e07eaf27e2c72d911289bbdcc2b0e0b",
+      "hash": "96805d61146feeef999ece522c0cc2487e07eaf27e2c72d911289bbdcc2b0e0b"
+    },
+    {
       "name": "mlk_fairburn.js",
       "size": 5940,
       "sha256": "a80b164d16a484bcbe9a42c193e04c5bea548eb98f269961338d755d66b29fe2",
@@ -176,6 +236,17 @@
       "size": 94958,
       "sha256": "da9c4fd1ac4abf81d0f1380338b60e97ea52eb1c89f021247aa9395c3eca4225",
       "hash": "da9c4fd1ac4abf81d0f1380338b60e97ea52eb1c89f021247aa9395c3eca4225"
+    },
+    {
+      "name": "pause_system.js",
+      "size": 10784,
+      "sha256": "92818ccc8ae26280665a087a8560c8bcdfb21b556ea1a7920412de530f2ae0e9"
+    },
+    {
+      "name": "perf_budget.js",
+      "sha256": "5195f628a349ad00c9fd93144d90ca31dbade14f8751232061c1ecf8a6e50cbe",
+      "hash": "5195f628a349ad00c9fd93144d90ca31dbade14f8751232061c1ecf8a6e50cbe",
+      "size": 11610
     },
     {
       "name": "player.gif",
@@ -287,6 +358,12 @@
       "hash": "b192b1aaceead7082db689f4a0e0417fff70544d569b1d38e954da3913919e8d"
     },
     {
+      "name": "stockdelivery.js",
+      "size": 32465,
+      "sha256": "42bccc9367e0370dbc5f7f2e93b8e13517ecbac8ed214f9b2d00214e50daeca8",
+      "hash": "42bccc9367e0370dbc5f7f2e93b8e13517ecbac8ed214f9b2d00214e50daeca8"
+    },
+    {
       "name": "stuck.js",
       "size": 17891,
       "sha256": "1ddbeafb54746cf643edb347efcee471040af2b64d1e2864a3220d8b8076e63a",
@@ -323,6 +400,12 @@
       "hash": "9274bbcec8d96168626c732b5d31c775aa8cfb7eaa0599bec0c175908a2c1ce2"
     },
     {
+      "name": "toon_mats.js",
+      "size": 4954,
+      "sha256": "fd01a802a68d0322d9e7de7bf66e217ff9e4773846806dd95325628fa69ea49e",
+      "hash": "fd01a802a68d0322d9e7de7bf66e217ff9e4773846806dd95325628fa69ea49e"
+    },
+    {
       "name": "traffic_assist.js",
       "size": 18226,
       "sha256": "e8c3ff29b576edb31cf7a8ace6054ea800434e41a7b677e29add611ad2ffd52c",
@@ -334,6 +417,30 @@
       "sha256": "7ff6dbc69d70178a4ad2750efb1c0202c3bb640457e9bb431b7aef6646003b36",
       "hash": "7ff6dbc69d70178a4ad2750efb1c0202c3bb640457e9bb431b7aef6646003b36",
       "md5": "636746d205ea4b5cbca623f6f8ec5b8b"
+    },
+    {
+      "name": "truck_restrictions.js",
+      "size": 7370,
+      "sha256": "7a9d853b6f0f644c13aaf90d33012c4965a770fa3c9ac90521374343d2c16d02",
+      "hash": "7a9d853b6f0f644c13aaf90d33012c4965a770fa3c9ac90521374343d2c16d02"
+    },
+    {
+      "name": "ui_layout.json",
+      "sha256": "a6f871b1027e0f1066575951f8cd5c62fb92310e163d9ea38cbe1d24c2e03a8c",
+      "size": 33591,
+      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/ui_layout.json"
+    },
+    {
+      "name": "ui_layout_apply.js",
+      "size": 8514,
+      "sha256": "25c6d341ad322645618802cfe5d326a14ec9a245dc02f30356f2123414de53d2",
+      "hash": "25c6d341ad322645618802cfe5d326a14ec9a245dc02f30356f2123414de53d2"
+    },
+    {
+      "name": "ui_sounds.js",
+      "size": 8332,
+      "sha256": "898fd4b082314cf1670fd8980a33dbd44064fcbae3a6123c002329b8ca49eb08",
+      "hash": "898fd4b082314cf1670fd8980a33dbd44064fcbae3a6123c002329b8ca49eb08"
     },
     {
       "name": "vehicle_avoid.js",
@@ -351,6 +458,18 @@
       "name": "visual_inspect.js",
       "size": 13217,
       "sha256": "ac7b7c70a23514d7e55bf996ed8f5ab549cbfab36db5969b74475d911b5ae8e4"
+    },
+    {
+      "name": "water_interaction.js",
+      "size": 22369,
+      "sha256": "12b50636745520be6881da392b4a1b60415f23d065c80f215fcc6505757e84d9",
+      "hash": "12b50636745520be6881da392b4a1b60415f23d065c80f215fcc6505757e84d9"
+    },
+    {
+      "name": "water_render.js",
+      "size": 8470,
+      "sha256": "d7c81b558479113d5e0ab5651a46a681ae5d73f3bbb7ba7737a3cbbd876ca527",
+      "hash": "d7c81b558479113d5e0ab5651a46a681ae5d73f3bbb7ba7737a3cbbd876ca527"
     },
     {
       "name": "workerhousing.js",
@@ -375,110 +494,8 @@
       "size": 23892,
       "sha256": "1832bc66f3cfc9cf80d915de0191bea4123ac20bfea00097a77202d813b53af0",
       "hash": "1832bc66f3cfc9cf80d915de0191bea4123ac20bfea00097a77202d813b53af0"
-    },
-    {
-      "name": "toon_mats.js",
-      "size": 4954,
-      "sha256": "fd01a802a68d0322d9e7de7bf66e217ff9e4773846806dd95325628fa69ea49e",
-      "hash": "fd01a802a68d0322d9e7de7bf66e217ff9e4773846806dd95325628fa69ea49e"
-    },
-    {
-      "name": "gps_system.js",
-      "size": 25920,
-      "sha256": "be6880d5b2fafb4b6424a5ee1ee7eb59c40786900d70baa5766f76e04d7e6a43",
-      "hash": "be6880d5b2fafb4b6424a5ee1ee7eb59c40786900d70baa5766f76e04d7e6a43"
-    },
-    {
-      "name": "engine_sounds.js",
-      "size": 22821,
-      "sha256": "8058d96d5ed000d73f16fe03f53bee161f5fec1765bbea4dedd5e85ec990e7e8",
-      "hash": "8058d96d5ed000d73f16fe03f53bee161f5fec1765bbea4dedd5e85ec990e7e8"
-    },
-    {
-      "name": "ambient_audio.js",
-      "size": 14143,
-      "sha256": "7885e8a6a851d9dd1bf11a01b676b1a71fd37d121fcd938af00f570b0704814e",
-      "hash": "7885e8a6a851d9dd1bf11a01b676b1a71fd37d121fcd938af00f570b0704814e"
-    },
-    {
-      "name": "ui_sounds.js",
-      "size": 8332,
-      "sha256": "898fd4b082314cf1670fd8980a33dbd44064fcbae3a6123c002329b8ca49eb08",
-      "hash": "898fd4b082314cf1670fd8980a33dbd44064fcbae3a6123c002329b8ca49eb08"
-    },
-    {
-      "name": "perf_budget.js",
-      "sha256": "5195f628a349ad00c9fd93144d90ca31dbade14f8751232061c1ecf8a6e50cbe",
-      "hash": "5195f628a349ad00c9fd93144d90ca31dbade14f8751232061c1ecf8a6e50cbe",
-      "size": 11610
-    },
-    {
-      "name": "interior_system.js",
-      "size": 40276,
-      "sha256": "d664ff9514f8d5e00d64e68a4da8d1f7058f522d0c0d725da00ba550fcee9a3d",
-      "hash": "d664ff9514f8d5e00d64e68a4da8d1f7058f522d0c0d725da00ba550fcee9a3d"
-    },
-    {
-      "name": "clothing_system.js",
-      "size": 26943,
-      "sha256": "b808eaeac7894a3129820d2af9d0c4c2d2f550e7ebbc7364ee71ff575fd5e30b",
-      "hash": "b808eaeac7894a3129820d2af9d0c4c2d2f550e7ebbc7364ee71ff575fd5e30b"
-    },
-    {
-      "name": "menu_layout.json",
-      "size": 11017,
-      "sha256": "969c6dd7c46ff1e0632e9c0c3aad34956ea62b88a72726c1a30e9937ea96bb2b",
-      "hash": "969c6dd7c46ff1e0632e9c0c3aad34956ea62b88a72726c1a30e9937ea96bb2b"
-    },
-    {
-      "name": "menu_layout_apply.js",
-      "size": 7842,
-      "sha256": "96805d61146feeef999ece522c0cc2487e07eaf27e2c72d911289bbdcc2b0e0b",
-      "hash": "96805d61146feeef999ece522c0cc2487e07eaf27e2c72d911289bbdcc2b0e0b"
-    },
-    {
-      "name": "ui_layout.json",
-      "sha256": "07edbaf015e7f795db1926e0ad1c6a95e3b05e7ec97e3784eb3c868c1823ae07",
-      "size": 32345,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/ui_layout.json"
-    },
-    {
-      "name": "ui_layout_apply.js",
-      "size": 8514,
-      "sha256": "25c6d341ad322645618802cfe5d326a14ec9a245dc02f30356f2123414de53d2",
-      "hash": "25c6d341ad322645618802cfe5d326a14ec9a245dc02f30356f2123414de53d2"
-    },
-    {
-      "name": "collision_material.js",
-      "sha256": "c5e4d0107ef0f1780a44c8e0d177dc02d9c6ed4548cad9347a2fff9113fa3456",
-      "size": 31828,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/collision_material.js"
-    },
-    {
-      "name": "airport.js",
-      "size": 12422,
-      "sha256": "0c1e4431e3c6b6d72cc948e6b8d028f8073690ff5f46558ce6c0232e0c8a3876",
-      "hash": "0c1e4431e3c6b6d72cc948e6b8d028f8073690ff5f46558ce6c0232e0c8a3876"
-    },
-    {
-      "name": "truck_restrictions.js",
-      "size": 7370,
-      "sha256": "7a9d853b6f0f644c13aaf90d33012c4965a770fa3c9ac90521374343d2c16d02",
-      "hash": "7a9d853b6f0f644c13aaf90d33012c4965a770fa3c9ac90521374343d2c16d02"
-    },
-    {
-      "name": "water_interaction.js",
-      "size": 22369,
-      "sha256": "12b50636745520be6881da392b4a1b60415f23d065c80f215fcc6505757e84d9",
-      "hash": "12b50636745520be6881da392b4a1b60415f23d065c80f215fcc6505757e84d9"
-    },
-    {
-      "name": "water_render.js",
-      "size": 8470,
-      "sha256": "d7c81b558479113d5e0ab5651a46a681ae5d73f3bbb7ba7737a3cbbd876ca527",
-      "hash": "d7c81b558479113d5e0ab5651a46a681ae5d73f3bbb7ba7737a3cbbd876ca527"
     }
   ],
-  "ui_version": "2026.10.17.4",
-  "version": "2026.10.17.4"
+  "ui_version": "2026.10.17.6",
+  "version": "2026.10.17.6"
 }

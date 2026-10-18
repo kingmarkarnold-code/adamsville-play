@@ -292,6 +292,24 @@
   #radio-name { max-width:40vw; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   #music-btn { position:fixed; top:160px; left:12px; z-index:30; width:44px; height:44px;
     border-radius:22px; border:2px solid #fff; background:rgba(0,0,0,.5); color:#fff; font-size:20px; }
+  /* PAUSE (Joshua 2026-10-17): the pause button sits top-right, just left of
+     the settings gear, in the same HUD button family as #music-btn. Its
+     position is also registered in ui_layout.json (both faces), so the
+     layout pass refines it at startup; this CSS is the pre-layout fallback. */
+  #pause-btn { position:fixed; top:10px; right:64px; z-index:30; width:44px; height:44px;
+    border-radius:22px; border:2px solid #fff; background:rgba(0,0,0,.5); color:#fff; font-size:18px; }
+  /* PAUSED overlay: follows the #help card pattern (dark scrim + card).
+     The scrim does NOT capture touches (pointer-events:none; the card
+     re-enables them) so the settings gear and the pause button stay
+     reachable while paused -- menus keep working in a paused game. */
+  #pause-overlay { position:fixed; inset:0; z-index:60; display:none; align-items:center;
+    justify-content:center; background:rgba(0,0,0,.55); pointer-events:none; }
+  #pause-overlay.show { display:flex; }
+  #pause-overlay .card { background:#161b26; border:2px solid #ffd75e; border-radius:14px;
+    padding:26px 34px; text-align:center; pointer-events:auto; }
+  #pause-overlay h3 { margin:0 0 14px 0; color:#ffd75e; font-size:30px; letter-spacing:4px; }
+  #pause-resume { padding:12px 26px; font-size:17px; border-radius:10px; border:none;
+    background:#ffd75e; color:#111; font-weight:bold; }
   /* v1.0: was top-right under the gear — overlapped the ENTER HOUSE action
      button on Joshua's phone. Now top-left, clear of the right-side buttons. */
   #help { position:fixed; inset:0; z-index:40; display:none; align-items:center; justify-content:center;
@@ -608,6 +626,12 @@
 <button id="help-btn">&#9881;<span id="gear-dot"></span></button>
 <!-- Music toggle + radio station stepper (two-context music: on-foot vs driving tracks). -->
 <button id="music-btn">&#128266;</button>
+<!-- PAUSE (Joshua 2026-10-17): on-screen pause for touch/web (Escape does it
+     on keyboard). Behaviour lives in pause_system.js: one tap freezes the
+     simulation and the music; the overlay's Resume (or Escape, or the
+     button again) unfreezes both. -->
+<button id="pause-btn" aria-label="Pause game">&#9208;</button>
+<div id="pause-overlay"><div class="card"><h3>PAUSED</h3><button id="pause-resume">&#9654; Resume</button></div></div>
 <div id="radio"><button id="radio-prev">&#9664;</button><span id="radio-name"></span><button id="radio-next">&#9654;</button></div>
 <!-- ===== SETTINGS PANEL (opens from the gear button) =====
      Top: Settings rows (How to play, Music, View report, Record, Gameplay).
@@ -636,6 +660,12 @@
   <button class="row" id="adm-ui">Re-download UI <span class="adm-tag" id="adm-ui-tag"></span></button>
   <button class="row" id="adm-vehicles">Re-download Vehicles <span class="adm-tag" id="adm-vehicles-tag"></span></button>
   <button class="row" id="adm-music">Re-download Music <span class="adm-tag" id="adm-music-tag"></span></button>
+  <!-- APK HARDENING 2026-10-17 (item 4): serve-source line — per type,
+       whether the running game was served from the APK bundle, an
+       earlier download, or a download from this session. Filled by
+       ASSETVER.refreshServeLine() from the native ServeLog; stays
+       hidden text on the web (no native bridge there). -->
+  <div id="adm-serve" style="font-size:11px;color:#9fb3c8;margin:4px 0;"></div>
   <button class="row" id="adm-hrauto">Live UI updates: ON</button>
   <button class="row" id="adm-hrcheck">Check for updates now</button>
   <button class="row" id="adm-stayawake">Stay Awake: OFF</button>
@@ -1192,6 +1222,20 @@ function __loadStep(key,failed){
     var s=document.getElementById('load-start'); if(s) s.style.display='block';
   }
 }
+/* v1.63 CRASH LOG — EARLY BUFFER (Joshua 2026-10-17 failure philosophy):
+   crashlog.js loads late in the deferred queue, but failures can happen
+   from the first second of boot. SA_CRASH(kind, data) exists from NOW:
+   instrumented seams push records into window.__crashQ, and crashlog.js
+   drains them on arrival (and immediately, via _drain(), once loaded).
+   Kinds: 'critical' | 'error' | 'warning' | 'bump'. Silent failure is
+   banned — every seam that used to swallow a failure now calls this. */
+window.__crashQ = window.__crashQ || [];
+window.SA_CRASH = function(kind, data){
+  try{
+    window.__crashQ.push({ kind:String(kind||'error'), data:(data||{}), ts:Date.now() });
+    if (window.CrashLog && CrashLog._drain) CrashLog._drain();
+  }catch(e){}
+};
 /* v1.53 #34 __criticalConsequence(fails): picks the honest consequence line for
    the critical-failure panel based on WHAT failed. An engine/world failure
    means the game cannot run; map-data failure means a broken world; a
@@ -1991,6 +2035,24 @@ function __loadDeferredQueueInner(){
         }catch(e){ _mdGo(); }
         return;
       }
+      /* STOCK DELIVERY (Joshua 2026-10-17): stockdelivery.js just loaded —
+         run the unified stock check in the BACKGROUND: it diffs the
+         published stock-manifest.json against this copy's stock, fetches
+         the changed fetch-servable files nobody else owns into the same
+         local store mapdelivery uses, and reports the rest. It never
+         blocks the queue and never throws into the loader (fail-open,
+         but logged — see stockdelivery.js). Runs once per page load. */
+      if (src.indexOf('stockdelivery.js') !== -1 && ok && !window.__stockDeliveryChecked){
+        window.__stockDeliveryChecked = true;
+        try{
+          if (window.StockDelivery && StockDelivery.runStartupCheck){
+            StockDelivery.runStartupCheck()
+              .then(function(res){ try{ window.__STOCKDELIVERY_RESULT = res; }catch(e){} })
+              .catch(function(){});
+          }
+        }catch(e){}
+        /* no return: the queue continues immediately */
+      }
       /* zoneloader.js exposes zone files; inject them next in order. */
       if (src.indexOf('zoneloader.js') !== -1 && window.__zoneScriptFiles && !window.__zoneScriptsInjected){
         window.__zoneScriptsInjected = true;
@@ -2274,6 +2336,13 @@ window.__applyCrewMaster = function(on){
      (mapdelivery.js). Loads before zoneloader.js so the deferred queue
      can run the check before any zone data is fetched. -->
 <script data-dsrc="mapdelivery.js"></script>
+<!-- STOCK DELIVERY (Joshua 2026-10-17): unified stock check across all
+     four delivery areas (stockdelivery.js) — the mapdelivery discipline
+     generalized to the whole stock library. Loads right after
+     mapdelivery.js; its launch check is fire-and-report (see the hook in
+     the deferred loader's finish()) and NEVER pauses this queue: the
+     per-area deliveries keep owning their own downloads. -->
+<script data-dsrc="stockdelivery.js"></script>
 <script data-dsrc="zoneloader.js" data-dkey="zoneloader"></script>
 <script data-dsrc="terrainfix.js" data-dkey=""></script>
 <script data-dsrc="vehicle_meshes.js" data-dkey="vehmeshes"></script>
@@ -2425,6 +2494,21 @@ function sendReportsToMollie(){
     }catch(e){ payload = null; }
     if(!payload) payload = { note:'no local Report data available' };
     payload._exportKind = 'manual-send-to-mollie';
+    /* APK HARDENING 2026-10-17 (item 4): attach the serve-source
+       summary — per artifact type, whether this session's bytes came
+       from the APK bundle, an earlier download, or a fresh download
+       (native ServeLog, read by ASSETVER.refreshServeLine into
+       window.__serveSources; probed directly here as a backup). This
+       is the game's report path: the answer to "am I looking at the
+       old map?" now travels with every exported report. Null on the
+       web, where no native serve choice exists. */
+    try{
+      var sr = window.__serveSources || null;
+      if (!sr && typeof window.MapDownload!=='undefined'
+          && window.MapDownload && window.MapDownload.getServeReport)
+        sr = JSON.parse(window.MapDownload.getServeReport() || 'null');
+      if (sr) payload.serveSources = sr;
+    }catch(e){}
     try{ window.GitHubReports.queue('manual-export', payload); }catch(e){}
     try{ showToast('Sending reports to Mollie…', 2000); }catch(e){}
     /* Flush now instead of waiting for the 5-minute timer. */
@@ -2917,6 +3001,66 @@ var ASSETVER=(function(){
         el.className='adm-tag ok';
       }
     }
+    /* APK HARDENING 2026-10-17 (item 4): keep the serve-source line
+       (#adm-serve) as fresh as the tags themselves. */
+    try{ refreshServeLine(); }catch(e){}
+  }
+
+  /* APK HARDENING 2026-10-17 (item 4): serve-source reporting.
+     serveReport() reads the native ServeLog summary (bundle / cache /
+     fresh counts per artifact type) through whichever bridge this
+     build has — MapDownload first (it also owns the map verdict),
+     AssetDownload second. Returns null on the web (no native bridges:
+     everything there streams from the deployment itself) and on old
+     APKs without getServeReport — callers degrade quietly.
+     refreshServeLine() renders the one-line Administrator verdict and
+     stashes the parsed report on window.__serveSources, which the
+     "Send Reports to Mollie" export attaches to its payload — so the
+     answer to "where did these bytes come from?" travels with the
+     game's reports instead of living only on this screen. */
+  function serveReport(){
+    try{
+      var b=(typeof mapBridge==='function')?mapBridge():null;
+      if (b && b.getServeReport){
+        var r=b.getServeReport();
+        if (r) return JSON.parse(r);
+      }
+    }catch(e){}
+    try{
+      var b2=(typeof bridge==='function')?bridge():null;
+      if (b2 && b2.getServeReport){
+        var r2=b2.getServeReport();
+        if (r2) return JSON.parse(r2);
+      }
+    }catch(e){}
+    return null;
+  }
+  function refreshServeLine(){
+    var el=null;
+    try{ el=document.getElementById('adm-serve'); }catch(e){}
+    if (!el) return;
+    var rep=serveReport();
+    if (!rep || !rep.types){
+      el.textContent='';
+      return;
+    }
+    try{ window.__serveSources=rep; }catch(e){}
+    var labels={map:'Map',ui:'UI',vehicles:'Vehicles',music:'Music'};
+    var words={bundle:'bundled in APK',cache:'downloaded earlier',fresh:'fresh download'};
+    var parts=[];
+    for (var k in labels){
+      var t=rep.types[k];
+      if (!t) continue;
+      /* Dominant source by serve count; fresh wins ties (it is the
+         most specific claim), bundle is the default. */
+      var cb=t.bundle||0, cc=t.cache||0, cf=t.fresh||0;
+      var src='bundle';
+      if (cf>0 && cf>=cc && cf>=cb) src='fresh';
+      else if (cc>0 && cc>=cb) src='cache';
+      var extra=t.floorPurged?' (older downloads discarded at startup)':'';
+      parts.push(labels[k]+': '+words[src]+extra);
+    }
+    el.textContent='Served from \u2014 '+parts.join(' \u00b7 ');
   }
 
   /* ASSETVER.applyOnNewGame - THE asset apply point. Called from the Gameplay
@@ -7139,6 +7283,12 @@ function runOsmBuildings(){
   try{
     if (typeof OSM_BUILDINGS==='undefined' || !OSM_BUILDINGS || !OSM_BUILDINGS.length){
       try{Report.setSys('osmBuildings',{status:'no-data'});}catch(e){}
+      /* v1.63 CRASH LOG (Joshua's template case): the map can download and
+         verify while the buildings never spawn — that is a CRITICAL, and
+         the tester is told, with the choice to keep exploring. */
+      try{ SA_CRASH('critical',{code:'buildings-no-data',
+        message:'building spawn ran with no building data (OSM_BUILDINGS missing/empty)',
+        where:'runOsmBuildings() (index.html)'}); }catch(e){}
       return;
     }
     /* v2.0: the road grid MUST be FINAL before the placement check runs.
@@ -7220,6 +7370,11 @@ function runOsmBuildings(){
     }catch(e){}
     if (!kept.length){
       try{Report.setSys('osmBuildings',{status:'all-skipped',in:OSM_BUILDINGS.length});}catch(e){}
+      /* v1.63 CRASH LOG: data arrived but EVERY building was skipped —
+         a named critical, never a silent empty city. */
+      try{ SA_CRASH('critical',{code:'buildings-all-skipped',
+        message:'placement skipped all '+OSM_BUILDINGS.length+' buildings (none kept)',
+        where:'runOsmBuildings() (index.html)'}); }catch(e){}
       return;
     }
     // v1.6: publish placed house (type 0) positions for driveway parking
@@ -7423,6 +7578,11 @@ function runOsmBuildings(){
     }
     var bodies=_bldgFacade('bodies'), roofs=_bldgFacade('roofs');
     try{ window.__bldgMeshes={bodies:bodies, roofs:roofs, kept:kept}; }catch(e){}
+    /* v1.63 CRASH LOG: publish the kept (placed) building records so
+       collision diagnostics can name the exact building the player
+       bumped — and flag a collider that matches NO placed building
+       (the invisible-but-solid suspect). */
+    try{ window.__bldgKept=kept; }catch(e){}
     /* v1.19: Report building-fix persistence status for QA/admin visibility. */
     var _fixInfo={savedApplied:0,totalSaved:0,savedStale:0};
     try{
@@ -7972,13 +8132,33 @@ try{
    through the MLK bridge. Force a full rebuild here so the grid includes
    every roadDrawData entry. */
 roadSurfGrid=null; roadSurfSegs=0;
-buildRoadGrids();
+/* v1.63 CRASH LOG: the road-grid build is a critical boundary. A throw
+   here used to surface as a vague broken world; now it is recorded with
+   its error + location, and the tester gets the guided window. An empty
+   grid under loaded road data is likewise a named critical failure. */
+try{ buildRoadGrids(); }catch(e){
+  try{ SA_CRASH('critical',{code:'road-build-failed',
+    errorName:(e&&e.name)||'Error', message:String(e&&e.message||e),
+    where:'buildRoadGrids() call site (index.html)'}); }catch(x){}
+}
+try{
+  if (typeof roadDrawData!=='undefined' && roadDrawData && roadDrawData.length &&
+      !(typeof roadSurfSegs==='number' && roadSurfSegs>0)){
+    SA_CRASH('critical',{code:'roads-empty',
+      message:'road data loaded ('+roadDrawData.length+' roads) but the drivable road grid is empty',
+      where:'buildRoadGrids() call site (index.html)'});
+  }
+}catch(e){}
 /* v2.0 (2026-10-09): THE automatic buildings-on-roads check — runs EVERY load.
    The road grid is now FINAL (every roadDrawData entry included), so
    runOsmBuildings() places all 13k+ OSM buildings against complete data:
    violators are auto-nudged clear and logged to placementViolations
    (id, original pos, new pos, road name). Never deletes. */
-try{ runOsmBuildings(); }catch(e){ try{Report.noteError('runOsmBuildings','deferred call failed',String(e&&e.stack||e));}catch(x){} }
+try{ runOsmBuildings(); }catch(e){ try{Report.noteError('runOsmBuildings','deferred call failed',String(e&&e.stack||e));}catch(x){}
+  /* v1.63 CRASH LOG: a throw out of building spawn is a critical too. */
+  try{ SA_CRASH('critical',{code:'buildings-spawn-crashed',
+    errorName:(e&&e.name)||'Error', message:String(e&&e.message||e),
+    where:'runOsmBuildings() deferred call site (index.html)'}); }catch(y){} }
 /* v1.16 GREEN PHASE: buildings placed (70%) — show real count. */
 try{
   var _bp=0;
@@ -10822,6 +11002,10 @@ function updateCar(dt){
   if (blocked>0.03 && spd>6 && now-(car.lastHit||0)>0.4){
     car.lastHit=now;
     addDamage(car, spd*1.7);   // ~43 dmg at full speed: ~3 hard hits kills the engine
+    /* v1.63 CRASH LOG (Joshua's collision diagnostics): the damage seam
+       already knows the car hit SOMETHING — now the hit names itself in
+       the bump notice + crash log (identified at this position). */
+    try{ SA_CRASH('bump',{mode:'driving', x:tmp.x, z:tmp.z, speed:spd}); }catch(e){}
     car.speed*=0.35;           // impact absorbs momentum
   }
   car.x=tmp.x; car.z=tmp.z;
@@ -11934,6 +12118,23 @@ function animate(){
   requestAnimationFrame(animate);
   /* v1.46 FIXED TIMESTEP: bank real elapsed time, spend it in 1/30s sim steps. */
   var realDt=Math.min(0.25, clock.getDelta());
+  /* PAUSE (Joshua 2026-10-17 -- pause_system.js): while paused, the sim
+     does not advance AT ALL. No simTick steps are spent, and the
+     render-phase module ticks are skipped too -- traffic, NPC crews,
+     MARTA and the daycycle take wall-clock dt there and would keep the
+     world moving behind the frozen frame. The accumulator is zeroed
+     every paused frame so resume never fast-forwards to catch up.
+     clock.getDelta() above still ran, draining the frame delta, and
+     rendering continues so the player sees the frozen scene under the
+     PAUSED overlay (the first-frame game-ready signal simply defers to
+     the first unpaused frame). */
+  try{
+    if (window.GamePause && GamePause.paused){
+      __simAcc = 0;
+      renderer.render(scene, camera);
+      return;
+    }
+  }catch(e){}
   /* v1.51 TICK REGISTRY (expert #14): input-phase ticks run once per frame,
      before the fixed-step sim. Nothing registers here yet — reserved for
      control/input sampling that must precede simulation. */
@@ -12105,7 +12306,9 @@ window.addEventListener('keyup', function(e){
     if (held['arrowright']) dYaw   += YAW_SPEED * dt;
     if (held['arrowup'])    dPitch -= PITCH_SPEED * dt;   // add() pitches down on +, so up key is -
     if (held['arrowdown'])  dPitch += PITCH_SPEED * dt;
-    if ((dYaw || dPitch) && window.LookInput && typeof window.LookInput.add === 'function'){
+    /* PAUSE (Joshua 2026-10-17): while paused, held arrows must not bank
+       look rotation that would snap the camera the moment the game resumes. */
+    if ((dYaw || dPitch) && !(window.GamePause && GamePause.paused) && window.LookInput && typeof window.LookInput.add === 'function'){
       try { window.LookInput.add(dYaw, dPitch); } catch(e){}
     }
   }
@@ -12492,6 +12695,8 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <!-- 2026-10-17 MERGE: keyboard remap + input diagnostics (Joshua 2026-10-16), ported from the www build so every deployment shares them -->
 <script data-dsrc="keyboard_remap.js" data-dkey=""></script>
 <script data-dsrc="input_diag.js" data-dkey=""></script>
+<!-- PAUSE (Joshua 2026-10-17): Escape / on-screen button freezes sim + music on every deployment. -->
+<script data-dsrc="pause_system.js" data-dkey=""></script>
 <script data-dsrc="traffic_system.js" data-dkey="traffic"></script>
 <script data-dsrc="gps_system.js" data-dkey=""></script>
 <!-- v1.54 #37 ENGINE SOUNDS (Michael Torres, Audio - Joshua approved fix, expanded: all drivable vehicles + buses/trains/trucks/crews) -->
@@ -12547,6 +12752,10 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <script data-dsrc="police_system.js" data-dkey=""></script>
 <script data-dsrc="github-config.js" data-dkey=""></script>
 <script data-dsrc="github_reports.js" data-dkey=""></script>
+<!-- CRASH LOG (Joshua 2026-10-17): one growing markdown log on GitHub,
+     passable critical window, collision naming. Loads right after the
+     report uploader whose config it shares. -->
+<script data-dsrc="crashlog.js" data-dkey=""></script>
 <script data-dsrc="worldfix_sync.js" data-dkey=""></script>
 <script data-dsrc="hq_staff_system.js" data-dkey="hq"></script>
 <script data-dsrc="dialogue_director_npc.js" data-dkey=""></script>
