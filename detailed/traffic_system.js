@@ -70,10 +70,28 @@ if (window.__trafficV19) return;          // never double-load
 window.__trafficV19 = true;
 
 /* ---------------- config ---------------- */
-var MAX_RENDERED   = 40;      // rendered vehicle cap (raised v1.13: local traffic)
-var STREAM_DIST    = 350;     // geometry only within this many units (raised v1.13)
+/* Joshua's HALF-MILE FULL-DRAW RULE (2026-10-17): inside 800u of the player
+   (800 units = half a mile — the world is true-scale, 1 unit = 1 metre,
+   a mile = 1,609u) traffic is drawn IN FULL: every car holds a render
+   slot, at every perf level, automatically. The canonical constant is
+   FULL_DRAW_R in perf_budget.js (window.FULL_DRAW_R); fullDrawR() below
+   reads it lazily because this module loads first — the 800 fallback is
+   the same number, used only if perf_budget failed to load. Retuning the
+   circle is one number in perf_budget.js. */
+function fullDrawR(){ return (typeof window!=='undefined'&&window.FULL_DRAW_R)||800; }
+var MAX_RENDERED   = 108;     // render-slot pool = the WHOLE fleet (44 highway + 28 arterial
+                              // + 24 local + 12 near-start cars). The full-draw guarantee is
+                              // only honourable if a slot always exists for an inside-circle
+                              // car; measured densest real case is 39 cars within 800u
+                              // (Downtown spawn — FULL-DRAW-CIRCLE-NOTES.md), and a
+                              // fleet-sized pool makes the guarantee unconditional.
+                              // If the fleet constants below ever grow, grow this too.
+var STREAM_DIST    = 1000;    // geometry streams in within this many units — 200u beyond the
+                              // full-draw circle, so a car is already drawn before it crosses
+                              // into the guaranteed zone (no pop at the 800u boundary), and a
+                              // slotted car keeps its slot out to here (the release radius —
+                              // this replaces the old RELEASE_DIST=420; release IS stream-out).
 var STREAM_DIST2   = STREAM_DIST*STREAM_DIST;
-var RELEASE_DIST   = 420;     // hysteresis is handled by 0.3s reassign cadence
 var MIN_ROAD_LEN   = 120;     // roads shorter than this get no traffic
 var STUCK_AFTER_S  = 5;       // "speed ~0 while trying" seconds before logging
 var STUCK_COOLDOWN = 25;      // seconds before the same car can log again
@@ -933,9 +951,10 @@ function stepCar(c,dt,px,pz){
 
 /* ---------------- streaming renderer ----------------
    3 draw calls for ALL traffic: bodies + glasshouses + wheels as
-   InstancedMesh. Slots are reassigned every 0.3s to the nearest cars.
-   PERFORMANCE: geometry exists only for cars near the player; distant cars
-   are pure data (positions only). Wheel spin is faked from distance driven
+   InstancedMesh. Slots are reassigned every 0.3s under Joshua's half-mile
+   full-draw rule (see assignSlots): every car within 800u is rendered,
+   cars stream in by 1000u, distant cars are pure data (positions only).
+   Wheel spin is faked from distance driven
    (wheelA += speed*dt / wheelRadius). */
 function buildRenderPool(){
   var bodyG=new THREE.BoxGeometry(2.0,0.62,4.6); bodyG.translate(0,0.55,0);
@@ -957,28 +976,48 @@ function buildRenderPool(){
   TR.glassIM.instanceMatrix.needsUpdate=true;
   TR.wheelIM.instanceMatrix.needsUpdate=true;
 }
-/* assignSlots(px,pz) — rebinds the MAX_RENDERED instanced slots to the
-   nearest cars within STREAM_DIST of the player (nearest-first sort).
-   Cars that lose a slot keep driving as data; emptied slots are zero-scaled
-   (hidden). Reassigns at most every 0.3s — the hysteresis-free cadence
-   keeps pop-in cheap while tracking a moving player. */
+/* assignSlots(px,pz) — rebinds the instanced slots every 0.3s under
+   Joshua's HALF-MILE FULL-DRAW RULE (2026-10-17):
+     1. GUARANTEE — every car within FULL_DRAW_R (800u) of the player
+        holds a slot, before any other car is considered, at every perf
+        level. The pool is fleet-sized (MAX_RENDERED=108) so this can
+        always be honoured; if the fleet ever outgrew the pool, the
+        nearest inside cars would win.
+     2. STICKINESS — a car that already holds a slot keeps it while it
+        stays within STREAM_DIST (1000u): beyond-circle slot claims go to
+        current holders first, so a car oscillating across the 800u line
+        (790 <-> 810u) never flickers. A holder is displaced only when the
+        budget is exhausted by inside-circle cars (rule 1 outranks it).
+     3. BUDGET — EXPERT #42's perf cap (window.__perfTrafficCap, null at
+        full quality) remains a cap on TOTAL rendered cars, but
+        inside-circle cars are EXEMPT: the beyond-circle allowance is
+        cap - insideCount (floored at 0), so quality scaling thins only
+        the field beyond 800u, never inside it.
+   Cars that lose a slot keep driving as data; emptied slots are
+   zero-scaled (hidden). */
 function assignSlots(px,pz){
-  var cand=[], i;
-  for (i=0;i<TR.cars.length;i++){ var c=TR.cars[i];
-    var dx=c.x-px, dz=c.z-pz, d2=dx*dx+dz*dz;
-    if (d2<STREAM_DIST2) cand.push([d2,i]);
+  var fdr=fullDrawR(), fdr2=fdr*fdr;
+  var inside=[], sticky=[], fresh=[], i, c, dx, dz, d2;
+  for (i=0;i<TR.cars.length;i++){ c=TR.cars[i];
+    dx=c.x-px; dz=c.z-pz; d2=dx*dx+dz*dz;
+    if (d2<=fdr2) inside.push([d2,i]);
+    else if (d2<STREAM_DIST2){
+      if (c.slot>=0) sticky.push([d2,i]); else fresh.push([d2,i]);
+    }
   }
-  cand.sort(function(a,b){return a[0]-b[0];});
-  /* EXPERT #42 (Dr. Elena Vasquez, Engine Programmer — Joshua approved "Fix
-     42"): perf budget can cap the rendered traffic slots on weak hardware.
-     window.__perfTrafficCap is null at full quality (stock 40). Cars that
-     lose a slot keep driving as data — same as the existing slot system. */
+  var byDist=function(a,b){return a[0]-b[0];};
+  inside.sort(byDist); sticky.sort(byDist); fresh.sort(byDist);
   var _cap=(typeof window!=='undefined'&&window.__perfTrafficCap)||MAX_RENDERED;
-  var n=Math.min(cand.length,_cap);
+  var outsideAllow=Math.max(0, Math.min(_cap,MAX_RENDERED)-inside.length);
+  var picked=[], k;
+  for (k=0;k<inside.length;k++) picked.push(inside[k][1]);
+  for (k=0;k<sticky.length&&outsideAllow>0;k++){ picked.push(sticky[k][1]); outsideAllow--; }
+  for (k=0;k<fresh.length&&outsideAllow>0;k++){ picked.push(fresh[k][1]); outsideAllow--; }
+  var n=Math.min(picked.length,MAX_RENDERED);
   for (var s=0;s<MAX_RENDERED;s++){
     var prev=TR.slots[s];
     if (prev>=0&&TR.cars[prev]) TR.cars[prev].slot=-1;
-    var ci=s<n?cand[s][1]:-1;
+    var ci=s<n?picked[s]:-1;
     TR.slots[s]=ci;
     if (ci>=0){ TR.cars[ci].slot=s; TR.bodyIM.setColorAt(s,_c.setHex(TR.cars[ci].color)); }
     else zeroSlot(s);
