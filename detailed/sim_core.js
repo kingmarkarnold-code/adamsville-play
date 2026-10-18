@@ -49,7 +49,17 @@
      var p = Sim.get('player');
      if (p) player.mesh.position.set(p.x, p.y, p.z);
    ------------------------------------------------------------------------- */
-window.Sim = {
+/* v1.63 MERGE FIX (2026-10-17, invisible-traffic hunt): index.html's
+   v1.51 tick registry ALREADY owns window.Sim (onTick/run/count/PHASES)
+   by the time this deferred module loads. This file used to REPLACE
+   window.Sim with the entity store below — silently deleting the
+   registry, so every Sim.onTick registration in the game (traffic,
+   MARTA, school bus, crews, daycycle, ~20 systems) quietly never ran
+   and animate()'s Sim.run threw every frame. The store is now built
+   as a local object and MERGED onto the existing window.Sim: both
+   halves of the Sim namespace live side by side (their key sets do
+   not overlap), exactly as the two expert designs intended. */
+var _simEntityStore = {
   /* id -> plain-data record. */
   entities: {},
 
@@ -120,6 +130,14 @@ window.Sim = {
     }
   }
 };
+/* Attach the entity store onto window.Sim WITHOUT evicting the tick
+   registry (see the v1.63 note above). If the registry is somehow
+   absent, this still yields a working store on a fresh object. */
+window.Sim = window.Sim || {};
+for (var _simKey in _simEntityStore){
+  if (Object.prototype.hasOwnProperty.call(_simEntityStore, _simKey))
+    window.Sim[_simKey] = _simEntityStore[_simKey];
+}
 
 /* Wrap Sim.update so subscribers are notified. (Kept as a wrapper rather
    than inline code so the core update path stays trivially readable.) */
