@@ -18,6 +18,12 @@
    - Unlock state persists in localStorage ONLY
      (key 'sa.zones.unlocked.v1'). Adamsville (home base) is ALWAYS
      unlocked and can never be re-locked.
+   - UNLOCK CEREMONY (Joshua 2026-10-17): a correct password hands
+     the unlock to zoneunlockflow.js when that module is loaded —
+     pause, download progress bar, zone data download, minimap
+     update — and the unlock COMMITS only once the data has landed
+     (commitUnlock). A failed download leaves the zone locked; the
+     old immediate flip survives only as the no-flow-module fallback.
    - Walls gate the PLAYER only (on foot and in the player's car). NPCs
      and traffic ignore the walls completely — nothing in this file ever
      moves or blocks an NPC/vehicle that is not the player's.
@@ -117,6 +123,20 @@ try{
 }catch(e){}
 /* Adamsville is ALWAYS unlocked — enforced after any load, forever. */
 state.unlocked.adamsville=true;
+
+/* ---------------- unlock-download flow hook ----------------
+   zoneunlockflow.js (Joshua 2026-10-17) registers here so a correct
+   password can run the full unlock ceremony — pause, download the
+   zone's data with a progress bar, update the minimap — and only then
+   commit the unlock through the callback it is handed. Signature:
+     fn({zones:[zoneId,...], source, commit:function(id)->bool})
+   returning true when it takes over. Null (module absent) keeps the
+   original immediate-unlock behaviour below, so the game never
+   depends on the flow module being present. */
+var _unlockFlow=null;
+function setUnlockFlow(fn){
+  _unlockFlow=(typeof fn==='function') ? fn : null;
+}
 function unlockedIdsList(){
   // Ids of every currently-unlocked zone, in ZONES (spec) order.
   var out=[];
@@ -230,13 +250,24 @@ function lockedZoneAt(x,z){
    unlock() is THE unlock entry point: the password UI calls it via
    tryUnlockWithPassword, and future mission completion (Saints Row
    style) will call unlock(id, 'mission') directly. */
-function unlock(id, source){
+
+/* commitUnlock(id, source) — the ONE place unlock state actually
+   flips: state + save + log, deliberately NO toast. unlock() adds
+   the toast for the immediate paths; the unlock-download flow
+   commits through here per zone once that zone's data has actually
+   downloaded, and makes its own announcement on its overlay. */
+function commitUnlock(id, source){
   var zn=zoneById(id);
   if(!zn) return false;              // unknown zone id: nothing to do
   if(isUnlocked(id)) return false;   // already unlocked: not "newly"
   state.unlocked[id]=true;
   save();
   dlog('Zone unlocked: '+zn.name+' (via '+(source||'api')+')');
+  return true;
+}
+function unlock(id, source){
+  if(!commitUnlock(id, source)) return false;
+  var zn=zoneById(id);
   notify('🗺️ Zone unlocked: '+zn.name);
   return true;
 }
@@ -252,6 +283,22 @@ function tryUnlockWithPassword(id, pw){
   // Exact string comparison against the per-zone password. A wrong
   // password changes NOTHING (no state write, no toast) — returns false.
   if(pw===null || pw===undefined || String(pw)!==ZONE_PASSWORD) return false;
+  /* ZONE DOWNLOAD FLOW (Joshua 2026-10-17): a correct password no
+     longer flips the zone open on the spot. When zoneunlockflow.js
+     is loaded it takes over — pause, progress bar, zone download,
+     minimap update — and commits through the callback only after
+     the data has landed, so a failed download leaves the zone
+     LOCKED instead of opening onto naked space. If the flow module
+     is absent or declines, the immediate unlock below runs exactly
+     as it always did. */
+  if(!isUnlocked(id) && _unlockFlow){
+    var took=false;
+    try{
+      took=_unlockFlow({ zones:[id], source:'password',
+        commit:function(zid){ return commitUnlock(zid, 'password'); } });
+    }catch(e){ took=false; }
+    if(took) return true;  // flow owns the unlock now
+  }
   unlock(id, 'password');
   return true;  // password was right, even if the zone was already open
 }
@@ -269,6 +316,21 @@ function tryUnlockAllWithPassword(pw){
   // Exact string comparison against the UNLOCK ALL password ONLY.
   // The per-zone password ('5464') must NOT work here.
   if(pw===null || pw===undefined || String(pw)!==UNLOCK_ALL_PASSWORD) return false;
+  /* ZONE DOWNLOAD FLOW (Joshua 2026-10-17): same ceremony as the
+     per-zone path, over every still-locked zone in spec order —
+     zoneunlockflow.js downloads them sequentially, committing each
+     zone as its own data lands (a zone whose download fails stays
+     locked; the ones before it stay unlocked). */
+  var lockedIds=[];
+  for(var i=0;i<ZONES.length;i++) if(!isUnlocked(ZONES[i].id)) lockedIds.push(ZONES[i].id);
+  if(lockedIds.length && _unlockFlow){
+    var tookAll=false;
+    try{
+      tookAll=_unlockFlow({ zones:lockedIds, source:'password-all',
+        commit:function(zid){ return commitUnlock(zid, 'password-all'); } });
+    }catch(e){ tookAll=false; }
+    if(tookAll) return true;  // flow owns the unlocks now
+  }
   unlockAll('password');
   return true;  // password was right, even if everything was already open
 }
@@ -487,6 +549,11 @@ window.ZoneUnlock={
   isUnlocked:isUnlocked,
   unlock:unlock,
   unlockAll:unlockAll,
+  /* ZONE DOWNLOAD FLOW (Joshua 2026-10-17): zoneunlockflow.js
+     registers its ceremony via setUnlockFlow; commitUnlock is the
+     flow's per-zone commit (state flip without the toast). */
+  setUnlockFlow:setUnlockFlow,
+  commitUnlock:commitUnlock,
   tryUnlockWithPassword:tryUnlockWithPassword,
   tryUnlockAllWithPassword:tryUnlockAllWithPassword,
   isPlayable:isPlayable,
