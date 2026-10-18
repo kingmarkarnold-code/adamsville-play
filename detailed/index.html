@@ -8416,13 +8416,101 @@ function updateVehicleCosmetics(dt){
    distance don't render — tracked as data only. Hysteresis: show < 175u,
    hide > 200u (~2 football fields, per Joshua's visibility rule 2026-10-10). */
 var VEHICLE_SHOW_R=175, VEHICLE_HIDE_R=200;
+/* ================= PLAYER'S VEHICLE ALWAYS FULLY DRAWS (Joshua's law, 2026-10-17) =================
+   Joshua's ruling (2026-10-17, after the ui .12 chunk-culling fix and the
+   ui .15 half-mile full-draw circle): "the player's vehicle should always
+   fully draw." His current vehicle — the state object the global `car`
+   points to, whether he is driving it or has parked and walked away — is
+   exempt from EVERY draw-suppression mechanism:
+     - the distance culling below (updateVehicleVisibility already forces
+       its group visible; that is kept and re-asserted on every tick);
+     - per-mesh FRUSTUM CULLING: every node in the vehicle's mesh tree
+       gets frustumCulled=false. Three r128 culls each mesh against its
+       geometry bounding sphere — the same class of mechanism that made
+       whole building chunks vanish in ui .12. His car must never depend
+       on a bounding sphere being right;
+     - perf-budget quality levels (perf_budget.js publishes NPC / traffic
+       / shadow / draw-distance overrides — none may touch his vehicle;
+       the blob-shadow half of this exemption lives in blob_shadows.js);
+     - traffic render slots (his vehicle is a unique scene-level group
+       built by vehicle_meshes.js — it is NOT in traffic_system.js's
+       instanced slot pool, so it never competes for a render slot).
+   HOW THE GUARANTEE IS KEPT: pinPlayerVehicleDraw() walks the vehicle's
+   mesh tree and switches frustum culling off on every node. It runs when
+   the vehicle spawns (spawnPlayerVan), the moment he enters a vehicle
+   (the action button), and again on every updateVehicleVisibility tick
+   (~2Hz) — so a part added later (cockpit, doors) or any stray code that
+   re-enables culling is re-pinned within half a second. When he switches
+   vehicles, the previous one is unpinned and goes back to being an
+   ordinary parked car under the normal culling rules.
+   checkPlayerVehicleDraw() verifies the law after each pin and reports a
+   violation loudly (console + Report) instead of letting his car quietly
+   disappear — Joshua's failure philosophy: no silent failures. */
+var _pinnedPlayerVehicle=null;   // state object currently holding the pin
+var _pvDrawViolation=false;      // true while a violation episode is open (log once per episode)
+function pinPlayerVehicleDraw(st){
+  if (!st || !st.mesh) return false;
+  var n=0, ok=true;
+  st.mesh.traverse(function(o){
+    if (o && ('frustumCulled' in o)){
+      o.frustumCulled=false; n++;
+      if (o.frustumCulled!==false) ok=false;
+    }
+  });
+  st._drawPinned=(ok && n>0);
+  return st._drawPinned;
+}
+function unpinPlayerVehicleDraw(st){
+  if (!st || !st.mesh) return;
+  try{ st.mesh.traverse(function(o){ if (o && ('frustumCulled' in o)) o.frustumCulled=true; }); }catch(e){}
+  st._drawPinned=false;
+}
+function checkPlayerVehicleDraw(){
+  /* Verify the law for the CURRENT player vehicle: group visible + every
+     node in its mesh tree free of the frustum culler. Returns true when
+     the vehicle fully draws. A failure is reported, never silent. */
+  try{
+    if (typeof car==='undefined' || !car || !car.mesh) return true;  // no vehicle yet — nothing to protect
+    var bad=[];
+    if (car.mesh.visible!==true) bad.push('group hidden');
+    car.mesh.traverse(function(o){
+      if (o && ('frustumCulled' in o) && o.frustumCulled!==false) bad.push('frustumCulled on '+(o.name||o.type||'node'));
+    });
+    if (bad.length){
+      if (!_pvDrawViolation){
+        _pvDrawViolation=true;
+        try{ console.error('[PlayerVehicleDraw] LAW VIOLATED: '+bad.join('; ')); }catch(e){}
+        try{ if (typeof Report!=='undefined' && Report.noteError) Report.noteError('player-vehicle-draw', bad.join('; ')); }catch(e){}
+      }
+      return false;
+    }
+    _pvDrawViolation=false;
+    return true;
+  }catch(e){ return true; }
+}
+function refreshPlayerVehiclePin(){
+  /* Keep the pin on whatever vehicle `car` currently points to. Called
+     at spawn, on entering a vehicle, and on every visibility tick. */
+  try{
+    if (typeof car==='undefined' || !car || !car.mesh) return;
+    if (_pinnedPlayerVehicle && _pinnedPlayerVehicle!==car) unpinPlayerVehicleDraw(_pinnedPlayerVehicle);
+    pinPlayerVehicleDraw(car);
+    if (car.mesh.visible!==true) car.mesh.visible=true;  // fully drawn also means the group itself is shown
+    _pinnedPlayerVehicle=car;
+    checkPlayerVehicleDraw();
+  }catch(e){}
+}
+/* DI/test surface (same pattern as window.PerfBudget): lets the harness
+   and diagnostics prove the law against the live game objects. */
+window.PlayerVehicleDraw={ pin:pinPlayerVehicleDraw, unpin:unpinPlayerVehicleDraw,
+  refresh:refreshPlayerVehiclePin, check:checkPlayerVehicleDraw };
 function updateVehicleVisibility(px,pz){
   try{
     var show2=VEHICLE_SHOW_R*VEHICLE_SHOW_R, hide2=VEHICLE_HIDE_R*VEHICLE_HIDE_R;
     for (var i=0;i<cars.length;i++){
       var c=cars[i];
       if (!c||!c.mesh) continue;
-      if (c===car) { if (!c.mesh.visible) c.mesh.visible=true; continue; }  // player's car always visible
+      if (c===car) { if (!c.mesh.visible) c.mesh.visible=true; refreshPlayerVehiclePin(); continue; }  // player's car always visible + always fully drawn (Joshua's law — pin block above)
       var dx=c.x-px, dz=c.z-pz, d2=dx*dx+dz*dz;
       if (d2>hide2){ if (c.mesh.visible) c.mesh.visible=false; }
       else if (d2<show2){ if (!c.mesh.visible) c.mesh.visible=true; }
@@ -8996,6 +9084,7 @@ function spawnPlayerVan(){
       if (vkind==='sedan' && typeof sedanMesh!=='function') return false;
     }catch(e){ return false; }
     car=makeCar(vx, vz, 0, 0x8b2e2e, true, vkind);
+    try { refreshPlayerVehiclePin(); }catch(e){}  // Joshua's law (2026-10-17): his vehicle always fully draws — pin it from birth
     try { car.mesh.position.y=heightAt(car.x,car.z)+0.32; }catch(e){}
     try { car.mesh.visible=true; }catch(e){}  // ensure visible (culling keeps it visible anyway)
     try { console.log('[van] Player van spawned at '+vx+','+vz+' kind='+vkind); }catch(e){}
@@ -9385,6 +9474,7 @@ actionBtn.addEventListener('click', function(){
   var a=actionBtn.dataset.act;
   if (a==='enter-car'){
     if (pendingCar) car=pendingCar;   // nearest usable vehicle becomes the driven car
+    try{ refreshPlayerVehiclePin(); }catch(e){}  // the entered vehicle is now HIS vehicle — pin it (Joshua's law: always fully draws)
     /* v1.58: null-car guard — don't try to drive a car that doesn't exist. */
     if (!car) return;
     car.driving=true; player.mesh.visible=false;  // hide the on-foot sprite while driving
