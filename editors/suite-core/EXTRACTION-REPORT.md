@@ -75,3 +75,21 @@ inventory registry as suite tooling, carried in by the Building
 Editor rebuild. The Decision Deck's JS gesture module remains
 the web-side sibling of this library — same write-shareable-first
 rule, different platform.
+
+
+---
+
+## Addendum (2026-10-18) — §4 EXECUTED
+
+The recommendation above was carried out: the flat additions
+were merged into the `suite_core/` package (round_trip +
+fetch_with_retries + 409-retry into `github_sync.py`; paned /
+SplitMemory / anchored-overlay parts into `layout.py`;
+`snapshot_view.py` and `suite_draw.py` homed in the package;
+`updater.py` now carries both updater halves — the check half
+above and the Building Editor's shipped applying updater).
+The flat files remain as compatibility shims naming the
+package modules. Record: `~/workspace/game-map/SUITE-CORE-MERGE-NOTES.md`.
+Repo home decided and landed: `editors/suite-core/` in
+adamsville-play (this file included), registered in
+`tools/inventory-registry.json`.
