@@ -1012,6 +1012,92 @@ function renderSlots(dt){
   TR.wheelIM.instanceMatrix.needsUpdate=true;
 }
 
+/* ---------------- station edits (Building Editor overrides) ----------------
+   Joshua's Building Editor (1.7.2+) lets him flip a problem gas station
+   to editable, drag/resize it in the editor's 3D view, and mark it
+   Walkable. Those edits live in ONE file in this repo —
+   editors/building-editor/station-edits.json — which the editor saves
+   by the standing rule (save locally -> push -> close -> re-download
+   the proof copy). The game NEVER edits that file; it only reads it.
+
+   Format (the editor's own — see StationEdits in the editor's
+   zonedata.py):
+     { "version": 1, "updatedBy": "...",
+       "stations": { "<stationIndex>": { "editable": true/false,
+                     "walkable": true/false,
+                     "dx": <units east of the real spot>,
+                     "dz": <units south of the real spot>,
+                     "w": <footprint width>, "d": <depth>,
+                     "h": <height> } } }
+   stationIndex is the station's index in REAL_FUEL_STATIONS (the
+   editor's station list is built in the same order — verified against
+   all 109 entries). Positions are OFFSETS from the station's real
+   spot — the editor's anchor rule is realPosition + (dx, dz) — never
+   absolute coordinates.
+
+   The download starts the moment this script loads (cache-busted,
+   cache:'no-store' — the same pattern map delivery and the watcher
+   use), so by the time the world is built and stations place, it has
+   settled. placeGasStations() waits for it; the promise ALWAYS
+   resolves, so placement can never be blocked by this file.
+
+   Failure behaviour (Joshua's failure philosophy — never silent):
+   - file missing (404): nobody has published a station edit yet —
+     a normal state; stations place by the standing rules, noted in
+     the console log.
+   - network error / bad JSON / wrong shape / timeout: stations place
+     by the standing rules AND the failure is reported (console +
+     Report), never swallowed. */
+var STATION_EDITS_URL='https://kingmarkarnold-code.github.io/adamsville-play/editors/building-editor/station-edits.json';
+var STATION_EDITS={ byIndex:{}, loaded:false, applied:0, walkable:0, error:'' };
+var stationEditsReady=(function(){
+  function settle(map, err){
+    STATION_EDITS.byIndex=map||{};
+    STATION_EDITS.loaded=!err;
+    STATION_EDITS.error=err||'';
+    if (err){
+      try{ console.error('[STATION-EDITS] '+err); }catch(e){}
+      try{ if (typeof Report!=='undefined') Report.noteError('gasStations','station-edits load failed',err); }catch(e){}
+    }
+    return STATION_EDITS;
+  }
+  if (typeof fetch!=='function')
+    return Promise.resolve(settle(null,'fetch unavailable in this environment — stations placed by the standing rules'));
+  var timedOut=false;
+  var timeoutP=new Promise(function(res){ setTimeout(function(){ timedOut=true; res(null); },25000); });
+  var fetchP=fetch(STATION_EDITS_URL+'?cb='+Date.now(), {cache:'no-store'}).then(function(r){
+    if (r.status===404) return null;   // no edits published yet — a normal state, handled below
+    if (!r.ok) throw new Error('HTTP '+r.status);
+    return r.json();
+  }).then(function(doc){
+    if (doc===null) return null;
+    if (!doc || typeof doc!=='object' || !doc.stations || typeof doc.stations!=='object')
+      throw new Error('station-edits.json has no "stations" object — the file is malformed');
+    return doc.stations;
+  });
+  return Promise.race([fetchP, timeoutP]).then(function(map){
+    if (map===null && timedOut)
+      return settle(null,'download timed out after 25s — stations placed by the standing rules');
+    if (map===null){
+      try{ console.log('[STATION-EDITS] no station-edits.json published yet — stations placed by the standing rules'); }catch(e){}
+      return settle({},'');
+    }
+    try{ console.log('[STATION-EDITS] loaded '+Object.keys(map).length+' station edit entr(ies) from the repo'); }catch(e){}
+    return settle(map,'');
+  }, function(err){
+    return settle(null, String(err&&err.message||err));
+  });
+})();
+/* stationEditFor(i) — Joshua's override for REAL_FUEL_STATIONS[i], or
+   null. An entry counts ONLY when its "editable" flag is true: the
+   editor keeps a station's saved values in the file when he flips it
+   back to review-only (editable:false), and those kept values must
+   NOT apply — review-only means the game treats it as unedited. */
+function stationEditFor(i){
+  var e=STATION_EDITS.byIndex[String(i)];
+  return (e && e.editable===true) ? e : null;
+}
+
 /* ---------------- gas stations (v1.12) ----------------
    REAL OSM locations: REAL_FUEL_STATIONS (deduped amenity=fuel, pulled
    2026-10-09 from Geofabrik Georgia extract). Positions verified against
@@ -1091,38 +1177,53 @@ function gasFaceAngle(x,z){
   }catch(e){}
   return Math.atan2(bx-x,bz-z);
 }
-/* buildGasStation(sx,sz,brand,colorHex) — builds one station from the shared
+/* buildGasStation(sx,sz,brand,colorHex,ov) — builds one station from the shared
    instanced parts (pad, canopy, kiosk, roof, 6 columns, 4 pump islands),
    rotated so +z local faces the nearest road. Registers 4 pump parking spots
    (on the approach side, +4.6u local z) for NPC fueling and the player's
    refuel hook, adds per-object colliders (columns, pumps, kiosk only — the
-   LOT stays drivable), and pushes the business into BUSINESSES/LANDMARKS. */
-function buildGasStation(sx,sz,brand,colorHex){
+   LOT stays drivable), and pushes the business into BUSINESSES/LANDMARKS.
+   ov (optional) is Joshua's Building Editor override for this station
+   ({w,d,h,walkable} from station-edits.json). Without ov the station is
+   the standard 48x38x8.5 cluster, built exactly as it always was. With
+   ov the whole cluster scales PROPORTIONALLY from the standard size —
+   the same rule the editor's 3D view uses (its station_parts) — so the
+   station Joshua sized in the editor is the station that stands here.
+   WALKABLE (ov.walkable): the station registers NO colliders at all —
+   the player can walk through the whole cluster (under the canopy,
+   through the kiosk and pumps). Stations have no interior geometry in
+   this game, so non-solid IS the enterable treatment for a station;
+   the lot was already drivable either way. */
+function buildGasStation(sx,sz,brand,colorHex,ov){
   var S=gasShared(); gasInstancing();
   if (S.n>=GAS_MAX) return null;
+  var GW=(ov&&+ov.w)||48, GD=(ov&&+ov.d)||38, GH=(ov&&+ov.h)||8.5;
+  var fsx=GW/48, fsz=GD/38, fsy=GH/8.5;      // proportional scale factors (all 1 without ov)
+  var walkable=!!(ov&&ov.walkable);
+  var _sv=new THREE.Vector3(fsx,fsy,fsz);    // per-instance part scale
   var gy=heightAt(sx,sz);
   var a=gasFaceAngle(sx,sz);
   var ca=Math.cos(a), sa=Math.sin(a);
-  function L2W(lx,lz){ return {x:sx+lx*ca+lz*sa, z:sz-lx*sa+lz*ca}; }
+  function L2W(lx,lz){ return {x:sx+(lx*fsx)*ca+(lz*fsz)*sa, z:sz-(lx*fsx)*sa+(lz*fsz)*ca}; }
   var idx=S.n++;
   _e.set(0,a,0); _q.setFromEuler(_e);
   function setIM(im,i,lx,ly,lz){
-    _v.set(sx+lx*ca+lz*sa, gy+ly, sz-lx*sa+lz*ca);
-    _m.compose(_v,_q,_ONE); im.setMatrixAt(i,_m);
+    _v.set(sx+(lx*fsx)*ca+(lz*fsz)*sa, gy+ly*fsy, sz-(lx*fsx)*sa+(lz*fsz)*ca);
+    _m.compose(_v,_q,_sv); im.setMatrixAt(i,_m);
   }
   setIM(S.padIM,idx, 0,0.15,0);
   // canopy gets per-instance brand color
-  _v.set(sx,gy+7.2,sz); _m.compose(_v,_q,_ONE);
+  _v.set(sx,gy+7.2*fsy,sz); _m.compose(_v,_q,_sv);
   S.canopyIM.setMatrixAt(idx,_m);
   try{ S.canopyIM.setColorAt(idx,_c.setHex(colorHex)); }catch(e){}
   setIM(S.kioskIM,idx, 18,1.95,-14);
   setIM(S.roofIM,idx, 18,3.95,-14);
-  // 6 canopy columns
+  // 6 canopy columns (colliders skipped entirely when walkable)
   var ci=idx*6, cn=0;
   [[-15,-9],[0,-9],[15,-9],[-15,9],[0,9],[15,9]].forEach(function(p){
     setIM(S.colIM,ci+cn,p[0],3.6,p[1]);
     var w=L2W(p[0],p[1]);
-    try{ addBldgCollider(w.x,w.z,0.9); }catch(e){}
+    if (!walkable){ try{ addBldgCollider(w.x,w.z,0.9*fsx); }catch(e){} }
     cn++;
   });
   // 4 pump islands + pump spots (parking positions on approach side)
@@ -1130,7 +1231,7 @@ function buildGasStation(sx,sz,brand,colorHex){
   [-15.75,-5.25,5.25,15.75].forEach(function(px){
     setIM(S.pumpIM,pi,px,1.05,0);
     var w=L2W(px,0);
-    try{ addBldgCollider(w.x,w.z,1.4); }catch(e){}
+    if (!walkable){ try{ addBldgCollider(w.x,w.z,1.4*fsx); }catch(e){} }
     var sp=L2W(px,4.6);
     pumpSpots.push({x:sp.x,z:sp.z,busy:0});
     GAS_PUMP_SPOTS.push({x:sp.x,z:sp.z});
@@ -1141,22 +1242,40 @@ function buildGasStation(sx,sz,brand,colorHex){
   });
   if (S.canopyIM.instanceColor) S.canopyIM.instanceColor.needsUpdate=true;
   // kiosk collider (the only big one — everything else is a small post/pump)
-  var kw=L2W(18,-14);
-  try{ addBldgCollider(kw.x,kw.z,6); }catch(e){}
+  if (!walkable){
+    var kw=L2W(18,-14);
+    try{ addBldgCollider(kw.x,kw.z,6*Math.max(fsx,fsz)); }catch(e){}
+  }
   try{ LANDMARKS.push({x:sx,z:sz,name:brand}); }catch(e){}
-  var biz={x:sx,z:sz,y:gy,w:48,d:38,h:8.5,type:'gas',name:brand,
+  var biz={x:sx,z:sz,y:gy,w:GW,d:GD,h:GH,type:'gas',name:brand,
            pumpSpots:pumpSpots,faceAngle:a};
+  if (ov){ biz.edited=true; biz.walkable=walkable; }
   try{ BUSINESSES.push(biz); }catch(e){}
   TR.gas.push(biz);
   return biz;
 }
-/* placeGasStations() — places all stations: prefers REAL_FUEL_STATIONS
+/* placeGasStations() — the gate: station placement runs once Joshua's
+   station-edits download has settled (see the loader above). The edits
+   promise ALWAYS resolves — edits loaded, no file yet, or a logged
+   failure all lead here — so stations can never be blocked by it, and
+   every other part of traffic init proceeds without waiting. */
+function placeGasStations(){
+  stationEditsReady.then(function(){
+    try{ placeGasStationsNow(); }
+    catch(e){ try{ Report.noteError('gasStations','placement failed',String(e&&e.message||e)); }catch(x){} }
+  });
+}
+/* placeGasStationsNow() — places all stations: prefers REAL_FUEL_STATIONS
    (real OSM coordinates converted with xz()) placed via placeStruct so they
    never collide with buildings/roads; falls back to procedural arterial
    placement if the data file is missing (should never happen — it's
    bundled). Then adds Joshua's hand-verified ground-truth station
-   (Fairburn Rd north of MLK, west side). Reports placed/skipped counts. */
-function placeGasStations(){
+   (Fairburn Rd north of MLK, west side). Reports placed/skipped counts.
+   Joshua's station edits (station-edits.json) layer ON TOP of the
+   standing rules: an edited station places at HIS position and size —
+   the skip rule is not consulted for it, because his edit IS the
+   ruling. Stations with no edit take the standing path, untouched. */
+function placeGasStationsNow(){
   var list=(typeof REAL_FUEL_STATIONS!=='undefined'&&REAL_FUEL_STATIONS.length)
     ? REAL_FUEL_STATIONS : null;
   var made=0, skipped=0;
@@ -1164,11 +1283,25 @@ function placeGasStations(){
     // REAL stations at verified OSM positions
     for (var i=0;i<list.length&&made<GAS_MAX;i++){
       var s=list[i], p=xz(s.lat,s.lon);
+      var edit=stationEditFor(i);
+      if (edit){
+        // Joshua's override: his position (real spot + his dx/dz
+        // offset), his size, his walkable flag — placed unconditionally.
+        var ebrand=uniqueGasName(GAS_BRANDS[made%GAS_BRANDS.length]);
+        var eb=buildGasStation(p.x+(+edit.dx||0), p.z+(+edit.dz||0), ebrand,
+          GAS_CANOPY[made%GAS_CANOPY.length],
+          { w:+edit.w||48, d:+edit.d||38, h:+edit.h||8.5, walkable:!!edit.walkable });
+        if (eb){ eb.stationIndex=i; made++; STATION_EDITS.applied++;
+                 if (eb.walkable) STATION_EDITS.walkable++; }
+        else skipped++;
+        continue;
+      }
       var spot=null;
       try{ spot=placeStruct(p.x,p.z,26,4,'gasStation-real'+i); }catch(e){}
       if (!spot){ skipped++; continue; }
       var brand=uniqueGasName(GAS_BRANDS[made%GAS_BRANDS.length]);
-      if (buildGasStation(spot.x,spot.z,brand,GAS_CANOPY[made%GAS_CANOPY.length])) made++;
+      var ub=buildGasStation(spot.x,spot.z,brand,GAS_CANOPY[made%GAS_CANOPY.length]);
+      if (ub){ ub.stationIndex=i; made++; }
       else skipped++;
     }
   } else {
@@ -1202,7 +1335,9 @@ function placeGasStations(){
   }catch(e){ try{ Report.noteError('gasStations','mlk-fairburn failed',String(e&&e.message||e)); }catch(x){} }
   try{ Report.setSys('gasStations',{placed:made,skipped:skipped,
     real:!!list,status:'ok',
-    note:'real OSM positions; drivable lots; per-object colliders'}); }catch(e){}
+    stationEdits:{loaded:STATION_EDITS.loaded, applied:STATION_EDITS.applied,
+      walkable:STATION_EDITS.walkable, error:STATION_EDITS.error||undefined},
+    note:'real OSM positions; drivable lots; per-object colliders; Building Editor station edits applied on top'}); }catch(e){}
 }
 window.GAS_PUMP_SPOTS=GAS_PUMP_SPOTS;
 /* nearestGasStation(x,z,maxD) — closest station within maxD units. Used by
@@ -1319,6 +1454,14 @@ function initTraffic(){
       Sim.onTick('render', 10, function(dt){ if(!window.__launchOpts || window.__launchOpts.traffic!==false) updateTraffic(); });
     }
   }catch(e){}
+  /* v1.63 CRASH LOG (Joshua 2026-10-17): a clean init that spawned ZERO
+     cars is a named critical, not a quiet empty world. */
+  try{
+    if (window.SA_CRASH && TR.cars.length===0)
+      SA_CRASH('critical',{code:'traffic-none-spawned',
+        message:'traffic initialised but spawned 0 cars (roads indexed: '+TR.roads.length+')',
+        where:'traffic_system.js initTraffic()'});
+  }catch(e){}
   try{
     var _jx=TR.jx?{nodes:TR.jx.nodes.length,endJx:TR.jx.nEndJx,
       crossings:TR.jx.nCross,buildMs:TR.jx.buildMs}:null;
@@ -1351,11 +1494,21 @@ var bootTimer=setInterval(function(){
   if (ready){
     try{ initTraffic(); }catch(e){
       try{ if(typeof Report!=='undefined') Report.noteError('traffic','init failed',String(e&&e.message||e)); }catch(x){}
+      /* v1.63 CRASH LOG: same failure, second record — the one growing
+         markdown log (the Report panel entry above stays for in-game QA). */
+      try{ if(window.SA_CRASH) SA_CRASH('error',{code:'traffic-init-failed',
+        errorName:(e&&e.name)||'Error', message:String(e&&e.message||e),
+        where:'traffic_system.js initTraffic()'}); }catch(y){}
     }
     clearInterval(bootTimer);
   } else if (bootTries>240){   // 60s — give up quietly, never break the game
     clearInterval(bootTimer);
     try{ if(typeof Report!=='undefined') Report.noteError('traffic','boot-timeout','deps never ready'); }catch(e){}
+    /* v1.63 CRASH LOG: this path used to "give up quietly" — silent
+       continuation is banned; the timeout is on the record. */
+    try{ if(window.SA_CRASH) SA_CRASH('error',{code:'traffic-boot-timeout',
+      message:'traffic dependencies never became ready within 60s; traffic did not start',
+      where:'traffic_system.js boot poll'}); }catch(x){}
   }
 },250);
 
