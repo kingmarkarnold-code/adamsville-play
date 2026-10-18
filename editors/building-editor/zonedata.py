@@ -141,7 +141,7 @@ STATION_EDITS_REPO_PATH = "editors/building-editor/station-edits.json"
 
 # Stamps into the version string of any zone file this editor saves
 # ("<date>-building-editor-<ver>-<zone>").
-EDITOR_VERSION = "2.0.1"
+EDITOR_VERSION = "2.0.2"
 
 # -- detail chunks (2.0.0 snapshot model) ------------------------------
 # buildings_detail.json stays the game's canonical detail file; the
