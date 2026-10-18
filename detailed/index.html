@@ -7560,7 +7560,11 @@ function runOsmBuildings(){
     /* v1.46: build per-chunk InstancedMeshes. Each gets frustumCulled=true
        with an explicit bounding sphere: chunk center, vertical center from
        actual placed extents, radius covering the chunk half-diagonal plus the
-       largest footprint half-diagonal in the chunk (+5u safety). */
+       largest footprint half-diagonal in the chunk (+5u safety).
+       v1.63 CORRECTION (2026-10-17): frustumCulled is now FALSE on these
+       meshes — on three r128 the sphere above is never consulted by the
+       frustum test, so "culled=true + manual sphere" silently meant
+       "culled as a unit sphere at the origin" (see the _bbm note below). */
     var bldgChunkMeshes={};  // chunkKey -> {bodies, roofs}
     var _bHalf=Math.sqrt(2)*BLDG_CHUNK/2;
     for (var _bck in bldgChunks){
@@ -7585,7 +7589,16 @@ function runOsmBuildings(){
       _bbm.instanceMatrix.needsUpdate=true;
       if(_bbm.instanceColor) _bbm.instanceColor.needsUpdate=true;
       _bbm.boundingSphere=_bbs.clone();
-      _bbm.frustumCulled=true;
+      /* v1.63 FIX (2026-10-17, Joshua's invisible-object report): MUST be
+         false. three r128's frustum test (Frustum.intersectsObject) reads
+         ONLY geometry.boundingSphere x matrixWorld — it never looks at
+         this mesh's hand-set boundingSphere above. With culling on, every
+         chunk was tested as a ~0.87u sphere at the WORLD ORIGIN and culled
+         whenever the origin left the camera frustum: buildings vanished
+         while their colliders stayed solid. Same fix the v1.17 pass
+         already applied to signs/marriott/marta meshes. The boundingSphere
+         assignment stays (harmless on r128, correct if three is upgraded). */
+      _bbm.frustumCulled=false;
       scene.add(_bbm); _bcm.bodies=_bbm;
       var _brm=new THREE.InstancedMesh(roofGeo, roofMat, _bc.roofs.length);
       for (var _ri=0;_ri<_bc.roofs.length;_ri++){
@@ -7596,7 +7609,7 @@ function runOsmBuildings(){
       _brm.instanceMatrix.needsUpdate=true;
       if(_brm.instanceColor) _brm.instanceColor.needsUpdate=true;
       _brm.boundingSphere=_bbs.clone();
-      _brm.frustumCulled=true;
+      _brm.frustumCulled=false;  // v1.63: r128 ignores mesh.boundingSphere — see _bbm note above
       scene.add(_brm); _bcm.roofs=_brm;
       bldgChunkMeshes[_bck]=_bcm;
     }
@@ -8480,7 +8493,9 @@ var TREE_SPECIES=[
   /* Build per-chunk InstancedMeshes. Each chunk mesh gets frustumCulled=true
      (the default) with a manually-set bounding sphere covering the chunk —
      r128's InstancedMesh.computeBoundingSphere exists but we set it explicitly
-     for reliability: center of chunk, radius = half-diagonal + max tree height. */
+     for reliability: center of chunk, radius = half-diagonal + max tree height.
+     v1.63 CORRECTION (2026-10-17): frustumCulled is now FALSE — r128's
+     frustum test ignores the manual sphere entirely (see _tm note below). */
   var treeChunkMeshes={};  // chunkKey -> {trunk, pine, decid}
   var _halfDiag=Math.sqrt(2)*TREE_CHUNK/2+20;  // chunk half-diagonal + tree height margin
   for (var _ck in treeChunks){
@@ -8497,7 +8512,13 @@ var TREE_SPECIES=[
       for (var _ti=0;_ti<_c.trunks.length;_ti++) _tm.setMatrixAt(_ti,_c.trunks[_ti]);
       _tm.instanceMatrix.needsUpdate=true;
       _tm.boundingSphere=_bs.clone();
-      _tm.frustumCulled=true;
+      /* v1.63 FIX (2026-10-17): MUST be false — three r128 culls
+         InstancedMeshes by their shared geometry's bounding sphere at the
+         world origin and ignores this hand-set sphere, so tree chunks
+         vanished while their trunk colliders stayed solid (invisible
+         objects Joshua crashed into). Same fix as the building chunks
+         above and the v1.17 sign/marriott/marta pass. */
+      _tm.frustumCulled=false;
       scene.add(_tm); _cm.trunk=_tm;
     }
     if (_c.pines.length){
@@ -8505,7 +8526,7 @@ var TREE_SPECIES=[
       for (var _pi=0;_pi<_c.pines.length;_pi++) _pm.setMatrixAt(_pi,_c.pines[_pi].m);
       _pm.instanceMatrix.needsUpdate=true;
       _pm.boundingSphere=_bs.clone();
-      _pm.frustumCulled=true;
+      _pm.frustumCulled=false;  // v1.63: r128 ignores mesh.boundingSphere — see _tm note above
       scene.add(_pm); _cm.pine=_pm;
     }
     if (_c.decids.length){
@@ -8518,7 +8539,7 @@ var TREE_SPECIES=[
       _dm.instanceMatrix.needsUpdate=true;
       if (_dm.instanceColor) _dm.instanceColor.needsUpdate=true;
       _dm.boundingSphere=_bs.clone();
-      _dm.frustumCulled=true;
+      _dm.frustumCulled=false;  // v1.63: r128 ignores mesh.boundingSphere — see _tm note above
       scene.add(_dm); _cm.decid=_dm;
     }
     treeChunkMeshes[_ck]=_cm;
