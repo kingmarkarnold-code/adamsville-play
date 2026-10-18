@@ -91,9 +91,34 @@
 #     which drift past the 1.0 tolerance on irregular rings — the
 #     measured reason 1,122 of 1,532 flagged buildings were never
 #     locked. See ring_area_centroid.
+#
+# 2.0.1 (Joshua's live report, 2026-10-18): THE SELECT FREEZE,
+# AGAIN — AND THE FIX. The snapshot model cut the BYTES, but the
+# selection path still ran its downloads (detail chunks, the
+# zone's 2.4 MB roads.json) and a full roads parse + ~79k-segment
+# index build SYNCHRONOUSLY on the UI thread, and rebuilt that
+# parse on EVERY click ("transient"). On Joshua's laptop over a
+# real network that is a multi-second freeze per selection, cold
+# or warm. The 2.0.0 harness could not see it: it served files
+# from local disk at zero latency, under a fake GTK. Now:
+#
+#   * GameStore.prepare_snapshot gathers EVERYTHING a selection
+#     needs (chunks, roads bytes, front, backdrop) in one call,
+#     and the app runs it on a WORKER thread — the UI thread only
+#     applies the finished snapshot. Downloads ride the window's
+#     MB progress bar (fetch_zone_file's progress path).
+#   * ZoneData.roads_view caches the parsed roads + segment
+#     index ONCE per zone per roads bytes (single-slot across
+#     zones), so repeat selections pay neither the parse nor
+#     the index build again. building_front takes the cached
+#     index; the derived fronts are byte-identical (the
+#     exactness gate proves it).
+#   * A roads failure is reported by name (prepare_snapshot's
+#     roads_error) instead of silently degrading the view.
 
 import json
 import math
+import threading
 from datetime import date as _date
 from pathlib import Path
 
@@ -116,7 +141,7 @@ STATION_EDITS_REPO_PATH = "editors/building-editor/station-edits.json"
 
 # Stamps into the version string of any zone file this editor saves
 # ("<date>-building-editor-<ver>-<zone>").
-EDITOR_VERSION = "2.0.0"
+EDITOR_VERSION = "2.0.1"
 
 # -- detail chunks (2.0.0 snapshot model) ------------------------------
 # buildings_detail.json stays the game's canonical detail file; the
@@ -464,7 +489,8 @@ def nearby_road_segments(zd, ring, margin=60.0):
     return zd.nearby_segments(ring, margin=margin)
 
 
-def building_front(zd, index, flagged_entry=None, roads=None):
+def building_front(zd, index, flagged_entry=None, roads=None,
+                   seg_index=None):
     """
     Derive a building's FRONT from the data (1.7.0, Joshua's
     design): the footprint edge whose midpoint is nearest a road
@@ -476,6 +502,14 @@ def building_front(zd, index, flagged_entry=None, roads=None):
     `roads` (1.7.2): an optionally pre-parsed roads dict for this
     zone (see ZoneData.transient_roads) so a caller showing one
     building parses the zone's roads at most once per selection.
+
+    `seg_index` (2.0.1): an optionally pre-built _segment_index
+    table for `roads` (see ZoneData.roads_view). 2.0.0 rebuilt
+    the table from all ~79k segments on EVERY selection — a
+    measurable slice of the select freeze on a slow CPU; the
+    caller that holds the zone's cached view passes it in and
+    the derivation is then just the candidate walk. The result
+    is identical either way (the exactness gate proves it).
 
     Returns {"ring", "edges", "front_edge", "front_road",
     "front_distance", "flagged_road"}: edges are (a, b) point
@@ -502,7 +536,10 @@ def building_front(zd, index, flagged_entry=None, roads=None):
     # 1.7.3: one segment index + one ring-wide candidate cut
     # serves every edge of this ring (the per-edge full re-scan
     # was the church freeze — see _segment_index/_edges_nearest).
-    seg_index = _segment_index(roads)
+    # 2.0.1: reuse the caller's cached table when one is offered
+    # instead of rebuilding it per selection.
+    if seg_index is None:
+        seg_index = _segment_index(roads)
     edge_nearest = _edges_nearest(seg_index, ring, edges)
     best_i, best_d, best_name = None, float("inf"), None
     flagged_best = None  # (distance, edge index) fronting flagged rd
@@ -1012,10 +1049,14 @@ class ZoneData:
              listed, never modified.
     zone_meta: parsed zone.json (bounds decide zone attribution).
     roads_raw: the zone's roads.json BYTES, fetched lazily on the
-             first snapshot and kept unparsed. The parsed roads of
-             a zone run to ~10 MB; they are parsed TRANSIENTLY
-             (transient_roads) when a building is shown, reduced to
-             the segments near it, and dropped.
+             first snapshot and kept. The parsed roads of a zone
+             run to ~10 MB; 2.0.0 parsed them TRANSIENTLY per
+             selection and dropped the parse — 2.0.1 keeps ONE
+             zone's parsed view (roads_view: parsed doc + segment
+             index) cached instead, because the per-selection
+             re-parse was half the select freeze. Only the
+             segments near a shown building are ever RETAINED by
+             callers (nearby_segments' result).
     dirty:   True once any placement/edit/delete touched this zone.
     bytes_fetched: detail/roads bytes this zone has downloaded in
              this session (the snapshot weight accounting the
@@ -1039,6 +1080,17 @@ class ZoneData:
         # generator do that — but it cannot fetch anything.
         self.store = None
         self.bytes_fetched = 0
+        # 2.0.1: the CACHED roads view — (roads_raw identity,
+        # parsed roads, segment index) built once per roads bytes
+        # by roads_view(). 2.0.0 re-parsed the zone's roads.json
+        # (~2.4 MB) and rebuilt the ~79k-segment index on EVERY
+        # selection, on the UI thread; that per-click CPU cost is
+        # half of the 2.0.1 freeze fix (the other half is doing
+        # the work off the UI thread — see GameStore.
+        # prepare_snapshot). The lock keeps two snapshot workers
+        # from building the same view twice at once.
+        self._roads_view = None
+        self._roads_view_lock = threading.Lock()
         # Pristine copies taken at materialisation (the state
         # GitHub held when editing began): the save path diffs
         # against them to know which records — and which chunk
@@ -1250,6 +1302,51 @@ class ZoneData:
             return json.loads(self.roads_raw)
         except Exception:
             return None
+
+    def roads_view(self):
+        """(parsed roads, segment index) for this zone — parsed
+        ONCE per roads bytes and then CACHED on the ZoneData
+        (2.0.1, the select-freeze fix).
+
+        2.0.0's transient_roads contract ("parse, use, drop")
+        kept memory low but charged every single selection the
+        full parse of roads.json plus a full rebuild of the
+        segment index (~0.35 s on a fast desktop CPU, several
+        seconds on Joshua's laptop — measured in the 2.0.1
+        investigation). The view is keyed on the roads BYTES
+        object, so a re-downloaded roads.json rebuilds it
+        automatically, and the store keeps only ONE zone's view
+        alive at a time (see GameStore._drop_roads_views) — the
+        lightweight law still holds: at most one zone's parsed
+        roads exist, for the zone actually being looked at.
+
+        Returns (None, None) when the zone has no roads (not
+        downloaded, fetch failed, or unparsable) — callers treat
+        that as "no front derivation / no backdrop", exactly as
+        they treated a transient parse of None."""
+        raw = self.roads_raw
+        view = self._roads_view
+        if view is not None and raw is not None \
+                and view[0] is raw:
+            return view[1], view[2]
+        with self._roads_view_lock:
+            # Re-check under the lock: another snapshot worker
+            # may have built the view while this one waited.
+            view = self._roads_view
+            if view is not None and self.roads_raw is not None \
+                    and view[0] is self.roads_raw:
+                return view[1], view[2]
+            roads = self.transient_roads()
+            index = _segment_index(roads) if roads else None
+            if roads:
+                # Cache only a SUCCESSFUL view: a failed roads
+                # fetch must retry on the next selection, not be
+                # remembered as "this zone has no roads".
+                self._roads_view = (self.roads_raw, roads, index)
+                if self.store is not None:
+                    self.store._drop_roads_views(
+                        except_zone=self.zone)
+            return roads, index
 
     def nearby_segments(self, ring, margin=60.0, roads=None):
         """[(name, pts)] for roads with any point within the ring's
@@ -1552,6 +1649,12 @@ class GameStore:
         self._fetch = None
         self._fetch_progress = None
         self._progress = None
+        # 2.0.1: serialises snapshot preparation (chunk fetches +
+        # roads work) across selection workers — the DetailList
+        # facade's chunk LRU is not safe for two threads racing
+        # the same cell, and serial prep is never the bottleneck
+        # (a superseded worker's fetches still warm the caches).
+        self._snapshot_lock = threading.Lock()
 
     def set_flagged(self, flagged):
         """Adopt the downloaded flagged index (1.7.2: the list is
@@ -1582,11 +1685,40 @@ class GameStore:
 
     def fetch_zone_file(self, zone, fname):
         """(raw, err) for one of a zone's game files through the
-        bound transport, with the standard retry policy."""
+        bound transport, with the standard retry policy.
+
+        2.0.1: when a progress callback is bound, the download
+        goes through the progress-capable fetch first (so the
+        window's MB bar moves during a selection's roads
+        download — in 2.0.0 that download was invisible AND on
+        the UI thread). A network-class failure of that attempt
+        falls through to the standard retried fetch; an HTTP
+        answer (401/403/404) is returned at once, as retries
+        cannot change it."""
         if self._fetch is None:
             return None, "no download connection is bound"
-        return _fetch_with_retries(self._fetch,
-                                   zone_repo_path(zone, fname))
+        path = zone_repo_path(zone, fname)
+        if self._fetch_progress is not None \
+                and self._progress is not None:
+            raw, err = _fetch_progress(
+                self._fetch, self._fetch_progress, path,
+                self._progress)
+            if raw is not None:
+                return raw, None
+            if "Network error:" not in (err or ""):
+                return None, err
+        return _fetch_with_retries(self._fetch, path)
+
+    def _drop_roads_views(self, except_zone=None):
+        """Drop every loaded zone's cached roads view except one
+        (2.0.1): parsed roads are the heaviest per-zone structure
+        the editor holds, so only the zone being looked at keeps
+        its view; another zone's view rebuilds on demand if
+        Joshua goes back to it. The roads BYTES stay — only the
+        parse + segment index are released."""
+        for name, zd in self.zones.items():
+            if name != except_zone:
+                zd._roads_view = None
 
     # -- light indexes ---------------------------------------------------
 
@@ -1703,6 +1835,70 @@ class GameStore:
         return {"zd": zd, "index": index, "detail": detail,
                 "flagged": flagged, "neighbours": neighbours,
                 "bytes": zd.bytes_fetched - before}
+
+    def prepare_snapshot(self, zone, index):
+        """
+        EVERYTHING the inspector needs for one building, gathered
+        in one call (2.0.1) — designed to run on a WORKER thread
+        so the UI thread never waits on it:
+
+        * the snapshot itself (open_snapshot: the detail chunks
+          of the building and its neighbours — network fetches),
+        * the zone's roads bytes (a ~2.4 MB download the first
+          time, with the bound progress callback driving the
+          window's MB bar),
+        * the zone's CACHED roads view (roads_view: the parse +
+          segment index, built once per zone, not per selection),
+        * the derived FRONT (building_front over the cached
+          view) and the nearby-segments backdrop.
+
+        Returns the open_snapshot dict plus {"front",
+        "roads_near", "roads_error"}. A roads problem is NOT
+        fatal to the snapshot — the building still shows, with
+        front=None and the reason in roads_error for the status
+        bar (2.0.0 silently degraded to a front-less view when
+        the roads fetch failed; the failure is named now, per
+        Joshua's failure philosophy). A snapshot problem (a
+        missing/unreadable detail chunk) raises ZoneDataError,
+        as open_snapshot always has.
+
+        Serialised on _snapshot_lock: the DetailList facade's
+        chunk LRU is single-threaded by design, and two rapid
+        selections must not race it.
+        """
+        zd = self.zones.get(zone)
+        if zd is None:
+            raise ZoneDataError(
+                f"Zone {zone} is not loaded — no snapshot can be "
+                f"prepared.")
+        with self._snapshot_lock:
+            snap = self.open_snapshot(zone, index)
+            roads = None
+            seg_index = None
+            roads_error = None
+            err = zd.ensure_roads()
+            if err:
+                roads_error = (f"{zone_repo_path(zone, 'roads.json')}"
+                               f": {err}")
+            else:
+                roads, seg_index = zd.roads_view()
+                if roads is None and zd.roads_raw:
+                    roads_error = (
+                        f"{zone_repo_path(zone, 'roads.json')}: "
+                        f"the downloaded roads could not be read.")
+            front = None
+            roads_near = []
+            if roads:
+                front = building_front(
+                    zd, index, snap["flagged"], roads=roads,
+                    seg_index=seg_index)
+                ring = front.get("ring") \
+                    or snap["detail"].get("ring") or []
+                roads_near = zd.nearby_segments(
+                    ring, margin=60.0, roads=roads)
+            snap.update({"front": front, "roads_near": roads_near,
+                         "roads_error": roads_error})
+            return snap
 
     def unload_zone(self, zone):
         """Drop a loaded zone's full data. ONLY a zone with no
