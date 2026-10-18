@@ -10,8 +10,10 @@
      - Free-think AI: no waypoints, no pathfinding — WALK a heading for a few
        seconds, IDLE (look around), TURN to a new heading; a 3.2u lookahead
        probe turns the NPC away from blockages. Simple sim, Joshua's rule.
-     - Streaming renderer: only MAX_VISIBLE=40 bodies within 150u of the
-       camera get instanced bodies (hysteresis: released beyond 200u), 10
+     - Streaming renderer: only MAX_VISIBLE=40 bodies get instanced bodies
+       — the nearest 40 of everyone within streaming range of the camera.
+       Streaming range is floored at 800u by Joshua's half-mile full-draw
+       rule (2026-10-17; hysteresis: released beyond 1.33x range), 10
        InstancedMeshes (torso/head/upper arms/forearms/thighs/shins —
        v1.57 expert #24 jointed limbs), per-instance colors
        (skin head+arms = short-sleeve look, shirt torso, pants legs).
@@ -843,18 +845,29 @@ function assignSlot(s,n){
   for (var i=0;i<mk.length;i++) if (mk[i].instanceColor) mk[i].instanceColor.needsUpdate=true;
 }
 /* refreshSlots(px,pz) — reassigns the 40 render slots every 0.5s: releases
-   NPCs beyond HIDE_R (200u — hysteresis so bodies don't pop at the
-   VISIBLE_R 150u boundary), then fills freed slots with the nearest
-   unslotted NPCs inside VISIBLE_R. No allocation: a _pick flag on each NPC
-   prevents double-picking within one pass, and _free is a reused scratch
-   array. Note: the fill scan is O(slots × npcs) — acceptable at 0.5s
-   cadence, would not be per frame. */
+   NPCs beyond the hide radius (1.33x the stream radius — hysteresis so
+   bodies don't pop at the boundary), then fills freed slots with the
+   nearest unslotted NPCs inside the stream radius. No allocation: a _pick
+   flag on each NPC prevents double-picking within one pass, and _free is
+   a reused scratch array. Note: the fill scan is O(slots × npcs) —
+   acceptable at 0.5s cadence, would not be per frame. */
 function refreshSlots(px,pz){
   /* EXPERT #42 (Dr. Elena Vasquez, Engine Programmer — Joshua approved "Fix
-     42"): perf budget can shrink the NPC streaming distance on weak hardware.
-     window.__perfNpcDist is null at full quality (stock behavior). HIDE_R
-     scales proportionally to keep the 1.33x anti-pop hysteresis ratio. */
-  var _vr=(typeof window!=='undefined'&&window.__perfNpcDist)||VISIBLE_R;
+     42"): perf budget publishes an NPC streaming distance on weak hardware
+     (window.__perfNpcDist, null at full quality = stock behavior). HIDE_R
+     scales proportionally to keep the 1.33x anti-pop hysteresis ratio.
+     HALF-MILE FULL-DRAW FLOOR (Joshua 2026-10-17): the effective radius
+     NEVER drops below FULL_DRAW_R (800u — half a mile at true scale).
+     The perf budget may thin the world beyond the circle, but people are
+     drawn in full inside it at every quality level, so a level's smaller
+     request (150/100/60/40u) is floored here (and clamped again in
+     perf_budget.js before publishing). Canonical constant:
+     window.FULL_DRAW_R in perf_budget.js; the 800 fallback is the same
+     number, used only if that module failed to load. Bodies remain the
+     nearest MAX_VISIBLE=40 — the TCL per-frame budget — now chosen from
+     the full 800u circle instead of a shrunken one. */
+  var _floor=(typeof window!=='undefined'&&window.FULL_DRAW_R)||800;
+  var _vr=Math.max((typeof window!=='undefined'&&window.__perfNpcDist)||VISIBLE_R, _floor);
   var _hr=_vr*(HIDE_R/VISIBLE_R);
   var VR2=_vr*_vr, HR2=_hr*_hr, i, s, n;
   _free.length=0;
@@ -1016,7 +1029,7 @@ function publishReport(){
       Report.setSys('npc',{
         count:npcs.length, visible:visCount, maxVisible:MAX_VISIBLE,
         glitchReports:glitchLog.slice(), glitchTotal:glitchTotal,
-        note:'free-think pedestrians (WALK/IDLE/TURN, no waypoints); bodies stream in under 150u'
+        note:'free-think pedestrians (WALK/IDLE/TURN, no waypoints); bodies stream in within 800u (half-mile full-draw rule)'
       });
     }
   }catch(e){}
