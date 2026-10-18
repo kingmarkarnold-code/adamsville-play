@@ -1,0 +1,26 @@
+{
+  "vocabulary": "decoration-types",
+  "title": "Decoration types",
+  "source_constant": "DECORATION_TYPES",
+  "source": "Building Editor data.py constants (shipped app 1.7.2; byte-identical copy in this repo at editors/building-editor/data.py)",
+  "migrated": "2026-10-17 — copied verbatim from the app code onto the shared stock shelf (ONE-SOURCE.md §4). The app still reads its baked-in copy until the Building Editor rebuild adopts this shelf; this file is the canonical list from now on.",
+  "values": [
+    "Picture Frame",
+    "Plant",
+    "Lamp",
+    "Rug",
+    "Curtains"
+  ],
+  "placement": {
+    "wall": [
+      "Curtains",
+      "Picture Frame"
+    ],
+    "ground": [
+      "Lamp",
+      "Plant",
+      "Rug"
+    ]
+  },
+  "placement_note": "From DECORATION_WALL_TYPES / DECORATION_FLOOR_TYPES in the same source block: wall types mount on wall faces, ground types sit on the ground."
+}
