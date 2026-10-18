@@ -1,6 +1,6 @@
 {
-  "version": "2.0.0",
-  "changelog": "The Building Editor rebuilt light (Joshua's snapshot design). (1) Opening a building no longer loads its whole zone: the editor downloads a light list, the zone's basic shape, and just that building's page of details \u2014 opening Elizabeth Baptist Church now downloads about 1 MB instead of the whole zone and answers in a fraction of a second, and the freeze is gone (the street-facing measurement only looks at nearby streets, with the same answer as before). (2) The properties pane scrolls properly: the mouse wheel now scrolls the pane everywhere, never changes a drop-down by accident, and the scrollbar is always shown. (3) Saving proves itself: after pushing, the editor closes the connection, re-downloads on a fresh one, and only says 'saved' when the bytes that come back contain your change \u2014 a colour edit is the tested case, and a save with no changes now honestly says so once. (4) Design drop-down lists (wall materials, roof textures, window and door types, and the rest) now download from the repo's stock shelf instead of being baked into the app; if a list cannot be downloaded and no earlier copy is cached, the editor says the list is unavailable rather than inventing one. (5) Flagged buildings lock properly: the flagged list holds 1,532 buildings and all 1,532 now lock (the old matching missed most of them on odd-shaped footprints \u2014 the church included). (6) New: a Draw for Mollie tab \u2014 sketch with finger or mouse (five colours, four line sizes, free/straight/curve lines, eraser, undo) and Send files it to the repo's drawings folder, verified the same way saves are.",
+  "version": "2.0.1",
+  "changelog": "Two repairs from real use on Joshua's laptop. (1) THE FREEZE AFTER PICKING A BUILDING: picking a building used to make the program itself fetch the building's details, download and read the area's whole roads file, and work out the building's front \u2014 all before it would respond again, and all over again on every click, so on a slow connection the window locked up for seconds per click. Now the fetching and working-out happen in the background while the window stays alive (the usual download progress bar shows what's coming down), the answer appears when it lands, and the roads are read once and kept for the next picks instead of being re-read every time. Measured with a deliberately slow connection: picking Elizabeth Baptist Church cold took 7.6 seconds of frozen window before, 0.18 seconds now; repeat picks went from up-to-2-second freezes to under a tenth of a second. (2) THE OPENING LAYOUT: the editor opened with the two horizontal field rows pushed to the top and the buildings list squeezed to a sliver. The three split bars now open at their designed shares of the window \u2014 the list opens with about three quarters of its column and both field rows at their full height \u2014 at any window size, and dragging a bar still works as before. (3) Small extra fix found by the new tests: flipping a gas station to editable used to quietly deselect it (and print an error behind the scenes), greying out the 'Open in 3D view' button until the station was picked again; the station now stays selected.",
   "files": [
     {
       "path": "about.py",
@@ -10,7 +10,7 @@
     {
       "path": "app.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/app.py",
-      "sha256": "ed729ffe7ccbb8f9c749b18361e473d1035ad8ab14b4ecbe28fe790f2a6cfeb7"
+      "sha256": "f63711ffa76a88a70b774be970f286c9677f1260491e8015dea3a82ceaff3c03"
     },
     {
       "path": "buildingcanvas.py",
@@ -60,7 +60,7 @@
     {
       "path": "zonedata.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/zonedata.py",
-      "sha256": "8500d2f0994e153dd1e0f54911b2cdc3cf561e0fb4aa751641c18434205a7e3b"
+      "sha256": "f1066d6bacbf4905c1b3038356092331349d70790ed25308769b3eb44ed2563c"
     }
   ]
 }
