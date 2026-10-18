@@ -134,9 +134,10 @@ def derive_references(root, files):
         ext = os.path.splitext(src)[1].lower()
 
         # resolution bases: a file's own directory. The root Pages page
-        # is a byte-mirror of detailed/index.html (kept by the release
-        # flow), so its relative references are read against detailed/
-        # as well — that is where they resolve for the canonical page.
+        # is the developer hub (hand-owned since 2026-10-17; before
+        # that it was a byte-mirror of detailed/index.html), so its
+        # relative references are read against detailed/ as well as
+        # the root — links written either way resolve.
         bases = [os.path.dirname(src)]
         if src == "index.html":
             bases.append("detailed")
@@ -268,10 +269,9 @@ def derive_references(root, files):
                 and parts[1] == "zones" and parts[2] in ZONES:
             note(f, "zone dataset (zoneloader.js / editor ZONE_DIR)")
 
-    # --- the root Pages page is the release flow's mirror target ---
+    # --- the root Pages page: the developer hub, the site doorway ---
     if "index.html" in fileset:
-        note("index.html", "GitHub Pages root (release-flow mirror of "
-                           "detailed/index.html)")
+        note("index.html", "GitHub Pages root (developer hub)")
     return referenced, dangling
 
 
