@@ -82,6 +82,11 @@
    "reason": "Repo tooling data (this registry)."
   },
   {
+   "class": "stock",
+   "pattern": "tools/chess-npc/score-sheets/*",
+   "reason": "Chess NPC source material: the prison score-sheet books (EPUB) that the chess NPC profiles are digitised from \u2014 the source of record for the cast of tools/generate-chess-npcs.js. Book 1 is final (annotated); book 2 joins it when its digitisation and opening-stamp pass finish."
+  },
+  {
    "class": "tooling",
    "pattern": "tools/watcher/*",
    "reason": "The watcher app, source of record. Its game_sync.js loads the game's published files live; the other files are the app itself plus its offline fallbacks and reference photos."
