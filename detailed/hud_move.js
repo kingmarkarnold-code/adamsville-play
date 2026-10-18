@@ -545,6 +545,42 @@ function buildMoveUI(){
       document.body.appendChild(panelEl);
     }
   } catch (e) { tabEl = null; panelEl = null; }
+  applyMenuLayoutEntries();
+}
+
+/* Menu currency (2026-10-18, UI Editor 1.9.0): menu_layout_apply.js
+   runs at startup, BEFORE the buttons this module adds to the Move
+   controls bar exist (hud-move-select, hud-move-hide, hud-move-tab)
+   — so it stashes the parsed menu_layout.json on
+   window.__SA_MENU_LAYOUT, and the "hudmove" entries are applied
+   here, right after those buttons are built. The bar's static
+   buttons (Reset / Done) are covered by the applier itself. Labels
+   apply only when the menu label differs in words, not glyphs:
+   these buttons carry suffix glyphs (▾ / ▴) that are part of the
+   control's look. Defensive throughout — no stashed document means
+   the bar keeps its authored labels and visibility. */
+function applyMenuLayoutEntries(){
+  try {
+    var doc = window.__SA_MENU_LAYOUT;
+    var menu = doc && doc.menus && doc.menus.hudmove;
+    if (!menu) return;
+    var defs = [];
+    (menu.groups || []).forEach(function (g) {
+      defs = defs.concat(g.items || []);
+    });
+    defs = defs.concat(menu.ungrouped || []);
+    defs.forEach(function (def) {
+      if (!def || !def.id) return;
+      var el = document.getElementById(def.id);
+      if (!el) return;
+      if (def.visible === false) el.style.display = 'none';
+      if (typeof def.label === 'string' && def.label &&
+          /[A-Za-z]/.test(def.label) &&
+          el.textContent !== def.label) {
+        el.textContent = def.label;
+      }
+    });
+  } catch (e) { /* menu entries are decoration; the bar stands */ }
 }
 
 /* The bar collapses to the slim tab (v2 yield rule): the drag
