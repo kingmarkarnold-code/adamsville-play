@@ -1,0 +1,55 @@
+{
+  "tool": "Decision Deck (batch decision making tool)",
+  "queue": "Flagged buildings — real data, 3D snapshots",
+  "exportedAt": "2026-10-18T02:41:57.591Z",
+  "decisions": [
+    {
+      "id": "flag-adamsville-19517",
+      "title": "Flagged: BP",
+      "gesture": "tap",
+      "at": "2026-10-18T02:41:37.388Z"
+    },
+    {
+      "id": "flag-downtown-147",
+      "title": "Flagged: Peachtree Station",
+      "gesture": "left",
+      "at": "2026-10-18T02:41:38.373Z"
+    },
+    {
+      "id": "flag-eastatlanta-17",
+      "title": "Flagged: Atlanta Municipal Market",
+      "gesture": "right",
+      "at": "2026-10-18T02:41:39.665Z"
+    },
+    {
+      "id": "flag-eastatlanta-3",
+      "title": "Flagged: Midcity Lofts",
+      "gesture": "down",
+      "at": "2026-10-18T02:41:40.701Z"
+    },
+    {
+      "id": "flag-mableton-2414",
+      "title": "Flagged: Burger King",
+      "gesture": "tap",
+      "at": "2026-10-18T02:41:43.985Z"
+    },
+    {
+      "id": "flag-unioncity-1673",
+      "title": "Flagged: Sandtown Church",
+      "gesture": "double-tap",
+      "at": "2026-10-18T02:41:44.960Z"
+    },
+    {
+      "id": "flag-southfulton-25107",
+      "title": "Flagged: Wendy's",
+      "gesture": "two-down",
+      "at": "2026-10-18T02:41:47.877Z"
+    },
+    {
+      "id": "flag-riverdale-15433",
+      "title": "Flagged: CubeSmart",
+      "gesture": "two-up",
+      "at": "2026-10-18T02:41:50.258Z"
+    }
+  ]
+}
