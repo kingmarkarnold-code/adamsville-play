@@ -731,6 +731,11 @@
   <button class="row" id="adm-hrcheck">Check for updates now</button>
   <button class="row" id="adm-stayawake">Stay Awake: OFF</button>
   <button class="row" id="adm-hrapply" style="display:none">Apply UI update &#8212; keep my spot</button>
+  <!-- MID-SESSION UI UPDATE (Joshua 2026-10-17): tap = the game pauses,
+       this menu closes, the changed UI files download (verified) while
+       you play, your spot is stashed, and the page reloads into the new
+       UI with you restored. Behaviour lives in ui_update_flow.js. -->
+  <button class="row" id="adm-uiflow">Download newest UI</button>
   <div id="adm-hrlog"></div>
   <button class="row" id="adm-dispatch">&#128679; Road Dispatch Log</button>
   <button class="row" id="adm-testconn">&#128268; Test Connection</button>
@@ -12628,6 +12633,9 @@ function __tryStartGame(){
       /* v1.14: hot-reload session restore — if the last page saved its spot
          before a UI-apply reload, put Joshua back exactly where he was. */
       try{ if(typeof window!=='undefined' && window.HR && HR.maybeRestore) HR.maybeRestore(); }catch(e){}
+      /* MID-SESSION UI UPDATE FLOW (Joshua 2026-10-17): if the flow
+         stashed our spot before its apply reload, put us back there. */
+      try{ if(typeof window!=='undefined' && window.UIUpdateFlow && UIUpdateFlow.maybeRestore) UIUpdateFlow.maybeRestore(); }catch(e){}
       /* v1.61 APK AUTO-LOAD (2026-10-12): after an in-app update restart, the
          APK sets localStorage 'sa_apk_autoload' to the slot number before
          reloading. Load that save automatically so the player resumes exactly
@@ -12898,6 +12906,10 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <script data-dsrc="zoneunlockflow.js" data-dkey=""></script>
 <script data-dsrc="satellite_view.js" data-dkey=""></script>
 <script data-dsrc="hotreload.js" data-dkey=""></script>
+<!-- MID-SESSION UI UPDATE FLOW (Joshua 2026-10-17): "Download newest UI"
+     — pause, close menu, verified background download, stash the spot,
+     reload, restore. Wired to #adm-uiflow; boot hook in __tryStartGame. -->
+<script data-dsrc="ui_update_flow.js" data-dkey=""></script>
 <!-- INTERIOR SYSTEM (2026-10-11): doors, furniture collision, appliances,
      pickupables. Non-invasive hooks (wraps updateActionButton /
      resolveCollision, own #action-btn listener) -- no game-code edits needed. -->
