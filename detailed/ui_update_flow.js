@@ -78,7 +78,9 @@
      sa_ui_update_resume   JSON  the resume stash (consumed on boot)
      sa_ui_update_applied  JSON  {ver, t} of the last consumed stash
 
-   Public API: window.UIUpdateFlow = { start, maybeRestore, diffManifests }
+   Public API: window.UIUpdateFlow = { start, maybeRestore, diffManifests,
+     writeStash, stashAndReload }  (the last two added 2026-10-17: the
+     generic stash API the zone transition + post-unlock refresh reuse)
    ============================================================================ */
 (function(){
 'use strict';
@@ -422,11 +424,18 @@ function downloadOne(entry, onProgress){
    stash can never float or bury the player. Returns null when there
    is no player yet (menu before start): the reload then just boots
    fresh, which is the honest outcome. */
-function snapshot(targetVer){
+function snapshot(targetVer, opts){
+  opts=opts||{};
   try{
     if (typeof player==='undefined' || !player) return null;
     var zone=null;
     try{ if (typeof ZONELOADER!=='undefined' && ZONELOADER.currentZone) zone=ZONELOADER.currentZone; }catch(e){}
+    /* opts.zone (2026-10-17): a caller reloading INTO a different page
+       (zoneloader's zone transition) tags the stash with the TARGET
+       zone — maybeRestore's zone-match check runs against the NEW
+       page's current zone, so a current-zone tag would be judged
+       foreign and discarded there. */
+    if (opts.zone) zone=opts.zone;
     var driving=false, carSnap=null, carIdx=-1;
     try{
       if (typeof car!=='undefined' && car){
@@ -441,7 +450,11 @@ function snapshot(targetVer){
                inside:!!player.inside, swimming:!!player.swimming, locIdx:(player.locIdx|0) },
       driving:driving, carIdx:carIdx, car:carSnap,
       camYaw:(typeof camYaw!=='undefined') ? +camYaw.toFixed(3) : null,
-      lookYawOff:(typeof look!=='undefined' && look) ? +((look.yawOff||0)).toFixed(3) : 0
+      lookYawOff:(typeof look!=='undefined' && look) ? +((look.yawOff||0)).toFixed(3) : 0,
+      /* opts.toast (2026-10-17): a caller-supplied restore message
+         (zone transitions, the post-unlock refresh). maybeRestore
+         shows it INSTEAD of the UI-update wording when present. */
+      toast:(opts.toast && typeof opts.toast==='string') ? opts.toast : ''
     };
   }catch(e){ return null; }
 }
@@ -559,7 +572,7 @@ function maybeRestore(){
   if (ok){
     try{
       if (typeof showToast==='function')
-        showToast('UI updated \u2014 you\u2019re where you left off.', 3200);
+        showToast(s.toast ? s.toast : 'UI updated \u2014 you\u2019re where you left off.', 3200);
     }catch(e){}
     reportEvent('restored', {event:'ui-update-restored', ver:s.forVer||''});
     logLine('Resume stash applied — player restored to ('+Math.round(s.player.x)+', '+Math.round(s.player.z)+').');
@@ -576,6 +589,40 @@ function readApplied(){
     var a=JSON.parse(raw);
     return (a && typeof a==='object') ? a : null;
   }catch(e){ return null; }
+}
+
+/* ---------- generic resume-stash API (2026-10-17) ----------
+   writeStash(opts): snapshot the player's exact spot into the SAME
+   resume stash this module's own reload path uses, WITHOUT
+   reloading. opts: {zone (tag: the zone the NEXT page boots into),
+   toast (shown by maybeRestore after the restore)}. Returns true
+   when a stash was written. Callers: zoneloader.transitionTo (the
+   reload is zoneloader's own — it changes ?zone= in the URL, which a
+   plain reload() cannot do).
+   stashAndReload(opts): writeStash + reload THIS page a moment
+   later. Returns true when it took over — the caller should stand
+   down (no resume, no further UI). Returns false when no stash
+   could be written (no live player): the caller falls back to its
+   no-reload behaviour. Caller: zoneunlockflow's finish (Joshua's
+   ruling — a successful unlock refreshes the page so the world can
+   change around an unmoved player). */
+function writeStash(opts){
+  opts=opts||{};
+  var s=snapshot('', opts);
+  if (!s) return false;
+  try{
+    lsSet(LS_STASH, JSON.stringify(s));
+    logLine('Resume stash written for '+(opts.zone ? ('zone '+opts.zone) : 'this page')+'.');
+    return true;
+  }catch(e){ return false; }
+}
+function stashAndReload(opts){
+  opts=opts||{};
+  if (!writeStash(opts)) return false;
+  setTimeout(function(){
+    try{ window.location.reload(); }catch(e){}
+  }, (typeof opts.delayMs==='number' && opts.delayMs>=0) ? opts.delayMs : 600);
+  return true;
 }
 
 /* ---------- the flow ---------- */
@@ -727,11 +774,14 @@ if (typeof document!=='undefined'){
 
 /* Public API — start is the button (and any future caller);
    maybeRestore is __tryStartGame's boot hook; diffManifests is the
-   pure core the harness drives. */
+   pure core the harness drives; writeStash/stashAndReload are the
+   generic stash API zoneloader + zoneunlockflow reuse (2026-10-17). */
 window.UIUpdateFlow={
   start:start,
   maybeRestore:maybeRestore,
-  diffManifests:diffManifests
+  diffManifests:diffManifests,
+  writeStash:writeStash,
+  stashAndReload:stashAndReload
 };
 
 /* Self-report so Joshua can verify the module loaded (Report panel). */
