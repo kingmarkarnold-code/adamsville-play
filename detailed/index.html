@@ -11124,8 +11124,13 @@ var SPD_SCALE = VAN_TOP_MPH / 65;            // ~2.54 — accel/brake scale fact
    cap (x1.25), so the van still creeps the last stretch up to top speed
    instead of walling off below it. Measured on this curve (ACCEL-NOTES.md):
    0-60 ~4.5 s, 0-100 ~10.4 s — a steady, unhurried incline where each
-   next mph is slower-won than the last. */
-var ENGINE_PEAK_ACCEL = 8.6;                // u/s^2 at a standstill (~18.6 mph/s, fading)
+   next mph is slower-won than the last. RETUNED later that night (Joshua,
+   live play: "the car still get to 75 too fast"): same taper SHAPE, peak
+   pull lowered 8.6 -> 4.45 u/s^2 so the whole run is calmer — an everyday
+   car, not a sports car. Measured on the retuned curve: 0-60 ~8.8 s,
+   0-75 ~12.2 s, 0-100 ~20.1 s, and the 165 mph top speed (unchanged)
+   now takes ~85 s of full throttle to reach. */
+var ENGINE_PEAK_ACCEL = 4.45;               // u/s^2 at a standstill (~9.6 mph/s, fading)
 var ENGINE_TAPER_US = VAN_TOP_US * 1.25;    // ~95.2 u/s — engine pull fades to zero here
 var SPEED_LIMIT_MPH = { highway:125, arterial:45, local:25, offroad:25 };
 
