@@ -148,9 +148,9 @@
     },
     {
       "name": "index.html",
-      "size": 983921,
-      "sha256": "58064158f35bd887ea30b3e308a88b4bbc47b40475f28348e71f343821594495",
-      "hash": "58064158f35bd887ea30b3e308a88b4bbc47b40475f28348e71f343821594495"
+      "size": 989862,
+      "sha256": "ea273f86117accd9eecbbfc15f7a356826b7228f6d40ae08a52a29240f6bff0f",
+      "hash": "ea273f86117accd9eecbbfc15f7a356826b7228f6d40ae08a52a29240f6bff0f"
     },
     {
       "name": "infracrew_system.js",
@@ -286,9 +286,9 @@
     },
     {
       "name": "residential_detail.js",
-      "size": 25794,
-      "sha256": "8d3cdaf51c546fff3a27ce32c9de4530947b0be2ea1a0b2d165571fee9d9dae3",
-      "hash": "8d3cdaf51c546fff3a27ce32c9de4530947b0be2ea1a0b2d165571fee9d9dae3"
+      "size": 26316,
+      "sha256": "2efab0ab839027b1502ae00db1b4cb441cceda2fe3f1955882d51bf52c97b10a",
+      "hash": "2efab0ab839027b1502ae00db1b4cb441cceda2fe3f1955882d51bf52c97b10a"
     },
     {
       "name": "roadcrew_system.js",
@@ -450,8 +450,8 @@
     },
     {
       "name": "ui_update_flow.js",
-      "size": 31901,
-      "sha256": "22ebe4429b7c796766c055c5b5e676d459148d9c8cda3f1f582f35dec7ba8eee"
+      "size": 34352,
+      "sha256": "3105fe5ff42de51d081ea41644e95118dac4618ee033053a09710271c5ef53bf"
     },
     {
       "name": "vehicle_avoid.js",
@@ -496,9 +496,9 @@
     },
     {
       "name": "zoneloader.js",
-      "size": 13040,
-      "sha256": "d1417bcbeada0aa4935b98354c8811f8338466c15f89fc5ee522dee1dd5c580a",
-      "hash": "d1417bcbeada0aa4935b98354c8811f8338466c15f89fc5ee522dee1dd5c580a"
+      "size": 17298,
+      "sha256": "9d50c63e172266dc2eab6916391f6a9a18a47f2d9b001739d002a529335aa4f5",
+      "hash": "9d50c63e172266dc2eab6916391f6a9a18a47f2d9b001739d002a529335aa4f5"
     },
     {
       "name": "zoneunlock.js",
@@ -508,10 +508,10 @@
     },
     {
       "name": "zoneunlockflow.js",
-      "size": 29016,
-      "sha256": "7a39238df8f93fba0f8c6ad0a7b84730188d2c72b094f2ffd072d2de0839a747"
+      "size": 31231,
+      "sha256": "74d2e3da9d5db086f3724cec9d5d42c2ba52e8561f2223fd467601d1ba8500b8"
     }
   ],
-  "ui_version": "2026.10.17.13",
+  "ui_version": "2026.10.17.14",
   "version": "2026.10.17.9"
 }
