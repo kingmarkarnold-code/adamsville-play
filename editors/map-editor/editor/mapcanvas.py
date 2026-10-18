@@ -419,17 +419,22 @@ class MapCanvas(Gtk.DrawingArea):
         self.drag_start = (0, 0)    # Screen coords where drag started
         self.cam_start = (0, 0)     # Camera position when drag started
         self.mouse_pos = (0, 0)     # Current mouse position (screen)
-        # Rotate drag (1.9.8 linked viewpoints): Shift+drag turns
-        # the shared view. None, or (start_x, start_rotation_deg).
-        # Rotation itself lives in the camera (see the rotation
-        # property below) — this is only gesture bookkeeping.
         # Batch area-select band (1.9.8): (start_x, start_y, cur_x,
         # cur_y) in screen px while Shift+drag draws the selection
-        # square for batch delete. (Shift+drag ROTATED the view in
-        # the first 1.9.8 draft; Joshua's batch rule claims the
-        # gesture on the main map — rotation lives on the Q/E keys,
-        # the heading buttons and Shift+drag in the side panes.)
+        # square for batch delete. (Rotation lives on the Q/E keys,
+        # the heading buttons, and Control+drag in any pane —
+        # Joshua's universal controls, 1.9.9; the Control+drag
+        # bookkeeping state is ctrl_drag, below.)
         self.band_drag = None
+        # Street-jump GHOST (1.9.9): when a Building Editor jump
+        # carries a building, its footprint + name are drawn here
+        # as reference context — {"name", "footprint", "at"} or
+        # None. Pure drawing state: never selectable, never
+        # editable, never part of any road data or save.
+        self.jump_ghost = None
+        # Universal controls (1.9.9): a Control+drag rotation in
+        # progress — (start_x, rotation_at_start) or None.
+        self.ctrl_drag = None
         # One-live-pane rule (1.9.8): while the 3D viewport is the
         # live pane, the map holds a still (rendered once, then
         # only blitted) — see on_draw.
@@ -585,9 +590,11 @@ class MapCanvas(Gtk.DrawingArea):
         Turn the shared view by delta degrees (clockwise positive)
         and tell the app so every linked viewpoint redraws. This
         is the single door every rotate gesture walks through —
-        Shift+drag here, Q/E keys and the status-bar buttons in
+        Control+drag here, Q/E keys and the status-bar buttons in
         app.py — so the panes can never disagree about heading.
         """
+        # A user rotation is navigation: the jump ghost clears.
+        self.clear_jump_ghost()
         self._camera.rotate_by(delta_deg)
         self.queue_draw()
         self._notify_camera_changed()
@@ -798,6 +805,8 @@ class MapCanvas(Gtk.DrawingArea):
         # while move-road mode is active (Joshua 2026-10-12).
         self._draw_move_ghost(cr)
 
+        # The street-jump building ghost (1.9.9), under the band.
+        self._draw_jump_ghost(cr)
         # Batch selection band (1.9.8), topmost.
         self._draw_band(cr)
 
@@ -1775,6 +1784,8 @@ class MapCanvas(Gtk.DrawingArea):
             self.app.note_pane_touched("map")
         except Exception:
             pass
+        # His own press: the jump ghost has done its job.
+        self.clear_jump_ghost()
         if event.button == 1:  # left click
             # Move-road mode is modal (Joshua 2026-10-12): a left click
             # drops the road at its current ghost position. Shift+click
@@ -1869,10 +1880,16 @@ class MapCanvas(Gtk.DrawingArea):
             # piece touching the square is collected for the batch
             # delete list. A band drag neither pans nor selects.
             # (Rotating the shared view lives on the Q/E keys, the
-            # heading buttons, and Shift+drag in the side panes.)
+            # heading buttons, and Control+drag in any pane —
+            # Joshua's universal controls, 1.9.9.)
             if event.state & Gdk.ModifierType.SHIFT_MASK:
                 self.band_drag = (event.x, event.y,
                                   event.x, event.y)
+                return True
+            # Universal controls: Control+drag rotates (it never
+            # picks and never pans).
+            if event.state & Gdk.ModifierType.CONTROL_MASK:
+                self.ctrl_drag = (event.x, self.rotation)
                 return True
             self.dragging = True
             self.drag_start = (event.x, event.y)
@@ -1890,6 +1907,8 @@ class MapCanvas(Gtk.DrawingArea):
 
     def on_button_release(self, widget, event):
         """End pan drag or pin drag."""
+        if event.button == 1:
+            self.ctrl_drag = None
         if event.button in (1, 3):
             self.dragging = False
             if event.button == 1 and self.band_drag is not None:
@@ -1927,6 +1946,13 @@ class MapCanvas(Gtk.DrawingArea):
     def on_motion(self, widget, event):
         """Handle mouse move. Pan if dragging, or drag a zone pin."""
         self.mouse_pos = (event.x, event.y)
+
+        # Universal controls (1.9.9): a Control+drag in progress
+        # rotates the shared view — horizontally, like the panes.
+        if self.ctrl_drag is not None:
+            x0, rot0 = self.ctrl_drag
+            self.rotation = rot0 + (event.x - x0) * 0.4
+            return True
 
         # Move-road mode is modal (Joshua 2026-10-12): the ghost
         # preview follows the cursor 1:1 from the anchor point grabbed
@@ -1993,6 +2019,8 @@ class MapCanvas(Gtk.DrawingArea):
             self.app.note_pane_touched("map")
         except Exception:
             pass
+        # His own zoom: the jump ghost clears.
+        self.clear_jump_ghost()
         """Handle mouse wheel. Zoom centered on cursor (the canvas
         zoom_at already notifies the linked viewpoints)."""
         if event.direction == Gdk.ScrollDirection.UP:
@@ -2377,6 +2405,9 @@ class MapCanvas(Gtk.DrawingArea):
         if self.delete_preview is not None:
             self.cancel_delete_preview()
         self.band_drag = None
+        self.ctrl_drag = None
+        # A tool switch is his own move: the jump ghost clears.
+        self.jump_ghost = None
         self.selected_roads = []
         self.extend_pick = None
         self.divide_pick = None  # cancel any divide-section picking
@@ -2574,6 +2605,70 @@ class MapCanvas(Gtk.DrawingArea):
             "drag pins to refine the shape.")
         self.queue_draw()
 
+
+    # ------------------------------------------------------------------
+    # Street-jump building ghost (1.9.9)
+    # ------------------------------------------------------------------
+
+    # The ghost's colour: a bright cyan no road category uses, so
+    # it can never be mistaken for a road.
+    GHOST_RGB = (0.35, 0.85, 1.0)
+
+    def clear_jump_ghost(self):
+        """Drop the ghost (his own selection/navigation began —
+        a stale ghost must not outlive the jump that brought it)."""
+        if self.jump_ghost is not None:
+            self.jump_ghost = None
+            self.queue_draw()
+
+    def _draw_jump_ghost(self, cr):
+        """The handed-off building, drawn where it belongs:
+        footprint outline (dashed cyan, translucent fill), a
+        centre mark, and its name on a dark chip. Reference only."""
+        ghost = self.jump_ghost
+        if not ghost:
+            return
+        w = self.get_allocated_width()
+        h = self.get_allocated_height()
+        fp = ghost.get("footprint") or []
+        if len(fp) < 3:
+            return
+        scr = [self._camera.world_to_screen(px, pz, w, h) for px, pz in fp]
+        r, g, b = self.GHOST_RGB
+        cr.set_source_rgba(r, g, b, 0.13)
+        for k, (sx, sy) in enumerate(scr):
+            cr.line_to(sx, sy) if k else cr.move_to(sx, sy)
+        cr.close_path()
+        cr.fill()
+        cr.set_source_rgba(r, g, b, 0.95)
+        cr.set_line_width(2.0)
+        cr.set_dash([7, 5])
+        for k, (sx, sy) in enumerate(scr):
+            cr.line_to(sx, sy) if k else cr.move_to(sx, sy)
+        cr.close_path()
+        cr.stroke()
+        cr.set_dash([])
+        at = ghost.get("at")
+        if at:
+            cx, cy = self._camera.world_to_screen(at[0], at[1], w, h)
+            cr.set_source_rgba(r, g, b, 0.95)
+            cr.arc(cx, cy, 3.0, 0, 2 * math.pi)
+            cr.fill()
+        name = ghost.get("name") or "Building"
+        top_x = sum(p[0] for p in scr) / len(scr)
+        top_y = min(p[1] for p in scr)
+        cr.select_font_face("Sans", 0, 1)  # normal, bold
+        cr.set_font_size(11)
+        ext = cr.text_extents(name)
+        chip_w = ext.width + 14
+        chip_x = max(4, min(top_x - chip_w / 2, w - chip_w - 4))
+        chip_y = max(4, top_y - 26)
+        cr.set_source_rgba(0, 0, 0, 0.62)
+        cr.rectangle(chip_x, chip_y, chip_w, 19)
+        cr.fill()
+        cr.set_source_rgb(1, 1, 1)
+        cr.move_to(chip_x + 7, chip_y + 14)
+        cr.show_text(name)
 
     # ------------------------------------------------------------------
     # Batch selection band drawing (1.9.8)

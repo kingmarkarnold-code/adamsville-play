@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Adamsville Map Editor (Native) 1.9.8 — Data management module.
+Adamsville Map Editor (Native) 1.9.9 — Data management module.
 
 1.9.0 REPOINT (Joshua's Step-1 Editors Phase): the game's converted
 zone files in kingmarkarnold-code/adamsville-play are the source of

@@ -1,6 +1,6 @@
 {
-  "version": "1.9.8",
-  "changelog": "All three views now show the SAME place. The elevation pane is the map itself \u2014 the rebuilt map data, locked to the main view: pan, zoom or rotate one view and the others follow (use the heading buttons or the Q/E keys to turn). The 3D inspector stays black until you click it, then shows your current area in 3D; its Satellite button shows our own world from directly above. Pictures stay still unless a view is live \u2014 only one view is ever live at a time, which keeps the editor light. Delete, Join and Merge now show Before and After pictures in the side panes while you decide. NEW batch delete: hold Shift and drag a square on the map \u2014 a list appears with a small red picture of each piece, tick boxes, and a confirm button that counts the pieces. NEW rename: the pencil button renames the selected piece. The Cut button is gone. Detail Edit now hands the selected piece to the separate Detail Editor app (it says so plainly if that app is not installed yet).",
+  "version": "1.9.9",
+  "changelog": "Two things. (1) Building jumps carry the building: from the Building Editor, click a road in the 3D view and the Map Editor now opens with the building itself drawn where it belongs \u2014 a pale-blue ghost outline with its name \u2014 its road already selected, and the view framed to show both. The ghost is reference only and clears the moment you click, scroll or turn the view yourself. (2) Universal controls everywhere: drag pans, the wheel zooms, + and - zoom, and Control+drag rotates \u2014 the same in the map, the elevation pane and the 3D inspector (the inspector follows them while it is live).",
   "files": [
     {
       "path": "about.py",
@@ -10,17 +10,17 @@
     {
       "path": "app.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/app.py",
-      "sha256": "086a9f89e0894265be7e9431a9f716f92fbcc07180615280978f2a1bd1351c47"
+      "sha256": "23fdb74ce45f4144bfaa50c46b6428bf562a38eecf7de4070579ad4a13706626"
     },
     {
       "path": "data.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/data.py",
-      "sha256": "2f43d0702b374668cb491b8dc448b51d2f446ff74516d22dcba39b0e3569f213"
+      "sha256": "17eee4321e987fdbb0d202410638567028a88ce088d9505a218514b1e868c4aa"
     },
     {
       "path": "gamedata.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/gamedata.py",
-      "sha256": "61ed77b1b94523c9dfc0fb5cb3894837342ef13e55fa9e096922463afa2becda"
+      "sha256": "4cc3a7845cd973b326395f98b076b25d1d6bc83a0aa9e67f877a4163742f667a"
     },
     {
       "path": "github_sync.py",
@@ -35,7 +35,7 @@
     {
       "path": "mapcanvas.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/mapcanvas.py",
-      "sha256": "d9ff9f14458707d3aceeca6226946793362d72206e5f8563f8bf63fd6464749a"
+      "sha256": "fa7f260ea3f597e8d76e1eb0f7e8a03acee4a1cfbc1020415bdc90157deb9429"
     },
     {
       "path": "overpass.py",
@@ -45,7 +45,7 @@
     {
       "path": "roadinspect.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/roadinspect.py",
-      "sha256": "6355b6cfa86fd9053e1a8551fb1358334b34bd6066a0d07db628d340fb87bdd5"
+      "sha256": "22de52d484bc2bfcca7e28d3adac01afeeb29c6a6abbd722763caea729a290d1"
     },
     {
       "path": "shared_cache.py",

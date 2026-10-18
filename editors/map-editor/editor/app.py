@@ -46,7 +46,7 @@ import overpass as overpass_mod  # noqa: E402
 
 # App version shown in the Help -> About dialog (bump with each release).
 # Joshua 2026-10-11: version number must be prominent in About.
-APP_VERSION = "1.9.8"
+APP_VERSION = "1.9.9"
 # Display name and icon-theme name for the About dialog.
 APP_NAME = "Adamsville Map Editor"
 APP_ICON = "adamsville-map-editor-native"
@@ -332,6 +332,21 @@ class MapEditorApp:
                 return True
             if key == "e":
                 self.canvas.rotate_by(step)
+                return True
+            # Universal controls (1.9.9): + / - zoom the shared
+            # view at its centre — the keyboard twin of the
+            # wheel, identical in every pane.
+            if event.keyval in (Gdk.KEY_plus, Gdk.KEY_KP_Add,
+                                Gdk.KEY_equal):
+                alloc = self.canvas.get_allocation()
+                self.canvas.zoom_at(alloc.width / 2,
+                                    alloc.height / 2, 1.25)
+                return True
+            if event.keyval in (Gdk.KEY_minus, Gdk.KEY_KP_Subtract,
+                                Gdk.KEY_underscore):
+                alloc = self.canvas.get_allocation()
+                self.canvas.zoom_at(alloc.width / 2,
+                                    alloc.height / 2, 0.8)
                 return True
         return False
 
@@ -3167,6 +3182,15 @@ class MapEditorApp:
         not parse is renamed .bad so it cannot loop; a stale one
         is simply removed.
 
+        1.9.9 (Joshua 2026-10-18): the file may also carry the
+        BUILDING the jump is about — "building": {"name", "zone",
+        "footprint": [[x, z], ...], "at": [x, z]} (Building
+        Editor 2.0.2 writes it). With it, arrival draws the
+        building's GHOST at its true position (reference only),
+        auto-selects the FRONTING road piece, and frames BOTH
+        into view. Without it, the jump behaves exactly as
+        before.
+
         1.9.6: returns True when a jump was actually applied, so
         the post-load whole-world re-fit (see _build_index_idle)
         knows to leave this view alone.
@@ -3185,6 +3209,29 @@ class MapEditorApp:
             x = float(doc["x"])
             z = float(doc["z"])
             street = doc.get("street") or ""
+            # 1.9.9: a jump may carry the BUILDING it is about
+            # (Building Editor 2.0.2 contract): {"name", "zone",
+            # "footprint": [[x, z], ...], "at": [x, z]}. Absent
+            # or malformed -> a plain street jump, exactly as
+            # before; a bad building never breaks the jump.
+            ghost = None
+            bdoc = doc.get("building")
+            if isinstance(bdoc, dict):
+                try:
+                    fp = [[float(p[0]), float(p[1])]
+                          for p in bdoc.get("footprint") or []]
+                    bat = bdoc.get("at") or []
+                    bat = [float(bat[0]), float(bat[1])]
+                    if len(fp) >= 3:
+                        ghost = {
+                            "name": str(bdoc.get("name")
+                                        or "Building"),
+                            "footprint": fp,
+                            "at": bat,
+                            "zone": str(bdoc.get("zone") or ""),
+                        }
+                except Exception:
+                    ghost = None
             fresh = True
             ts = doc.get("timestamp")
             if ts:
@@ -3242,10 +3289,86 @@ class MapEditorApp:
                             best = (d, cat, i)
             if best is not None:
                 self.canvas.selected_roads = [(best[1], best[2])]
+        # 1.9.9: with a building aboard, draw its GHOST where it
+        # belongs, auto-select the FRONTING road piece (Joshua's
+        # suggestion — his eye lands building -> its road in one
+        # glance), and frame BOTH into the arriving view.
+        if ghost is not None:
+            from overpass import _point_to_segment_dist
+            samples = [tuple(p) for p in ghost["footprint"]]
+            samples.append(tuple(ghost["at"]))
+            gx0 = min(p[0] for p in ghost["footprint"]) - 200.0
+            gx1 = max(p[0] for p in ghost["footprint"]) + 200.0
+            gz0 = min(p[1] for p in ghost["footprint"]) - 200.0
+            gz1 = max(p[1] for p in ghost["footprint"]) + 200.0
+
+            def dist_to(rec):
+                pts = rec.get("pts") or []
+                best_d = None
+                for a, b in zip(pts, pts[1:]):
+                    for (sx, sz) in samples:
+                        d, _c = _point_to_segment_dist(
+                            sx, sz, a[0], a[1], b[0], b[1])
+                        if best_d is None or d < best_d:
+                            best_d = d
+                return best_d
+
+            front = None   # nearest piece of any name
+            named = None   # nearest piece of the named street
+            for cat, records in self.roads_data.items():
+                for i, rec in enumerate(records or []):
+                    if rec.get("_zone") not in (None, zone_id):
+                        continue
+                    pts = rec.get("pts") or []
+                    if len(pts) < 2:
+                        continue
+                    # Cheap bbox gate before the segment maths.
+                    rxs = [p[0] for p in pts]
+                    rzs = [p[1] for p in pts]
+                    if max(rxs) < gx0 or min(rxs) > gx1 \
+                            or max(rzs) < gz0 or min(rzs) > gz1:
+                        continue
+                    d = dist_to(rec)
+                    if d is None:
+                        continue
+                    if front is None or d < front[0]:
+                        front = (d, cat, i, rec)
+                    if street and (rec.get("name") or "") == street:
+                        if named is None or d < named[0]:
+                            named = (d, cat, i, rec)
+            pick = named if (named is not None
+                             and named[0] <= 150.0) else front
+            xs = [p[0] for p in ghost["footprint"]]
+            zs = [p[1] for p in ghost["footprint"]]
+            if pick is not None:
+                self.canvas.selected_roads = [(pick[1], pick[2])]
+                for p in pick[3].get("pts") or []:
+                    xs.append(p[0])
+                    zs.append(p[1])
+            # Frame building + road together (minimum span so a
+            # small building never zooms to a postage stamp).
+            ccx = (min(xs) + max(xs)) / 2
+            ccz = (min(zs) + max(zs)) / 2
+            span_x = max(max(xs) - min(xs), 150.0)
+            span_z = max(max(zs) - min(zs), 150.0)
+            self.canvas.frame_rect(ccx - span_x / 2,
+                                   ccz - span_z / 2,
+                                   ccx + span_x / 2,
+                                   ccz + span_z / 2)
+            self.canvas.jump_ghost = ghost
         self.canvas.queue_draw()
-        self.set_status(
-            f"Opened at {street or 'the marked spot'} in "
-            f"{ZONES[idx]['name']} (sent from the Building Editor).")
+        if ghost is not None:
+            self.set_status(
+                f"Opened at {street or 'the marked spot'} in "
+                f"{ZONES[idx]['name']} — '{ghost['name']}' is "
+                "drawn where it belongs (pale-blue ghost, "
+                "reference only) and its road is selected. "
+                "(Sent from the Building Editor.)")
+        else:
+            self.set_status(
+                f"Opened at {street or 'the marked spot'} in "
+                f"{ZONES[idx]['name']} (sent from the Building "
+                "Editor).")
         return True
 
     def _surface_download_warning(self):

@@ -35,7 +35,7 @@ camera of its own.
   else.
 
 Gestures are the same in every pane (the sync law): drag pans the
-shared camera, Shift+drag rotates it, the wheel zooms it. Panes
+shared camera, Ctrl+drag rotates it, the wheel zooms it. Panes
 redraw each other through the app's on_camera_changed hook.
 
 Purpose (Joshua 2026-10-11, still the point of the 3D view):
@@ -501,7 +501,7 @@ class ControlPointViewer(Gtk.DrawingArea):
     The pane is BLACK — pure black, nothing drawn — until it is
     first clicked (Joshua's rule); the click that wakes it does
     nothing else. Once awake: drag pans the shared camera,
-    Shift+drag rotates it, the wheel zooms it — every other view
+    Ctrl+drag rotates it, the wheel zooms it — every other view
     follows, because there is only one camera. Endpoint picking
     and endpoint snapping (the pane's original job) still work in
     3D mode on the selected road.
@@ -835,7 +835,7 @@ class ControlPointViewer(Gtk.DrawingArea):
         if selected:
             self._draw_snap_indicator(cr, project, sampler)
         self._hint(cr, w, h,
-                   "Drag: move all views · Shift+drag: turn all "
+                   "Drag: move all views · Ctrl+drag: turn all "
                    "views · Wheel: zoom · Double-click a road end: "
                    "snap")
 
@@ -956,7 +956,7 @@ class ControlPointViewer(Gtk.DrawingArea):
         _draw_north_arrow(cr, cam, w, h)
         self._hint(cr, w, h,
                    "Satellite: your world from above · Drag: move "
-                   "all views · Shift+drag: turn · Wheel: zoom")
+                   "all views · Ctrl+drag: turn · Wheel: zoom")
 
     def _placeholder(self, cr, w, h, text):
         cr.set_source_rgb(0.75, 0.78, 0.85)
@@ -1531,8 +1531,11 @@ class ControlPointViewer(Gtk.DrawingArea):
                 self.snap_candidate = None
                 self.panel.update_snap_ui()
                 self.queue_draw()
-        shift = bool(event.state & Gdk.ModifierType.SHIFT_MASK)
-        if shift:
+        # Universal controls (1.9.9, Joshua's ruling): plain
+        # drag PANS, Control+drag ROTATES, the wheel zooms —
+        # the same in every pane.
+        ctrl = bool(event.state & Gdk.ModifierType.CONTROL_MASK)
+        if ctrl:
             self._drag = ("rotate", event.x, canvas.rotation)
         else:
             self._drag = ("pan", event.x, event.y,
@@ -1627,7 +1630,7 @@ class ElevationMapViewer(Gtk.DrawingArea):
     steppers) — see RoadInspectorPanel.update_elev_readout.
 
     Gestures mirror the main view: drag pans the shared camera,
-    Shift+drag rotates it, the wheel zooms it around the pointer.
+    Ctrl+drag rotates it, the wheel zooms it around the pointer.
     During a delete/join/merge confirmation the pane holds the
     AFTER still instead (compare mode) and ignores gestures.
     """
@@ -1718,7 +1721,9 @@ class ElevationMapViewer(Gtk.DrawingArea):
         canvas = self._canvas()
         if canvas is None:
             return False
-        if event.state & Gdk.ModifierType.SHIFT_MASK:
+        # Universal controls (1.9.9): plain drag pans,
+        # Control+drag rotates.
+        if event.state & Gdk.ModifierType.CONTROL_MASK:
             self._drag = ("rotate", event.x, canvas.rotation)
         else:
             self._drag = ("pan", event.x, event.y)
