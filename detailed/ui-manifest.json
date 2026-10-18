@@ -118,9 +118,9 @@
     },
     {
       "name": "goto.js",
-      "size": 48950,
-      "sha256": "cb9af3929de7ac0615b75d86f8a3754cd5eb4602c66532edfd7a6997e0e35d28",
-      "hash": "cb9af3929de7ac0615b75d86f8a3754cd5eb4602c66532edfd7a6997e0e35d28"
+      "size": 50176,
+      "sha256": "bac319fa0450ba3fe9b337b7b68118023e24db84b1b611ab9fc39951382a5bd1",
+      "hash": "bac319fa0450ba3fe9b337b7b68118023e24db84b1b611ab9fc39951382a5bd1"
     },
     {
       "name": "gps_system.js",
@@ -148,9 +148,9 @@
     },
     {
       "name": "hud_move.js",
-      "size": 40445,
-      "sha256": "64d74c544e0659e4aff77168d5f8496c737375ee924d40585bdd6c65db61e03b",
-      "hash": "64d74c544e0659e4aff77168d5f8496c737375ee924d40585bdd6c65db61e03b"
+      "size": 41969,
+      "sha256": "7ee72c440e3b58d0c76bac9af0a5c68f049f34fe3579f0c99ce2249b94c1b4fb",
+      "hash": "7ee72c440e3b58d0c76bac9af0a5c68f049f34fe3579f0c99ce2249b94c1b4fb"
     },
     {
       "name": "icon.png",
@@ -233,15 +233,15 @@
     },
     {
       "name": "menu_layout.json",
-      "size": 11017,
-      "sha256": "969c6dd7c46ff1e0632e9c0c3aad34956ea62b88a72726c1a30e9937ea96bb2b",
-      "hash": "969c6dd7c46ff1e0632e9c0c3aad34956ea62b88a72726c1a30e9937ea96bb2b"
+      "size": 21471,
+      "sha256": "df801671253f6a1a7b9dfe19206082584d944c8db92641e4bbeb7af0c8054cd0",
+      "hash": "df801671253f6a1a7b9dfe19206082584d944c8db92641e4bbeb7af0c8054cd0"
     },
     {
       "name": "menu_layout_apply.js",
-      "size": 7842,
-      "sha256": "96805d61146feeef999ece522c0cc2487e07eaf27e2c72d911289bbdcc2b0e0b",
-      "hash": "96805d61146feeef999ece522c0cc2487e07eaf27e2c72d911289bbdcc2b0e0b"
+      "size": 10912,
+      "sha256": "c8bc68785d49a8bc4e72d595f2cf12ff0e1c98cee845862d16b3c6046165f6e9",
+      "hash": "c8bc68785d49a8bc4e72d595f2cf12ff0e1c98cee845862d16b3c6046165f6e9"
     },
     {
       "name": "mlk_fairburn.js",
@@ -524,6 +524,6 @@
       "sha256": "74d2e3da9d5db086f3724cec9d5d42c2ba52e8561f2223fd467601d1ba8500b8"
     }
   ],
-  "ui_version": "2026.10.17.25",
+  "ui_version": "2026.10.17.26",
   "version": "2026.10.17.9"
 }
