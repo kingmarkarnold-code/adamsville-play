@@ -151,6 +151,25 @@
     background: #241b12; border: 2px solid #e8722a; border-radius: 12px;
     padding: 18px; max-width: 92vw; text-align: center;
     box-shadow: 0 12px 40px rgba(0,0,0,.6);
+    /* Never taller than the screen (Joshua's nothing-off-screen law):
+       a long modal scrolls inside its own box instead of growing past
+       the top and bottom edges, where no finger could reach it. */
+    max-height: calc(100vh - 36px); max-height: calc(100dvh - 36px);
+    overflow-y: auto;
+  }
+  /* ---- the opponent cast list (v2 picker) ----
+     A bounded region that scrolls — mouse wheel and touch drag — so
+     every man on the score sheets is reachable on a small phone.
+     Before this the picker's modal simply outgrew the screen: the
+     bottom names, and even Cancel, sat off-screen with nothing able
+     to scroll (Joshua's report, 2026-10-18: "the chess player is
+     not scrollable"). The title, Pass & Play and Cancel stay put
+     outside the region; only the cast moves. */
+  #modal .opplist {
+    display: flex; flex-direction: column; gap: 10px; align-items: stretch;
+    max-height: 42vh; max-height: 42dvh; overflow-y: auto;
+    -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+    padding: 2px;
   }
   #modal h3 { margin: 0 0 8px; font-size: 17px; }
   #modal p { margin: 0 0 14px; color: #e8dcc8; font-size: 14px; line-height: 1.45; }
@@ -1585,7 +1604,7 @@ var ChessOpponent = (function () {
     row.className = 'row';
     row.style.flexDirection = 'column';
     row.style.alignItems = 'stretch';
-    function seatButton(label, id) {
+    function seatButton(label, id, host) {
       var b = document.createElement('button');
       b.type = 'button';
       b.className = 'barbtn';
@@ -1593,17 +1612,26 @@ var ChessOpponent = (function () {
       if (id && npcSeat && npcSeat.id === id) b.style.background = '#e8722a';
       if (!id && !npcSeat) b.style.background = '#e8722a';
       b.addEventListener('click', function () { chooseOpponent(id); });
-      row.appendChild(b);
+      (host || row).appendChild(b);
     }
-    seatButton('Pass & Play — two humans, one board', null);
+    seatButton('Pass & Play — two humans, one board', null, row);
+    /* The cast itself lives in its own bounded, scrolling region
+       (.opplist in the stylesheet): the whole cast does not fit a
+       phone screen, and a list that cannot scroll leaves its bottom
+       names — and the Cancel button below them — out of reach
+       (Joshua, 2026-10-18). The buttons are the same buttons with
+       the same listeners; only their container changed. */
+    var list = document.createElement('div');
+    list.className = 'opplist';
     var cast = ChessOpponent.listProfiles().slice().sort(function (a, b) {
       if (b.gamesRecorded !== a.gamesRecorded) return b.gamesRecorded - a.gamesRecorded;
       return a.displayName < b.displayName ? -1 : 1;
     });
     cast.forEach(function (prof) {
       seatButton(prof.displayName + ' — ' + prof.gamesRecorded +
-        (prof.gamesRecorded === 1 ? ' game' : ' games') + ' recorded', prof.id);
+        (prof.gamesRecorded === 1 ? ' game' : ' games') + ' recorded', prof.id, list);
     });
+    row.appendChild(list);
     var cancel = document.createElement('button');
     cancel.type = 'button';
     cancel.className = 'barbtn';
