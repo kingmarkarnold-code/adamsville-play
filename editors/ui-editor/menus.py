@@ -33,6 +33,19 @@ Document shape (see data.py):
   Item: {"id", "label", "description", "action", "visible"}
   Group (optional key): {"start": "expanded" | "collapsed"}
 
+v1.9.0 (Joshua 2026-10-18) — MENU CURRENCY: the tab used to show
+menu_layout.json exactly as downloaded, but the game had outgrown
+that file (Pause, Go To, Move controls, Advanced Properties and
+more were in the game but not in the file, so the tab silently
+fell behind). On open the tab now ALSO downloads the game's own
+menu-bearing files (index.html, goto.js, hud_move.js — through the
+suite shared cache), derives the game's CURRENT menus from them
+(game_menus.py), and merges in anything the document is missing:
+new rows/menus appear marked 🆕, items the game no longer has are
+kept and marked ⚠, and the merged document is what Save Menus
+publishes — one save brings the file current with the game.
+Nothing is ever removed by the merge (Joshua's never-delete rule).
+
 Pure Python + GTK3. NO webview, NO HTML, NO JavaScript.
 
 Joshua's rule: all code commented.
@@ -44,9 +57,11 @@ import gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk
 
+import game_menus
 from data import (
     download_menu_layout, load_menu_layout, validate_menu_doc,
     stage_content, staged_bytes,
+    download_game_menu_files, game_ui_version,
 )
 
 # TreeStore columns: (display text, row kind, payload)
@@ -84,6 +99,14 @@ class MenuTab:
         self._dirty = False        # unsaved changes?
         self._updating = False     # guard against signal recursion
         self._menu_seq = 1          # counter for new item ids
+        # v1.9.0 menu-currency state (filled by _apply_game_currency):
+        self.game_inventory = None  # menus derived from the game files
+        self.currency_report = None  # what the merge added / orphaned
+        self.game_ui_version = None  # the game's ui_version checked
+        self._currency_note = ""     # the status-bar currency sentence
+        self._added_menu_keys = set()   # menus the merge added (🆕)
+        self._added_item_keys = set()   # (menu, item id) added (🆕)
+        self._orphan_item_keys = set()  # (menu, item id) not in game (⚠)
         self._build_ui()
         self._load_initial()
 
@@ -121,17 +144,85 @@ class MenuTab:
                 self.doc = staged_doc
                 self._staged_pending = True
                 self._dirty = True
+        # v1.9.0: check the loaded document against the game's
+        # CURRENT menus (derived from the game's own files) and
+        # merge in anything missing — BEFORE the tree is built, so
+        # what Joshua sees is already current. Runs on whichever
+        # document won above (repo copy or his unsaved staged work).
+        self._currency_note = self._apply_game_currency()
         if self._staged_pending:
-            self.app.set_status(
-                "Showing your unsaved local menus — Save Menus "
-                "pushes them to GitHub")
+            base = ("Showing your unsaved local menus — Save Menus "
+                    "pushes them to GitHub")
         elif self.doc and self.doc.get("menus"):
-            self.app.set_status(
-                f"Loaded {len(self.doc['menus'])} menus.")
+            base = f"Loaded {len(self.doc['menus'])} menus."
         else:
-            self.app.set_status(
-                "No menu data yet — it downloads from GitHub on first run.")
+            base = ("No menu data yet — it downloads from GitHub "
+                    "on first run.")
+        self.app.set_status(
+            f"{base} {self._currency_note}".strip())
         self.refresh_all()
+
+    def _apply_game_currency(self):
+        """
+        v1.9.0: derive the game's current menus from its own files
+        and merge anything missing into the displayed document.
+
+        Returns the status-bar sentence describing the check.
+        Fail-open by design: if the game's files can't be
+        downloaded or read, the tab shows menu_layout.json exactly
+        as before and the sentence says the check was skipped.
+        Additions mark the tab dirty — they are real changes, and
+        Save Menus is what publishes them to the repo file.
+        """
+        try:
+            files = download_game_menu_files()
+        except Exception:
+            files = {}
+        if not files.get("index.html"):
+            return ("Menu currency check skipped — the game's "
+                    "files couldn't be downloaded.")
+        inventory = game_menus.derive_inventory(
+            files.get("index.html"), files.get("goto.js"),
+            files.get("hud_move.js"))
+        self.game_inventory = inventory
+        if not inventory:
+            return ("Menu currency check skipped — no menus could "
+                    "be read from the game's files.")
+        new_doc, report = game_menus.reconcile_menu_doc(
+            self.doc, inventory)
+        self.currency_report = report
+        self.game_ui_version = game_ui_version()
+        self._added_menu_keys = set(report["added_menus"])
+        self._added_item_keys = {
+            (k, i) for k, ids in report["added_items"].items()
+            for i in ids}
+        self._orphan_item_keys = {
+            (k, i) for k, ids in report["orphan_items"].items()
+            for i in ids}
+        n_items = sum(len(v) for v in report["added_items"].values())
+        n_orphan_items = sum(
+            len(v) for v in report["orphan_items"].values())
+        if report["added_menus"] or n_items:
+            # The game has menus/rows this document lacked: show
+            # the merged document and count it as unsaved work.
+            self.doc = new_doc
+            self._mark_dirty()
+        ver = (f" (game ui {self.game_ui_version})"
+               if self.game_ui_version else "")
+        parts = []
+        if report["added_menus"] or n_items:
+            parts.append(
+                f"Menus checked against the current game{ver}: "
+                f"added {len(report['added_menus'])} menu(s) and "
+                f"{n_items} item(s) the menu file was missing — "
+                f"Save Menus publishes them.")
+        else:
+            parts.append(f"Menus match the current game{ver}.")
+        if n_orphan_items or report["orphan_menus"]:
+            parts.append(
+                f"{n_orphan_items} item(s) in the file are not in "
+                f"the current game — kept and marked ⚠.")
+        return " ".join(parts)
 
     def apply_github_menus(self, raw_bytes):
         """
@@ -149,6 +240,11 @@ class MenuTab:
         self.doc = validate_menu_doc(doc)
         self._staged_pending = False
         self._dirty = False
+        # v1.9.0: re-check the GitHub copy against the game — if the
+        # game advanced again since the tab opened, the fresh
+        # additions show (and re-mark the tab dirty) instead of the
+        # tab quietly falling behind a second time.
+        self._currency_note = self._apply_game_currency()
         self.refresh_all()
         return True
 
@@ -394,6 +490,10 @@ class MenuTab:
         for key in self.doc.get("menus", {}):
             menu = self.doc["menus"][key]
             title = menu.get("title") or key
+            # v1.9.0: a menu the currency merge just added is
+            # marked 🆕 until the next open.
+            if key in self._added_menu_keys:
+                title = f"🆕 {title}"
             self.menu_store.append([key, title])
         # Restore selection.
         if sel_key:
@@ -456,6 +556,16 @@ class MenuTab:
         """Add one item row under a group/header, with visibility mark."""
         label = item.get("label", item.get("id", "?"))
         mark = "" if item.get("visible", True) else " 🚫"
+        # v1.9.0 currency marks: 🆕 = in the current game but was
+        # missing from the file (the merge just added it); ⚠ = in
+        # the file but NOT in the current game (kept, never deleted
+        # silently — Joshua decides).
+        menu_key = self._selected_menu_key()
+        key = (menu_key, item.get("id"))
+        if key in self._added_item_keys:
+            label = f"🆕 {label}"
+        if key in self._orphan_item_keys:
+            mark += " ⚠"
         self.tree_store.append(parent, [f"{label}{mark}", "item", item])
 
     def _selected_row(self):
@@ -492,8 +602,19 @@ class MenuTab:
         try:
             kind, ref = self._selected_row()
             if kind == "item" and isinstance(ref, dict):
+                # v1.9.0: say plainly when the selected item is one
+                # the currency merge added, or one the game no
+                # longer has.
+                note = ""
+                key = (self._selected_menu_key(), ref.get("id"))
+                if key in self._added_item_keys:
+                    note = (" — 🆕 in the current game; was missing "
+                            "from the menu file")
+                elif key in self._orphan_item_keys:
+                    note = (" — ⚠ not in the current game; kept "
+                            "here until you remove it")
                 self.kind_label.set_markup(
-                    "<small><i>Menu item</i></small>")
+                    f"<small><i>Menu item{note}</i></small>")
                 self.label_entry.set_text(ref.get("label", ""))
                 self.label_entry.set_sensitive(True)
                 desc = ref.get("description", "")
