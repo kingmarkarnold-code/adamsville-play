@@ -8443,6 +8443,20 @@ var VEHICLE_SHOW_R=175, VEHICLE_HIDE_R=200;
    re-enables culling is re-pinned within half a second. When he switches
    vehicles, the previous one is unpinned and goes back to being an
    ordinary parked car under the normal culling rules.
+   SWAP CONTINUITY (2026-10-17, Joshua: the car he's in disappeared and
+   reappears when he changes cars): the ~2Hz tick alone left a real gap.
+   `car` is also reassigned OUTSIDE the enter button - loadSlot() (a save
+   can name a different cars[] entry and restores it DRIVING) and
+   startNewGame() (the hero is rebuilt as a brand-new mesh) - and neither
+   of those pinned the new car or forced it visible, so the car he was in
+   rendered unpinned (group possibly distance-hidden, every mesh at the
+   mercy of the r128 sphere test) from the swap until the next visibility
+   tick caught up: vanished, then reappeared. refreshPlayerVehiclePin()
+   therefore ALSO runs inside animate() immediately before every
+   renderer.render (paused frames included), and at the loadSlot /
+   startNewGame reassignments themselves. The pin now attaches to
+   whichever car is his before the first frame that could present it -
+   no gap frame exists, on any swap path.
    checkPlayerVehicleDraw() verifies the law after each pin and reports a
    violation loudly (console + Report) instead of letting his car quietly
    disappear — Joshua's failure philosophy: no silent failures. */
@@ -8463,6 +8477,11 @@ function pinPlayerVehicleDraw(st){
 function unpinPlayerVehicleDraw(st){
   if (!st || !st.mesh) return;
   try{ st.mesh.traverse(function(o){ if (o && ('frustumCulled' in o)) o.frustumCulled=true; }); }catch(e){}
+  /* Return the car WHOLE to normal rules: if he left it while in driver
+     (first-person) camera mode, its cab group is still hidden, and
+     updateCamera only ever un-hides the CURRENT car's cab - a car swapped
+     away from in that state would keep a missing cab indefinitely. */
+  try{ if (st.mesh.userData && st.mesh.userData.cab) st.mesh.userData.cab.visible=true; }catch(e){}
   st._drawPinned=false;
 }
 function checkPlayerVehicleDraw(){
@@ -10042,6 +10061,13 @@ function loadSlot(n){
       }catch(e){ try{_ly=heightAt(c.x,c.z);}catch(e2){} }
       c.mesh.position.set(c.x,_ly+(atHome?0.32:0),c.z); c.mesh.rotation.y=c.yaw;
     }
+    /* PLAYER-VEHICLE LAW (Joshua 2026-10-17): the loaded car may be a
+       DIFFERENT cars[] entry than the session's current one. Reassigning
+       `car` above used to leave it unpinned - and possibly group-hidden,
+       since nothing here set mesh.visible - until the next ~0.5s
+       visibility tick, so the car he was in vanished on load and popped
+       back. Pin it in this same call, before any frame can present it. */
+    try{ refreshPlayerVehiclePin(); }catch(e){}
     camYaw=s.camYaw||p.yaw; look.yawOff=s.lookYawOff||0;
     var cb=camYaw+Math.PI, gy=heightAt(player.x,player.z);
     camera.position.set(player.x+Math.sin(cb)*4.6, gy+3.0, player.z+Math.cos(cb)*4.6);
@@ -10244,6 +10270,11 @@ function startNewGame(spawnX, spawnZ){
     var fresh=makeCar(carX, carZ, Math.PI/2, 0x8b2e2e, true, 'safari');
     cars.pop(); cars[0]=fresh;   // makeCar pushed; keep the hero at index 0
     car=fresh;
+    /* PLAYER-VEHICLE LAW (Joshua 2026-10-17): the rebuilt hero is a
+       brand-new mesh with stock frustum culling - pin it in this same
+       call so it is never presented unpinned (it used to wait for the
+       next visibility tick and could blink out and back at spawn). */
+    try{ refreshPlayerVehiclePin(); }catch(e){}
     // 3. player to spawn point, on foot, visible
     player.x=px; player.z=pz; player.yaw=Math.PI/2;
     player.speed=0; player.inside=false; player.swimming=false;
@@ -11515,6 +11546,7 @@ function camSafeDist(lx,ly,lz, tx,ty,tz, wantDist){
 var fpLookYaw=0, fpPitch=0, fpBlend=0, wasFP=false;
 function updateCamera(dt){
   if (window.__satViewActive) return;  // v1.16 SATELLITE VIEW owns the camera
+  if (window.__bballActive) return;  // BASKETBALL mini-game (basketball_court.js) owns the camera while playing
   // ---------- v1.13 FIRST-PERSON interior camera ----------
   // When the player is inside a building: camera at head level (~1.6m),
   // looking where the player faces. Drag to look around (yaw + pitch).
@@ -12456,6 +12488,11 @@ function animate(){
   try{
     if (window.GamePause && GamePause.paused){
       __simAcc = 0;
+      /* PLAYER-VEHICLE LAW (Joshua 2026-10-17): even the frozen paused
+         frame must never present his current car unpinned or hidden -
+         a menu (load slot / new game) can reassign `car` while paused,
+         and the sim-side visibility tick does not run here. */
+      try{ refreshPlayerVehiclePin(); }catch(e){}
       renderer.render(scene, camera);
       return;
     }
@@ -12483,6 +12520,16 @@ function animate(){
       }
     }
   }catch(e){}
+  /* PLAYER-VEHICLE LAW (Joshua 2026-10-17 - swap continuity): pin his
+     CURRENT car immediately before EVERY presented frame. `car` can be
+     reassigned between frames (enter button, save load, new game) and
+     the ~0.5s visibility tick inside simTick is too slow to cover the
+     gap - the reassigned car presented unpinned (frustum culling live,
+     group possibly distance-hidden) until the tick caught up: the car
+     he was in vanished, then reappeared. Running the pin here, after
+     the sim steps and before the render, means no presented frame can
+     ever show his car unprotected, on any swap path. */
+  try{ refreshPlayerVehiclePin(); }catch(e){}
   renderer.render(scene, camera);
   // v1.10.1: first frame is on screen — dismiss the native loading screen.
   if (!window.__gameReadyFired) {
@@ -13104,7 +13151,7 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <script data-dsrc="zoneunlock.js" data-dkey=""></script>
 <script data-dsrc="zoneunlockflow.js" data-dkey=""></script>
 <script data-dsrc="satellite_view.js" data-dkey=""></script>
-<!-- BACKYARD BASKETBALL (Joshua 2026-10-17, from his Draw-for-Mollie sketch): the world side — dirt court + goal tree behind 535 and the walk-in invitation. The game itself is the web player at minigames/basketball.html, opened on Yes. Self-contained module; no-op if it fails (files via SA_CRASH). -->
+<!-- BACKYARD BASKETBALL mini-game stage 1 (Joshua 2026-10-17, from his Draw-for-Mollie sketch): dirt court + goal tree behind 535, gate prompt, full-screen mode, saved progress. Self-contained module; no-op if it fails (files via SA_CRASH). -->
 <script data-dsrc="basketball_court.js" data-dkey=""></script>
 <script data-dsrc="hotreload.js" data-dkey=""></script>
 <!-- MID-SESSION UI UPDATE FLOW (Joshua 2026-10-17): "Download newest UI"
