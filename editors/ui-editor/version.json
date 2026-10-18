@@ -1,6 +1,6 @@
 {
-  "version": "1.9.1",
-  "changelog": "Update-channel check build — no feature changes. This small release exists to prove the Help → Check for Updates channel end to end: if you are reading this text inside the update prompt, the push channel works. It carries everything from 1.9.0: the Menus tab now matches the game's current menus (Pause, Go To, Move controls, Advanced Properties, Download newest UI), the suite's shared download cache, and the Mobile/Desktop faces from 1.8.0. After it installs, Help → About will read Version 1.9.1.",
+  "version": "1.9.0",
+  "changelog": "The Menus tab now matches the game you actually play. The game's menu list had fallen behind the game itself \u2014 the Pause menu, Go To, Move controls, Advanced Properties, Download newest UI and more were in the game but missing from the editor. The tab now checks the game's own files every time it opens and adds anything missing, marked with a \ud83c\udd95; rows the game no longer has are kept and marked \u26a0, never silently deleted. Pressing Save Menus publishes the brought-up-to-date list to GitHub, and the game now applies those menus too (including the launcher options, which it used to skip). The editor also joins the suite's shared download cache, so files another editor already downloaded are not downloaded again. This version replaces both 1.7.8 and 1.8.0 \u2014 if your About box reads 1.7.8, you missed the 1.8.0 update; installing this one brings you fully current.",
   "files": [
     {
       "path": "about.py",
@@ -10,7 +10,7 @@
     {
       "path": "app.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/ui-editor/app.py",
-      "sha256": "2b3c9e6a68c8d9d35a8bb7642acb2abd89766b9737bf7c791b4120d3389930bc"
+      "sha256": "18285e80eb32b57f583aa9ca0f084f947aa1d8eca811a1fbe6e8cc5126a4d2a5"
     },
     {
       "path": "data.py",
