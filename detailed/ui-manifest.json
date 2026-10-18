@@ -148,9 +148,9 @@
     },
     {
       "name": "index.html",
-      "size": 977752,
-      "sha256": "7f17772251bae8cd7c4c5aeefc9c59efd055e2f6d82ef98308ccae54bc32960a",
-      "hash": "7f17772251bae8cd7c4c5aeefc9c59efd055e2f6d82ef98308ccae54bc32960a"
+      "size": 981269,
+      "sha256": "7eee2daec82da9cc8b8482fbabdf5427853936dbf77ca723c376bd8393c8617e",
+      "hash": "7eee2daec82da9cc8b8482fbabdf5427853936dbf77ca723c376bd8393c8617e"
     },
     {
       "name": "infracrew_system.js",
@@ -497,11 +497,16 @@
     },
     {
       "name": "zoneunlock.js",
-      "size": 23892,
-      "sha256": "1832bc66f3cfc9cf80d915de0191bea4123ac20bfea00097a77202d813b53af0",
-      "hash": "1832bc66f3cfc9cf80d915de0191bea4123ac20bfea00097a77202d813b53af0"
+      "size": 27219,
+      "sha256": "7b6075e64d0c33b3e96dcdeb9b9951b22844acb9c233b9bbed3ebfdee522319d",
+      "hash": "7b6075e64d0c33b3e96dcdeb9b9951b22844acb9c233b9bbed3ebfdee522319d"
+    },
+    {
+      "name": "zoneunlockflow.js",
+      "size": 29016,
+      "sha256": "7a39238df8f93fba0f8c6ad0a7b84730188d2c72b094f2ffd072d2de0839a747"
     }
   ],
-  "ui_version": "2026.10.17.9",
+  "ui_version": "2026.10.17.10",
   "version": "2026.10.17.9"
 }
