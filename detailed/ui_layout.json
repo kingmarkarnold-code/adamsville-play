@@ -109,8 +109,8 @@
       "type": "label",
       "visible": true,
       "width": 300,
-      "x": 722,
-      "y": 74,
+      "x": 48,
+      "y": 147,
       "description": "Shows the name of the street the player is currently on"
     },
     {
@@ -561,8 +561,8 @@
           "type": "label",
           "visible": true,
           "width": 300,
-          "x": 722,
-          "y": 74,
+          "x": 48,
+          "y": 147,
           "description": "Shows the name of the street the player is currently on"
         },
         {
