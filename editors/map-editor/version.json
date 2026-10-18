@@ -1,6 +1,6 @@
 {
-  "version": "1.9.5",
-  "changelog": "Two suite links arrive. (1) 'Open in Map Editor' now works end to end: in the Building Editor, pick a street and choose Open in Map Editor, and this app opens on that street's zone with the street centred and selected (the Building Editor side shipped in its 1.7.2). A handoff is used once and then removed; one older than 48 hours is ignored, and a broken one is set aside so it cannot loop. (2) Downloads now go through the one shared Adamsville suite cache (~/.local/share/adamsville-suite/cache/) \u2014 the same store the other editors use \u2014 so a file another editor already downloaded is reused instead of fetched again. Proof downloads after a save still always come fresh from GitHub.",
+  "version": "1.9.6",
+  "changelog": "The whole map fits the opening view again. (1) Local streets are drawn at every zoom: zoomed all the way out you now see the full road network in every zone, drawn as hairlines in one fast pass, instead of only highways and main roads \u2014 the extension areas of Adamsville, Mableton, Union City and South Fulton, and Riverdale's streets, are on the map from the moment it opens. (2) The zoom floor no longer fights the fit: zooming out with the wheel can always return to the full-map view (before, the first zoom-out jumped the view inward and pushed the far edges off screen). (3) The view re-fits once the data has loaded and the window has settled, so the opening frame always covers all seven zones. Zone boundaries still come from each zone's own current data, so boundary changes show up by themselves.\n\nTwo suite links arrive. (1) 'Open in Map Editor' now works end to end: in the Building Editor, pick a street and choose Open in Map Editor, and this app opens on that street's zone with the street centred and selected (the Building Editor side shipped in its 1.7.2). A handoff is used once and then removed; one older than 48 hours is ignored, and a broken one is set aside so it cannot loop. (2) Downloads now go through the one shared Adamsville suite cache (~/.local/share/adamsville-suite/cache/) \u2014 the same store the other editors use \u2014 so a file another editor already downloaded is reused instead of fetched again. Proof downloads after a save still always come fresh from GitHub.",
   "files": [
     {
       "path": "about.py",
@@ -10,17 +10,17 @@
     {
       "path": "app.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/app.py",
-      "sha256": "05666fe7d61e723b1447decf41a0c9984570e5777cf617e1fa3fde544992764b"
+      "sha256": "141b0f8692e2db16a975a78c2ea50e92917e9173cbfa207dd931fedd81529ec0"
     },
     {
       "path": "data.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/data.py",
-      "sha256": "bcc38e641a3240fb9bdd6f6376e06234b7bf2181cec99e3f62c5c02be6cecf99"
+      "sha256": "a2fba0523d94bba7dbf646708862006f6c0b69d1fb59048fd9e4074772a1e84d"
     },
     {
       "path": "gamedata.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/gamedata.py",
-      "sha256": "e9035e55ee127d25fecc95b2db2bcd29a85e9c0ae46aa1ea5203480f81106e23"
+      "sha256": "c539e2b9051563d77e62f885783b65213aa5bf6e37291970e6a675f4f1af8d6f"
     },
     {
       "path": "github_sync.py",
@@ -35,7 +35,7 @@
     {
       "path": "mapcanvas.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/mapcanvas.py",
-      "sha256": "007e85c621b49f5062412983783cc602947f81ab0a4bb98d57d8a325cdfc4198"
+      "sha256": "af5a959005c545ccd07af0a9aaff6d377d974236e6317cc4cb343e22c0c257b5"
     },
     {
       "path": "overpass.py",
