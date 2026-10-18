@@ -19,8 +19,9 @@
      the game's three.min.js, next door.
 
      Progress is shared with the game page (same origin): lifetime
-     baskets, sessions, and the last mode live in localStorage under
-     'sa.basketball.v1', written the moment they change.
+     baskets, sessions, the last mode, the last opponent, and any game
+     in progress live in localStorage under 'sa.basketball.v1', written
+     the moment they change.
      ==================================================================== -->
 <style>
   html, body { height: 100%; }
@@ -38,6 +39,7 @@
   #topbar .title { font-size: 16px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #topbar .vtag { font-size: 11px; font-weight: 700; color: #ffb37a; border: 1px solid #e8722a; border-radius: 6px; padding: 1px 5px; }
   #topbar .spacer { flex: 1 1 auto; }
+  #score-readout { font-size: 14px; font-weight: 700; color: #fff; white-space: nowrap; display: none; }
   #baskets-readout { font-size: 15px; font-weight: 700; color: #ffb37a; white-space: nowrap; }
   .barbtn {
     background: #4a4a4a; color: #eee; border: 0; border-radius: 8px;
@@ -46,32 +48,62 @@
   }
   .barbtn:active { background: #666; }
   #back-link { background: #e8722a; color: #fff; }
+  /* ---- skill bar (your level, always at the top) ---- */
+  #skillbar {
+    flex: 0 0 auto; display: flex; align-items: center; gap: 8px;
+    background: rgba(22,17,12,.96); padding: 2px 12px 5px; z-index: 5;
+  }
+  #skill-label { font-size: 11px; font-weight: 700; color: #ffb37a; white-space: nowrap; }
+  #skilltrack { flex: 1 1 auto; height: 7px; background: #3a3a3a; border-radius: 4px; overflow: hidden; }
+  #skillfill { height: 100%; width: 0%; background: #e8722a; border-radius: 4px; }
+  /* ---- roster strip (who is on the court, during a game) ---- */
+  #rosterbar {
+    flex: 0 0 auto; display: none; background: rgba(22,17,12,.92); color: #ffd9ae;
+    font-size: 12px; font-weight: 600; padding: 3px 12px; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; z-index: 5;
+  }
   /* ---- the court view ---- */
-  #court-wrap { flex: 1 1 auto; position: relative; min-height: 0; background: #87b5d9; }
+  #court-wrap { flex: 1 1 auto; position: relative; min-height: 0; background: #87b5d9; touch-action: none; }
   #court-wrap canvas { display: block; width: 100%; height: 100%; }
-  /* ---- mode choice overlay ---- */
-  #mode-screen {
+  /* ---- walk joystick (bottom-left, over the court) ---- */
+  #joy {
+    position: absolute; left: 14px; bottom: 14px; width: 118px; height: 118px;
+    border-radius: 50%; background: rgba(20,16,12,.38); border: 2px solid rgba(255,255,255,.45);
+    display: none; z-index: 3; touch-action: none;
+  }
+  #joy.on { display: block; }
+  #joy-knob {
+    position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; border-radius: 50%;
+    background: rgba(232,114,42,.85); border: 2px solid rgba(255,255,255,.7);
+    transform: translate(-50%, -50%);
+  }
+  /* ---- full-court overlays: mode choice, opponent pick, leave, win ---- */
+  .sheet {
     position: absolute; inset: 0; display: none; z-index: 4;
     align-items: center; justify-content: center; background: rgba(10,8,6,.55);
     padding: 12px; box-sizing: border-box;
   }
-  #mode-screen.show { display: flex; }
-  #mode-panel {
+  .sheet.show { display: flex; }
+  .panel {
     background: rgba(22,17,12,.96); border: 2px solid #e8722a; border-radius: 14px;
     padding: 20px 22px; text-align: center; max-width: 92vw; max-height: 100%;
     overflow-y: auto; box-sizing: border-box; box-shadow: 0 8px 30px rgba(0,0,0,.5);
   }
-  #mode-panel h1 { font-size: 24px; margin: 0 0 4px; }
-  #mode-panel .where { font-size: 13px; opacity: .8; margin: 0 0 4px; }
-  #mode-panel .how { font-size: 13px; opacity: .65; margin: 0 0 14px; }
-  #mode-panel .pick { font-size: 15px; font-weight: 700; margin: 0 0 10px; }
-  .modebtn {
+  .panel h1 { font-size: 24px; margin: 0 0 4px; }
+  .panel h2 { font-size: 21px; margin: 0 0 6px; }
+  .panel .where { font-size: 13px; opacity: .8; margin: 0 0 4px; }
+  .panel .how { font-size: 13px; opacity: .65; margin: 0 0 14px; }
+  .panel .pick { font-size: 15px; font-weight: 700; margin: 0 0 10px; }
+  .bigbtn {
     display: block; width: 100%; box-sizing: border-box; margin: 8px 0;
     background: #e8722a; color: #fff; border: 0; border-radius: 10px;
     font-size: 20px; font-weight: 700; padding: 14px 10px; cursor: pointer; min-height: 52px;
   }
-  .modebtn .last { display: block; font-size: 12px; font-weight: 700; color: #ffe1c9; margin-top: 2px; }
-  .modebtn:active { background: #c95f1f; }
+  .bigbtn .last { display: block; font-size: 12px; font-weight: 700; color: #ffe1c9; margin-top: 2px; }
+  .bigbtn .sub { display: block; font-size: 12px; font-weight: 600; color: #ffe1c9; margin-top: 2px; }
+  .bigbtn:active { background: #c95f1f; }
+  .bigbtn.grey { background: #4a4a4a; }
+  .bigbtn.grey:active { background: #666; }
   #mode-baskets { font-size: 14px; font-weight: 700; color: #ffb37a; margin: 12px 0 0; }
   /* ---- bottom play controls ---- */
   #controls {
@@ -104,24 +136,62 @@
 
 <div id="topbar">
   <span class="title">🏀 Basketball — 535 Backyard Court</span>
-  <span class="vtag">v1</span>
+  <span class="vtag">v2</span>
   <span class="spacer"></span>
+  <span id="score-readout">You: 0</span>
   <span id="baskets-readout">Baskets: 0</span>
   <button class="barbtn" id="change-mode-btn" type="button">Change mode</button>
   <a class="barbtn" id="back-link" href="./">← Surviving Adamsville</a>
 </div>
+<div id="skillbar"><span id="skill-label">Skill Lv 1</span><div id="skilltrack"><div id="skillfill"></div></div></div>
+<div id="rosterbar"></div>
 
 <div id="court-wrap">
+  <!-- walk joystick: shown while a game is on -->
+  <div id="joy"><div id="joy-knob"></div></div>
+
   <!-- mode choice: shown on open, and again from "Change mode" -->
-  <div id="mode-screen">
-    <div id="mode-panel">
+  <div id="mode-screen" class="sheet">
+    <div id="mode-panel" class="panel">
       <h1>🏀 Basketball</h1>
       <p class="where">The backyard court at 535 Dollar Mill Road, from Surviving Adamsville.</p>
       <p class="how">In the main game, walk in between the trees behind the house at 535 and the court will invite you to play.</p>
       <p class="pick">How do you want to play?</p>
-      <button class="modebtn" id="mode-1on1" type="button">1 on 1<span class="last" id="last-1on1" style="display:none">★ Last played</span></button>
-      <button class="modebtn" id="mode-3on3" type="button">3 on 3<span class="last" id="last-3on3" style="display:none">★ Last played</span></button>
+      <button class="bigbtn" id="mode-1on1" type="button">1 on 1<span class="last" id="last-1on1" style="display:none">★ Last played</span></button>
+      <button class="bigbtn" id="mode-3on3" type="button">3 on 3<span class="last" id="last-3on3" style="display:none">★ Last played</span></button>
       <p id="mode-baskets">Your baskets: 0</p>
+    </div>
+  </div>
+
+  <!-- opponent choice: select your opponent from the cast -->
+  <div id="pick-screen" class="sheet">
+    <div id="pick-panel" class="panel">
+      <h2>Select your opponent</h2>
+      <p class="how">He guards you all game — and every man plays his own game: some block, some steal, some shoot.</p>
+      <button class="bigbtn" id="pick-opp-0" type="button">Big Joe<span class="last" id="pick-last-0" style="display:none">★ Your last opponent</span></button>
+      <button class="bigbtn" id="pick-opp-1" type="button">Terminator<span class="last" id="pick-last-1" style="display:none">★ Your last opponent</span></button>
+      <button class="bigbtn" id="pick-opp-2" type="button">Big John<span class="last" id="pick-last-2" style="display:none">★ Your last opponent</span></button>
+      <button class="bigbtn grey" id="pick-any" type="button">Surprise me</button>
+    </div>
+  </div>
+
+  <!-- leaving the court mid-game takes a yes -->
+  <div id="leave-screen" class="sheet">
+    <div id="leave-panel" class="panel">
+      <h2>Leave the court?</h2>
+      <p class="pick">You are in the middle of a game. Would you like to leave the court?</p>
+      <button class="bigbtn" id="leave-yes" type="button">Leave the court</button>
+      <button class="bigbtn grey" id="leave-no" type="button">Keep playing</button>
+    </div>
+  </div>
+
+  <!-- game over: the target was reached -->
+  <div id="win-screen" class="sheet">
+    <div id="win-panel" class="panel">
+      <h2 id="win-title">🏆 You win!</h2>
+      <p class="pick" id="win-text">You reached the target.</p>
+      <button class="bigbtn" id="win-again" type="button">Play again</button>
+      <button class="bigbtn grey" id="win-mode" type="button">Change mode</button>
     </div>
   </div>
 </div>
@@ -144,29 +214,48 @@
 <script src="three.min.js"></script>
 <script>
 /* ============================================================================
-   BASKETBALL — 535 BACKYARD COURT, the player page's game (v1)
+   BASKETBALL — 535 BACKYARD COURT, the player page's game (v2)
    ----------------------------------------------------------------------------
-   Scope (Joshua's rounds so far): the court and the goal tree, the mode
-   choice (1 on 1 / 3 on 3), the players on the court for the mode, the
-   shooting play, and saved progress. Game RULES (defence, passing,
-   scoring games) are Joshua's future design rounds — not invented here.
-
-   HOW IT PLAYS (v1): you stand at the shooting spot with the ball.
-   The big button picks the ball up, then shoots it at the goal on the
-   tree. A basket counts when the ball drops through the rim — detected,
-   not granted — and is saved the moment it lands.
+   Joshua's rounds: v1 brought the court, the goal tree, the mode choice
+   (1 on 1 / 3 on 3), the shooting play and saved progress. v2 is the
+   BEGINNING GAME LOGIC, in his words:
+   - You MOVE around the court the way you move in the main game, and
+     you can't walk off the dirt mid-game: trying brings up "You are in
+     the middle of a game. Would you like to leave the court?"
+   - Once you start walking with the ball, it DRIBBLES — and it keeps
+     bouncing even when you stop (settling it back into your hands
+     would be a double dribble). Only a shot ends the dribble; a new
+     possession starts in your hands again.
+   - From a considerable distance, Shoot is a JUMP shot: you leave the
+     ground and release at the top. Close up, you shoot from the floor.
+   - You SELECT YOUR OPPONENT from the cast — Big Joe, Terminator,
+     Big John — and every man plays by his own ATTRIBUTES (see the CAST
+     block): intelligence, defense, block, steal, shooting. Defense
+     makes his contest hurt more, block can swat your shot away, steal
+     can take the ball off your dribble, shooting lets HIM score when
+     the ball is his. Both sides can win now.
+   - Games are played to a target: 1 on 1 goes to 10, 3 on 3 to 21.
+     (Flagged assumption, his to correct: each made basket is 1 point.)
+   - The more YOU play, the better you get: a skill bar at the top
+     fills in small increments (see the SKILL block) and your shot
+     tightens a little as your level rises.
+   Every tuning number lives in the TUNING / SKILL blocks or in a man's
+   own attribute block — a later tuning pass changes numbers, not logic.
    ============================================================================ */
 (function(){
 'use strict';
 
 /* ============================== saved progress ============================== */
 /* Shared with the main game page (same origin): {v, baskets, sessions,
-   lastMode}. Written the moment anything changes. */
+   lastMode, lastOpponent, skillXp, game}. Written the moment anything
+   changes. 'game' is the game in progress {mode, opp, score, oppScore,
+   target} or null — it is what brings a half-finished game back after
+   a reload. */
 var SAVE_KEY = 'sa.basketball.v1';
 var ERROR_KEY = 'sa.basketball.error';
 
 function loadProgress(){
-  var fresh = { v: 1, baskets: 0, sessions: 0, lastMode: '' };
+  var fresh = { v: 1, baskets: 0, sessions: 0, lastMode: '', lastOpponent: '', skillXp: 0, game: null };
   try{
     var raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return fresh;
@@ -174,14 +263,23 @@ function loadProgress(){
     if (!p || typeof p !== 'object') return fresh;
     fresh.baskets  = Math.max(0, parseInt(p.baskets, 10) || 0);
     fresh.sessions = Math.max(0, parseInt(p.sessions, 10) || 0);
+    fresh.skillXp  = Math.max(0, parseInt(p.skillXp, 10) || 0);
     if (p.lastMode === '1on1' || p.lastMode === '3on3') fresh.lastMode = p.lastMode;
+    if (typeof p.lastOpponent === 'string' && castByName(p.lastOpponent)) fresh.lastOpponent = p.lastOpponent;
+    if (p.game && typeof p.game === 'object' &&
+        (p.game.mode === '1on1' || p.game.mode === '3on3') && castByName(p.game.opp)){
+      var sc = Math.max(0, parseInt(p.game.score, 10) || 0);
+      var oc = Math.max(0, parseInt(p.game.oppScore, 10) || 0);
+      var tg = (p.game.mode === '1on1') ? 10 : 21;
+      if (sc < tg && oc < tg)
+        fresh.game = { mode: p.game.mode, opp: p.game.opp, score: sc, oppScore: oc, target: tg };
+    }
     return fresh;
   }catch(e){ return fresh; }
 }
 function saveProgress(){
   try{ progress.v = 1; localStorage.setItem(SAVE_KEY, JSON.stringify(progress)); }catch(e){}
 }
-var progress = loadProgress();
 
 /* ============================== failure surfacing ============================== */
 /* Never a silent black page: any failure shows the plain-language error
@@ -202,16 +300,90 @@ function showError(err){
 }
 window.addEventListener('error', function(ev){ showError(ev && ev.message ? ev.message : ev); });
 
-/* ============================== court layout (this page's own small world) ============================== */
+/* ============================== court + game constants ============================== */
 /* Metres, flat ground at y=0, the same arrangement as the court behind
    535 in the main game: dirt ellipse, goal tree on the north arc, the
    entrance trees to the south, pines around the edge. North is -z. */
 var COURT = { rx: 7, rz: 9 };
 var GOAL_TREE = { x: 0, z: -8.2 };
 var RIM = { x: 0, y: 3.05, z: -7.42 };        // rim centre (tree z + 0.78)
-var SHOOT_SPOT = { x: 0, z: -2.0 };           // where you stand
-var BALL_FWD = 0.55;                          // ball spot, in front of you
+var START_SPOT = { x: 0, z: -2.0 };           // where you start each game
 var GRAVITY = 9.8, BALL_R = 0.12;
+var WALK_SPEED = 3.4;                          // your pace, main-game walking feel
+var FIG_R = 0.35;                              // a player's personal space (court margin)
+var JUMP_DIST = 6.0;                           // beyond this from the rim, Shoot is a jump shot
+var BASE_SPREAD = 0.22;                        // v1 shot spread (half-range, metres) before contest/skill
+var DRIBBLE_HZ = 2.3;                          // dribble bounces per second
+var HAND_Y = 0.98;                             // the dribble's top, at the hand
+var TARGETS = { '1on1': 10, '3on3': 21 };      // his ruling: 1 on 1 to 10, 3 on 3 to 21
+
+/* ============================== TUNING (game-feel numbers) ==============================
+   Every ability check below reads its numbers from here or from a
+   man's attributes — change the NUMBERS to tune the game; the logic
+   never needs hunting. */
+var TUNING = {
+  /* CONTEST (defense attribute): how much a close defender widens your
+     shot's spread. proximity 0..1 runs from CONTEST_RANGE down to 0. */
+  CONTEST_RANGE: 3.2,          // metres: beyond this he barely matters
+  CONTEST_BASE: 0.30,          // spread growth even a weak defender adds, point blank
+  CONTEST_PER_DEFENSE: 0.08,   // extra spread growth per defense point, point blank
+  /* BLOCK (block attribute): at your release, a defender inside
+     BLOCK_RANGE rolls to swat the shot away outright. */
+  BLOCK_RANGE: 1.7,            // metres from you at the release
+  BLOCK_BASE: 0.08,            // swat chance floor per point of closeness
+  BLOCK_PER_POINT: 0.030,      // extra swat chance per block point, point blank
+  /* STEAL (steal attribute): while you dribble, a defender inside
+     STEAL_RANGE builds steal pressure; at the (random) threshold he
+     takes the ball. Rate is per second. */
+  STEAL_RANGE: 1.35,           // metres from you while you dribble
+  STEAL_RATE: 0.16,            // pressure per second, per steal point, point blank
+  STEAL_NEED_MIN: 0.9,         // pressure needed, low end (randomised per possession)
+  STEAL_NEED_SPAN: 0.7,        // ... up to MIN + SPAN
+  /* OPPONENT OFFENCE (shooting + intelligence attributes): when the
+     ball is his, he dribbles to a spot and shoots. */
+  OPP_SPEED: 2.7,              // his dribble pace toward his spot
+  OPP_RECOVER_SPEED: 3.0,      // his pace fetching a loose ball
+  OPP_SPOT_BASE: 5.9,          // spot distance from the rim before intelligence
+  OPP_SPOT_PER_INT: 0.18,      // smarter men shoot from closer (better looks)
+  OPP_WAIT_BASE: 1.6,          // seconds he'll hold for an open look, before intelligence
+  OPP_WAIT_PER_INT: 0.25,      // ... smarter men wait longer
+  OPP_MAKE_BASE: 0.16,         // his make chance before his shooting attribute
+  OPP_MAKE_PER_SHOOTING: 0.052,// make chance per shooting point
+  OPP_MAKE_FAR: 0.8,           // make-chance multiplier from beyond OPP_FAR_DIST
+  OPP_FAR_DIST: 6.5,           // metres from the rim
+  OPP_CONTEST_CLOSE: 0.55,     // your contest on him, inside 1.2 m of him
+  OPP_CONTEST_MID: 0.82        // ... inside 2.2 m
+};
+
+/* ============================== SKILL (your progression) ==============================
+   The more you play, the better you get (his design). Play earns XP in
+   small increments; each SKILL_XP_PER_LEVEL of XP is a level, shown on
+   the bar at the top. Levels tighten your shot spread a little.
+   "We'll adjust it later" — these are the numbers to adjust. */
+var SKILL = {
+  GAIN_PER_SHOT: 1,            // XP for every shot you take
+  GAIN_PER_MAKE: 3,            // XP for every basket you make
+  GAIN_PER_GAME: 5,            // XP for finishing a game, win or lose
+  XP_PER_LEVEL: 40,            // XP per skill level
+  NARROW_PER_LEVEL: 0.02,      // shot-spread tightening per level (fraction)
+  NARROW_MAX: 0.30             // ... capped, so it never becomes laser-guided
+};
+function skillLevel(){ return Math.floor(progress.skillXp / SKILL.XP_PER_LEVEL) + 1; }
+function skillSpreadFactor(){
+  var cut = Math.min(SKILL.NARROW_MAX, (skillLevel() - 1) * SKILL.NARROW_PER_LEVEL);
+  return 1 - cut;
+}
+function addSkill(xp){
+  progress.skillXp += xp;
+  saveProgress();
+  updateSkillBar();
+}
+function updateSkillBar(){
+  var label = el('skill-label'), fill = el('skillfill');
+  var into = progress.skillXp % SKILL.XP_PER_LEVEL;
+  if (label) label.textContent = 'Skill Lv ' + skillLevel();
+  if (fill) fill.style.width = Math.round(into / SKILL.XP_PER_LEVEL * 100) + '%';
+}
 
 var COL_DIRT = 0x8a6a48, COL_DIRT_WORN = 0x96754f, COL_GRASS = 0x55803d,
     COL_TRUNK = 0x5a4030, COL_CANOPY = 0x2d5a27, COL_BOARD = 0xf4f1ea,
@@ -219,8 +391,43 @@ var COL_DIRT = 0x8a6a48, COL_DIRT_WORN = 0x96754f, COL_GRASS = 0x55803d,
     COL_PANTS = 0x2e4a6b,
     TEAM_HOME = 0xc23b2e,     // your team's shirts (the hero's red)
     TEAM_HOME_2 = 0xb03427,   // a second home shade so teammates read apart
-    TEAM_AWAY = 0x2e4a8a;     // the other team's shirts
+    TEAM_AWAY = 0x2e4a8a,     // a regular opponent's blue
+    TEAM_AWAY_2 = 0x274a7d;
 var SKIN_TONES = [0x8a5a33, 0xa06a3f, 0x6e4525, 0xb57a4a, 0x7d4e2c, 0x96613a];
+
+/* ============================== THE CAST ==============================
+   Joshua's cast (2026-10-18): the men you play against — and in 3 on 3
+   the rest of them fill the court. Each man carries ATTRIBUTE
+   variables, all on a 1..10 scale, in his own block below:
+     intelligence — how smart he plays: reacts faster on defence,
+                    picks better spots and waits for better looks
+     defense      — how hard his contest hurts your shot's accuracy
+     block        — how likely he is to swat your shot away outright
+     steal        — how fast he takes the ball off your dribble
+     shooting     — how often HIS shots fall when the ball is his
+   STANDARD PLACEHOLDER VALUES for now, differentiated so who you pick
+   changes the game; per-person tuning later = edit these numbers.
+   scale/wide are his build ('Big' reads bigger), shirt his colours. */
+var CAST = [
+  { name: 'Big Joe',    scale: 1.13, wide: 1.30, shirt: 0x2f7a3d, skin: SKIN_TONES[2],
+    attrs: { intelligence: 4, defense: 8, block: 9, steal: 3, shooting: 5 } },
+  { name: 'Terminator', scale: 1.03, wide: 1.22, shirt: 0x26262b, skin: SKIN_TONES[4],
+    attrs: { intelligence: 9, defense: 8, block: 6, steal: 8, shooting: 7 } },
+  { name: 'Big John',   scale: 1.09, wide: 1.18, shirt: 0xc9a227, skin: SKIN_TONES[1],
+    attrs: { intelligence: 6, defense: 6, block: 7, steal: 5, shooting: 9 } }
+];
+var DEFAULT_ATTRS = { intelligence: 5, defense: 5, block: 5, steal: 5, shooting: 5 };
+function castByName(name){
+  for (var i = 0; i < CAST.length; i++) if (CAST[i].name === name) return CAST[i];
+  return null;
+}
+/* (declared here, after CAST exists: loadProgress validates saved
+   names against the cast) */
+var progress = loadProgress();
+/* The "surprise me" rotation: the next cast member in turn. */
+function rotateCast(){
+  return CAST[(progress.sessions + progress.baskets) % CAST.length];
+}
 
 /* Yard pines (goal tree handled separately): [x, z, scale] */
 var PINES = [
@@ -229,44 +436,66 @@ var PINES = [
   { x: -8.8, z: 2.0,  s: 0.95 }, { x: 8.8, z: 2.0,  s: 1.10 },
   { x: -5.5, z: -10.5, s: 1.15 }, { x: 5.5, z: -10.5, s: 0.90 }
 ];
-
-/* Who stands where, per mode. face: 'rim' | 'player' | 'ball'.
-   1 on 1: you + 1 opponent. 3 on 3: you + 2 teammates + 3 opponents. */
-var LINEUPS = {
-  '1on1': [
-    { team: 'opp', x: 0.9, z: -5.6, face: 'player' }
-  ],
-  '3on3': [
-    { team: 'home', x: -3.4, z: -3.2, face: 'rim' },
-    { team: 'home', x: 3.3,  z: -4.4, face: 'rim' },
-    { team: 'opp',  x: -2.7, z: -4.6, face: 'rim' },
-    { team: 'opp',  x: 0.7,  z: -6.1, face: 'player' },
-    { team: 'opp',  x: 3.1,  z: -3.0, face: 'rim' }
-  ]
-};
+/* Where teammates hold their spots in 3 on 3 (their defenders key off them) */
+var TEAM_SPOTS = [ { x: -3.4, z: -3.2 }, { x: 3.3, z: -4.4 } ];
 
 /* ============================== state ============================== */
-var mode = '';              // '' until a mode is chosen, then '1on1' | '3on3'
-var figures = [];           // animated figures on the court (not you)
-var you = null;             // your figure
-var ball = null, ballState = 'ready', ballVel = { x: 0, y: 0, z: 0 },
-    ballScored = false, flyT = 0;
+var phase = 'mode';           // 'mode' | 'pick' | 'game' | 'win'
+var mode = '';                // the mode of the game on the court
+var pendingMode = '';         // mode chosen, opponent not yet picked
+var game = null;              // {mode, opp, score, oppScore, target} while a game is on
+var figures = [];             // the other figures on the court (not you)
+var primaryDef = null;        // the figure guarding you (your opponent)
+var you = null;               // your figure
+var player = {                // your body on the court
+  x: START_SPOT.x, z: START_SPOT.z, face: Math.PI,  // heading: 0 = +z (south); PI = -z (north, at the rim)
+  speed: 0, stepPhase: 0, jumpY: 0, idleFor: 0
+};
+var ball = null, ballState = 'ready',   // 'ready' | 'held' | 'dribbling' | 'shooting' | 'flying' | 'dead' | 'ophold' | 'oppdribble'
+    ballVel = { x: 0, y: 0, z: 0 }, ballScored = false, flyT = 0;
+var possession = 'you';       // 'you' | 'opp' — whose turn it is with the ball
+var shotCtx = null;           // {by:'you'|'opp', blocked:bool, made:bool} for the shot in the air
+var oppBrain = { state: 'none', t: 0, spot: null };  // 'none' | 'recover' | 'approach' | 'windup'
+var stealPressure = 0, stealNeed = 1.2;
+var dribblePhase = 0;                    // runs while a dribble is live (yours or his)
+var shotAnim = null;                     // {t, jump, released} during your shot
+var lastShot = null;                     // record of the last shot (also a test surface)
+var pendingWin = '';                     // '' | 'you' | 'opp'
+var leaveOpen = false, leaveArmed = true, leavePromptCount = 0;
+var keys = {};                           // keyboard state, by code
+var joyVec = { x: 0, z: 0 };             // joystick vector
+var keyVec = { x: 0, z: 0 };             // keyboard vector (recomputed per frame)
+var camPos = { x: 3.4, y: 3.8, z: 5.6 }, camLook = { x: 0, y: 1.7, z: -3.2 };
+var T = 0;                               // the page's own clock (seconds)
 var scene, camera, renderer, clock, courtGroup, started = false;
 
 /* ============================== DOM helpers ============================== */
 function el(id){ return document.getElementById(id); }
 function setFeedback(t){ var f = el('feedback'); if (f) f.textContent = t; }
+function showSheet(id, on){
+  var s = el(id); if (!s) return;
+  if (on) s.classList.add('show'); else s.classList.remove('show');
+}
 function updateReadout(){
-  var t = 'Baskets: ' + progress.baskets;
-  var r = el('baskets-readout'); if (r) r.textContent = t;
+  var b = el('baskets-readout'); if (b) b.textContent = 'Baskets: ' + progress.baskets;
   var m = el('mode-baskets'); if (m) m.textContent = 'Your baskets: ' + progress.baskets;
+  var s = el('score-readout');
+  if (s){
+    if (game){
+      s.style.display = '';
+      s.textContent = 'You: ' + game.score + ' · ' + game.opp + ': ' + game.oppScore + ' · first to ' + game.target;
+    } else { s.style.display = 'none'; }
+  }
 }
 function updateActionButton(){
   var b = el('act-btn'); if (!b) return;
-  if (!mode){ b.textContent = 'Pick a mode first'; b.setAttribute('disabled', ''); return; }
+  if (phase !== 'game' || leaveOpen){ b.textContent = 'Pick a mode first'; b.setAttribute('disabled', ''); return; }
+  if (possession === 'opp' || ballState === 'ophold' || ballState === 'oppdribble'){
+    b.textContent = 'Defend'; b.setAttribute('disabled', ''); return;
+  }
   b.removeAttribute('disabled');
   if (ballState === 'ready') b.textContent = 'Pick up the ball';
-  else if (ballState === 'held') b.textContent = 'Shoot';
+  else if (ballState === 'held' || ballState === 'dribbling') b.textContent = 'Shoot';
   else if (ballState === 'dead') b.textContent = 'Get the ball';
   else { b.textContent = '…'; b.setAttribute('disabled', ''); }
 }
@@ -309,35 +538,86 @@ function makeGoalTree(){
 }
 
 /* A player figure in the game's stylized look: shirt torso, head,
-   arms, legs. Light on purpose — a handful of boxes and a sphere. */
-function makeFigure(shirt, skin){
+   arms, legs — with the parts kept so the game can move them (walk
+   swing, a defender's hands going up, your jump). A cast member is
+   scaled and widened by his build. A soft team disc under the feet
+   says whose side he is on: red for yours, blue for theirs. */
+function makeFigure(shirt, skin, opts){
+  opts = opts || {};
   var g = new THREE.Group();
   var mShirt = lam(shirt), mSkin = lam(skin), mPants = lam(COL_PANTS);
   var legL = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.78, 0.18), mPants);
   legL.position.set(-0.11, 0.39, 0); g.add(legL);
-  var legR = legL.clone(); legR.position.x = 0.11; g.add(legR);
+  var legR = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.78, 0.18), mPants);
+  legR.position.set(0.11, 0.39, 0); g.add(legR);
   var torso = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.62, 0.26), mShirt);
   torso.position.set(0, 1.09, 0); g.add(torso);
+  if (opts.wide && opts.wide !== 1) torso.scale.x = opts.wide;
   var armL = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.58, 0.13), mShirt);
   armL.position.set(-0.3, 1.08, 0); armL.rotation.z = 0.12; g.add(armL);
-  var armR = armL.clone(); armR.position.x = 0.3; armR.rotation.z = -0.12; g.add(armR);
+  var armR = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.58, 0.13), mShirt);
+  armR.position.set(0.3, 1.08, 0); armR.rotation.z = -0.12; g.add(armR);
   var head = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 10), mSkin);
   head.position.set(0, 1.58, 0); g.add(head);
+  var disc = new THREE.Mesh(new THREE.CircleGeometry(0.46, 20),
+    new THREE.MeshBasicMaterial({ color: opts.away ? 0x2e4a8a : 0xc23b2e, transparent: true, opacity: 0.45 }));
+  disc.rotation.x = -Math.PI / 2; disc.position.y = 0.02;
+  g.add(disc);
+  if (opts.scale && opts.scale !== 1) g.scale.set(opts.scale, opts.scale, opts.scale);
+  g.userData.parts = { legL: legL, legR: legR, armL: armL, armR: armR, torso: torso };
   return g;
 }
 
 function faceToward(fig, tx, tz){
   fig.rotation.y = Math.atan2(tx - fig.position.x, tz - fig.position.z);
 }
+/* Heading convention, matching faceToward: a figure with
+   rotation.y = a faces (sin a, cos a) in (x, z). */
+function headingVec(a){ return { x: Math.sin(a), z: Math.cos(a) }; }
 
-/* (Re)build the court for a mode: your figure + the lineup. */
-function buildCourt(){
+/* Who is on the court, per mode and opponent — built from the cast.
+   1 on 1: your opponent, guarding you. 3 on 3: your opponent guards
+   you, a second cast member guards a teammate and a third plays on
+   YOUR side; the two remaining spots are regulars (with a three-man
+   cast and five other spots, two players are unnamed — for the record). */
+function courtPlan(m, oppName){
+  var opp = castByName(oppName) || CAST[0];
+  var rest = [];
+  for (var i = 0; i < CAST.length; i++) if (CAST[i].name !== opp.name) rest.push(CAST[i]);
+  var plan = { opp: opp, entries: [] };
+  /* entries: {team, cast, role, spot, mark} — mark is the HOME side
+     slot a defender guards (0 = you, 1.. = teammates in TEAM_SPOTS). */
+  plan.entries.push({ team: 'opp', cast: opp, role: 'primary', spot: null, mark: 0 });
+  if (m === '3on3'){
+    plan.entries.push({ team: 'home', cast: rest[1], role: 'mate', spot: TEAM_SPOTS[0], mark: -2 });
+    plan.entries.push({ team: 'home', cast: null,     role: 'mate', spot: TEAM_SPOTS[1], mark: -2 });
+    plan.entries.push({ team: 'opp',  cast: rest[0],  role: 'def',  spot: null, mark: 1 });
+    plan.entries.push({ team: 'opp',  cast: null,     role: 'def',  spot: null, mark: 2 });
+  }
+  return plan;
+}
+function rosterText(plan, m){
+  function nm(e){ return e.cast ? e.cast.name : 'a regular'; }
+  var mates = [], opps = [plan.opp.name];
+  for (var i = 0; i < plan.entries.length; i++){
+    var e = plan.entries[i];
+    if (e.role === 'primary') continue;
+    if (e.team === 'home') mates.push(nm(e)); else opps.push(nm(e));
+  }
+  if (m === '1on1') return 'You vs ' + plan.opp.name;
+  return 'You · ' + mates.join(' · ') + '  vs  ' + opps.join(' · ');
+}
+
+/* (Re)build the court for a game: ground, trees, you, the plan's
+   others, and the ball. plan === null builds the quiet court that
+   sits behind the opening screens. */
+function buildCourt(plan){
   if (courtGroup){ scene.remove(courtGroup); }
   courtGroup = new THREE.Group();
   figures = [];
+  primaryDef = null;
+  you = null;
 
-  /* ground: grass, then the dirt patch and its worn middle (flat —
-     this page's own ground is level; the edge is the only "line") */
   var grass = new THREE.Mesh(new THREE.CircleGeometry(60, 40), lam(COL_GRASS));
   grass.rotation.x = -Math.PI / 2; grass.position.y = -0.02;
   courtGroup.add(grass);
@@ -349,93 +629,573 @@ function buildCourt(){
   worn.position.y = 0.012;
   courtGroup.add(worn);
 
-  /* trees: the pines around the edge, then the goal tree */
   for (var i = 0; i < PINES.length; i++) courtGroup.add(makePine(PINES[i].x, PINES[i].z, PINES[i].s));
   courtGroup.add(makeGoalTree());
 
-  /* you, at the shooting spot, facing the goal */
-  you = makeFigure(TEAM_HOME, SKIN_TONES[0]);
-  you.position.set(SHOOT_SPOT.x, 0, SHOOT_SPOT.z);
-  faceToward(you, RIM.x, RIM.z);
-  courtGroup.add(you);
+  if (plan){
+    you = makeFigure(TEAM_HOME, SKIN_TONES[0], { away: false });
+    you.position.set(player.x, 0, player.z);
+    faceToward(you, RIM.x, RIM.z);
+    courtGroup.add(you);
 
-  /* the lineup for the mode */
-  var lineup = LINEUPS[mode] || [];
-  var homeShade = 0;
-  for (var j = 0; j < lineup.length; j++){
-    var L = lineup[j];
-    var shirt = (L.team === 'home') ? (homeShade++ ? TEAM_HOME : TEAM_HOME_2) : TEAM_AWAY;
-    var fig = makeFigure(shirt, SKIN_TONES[(j + 1) % SKIN_TONES.length]);
-    fig.position.set(L.x, 0, L.z);
-    if (L.face === 'player') faceToward(fig, SHOOT_SPOT.x, SHOOT_SPOT.z);
-    else faceToward(fig, RIM.x, RIM.z);
-    fig.userData.baseX = L.x;
-    fig.userData.baseZ = L.z;
-    fig.userData.phase = j * 1.7 + 0.6;
-    fig.userData.opp = (L.team === 'opp');
-    courtGroup.add(fig);
-    figures.push(fig);
+    var homeShade = 0;
+    var homeFigs = [null];   // slot 0 is you (position read live); mates follow
+    for (var j = 0; j < plan.entries.length; j++){
+      var e = plan.entries[j];
+      var shirt, skin, opts = { away: e.team === 'opp' };
+      if (e.cast){ shirt = e.cast.shirt; skin = e.cast.skin; opts.scale = e.cast.scale; opts.wide = e.cast.wide; }
+      else if (e.team === 'home'){ shirt = (homeShade++ % 2) ? TEAM_HOME_2 : TEAM_HOME; skin = SKIN_TONES[(j + 3) % SKIN_TONES.length]; }
+      else { shirt = (j % 2) ? TEAM_AWAY_2 : TEAM_AWAY; skin = SKIN_TONES[(j + 2) % SKIN_TONES.length]; }
+      var fig = makeFigure(shirt, skin, opts);
+      fig.userData.role = e.role;
+      fig.userData.team = e.team;
+      fig.userData.mark = e.mark;
+      fig.userData.name = e.cast ? e.cast.name : '';
+      fig.userData.attrs = e.cast ? e.cast.attrs : DEFAULT_ATTRS;
+      fig.userData.phase = j * 1.7 + 0.6;
+      fig.userData.vel = { x: 0, z: 0 };
+      fig.userData.contestT = -1;
+      if (e.role === 'mate'){
+        fig.position.set(e.spot.x, 0, e.spot.z);
+        faceToward(fig, player.x, player.z);
+        homeFigs.push(fig);
+      } else {
+        var mp = (e.mark === 0) ? { x: player.x, z: player.z }
+                               : { x: TEAM_SPOTS[e.mark - 1].x, z: TEAM_SPOTS[e.mark - 1].z };
+        var a = defenderAnchor(mp, e.role === 'primary' ? 1.15 : 1.25);
+        fig.position.set(a.x, 0, a.z);
+        faceToward(fig, mp.x, mp.z);
+        fig.userData.markPos = mp;
+      }
+      fig.userData.baseX = fig.position.x;
+      fig.userData.baseZ = fig.position.z;
+      courtGroup.add(fig);
+      figures.push(fig);
+      if (e.role === 'primary') primaryDef = fig;
+    }
+    for (var k = 0; k < figures.length; k++){
+      var f = figures[k];
+      if ((f.userData.role === 'def') && f.userData.mark >= 1)
+        f.userData.markFig = homeFigs[f.userData.mark] || null;
+    }
   }
 
-  /* the ball */
   ball = new THREE.Mesh(new THREE.SphereGeometry(BALL_R, 14, 12), lam(COL_BALL));
   ball.frustumCulled = false;
   courtGroup.add(ball);
-  spotBall();
+  spotBallAtStart();
 
   scene.add(courtGroup);
 }
 
-/* ============================== the play ============================== */
-function spotBall(){
+/* The ball's start-of-game spot: on the ground in front of your start. */
+function spotBallAtStart(){
   if (!ball) return;
-  ball.position.set(SHOOT_SPOT.x, BALL_R, SHOOT_SPOT.z - BALL_FWD);
+  ball.position.set(START_SPOT.x, BALL_R, START_SPOT.z - 0.55);
   ballVel.x = 0; ballVel.y = 0; ballVel.z = 0;
   ballState = 'ready';
+  ballScored = false;
+  shotAnim = null;
+  shotCtx = null;
+  oppBrain.state = 'none';
+  possession = 'you';
   updateActionButton();
 }
 
-function ballAction(){
-  if (!mode || !ball) return;
-  if (ballState === 'ready'){
-    ballState = 'held';
-    setFeedback('You have the ball. Shoot when ready.');
-  } else if (ballState === 'held'){
-    shoot();
-  } else if (ballState === 'dead'){
-    spotBall();
-    setFeedback('Ball is back at the spot.');
+/* ============================== court geometry helpers ============================== */
+/* The dirt is an ellipse; a point is "on the court" for a body of
+   radius margin when it fits inside the ellipse shrunk by that much. */
+function ellipseVal(x, z, margin){
+  var rx = COURT.rx - (margin || 0), rz = COURT.rz - (margin || 0);
+  return (x * x) / (rx * rx) + (z * z) / (rz * rz);
+}
+function insideCourt(x, z, margin){ return ellipseVal(x, z, margin) <= 1.0; }
+function clampInside(x, z, margin){
+  var e = ellipseVal(x, z, margin);
+  if (e <= 1.0) return { x: x, z: z };
+  var k = 1 / Math.sqrt(e);
+  return { x: x * k, z: z * k };
+}
+/* Trees are solid: nobody walks through a trunk. */
+var TRUNKS = null;
+function trunkList(){
+  if (TRUNKS) return TRUNKS;
+  TRUNKS = [ { x: GOAL_TREE.x, z: GOAL_TREE.z, r: 0.62 } ];
+  for (var i = 0; i < PINES.length; i++) TRUNKS.push({ x: PINES[i].x, z: PINES[i].z, r: 0.45 * PINES[i].s });
+  return TRUNKS;
+}
+function pushOutOfTrunks(p, bodyR){
+  var list = trunkList();
+  for (var i = 0; i < list.length; i++){
+    var t = list[i], dx = p.x - t.x, dz = p.z - t.z;
+    var d = Math.sqrt(dx * dx + dz * dz), min = t.r + bodyR;
+    if (d < min && d > 0.0001){ p.x = t.x + dx / d * min; p.z = t.z + dz / d * min; }
+  }
+  return p;
+}
+/* A defender's post: on the line from his man to the rim, 'dist' from
+   the man, kept on the court. */
+function defenderAnchor(manPos, dist){
+  var dx = RIM.x - manPos.x, dz = RIM.z - manPos.z;
+  var d = Math.sqrt(dx * dx + dz * dz) || 1;
+  var p = { x: manPos.x + dx / d * dist, z: manPos.z + dz / d * dist };
+  p = clampInside(p.x, p.z, 0.55);
+  p = pushOutOfTrunks(p, 0.3);
+  return p;
+}
+function distToRim(x, z){
+  var dx = RIM.x - x, dz = RIM.z - z;
+  return Math.sqrt(dx * dx + dz * dz);
+}
+function dist2D(ax, az, bx, bz){
+  var dx = ax - bx, dz = az - bz;
+  return Math.sqrt(dx * dx + dz * dz);
+}
+
+/* ============================== input ============================== */
+function inputVector(){
+  var x = joyVec.x + keyVec.x, z = joyVec.z + keyVec.z;
+  var m = Math.sqrt(x * x + z * z);
+  if (m > 1){ x /= m; z /= m; }
+  return { x: x, z: z, mag: Math.min(1, m) };
+}
+function refreshKeyVec(){
+  keyVec.x = (keys['KeyD'] || keys['ArrowRight'] ? 1 : 0) - (keys['KeyA'] || keys['ArrowLeft'] ? 1 : 0);
+  keyVec.z = (keys['KeyS'] || keys['ArrowDown'] ? 1 : 0) - (keys['KeyW'] || keys['ArrowUp'] ? 1 : 0);
+  var m = Math.sqrt(keyVec.x * keyVec.x + keyVec.z * keyVec.z);
+  if (m > 1){ keyVec.x /= m; keyVec.z /= m; }
+}
+
+/* ============================== your movement + the leave prompt ============================== */
+function updatePlayer(dt){
+  if (!you) return;
+  var iv = inputVector();
+  var moving = iv.mag > 0.12 && !leaveOpen && ballState !== 'shooting';
+  player.speed = moving ? WALK_SPEED * iv.mag : 0;
+  if (moving) player.idleFor = 0; else player.idleFor += dt;
+
+  if (moving){
+    var nx = player.x + iv.x * player.speed * dt, nz = player.z + iv.z * player.speed * dt;
+    /* Leaving the dirt mid-game is an exit ATTEMPT: clamp at the edge
+       and ask — once per attempt. Stepping well back inside re-arms. */
+    if (!insideCourt(nx, nz, FIG_R)){
+      var clamped = clampInside(nx, nz, FIG_R);
+      player.x = clamped.x; player.z = clamped.z;
+      if (game && leaveArmed && ellipseVal(player.x, player.z, FIG_R) > 0.80){
+        leaveArmed = false;
+        leavePromptCount++;
+        openLeavePrompt();
+      }
+    } else { player.x = nx; player.z = nz; }
+    var pushed = pushOutOfTrunks({ x: player.x, z: player.z }, FIG_R * 0.8);
+    player.x = pushed.x; player.z = pushed.z;
+    player.face = Math.atan2(iv.x, iv.z);
+    player.stepPhase += dt * 9.0 * iv.mag;
+  }
+  /* well back inside the dirt, the next exit attempt may ask again */
+  if (ellipseVal(player.x, player.z, FIG_R) < 0.72) leaveArmed = true;
+
+  you.position.x = player.x;
+  you.position.z = player.z;
+  you.position.y = (moving ? Math.abs(Math.sin(player.stepPhase)) * 0.05 : 0) + player.jumpY;
+  if (ballState === 'held' || ballState === 'dribbling' || ballState === 'shooting' ||
+      ballState === 'flying' || ballState === 'dead' || possession === 'opp')
+    faceToward(you, RIM.x, RIM.z);
+  else you.rotation.y = player.face;
+  if (moving) you.rotation.y = player.face;
+  animateLimbs(you, moving ? iv.mag : 0, player.stepPhase, ballState === 'held' || ballState === 'dribbling');
+
+  /* Walking over a LOOSE ball picks it up — a fresh possession — but
+     only when the ball is yours to take (not while he has it or is
+     fetching it for his turn). The opening ball waits for the button:
+     picking it up is the deliberate start of play. */
+  if (ball && possession === 'you' && ballState === 'dead'){
+    if (dist2D(ball.position.x, ball.position.z, player.x, player.z) < 0.9) pickUpBall();
+  }
+}
+function animateLimbs(fig, moveAmt, phase, hasBall){
+  var p = fig.userData.parts; if (!p) return;
+  var sw = Math.sin(phase) * 0.55 * moveAmt;
+  p.legL.rotation.x = sw; p.legR.rotation.x = -sw;
+  if (fig.userData.contestT !== undefined && fig.userData.contestT >= 0){
+    p.armL.rotation.z = 2.7; p.armR.rotation.z = -2.7;    // hands UP, contesting
+    p.armL.rotation.x = 0; p.armR.rotation.x = 0;
+  } else if (fig === you && hasBall){
+    p.armL.rotation.z = 0.12; p.armR.rotation.z = -0.85; // one hand down on the ball
+    p.armL.rotation.x = 0; p.armR.rotation.x = 0;
+  } else {
+    p.armL.rotation.z = 0.12; p.armR.rotation.z = -0.12;
+    p.armL.rotation.x = -sw * 0.7; p.armR.rotation.x = sw * 0.7;
+  }
+}
+
+function openLeavePrompt(){
+  leaveOpen = true;
+  showSheet('leave-screen', true);
+  updateActionButton();
+}
+function answerLeave(yesLeave){
+  showSheet('leave-screen', false);
+  leaveOpen = false;
+  if (yesLeave){
+    endGame();
+    showModeScreen();
+    setFeedback('You left the court. The game is over — pick a mode to play again.');
+  } else {
+    var k = 0.88;   // step back in: a nudge toward the middle
+    player.x *= k; player.z *= k;
+    setFeedback('Back on the court. Play on.');
   }
   updateActionButton();
 }
 
-/* A simple arc from your hands through (or near) the rim. The small
-   spread means clean shots fall and off shots miss — a basket is then
-   DETECTED as the ball crosses the rim plane downward inside the ring,
-   never granted. */
-function shoot(){
-  var p0 = { x: SHOOT_SPOT.x, y: 1.35, z: SHOOT_SPOT.z - 0.45 };
-  var tx = RIM.x + (Math.random() * 0.44 - 0.22);
-  var tz = RIM.z + (Math.random() * 0.44 - 0.22);
+/* ============================== moving a figure toward a point ============================== */
+/* Shared legs for the other men: run at 'cap' speed toward (tx, tz)
+   with a reaction lag (tau — smarter men react faster), staying on
+   the court and out of the trunks. Returns his speed. */
+function moveFigureToward(f, tx, tz, cap, tau, dt){
+  var u = f.userData;
+  var dx = tx - f.position.x, dz = tz - f.position.z;
+  var d = Math.sqrt(dx * dx + dz * dz);
+  var desX = d > 0.02 ? dx / d * Math.min(cap, d * 3.2) : 0;
+  var desZ = d > 0.02 ? dz / d * Math.min(cap, d * 3.2) : 0;
+  var blend = 1 - Math.exp(-dt / tau);
+  u.vel.x += (desX - u.vel.x) * blend;
+  u.vel.z += (desZ - u.vel.z) * blend;
+  f.position.x += u.vel.x * dt;
+  f.position.z += u.vel.z * dt;
+  var cl = clampInside(f.position.x, f.position.z, 0.5);
+  var po = pushOutOfTrunks({ x: cl.x, z: cl.z }, 0.3);
+  f.position.x = po.x; f.position.z = po.z;
+  var spd = Math.sqrt(u.vel.x * u.vel.x + u.vel.z * u.vel.z);
+  u.phase += dt * (2 + spd * 2.2);
+  f.position.y = Math.abs(Math.sin(u.phase)) * (spd > 0.3 ? 0.045 : 0.02);
+  animateLimbs(f, Math.min(1, spd / 3), u.phase, false);
+  return spd;
+}
+
+/* ============================== the defenders (when the ball is yours) ============================== */
+/* A defender with intent, not a metronome: he holds the line between
+   his man and the goal, creeps in when his man idles with the ball,
+   gives a step when his man drives, and goes up to contest a shot.
+   His reaction lag reads his INTELLIGENCE. */
+function updateGuarding(dt){
+  for (var i = 0; i < figures.length; i++){
+    var f = figures[i], u = f.userData;
+    if (u.team !== 'opp') continue;
+    if (f === primaryDef && possession === 'opp') continue;   // he has the ball: the offence brain drives him
+    var man = (u.role === 'primary') ? { x: player.x, z: player.z }
+                                     : (u.markFig ? { x: u.markFig.position.x, z: u.markFig.position.z }
+                                                  : { x: u.markPos.x, z: u.markPos.z });
+    var guardDist = 1.25;
+    if (u.role === 'primary'){
+      var hasBall = (ballState === 'held' || ballState === 'dribbling' || ballState === 'shooting');
+      if (hasBall){
+        guardDist = 1.15;
+        var toRim = { x: RIM.x - player.x, z: RIM.z - player.z };
+        var tl = Math.sqrt(toRim.x * toRim.x + toRim.z * toRim.z) || 1;
+        var iv = inputVector();
+        var drive = (iv.x * toRim.x / tl + iv.z * toRim.z / tl) * player.speed;
+        if (player.idleFor > 1.2) guardDist = 0.85;
+        else if (drive > 1.6) guardDist = 1.45;
+      } else if (possession === 'opp'){
+        guardDist = 1.6;   // his team has it; he keeps a loose eye on you
+      } else guardDist = 1.7;
+    }
+    var anchor = defenderAnchor(man, guardDist);
+    var tau = 0.20 - 0.011 * (u.attrs ? u.attrs.intelligence : 5);
+    moveFigureToward(f, anchor.x, anchor.z, u.role === 'primary' ? 3.05 : 2.9, Math.max(0.08, tau), dt);
+    faceToward(f, man.x, man.z);
+    if (u.contestT >= 0){
+      u.contestT += dt;
+      var ct = u.contestT / 0.5;
+      if (ct >= 1) u.contestT = -1;
+      else f.position.y += Math.sin(ct * Math.PI) * 0.35;
+    }
+  }
+  /* teammates: hold their spots, drift a little, watch the ball */
+  for (var j = 0; j < figures.length; j++){
+    var m = figures[j];
+    if (m.userData.role !== 'mate') continue;
+    m.position.x = m.userData.baseX + Math.sin(T * 0.4 + m.userData.phase) * 0.35;
+    m.position.z = m.userData.baseZ + Math.cos(T * 0.31 + m.userData.phase) * 0.3;
+    m.position.y = Math.abs(Math.sin(T * 2.1 + m.userData.phase)) * 0.03;
+    faceToward(m, player.x, player.z);
+    animateLimbs(m, 0, m.userData.phase, false);
+  }
+}
+
+/* ============================== the steal ============================== */
+/* While you dribble, your defender builds STEAL PRESSURE from his
+   steal attribute and his closeness (TUNING). At the threshold he
+   takes it — the ball is his, and his offence begins. Standing still
+   dribbling in his face is how it happens; keep moving or shoot. */
+function updateSteal(dt){
+  if (ballState !== 'dribbling' || !primaryDef || possession !== 'you'){ stealPressure = 0; return; }
+  var d = dist2D(primaryDef.position.x, primaryDef.position.z, player.x, player.z);
+  if (d >= TUNING.STEAL_RANGE){ stealPressure = Math.max(0, stealPressure - dt * 0.5); return; }
+  var close = 1 - d / TUNING.STEAL_RANGE;
+  stealPressure += dt * TUNING.STEAL_RATE * primaryDef.userData.attrs.steal * close;
+  if (stealPressure >= stealNeed){
+    stealPressure = 0;
+    possession = 'opp';
+    ballState = 'ophold';
+    oppBrain.state = 'approach';
+    oppBrain.t = 0;
+    oppBrain.spot = oppShotSpot();
+    setFeedback(game.opp + ' stole the ball! Get back on defence.');
+    updateActionButton();
+  }
+}
+
+/* ============================== his offence ============================== */
+/* When the ball is his (your make, his steal, his block recovery),
+   your opponent runs a simple offence: fetch it if it's loose, dribble
+   to his spot (smarter men pick better spots — TUNING), wait for an
+   open look (smarter men wait longer), and shoot. His make chance
+   rides his SHOOTING attribute and how close you guard him. */
+function oppShotSpot(){
+  var a = primaryDef.userData.attrs;
+  var d = TUNING.OPP_SPOT_BASE - TUNING.OPP_SPOT_PER_INT * a.intelligence;
+  var dx = primaryDef.position.x - RIM.x, dz = primaryDef.position.z - RIM.z;
+  var len = Math.sqrt(dx * dx + dz * dz);
+  if (len < 0.5){ dx = 0; dz = 1; len = 1; }
+  var p = { x: RIM.x + dx / len * d, z: RIM.z + dz / len * d };
+  p = clampInside(p.x, p.z, 0.6);
+  return pushOutOfTrunks(p, 0.3);
+}
+function startOppRecovery(){
+  possession = 'opp';
+  oppBrain.state = 'recover';
+  oppBrain.t = 0;
+  updateActionButton();
+}
+function updateOpponent(dt){
+  if (!primaryDef || possession !== 'opp') return;
+  var f = primaryDef, u = f.userData;
+  if (oppBrain.state === 'recover'){
+    /* fetch the loose ball where it lies */
+    var spd = moveFigureToward(f, ball.position.x, ball.position.z, TUNING.OPP_RECOVER_SPEED, 0.14, dt);
+    faceToward(f, ball.position.x, ball.position.z);
+    if (dist2D(f.position.x, f.position.z, ball.position.x, ball.position.z) < 0.7){
+      ballState = 'ophold';
+      oppBrain.state = 'approach';
+      oppBrain.t = 0;
+      oppBrain.spot = oppShotSpot();
+      setFeedback(game.opp + ' has the ball. Guard him — stay close when he shoots.');
+    }
+    return;
+  }
+  if (oppBrain.state === 'approach'){
+    if (!oppBrain.spot) oppBrain.spot = oppShotSpot();
+    var arrived = dist2D(f.position.x, f.position.z, oppBrain.spot.x, oppBrain.spot.z) < 0.35;
+    if (!arrived){
+      moveFigureToward(f, oppBrain.spot.x, oppBrain.spot.z, TUNING.OPP_SPEED, 0.14, dt);
+      faceToward(f, oppBrain.spot.x, oppBrain.spot.z);
+      if (ballState === 'ophold' && (u.vel.x * u.vel.x + u.vel.z * u.vel.z) > 0.09) ballState = 'oppdribble';
+    } else {
+      oppBrain.state = 'windup';
+      oppBrain.t = 0;
+    }
+    return;
+  }
+  if (oppBrain.state === 'windup'){
+    faceToward(f, RIM.x, RIM.z);
+    oppBrain.t += dt;
+    var yourDist = dist2D(player.x, player.z, f.position.x, f.position.z);
+    var maxWait = TUNING.OPP_WAIT_BASE + TUNING.OPP_WAIT_PER_INT * u.attrs.intelligence;
+    if (yourDist > 1.05 || oppBrain.t >= maxWait){
+      oppShoot();
+    }
+    return;
+  }
+}
+/* His ball handling: same dribble law as yours — once it starts it
+   keeps bouncing, stops and all, until the shot. */
+function updateOppBall(dt){
+  if (!ball || !primaryDef) return;
+  if (ballState !== 'ophold' && ballState !== 'oppdribble') return;
+  var f = primaryDef;
+  var hv = { x: Math.sin(f.rotation.y), z: Math.cos(f.rotation.y) };
+  var handX = f.position.x + hv.x * 0.45, handZ = f.position.z + hv.z * 0.45;
+  if (ballState === 'ophold'){
+    ball.position.set(handX, HAND_Y + 0.12, handZ);
+    return;
+  }
+  dribblePhase += dt * DRIBBLE_HZ;
+  var u = dribblePhase % 1;
+  var bx = f.position.x + hv.x * 0.52 - hv.z * 0.22;
+  var bz = f.position.z + hv.z * 0.52 + hv.x * 0.22;
+  var lift = Math.pow(Math.sin(u * Math.PI), 1.15);
+  ball.position.set(bx, BALL_R + (HAND_Y - BALL_R) * lift, bz);
+}
+function oppShoot(){
+  var f = primaryDef, a = f.userData.attrs;
+  var hv = { x: Math.sin(f.rotation.y), z: Math.cos(f.rotation.y) };
+  var p0 = { x: f.position.x + hv.x * 0.45, y: 1.35, z: f.position.z + hv.z * 0.45 };
+  /* his make chance: shooting attribute, distance, and YOUR contest */
+  var dShot = distToRim(f.position.x, f.position.z);
+  var pMake = TUNING.OPP_MAKE_BASE + TUNING.OPP_MAKE_PER_SHOOTING * a.shooting;
+  if (dShot > TUNING.OPP_FAR_DIST) pMake *= TUNING.OPP_MAKE_FAR;
+  var yourDist = dist2D(player.x, player.z, f.position.x, f.position.z);
+  if (yourDist <= 1.2) pMake *= TUNING.OPP_CONTEST_CLOSE;
+  else if (yourDist <= 2.2) pMake *= TUNING.OPP_CONTEST_MID;
+  pMake = Math.max(0.05, Math.min(0.9, pMake));
+  var make = Math.random() < pMake;
+  var tx, tz;
+  if (make){ tx = RIM.x + (Math.random() * 0.08 - 0.04); tz = RIM.z + (Math.random() * 0.08 - 0.04); }
+  else {
+    var ang = Math.random() * Math.PI * 2, off = 0.38 + Math.random() * 0.25;
+    tx = RIM.x + Math.cos(ang) * off; tz = RIM.z + Math.sin(ang) * off;
+  }
+  launchBall(p0, tx, tz);
+  shotCtx = { by: 'opp', blocked: false, made: false };
+  lastShot = { jumped: false, contest: 1, defenderDist: yourDist, spread: 0, fromDist: dShot, by: 'opp', pMake: pMake };
+  oppBrain.state = 'none';
+}
+
+/* ============================== the ball: your hands, your dribble ============================== */
+function handPos(){
+  var hv = headingVec(player.face);
+  return { x: player.x + hv.x * 0.45, z: player.z + hv.z * 0.45 };
+}
+function pickUpBall(){
+  if (ballState !== 'ready' && ballState !== 'dead') return;
+  ballState = 'held';           // a new possession starts in your hands
+  ballScored = false;
+  stealPressure = 0;
+  stealNeed = TUNING.STEAL_NEED_MIN + Math.random() * TUNING.STEAL_NEED_SPAN;
+  setFeedback('You have the ball. Walk to move — shoot when ready.');
+  updateActionButton();
+}
+function ballAction(){
+  if (phase !== 'game' || leaveOpen || !ball) return;
+  if (possession !== 'you') return;
+  if (ballState === 'ready' || ballState === 'dead') pickUpBall();
+  else if (ballState === 'held' || ballState === 'dribbling') shoot();
+  updateActionButton();
+}
+
+/* The dribble (his rule, 2026-10-18): once you start walking with the
+   ball, the dribble is LIVE — the ball keeps bouncing at the same
+   rhythm whether you are walking or standing still. It never settles
+   back into your hands mid-possession (that would be a double
+   dribble). Only the shot ends it. */
+function updateBallCarry(dt){
+  if (!ball) return;
+  if (ballState === 'held'){
+    if (player.speed > 0.25){ ballState = 'dribbling'; dribblePhase = 0.5; }
+    else {
+      var hp = handPos();
+      ball.position.set(hp.x, HAND_Y + 0.12, hp.z);
+      return;
+    }
+  }
+  if (ballState === 'dribbling'){
+    dribblePhase += dt * DRIBBLE_HZ;
+    var u = dribblePhase % 1;
+    var hv = headingVec(player.face);
+    var bx = player.x + hv.x * 0.52 - hv.z * 0.22;
+    var bz = player.z + hv.z * 0.52 + hv.x * 0.22;
+    var lift = Math.pow(Math.sin(u * Math.PI), 1.15);
+    ball.position.set(bx, BALL_R + (HAND_Y - BALL_R) * lift, bz);
+  }
+}
+
+/* ============================== shooting ============================== */
+/* One arc for everyone: from a release point to a target point near
+   the rim, with the flight time growing with distance. */
+function launchBall(p0, tx, tz){
   var dx = tx - p0.x, dz = tz - p0.z;
   var dist = Math.sqrt(dx * dx + dz * dz);
-  var T = 0.8 + dist * 0.05;
-  ballVel.x = dx / T;
-  ballVel.z = dz / T;
-  ballVel.y = (RIM.y - p0.y) / T + 0.5 * GRAVITY * T;
+  var Tfly = 0.8 + dist * 0.05;
+  ballVel.x = dx / Tfly;
+  ballVel.z = dz / Tfly;
+  ballVel.y = (RIM.y - p0.y) / Tfly + 0.5 * GRAVITY * Tfly;
   ball.position.set(p0.x, p0.y, p0.z);
   ballScored = false;
   flyT = 0;
   ballState = 'flying';
-  setFeedback('');
 }
 
+/* YOUR shot: close up, a set shot off the floor; from JUMP_DIST or
+   more, a jump shot — you leave the ground and release at the top.
+   At the release, his DEFENSE widens the spread (your SKILL tightens
+   it back a little), and his BLOCK gets its roll to swat it away. */
+function shoot(){
+  var dRim = distToRim(player.x, player.z);
+  var jump = dRim >= JUMP_DIST;
+  shotAnim = { t: 0, jump: jump, released: false, dur: jump ? 0.62 : 0.30, releaseT: jump ? 0.30 : 0.12 };
+  ballState = 'shooting';
+  addSkill(SKILL.GAIN_PER_SHOT);
+  setFeedback('');
+  if (primaryDef){
+    var d = dist2D(primaryDef.position.x, primaryDef.position.z, player.x, player.z);
+    if (d < 2.4 && primaryDef.userData.contestT < 0) primaryDef.userData.contestT = 0;
+  }
+  updateActionButton();
+}
+function releaseShot(){
+  var hp = handPos();
+  var p0 = { x: hp.x, y: 1.35 + player.jumpY, z: hp.z };
+  var defDist = 99, attrs = DEFAULT_ATTRS;
+  if (primaryDef){
+    defDist = dist2D(primaryDef.position.x, primaryDef.position.z, player.x, player.z);
+    attrs = primaryDef.userData.attrs || DEFAULT_ATTRS;
+  }
+  /* BLOCK: a close defender rolls his block attribute to end the shot
+     before it starts — the ball is swatted down and away, no score,
+     and he recovers it for his turn. */
+  var prox = Math.max(0, Math.min(1, (TUNING.CONTEST_RANGE - defDist) / TUNING.CONTEST_RANGE));
+  if (defDist < TUNING.BLOCK_RANGE){
+    var blockClose = 1 - defDist / TUNING.BLOCK_RANGE;
+    var pBlock = blockClose * (TUNING.BLOCK_BASE + TUNING.BLOCK_PER_POINT * attrs.block);
+    if (Math.random() < pBlock){
+      shotCtx = { by: 'you', blocked: true, made: false };
+      ballVel.x = (player.x - (primaryDef ? primaryDef.position.x : player.x)) * 1.4 + 0.6;
+      ballVel.z = (player.z - (primaryDef ? primaryDef.position.z : player.z)) * 1.4 + 1.2;
+      ballVel.y = -1.6;
+      ball.position.set(p0.x, Math.max(p0.y - 0.3, 0.6), p0.z);
+      ballScored = false;
+      flyT = 0;
+      ballState = 'flying';
+      lastShot = { jumped: !!(shotAnim && shotAnim.jump), blocked: true, contest: 0, defenderDist: defDist, spread: 0, fromDist: distToRim(player.x, player.z) };
+      setFeedback('Blocked! ' + game.opp + ' swatted that away.');
+      return;
+    }
+  }
+  /* CONTEST: spread = v1 base, widened by his defense through
+     proximity, tightened back by your skill. */
+  var contest = 1 + prox * (TUNING.CONTEST_BASE + TUNING.CONTEST_PER_DEFENSE * attrs.defense);
+  var sp = BASE_SPREAD * contest * skillSpreadFactor();
+  var tx = RIM.x + (Math.random() * 2 - 1) * sp;
+  var tz = RIM.z + (Math.random() * 2 - 1) * sp;
+  launchBall(p0, tx, tz);
+  shotCtx = { by: 'you', blocked: false, made: false };
+  lastShot = { jumped: !!(shotAnim && shotAnim.jump), blocked: false, contest: contest, defenderDist: defDist, spread: sp, fromDist: distToRim(player.x, player.z) };
+}
+function updateShotAnim(dt){
+  if (ballState !== 'shooting' || !shotAnim){ if (ballState !== 'shooting') player.jumpY = 0; return; }
+  shotAnim.t += dt;
+  if (shotAnim.jump){
+    var u = Math.min(1, shotAnim.t / shotAnim.dur);
+    player.jumpY = 0.48 * Math.sin(u * Math.PI);
+  }
+  if (!shotAnim.released && shotAnim.t >= shotAnim.releaseT){
+    shotAnim.released = true;
+    releaseShot();   // may set ballState 'flying' (or register the block)
+  }
+  if (shotAnim.t >= shotAnim.dur || ballState !== 'shooting'){
+    shotAnim = null;
+    player.jumpY = 0;
+  }
+}
+
+/* Ball flight + the score. A basket is DETECTED — the ball crossing
+   the rim plane downward inside the ring — never granted, for his
+   shots and yours alike. */
 function stepBall(dt){
   if (!ball) return;
-  if (ballState === 'held'){
-    ball.position.set(SHOOT_SPOT.x, 1.35, SHOOT_SPOT.z - 0.45);
-    return;
-  }
   if (ballState !== 'flying') return;
   flyT += dt;
   var prevY = ball.position.y;
@@ -444,20 +1204,32 @@ function stepBall(dt){
   ball.position.y += ballVel.y * dt;
   ball.position.z += ballVel.z * dt;
 
-  /* made basket: crossing the rim plane downward, inside the ring.
-     Counted + saved the moment it happens. */
+  /* trees are solid for the ball too: a shot that reaches the goal
+     tree (or clips a pine) bounces off the trunk instead of dropping
+     behind it, where nobody could ever fetch it */
+  var tl2 = trunkList();
+  for (var ti = 0; ti < tl2.length; ti++){
+    var tt2 = tl2[ti];
+    var tdx = ball.position.x - tt2.x, tdz = ball.position.z - tt2.z;
+    var td = Math.sqrt(tdx * tdx + tdz * tdz);
+    if (ball.position.y < 6 && td < tt2.r && td > 0.0001){
+      var nx = tdx / td, nz = tdz / td;
+      ball.position.x = tt2.x + nx * tt2.r;
+      ball.position.z = tt2.z + nz * tt2.r;
+      var vr = ballVel.x * nx + ballVel.z * nz;
+      if (vr < 0){ ballVel.x -= 1.4 * vr * nx; ballVel.z -= 1.4 * vr * nz; ballVel.x *= 0.7; ballVel.z *= 0.7; }
+    }
+  }
+
   if (!ballScored && ballVel.y < 0 && prevY > RIM.y && ball.position.y <= RIM.y){
     var ddx = ball.position.x - RIM.x, ddz = ball.position.z - RIM.z;
     if (Math.sqrt(ddx * ddx + ddz * ddz) < 0.27){
       ballScored = true;
-      progress.baskets++;
-      saveProgress();
-      updateReadout();
-      setFeedback('Basket! 🏀  That makes ' + progress.baskets + '.');
+      if (shotCtx) shotCtx.made = true;
+      onBasket(shotCtx ? shotCtx.by : 'you');
     }
   }
 
-  /* ground: bounce with damping, then rest where it fell */
   if (ball.position.y <= BALL_R){
     ball.position.y = BALL_R;
     if (ballVel.y < -1.4){
@@ -465,53 +1237,210 @@ function stepBall(dt){
       ballVel.x *= 0.7; ballVel.z *= 0.7;
     } else {
       ballVel.x = 0; ballVel.y = 0; ballVel.z = 0;
-      ballState = 'dead';
-      if (!ballScored) setFeedback('Off the mark. Get the ball and try again.');
-      updateActionButton();
+      settleDeadBall();
     }
   }
-  if (flyT > 6){ ballVel.x = 0; ballVel.y = 0; ballVel.z = 0; ballState = 'dead'; updateActionButton(); }
+  if (flyT > 6 && ballState === 'flying'){
+    ballVel.x = 0; ballVel.y = 0; ballVel.z = 0;
+    settleDeadBall();
+  }
+}
+/* A made basket, whoever shot it: the score moves, savings happen the
+   moment it drops, and a reached target ends the game (on the settle). */
+function onBasket(by){
+  if (by === 'opp'){
+    if (game){
+      game.oppScore++;
+      progress.game = { mode: game.mode, opp: game.opp, score: game.score, oppScore: game.oppScore, target: game.target };
+      if (game.oppScore >= game.target) pendingWin = 'opp';
+    }
+    saveProgress();
+    updateReadout();
+    if (pendingWin) setFeedback(game.opp + ' scores — that reaches ' + game.target + '.');
+    else setFeedback(game.opp + ' scores. ' + game.opp + ': ' + game.oppScore + ' — your ball when it settles.');
+    return;
+  }
+  progress.baskets++;
+  addSkill(SKILL.GAIN_PER_MAKE);
+  if (game){
+    game.score++;
+    progress.game = { mode: game.mode, opp: game.opp, score: game.score, oppScore: game.oppScore, target: game.target };
+    if (game.score >= game.target) pendingWin = 'you';
+  }
+  saveProgress();
+  updateReadout();
+  if (pendingWin) setFeedback('Basket! That reaches ' + game.target + '! 🏆');
+  else if (game) setFeedback('Basket! 🏀  You: ' + game.score + ' · ' + game.opp + ': ' + game.oppScore + ' — first to ' + game.target + '.');
+  else setFeedback('Basket! 🏀');
+}
+/* The ball has come to rest: keep it on the dirt, then hand the turn
+   over. Your make or a block of your shot -> he fetches it and his
+   offence begins. Anything else -> it's loose, and yours to take. */
+function settleDeadBall(){
+  ballState = 'dead';
+  var c = clampInside(ball.position.x, ball.position.z, 0.3);
+  ball.position.x = c.x; ball.position.z = c.z;
+  /* a dead ball must rest somewhere REACHABLE: never tucked against a
+     trunk, where the man fetching it could never close the last gap.
+     Push it clear of the trunk — toward the middle if outward would
+     leave the dirt — then settle it inside the court. */
+  var list = trunkList();
+  for (var i = 0; i < list.length; i++){
+    var t = list[i], dx = ball.position.x - t.x, dz = ball.position.z - t.z;
+    var d = Math.sqrt(dx * dx + dz * dz), min = t.r + 0.35;
+    if (d < min){
+      if (d < 0.001){ dx = 0; dz = 1; d = 1; }
+      var px = t.x + dx / d * min, pz = t.z + dz / d * min;
+      if (!insideCourt(px, pz, 0.3)){
+        var cx = -dx / d, cz = -dz / d;
+        px = t.x + cx * min; pz = t.z + cz * min;
+      }
+      ball.position.x = px; ball.position.z = pz;
+    }
+  }
+  var c2 = clampInside(ball.position.x, ball.position.z, 0.3);
+  ball.position.x = c2.x; ball.position.z = c2.z;
+  if (pendingWin){ var w = pendingWin; pendingWin = ''; showWin(w); shotCtx = null; return; }
+  var ctx = shotCtx; shotCtx = null;
+  if (!ballScored && ctx && ctx.by === 'you' && !ctx.blocked)
+    setFeedback('Off the mark. Get the ball and go again.');
+  if (ctx && ctx.by === 'you' && (ctx.made || ctx.blocked) && game){
+    startOppRecovery();
+  } else {
+    possession = 'you';
+  }
+  updateActionButton();
 }
 
-/* ============================== modes ============================== */
-function startMode(m){
-  mode = m;
-  progress.lastMode = m;
-  progress.sessions++;
+/* ============================== game flow ============================== */
+function saveGameState(){
+  progress.game = game ? { mode: game.mode, opp: game.opp, score: game.score, oppScore: game.oppScore, target: game.target } : null;
   saveProgress();
-  buildCourt();
-  var ms = el('mode-screen'); if (ms) ms.classList.remove('show');
-  setFeedback(m === '1on1' ? '1 on 1. The ball is at the spot — pick it up.'
-                           : '3 on 3. Your team is in red — the ball is at the spot.');
+}
+function startGame(m, oppName, opts){
+  opts = opts || {};
+  var plan = courtPlan(m, oppName);
+  mode = m;
+  pendingMode = '';
+  player.x = START_SPOT.x; player.z = START_SPOT.z;
+  player.face = Math.PI; player.speed = 0; player.idleFor = 0; player.jumpY = 0;
+  leaveArmed = true; leaveOpen = false; pendingWin = '';
+  stealPressure = 0;
+  game = { mode: m, opp: plan.opp.name, score: opts.score || 0, oppScore: opts.oppScore || 0, target: TARGETS[m] };
+  progress.lastMode = m;
+  progress.lastOpponent = plan.opp.name;
+  if (!opts.restored) progress.sessions++;
+  saveGameState();
+  buildCourt(plan);
+  phase = 'game';
+  showSheet('mode-screen', false); showSheet('pick-screen', false);
+  showSheet('leave-screen', false); showSheet('win-screen', false);
+  var rb = el('rosterbar');
+  if (rb){ rb.textContent = rosterText(plan, m); rb.style.display = 'block'; }
+  var joy = el('joy'); if (joy) joy.classList.add('on');
+  if (opts.restored)
+    setFeedback('Welcome back — your game against ' + game.opp + ' is still on. You: ' + game.score + ' · ' + game.opp + ': ' + game.oppScore + ', first to ' + game.target + '.');
+  else
+    setFeedback('First to ' + game.target + '. You are up against ' + game.opp + ' — the ball is at the spot.');
   updateReadout();
   updateActionButton();
 }
+function endGame(){
+  game = null;
+  saveGameState();
+  var rb = el('rosterbar'); if (rb) rb.style.display = 'none';
+  var joy = el('joy'); if (joy) joy.classList.remove('on');
+  updateReadout();
+}
+/* Programmatic start (also the test surface): an omitted opponent
+   means the rotation picks — matching the "Surprise me" button. */
+function startMode(m, oppName){
+  startGame(m, oppName || rotateCast().name, {});
+}
+function chooseMode(m){
+  pendingMode = m;
+  progress.lastMode = m;
+  saveProgress();
+  phase = 'pick';
+  showSheet('mode-screen', false);
+  showPickScreen();
+  updateActionButton();
+}
+function showPickScreen(){
+  showSheet('pick-screen', true);
+  for (var i = 0; i < CAST.length; i++){
+    var s = el('pick-last-' + i);
+    if (s) s.style.display = (progress.lastOpponent === CAST[i].name) ? 'block' : 'none';
+  }
+  setFeedback('Select your opponent.');
+}
+function pickOpponent(name){
+  progress.lastOpponent = name;
+  saveProgress();
+  startGame(pendingMode || progress.lastMode || '1on1', name, {});
+}
+function showWin(winner){
+  phase = 'win';
+  addSkill(SKILL.GAIN_PER_GAME);
+  var title = el('win-title'), w = el('win-text');
+  if (game){
+    if (winner === 'you'){
+      if (title) title.textContent = '🏆 You win!';
+      if (w) w.textContent = 'You reached ' + game.target + ' against ' + game.opp + '. Final: You ' + game.score + ' · ' + game.opp + ' ' + game.oppScore + '.';
+      setFeedback('Game over — you win! 🏆');
+    } else {
+      if (title) title.textContent = game.opp + ' wins';
+      if (w) w.textContent = game.opp + ' reached ' + game.target + ' first. Final: You ' + game.score + ' · ' + game.opp + ' ' + game.oppScore + '.';
+      setFeedback('Game over — ' + game.opp + ' takes this one.');
+    }
+  }
+  endGame();
+  showSheet('win-screen', true);
+  updateActionButton();
+}
 function showModeScreen(){
-  var ms = el('mode-screen'); if (ms) ms.classList.add('show');
+  phase = 'mode';
+  showSheet('pick-screen', false); showSheet('leave-screen', false); showSheet('win-screen', false);
+  showSheet('mode-screen', true);
   var l1 = el('last-1on1'), l3 = el('last-3on3');
   if (l1) l1.style.display = (progress.lastMode === '1on1') ? 'block' : 'none';
   if (l3) l3.style.display = (progress.lastMode === '3on3') ? 'block' : 'none';
   setFeedback('Choose how you want to play.');
   updateReadout();
+  updateActionButton();
 }
 
 /* ============================== main loop ============================== */
 function animate(){
   requestAnimationFrame(animate);
   var dt = Math.min(0.05, clock.getDelta());
-  var t = clock.elapsedTime;
-  /* the other players idle: a gentle bob, and the defence shifts a
-     little side to side. (Movement with intent — defence, passing —
-     belongs to the future game-rules rounds.) */
-  for (var i = 0; i < figures.length; i++){
-    var f = figures[i];
-    f.position.y = Math.abs(Math.sin(t * 2.1 + f.userData.phase)) * 0.035;
-    if (f.userData.opp){
-      f.position.x = f.userData.baseX + Math.sin(t * 0.55 + f.userData.phase) * 0.22;
-    }
+  T += dt;
+  if (phase === 'game' && !leaveOpen){
+    refreshKeyVec();
+    updatePlayer(dt);
+    updateGuarding(dt);
+    updateOpponent(dt);
+    updateSteal(dt);
   }
-  if (you) you.position.y = Math.abs(Math.sin(t * 2.1)) * 0.02;
+  updateShotAnim(dt);
+  updateBallCarry(dt);
+  updateOppBall(dt);
   stepBall(dt);
+  /* camera: behind and above you during a game, looking past you
+     toward the goal; the quiet establishing view otherwise. */
+  var wantPos, wantLook;
+  if (phase === 'game' || phase === 'win'){
+    wantPos = { x: player.x * 0.82, y: 5.1, z: player.z + 7.0 };
+    wantLook = { x: player.x * 0.9, y: 1.1, z: player.z - 2.4 };
+  } else {
+    wantPos = { x: 3.4, y: 3.8, z: 5.6 };
+    wantLook = { x: 0, y: 1.7, z: -3.2 };
+  }
+  var kp = 1 - Math.exp(-dt * 3.2), kl = 1 - Math.exp(-dt * 4.2);
+  camPos.x += (wantPos.x - camPos.x) * kp; camPos.y += (wantPos.y - camPos.y) * kp; camPos.z += (wantPos.z - camPos.z) * kp;
+  camLook.x += (wantLook.x - camLook.x) * kl; camLook.y += (wantLook.y - camLook.y) * kl; camLook.z += (wantLook.z - camLook.z) * kl;
+  camera.position.set(camPos.x, camPos.y, camPos.z);
+  camera.lookAt(camLook.x, camLook.y, camLook.z);
   renderer.render(scene, camera);
 }
 
@@ -526,6 +1455,28 @@ function onResize(){
   }catch(e){}
 }
 
+/* ============================== joystick ============================== */
+function wireJoystick(){
+  var joy = el('joy'), knob = el('joy-knob');
+  if (!joy || !knob) return;
+  var active = null;
+  function setKnob(dx, dy){ knob.style.transform = 'translate(calc(-50% + ' + dx + 'px), calc(-50% + ' + dy + 'px))'; }
+  function handle(ev){
+    var r = joy.getBoundingClientRect();
+    var cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    var dx = ev.clientX - cx, dy = ev.clientY - cy;
+    var m = Math.sqrt(dx * dx + dy * dy), max = 42;
+    if (m > max){ dx *= max / m; dy *= max / m; }
+    joyVec.x = dx / max; joyVec.z = dy / max;
+    setKnob(dx, dy);
+  }
+  joy.addEventListener('pointerdown', function(ev){ active = ev.pointerId; try{ joy.setPointerCapture(active); }catch(e){} handle(ev); ev.preventDefault(); });
+  joy.addEventListener('pointermove', function(ev){ if (ev.pointerId === active) handle(ev); });
+  function end(ev){ if (ev.pointerId === active){ active = null; joyVec.x = 0; joyVec.z = 0; setKnob(0, 0); } }
+  joy.addEventListener('pointerup', end);
+  joy.addEventListener('pointercancel', end);
+}
+
 /* ============================== init ============================== */
 function init(){
   if (typeof THREE === 'undefined') throw new Error('The 3D engine (three.min.js) did not load.');
@@ -535,8 +1486,8 @@ function init(){
   scene.fog = new THREE.Fog(0x87b5d9, 55, 140);
 
   camera = new THREE.PerspectiveCamera(55, 1, 0.1, 300);
-  camera.position.set(3.4, 3.8, 5.6);
-  camera.lookAt(0, 1.7, -3.2);
+  camera.position.set(camPos.x, camPos.y, camPos.z);
+  camera.lookAt(camLook.x, camLook.y, camLook.z);
 
   var hemi = new THREE.HemisphereLight(0xffffff, 0x3a5f2a, 0.95);
   scene.add(hemi);
@@ -550,19 +1501,45 @@ function init(){
 
   clock = new THREE.Clock();
 
-  el('mode-1on1').addEventListener('click', function(){ startMode('1on1'); });
-  el('mode-3on3').addEventListener('click', function(){ startMode('3on3'); });
-  el('change-mode-btn').addEventListener('click', function(){ showModeScreen(); });
+  el('mode-1on1').addEventListener('click', function(){ chooseMode('1on1'); });
+  el('mode-3on3').addEventListener('click', function(){ chooseMode('3on3'); });
+  el('pick-opp-0').addEventListener('click', function(){ pickOpponent(CAST[0].name); });
+  el('pick-opp-1').addEventListener('click', function(){ pickOpponent(CAST[1].name); });
+  el('pick-opp-2').addEventListener('click', function(){ pickOpponent(CAST[2].name); });
+  el('pick-any').addEventListener('click', function(){ pickOpponent(rotateCast().name); });
+  el('leave-yes').addEventListener('click', function(){ answerLeave(true); });
+  el('leave-no').addEventListener('click', function(){ answerLeave(false); });
+  el('win-again').addEventListener('click', function(){
+    showSheet('win-screen', false);
+    startGame(mode || '1on1', progress.lastOpponent || rotateCast().name, {});
+  });
+  el('win-mode').addEventListener('click', function(){ showSheet('win-screen', false); showModeScreen(); });
+  el('change-mode-btn').addEventListener('click', function(){
+    if (game) endGame();
+    leaveOpen = false;
+    showModeScreen();
+  });
   el('act-btn').addEventListener('click', function(){ ballAction(); });
   document.addEventListener('keydown', function(ev){
-    if ((ev.code === 'Space' || ev.code === 'Enter') && mode && !ev.repeat){
-      var ms = el('mode-screen');
-      if (ms && !ms.classList.contains('show')){ ev.preventDefault(); ballAction(); }
+    keys[ev.code] = true;
+    if ((ev.code === 'Space' || ev.code === 'Enter') && phase === 'game' && !leaveOpen && !ev.repeat){
+      ev.preventDefault(); ballAction();
     }
+    if (ev.code.indexOf('Arrow') === 0) ev.preventDefault();
   });
+  document.addEventListener('keyup', function(ev){ keys[ev.code] = false; });
   window.addEventListener('resize', onResize);
+  wireJoystick();
 
-  showModeScreen();
+  updateSkillBar();
+  /* open: a saved game in progress comes straight back; otherwise
+     the mode choice, over the quiet court. */
+  if (progress.game){
+    startGame(progress.game.mode, progress.game.opp, { restored: true, score: progress.game.score, oppScore: progress.game.oppScore });
+  } else {
+    buildCourt(null);
+    showModeScreen();
+  }
   updateActionButton();
   onResize();
   started = true;
@@ -572,19 +1549,49 @@ function init(){
 try{ init(); }
 catch(e){ showError(e); }
 
-/* test/debug surface (also handy later): state snapshots, no DOM */
+/* test/debug surface (also handy later): state snapshots + drivers */
 window.BBALL_PAGE = {
-  version: '1.0.0',
+  version: '2.0.0',
   started: function(){ return started; },
   mode: function(){ return mode; },
+  phase: function(){ return phase; },
   baskets: function(){ return progress.baskets; },
   sessions: function(){ return progress.sessions; },
+  skill: function(){ return { xp: progress.skillXp, level: skillLevel() }; },
   lastMode: function(){ return progress.lastMode; },
+  lastOpponent: function(){ return progress.lastOpponent; },
+  opponent: function(){ return game ? game.opp : ''; },
   figures: function(){ return figures.length + (you ? 1 : 0); },
   ballState: function(){ return ballState; },
+  possession: function(){ return possession; },
+  game: function(){ return game ? { mode: game.mode, opp: game.opp, score: game.score, oppScore: game.oppScore, target: game.target } : null; },
   startMode: startMode,
+  chooseMode: chooseMode,
+  pickOpponent: pickOpponent,
   action: ballAction,
-  showModeScreen: showModeScreen
+  showModeScreen: showModeScreen,
+  debug: {
+    setMove: function(x, z){ joyVec.x = x; joyVec.z = z; },
+    setKeys: function(map){ keys = {}; for (var k in map) keys[k] = map[k]; },
+    setPlayerPos: function(x, z){ player.x = x; player.z = z; },
+    playerPos: function(){ return { x: player.x, z: player.z }; },
+    defenderPos: function(){ return primaryDef ? { x: primaryDef.position.x, z: primaryDef.position.z } : null; },
+    setDefenderPos: function(x, z){ if (primaryDef){ primaryDef.position.x = x; primaryDef.position.z = z; } },
+    ballPos: function(){ return ball ? { x: ball.position.x, y: ball.position.y, z: ball.position.z } : null; },
+    dribble: function(){ return ballState === 'dribbling'; },
+    lastShot: function(){ return lastShot; },
+    leaveShown: function(){ return leaveOpen; },
+    leaveCount: function(){ return leavePromptCount; },
+    answerLeave: answerLeave,
+    oppState: function(){ return oppBrain.state; },
+    figuresDetail: function(){
+      return figures.map(function(f){
+        return { role: f.userData.role, team: f.userData.team, name: f.userData.name,
+                 attrs: f.userData.attrs, x: f.position.x, z: f.position.z,
+                 scale: f.scale ? f.scale.x : 1 };
+      });
+    }
+  }
 };
 })();
 </script>
