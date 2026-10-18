@@ -46,7 +46,7 @@ import overpass as overpass_mod  # noqa: E402
 
 # App version shown in the Help -> About dialog (bump with each release).
 # Joshua 2026-10-11: version number must be prominent in About.
-APP_VERSION = "1.9.5"
+APP_VERSION = "1.9.6"
 # Display name and icon-theme name for the About dialog.
 APP_NAME = "Adamsville Map Editor"
 APP_ICON = "adamsville-map-editor-native"
@@ -2375,8 +2375,11 @@ class MapEditorApp:
             # 1.9.5 (ready-in-source 2026-10-17): a suite handoff
             # from the Building Editor may be waiting — open at the
             # street it names. See _consume_open_handoff.
+            # 1.9.6: remember whether it applied a jump, so the
+            # post-load re-fit doesn't override the jump's view.
+            self._handoff_applied = False
             try:
-                self._consume_open_handoff()
+                self._handoff_applied = bool(self._consume_open_handoff())
             except Exception:
                 pass
         except FileNotFoundError:
@@ -2400,6 +2403,10 @@ class MapEditorApp:
         jump happens once, not on every launch. A file that does
         not parse is renamed .bad so it cannot loop; a stale one
         is simply removed.
+
+        1.9.6: returns True when a jump was actually applied, so
+        the post-load whole-world re-fit (see _build_index_idle)
+        knows to leave this view alone.
         """
         import json as _json
         from datetime import datetime, timezone
@@ -2408,7 +2415,7 @@ class MapEditorApp:
         path = (_Path.home() / ".local" / "share" / "adamsville-suite"
                 / "open-in-map-editor.json")
         if not path.exists():
-            return
+            return False
         try:
             doc = _json.loads(path.read_text())
             zone_id = str(doc["zone"])
@@ -2426,14 +2433,14 @@ class MapEditorApp:
                 path.rename(path.with_suffix(".json.bad"))
             except Exception:
                 pass
-            return
+            return False
         # Consumed (or stale): the file never applies twice.
         try:
             path.unlink()
         except Exception:
             pass
         if not fresh:
-            return
+            return False
         # Resolve the zone: handoff zones are game zone ids
         # ("eastatlanta"); ZONES carry display names ("East
         # Atlanta") — match on the squashed name.
@@ -2445,7 +2452,7 @@ class MapEditorApp:
                 idx = j
                 break
         if idx is None:
-            return
+            return False
         self.zoom_to_zone(idx, ZONES[idx]["name"])
         # Centre on the handed-off point, at street level.
         self.canvas.cam_x = x
@@ -2476,6 +2483,7 @@ class MapEditorApp:
         self.set_status(
             f"Opened at {street or 'the marked spot'} in "
             f"{ZONES[idx]['name']} (sent from the Building Editor).")
+        return True
 
     def _surface_download_warning(self):
         """
@@ -2504,6 +2512,16 @@ class MapEditorApp:
         self.spatial_index.build(self.roads_data)
         total = len(self.spatial_index.roads)
         self.set_status(f"Loaded {total:,} roads.")
+        # 1.9.6: re-fit NOW that the data is in and the window has
+        # reached its final size. The startup fit (in
+        # _initial_setup) runs BEFORE the download, against
+        # whatever allocation the canvas had at that idle moment;
+        # this re-fit is what guarantees the opening view a user
+        # actually lands on frames the whole seven-zone world.
+        # A Building Editor street jump (1.9.5) sets the view
+        # itself — never override it with the overview.
+        if not getattr(self, "_handoff_applied", False):
+            self.canvas.fit_view()
         self.canvas.queue_draw()
         return False
 
