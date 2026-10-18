@@ -19,12 +19,18 @@
      copied out as text, and the game in progress is saved on the
      device so leaving and returning picks it up where it stopped.
 
-     WHAT IS DELIBERATELY NOT HERE YET: the computer opponent. Joshua
-     played chess in prison and kept score sheets of the people he
-     played; those sheets will be digitised and used to design the
-     NPC chess player algorithm. Until then the opponent seat is an
-     empty chair with a named module boundary (see ChessOpponent in
-     the code below) — no fake brain, no random moves.
+     v2 (2026-10-18): THE OPPONENT SEAT IS FILLED — by the men on
+     Joshua's prison score sheets. Each computer opponent is a
+     re-creation of one real player, generated mechanically from his
+     recorded games (see CHESS-NPC-DESIGN.md): his opening book is the
+     moves he actually played, and out of book he plays to his
+     measured habits (how often he took a capture or gave a check
+     when he could). The profiles are DATA — chess-npcs.json, built
+     by tools/generate-chess-npcs.js from the digitised sheets — the
+     page loads them at open and bakes none of them in, so a new
+     sheet grows the men without touching this page. Pass and play
+     remains, and if the profiles cannot be loaded the page is
+     exactly the v1 game. Pick an opponent from the Opponent button.
 
      Lightweight by law: one self-contained page, no libraries, no
      images — the pieces are chess glyphs drawn as text. The board,
@@ -180,6 +186,7 @@
   <button class="barbtn" id="btn-undo" type="button">Undo</button>
   <button class="barbtn" id="btn-flip" type="button">Flip board</button>
   <button class="barbtn" id="btn-copy" type="button">Copy sheet</button>
+  <button class="barbtn" id="btn-opp" type="button">Opponent: Pass &amp; Play</button>
   <a class="barbtn" id="back-link" href="../">← Hub</a>
 </div>
 
@@ -846,32 +853,305 @@ var ChessEngine = (function () {
 
 <script>
 /* =====================================================================
-   THE OPPONENT SEAT — ChessOpponent (the NPC boundary)
+   THE OPPONENT SEAT — ChessOpponent (the score-sheet NPCs)
    ---------------------------------------------------------------------
-   Joshua's plan (2026-10-18): the computer chess player will be
-   designed LATER, from score sheets he kept of people he played in
-   prison — real players' habits become the algorithm. Until those
-   sheets are digitised and the design is done, this seat is EMPTY
-   on purpose:
+   Joshua's design (2026-10-18, CHESS-NPC-DESIGN.md): the computer
+   opponents are re-creations of the real men on his prison score
+   sheets — one NPC per player, GENERATED from that player's recorded
+   games by tools/generate-chess-npcs.js into chess-npcs.json. This
+   module holds no player data of its own: the page loads the
+   profiles file and hands it over (setProfiles), the picker seats
+   one profile (setActive), and chooseMove plays as that man:
 
-     - There is NO move-generating brain here. Not even random moves:
-       a fake opponent would play chess nobody designed and teach the
-       score sheet bad data.
-     - The seat's shape is fixed NOW so the brain drops in without
-       touching the rules or the page: an opponent is anything with
-       chooseMove(engine, state) returning { from, to, promotion }
-       in the same words a human tap produces, which the page then
-       plays through ChessEngine.applyMove — the one door every move
-       uses, so an NPC move lands on the score sheet exactly like a
-       human one.
+     1. BOOK — if the current position is one this player reached in
+        a recorded game, play the move he played (his most-played
+        move when several games reached it). His games, his moves.
+     2. TENDENCIES — out of book, legal moves are scored by his
+        measured habits: a capture earns CAPTURE_WEIGHT × his
+        capture rate, a check earns CHECK_WEIGHT × his check rate
+        (the rates come from his profile, each computed over the
+        positions where the chance was there). The pick is a
+        weighted random draw over the scores, so the habit shapes
+        play without repeating one fixed game.
+     3. THE FLOOR — not a style, a sanity net: a picked move that
+        would hang a piece worth HANG_MIN_VALUE or more FOR NOTHING
+        (taken by an equal-or-cheaper piece, with no recapture)
+        while another legal move hangs nothing is re-picked among
+        the non-hanging moves. It only ever vetoes; it never picks.
+        No deeper search exists anywhere in here, on purpose — these
+        are club players re-created, not an engine.
+     4. FALLBACK — anything unexpected (no profile, an exception):
+        a random legal move. The seat never freezes a game.
 
-   In v1 the seat is filled by a second human: pass and play.
+   The boundary the v1 page fixed still holds: chooseMove(engine,
+   state) returns { from, to, promotion } with squares named the
+   way ChessEngine.applyMove names them ('e2', 'e4'; promotion a
+   letter like 'Q' or null), and the page plays the answer through
+   applyMove — the one door every move uses — so an NPC move lands
+   on the score sheet exactly like a human one.
    ===================================================================== */
-var ChessOpponent = {
-  name: 'Pass & Play',
-  built: false,               // <- the score-sheet algorithm flips this
-  chooseMove: function (engine, state) { return null; }   // no brain yet
-};
+/* === CHESS NPC BEGIN === */
+var ChessOpponent = (function () {
+  'use strict';
+
+  /* ---- tuning constants (the whole dial board — see header) ---- */
+  var CAPTURE_WEIGHT = 2;    // score a capture earns, × the player's capture rate
+  var CHECK_WEIGHT = 2;      // score a checking move earns, × the player's check rate
+  var HANG_MIN_VALUE = 3;    // the floor stirs only for pieces worth this much
+                             // (a minor piece) or more: pawns hang freely, as
+                             // they do in real club games
+  var PIECE_VALUE = { P: 1, N: 3, B: 3, R: 5, Q: 9, K: 0 };
+
+  var profilesById = {};     // id -> profile, from chess-npcs.json
+  var profileList = [];      // the same profiles, in file order
+  var active = null;         // the profile in the seat, or null
+
+  /* The generator emits each book as a sorted list of
+     { key, moves: [{m, n}] }; the seat reshapes it once into a plain
+     lookup: bookMap[colour][positionKey] -> [{m, n}, ...]. */
+  function buildBookMap(profile) {
+    var map = { w: {}, b: {} };
+    ['w', 'b'].forEach(function (colour) {
+      (profile.book[colour] || []).forEach(function (entry) {
+        map[colour][entry.key] = entry.moves;
+      });
+    });
+    return map;
+  }
+  function setProfiles(data) {
+    profilesById = {};
+    profileList = [];
+    ((data && data.npcs) || []).forEach(function (p) {
+      p._bookMap = buildBookMap(p);
+      profilesById[p.id] = p;
+      profileList.push(p);
+    });
+    if (active && !profilesById[active.id]) active = null;
+  }
+  function listProfiles() { return profileList.slice(); }
+  function getProfile(id) { return profilesById[id] || null; }
+  function setActive(id) {
+    active = id ? (profilesById[id] || null) : null;
+    return active;
+  }
+  function activeProfile() { return active; }
+
+  /* A move in the words the page's one door speaks. */
+  function asResult(engine, m) {
+    return { from: engine.sqName(m.from), to: engine.sqName(m.to),
+             promotion: m.promotion ? m.promotion.toUpperCase() : null };
+  }
+  /* A move's book code — the generator's spelling: 'e2e4', 'e7e8q'. */
+  function codeOf(engine, m) {
+    return engine.sqName(m.from) + engine.sqName(m.to) +
+           (m.promotion ? m.promotion.toLowerCase() : '');
+  }
+
+  /* Step 1 — the book. Returns a result, or null when this position
+     is not in the player's recorded games (for his colour). */
+  function bookMove(engine, state, legal) {
+    if (!active || !active._bookMap) return null;
+    var entry = active._bookMap[state.turn][engine.positionKey(state)];
+    if (!entry || !entry.length) return null;
+    var best = 0, i;
+    for (i = 0; i < entry.length; i++) if (entry[i].n > best) best = entry[i].n;
+    var tops = entry.filter(function (e) { return e.n === best; });
+    var pick = tops[Math.floor(Math.random() * tops.length)];
+    for (i = 0; i < legal.length; i++) {
+      if (codeOf(engine, legal[i]) === pick.m) return asResult(engine, legal[i]);
+    }
+    return null;   // the recorded move isn't legal here — cannot happen
+                   // from a validated book; fall through rather than force
+  }
+
+  /* Does this move give check? Answered on a COPY of the board with
+     the move's own deltas applied (piece lifts, lands, captures —
+     including the en-passant square — promotion, the castling
+     rook), then the engine's attack geometry mirrored square for
+     square: is the enemy king attacked by the mover?
+     Why not probe through applyMove, the one door? Because
+     applyMove computes the full game status (mate, stalemate,
+     draws) — measured at ~55 ms a call — and the tendency layer
+     asks this question about EVERY legal move: in an open
+     position that made one NPC move take ~3 seconds (measured
+     2026-10-18). The copy-board answer costs microseconds.
+     This probe ONLY weights moves the engine already ruled legal;
+     it can never make an illegal move playable — the pick still
+     goes through applyMove like every move in the game. The
+     harness proves the probe against the applyMove truth,
+     move by move over sampled positions (check f). */
+  function fileOf(sq) { return sq & 7; }
+  function rankOf(sq) { return 8 - (sq >> 3); }              // 1..8
+  function pieceAtC(bd, f, r) {
+    return (f < 0 || f > 7 || r < 1 || r > 8) ? undefined : bd[(8 - r) * 8 + f];
+  }
+  /* Mirror of the engine's isAttacked(bd, sq, by): pawns sit one
+     rank behind the square they attack, knights and the king one
+     jump away, sliders walk each ray to the first piece met. */
+  function attackedOn(bd, sq, by) {
+    var f = fileOf(sq), r = rankOf(sq), i, df, dr, p;
+    var byWhite = by === 'w';
+    var pr = byWhite ? r - 1 : r + 1;
+    for (i = 0; i < 2; i++) {
+      p = pieceAtC(bd, f + (i === 0 ? -1 : 1), pr);
+      if (p === (byWhite ? 'P' : 'p')) return true;
+    }
+    var ND = [[1,2],[2,1],[-1,2],[-2,1],[1,-2],[2,-1],[-1,-2],[-2,-1]];
+    for (i = 0; i < 8; i++) {
+      p = pieceAtC(bd, f + ND[i][0], r + ND[i][1]);
+      if (p === (byWhite ? 'N' : 'n')) return true;
+    }
+    for (df = -1; df <= 1; df++) for (dr = -1; dr <= 1; dr++) {
+      if (!df && !dr) continue;
+      p = pieceAtC(bd, f + df, r + dr);
+      if (p === (byWhite ? 'K' : 'k')) return true;
+    }
+    var DIRS = [
+      { d: [[1,1],[1,-1],[-1,1],[-1,-1]], hits: 'BQ' },
+      { d: [[1,0],[-1,0],[0,1],[0,-1]], hits: 'RQ' }
+    ];
+    for (var g = 0; g < 2; g++) {
+      for (i = 0; i < 4; i++) {
+        var nf = f, nr = r;
+        while (true) {
+          nf += DIRS[g].d[i][0]; nr += DIRS[g].d[i][1];
+          p = pieceAtC(bd, nf, nr);
+          if (p === undefined) break;
+          if (p !== null) {
+            var isBy = byWhite ? (p === p.toUpperCase()) : (p === p.toLowerCase());
+            if (isBy && DIRS[g].hits.indexOf(p.toUpperCase()) >= 0) return true;
+            break;
+          }
+        }
+      }
+    }
+    return false;
+  }
+  function moveGivesCheck(engine, state, m) {
+    var bd = state.board.slice();
+    bd[m.from] = null;
+    if (m.capturedSq !== m.to) bd[m.capturedSq] = null;    // en passant
+    bd[m.to] = m.promotion
+      ? (state.turn === 'w' ? m.promotion.toUpperCase() : m.promotion.toLowerCase())
+      : m.piece;
+    if (m.castle) {                                        // the rook hops too
+      var home = rankOf(m.from);
+      var rf = (m.castle === 'K' || m.castle === 'k') ? [7, 5] : [0, 3];
+      bd[(8 - home) * 8 + rf[1]] = bd[(8 - home) * 8 + rf[0]];
+      bd[(8 - home) * 8 + rf[0]] = null;
+    }
+    var kingChar = state.turn === 'w' ? 'k' : 'K';
+    var ksq = -1;
+    for (var i = 0; i < 64; i++) if (bd[i] === kingChar) { ksq = i; break; }
+    if (ksq < 0) return false;
+    return attackedOn(bd, ksq, state.turn);
+  }
+
+  /* Step 3 — the floor. True when playing m leaves the moved piece
+     to be taken for nothing: some enemy reply captures it with a
+     piece of equal or lesser value, and the mover has no recapture
+     of that taker. Only the piece just moved is examined — one ply,
+     deliberately shallow (see header). */
+  function moveHangsPiece(engine, state, m) {
+    var standing = m.promotion || m.piece;      // what will stand on m.to
+    var myValue = PIECE_VALUE[standing.toUpperCase()] || 0;
+    if (myValue < HANG_MIN_VALUE) return false;
+    var applied = engine.applyMove(state, engine.sqName(m.from),
+      engine.sqName(m.to), m.promotion ? m.promotion.toUpperCase() : undefined);
+    if (!applied) return false;
+    var hangs = false;
+    var replies = engine.legalMoves(state, state.turn);
+    for (var i = 0; i < replies.length && !hangs; i++) {
+      var reply = replies[i];
+      if (reply.capturedSq !== m.to) continue;          // doesn't take it
+      var takerValue = PIECE_VALUE[reply.piece.toUpperCase()] || 0;
+      if (takerValue > myValue) continue;              // taking loses more
+      var taken = engine.applyMove(state, engine.sqName(reply.from),
+        engine.sqName(reply.to),
+        reply.promotion ? reply.promotion.toUpperCase() : undefined);
+      if (!taken) continue;
+      var recapture = engine.legalMoves(state, state.turn)
+        .some(function (rm) { return rm.capturedSq === reply.to; });
+      engine.undoMove(state);
+      if (!recapture) hangs = true;
+    }
+    engine.undoMove(state);
+    return hangs;
+  }
+
+  function weightedPick(scored) {
+    var total = 0, i;
+    for (i = 0; i < scored.length; i++) total += scored[i].score;
+    var r = Math.random() * total;
+    for (i = 0; i < scored.length; i++) {
+      r -= scored[i].score;
+      if (r <= 0) return scored[i].move;
+    }
+    return scored[scored.length - 1].move;
+  }
+
+  function chooseMove(engine, state) {
+    var legal = engine.legalMoves(state, state.turn);
+    if (!legal.length) return null;
+
+    /* 1 — book */
+    var booked = bookMove(engine, state, legal);
+    if (booked) return booked;
+
+    /* 2 — tendencies, scored from THIS player's measured rates.
+       A term whose weight × rate is zero is skipped entirely (it
+       could add nothing), which also spares the check probing for
+       players who never had a checking habit to measure. */
+    var capRate = active && active.tendencies ? (active.tendencies.capture.rate || 0) : 0;
+    var chkRate = active && active.tendencies ? (active.tendencies.check.rate || 0) : 0;
+    var capTerm = CAPTURE_WEIGHT * capRate;
+    var chkTerm = CHECK_WEIGHT * chkRate;
+    var scored = legal.map(function (m) {
+      var score = 1;
+      if (m.captured && capTerm > 0) score += capTerm;
+      if (chkTerm > 0 && moveGivesCheck(engine, state, m)) score += chkTerm;
+      return { move: m, score: score };
+    });
+    var pick = weightedPick(scored);
+
+    /* 3 — the floor: re-pick among moves that hang nothing, but
+       only when such a move exists; if everything hangs, the
+       original pick stands (the floor vetoes, it never strands).
+       The re-pick draws candidates in weighted order and tests
+       ONLY the drawn move, stopping at the first that hangs
+       nothing: drawing without replacement and keeping the first
+       survivor is the same weighted draw over the safe moves as
+       testing them all up front — but a hang test costs a full
+       reply scan, and testing all ~40 legal moves made an NPC
+       "think" for seconds in open positions (measured 2026-10-18:
+       2,963 ms for one move). Now the common case costs ONE test:
+       the first re-draw usually hangs nothing. */
+    if (moveHangsPiece(engine, state, pick)) {
+      var pool = scored.filter(function (s) { return s.move !== pick; });
+      while (pool.length) {
+        var cand = weightedPick(pool);
+        if (!moveHangsPiece(engine, state, cand)) { pick = cand; break; }
+        pool = pool.filter(function (s) { return s.move !== cand; });
+      }
+    }
+    return asResult(engine, pick);
+  }
+
+  return {
+    name: 'Score-sheet NPCs',
+    built: true,
+    setProfiles: setProfiles,
+    listProfiles: listProfiles,
+    getProfile: getProfile,
+    setActive: setActive,
+    activeProfile: activeProfile,
+    chooseMove: chooseMove,
+    /* test hook (like the engine's perft): the harness compares
+       this probe against the applyMove truth, move by move */
+    probeGivesCheck: moveGivesCheck
+  };
+})();
+/* === CHESS NPC END === */
 
 /* =====================================================================
    THE PAGE — board, sheet, saving. Talks to the rules only through
@@ -899,6 +1179,22 @@ var ChessOpponent = {
   var startedAt = null;     // ISO time the current game began
   var status = null;        // last ChessEngine.gameStatus result
 
+  /* ---- the opponent seat (v2) ----
+     npcSeat is the saved choice: { id, name, colour } or null for
+     pass and play. The NPC always plays Black in this version of
+     the picker; the human plays White. npcProfile is the loaded
+     profile object the seat points at — it only exists once
+     chess-npcs.json has arrived (loadProfiles); until then, or if
+     the file cannot be fetched, the game is pass and play, exactly
+     as v1 behaved. NPC_MOVE_DELAY_MS is the pause before his reply
+     lands — long enough to follow your own move, short enough to
+     keep the game breathing. */
+  var NPC_MOVE_DELAY_MS = 550;
+  var npcSeat = null;
+  var npcProfile = null;
+  var npcTimer = null;      // pending NPC reply (a setTimeout id) or null
+  var profilesLoaded = false;
+
   var boardEl = document.getElementById('board');
   var sheetEl = document.getElementById('sheet');
   var statusEl = document.getElementById('statustext');
@@ -908,6 +1204,8 @@ var ChessOpponent = {
   var veilEl = document.getElementById('modal-veil');
   var modalEl = document.getElementById('modal');
   var toastEl = document.getElementById('toast');
+  var seatEl = document.getElementById('seat-note');
+  var oppBtn = document.getElementById('btn-opp');
 
   /* ---- failure handling: plain words on screen, a note in storage,
      never a silent black page (the game's failure philosophy). ---- */
@@ -963,7 +1261,10 @@ var ChessOpponent = {
                  p: u.move.promotion ? u.move.promotion.toUpperCase() : null };
       }),
       sans: game.sans.slice(),
-      result: status ? status.result : '*'
+      result: status ? status.result : '*',
+      // the seat this game is being played against (v2); saves from
+      // v1 have no such field and simply open as pass and play.
+      opponent: npcSeat ? { id: npcSeat.id, name: npcSeat.name, colour: npcSeat.colour } : null
     };
   }
   function persist() {
@@ -1003,7 +1304,79 @@ var ChessOpponent = {
     var last = rec.moves[rec.moves.length - 1];
     lastMove = last ? { from: ChessEngine.parseSq(last.f), to: ChessEngine.parseSq(last.t) } : null;
     status = ChessEngine.gameStatus(game);
+    // the seat the saved game was played against comes back with it;
+    // the profile itself is bound when the profiles file arrives
+    // (bindNpcSeat), because a seat without its sheets is just a name.
+    npcSeat = (rec.opponent && rec.opponent.id && rec.opponent.name)
+      ? { id: rec.opponent.id, name: rec.opponent.name,
+          colour: rec.opponent.colour === 'w' ? 'w' : 'b' }
+      : null;
     return true;
+  }
+
+  /* ---- the opponent seat: display, binding, and his turns ---- */
+  function renderSeat() {
+    oppBtn.textContent = 'Opponent: ' + (npcSeat ? npcSeat.name : 'Pass & Play');
+    if (npcSeat && npcProfile) {
+      seatEl.textContent = 'Opponent: ' + npcSeat.name + ' — re-created from ' +
+        'Joshua\u2019s prison score sheets (' + npcProfile.gamesRecorded +
+        (npcProfile.gamesRecorded === 1 ? ' game' : ' games') + ' recorded)';
+    } else if (npcSeat) {
+      seatEl.textContent = 'Opponent: ' + npcSeat.name + ' — his score sheets ' +
+        'are not loaded, so this seat is playing pass & play';
+    } else {
+      seatEl.textContent = 'Opponent seat: Pass & Play — both sides moved by hand';
+    }
+  }
+  function bindNpcSeat() {
+    if (!npcSeat) { npcProfile = null; ChessOpponent.setActive(null); renderSeat(); return; }
+    npcProfile = ChessOpponent.getProfile(npcSeat.id);
+    if (npcProfile) {
+      ChessOpponent.setActive(npcSeat.id);
+    } else {
+      // the saved seat names a man whose sheets are not in the loaded
+      // file — say so and return the seat to pass and play rather
+      // than pretending he is sitting there.
+      npcSeat = null;
+      toast('That opponent is not in the loaded score sheets — pass & play');
+    }
+    renderSeat();
+  }
+  function loadProfiles() {
+    if (typeof fetch !== 'function') { renderSeat(); return; }
+    fetch('chess-npcs.json', { cache: 'no-cache' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (data && data.npcs) {
+          ChessOpponent.setProfiles(data);
+          profilesLoaded = true;
+          bindNpcSeat();
+          maybeNpcMove();   // a resumed game may be waiting on him
+        }
+        renderSeat();
+      })
+      .catch(function () { renderSeat(); /* no sheets, no NPCs — v1 game */ });
+  }
+  /* His turn, when it is his turn: a short pause, then his move goes
+     through playMove — the same door as a human's tap. */
+  function maybeNpcMove() {
+    if (!npcSeat || !npcProfile || !game) return;
+    if (status && status.over) return;
+    if (game.turn !== npcSeat.colour) return;
+    if (npcTimer) return;
+    npcTimer = setTimeout(function () {
+      npcTimer = null;
+      try {
+        var mv = ChessOpponent.chooseMove(ChessEngine, game);
+        if (mv) {
+          playMove(ChessEngine.parseSq(mv.from), ChessEngine.parseSq(mv.to),
+                   mv.promotion || null);
+        }
+      } catch (e) { showError('the opponent\u2019s move', e); }
+    }, NPC_MOVE_DELAY_MS);
+  }
+  function cancelNpcMove() {
+    if (npcTimer) { clearTimeout(npcTimer); npcTimer = null; }
   }
 
   /* ---- the board ---- */
@@ -1127,6 +1500,7 @@ var ChessOpponent = {
       persist();
       render();
       if (status.over) toast(status.text);
+      maybeNpcMove();   // if that was the human's move, the seat answers
     } catch (e) { showError('playing a move', e); }
   }
 
@@ -1135,6 +1509,11 @@ var ChessOpponent = {
     if (!cell) return;
     var sq = parseInt(cell.getAttribute('data-sq'), 10);
     if (status && status.over) return;            // a finished game is read-only
+    if (npcTimer) return;                         // he is mid-thought
+    if (npcSeat && npcProfile && game.turn === npcSeat.colour) return;
+    // against an NPC, his pieces are his: on his turn the board is
+    // for looking only. (Before his sheets load, npcProfile is null
+    // and the seat is pass and play, as renderSeat says.)
     var piece = game.board[sq];
     if (selected >= 0 && targets.some(function (m) { return m.to === sq; })) {
       tryMove(selected, sq);
@@ -1183,6 +1562,86 @@ var ChessOpponent = {
     document.getElementById('m-no').addEventListener('click', function () { closeModal(); done(false); });
   }
 
+  /* ---- Select your opponent (v2) — the basketball mini-game's
+     ceremony, brought to chess: a named cast, one tap seats a man.
+     The rows are real DOM buttons (built node by node, each with its
+     own listener), and every NPC row carries how many of his games
+     the sheets hold — a man with two recorded games is a thinner
+     re-creation than a man with fourteen, and the picker says so
+     rather than dressing them alike. ---- */
+  function askOpponent() {
+    modalEl.innerHTML = '';
+    var h = document.createElement('h3');
+    h.textContent = 'Select your opponent';
+    modalEl.appendChild(h);
+    var p = document.createElement('p');
+    p.textContent = profilesLoaded
+      ? 'Each man below is re-created from his own games on Joshua\u2019s ' +
+        'prison score sheets — his recorded openings, his habits. He plays Black.'
+      : 'The score-sheet opponents could not be loaded, so only pass & ' +
+        'play is on offer — the game itself is unaffected.';
+    modalEl.appendChild(p);
+    var row = document.createElement('div');
+    row.className = 'row';
+    row.style.flexDirection = 'column';
+    row.style.alignItems = 'stretch';
+    function seatButton(label, id) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'barbtn';
+      b.textContent = label;
+      if (id && npcSeat && npcSeat.id === id) b.style.background = '#e8722a';
+      if (!id && !npcSeat) b.style.background = '#e8722a';
+      b.addEventListener('click', function () { chooseOpponent(id); });
+      row.appendChild(b);
+    }
+    seatButton('Pass & Play — two humans, one board', null);
+    var cast = ChessOpponent.listProfiles().slice().sort(function (a, b) {
+      if (b.gamesRecorded !== a.gamesRecorded) return b.gamesRecorded - a.gamesRecorded;
+      return a.displayName < b.displayName ? -1 : 1;
+    });
+    cast.forEach(function (prof) {
+      seatButton(prof.displayName + ' — ' + prof.gamesRecorded +
+        (prof.gamesRecorded === 1 ? ' game' : ' games') + ' recorded', prof.id);
+    });
+    var cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'barbtn';
+    cancel.textContent = 'Cancel';
+    cancel.addEventListener('click', closeModal);
+    row.appendChild(cancel);
+    modalEl.appendChild(row);
+    veilEl.className = 'open';
+  }
+  function chooseOpponent(id) {
+    closeModal();
+    function apply() {
+      if (id) {
+        var prof = ChessOpponent.getProfile(id);
+        if (!prof) { toast('That opponent is not in the loaded score sheets'); return; }
+        npcSeat = { id: prof.id, name: prof.displayName, colour: 'b' };
+        npcProfile = prof;
+        ChessOpponent.setActive(id);
+      } else {
+        npcSeat = null;
+        npcProfile = null;
+        ChessOpponent.setActive(null);
+      }
+      startNewGame();         // archives the old sheet, sets a fresh board
+      renderSeat();
+      persist();              // the fresh record carries the new seat
+      toast(id ? 'Your opponent: ' + npcSeat.name : 'Pass & play — both sides by hand');
+    }
+    // changing seats mid-game asks first, like New game does; on an
+    // untouched board the new seat is taken at once.
+    if (game && game.sans.length) {
+      askNewGame(function (yes) { if (yes) apply(); });
+    } else {
+      apply();
+    }
+  }
+  oppBtn.addEventListener('click', askOpponent);
+
   /* ---- top-bar buttons ---- */
   document.getElementById('btn-new').addEventListener('click', function () {
     if (game && game.sans.length) {
@@ -1193,6 +1652,7 @@ var ChessOpponent = {
   });
   function startNewGame() {
     try {
+      cancelNpcMove();   // no reply from the old game may land in the new one
       var data = readSave();
       if (game && game.sans.length) {
         var rec = currentRecord();
@@ -1211,7 +1671,15 @@ var ChessOpponent = {
   document.getElementById('btn-undo').addEventListener('click', function () {
     try {
       if (!game.history.length) { toast('Nothing to take back yet'); return; }
+      cancelNpcMove();
       ChessEngine.undoMove(game);
+      // Against an NPC, one tap takes back a full ROUND — his reply
+      // and your move — so the board comes back to your turn. If the
+      // first take-back already leaves it your turn (he had not
+      // replied yet), that single step is the whole round.
+      if (npcSeat && game.history.length && game.turn === npcSeat.colour) {
+        ChessEngine.undoMove(game);
+      }
       selected = -1; targets = [];
       var last = game.history[game.history.length - 1];
       lastMove = last ? { from: last.move.from, to: last.move.to } : null;
@@ -1236,7 +1704,9 @@ var ChessOpponent = {
     var lines = [];
     lines.push('Surviving Adamsville — Chess score sheet');
     lines.push('Date: ' + (startedAt || new Date().toISOString()).slice(0, 10));
-    lines.push('White: Player 1    Black: Player 2 (pass and play)');
+    lines.push(npcSeat
+      ? 'White: You    Black: ' + npcSeat.name + ' (re-created from Joshua\u2019s score sheets)'
+      : 'White: Player 1    Black: Player 2 (pass and play)');
     lines.push('Result: ' + (status && status.over ? status.result + ' (' + status.reason + ')' : 'game in progress'));
     lines.push('');
     var movetext = '';
@@ -1278,7 +1748,9 @@ var ChessOpponent = {
       persist();
     }
     renderHistoryNote(data);
+    renderSeat();
     render();
+    loadProfiles();   // the cast arrives as data; the board never waits on it
     if (resumed) toast('Your game was picked up where it stopped');
   }
   window.addEventListener('resize', render);
