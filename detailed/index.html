@@ -310,6 +310,28 @@
   #pause-overlay h3 { margin:0 0 14px 0; color:#ffd75e; font-size:30px; letter-spacing:4px; }
   #pause-resume { padding:12px 26px; font-size:17px; border-radius:10px; border:none;
     background:#ffd75e; color:#111; font-weight:bold; }
+  #pause-move { padding:12px 20px; font-size:17px; border-radius:10px; border:2px solid #ffd75e;
+    background:transparent; color:#ffd75e; font-weight:bold; margin-left:10px; }
+  /* MOVABLE HUD (Joshua 2026-10-17, hud_move.js): in move mode every
+     gameplay control wears a dashed outline so the player can see
+     what can be dragged; the bar rides top-centre above everything
+     (Done / Reset for the active face); the tag names the control
+     being dragged. All behaviour lives in hud_move.js — CSS only. */
+  body.hud-move-mode [data-hud-drag] { outline:2px dashed #ffd75e !important;
+    outline-offset:2px; cursor:grab; }
+  #hud-move-bar { position:fixed; top:10px; left:50%; transform:translateX(-50%);
+    z-index:200; display:none; align-items:center; gap:10px; max-width:94vw;
+    background:rgba(10,14,22,.94); border:2px solid #ffd75e; border-radius:12px;
+    padding:8px 12px; color:#fff; font-size:14px; }
+  #hud-move-bar.show { display:flex; }
+  #hud-move-bar button { padding:9px 16px; font-size:15px; border-radius:9px;
+    border:none; font-weight:bold; white-space:nowrap; }
+  #hud-move-done { background:#ffd75e; color:#111; }
+  #hud-move-reset { background:#333a4e; color:#fff; }
+  #hud-move-tag { position:fixed; z-index:201; display:none; pointer-events:none;
+    background:rgba(10,14,22,.92); color:#ffd75e; border:1px solid #ffd75e;
+    border-radius:8px; padding:3px 10px; font-size:13px; font-weight:bold; }
+  #hud-move-tag.show { display:block; }
   /* v1.0: was top-right under the gear — overlapped the ENTER HOUSE action
      button on Joshua's phone. Now top-left, clear of the right-side buttons. */
   #help { position:fixed; inset:0; z-index:40; display:none; align-items:center; justify-content:center;
@@ -631,7 +653,12 @@
      simulation and the music; the overlay's Resume (or Escape, or the
      button again) unfreezes both. -->
 <button id="pause-btn" aria-label="Pause game">&#9208;</button>
-<div id="pause-overlay"><div class="card"><h3>PAUSED</h3><button id="pause-resume">&#9654; Resume</button></div></div>
+<div id="pause-overlay"><div class="card"><h3>PAUSED</h3><button id="pause-resume">&#9654; Resume</button><button id="pause-move">&#9998; Move controls</button></div></div>
+<!-- MOVABLE HUD (Joshua 2026-10-17): the move-mode bar (shown by
+     hud_move.js while arranging controls) + the floating name tag
+     that follows the control being dragged. -->
+<div id="hud-move-bar"><span>&#9998; Drag any outlined control to its spot.</span><button id="hud-move-reset">Reset this screen</button><button id="hud-move-done">&#10003; Done</button></div>
+<div id="hud-move-tag"></div>
 <div id="radio"><button id="radio-prev">&#9664;</button><span id="radio-name"></span><button id="radio-next">&#9654;</button></div>
 <!-- ===== SETTINGS PANEL (opens from the gear button) =====
      Top: Settings rows (How to play, Music, View report, Record, Gameplay).
@@ -655,6 +682,10 @@
   <!-- STEP2 (Joshua 2026-10-16): zone password unlocking lives under
        Advanced Properties (panel + wiring below). -->
   <button class="row" id="set-advprops">Advanced Properties &#9654;</button>
+  <!-- MOVABLE HUD (Joshua 2026-10-17): arrange the gameplay
+       controls for this screen (hud_move.js). Entering move mode
+       auto-pauses; Done restores play. -->
+  <button class="row" id="set-movecontrols">Move controls &#9998;</button>
   <h3>Administrator</h3>
   <button class="row" id="adm-map">Re-download Map <span class="adm-tag" id="adm-map-tag"></span></button>
   <button class="row" id="adm-ui">Re-download UI <span class="adm-tag" id="adm-ui-tag"></span></button>
@@ -12730,7 +12761,12 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <!-- v1.56: UI LAYOUT (Joshua 2026-10-11) — applies ui_layout.json
      (positions/visibility edited visually in the UI Layout Editor).
      Defensive: no-op if the file is missing. -->
-<script data-dsrc="ui_layout_apply.js" data-dkey=""></script> <!-- MENU LAYOUT (Joshua 2026-10-11) — applies menu_layout.json (menus edited visually in the UI Menu Editor). Defensive: no-op if the file is missing. --> <script data-dsrc="menu_layout_apply.js" data-dkey=""></script> <script data-dsrc="water_render.js" data-dkey=""></script>
+<script data-dsrc="ui_layout_apply.js" data-dkey=""></script>
+<!-- MOVABLE HUD (Joshua 2026-10-17): the player's own HUD position
+     overrides (per-face, localStorage) on top of the designed
+     layout. Loaded after ui_layout_apply.js; its onLayoutApplied
+     hook is called at the end of every layout pass. -->
+<script data-dsrc="hud_move.js" data-dkey=""></script> <!-- MENU LAYOUT (Joshua 2026-10-11) — applies menu_layout.json (menus edited visually in the UI Menu Editor). Defensive: no-op if the file is missing. --> <script data-dsrc="menu_layout_apply.js" data-dkey=""></script> <script data-dsrc="water_render.js" data-dkey=""></script>
 <script data-dsrc="traffic_assist.js" data-dkey="trafficassist"></script>
 <script data-dsrc="residential_detail.js" data-dkey=""></script>
 <!-- RETIRED 2026-10-16 (Joshua): building_spawner.js + road_sync.js no longer
