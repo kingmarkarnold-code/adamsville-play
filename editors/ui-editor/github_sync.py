@@ -349,11 +349,58 @@ def fetch_file(repo, path, **kwargs):
     resp, err = _api_request(url, tok, conn=conn)
     if resp is None:
         return None, err
+    # v1.9.0: the Contents API returns NO inline content for files
+    # larger than 1 MB — the response is metadata only ("encoding":
+    # "none", "content": ""). The game's index.html is over that
+    # limit, and the Menus tab now downloads it (to derive the game's
+    # current menus), so the empty body must not decode to b"".
+    # Ported from the Building Editor's field-proven fix: when the
+    # metadata says the file has bytes but carries no content, fetch
+    # the same bytes from the Git Blobs API by the blob SHA the
+    # metadata gives us — content-addressed (never stale), same
+    # host, same connection, one extra request, only when needed.
+    content = resp.get("content") or ""
+    if not content and resp.get("size", 0) and resp.get("sha"):
+        blob_url = (f"https://api.github.com/repos/{repo}"
+                    f"/git/blobs/{resp['sha']}")
+        blob, berr = _api_request(blob_url, tok, conn=conn)
+        if blob is None:
+            return None, (f"Fetch failed: {path} is over the "
+                          f"Contents API's 1 MB inline limit, and "
+                          f"the follow-up blob download failed: "
+                          f"{berr}")
+        content = blob.get("content") or ""
+        if not content:
+            # The Blobs API itself caps at 10 MB; an empty blob body
+            # for a non-empty file means we hit that ceiling — say
+            # so plainly instead of returning empty bytes upstream.
+            return None, (f"Fetch failed: {path} is too large for "
+                          f"the GitHub API to return (over 10 MB).")
     try:
         # Contents API returns the file base64-encoded (with newlines).
-        return base64.b64decode(resp["content"]), None
+        return base64.b64decode(content), None
     except Exception as e:
         return None, f"Fetch failed: undecodable content ({e})"
+
+
+def fetch_file_meta(repo, path, **kwargs):
+    """
+    Read one file's Contents API METADATA (no content download):
+    returns (meta_dict, None) — meta carries "sha" (the git blob
+    SHA) and "size" — or (None, error_message). v1.9.0: the suite
+    shared cache (shared_cache.CachedFetcher) probes freshness with
+    this, per editors/SHARED-CACHE.md. Same connection rules as
+    fetch_file (conn= rides the caller's leg; otherwise a fresh
+    one-shot connection). Mirrors the Building Editor's function of
+    the same name — one suite, one shape.
+    """
+    url = f"https://api.github.com/repos/{repo}/contents/{path}"
+    tok = kwargs.get("token") or get_token()
+    conn = kwargs.get("conn")
+    resp, err = _api_request(url, tok, conn=conn)
+    if resp is None:
+        return None, err
+    return resp, None
 
 
 def delete_file(repo, path, message, **kwargs):
