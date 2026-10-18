@@ -73,7 +73,9 @@
       default: // unknown anchor — treat as top-left, don't crash
         left = ox; top = oy; break;
     }
-    return { left: left, top: top, width: sw, height: sh };
+    // scale rides along: applyElement needs it for the small-screen
+    // button floor below (v2026-10-18 satellite/nav fix).
+    return { left: left, top: top, width: sw, height: sh, scale: s };
   }
 
   /**
@@ -95,37 +97,155 @@
    * Skips anything missing; never throws.
    */
   function applyElement(def, vw, vh, mobile) {
-    if (!def || !def.id) return;
+    if (!def || !def.id) return null;
     var el = document.getElementById(def.id);
-    if (!el) return; // element not in this build — skip safely
+    if (!el) return null; // element not in this build — skip safely
 
     // Mobile-only elements: hide on desktop viewports, leave alone
     // on mobile (the game controls their show/hide from here).
     if (def.mobile_only && !mobile) {
       el.style.display = "none";
-      return;
+      return null;
     }
 
     // Visibility: hide what the layout marks invisible. Never
     // force-show — game code may hide elements dynamically.
     if (def.visible === false) {
       el.style.display = "none";
-      return;
+      return null;
+    }
+
+    // BUTTON SIZE FLOOR (2026-10-18 satellite/nav fix): remember the
+    // element's natural size — its size under the game's own CSS,
+    // before this applier ever sets an inline width/height. Measured
+    // once and cached on the element, because later passes (resize)
+    // would otherwise measure our own shrunk box and call it natural.
+    // Only buttons need this, and only while they are rendered (a
+    // display:none element measures 0 and must not poison the cache).
+    var isButton = (def.type === "button") ||
+      (el.tagName && el.tagName.toUpperCase() === "BUTTON");
+    if (isButton && el.dataset && !el.dataset.saNatW) {
+      try {
+        if (el.offsetWidth > 0 && el.offsetHeight > 0) {
+          el.dataset.saNatW = String(el.offsetWidth);
+          el.dataset.saNatH = String(el.offsetHeight);
+        }
+      } catch (e) { /* dataset unavailable — floor just won't apply */ }
     }
 
     // Position + size via the anchor math.
     var pos = anchorToLeftTop(def, vw, vh);
-    if (!pos) return;
+    if (!pos) return null;
     // Only touch elements that are already absolutely positioned by
     // the game's CSS; don't change anyone's position scheme.
     var cs = null;
     try { cs = window.getComputedStyle(el); } catch (e) { /* ignore */ }
-    if (cs && cs.position !== "absolute" && cs.position !== "fixed") return;
+    if (cs && cs.position !== "absolute" && cs.position !== "fixed") return null;
     el.style.left = Math.round(pos.left) + "px";
     el.style.top = Math.round(pos.top) + "px";
+    var w = pos.width;
+    var h = pos.height;
+    // On a viewport smaller than the canonical 1280x800 frame the
+    // uniform scale shrinks a button's SLOT (42px -> 13px on a phone)
+    // while its padding and label text do NOT shrink — the rendered
+    // box stays ~36px wide on a ~15px pitch and neighbouring buttons
+    // (Satellite View / Navigate on the full map) physically overlap,
+    // so taps land on the wrong button or miss onto the map beneath.
+    // Floor: a button never renders smaller than its natural size,
+    // and never smaller than a 44px tappable box. Full-size viewports
+    // (scale >= 1) are untouched — the designed layout applies as-is.
+    if (isButton && pos.scale < 1) {
+      var natW = 0, natH = 0;
+      try {
+        natW = parseInt((el.dataset && el.dataset.saNatW) || "0", 10) || 0;
+        natH = parseInt((el.dataset && el.dataset.saNatH) || "0", 10) || 0;
+      } catch (e) { /* ignore — absolute floor below still applies */ }
+      if (natW > 0) w = Math.max(w, natW);
+      if (natH > 0) h = Math.max(h, natH);
+      w = Math.max(w, 44);
+      h = Math.max(h, 44);
+    }
     // Only resize when the layout gives sane dimensions.
-    if (pos.width > 0) el.style.width = Math.round(pos.width) + "px";
-    if (pos.height > 0) el.style.height = Math.round(pos.height) + "px";
+    if (w > 0) el.style.width = Math.round(w) + "px";
+    if (h > 0) el.style.height = Math.round(h) + "px";
+    // The de-overlap pass in applyUILayout works on placed buttons.
+    return isButton ? el : null;
+  }
+
+  /**
+   * BUTTON DE-OVERLAP PASS (2026-10-18 satellite/nav fix).
+   * After every element is placed, any two buttons IN THE SAME PANEL
+   * whose boxes intersect are stacked: the lower one moves down below
+   * the upper one (6px gap), clamped inside the viewport; if there
+   * is no room below, it moves above instead. Only buttons, only
+   * when they actually intersect — a layout that already fits (e.g.
+   * desktop at scale 1) comes out byte-identical.
+   *
+   * Boxes are read from the INLINE STYLES applyElement just wrote,
+   * never from getBoundingClientRect: this pass runs at startup,
+   * when panels like the full map are still display:none and their
+   * buttons render as 0x0 rects — a rect-based pass would see
+   * nothing and skip exactly the buttons it exists to protect.
+   * Grouping is by parent element so buttons from different panels
+   * (which are never on screen together) never push each other.
+   */
+  function deoverlapButtons(buttons, vw, vh) {
+    if (!buttons || !buttons.length) return;
+    // Group placed buttons by their parent panel.
+    var groups = [];
+    var byParent = {};
+    for (var i = 0; i < buttons.length; i++) {
+      var key = buttons[i].parentElement || buttons[i];
+      var gk = groups.indexOf(key);
+      if (gk < 0) { groups.push(key); byParent[groups.length - 1] = []; gk = groups.length - 1; }
+      byParent[gk].push(buttons[i]);
+    }
+    for (var gi = 0; gi < groups.length; gi++) {
+      var items = [];
+      var list = byParent[gi];
+      for (var j = 0; j < list.length; j++) {
+        var el = list[j];
+        try {
+          if (el.style.display === "none") continue;
+          var left = parseFloat(el.style.left);
+          var top = parseFloat(el.style.top);
+          var width = parseFloat(el.style.width);
+          var height = parseFloat(el.style.height);
+          // A button whose box we cannot read was not positioned by
+          // this applier — leave it exactly as authored.
+          if (!isFinite(left) || !isFinite(top) || !isFinite(width) || !isFinite(height)) continue;
+          if (width <= 0 || height <= 0) continue;
+          items.push({ el: el, left: left, top: top, width: width, height: height });
+        } catch (e) { /* one bad box must not break the pass */ }
+      }
+      // Top-to-bottom, left-to-right: deterministic stacking order.
+      items.sort(function (a, b) { return (a.top - b.top) || (a.left - b.left); });
+      // A few sweeps settle chains (A pushes B, B now covers C...).
+      for (var pass = 0; pass < 4; pass++) {
+        var moved = false;
+        for (var a = 0; a < items.length; a++) {
+          for (var b = a + 1; b < items.length; b++) {
+            var A = items[a], B = items[b];
+            var hitX = B.left < A.left + A.width && A.left < B.left + B.width;
+            var hitY = B.top < A.top + A.height && A.top < B.top + B.height;
+            if (!hitX || !hitY) continue;
+            // Move B below A; if that leaves the viewport, above A.
+            var newTop = A.top + A.height + 6;
+            if (newTop + B.height > vh - 4) {
+              var above = A.top - B.height - 6;
+              if (above >= 4) newTop = above;
+              else newTop = Math.max(4, vh - B.height - 4);
+            }
+            if (Math.round(newTop) !== Math.round(B.top)) {
+              B.el.style.top = Math.round(newTop) + "px";
+              B.top = newTop;
+              moved = true;
+            }
+          }
+        }
+        if (!moved) break;
+      }
+    }
   }
 
   /**
@@ -190,11 +310,18 @@
         // list means a missing/corrupt layout — no-op as before.
         var list = pickLayoutElements(doc, mobile);
         if (!list) return;
+        var placedButtons = [];
         list.forEach(function (def) {
           try {
-            applyElement(def, vw, vh, mobile);
+            var placed = applyElement(def, vw, vh, mobile);
+            if (placed) placedButtons.push(placed);
           } catch (e) { /* one bad element must not break the rest */ }
         });
+        // Buttons that ended up on top of each other get stacked so
+        // every one of them stays tappable (satellite/nav fix). Runs
+        // before the HudMove hook below, so the player's own dragged
+        // positions still win over this pass.
+        try { deoverlapButtons(placedButtons, vw, vh); } catch (e) { /* never break the layout */ }
         // MOVABLE HUD (Joshua 2026-10-17): the designed layout is
         // on — now the player's own per-face position overrides
         // (hud_move.js) re-assert on top of it. This hook is the

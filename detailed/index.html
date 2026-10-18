@@ -10606,7 +10606,7 @@ fmCanvas.addEventListener('touchstart', function(e){
   if (ts.length===1 && !fmT.pinch){
     var t=ts[0];
     fmT.pan={id:t.identifier, lx:t.clientX, ly:t.clientY};
-    fmT.tapOk=true; fmT.tapX=t.clientX; fmT.tapY=t.clientY; fmT.tapT=Date.now();
+    fmT.tapOk=true; fmT.tapX=t.clientX; fmT.tapY=t.clientY; fmT.tapT=(e.timeStamp||Date.now());
   } else if (ts.length>=2){
     // v0.6: pinch-to-zoom + TWO-FINGER ROTATE (twist to spin the map)
     var a=ts[0], b=ts[1];
@@ -10656,8 +10656,15 @@ fmCanvas.addEventListener('touchmove', function(e){
   }
   e.preventDefault();
 }, {passive:false});
-function fmTouchEnd(){
-  var wasTap=fmT.tapOk && (Date.now()-fmT.tapT)<350;
+/* 2026-10-18 SAT/NAV FIX: tap duration is measured with the EVENTS'
+   own timeStamps (finger down/up), never Date.now() at handler time.
+   On a slow device a rendered frame can sit between the touchstart
+   and touchend handlers for longer than the tap window, so handler-
+   time measurement silently ate real taps (the map did nothing when
+   tapped in pick mode). Event timeStamps are stamped at dispatch
+   and are immune to handler backlog. Same fix in fmMouseUp. */
+function fmTouchEnd(e){
+  var wasTap=fmT.tapOk && (((e&&e.timeStamp)||Date.now())-fmT.tapT)<350;
   var tx=fmT.tapX, ty=fmT.tapY;
   fmT.pinch=null; fmT.pan=null; fmT.tapOk=false;
   fmT.lastTouch=Date.now();
@@ -10681,7 +10688,7 @@ fmCanvas.addEventListener('mousedown', function(e){
   if (e.button!==0) return;  // left button only
   fmT.mDown=true; fmT.mDragged=false;
   fmT.mPan={lx:e.clientX, ly:e.clientY};
-  fmT.tapOk=true; fmT.tapX=e.clientX; fmT.tapY=e.clientY; fmT.tapT=Date.now();
+  fmT.tapOk=true; fmT.tapX=e.clientX; fmT.tapY=e.clientY; fmT.tapT=(e.timeStamp||Date.now());
   fmCanvas.style.cursor='grabbing';
   e.preventDefault();
 });
@@ -10696,7 +10703,7 @@ fmCanvas.addEventListener('mousemove', function(e){
   drawFullMap();
 });
 function fmMouseUp(e){
-  var wasTap=fmT.mDown && fmT.tapOk && (Date.now()-fmT.tapT)<500;
+  var wasTap=fmT.mDown && fmT.tapOk && (((e&&e.timeStamp)||Date.now())-fmT.tapT)<500;
   var cx=e?e.clientX:0, cy=e?e.clientY:0;
   fmT.mDown=false; fmT.mPan=null;
   fmCanvas.style.cursor='grab';

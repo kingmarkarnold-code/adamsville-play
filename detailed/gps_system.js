@@ -70,6 +70,13 @@ var bootTimer=setInterval(function(){
 var G=null;   // routing graph, built once
 var route=null;        // {pts:[{x,z}...], destX, destZ, destName, dist}
 var pickMode=false;    // full-map tap sets destination instead of closing
+// Floating HUD-arrow state (forward declaration, v1.63): these vars MUST be
+// declared here with the rest of the state, BEFORE the module-load calls at
+// the bottom of this file. They used to be declared further down — after
+// buildHudArrow() had already run at load — and the later `=null`
+// assignments silently wiped the stored element handle, so the guidance
+// arrow never appeared (see the note at the old declaration site).
+var hudArrowEl=null, hudArrowIcon=null, hudArrowDist=null, hudArrowVisible=false;
 var routeLine=null;    // THREE.Line (3D route ribbon)
 var beacon=null;       // destination beacon mesh
 var arrow=null;        // direction arrow above player
@@ -500,7 +507,7 @@ window.GPS={
   setPickMode:setPickMode,
   drawMinimapRoute:drawMinimapRoute,
   drawFullMapRoute:drawFullMapRoute,
-  version:'1.62'
+  version:'1.63'
 };
 // per-frame ticks on the central registry (expert #14); interval fallback
 // when Sim isn't available yet — independent of the graph boot poll.
@@ -567,8 +574,15 @@ function initGPS(){
    toward the destination relative to the camera view; shows destination name
    + distance. Tap to clear. Auto-hides on arrival (route cleared) and while
    the full map or satellite view is open.
+   ---------------------------------------------------------------------------
+   v1.63 NAV FIX (2026-10-18): the state vars for this arrow used to be
+   declared on the line below this block — AFTER the buildHudArrow() call
+   at module load. The build stored the element in hudArrowEl, then this
+   declaration's `=null` assignments executed and wiped the handle, so
+   hudArrowTick() returned at its first line on every tick and the arrow
+   NEVER appeared (the element sat in the DOM at display:none). The
+   declarations now live with the other state at the top of this file.
    --------------------------------------------------------------------------- */
-var hudArrowEl=null, hudArrowIcon=null, hudArrowDist=null, hudArrowVisible=false;
 function buildHudArrow(){
   if (hudArrowEl) return;
   if (typeof document==='undefined' || !document.body) return;
@@ -599,6 +613,10 @@ function buildHudArrow(){
   hudArrowDist=el.querySelector('#gps-hud-arrow-dist');
 }
 function hudArrowTick(){
+  // Self-heal (v1.63): if the load-time build could not run (e.g. the
+  // module executed before <body> existed), build the element lazily on
+  // the first tick instead of staying silent forever.
+  if (!hudArrowEl){ try{ buildHudArrow(); }catch(e){} }
   if (!hudArrowEl) return;
   var show=!!route;
   // hide while the full map or satellite view is open (route shown there)
