@@ -7,7 +7,8 @@
   "editors/map-editor/zone_edits.json",
   "editors/map-editor/custom_zones.json",
   "reports/*",
-  "world-fixes/*"
+  "world-fixes/*",
+  "drawings/*"
  ],
  "declarations": [
   {
@@ -149,6 +150,11 @@
    "class": "tooling",
    "pattern": "world-fixes/.gitkeep",
    "reason": "Folder marker. world-fixes/ is the world-fix sync folder (detailed/worldfix_sync.js); batch files are created by devices at runtime, and git cannot hold an empty folder."
+  },
+  {
+   "class": "tooling",
+   "pattern": "drawings/.gitkeep",
+   "reason": "Folder marker. drawings/ is the Draw for Mollie upload target (suite app: core/suite-draw.js + modules/draw-send.js); the real files (drawing PNGs and their sidecar notes) are created by the suite app at runtime, and git cannot hold an empty folder."
   },
   {
    "class": "doc",
