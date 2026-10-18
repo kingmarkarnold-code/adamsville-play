@@ -20,9 +20,9 @@
     },
     {
       "name": "basketball_court.js",
-      "size": 20643,
-      "sha256": "1069dd2aa457e6bab5c4d90b828d4f054eddab9d36746aad968cc95bae9d3b0f",
-      "hash": "1069dd2aa457e6bab5c4d90b828d4f054eddab9d36746aad968cc95bae9d3b0f"
+      "size": 20623,
+      "sha256": "6bfade7cb61e984aa9853bc72b7088836b457ac6da3227d75828d3d617aae464",
+      "hash": "6bfade7cb61e984aa9853bc72b7088836b457ac6da3227d75828d3d617aae464"
     },
     {
       "name": "bird_drones.js",
@@ -154,9 +154,9 @@
     },
     {
       "name": "index.html",
-      "size": 998881,
-      "sha256": "1a08059522225bc946a6086a0d157e9a79b372be61043817176858c41576952c",
-      "hash": "1a08059522225bc946a6086a0d157e9a79b372be61043817176858c41576952c"
+      "size": 999064,
+      "sha256": "a4883cb5977dc06a528e86514f256d7104fe883003fdc24feb5216babb059c40",
+      "hash": "a4883cb5977dc06a528e86514f256d7104fe883003fdc24feb5216babb059c40"
     },
     {
       "name": "infracrew_system.js",
@@ -518,6 +518,6 @@
       "sha256": "74d2e3da9d5db086f3724cec9d5d42c2ba52e8561f2223fd467601d1ba8500b8"
     }
   ],
-  "ui_version": "2026.10.17.20",
+  "ui_version": "2026.10.17.21",
   "version": "2026.10.17.9"
 }
