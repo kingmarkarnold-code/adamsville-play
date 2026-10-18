@@ -203,6 +203,10 @@
     color:#b9b7ad; font-size:17px; overflow:hidden; text-align:center;
   }
   #cardImage img{ width:100%; height:100%; object-fit:contain; display:block; }
+  /* A live snapshot canvas fills the same reserved region. It is a
+     VIEW only: pointer-events:none, so swipes and taps pass straight
+     through it to the card — the gesture recognizer never sees it. */
+  #cardImage canvas{ width:100%; height:100%; display:block; pointer-events:none; }
   /* TEXT BLOCK — the item's identifying text. STATIC and READ-ONLY:
      plain text display only, no inputs, nothing editable. It sits at
      the bottom on grid row 2: ~20% of the item for ordinary content;
@@ -718,44 +722,1144 @@ const GestureRecognizer = (() => {
 /* ================= END GESTURE RECOGNIZER ================= */
 
 /* ==========================================================================
-   PART 2 — SAMPLE QUEUE
+   PART 1C — SNAPSHOT VIEW (pure data-in -> canvas draw, NO deck internals)
    --------------------------------------------------------------------------
-   Demo items ONLY, so the deck can be tried the moment the file is opened.
-   Shaped exactly like a real queue: { id, title, lines:[...], image }.
-   "image" is null here (no pictures); a real queue may put an image URL or
-   a data URI there. Real queues replace this via the Queue… panel, or by a
-   future plug-in — the deck code below does not care where items came from.
+   A small software-3D snapshot renderer, written shareable-first like the
+   other core modules: it knows nothing about the deck, sessions or
+   gestures. Hand it a SCENE (plain data) and a canvas, and it draws that
+   scene rotating slowly — the same job the Building Editor's inspector
+   does for one building in its location, reduced to a read-only viewer
+   any suite tool can lift whole.
+
+   SCENE shape (all coordinates LOCAL, centred on the subject, game
+   units; y is up and lives only in the heights):
+     { subject:    { ring:[[x,z],...], h, wall:"#rrggbb",
+                     roof:"#rrggbb", code, frontEdge },
+       ground:     radius of the ground patch,
+       road:       { name, width, pts:[[x,z],...] } | null,
+       neighbours: [ { x, z, w, d, h }, ... ] }
+   The subject's FRONT is ring edge `frontEdge` (edge k runs from
+   ring[k] to ring[k+1]); it is drawn in the editor's permanent warm
+   orange with a FRONT label whenever that face turns toward the camera.
+
+   Rendering: canvas 2D, projected polygons, painter's algorithm — the
+   approach the Building Editor's inspector proves on this data. No
+   external libraries. The view is DISPLAY-ONLY: the canvas never takes
+   pointer events (the deck's gestures own the card), and rotation is
+   driven by the module's own animation loop, which the owner starts
+   and stops (only the visible card's view should be running).
+   ========================================================================== */
+const SnapshotView = (() => {
+
+  const FRONT_FILL = "#e07b2a";   /* warm orange — the editor's front */
+  const GROUND_FILL = "#46523f";  /* muted ground green-grey */
+  const ROAD_FILL = "#33333c";    /* asphalt */
+  const ROAD_EDGE = "#5a5a64";
+  const NB_WALL = "#5b5f68";      /* neighbours: muted on purpose, so */
+  const NB_ROOF = "#3e4046";      /* the subject stays the subject */
+  const PITCH = 0.72;             /* camera elevation ~41 degrees */
+  const TURN_SECONDS = 36;        /* one slow revolution */
+  const DPR_CAP = 2;              /* lightness: never render past 2x */
+
+  /* Multiply a #rrggbb colour by a light factor (face shading). */
+  function shade(hex, f) {
+    const n = parseInt(String(hex).slice(1), 16);
+    const r = Math.min(255, Math.round(((n >> 16) & 255) * f));
+    const g = Math.min(255, Math.round(((n >> 8) & 255) * f));
+    const b = Math.min(255, Math.round((n & 255) * f));
+    return "rgb(" + r + "," + g + "," + b + ")";
+  }
+
+  /* A ring may arrive closed (first point repeated at the end); the
+     prism builder wants each vertex once. */
+  function openRing(ring) {
+    const pts = (ring || []).slice();
+    if (pts.length > 1 &&
+        pts[0][0] === pts[pts.length - 1][0] &&
+        pts[0][1] === pts[pts.length - 1][1]) pts.pop();
+    return pts;
+  }
+
+  /* The faces of one extruded footprint: a wall quad per ring edge
+     plus the roof. Each face carries its outward normal (for shading
+     and for the front-face visibility test) and, after projection, a
+     depth for the painter sort. frontEdge is the edge index to paint
+     with `frontFill` (-1 = none). */
+  function prismFaces(ring, height, wallFill, roofFill, frontEdge, frontFill) {
+    const pts = openRing(ring);
+    const faces = [];
+    if (pts.length < 3 || !(height > 0)) return faces;
+    let cx = 0, cz = 0;
+    pts.forEach((p) => { cx += p[0]; cz += p[1]; });
+    cx /= pts.length; cz /= pts.length;
+    for (let k = 0; k < pts.length; k++) {
+      const a = pts[k], b = pts[(k + 1) % pts.length];
+      /* Outward normal of the edge: perpendicular, flipped to point
+         AWAY from the centroid, so either ring winding works. */
+      let nx = (b[1] - a[1]), nz = -(b[0] - a[0]);
+      const mx = (a[0] + b[0]) / 2 - cx, mz = (a[1] + b[1]) / 2 - cz;
+      if (nx * mx + nz * mz < 0) { nx = -nx; nz = -nz; }
+      const len = Math.hypot(nx, nz) || 1;
+      faces.push({
+        pts3: [[a[0], 0, a[1]], [b[0], 0, b[1]],
+               [b[0], height, b[1]], [a[0], height, a[1]]],
+        nx: nx / len, nz: nz / len,
+        fill: (k === frontEdge && frontFill) ? frontFill : wallFill,
+        front: (k === frontEdge && !!frontFill)
+      });
+    }
+    faces.push({
+      pts3: pts.map((p) => [p[0], height, p[1]]),
+      nx: 0, nz: 0, roof: true,
+      fill: roofFill, front: false
+    });
+    return faces;
+  }
+
+  /* One ribbon quad per road segment: the centreline offset by half
+     the road's width on either side, lying on the ground. */
+  function roadFaces(road) {
+    const faces = [];
+    if (!road || !road.pts || road.pts.length < 2) return faces;
+    const hw = (road.width || 7.2) / 2;
+    for (let i = 0; i < road.pts.length - 1; i++) {
+      const a = road.pts[i], b = road.pts[i + 1];
+      let px = (b[1] - a[1]), pz = -(b[0] - a[0]);
+      const len = Math.hypot(px, pz) || 1;
+      px = px / len * hw; pz = pz / len * hw;
+      faces.push({
+        pts3: [[a[0] + px, 0.05, a[1] + pz], [b[0] + px, 0.05, b[1] + pz],
+               [b[0] - px, 0.05, b[1] - pz], [a[0] - px, 0.05, a[1] - pz]],
+        nx: 0, nz: 0, ground: true, fill: ROAD_FILL
+      });
+    }
+    return faces;
+  }
+
+  function boxRing(nb) {
+    const hw = nb.w / 2, hd = nb.d / 2;
+    return [[nb.x - hw, nb.z - hd], [nb.x + hw, nb.z - hd],
+            [nb.x + hw, nb.z + hd], [nb.x - hw, nb.z + hd]];
+  }
+
+  /* Draw ONE frame of `scene` into ctx at pixel size (w, h), orbit
+     angle `angle` radians. Pure projection + draw calls — this is the
+     function the headless smoke test drives with a recording stub.
+     Returns a small stats object (faces drawn, front visibility). */
+  function drawFrame(ctx, scene, w, h, angle) {
+    const stats = { faces: 0, frontVisible: false, frontFillUsed: false };
+    if (!scene || !scene.subject || !(w > 0) || !(h > 0)) return stats;
+    ctx.clearRect(0, 0, w, h);
+    const sub = scene.subject;
+    /* Fit: the ground radius rules, but a tall subject needs headroom
+       for its projected height too. */
+    const radius = Math.max(scene.ground || 60, (sub.h || 0) * 1.35);
+    const scale = (Math.min(w, h) * 0.46) / radius;
+    const ox = w / 2, oy = h * 0.56;
+    const cosA = Math.cos(angle), sinA = Math.sin(angle);
+    const cosP = Math.cos(PITCH), sinP = Math.sin(PITCH);
+    function project(p) {
+      const xr = p[0] * cosA - p[2] * sinA;          /* yaw */
+      const zr = p[0] * sinA + p[2] * cosA;
+      const v = p[1] * cosP + zr * sinP;             /* pitch: up-screen */
+      return [ox + xr * scale, oy - v * scale, zr * cosP - p[1] * sinP];
+    }
+    function rotNormal(nx, nz) { return [nx * cosA - nz * sinA, nx * sinA + nz * cosA]; }
+
+    /* Assemble every face, then paint far-to-near. */
+    const faces = [];
+    /* Ground first in the list AND given a far depth bias below, so it
+       can never cover a building: it is repainted before the sort. */
+    const groundPts = [];
+    const SEG = 28;
+    for (let i = 0; i < SEG; i++) {
+      const t = (i / SEG) * Math.PI * 2;
+      groundPts.push([Math.cos(t) * (scene.ground || 60), 0,
+                      Math.sin(t) * (scene.ground || 60)]);
+    }
+    faces.push({ pts3: groundPts, nx: 0, nz: 0, ground: true, fill: GROUND_FILL, front: false });
+    roadFaces(scene.road).forEach((f) => faces.push(f));
+    (scene.neighbours || []).forEach((nb) => {
+      prismFaces(boxRing(nb), nb.h, NB_WALL, NB_ROOF, -1, null)
+        .forEach((f) => faces.push(f));
+    });
+    prismFaces(sub.ring, sub.h, sub.wall, shade(sub.roof || "#5a3a2a", 1.12),
+               sub.frontEdge, FRONT_FILL).forEach((f) => faces.push(f));
+
+    let frontFace = null;
+    faces.forEach((f) => {
+      let depth = 0;
+      f.proj = f.pts3.map((p) => {
+        const s = project(p);
+        depth += s[2];
+        return s;
+      });
+      f.depth = depth / f.pts3.length + (f.ground ? 1e6 : 0);
+      if (!f.roof && !f.ground) {
+        const rn = rotNormal(f.nx, f.nz);
+        f.facing = -rn[1];               /* >0: normal turns to camera */
+        f.shadeF = 0.74 + 0.26 * Math.max(-1, Math.min(1, rn[0]));
+      } else { f.facing = 1; f.shadeF = 1; }
+      if (f.front) frontFace = f;
+    });
+    faces.sort((a, b) => b.depth - a.depth);
+    faces.forEach((f) => {
+      if (!f.ground && !f.roof && f.facing <= -0.05) return;  /* back face */
+      ctx.beginPath();
+      f.proj.forEach((s, i) => { if (i === 0) ctx.moveTo(s[0], s[1]); else ctx.lineTo(s[0], s[1]); });
+      ctx.closePath();
+      ctx.fillStyle = (f.front) ? f.fill
+        : (f.roof || f.ground) ? f.fill : shade(f.fill, f.shadeF);
+      if (f.front) stats.frontFillUsed = true;
+      ctx.fill();
+      stats.faces++;
+    });
+
+    /* FRONT label: only while the orange face actually faces us. */
+    if (frontFace && frontFace.facing > 0.25) {
+      let lx = 0, ly = 0;
+      frontFace.proj.forEach((s) => { lx += s[0]; ly += s[1]; });
+      lx /= frontFace.proj.length; ly /= frontFace.proj.length;
+      ctx.font = "bold 13px sans-serif";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      const tw = (ctx.measureText ? ctx.measureText("FRONT").width : 40);
+      ctx.fillRect(lx - tw / 2 - 5, ly - 10, tw + 10, 20);
+      ctx.fillStyle = "#ffd9ae";
+      ctx.fillText("FRONT", lx, ly);
+      stats.frontVisible = true;
+    }
+    return stats;
+  }
+
+  /* A running view on one canvas. The owner (the deck) starts it when
+     its card becomes current and stops it when the card leaves — only
+     one view should ever be animating. Rotation pauses while the page
+     is hidden (document.hidden), and the backing store is capped at
+     DPR_CAP for lightness. */
+  function create(canvas, scene) {
+    const ctx = canvas.getContext("2d");
+    let current = scene, raf = 0, running = false;
+    function frame(ts) {
+      if (!running) return;
+      if (!document.hidden) {
+        const w = canvas.clientWidth || 0, h = canvas.clientHeight || 0;
+        if (w > 0 && h > 0) {
+          const dpr = Math.min(window.devicePixelRatio || 1, DPR_CAP);
+          const bw = Math.round(w * dpr), bh = Math.round(h * dpr);
+          if (canvas.width !== bw || canvas.height !== bh) {
+            canvas.width = bw; canvas.height = bh;
+          }
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          const angle = ((ts / 1000) % TURN_SECONDS) / TURN_SECONDS * Math.PI * 2;
+          drawFrame(ctx, current, w, h, angle);
+        }
+      }
+      raf = requestAnimationFrame(frame);
+    }
+    return {
+      start() { if (!running) { running = true; raf = requestAnimationFrame(frame); } },
+      stop() { running = false; if (raf) cancelAnimationFrame(raf); raf = 0; },
+      setScene(s) { current = s; },
+      isRunning() { return running; }
+    };
+  }
+
+  return { create, drawFrame, FRONT_FILL, TURN_SECONDS };
+})();
+/* ================= END SNAPSHOT VIEW ================= */
+
+/* ==========================================================================
+   PART 2 — SAMPLE QUEUE (v0.4: REAL flagged buildings + 3D snapshots)
+   --------------------------------------------------------------------------
+   The built-in queue is no longer invented demo data: these are REAL
+   flagged buildings from the game's own records — the conversion's
+   flagged list (editors/building-editor/flagged_buildings.json) matched
+   to the zone index and detail files — each carrying a `scene` payload
+   (its true footprint ring, height, the front the editor's rule derives
+   from the nearest road, that road, and its nearest neighbours) for the
+   SnapshotView in Part 1C to redraw as a slowly rotating 3D view.
+   Zone data carries no wall/roof colours, so the scene colours are the
+   editor's render-time assignment by type code. Which buildings these
+   are, exactly, is listed in DECISION-DECK-NOTES.md (v0.4).
+   Items WITHOUT a scene (older queues, plain JSON queues) simply show
+   the framed "No picture for this item" region, exactly as before.
    ========================================================================== */
 const SAMPLE_QUEUE = {
-  name: "Sample queue — flagged buildings (demo)",
-  items: [
-    { id: "sample-001", title: "Flagged house — 1240 Cascade Rd SW",
-      lines: ["Type: single house", "Why flagged: sits close to the road edge", "Zone: Adamsville"],
-      image: null },
-    { id: "sample-002", title: "Flagged church — Elizabeth Baptist Church",
-      lines: ["Type: church", "Why flagged: footprint overlaps the sidewalk line", "Zone: Adamsville"],
-      image: null },
-    { id: "sample-003", title: "Flagged store — Dollar General, Lee St SW",
-      lines: ["Type: commercial", "Why flagged: parking lot crosses a driveway segment", "Zone: Adamsville"],
-      image: null },
-    { id: "sample-004", title: "Flagged house — 88 MLK Jr Dr SW",
-      lines: ["Type: single house", "Why flagged: porch extends past the front line", "Zone: Downtown"],
-      image: null },
-    { id: "sample-005", title: "Flagged apartments — Roberts Dr, block 160",
-      lines: ["Type: multi-unit", "Why flagged: one building of the set sits on a road stub", "Zone: Riverdale"],
-      image: null },
-    { id: "sample-006", title: "Flagged gas station — Marathon, Hollywood Rd NW",
-      lines: ["Type: gas station", "Why flagged: canopy column inside the road edge", "Zone: Adamsville"],
-      image: null },
-    { id: "sample-007", title: "Flagged house — 535 Dollar Mill Rd SW",
-      lines: ["Type: single house", "Why flagged: fence line touches the street line", "Zone: Adamsville"],
-      image: null },
-    { id: "sample-008", title: "Flagged school annex — Fairburn Rd SW",
-      lines: ["Type: institutional", "Why flagged: annex footprint crosses the lot boundary", "Zone: South Fulton"],
-      image: null }
+  "name": "Flagged buildings \u2014 real data, 3D snapshots",
+  "items": [
+    {
+      "id": "flag-adamsville-19517",
+      "title": "Flagged: BP",
+      "lines": [
+        "Type: Other / special (roof)",
+        "Zone: Adamsville",
+        "Why flagged: intersects Unnamed St \u2014 left in place by the conversion; your decision is pending"
+      ],
+      "image": null,
+      "scene": {
+        "subject": {
+          "ring": [
+            [
+              -7.3,
+              -0.1
+            ],
+            [
+              -3.3,
+              6.1
+            ],
+            [
+              1.5,
+              3.4
+            ],
+            [
+              7.8,
+              -0.1
+            ],
+            [
+              3.7,
+              -6.4
+            ],
+            [
+              -2.4,
+              -2.8
+            ]
+          ],
+          "h": 5,
+          "wall": "#d8d2c4",
+          "roof": "#6b6f66",
+          "code": 3,
+          "frontEdge": 1
+        },
+        "ground": 88.6,
+        "road": {
+          "name": "Unnamed St",
+          "width": 7.2,
+          "pts": [
+            [
+              -2.4,
+              -2.8
+            ],
+            [
+              1.5,
+              3.4
+            ]
+          ]
+        },
+        "neighbours": [
+          {
+            "x": -32.3,
+            "z": 2.8,
+            "w": 23.77,
+            "d": 22.04,
+            "h": 5
+          },
+          {
+            "x": -9.3,
+            "z": 35.1,
+            "w": 15.07,
+            "d": 16.84,
+            "h": 5
+          },
+          {
+            "x": -75.4,
+            "z": 13.4,
+            "w": 32.17,
+            "d": 30.03,
+            "h": 5
+          },
+          {
+            "x": 35.8,
+            "z": 97.2,
+            "w": 39.75,
+            "d": 30.89,
+            "h": 5
+          },
+          {
+            "x": 85.4,
+            "z": 70.0,
+            "w": 27,
+            "d": 22.71,
+            "h": 5
+          }
+        ]
+      }
+    },
+    {
+      "id": "flag-downtown-147",
+      "title": "Flagged: Peachtree Station",
+      "lines": [
+        "Type: Other / special (train_station)",
+        "Zone: Downtown",
+        "Why flagged: intersects Unnamed St \u2014 left in place by the conversion; your decision is pending"
+      ],
+      "image": null,
+      "scene": {
+        "subject": {
+          "ring": [
+            [
+              -1.6,
+              -18.4
+            ],
+            [
+              12.1,
+              -21.5
+            ],
+            [
+              18.3,
+              3.1
+            ],
+            [
+              8.4,
+              5.3
+            ],
+            [
+              2.8,
+              11.1
+            ],
+            [
+              -1.6,
+              7.4
+            ],
+            [
+              -6.3,
+              3.1
+            ],
+            [
+              -11.7,
+              8.7
+            ],
+            [
+              -20.4,
+              1.2
+            ]
+          ],
+          "h": 5,
+          "wall": "#d8d2c4",
+          "roof": "#6b6f66",
+          "code": 3,
+          "frontEdge": 1
+        },
+        "ground": 133.4,
+        "road": {
+          "name": "Unnamed St",
+          "width": 7.2,
+          "pts": [
+            [
+              7.1,
+              -32.2
+            ],
+            [
+              26.1,
+              -6.2
+            ]
+          ]
+        },
+        "neighbours": [
+          {
+            "x": -1.4,
+            "z": 15.3,
+            "w": 7.79,
+            "d": 7.8,
+            "h": 5
+          },
+          {
+            "x": -43.8,
+            "z": -57.6,
+            "w": 58.46,
+            "d": 52.27,
+            "h": 5
+          },
+          {
+            "x": -91.7,
+            "z": 30.3,
+            "w": 36.51,
+            "d": 34.75,
+            "h": 5
+          },
+          {
+            "x": -99.7,
+            "z": -3.4,
+            "w": 11.73,
+            "d": 11.17,
+            "h": 4.5
+          },
+          {
+            "x": -108.0,
+            "z": -9.6,
+            "w": 11.33,
+            "d": 11.07,
+            "h": 4.5
+          }
+        ]
+      }
+    },
+    {
+      "id": "flag-eastatlanta-17",
+      "title": "Flagged: Atlanta Municipal Market",
+      "lines": [
+        "Type: Commercial (retail)",
+        "Zone: East Atlanta",
+        "Why flagged: intersects Edgewood Avenue Northeast \u2014 left in place by the conversion; your decision is pending"
+      ],
+      "image": null,
+      "scene": {
+        "subject": {
+          "ring": [
+            [
+              -51.4,
+              -26.6
+            ],
+            [
+              -37.0,
+              -42.8
+            ],
+            [
+              -16.5,
+              -42.4
+            ],
+            [
+              31.7,
+              -41.5
+            ],
+            [
+              31.7,
+              27.1
+            ],
+            [
+              13.9,
+              26.7
+            ],
+            [
+              13.6,
+              39.1
+            ],
+            [
+              6.9,
+              33.7
+            ],
+            [
+              7.1,
+              26.6
+            ]
+          ],
+          "h": 7,
+          "wall": "#b9bec6",
+          "roof": "#4c4f57",
+          "code": 1,
+          "frontEdge": 1
+        },
+        "ground": 218.0,
+        "road": {
+          "name": "Edgewood Avenue Northeast",
+          "width": 18.4,
+          "pts": [
+            [
+              -41.2,
+              -50.4
+            ],
+            [
+              -19.7,
+              -50.2
+            ]
+          ]
+        },
+        "neighbours": [
+          {
+            "x": -15.2,
+            "z": 63.6,
+            "w": 3.64,
+            "d": 3.37,
+            "h": 5
+          },
+          {
+            "x": -55.8,
+            "z": 46.3,
+            "w": 28.72,
+            "d": 26.85,
+            "h": 5
+          },
+          {
+            "x": -23.5,
+            "z": 73.3,
+            "w": 35.4,
+            "d": 31.67,
+            "h": 5
+          },
+          {
+            "x": 22.3,
+            "z": -85.3,
+            "w": 18,
+            "d": 36.77,
+            "h": 8
+          },
+          {
+            "x": 7.3,
+            "z": 90.1,
+            "w": 30.14,
+            "d": 30.03,
+            "h": 5
+          }
+        ]
+      }
+    },
+    {
+      "id": "flag-eastatlanta-3",
+      "title": "Flagged: Midcity Lofts",
+      "lines": [
+        "Type: Residential / generic (yes)",
+        "Zone: East Atlanta",
+        "Why flagged: intersects Unnamed St \u2014 left in place by the conversion; your decision is pending"
+      ],
+      "image": null,
+      "scene": {
+        "subject": {
+          "ring": [
+            [
+              -50.9,
+              -19.4
+            ],
+            [
+              -51.3,
+              8.8
+            ],
+            [
+              -51.3,
+              10.4
+            ],
+            [
+              21.0,
+              11.9
+            ],
+            [
+              41.0,
+              12.4
+            ],
+            [
+              58.5,
+              12.9
+            ],
+            [
+              59.1,
+              -17.9
+            ],
+            [
+              -26.2,
+              -19.0
+            ]
+          ],
+          "h": 32,
+          "wall": "#c9b18c",
+          "roof": "#7a4a34",
+          "code": 0,
+          "frontEdge": 4
+        },
+        "ground": 269.6,
+        "road": {
+          "name": "Unnamed St",
+          "width": 7.2,
+          "pts": [
+            [
+              41.0,
+              12.4
+            ],
+            [
+              40.7,
+              23.5
+            ]
+          ]
+        },
+        "neighbours": [
+          {
+            "x": -26.8,
+            "z": -44.7,
+            "w": 54.52,
+            "d": 25.12,
+            "h": 12
+          },
+          {
+            "x": 37.9,
+            "z": -43.0,
+            "w": 43.69,
+            "d": 18,
+            "h": 9
+          },
+          {
+            "x": 3.7,
+            "z": 58.8,
+            "w": 114.9,
+            "d": 68.34,
+            "h": 9.3
+          },
+          {
+            "x": 30.7,
+            "z": -59.6,
+            "w": 56.64,
+            "d": 17.71,
+            "h": 64
+          },
+          {
+            "x": 32.5,
+            "z": -77.8,
+            "w": 53.81,
+            "d": 20.12,
+            "h": 5
+          }
+        ]
+      }
+    },
+    {
+      "id": "flag-mableton-2414",
+      "title": "Flagged: Burger King",
+      "lines": [
+        "Type: Residential / generic (yes)",
+        "Zone: Mableton",
+        "Why flagged: intersects Unnamed St \u2014 left in place by the conversion; your decision is pending"
+      ],
+      "image": null,
+      "scene": {
+        "subject": {
+          "ring": [
+            [
+              8.5,
+              12.0
+            ],
+            [
+              7.9,
+              -9.7
+            ],
+            [
+              -3.8,
+              -9.4
+            ],
+            [
+              -3.7,
+              -2.6
+            ],
+            [
+              -4.7,
+              -2.6
+            ],
+            [
+              -4.2,
+              12.3
+            ]
+          ],
+          "h": 5,
+          "wall": "#c9b18c",
+          "roof": "#7a4a34",
+          "code": 0,
+          "frontEdge": 1
+        },
+        "ground": 101.7,
+        "road": {
+          "name": "Unnamed St",
+          "width": 7.2,
+          "pts": [
+            [
+              14.1,
+              -1.8
+            ],
+            [
+              -11.7,
+              -18.9
+            ]
+          ]
+        },
+        "neighbours": [
+          {
+            "x": 41.2,
+            "z": -17.7,
+            "w": 19.72,
+            "d": 18.58,
+            "h": 5
+          },
+          {
+            "x": 60.4,
+            "z": -17.4,
+            "w": 26.8,
+            "d": 24.83,
+            "h": 5
+          },
+          {
+            "x": -51.5,
+            "z": -85.5,
+            "w": 15.28,
+            "d": 7.6,
+            "h": 5
+          },
+          {
+            "x": 100.6,
+            "z": 36.7,
+            "w": 22.25,
+            "d": 20.4,
+            "h": 7
+          },
+          {
+            "x": -6.7,
+            "z": -114.4,
+            "w": 21.75,
+            "d": 11.84,
+            "h": 5
+          }
+        ]
+      }
+    },
+    {
+      "id": "flag-unioncity-1673",
+      "title": "Flagged: Sandtown Church",
+      "lines": [
+        "Type: Residential / generic (yes)",
+        "Zone: Union City",
+        "Why flagged: intersects Unnamed St \u2014 left in place by the conversion; your decision is pending"
+      ],
+      "image": null,
+      "scene": {
+        "subject": {
+          "ring": [
+            [
+              -15.6,
+              17.0
+            ],
+            [
+              -18.8,
+              7.6
+            ],
+            [
+              -3.5,
+              2.8
+            ],
+            [
+              -8.9,
+              -13.2
+            ],
+            [
+              1.1,
+              -16.2
+            ],
+            [
+              6.6,
+              -0.2
+            ],
+            [
+              17.9,
+              -3.6
+            ],
+            [
+              21.2,
+              5.7
+            ]
+          ],
+          "h": 5,
+          "wall": "#c9b18c",
+          "roof": "#7a4a34",
+          "code": 0,
+          "frontEdge": 6
+        },
+        "ground": 136.1,
+        "road": {
+          "name": "Unnamed St",
+          "width": 7.2,
+          "pts": [
+            [
+              12.0,
+              -60.8
+            ],
+            [
+              15.1,
+              -47.8
+            ],
+            [
+              17.8,
+              -24.1
+            ],
+            [
+              17.9,
+              -23.2
+            ],
+            [
+              17.9,
+              -22.2
+            ],
+            [
+              20.1,
+              -8.9
+            ],
+            [
+              20.3,
+              -7.9
+            ],
+            [
+              21.1,
+              9.0
+            ],
+            [
+              18.9,
+              14.3
+            ],
+            [
+              9.3,
+              22.6
+            ],
+            [
+              8.7,
+              23.0
+            ],
+            [
+              -7.6,
+              25.2
+            ],
+            [
+              -20.4,
+              15.9
+            ],
+            [
+              -31.6,
+              7.7
+            ],
+            [
+              -35.9,
+              -0.6
+            ]
+          ]
+        },
+        "neighbours": [
+          {
+            "x": 48.0,
+            "z": -4.5,
+            "w": 37.83,
+            "d": 25.03,
+            "h": 5
+          },
+          {
+            "x": -5.5,
+            "z": 93.1,
+            "w": 25.69,
+            "d": 19.64,
+            "h": 4.5
+          },
+          {
+            "x": -68.4,
+            "z": 73.3,
+            "w": 26.5,
+            "d": 14.25,
+            "h": 4.5
+          },
+          {
+            "x": -102.9,
+            "z": -8.8,
+            "w": 22.45,
+            "d": 9.63,
+            "h": 4.5
+          }
+        ]
+      }
+    },
+    {
+      "id": "flag-southfulton-25107",
+      "title": "Flagged: Wendy's",
+      "lines": [
+        "Type: Residential / generic (yes)",
+        "Zone: South Fulton",
+        "Why flagged: intersects Unnamed St \u2014 left in place by the conversion; your decision is pending"
+      ],
+      "image": null,
+      "scene": {
+        "subject": {
+          "ring": [
+            [
+              4.3,
+              -8.7
+            ],
+            [
+              -19.6,
+              2.7
+            ],
+            [
+              -13.8,
+              13.5
+            ],
+            [
+              12.5,
+              1.0
+            ],
+            [
+              9.5,
+              -4.8
+            ],
+            [
+              7.0,
+              -3.7
+            ]
+          ],
+          "h": 5,
+          "wall": "#c9b18c",
+          "roof": "#7a4a34",
+          "code": 0,
+          "frontEdge": 4
+        },
+        "ground": 120.9,
+        "road": {
+          "name": "Unnamed St",
+          "width": 7.2,
+          "pts": [
+            [
+              22.3,
+              2.8
+            ],
+            [
+              18.1,
+              -5.0
+            ],
+            [
+              -17.7,
+              -4.3
+            ],
+            [
+              -26.8,
+              -0.3
+            ]
+          ]
+        },
+        "neighbours": [
+          {
+            "x": -28.9,
+            "z": -45.7,
+            "w": 51.99,
+            "d": 38.5,
+            "h": 5
+          },
+          {
+            "x": 55.0,
+            "z": -19.8,
+            "w": 43.09,
+            "d": 47.45,
+            "h": 5
+          },
+          {
+            "x": 53.9,
+            "z": 66.8,
+            "w": 28.42,
+            "d": 36,
+            "h": 5
+          },
+          {
+            "x": -38.3,
+            "z": 108.5,
+            "w": 25.48,
+            "d": 31.08,
+            "h": 5
+          }
+        ]
+      }
+    },
+    {
+      "id": "flag-riverdale-15433",
+      "title": "Flagged: CubeSmart",
+      "lines": [
+        "Type: Residential / generic (yes)",
+        "Zone: Riverdale",
+        "Why flagged: intersects Unnamed St \u2014 left in place by the conversion; your decision is pending"
+      ],
+      "image": null,
+      "scene": {
+        "subject": {
+          "ring": [
+            [
+              -60.7,
+              21.8
+            ],
+            [
+              -60.3,
+              -22.8
+            ],
+            [
+              15.8,
+              -22.1
+            ],
+            [
+              15.7,
+              -15.9
+            ],
+            [
+              29.5,
+              -15.8
+            ],
+            [
+              29.2,
+              16.2
+            ],
+            [
+              15.4,
+              16.0
+            ],
+            [
+              15.4,
+              22.5
+            ]
+          ],
+          "h": 5,
+          "wall": "#c9b18c",
+          "roof": "#7a4a34",
+          "code": 0,
+          "frontEdge": 0
+        },
+        "ground": 231.4,
+        "road": {
+          "name": "Unnamed St",
+          "width": 7.2,
+          "pts": [
+            [
+              -54.5,
+              25.7
+            ],
+            [
+              -70.0,
+              23.7
+            ]
+          ]
+        },
+        "neighbours": [
+          {
+            "x": 24.1,
+            "z": 52.3,
+            "w": 9.51,
+            "d": 12.32,
+            "h": 7
+          },
+          {
+            "x": 9.0,
+            "z": -61.1,
+            "w": 4.85,
+            "d": 7.89,
+            "h": 5
+          },
+          {
+            "x": 29.5,
+            "z": -57.6,
+            "w": 35.9,
+            "d": 16.56,
+            "h": 5
+          },
+          {
+            "x": -50.9,
+            "z": 45.4,
+            "w": 11.32,
+            "d": 18.38,
+            "h": 7
+          },
+          {
+            "x": 53.9,
+            "z": 77.3,
+            "w": 6.37,
+            "d": 5.58,
+            "h": 7
+          }
+        ]
+      }
+    }
   ]
 };
-
 /* ==========================================================================
    PART 3 — PAGE STATE + PERSISTENCE
    --------------------------------------------------------------------------
@@ -791,7 +1895,16 @@ function loadStoredSession() {
     const raw = localStorage.getItem(STORE_KEY);
     if (!raw) return null;
     const s = DecisionCore.restore(raw);
-    if (s && s.items.length) { queueLabel = "Resumed session"; return s; }
+    if (s && s.items.length) {
+      /* The pre-v0.4 built-in demo used invented "sample-*" items with
+         no scenes. A stored session of THAT queue is demo data, not
+         the user's — let the real flagged queue replace it. (Sessions
+         of real queues, whose ids are anything else, resume as ever.) */
+      const staleDemo = s.items.every((it) =>
+        typeof it.id === "string" && it.id.indexOf("sample-") === 0 && !it.scene);
+      if (staleDemo) return null;
+      queueLabel = "Resumed session"; return s;
+    }
   } catch (e) { /* storage unavailable (private mode etc.) — run unstored */ }
   return null;
 }
@@ -838,8 +1951,17 @@ const FLY_TO = {
   "tap": [0, 0], "double-tap": [0, 0], "hold": [0, 0]
 };
 
+/* The current card's live snapshot view, if its item carries a
+   scene. Only ONE view ever runs: render() stops the old one before
+   the picture area is rebuilt, so swiping away stops its loop. */
+let snapshotCtl = null;
+function stopSnapshot() {
+  if (snapshotCtl) { snapshotCtl.stop(); snapshotCtl = null; }
+}
+
 /* Draw the current card + header from the session state. */
 function render(animateIn) {
+  stopSnapshot();
   const item = DecisionCore.current(session);
   const p = DecisionCore.progress(session);
   $("progressText").textContent =
@@ -870,10 +1992,17 @@ function render(animateIn) {
   });
   $("cardId").textContent = "Item: " + (item.id || "—");
 
-  /* Picture area: an image if the item supplied one, else the placeholder. */
+  /* Picture area: a live 3D snapshot if the item carries a scene,
+     else an image if one was supplied, else the placeholder frame. */
   const imgBox = $("cardImage");
   imgBox.innerHTML = "";
-  if (item.image) {
+  if (item.scene) {
+    const cv = document.createElement("canvas");
+    cv.setAttribute("aria-hidden", "true");
+    imgBox.appendChild(cv);
+    snapshotCtl = SnapshotView.create(cv, item.scene);
+    snapshotCtl.start();
+  } else if (item.image) {
     const img = document.createElement("img");
     img.src = item.image; img.alt = "";
     imgBox.appendChild(img);
@@ -1143,7 +2272,10 @@ function adoptQueue(data, label) {
     id: (it && it.id) || ("item-" + (i + 1)),
     title: (it && it.title) || "(untitled item)",
     lines: (it && Array.isArray(it.lines)) ? it.lines.map(String) : [],
-    image: (it && it.image) || null
+    image: (it && it.image) || null,
+    /* A scene payload (Part 1C) rides along untouched, so real queues
+       can carry 3D snapshots the same way the built-in queue does. */
+    scene: (it && it.scene) || null
   }));
   session = DecisionCore.createSession(clean);
   queueLabel = label;
