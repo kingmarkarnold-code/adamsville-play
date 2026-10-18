@@ -10,7 +10,7 @@
   /* ---------- layout: every control lives inside the viewport box ---- */
   html, body { margin:0; padding:0; height:100%; overflow:hidden;
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    background:#e7e9df; color:#22251f; }
+    background:#14171b; color:#e9ebee; }
   #app { position:fixed; inset:0; overflow:hidden; }
   #map { position:absolute; inset:0; width:100%; height:100%;
     touch-action:none; display:block; cursor:grab; }
@@ -23,41 +23,43 @@
   #searchrow { display:flex; gap:6px; align-items:flex-start;
     pointer-events:none; }
   #titlechip { pointer-events:auto; flex:0 1 auto; min-width:0;
-    background:rgba(255,255,255,.94); border:1px solid #c9c4b4;
+    background:rgba(22,25,31,.94); border:1px solid #3b414b;
     border-radius:10px; padding:9px 10px; font-size:13px; font-weight:700;
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-    box-shadow:0 1px 4px rgba(40,40,30,.18); }
+    box-shadow:0 1px 4px rgba(0,0,0,.45); }
   #searchbox { pointer-events:auto; position:relative; flex:1 1 auto;
     min-width:120px; }
   #q { width:100%; box-sizing:border-box; font-size:16px; padding:9px 34px 9px 12px;
-    border:1px solid #c9c4b4; border-radius:10px; background:rgba(255,255,255,.97);
-    box-shadow:0 1px 4px rgba(40,40,30,.18); outline:none; }
+    border:1px solid #3b414b; border-radius:10px; background:rgba(22,25,31,.97);
+    color:#eef0f3;
+    box-shadow:0 1px 4px rgba(0,0,0,.45); outline:none; }
+  #q::placeholder { color:#8b929c; }
   #q:focus { border-color:#e07b2a; }
   #qclear { position:absolute; right:4px; top:4px; width:32px; height:32px;
-    border:none; background:transparent; font-size:18px; color:#777; cursor:pointer; }
+    border:none; background:transparent; font-size:18px; color:#9aa2ac; cursor:pointer; }
   #results { position:absolute; top:calc(100% + 4px); left:0; right:0;
-    background:#fff; border:1px solid #c9c4b4; border-radius:10px;
-    box-shadow:0 4px 14px rgba(40,40,30,.25); overflow-y:auto;
+    background:#171a20; border:1px solid #3b414b; border-radius:10px;
+    box-shadow:0 4px 14px rgba(0,0,0,.5); overflow-y:auto;
     max-height:46vh; display:none; }
-  #results .item { padding:10px 12px; cursor:pointer; border-bottom:1px solid #eee9db; }
+  #results .item { padding:10px 12px; cursor:pointer; border-bottom:1px solid #262b33; }
   #results .item:last-child { border-bottom:none; }
-  #results .item:active, #results .item:hover { background:#fdf1e3; }
+  #results .item:active, #results .item:hover { background:#232833; }
   #results .nm { font-size:15px; font-weight:600; }
-  #results .meta { font-size:12px; color:#6d6a5e; margin-top:1px; }
-  #results .none { padding:10px 12px; font-size:13px; color:#6d6a5e; }
+  #results .meta { font-size:12px; color:#9aa2ac; margin-top:1px; }
+  #results .none { padding:10px 12px; font-size:13px; color:#9aa2ac; }
 
   /* ---------- layer chips -------------------------------------------- */
   #chips { display:flex; gap:6px; flex-wrap:wrap; pointer-events:none; }
-  .chip { pointer-events:auto; border:1px solid #c9c4b4; cursor:pointer;
-    background:rgba(255,255,255,.85); color:#55524a; border-radius:999px;
+  .chip { pointer-events:auto; border:1px solid #3b414b; cursor:pointer;
+    background:rgba(22,25,31,.88); color:#c9ced6; border-radius:999px;
     font-size:12.5px; font-weight:600; padding:6px 11px;
-    box-shadow:0 1px 3px rgba(40,40,30,.15); }
+    box-shadow:0 1px 3px rgba(0,0,0,.4); }
   .chip.on { background:#2f4634; color:#fff; border-color:#2f4634; }
   .chip.base.on { background:#7a4a12; border-color:#7a4a12; }
   .chip:disabled { opacity:.55; cursor:default; }
-  .chipdiv { width:1px; align-self:stretch; background:#b9b49e; margin:2px 1px; }
+  .chipdiv { width:1px; align-self:stretch; background:#3b414b; margin:2px 1px; }
   #attrib { position:absolute; right:8px; bottom:8px; z-index:4;
-    font-size:10px; color:#44423a; background:rgba(255,255,255,.8);
+    font-size:10px; color:#a9b0ba; background:rgba(16,18,22,.82);
     padding:3px 7px; border-radius:6px; pointer-events:none;
     max-width:calc(100vw - 130px); text-align:right; }
 
@@ -65,26 +67,26 @@
   #zoomctl { position:absolute; right:10px; bottom:86px; z-index:5;
     display:flex; flex-direction:column; gap:6px; }
   #zoomctl button { width:44px; height:44px; border-radius:10px;
-    border:1px solid #c9c4b4; background:rgba(255,255,255,.95);
-    font-size:20px; font-weight:700; color:#33362e; cursor:pointer;
-    box-shadow:0 1px 4px rgba(40,40,30,.2); line-height:1; }
-  #zoomctl button:active { background:#fdf1e3; }
+    border:1px solid #3b414b; background:rgba(22,25,31,.95);
+    font-size:20px; font-weight:700; color:#e9ebee; cursor:pointer;
+    box-shadow:0 1px 4px rgba(0,0,0,.45); line-height:1; }
+  #zoomctl button:active { background:#262c36; }
   #zfit { font-size:12px !important; }
 
   /* ---------- north badge + scale bar -------------------------------- */
   #north { position:absolute; right:17px; bottom:238px; z-index:4;
     width:34px; height:34px; border-radius:50%; text-align:center;
-    background:rgba(255,255,255,.9); border:1px solid #c9c4b4;
-    font-size:12px; font-weight:800; color:#33362e; line-height:34px;
-    box-shadow:0 1px 3px rgba(40,40,30,.15); pointer-events:none; }
-  #north span { color:#c33; }
+    background:rgba(22,25,31,.92); border:1px solid #3b414b;
+    font-size:12px; font-weight:800; color:#e9ebee; line-height:34px;
+    box-shadow:0 1px 3px rgba(0,0,0,.4); pointer-events:none; }
+  #north span { color:#ff6b5e; }
   #scalebar { position:absolute; left:10px; bottom:12px; z-index:4;
-    pointer-events:none; font-size:11px; color:#33362e;
-    text-shadow:0 1px 0 rgba(255,255,255,.8); }
-  #scaleline { height:5px; border:1.5px solid #33362e; border-top:none;
-    background:rgba(255,255,255,.35); width:100px; }
+    pointer-events:none; font-size:11px; color:#e9ebee;
+    text-shadow:0 1px 0 rgba(0,0,0,.8); }
+  #scaleline { height:5px; border:1.5px solid #e9ebee; border-top:none;
+    background:rgba(255,255,255,.14); width:100px; }
   #scalelabel { margin-top:2px; font-weight:600; }
-  #scaleimp { font-weight:400; color:#55524a; }
+  #scaleimp { font-weight:400; color:#9aa2ac; }
 
   /* ---------- loading pill + fatal overlay ---------------------------- */
   #loadpill { position:absolute; left:50%; transform:translate(-50%,-50%);
@@ -94,19 +96,19 @@
     max-width:calc(100vw - 32px); white-space:nowrap; overflow:hidden;
     text-overflow:ellipsis; }
   #fatal { position:absolute; inset:0; z-index:9; display:none;
-    background:#e7e9df; padding:24px; box-sizing:border-box;
+    background:#14171b; padding:24px; box-sizing:border-box;
     font-size:15px; line-height:1.5; }
 
   /* ---------- info panel (bottom, slim, never covers the map) -------- */
   #info { position:absolute; left:8px; right:8px; bottom:8px; z-index:5;
-    background:rgba(255,255,255,.97); border:1px solid #c9c4b4;
-    border-radius:12px; box-shadow:0 3px 12px rgba(40,40,30,.25);
+    background:rgba(22,25,31,.97); border:1px solid #3b414b;
+    border-radius:12px; box-shadow:0 3px 12px rgba(0,0,0,.5);
     padding:10px 40px 10px 14px; display:none; max-height:30vh;
     overflow-y:auto; }
   #info .nm { font-size:16px; font-weight:700; }
-  #info .meta { font-size:13px; color:#6d6a5e; margin-top:2px; }
+  #info .meta { font-size:13px; color:#9aa2ac; margin-top:2px; }
   #infoclose { position:absolute; right:6px; top:6px; width:32px; height:32px;
-    border:none; background:transparent; font-size:19px; color:#777;
+    border:none; background:transparent; font-size:19px; color:#9aa2ac;
     cursor:pointer; }
   @media (max-width:520px) {
     #titlechip { display:none; }        /* phone: search takes the row */
@@ -184,8 +186,15 @@
    * TRUE detail (exact road geometry, buildings, water) is fetched
      per zone, only when the user zooms deep into that zone, from the
      game's own files: ../detailed/zones/<zone>/roads.json etc.
-   * At the widest zooms the whole world is painted once onto an
-     offscreen canvas and blitted — panning stays smooth on a phone.
+   * At the widest zooms the whole world is painted onto an offscreen
+     canvas and blitted — panning stays smooth on a phone. The painting
+     resolution FOLLOWS the screen (it is repainted, debounced, when
+     the zoom band changes): a fixed low resolution blitted down to a
+     phone-sized fit view shrank the local-road hairlines to nothing,
+     which is why the first shipped version showed zone boxes but no
+     streets on Joshua's phone (his live report, 2026-10-18).
+   * The colour scheme is DARK (Joshua: "it's really bright") — deep
+     charcoal land, light roads, light labels with dark halos.
    * BASE LAYERS (the switcher chips): Street = our data on a plain
      backdrop; Satellite = live Esri World Imagery tiles under our
      roads, aligned through the conversion's own lat/lon frame (see
@@ -206,7 +215,11 @@ const CLS_LABEL = ['Highway', 'Major artery', 'Minor artery', 'Local road'];
    pixel floor keeps every street visible — the 1.9.6 lesson: never a
    highway-only skeleton). */
 const CLS_WIDTH = [26, 15, 11, 7.5];
-const CLS_COLOR = ['#f2a71b', '#ffffff', '#ffffff', '#fdfdf8'];
+/* Dark scheme: amber highways, then light greys stepping down by
+   class so the whole network reads on the charcoal land. */
+const CLS_COLOR = ['#f2a71b', '#eef1f4', '#ccd2da', '#a3abb6'];
+const LAND = '#21262e';           // street-mode land (deep charcoal)
+const PAGE_BG = '#14171b';        // page background behind everything
 const DETAIL_SCALE = 0.25;      // px/m at which true zone detail takes over
 const CACHE_SCALE_MAX = 0.06;   // px/m below which the offscreen world is used
 const MAX_SCALE = 6;            // deepest zoom: 6 px per metre
@@ -228,6 +241,20 @@ let layers = { roads: true, buildings: true, labels: true, zones: true };
 let selection = null;                        // {roads:[idx...], name, meta}
 let cacheCanvas = null, cacheDirty = true;   // offscreen whole-world paint (street)
 let overlayCanvas = null, overlayDirty = true; // same, transparent bg (sat/terrain)
+/* The caches are painted FOR the current screen resolution
+   (cacheScale, px per metre): line widths are then real screen
+   pixels, so the network survives at fit zoom on any screen size.
+   When a zoom crosses into a new resolution band, the target scale is
+   adopted at once but the repaint is debounced — pans and pinches
+   keep blitting the (slightly soft) old painting until things settle. */
+let cacheScale = 0, cacheTimer = 0, cacheHoldUntil = 0;
+function cacheTargetScale() {
+  if (!world) return 0.055;
+  const W = world.world[2] - world.world[0], H = world.world[3] - world.world[1];
+  let t = cam.scale * DPR;                       // device px per metre
+  t = Math.min(t, 3000 / W, 3000 / H);           // cap the canvas size
+  return Math.max(0.004, t);
+}
 let detailTimer = 0;
 /* Base layer (Google-Maps-style switcher): 'street' (our data on a
    plain land backdrop), 'satellite' (live Esri World Imagery tiles
@@ -288,6 +315,20 @@ function requestDraw() {
 }
 function afterCam() {
   clampCam();
+  /* Resolution band check for the wide-zoom paintings: adopt a new
+     target scale when the zoom has moved ~35% from the painted one,
+     but hold the repaint briefly so a gesture never stalls on it. */
+  if (world && cacheScale) {
+    const ct = cacheTargetScale();
+    if (Math.abs(Math.log2(ct / cacheScale)) > 0.45) {
+      cacheScale = ct;
+      cacheHoldUntil = performance.now() + 260;
+      clearTimeout(cacheTimer);
+      cacheTimer = setTimeout(() => {
+        cacheDirty = overlayDirty = true; requestDraw();
+      }, 270);
+    }
+  }
   updateScaleBar();
   requestDraw();
   clearTimeout(detailTimer);
@@ -313,19 +354,24 @@ function pathFromPolys(polys) {
   return p;
 }
 
-/* The offscreen whole-world painting: every road, drawn once at a
-   fixed resolution; wide-zoom frames just blit it. Locals get a
-   visible hairline here — the whole network, never a skeleton.
-   Two flavours: street (land painted in) and overlay (transparent,
-   blitted over satellite imagery / terrain tint). */
+/* The offscreen whole-world painting: every road, painted at the
+   resolution the screen is actually showing (cacheScale — see the
+   state declarations), so wide-zoom frames blit it ~1:1 and the
+   hairlines stay hairlines instead of averaging away. The whole
+   network, never a skeleton. Two flavours: street (land painted in)
+   and overlay (transparent, blitted over satellite imagery / terrain
+   tint). Widths below are PAINT pixels at cacheScale. */
 function buildCache(overlayOnly) {
-  const cs = 0.055;                                  // px per metre
+  if (!cacheScale) cacheScale = cacheTargetScale();
+  const cs = cacheScale;                             // px per metre
   const [x0, z0, x1, z1] = world.world;
-  const w = Math.ceil((x1 - x0) * cs), h = Math.ceil((z1 - z0) * cs);
+  const w = Math.max(2, Math.ceil((x1 - x0) * cs));
+  const h = Math.max(2, Math.ceil((z1 - z0) * cs));
   const cnv = document.createElement('canvas');
   cnv.width = w; cnv.height = h;
+  cnv._cs = cs;                    // the scale this painting was made at
   const c = cnv.getContext('2d');
-  if (!overlayOnly) { c.fillStyle = '#e3e5d8'; c.fillRect(0, 0, w, h); }
+  if (!overlayOnly) { c.fillStyle = LAND; c.fillRect(0, 0, w, h); }
   c.lineCap = 'round'; c.lineJoin = 'round';
   const pass = (cls, widthPx, color) => {
     c.strokeStyle = color; c.lineWidth = widthPx; c.beginPath();
@@ -336,10 +382,22 @@ function buildCache(overlayOnly) {
     }
   };
   if (layers.roads) {
-    pass(3, 0.9, '#f5f4ec');                        // locals: hairlines
-    pass(2, 1.2, '#fbfbf6');                        // minor arteries
-    pass(1, 2.4, '#c7c1ae'); pass(1, 1.7, '#ffffff'); // majors + casing
-    pass(0, 2.6, '#f2a71b');                        // highways
+    if (overlayOnly) {
+      /* Over imagery / tint: white roads with a dark major casing,
+         amber highways. The locals are slightly transparent so the
+         imagery breathes through at fit zoom instead of sitting
+         under a solid white web. */
+      pass(3, 1.3, 'rgba(240,240,238,.8)');          // locals
+      pass(2, 1.7, 'rgba(255,255,255,.9)');          // minor arteries
+      pass(1, 3.4, 'rgba(0,0,0,.5)'); pass(1, 2.4, '#ffffff'); // majors
+      pass(0, 3.6, '#ffb340');                       // highways
+    } else {
+      /* On charcoal land: light greys stepping down by class. */
+      pass(3, 1.5, '#a3abb6');                       // locals: hairlines
+      pass(2, 1.9, '#ccd2da');                       // minor arteries
+      pass(1, 3.6, '#0b0d10'); pass(1, 2.6, '#eef1f4'); // majors + casing
+      pass(0, 3.8, '#f2a71b');                       // highways
+    }
   }
   if (overlayOnly) { overlayCanvas = cnv; overlayDirty = false; }
   else { cacheCanvas = cnv; cacheDirty = false; }
@@ -359,7 +417,7 @@ function drawRoadSet(getPath, casing) {
       if (passName === 'casing') {
         if (cls === 3) continue;                    // locals: no casing
         lw = Math.max(CLS_WIDTH[cls] + 2.5, 2.6 / s);
-        ctx.strokeStyle = '#c7c1ae';
+        ctx.strokeStyle = '#0b0d10';                // near-black casing (dark scheme)
       } else {
         lw = Math.max(CLS_WIDTH[cls], (cls === 0 ? 1.8 : cls === 3 ? 0.85 : 1.2) / s);
         ctx.strokeStyle = CLS_COLOR[cls];
@@ -392,24 +450,28 @@ function draw() {
 
   /* --- base layer first --- */
   if (baseMode === 'satellite') {
-    ctx.fillStyle = '#101208'; ctx.fillRect(0, 0, VW, VH);
+    ctx.fillStyle = '#0b0d0f'; ctx.fillRect(0, 0, VW, VH);
     drawTiles();
   } else if (baseMode === 'terrain') {
-    ctx.fillStyle = '#dfe3cf'; ctx.fillRect(0, 0, VW, VH);
+    ctx.fillStyle = LAND; ctx.fillRect(0, 0, VW, VH);
     drawTerrainBase();
   } else {
-    ctx.fillStyle = '#e7e9df'; ctx.fillRect(0, 0, VW, VH);
+    ctx.fillStyle = LAND; ctx.fillRect(0, 0, VW, VH);
   }
 
   /* --- our roads over the base --- */
   if (layers.roads && s <= CACHE_SCALE_MAX) {
     /* Wide zoom: blit the pre-painted world (street flavour carries
-       its own land; satellite/terrain use the transparent overlay). */
+       its own land; satellite/terrain use the transparent overlay).
+       A painting whose repaint is being held (mid-gesture) is blitted
+       as-is; the debounced repaint sharpens it once things settle. */
     const streetBase = baseMode === 'street';
-    if (streetBase ? cacheDirty : overlayDirty) buildCache(!streetBase);
-    const cnv = streetBase ? cacheCanvas : overlayCanvas;
+    let cnv = streetBase ? cacheCanvas : overlayCanvas;
+    const dirty = streetBase ? cacheDirty : overlayDirty;
+    if (!cnv || (dirty && performance.now() >= cacheHoldUntil))
+      cnv = buildCache(!streetBase);
     const [x0, z0] = world.world;
-    const cs = 0.055;
+    const cs = cnv._cs;
     ctx.save();
     if (baseMode === 'terrain') ctx.globalAlpha = 0.55;
     ctx.imageSmoothingEnabled = true;
@@ -448,14 +510,14 @@ function drawDetailUnderlay() {
   for (const zi of visibleZones()) {
     const d = detail[world.zones[zi].id];
     if (!d || !d.loaded) continue;
-    if (d.waterFill) { ctx.fillStyle = 'rgba(150,190,225,.55)'; ctx.fill(d.waterFill); }
+    if (d.waterFill) { ctx.fillStyle = 'rgba(58,110,175,.50)'; ctx.fill(d.waterFill); }
     if (d.waterLine) {
-      ctx.strokeStyle = 'rgba(120,170,215,.7)';
+      ctx.strokeStyle = 'rgba(96,150,215,.8)';
       ctx.lineWidth = Math.max(2, 1 / s); ctx.stroke(d.waterLine);
     }
     if (layers.buildings && d.buildings) {
-      ctx.fillStyle = '#ddd3bf'; ctx.fill(d.buildings);
-      ctx.strokeStyle = 'rgba(120,110,95,.35)';
+      ctx.fillStyle = '#2e343e'; ctx.fill(d.buildings);
+      ctx.strokeStyle = 'rgba(170,178,190,.38)';
       ctx.lineWidth = 0.6 / s; ctx.stroke(d.buildings);
     }
   }
@@ -485,13 +547,13 @@ function drawZones() {
     const x0 = w2sx(b[0]), y0 = w2sy(b[1]), x1 = w2sx(b[2]), y1 = w2sy(b[3]);
     if (x1 < 0 || x0 > VW || y1 < 0 || y0 > VH) continue;
     ctx.strokeStyle = baseMode === 'satellite' ? 'rgba(255,255,255,.6)'
-                                               : 'rgba(110,95,70,.55)';
+                                               : 'rgba(235,238,242,.5)';
     ctx.lineWidth = 1.4; ctx.setLineDash([7, 5]);
     ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
     ctx.setLineDash([]);
     if (x1 - x0 > 120 && y1 - y0 > 44) {
-      ctx.fillStyle = baseMode === 'satellite' ? 'rgba(255,255,255,.75)'
-                                               : 'rgba(90,80,60,.6)';
+      ctx.fillStyle = baseMode === 'satellite' ? 'rgba(255,255,255,.8)'
+                                               : 'rgba(230,234,240,.66)';
       ctx.fillText(z.name.toUpperCase(), (x0 + x1) / 2, (y0 + y1) / 2);
     }
   }
@@ -533,13 +595,13 @@ function drawLabels(overviewMode) {
     if (a > Math.PI / 2) a -= Math.PI;
     if (a < -Math.PI / 2) a += Math.PI;
     ctx.rotate(a);
-    /* Light text with a dark halo over imagery; dark text with a
-       light halo over our own backdrops. */
+    /* Light text with a dark halo in every mode — the street and
+       terrain backdrops are dark now too. */
     ctx.lineWidth = 3.2;
     ctx.strokeStyle = baseMode === 'satellite' ? 'rgba(8,8,8,.62)'
-                                               : 'rgba(247,246,240,.88)';
+                                               : 'rgba(10,12,15,.72)';
     ctx.strokeText(r.name, 0, 0);
-    ctx.fillStyle = baseMode === 'satellite' ? '#ffffff' : '#3c3f38';
+    ctx.fillStyle = baseMode === 'satellite' ? '#ffffff' : '#eef0f3';
     ctx.fillText(r.name, 0, 0);
     ctx.restore();
     drawn++;
@@ -647,21 +709,83 @@ function drawTiles() {
    tint, 139–350 m) whose lat/lon bounds live in terrain_bands.json.
    Drawn through the same frame, so it aligns with the roads. (A true
    hillshade would need the full heights grid; the tint is the stored
-   terrain picture the repo already carries — v1 ships the tint.) */
-let tintImg = null, tintBounds = null;
+   terrain picture the repo already carries — v1 ships the tint.)
+   COVERAGE: the PNG's artwork is only the border-shaped study quad —
+   the rest of the image is transparent margin — while the world
+   (the zone rects) is bigger, mostly west and north. So the artwork
+   is drawn at its true place over a soft underlay: the artwork's own
+   colours, blurred tiny and stretched across the whole world rect.
+   Terrain then covers the entire area, what sits inside the quad is
+   still the exact stored picture, and the surround reads as the same
+   terrain continuing, softly out of focus. The artwork's extent
+   inside the PNG is measured once, from its alpha channel, when the
+   image arrives (a hard stretch of the artwork's rim pixels was
+   tried first — it smeared into corduroy streaks). */
+let tintImg = null, tintBounds = null, tintArt = null, tintBlur = null;
 fetch('../../map-data/terrain_bands.json').then(r => r.json()).then(j => {
   tintBounds = j.bounds;
   tintImg = new Image();
-  tintImg.onload = () => requestDraw();
+  tintImg.onload = () => { scanTintArt(); requestDraw(); };
   tintImg.src = '../../map-data/terrain_tint.png';
 }).catch(() => { /* terrain mode falls back to the plain backdrop */ });
+function scanTintArt() {
+  try {
+    const iw = tintImg.naturalWidth, ih = tintImg.naturalHeight;
+    const sc = Math.min(1, 512 / Math.max(iw, ih));
+    const oc = document.createElement('canvas');
+    oc.width = Math.max(1, Math.round(iw * sc));
+    oc.height = Math.max(1, Math.round(ih * sc));
+    const octx = oc.getContext('2d', { willReadFrequently: true });
+    octx.drawImage(tintImg, 0, 0, oc.width, oc.height);
+    const d = octx.getImageData(0, 0, oc.width, oc.height).data;
+    let x0 = oc.width, y0 = oc.height, x1 = -1, y1 = -1;
+    for (let y = 0; y < oc.height; y++)
+      for (let x = 0; x < oc.width; x++) {
+        if (d[(y * oc.width + x) * 4 + 3] > 8) {
+          if (x < x0) x0 = x; if (x > x1) x1 = x;
+          if (y < y0) y0 = y; if (y > y1) y1 = y;
+        }
+      }
+    if (x1 >= 0) tintArt = { x0: x0 / oc.width, y0: y0 / oc.height,
+                             x1: (x1 + 1) / oc.width, y1: (y1 + 1) / oc.height };
+    /* The soft underlay: the artwork squeezed into a 16×20 canvas —
+       stretched back out over the world it is all gentle gradients. */
+    if (tintArt) {
+      const bc = document.createElement('canvas');
+      bc.width = 16; bc.height = 20;
+      bc.getContext('2d').drawImage(tintImg,
+        tintArt.x0 * iw, tintArt.y0 * ih,
+        (tintArt.x1 - tintArt.x0) * iw, (tintArt.y1 - tintArt.y0) * ih,
+        0, 0, 16, 20);
+      tintBlur = bc;
+    }
+  } catch (e) { /* scan unavailable: the full image counts as artwork */ }
+}
 function drawTerrainBase() {
   if (!tintImg || !tintImg.complete || !tintBounds) return;
   const aw = latLonToWorld(tintBounds.north, tintBounds.west);
   const bw = latLonToWorld(tintBounds.south, tintBounds.east);
-  ctx.save(); ctx.globalAlpha = 0.95;
-  ctx.drawImage(tintImg, w2sx(aw[0]), w2sy(aw[1]),
-    (bw[0] - aw[0]) * cam.scale, (bw[1] - aw[1]) * cam.scale);
+  const f = tintArt || { x0: 0, y0: 0, x1: 1, y1: 1 };
+  const iw = tintImg.naturalWidth, ih = tintImg.naturalHeight;
+  const sx0 = f.x0 * iw, sy0 = f.y0 * ih, sx1 = f.x1 * iw, sy1 = f.y1 * ih;
+  /* The artwork's true screen rect (its own lat/lon through the frame) */
+  const ax0 = w2sx(aw[0] + (bw[0] - aw[0]) * f.x0);
+  const ax1 = w2sx(aw[0] + (bw[0] - aw[0]) * f.x1);
+  const ay0 = w2sy(aw[1] + (bw[1] - aw[1]) * f.y0);
+  const ay1 = w2sy(aw[1] + (bw[1] - aw[1]) * f.y1);
+  /* The whole world's screen rect — the underlay stretches to it. */
+  const wx0 = w2sx(world.world[0]), wy0 = w2sy(world.world[1]);
+  const wx1 = w2sx(world.world[2]), wy1 = w2sy(world.world[3]);
+  ctx.save();
+  /* underlay: the artwork's colours, blurred, over the whole world */
+  if (tintBlur) {
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(tintBlur, wx0, wy0, wx1 - wx0, wy1 - wy0);
+  }
+  /* the stored picture itself, at its true place, over the underlay */
+  ctx.globalAlpha = 0.97;
+  ctx.drawImage(tintImg, sx0, sy0, sx1 - sx0, sy1 - sy0,
+    ax0, ay0, ax1 - ax0, ay1 - ay0);
   ctx.restore();
 }
 
@@ -989,6 +1113,9 @@ function resize() {
   VW = app.clientWidth; VH = app.clientHeight;
   DPR = Math.min(2, window.devicePixelRatio || 1);
   cv.width = Math.round(VW * DPR); cv.height = Math.round(VH * DPR);
+  /* A new screen size (or pixel ratio) means the wide-zoom paintings
+     are at the wrong resolution — repaint them for this screen. */
+  cacheScale = 0; cacheDirty = overlayDirty = true; cacheHoldUntil = 0;
   if (world) {
     fitScale = Math.min(VW / (world.world[2] - world.world[0]),
                         VH / (world.world[3] - world.world[1]));
@@ -1031,6 +1158,8 @@ window.MAPVIEW = {
     detailLoaded: Object.keys(detail).filter(k => detail[k].loaded),
     tiles: tileCache.size,
     tilesOk: [...tileCache.values()].filter(t => t.ok).length,
+    cacheCs: cacheScale,
+    tintArt: tintArt,
   }),
   frameSearch: name => {
     for (const g of groups.values())
