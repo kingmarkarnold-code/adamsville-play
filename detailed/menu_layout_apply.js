@@ -14,6 +14,17 @@
  *     It decides how the group's items START the first time the menu
  *     is shown. Groups without the setting behave exactly as they
  *     always have. See applyGroupStart() below.
+ *   - Menu currency (2026-10-18, UI Editor 1.9.0): MENU_PANELS now
+ *     covers EVERY menu panel the game has (Pause, Advanced
+ *     Properties, Go To's siblings, Full Map, ...). Before this,
+ *     entries for those menus were skipped silently as "unknown",
+ *     which is how menu_layout.json fell behind the game without
+ *     anyone noticing. Launcher options (keyed "opt-<name>" in the
+ *     JSON) resolve to their checkbox input[data-opt] — they have
+ *     no element id. The parsed document is also stashed on
+ *     window.__SA_MENU_LAYOUT so panels built later by their own
+ *     modules (goto.js's Go To panel, hud_move.js's added buttons)
+ *     can apply their entries when they build.
  *
  * Joshua's rule: all code commented.
  */
@@ -21,7 +32,12 @@
   "use strict";
 
   // Menu panel element IDs in index.html that this applier can restyle.
-  // Maps menu key -> panel element ID.
+  // Maps menu key -> panel element ID. Keep this list complete: an
+  // entry whose key is missing here is skipped SILENTLY (that silence
+  // is what let the menu file fall behind the game — UI Editor
+  // 1.9.0's Menus tab now derives its list from the game files and
+  // would show the gap, but the applier must still cover the panel
+  // for edits to reach the game).
   var MENU_PANELS = {
     settings: "settings",
     gameplay: "gameplay",
@@ -29,6 +45,21 @@
     saveexit: "saveexit",
     launcher: "launcher",
     help: "help",
+    // Added 2026-10-18 (UI Editor 1.9.0 menu currency):
+    pause: "pause-overlay",
+    advprops: "advprops",
+    advpass: "advpass",
+    slotpick: "slotpick",
+    admconfirm: "adm-confirm",
+    zoneload: "zone-load-overlay",
+    inventory: "inv-panel",
+    npcdialog: "npc-dialog",
+    fullmap: "fullmap",
+    satview: "satview-ui",
+    hudmove: "hud-move-bar",
+    // "goto" is deliberately NOT here: goto.js builds its panel when
+    // the module loads (after this applier runs) and applies the
+    // Go To entries itself from window.__SA_MENU_LAYOUT.
   };
 
   /**
@@ -39,22 +70,45 @@
   function applyItem(def) {
     if (!def || !def.id) return null;
     var el = document.getElementById(def.id);
+    if (!el && def.id.indexOf("opt-") === 0) {
+      // Launcher option (2026-10-18): menu_layout.json keys these
+      // "opt-<name>", but the game's element is the checkbox
+      // input[data-opt="<name>"] — it carries no id, so the id
+      // lookup above can never find it. Resolve via data-opt.
+      el = document.querySelector(
+        'input[data-opt="' + def.id.slice(4) + '"]');
+    }
     if (!el) return null; // item not present — skip, don't crash
+    // For form controls (launcher checkboxes and selects), the
+    // player-visible text lives in the .opt-label span of the
+    // wrapping <label>, and hiding the option means hiding that
+    // wrapper row. The element RETURNED is the wrapper, so group
+    // start state (below) hides/shows the row, not the bare input.
+    var labelEl = el;
+    var retEl = el;
+    if (el.tagName === "INPUT" || el.tagName === "SELECT") {
+      var wrap = el.closest ? el.closest("label") : null;
+      if (wrap) {
+        labelEl = wrap.querySelector(".opt-label") || wrap;
+        retEl = wrap;
+        if (def.visible === false) wrap.style.display = "none";
+      }
+    }
     // Update the visible label (buttons may contain spans; only
     // replace the text node portion to preserve inner markup).
     if (typeof def.label === "string" && def.label) {
       // If the button has a single text node, replace it directly.
       var replaced = false;
-      for (var n = 0; n < el.childNodes.length; n++) {
-        var node = el.childNodes[n];
+      for (var n = 0; n < labelEl.childNodes.length; n++) {
+        var node = labelEl.childNodes[n];
         if (node.nodeType === 3 && node.textContent.trim()) {
           node.textContent = def.label;
           replaced = true;
           break;
         }
       }
-      if (!replaced && !el.querySelector("span")) {
-        el.textContent = def.label;
+      if (!replaced && !labelEl.querySelector("span")) {
+        labelEl.textContent = def.label;
       }
     }
     // Visibility: hide items marked invisible. Never force-show —
@@ -62,7 +116,7 @@
     if (def.visible === false) {
       el.style.display = "none";
     }
-    return el;
+    return retEl;
   }
 
   /**
@@ -185,6 +239,12 @@
       })
       .then(function (doc) {
         if (!doc || typeof doc.menus !== "object") return;
+        // Stash the parsed document for panels built AFTER this
+        // applier runs by their own modules: goto.js applies the
+        // "goto" entries when it builds its panel, hud_move.js
+        // applies "hudmove" entries to the buttons it adds to the
+        // Move controls bar (2026-10-18, menu currency).
+        try { window.__SA_MENU_LAYOUT = doc; } catch (e) {}
         Object.keys(doc.menus).forEach(function (key) {
           try {
             applyMenu(key, doc.menus[key]);
