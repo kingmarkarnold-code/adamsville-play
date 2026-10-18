@@ -1,169 +1,170 @@
 {
-  "about": "The inventory registry for adamsville-play. The used-list is NOT kept here \u2014 tools/check_inventory.py DERIVES it from the code's own references on every run (Joshua's design amendment, 2026-10-17: a hand-kept roster decays). This file only DECLARES the legitimate non-referenced states: stock, tooling and doc files, by area, with reasons. A file that is neither referenced nor declared here is a true orphan and fails the gate. Tools that create stock add their declaration here as part of creating it.",
-  "creation_targets": [
-    "editors/building-editor/station-edits.json",
-    "editors/building-editor/subdivisions.json",
-    "editors/map-editor/zone_edits.json",
-    "editors/map-editor/custom_zones.json",
-    "reports/*",
-    "world-fixes/*"
-  ],
-  "declarations": [
-    {
-      "class": "stock",
-      "pattern": "editors/stock/*",
-      "reason": "The shared stock shelf (ONE-SOURCE.md section 4): props, vocabularies and designs any editor \u2014 or the game \u2014 may use. Stock is present on purpose; no program has to reference it yet. Shelf layout is documented in editors/stock/README.md."
-    },
-    {
-      "class": "stock",
-      "pattern": "editors/stock/vocabularies/*.json",
-      "reason": "The Building Editor's pick-list vocabularies (floor-plan templates, fence styles, floor types, driveway materials, garage sides, house styles, decoration types, and the sibling lists in the same source block), copied verbatim out of the app's data.py onto the shared shelf 2026-10-17 (ONE-SOURCE.md section 4). These files are the canonical lists; the app still reads its baked-in copies until the Building Editor rebuild adopts the shelf."
-    },
-    {
-      "class": "stock",
-      "pattern": "editors/ui-editor/ui_layout_default.json",
-      "reason": "UI Editor factory-default layout seed. The live stock is detailed/ui_layout.json; this is the reset-to-factory source, labelled as such."
-    },
-    {
-      "class": "tooling",
-      "pattern": "editors/*.py",
-      "reason": "Editor app sources, kept in the repo as the editors' source of record (each app's updater also downloads its own .py files from these paths)."
-    },
-    {
-      "class": "tooling",
-      "pattern": "editors/*.js",
-      "reason": "Editor repo-side generator scripts (e.g. the Building Editor's index/live-status generators), run as part of editor save flows."
-    },
-    {
-      "class": "tooling",
-      "pattern": "editors/*.html",
-      "reason": "Editor web entry pages, part of the editor source sets."
-    },
-    {
-      "class": "tooling",
-      "pattern": "editors/*.png",
-      "reason": "Editor app icons (mollie-icon.png), part of the editor source sets."
-    },
-    {
-      "class": "tooling",
-      "pattern": "editors/*/.github/*.yml",
-      "reason": "Workflow copies kept with the editor sources from their old repos. Inert here \u2014 GitHub only runs workflows from the repo root .github/workflows."
-    },
-    {
-      "class": "tooling",
-      "pattern": "editors/map-editor/blender/*",
-      "reason": "Map Editor Blender workshop assets (world model, road objs). The placeable prop models moved to the shared shelf, editors/stock/props/."
-    },
-    {
-      "class": "tooling",
-      "pattern": "editors/elevation-editor/blender/*",
-      "reason": "Elevation Editor Blender workshop assets (parked editor, kept with its source set)."
-    },
-    {
-      "class": "tooling",
-      "pattern": "editors/elevation-editor/*.json",
-      "reason": "Elevation Editor data (terrain.json, version.json). The Elevation Editor is parked by Joshua (2026-10-16) and its code still points at its pre-consolidation repo; these files are its data of record, kept with the source set until it is unparked."
-    },
-    {
-      "class": "tooling",
-      "pattern": "tools/*.js",
-      "reason": "Repo tooling (smoke test, CI check, this inventory checker)."
-    },
-    {
-      "class": "tooling",
-      "pattern": "tools/*.py",
-      "reason": "Repo tooling (this inventory checker)."
-    },
-    {
-      "class": "tooling",
-      "pattern": "tools/*.json",
-      "reason": "Repo tooling data (this registry)."
-    },
-    {
-      "class": "tooling",
-      "pattern": "tools/watcher/*",
-      "reason": "The watcher app, source of record. Its game_sync.js loads the game's published files live; the other files are the app itself plus its offline fallbacks and reference photos."
-    },
-    {
-      "class": "tooling",
-      "pattern": "viewers/*",
-      "reason": "Standalone map viewer apps (web / Android / Linux), source of record. They consume the game's published data; nothing in the game references them."
-    },
-    {
-      "class": "stock",
-      "pattern": "map-data/*.geojson",
-      "reason": "Map source data of record \u2014 the border-clipped OSM record the converted game map was built from (map-data/INVENTORY.md). Kept so research and rebuilds never start over."
-    },
-    {
-      "class": "stock",
-      "pattern": "map-data/*.png",
-      "reason": "Map source data of record (terrain tint for the map-data set)."
-    },
-    {
-      "class": "stock",
-      "pattern": "map-data/*.json",
-      "reason": "Map source data of record (street names, terrain bands)."
-    },
-    {
-      "class": "stock",
-      "pattern": "map-data/game-map/*",
-      "reason": "The converted map dataset of record (roads/buildings/water/terrain + its viewer), produced by the map conversion and read by its viewer and the diagnostics work."
-    },
-    {
-      "class": "tooling",
-      "pattern": "map-data/diagnostics/*.html",
-      "reason": "Map diagnostics pages, served by Pages (road-buried-view.html and ground-compare-535.html are standing preview addresses). Instruments of the map toolchain."
-    },
-    {
-      "class": "doc",
-      "pattern": "map-data/resource-*.html",
-      "reason": "Research reference maps from the border/map research. Kept so the research is never redone."
-    },
-    {
-      "class": "doc",
-      "pattern": "map-data/border-map.html",
-      "reason": "Research reference map (the revised border). Kept so the research is never redone."
-    },
-    {
-      "class": "tooling",
-      "pattern": "map-data/.nojekyll",
-      "reason": "GitHub Pages config for the map-data subtree."
-    },
-    {
-      "class": "tooling",
-      "pattern": ".github/workflows/*.yml",
-      "reason": "Live GitHub Actions workflows."
-    },
-    {
-      "class": "tooling",
-      "pattern": ".gitignore",
-      "reason": "Repo config."
-    },
-    {
-      "class": "tooling",
-      "pattern": "reports/.gitkeep",
-      "reason": "Folder marker. reports/ is the game's upload target (detailed/github_reports.js); the real files are created by the game at runtime, and git cannot hold an empty folder."
-    },
-    {
-      "class": "tooling",
-      "pattern": "world-fixes/.gitkeep",
-      "reason": "Folder marker. world-fixes/ is the world-fix sync folder (detailed/worldfix_sync.js); batch files are created by devices at runtime, and git cannot hold an empty folder."
-    },
-    {
-      "class": "doc",
-      "pattern": "MIGRATION-MANIFEST.json",
-      "reason": "Generated snapshot of the 2026-10-17 clean-repo migration \u2014 the deriver's output at migration time (path, sha256, used-by/declaration for every file that moved). Regenerable by tools/check_inventory.py --snapshot; kept as the migration's record."
-    },
-    {
-      "class": "doc",
-      "pattern": "*.md",
-      "reason": "Project records and documentation (README, ONE-SOURCE.md, INVENTORY.md, dated work notes, editor READMEs, stock SOURCES notes)."
-    }
-  ],
-  "external": [
-    {
-      "note": "The APK's first-run setup page. Deployment file of the Android shell \u2014 it lives in the generated www tree / APK assets, never in this repo. References to it are references across the deployment boundary, not dangling.",
-      "path": "setup.html"
-    }
-  ]
+ "about": "The inventory registry for adamsville-play. The used-list is NOT kept here \u2014 tools/check_inventory.py DERIVES it from the code's own references on every run (Joshua's design amendment, 2026-10-17: a hand-kept roster decays). This file only DECLARES the legitimate non-referenced states: stock, tooling and doc files, by area, with reasons. A file that is neither referenced nor declared here is a true orphan and fails the gate. Tools that create stock add their declaration here as part of creating it.",
+ "creation_targets": [
+  "editors/building-editor/station-edits.json",
+  "editors/building-editor/building-edits.json",
+  "editors/building-editor/subdivisions.json",
+  "editors/map-editor/zone_edits.json",
+  "editors/map-editor/custom_zones.json",
+  "reports/*",
+  "world-fixes/*"
+ ],
+ "declarations": [
+  {
+   "class": "stock",
+   "pattern": "editors/stock/*",
+   "reason": "The shared stock shelf (ONE-SOURCE.md section 4): props, vocabularies and designs any editor \u2014 or the game \u2014 may use. Stock is present on purpose; no program has to reference it yet. Shelf layout is documented in editors/stock/README.md."
+  },
+  {
+   "class": "stock",
+   "pattern": "editors/stock/vocabularies/*.json",
+   "reason": "The Building Editor's pick-list vocabularies (floor-plan templates, fence styles, floor types, driveway materials, garage sides, house styles, decoration types, and the sibling lists in the same source block), copied verbatim out of the app's data.py onto the shared shelf 2026-10-17 (ONE-SOURCE.md section 4). These files are the canonical lists; the app still reads its baked-in copies until the Building Editor rebuild adopts the shelf."
+  },
+  {
+   "class": "stock",
+   "pattern": "editors/ui-editor/ui_layout_default.json",
+   "reason": "UI Editor factory-default layout seed. The live stock is detailed/ui_layout.json; this is the reset-to-factory source, labelled as such."
+  },
+  {
+   "class": "tooling",
+   "pattern": "editors/*.py",
+   "reason": "Editor app sources, kept in the repo as the editors' source of record (each app's updater also downloads its own .py files from these paths)."
+  },
+  {
+   "class": "tooling",
+   "pattern": "editors/*.js",
+   "reason": "Editor repo-side generator scripts (e.g. the Building Editor's index/live-status generators), run as part of editor save flows."
+  },
+  {
+   "class": "tooling",
+   "pattern": "editors/*.html",
+   "reason": "Editor web entry pages, part of the editor source sets."
+  },
+  {
+   "class": "tooling",
+   "pattern": "editors/*.png",
+   "reason": "Editor app icons (mollie-icon.png), part of the editor source sets."
+  },
+  {
+   "class": "tooling",
+   "pattern": "editors/*/.github/*.yml",
+   "reason": "Workflow copies kept with the editor sources from their old repos. Inert here \u2014 GitHub only runs workflows from the repo root .github/workflows."
+  },
+  {
+   "class": "tooling",
+   "pattern": "editors/map-editor/blender/*",
+   "reason": "Map Editor Blender workshop assets (world model, road objs). The placeable prop models moved to the shared shelf, editors/stock/props/."
+  },
+  {
+   "class": "tooling",
+   "pattern": "editors/elevation-editor/blender/*",
+   "reason": "Elevation Editor Blender workshop assets (parked editor, kept with its source set)."
+  },
+  {
+   "class": "tooling",
+   "pattern": "editors/elevation-editor/*.json",
+   "reason": "Elevation Editor data (terrain.json, version.json). The Elevation Editor is parked by Joshua (2026-10-16) and its code still points at its pre-consolidation repo; these files are its data of record, kept with the source set until it is unparked."
+  },
+  {
+   "class": "tooling",
+   "pattern": "tools/*.js",
+   "reason": "Repo tooling (smoke test, CI check, this inventory checker)."
+  },
+  {
+   "class": "tooling",
+   "pattern": "tools/*.py",
+   "reason": "Repo tooling (this inventory checker)."
+  },
+  {
+   "class": "tooling",
+   "pattern": "tools/*.json",
+   "reason": "Repo tooling data (this registry)."
+  },
+  {
+   "class": "tooling",
+   "pattern": "tools/watcher/*",
+   "reason": "The watcher app, source of record. Its game_sync.js loads the game's published files live; the other files are the app itself plus its offline fallbacks and reference photos."
+  },
+  {
+   "class": "tooling",
+   "pattern": "viewers/*",
+   "reason": "Standalone map viewer apps (web / Android / Linux), source of record. They consume the game's published data; nothing in the game references them."
+  },
+  {
+   "class": "stock",
+   "pattern": "map-data/*.geojson",
+   "reason": "Map source data of record \u2014 the border-clipped OSM record the converted game map was built from (map-data/INVENTORY.md). Kept so research and rebuilds never start over."
+  },
+  {
+   "class": "stock",
+   "pattern": "map-data/*.png",
+   "reason": "Map source data of record (terrain tint for the map-data set)."
+  },
+  {
+   "class": "stock",
+   "pattern": "map-data/*.json",
+   "reason": "Map source data of record (street names, terrain bands)."
+  },
+  {
+   "class": "stock",
+   "pattern": "map-data/game-map/*",
+   "reason": "The converted map dataset of record (roads/buildings/water/terrain + its viewer), produced by the map conversion and read by its viewer and the diagnostics work."
+  },
+  {
+   "class": "tooling",
+   "pattern": "map-data/diagnostics/*.html",
+   "reason": "Map diagnostics pages, served by Pages (road-buried-view.html and ground-compare-535.html are standing preview addresses). Instruments of the map toolchain."
+  },
+  {
+   "class": "doc",
+   "pattern": "map-data/resource-*.html",
+   "reason": "Research reference maps from the border/map research. Kept so the research is never redone."
+  },
+  {
+   "class": "doc",
+   "pattern": "map-data/border-map.html",
+   "reason": "Research reference map (the revised border). Kept so the research is never redone."
+  },
+  {
+   "class": "tooling",
+   "pattern": "map-data/.nojekyll",
+   "reason": "GitHub Pages config for the map-data subtree."
+  },
+  {
+   "class": "tooling",
+   "pattern": ".github/workflows/*.yml",
+   "reason": "Live GitHub Actions workflows."
+  },
+  {
+   "class": "tooling",
+   "pattern": ".gitignore",
+   "reason": "Repo config."
+  },
+  {
+   "class": "tooling",
+   "pattern": "reports/.gitkeep",
+   "reason": "Folder marker. reports/ is the game's upload target (detailed/github_reports.js); the real files are created by the game at runtime, and git cannot hold an empty folder."
+  },
+  {
+   "class": "tooling",
+   "pattern": "world-fixes/.gitkeep",
+   "reason": "Folder marker. world-fixes/ is the world-fix sync folder (detailed/worldfix_sync.js); batch files are created by devices at runtime, and git cannot hold an empty folder."
+  },
+  {
+   "class": "doc",
+   "pattern": "MIGRATION-MANIFEST.json",
+   "reason": "Generated snapshot of the 2026-10-17 clean-repo migration \u2014 the deriver's output at migration time (path, sha256, used-by/declaration for every file that moved). Regenerable by tools/check_inventory.py --snapshot; kept as the migration's record."
+  },
+  {
+   "class": "doc",
+   "pattern": "*.md",
+   "reason": "Project records and documentation (README, ONE-SOURCE.md, INVENTORY.md, dated work notes, editor READMEs, stock SOURCES notes)."
+  }
+ ],
+ "external": [
+  {
+   "note": "The APK's first-run setup page. Deployment file of the Android shell \u2014 it lives in the generated www tree / APK assets, never in this repo. References to it are references across the deployment boundary, not dangling.",
+   "path": "setup.html"
+  }
+ ]
 }
