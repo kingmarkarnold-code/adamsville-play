@@ -413,10 +413,10 @@
     },
     {
       "name": "traffic_system.js",
-      "size": 65521,
-      "sha256": "7ff6dbc69d70178a4ad2750efb1c0202c3bb640457e9bb431b7aef6646003b36",
-      "hash": "7ff6dbc69d70178a4ad2750efb1c0202c3bb640457e9bb431b7aef6646003b36",
-      "md5": "636746d205ea4b5cbca623f6f8ec5b8b"
+      "size": 74155,
+      "sha256": "99d3e0e7dfb5d2d64e4d0a9c60dd792f014ef5c8a378cc964a4880f7b2677789",
+      "hash": "99d3e0e7dfb5d2d64e4d0a9c60dd792f014ef5c8a378cc964a4880f7b2677789",
+      "md5": "9f1fb64d35236660da6edc3c8992a895"
     },
     {
       "name": "truck_restrictions.js",
@@ -496,6 +496,6 @@
       "hash": "1832bc66f3cfc9cf80d915de0191bea4123ac20bfea00097a77202d813b53af0"
     }
   ],
-  "ui_version": "2026.10.17.6",
-  "version": "2026.10.17.6"
+  "ui_version": "2026.10.17.7",
+  "version": "2026.10.17.7"
 }
