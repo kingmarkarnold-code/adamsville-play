@@ -1,0 +1,7 @@
+{
+  "schema": 1,
+  "kind": "chess-npc-profiles",
+  "generatedBy": "tools/generate-chess-npcs.js",
+  "sourceFiles": [],
+  "npcs": []
+}
