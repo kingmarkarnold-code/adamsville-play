@@ -239,9 +239,9 @@
     },
     {
       "name": "npc_system.js",
-      "size": 94958,
-      "sha256": "da9c4fd1ac4abf81d0f1380338b60e97ea52eb1c89f021247aa9395c3eca4225",
-      "hash": "da9c4fd1ac4abf81d0f1380338b60e97ea52eb1c89f021247aa9395c3eca4225"
+      "size": 95935,
+      "sha256": "5da981e426ea2ed398fedc46071e27d2f7141e2d7209e1a90102d16d13194685",
+      "hash": "5da981e426ea2ed398fedc46071e27d2f7141e2d7209e1a90102d16d13194685"
     },
     {
       "name": "pause_system.js",
@@ -250,9 +250,9 @@
     },
     {
       "name": "perf_budget.js",
-      "sha256": "5195f628a349ad00c9fd93144d90ca31dbade14f8751232061c1ecf8a6e50cbe",
-      "hash": "5195f628a349ad00c9fd93144d90ca31dbade14f8751232061c1ecf8a6e50cbe",
-      "size": 11610
+      "sha256": "74775423ff9b3f1e9d7d942189625f859c2a4160606af66da4afd51d52f1dc24",
+      "hash": "74775423ff9b3f1e9d7d942189625f859c2a4160606af66da4afd51d52f1dc24",
+      "size": 15785
     },
     {
       "name": "player.gif",
@@ -419,9 +419,9 @@
     },
     {
       "name": "traffic_system.js",
-      "size": 74155,
-      "sha256": "99d3e0e7dfb5d2d64e4d0a9c60dd792f014ef5c8a378cc964a4880f7b2677789",
-      "hash": "99d3e0e7dfb5d2d64e4d0a9c60dd792f014ef5c8a378cc964a4880f7b2677789",
+      "size": 76854,
+      "sha256": "f6ae231fe5e2ff89191d4f73ee0a10c44a607101e3f995b556af3586dc060638",
+      "hash": "f6ae231fe5e2ff89191d4f73ee0a10c44a607101e3f995b556af3586dc060638",
       "md5": "9f1fb64d35236660da6edc3c8992a895"
     },
     {
@@ -512,6 +512,6 @@
       "sha256": "74d2e3da9d5db086f3724cec9d5d42c2ba52e8561f2223fd467601d1ba8500b8"
     }
   ],
-  "ui_version": "2026.10.17.14",
+  "ui_version": "2026.10.17.15",
   "version": "2026.10.17.9"
 }
