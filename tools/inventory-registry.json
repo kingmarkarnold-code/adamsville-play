@@ -127,6 +127,11 @@
    "reason": "Map diagnostics pages, served by Pages (road-buried-view.html and ground-compare-535.html are standing preview addresses). Instruments of the map toolchain."
   },
   {
+   "class": "tooling",
+   "pattern": "tools/map-view/*",
+   "reason": "The Google-Maps-style viewable map of the rebuilt world (Joshua, 2026-10-18): map-view.html (pan/zoom/search viewer with Street / Satellite (Esri World Imagery tiles) / Terrain base layers, aligned through the conversion's own lat/lon frame), its generated overview dataset map-view-overview.json, and the generator that rebuilds that dataset from the game's zone files. The viewer only READS map-data/ and detailed/zones/ — map-data is the read-only resource map, so the tool lives here, never inside it."
+  },
+  {
    "class": "doc",
    "pattern": "map-data/resource-*.html",
    "reason": "Research reference maps from the border/map research. Kept so the research is never redone."

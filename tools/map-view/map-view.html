@@ -1,0 +1,1047 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- The viewer must fit whatever screen opens it (NOTHING OFF-SCREEN LAW):
+     the whole app lives inside one fixed, viewport-sized box. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Surviving Adamsville — Map Viewer</title>
+<style>
+  /* ---------- layout: every control lives inside the viewport box ---- */
+  html, body { margin:0; padding:0; height:100%; overflow:hidden;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background:#e7e9df; color:#22251f; }
+  #app { position:fixed; inset:0; overflow:hidden; }
+  #map { position:absolute; inset:0; width:100%; height:100%;
+    touch-action:none; display:block; cursor:grab; }
+  #map:active { cursor:grabbing; }
+
+  /* ---------- top bar: title + search -------------------------------- */
+  #topbar { position:absolute; top:0; left:0; right:0; z-index:5;
+    display:flex; flex-direction:column; gap:6px;
+    padding:8px 8px 0 8px; pointer-events:none; }
+  #searchrow { display:flex; gap:6px; align-items:flex-start;
+    pointer-events:none; }
+  #titlechip { pointer-events:auto; flex:0 1 auto; min-width:0;
+    background:rgba(255,255,255,.94); border:1px solid #c9c4b4;
+    border-radius:10px; padding:9px 10px; font-size:13px; font-weight:700;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    box-shadow:0 1px 4px rgba(40,40,30,.18); }
+  #searchbox { pointer-events:auto; position:relative; flex:1 1 auto;
+    min-width:120px; }
+  #q { width:100%; box-sizing:border-box; font-size:16px; padding:9px 34px 9px 12px;
+    border:1px solid #c9c4b4; border-radius:10px; background:rgba(255,255,255,.97);
+    box-shadow:0 1px 4px rgba(40,40,30,.18); outline:none; }
+  #q:focus { border-color:#e07b2a; }
+  #qclear { position:absolute; right:4px; top:4px; width:32px; height:32px;
+    border:none; background:transparent; font-size:18px; color:#777; cursor:pointer; }
+  #results { position:absolute; top:calc(100% + 4px); left:0; right:0;
+    background:#fff; border:1px solid #c9c4b4; border-radius:10px;
+    box-shadow:0 4px 14px rgba(40,40,30,.25); overflow-y:auto;
+    max-height:46vh; display:none; }
+  #results .item { padding:10px 12px; cursor:pointer; border-bottom:1px solid #eee9db; }
+  #results .item:last-child { border-bottom:none; }
+  #results .item:active, #results .item:hover { background:#fdf1e3; }
+  #results .nm { font-size:15px; font-weight:600; }
+  #results .meta { font-size:12px; color:#6d6a5e; margin-top:1px; }
+  #results .none { padding:10px 12px; font-size:13px; color:#6d6a5e; }
+
+  /* ---------- layer chips -------------------------------------------- */
+  #chips { display:flex; gap:6px; flex-wrap:wrap; pointer-events:none; }
+  .chip { pointer-events:auto; border:1px solid #c9c4b4; cursor:pointer;
+    background:rgba(255,255,255,.85); color:#55524a; border-radius:999px;
+    font-size:12.5px; font-weight:600; padding:6px 11px;
+    box-shadow:0 1px 3px rgba(40,40,30,.15); }
+  .chip.on { background:#2f4634; color:#fff; border-color:#2f4634; }
+  .chip.base.on { background:#7a4a12; border-color:#7a4a12; }
+  .chip:disabled { opacity:.55; cursor:default; }
+  .chipdiv { width:1px; align-self:stretch; background:#b9b49e; margin:2px 1px; }
+  #attrib { position:absolute; right:8px; bottom:8px; z-index:4;
+    font-size:10px; color:#44423a; background:rgba(255,255,255,.8);
+    padding:3px 7px; border-radius:6px; pointer-events:none;
+    max-width:calc(100vw - 130px); text-align:right; }
+
+  /* ---------- zoom controls (right edge, Google-style stack) --------- */
+  #zoomctl { position:absolute; right:10px; bottom:86px; z-index:5;
+    display:flex; flex-direction:column; gap:6px; }
+  #zoomctl button { width:44px; height:44px; border-radius:10px;
+    border:1px solid #c9c4b4; background:rgba(255,255,255,.95);
+    font-size:20px; font-weight:700; color:#33362e; cursor:pointer;
+    box-shadow:0 1px 4px rgba(40,40,30,.2); line-height:1; }
+  #zoomctl button:active { background:#fdf1e3; }
+  #zfit { font-size:12px !important; }
+
+  /* ---------- north badge + scale bar -------------------------------- */
+  #north { position:absolute; right:17px; bottom:238px; z-index:4;
+    width:34px; height:34px; border-radius:50%; text-align:center;
+    background:rgba(255,255,255,.9); border:1px solid #c9c4b4;
+    font-size:12px; font-weight:800; color:#33362e; line-height:34px;
+    box-shadow:0 1px 3px rgba(40,40,30,.15); pointer-events:none; }
+  #north span { color:#c33; }
+  #scalebar { position:absolute; left:10px; bottom:12px; z-index:4;
+    pointer-events:none; font-size:11px; color:#33362e;
+    text-shadow:0 1px 0 rgba(255,255,255,.8); }
+  #scaleline { height:5px; border:1.5px solid #33362e; border-top:none;
+    background:rgba(255,255,255,.35); width:100px; }
+  #scalelabel { margin-top:2px; font-weight:600; }
+  #scaleimp { font-weight:400; color:#55524a; }
+
+  /* ---------- loading pill + fatal overlay ---------------------------- */
+  #loadpill { position:absolute; left:50%; transform:translate(-50%,-50%);
+    top:50%; z-index:6; pointer-events:none; /* status only: never eat a tap */
+    background:rgba(38,42,35,.88); color:#fff;
+    font-size:12.5px; padding:6px 12px; border-radius:999px; display:none;
+    max-width:calc(100vw - 32px); white-space:nowrap; overflow:hidden;
+    text-overflow:ellipsis; }
+  #fatal { position:absolute; inset:0; z-index:9; display:none;
+    background:#e7e9df; padding:24px; box-sizing:border-box;
+    font-size:15px; line-height:1.5; }
+
+  /* ---------- info panel (bottom, slim, never covers the map) -------- */
+  #info { position:absolute; left:8px; right:8px; bottom:8px; z-index:5;
+    background:rgba(255,255,255,.97); border:1px solid #c9c4b4;
+    border-radius:12px; box-shadow:0 3px 12px rgba(40,40,30,.25);
+    padding:10px 40px 10px 14px; display:none; max-height:30vh;
+    overflow-y:auto; }
+  #info .nm { font-size:16px; font-weight:700; }
+  #info .meta { font-size:13px; color:#6d6a5e; margin-top:2px; }
+  #infoclose { position:absolute; right:6px; top:6px; width:32px; height:32px;
+    border:none; background:transparent; font-size:19px; color:#777;
+    cursor:pointer; }
+  @media (max-width:520px) {
+    #titlechip { display:none; }        /* phone: search takes the row */
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="map"></canvas>
+
+  <div id="topbar">
+    <div id="searchrow">
+      <div id="titlechip">🗺️ Surviving Adamsville</div>
+      <div id="searchbox">
+        <input id="q" type="search" placeholder="Search a street name…"
+               autocomplete="off" enterkeyhint="search">
+        <button id="qclear" title="Clear search" aria-label="Clear search">×</button>
+        <div id="results"></div>
+      </div>
+    </div>
+    <div id="chips">
+      <button class="chip on" data-layer="roads">Roads</button>
+      <button class="chip on" data-layer="buildings">Buildings</button>
+      <button class="chip on" data-layer="labels">Labels</button>
+      <button class="chip on" data-layer="zones">Zone boundaries</button>
+      <span class="chipdiv"></span>
+      <button class="chip base on" data-base="street">Street</button>
+      <button class="chip base" data-base="satellite">Satellite</button>
+      <button class="chip base" data-base="terrain">Terrain</button>
+      <button class="chip base" disabled title="The game itself renders the true 3D">3D · soon</button>
+    </div>
+  </div>
+
+  <div id="north"><span>▲</span> N</div>
+
+  <div id="zoomctl">
+    <button id="zin" aria-label="Zoom in">+</button>
+    <button id="zout" aria-label="Zoom out">−</button>
+    <button id="zfit" aria-label="Fit whole map">FIT</button>
+  </div>
+
+  <div id="scalebar">
+    <div id="scaleline"></div>
+    <div id="scalelabel">—</div>
+    <div id="scaleimp"></div>
+  </div>
+
+  <div id="loadpill"></div>
+
+  <div id="info">
+    <div class="nm" id="infoname"></div>
+    <div class="meta" id="infometa"></div>
+    <button id="infoclose" aria-label="Close">×</button>
+  </div>
+
+  <div id="attrib">Map data: Surviving Adamsville (OSM-derived)</div>
+
+  <div id="fatal"></div>
+</div>
+
+<script>
+'use strict';
+/* =====================================================================
+   Surviving Adamsville — MAP VIEWER (tools/map-view/map-view.html)
+
+   A Google-Maps-style viewable map of the REBUILT world — the same
+   converted zone data the game loads (65,970 roads, 166,444 buildings,
+   7 zones). It is a viewer only: it never edits data.
+
+   HOW IT STAYS LIGHT (Joshua's lightweight law):
+   * It opens on ONE compact overview file (map-view-overview.json,
+     ~2.1 MB / ~0.67 MB gzipped): every road in the world, simplified
+     to a few metres and delta-encoded, generated by
+     tools/map-view/generate-overview.py from the game's zone files.
+   * TRUE detail (exact road geometry, buildings, water) is fetched
+     per zone, only when the user zooms deep into that zone, from the
+     game's own files: ../detailed/zones/<zone>/roads.json etc.
+   * At the widest zooms the whole world is painted once onto an
+     offscreen canvas and blitted — panning stays smooth on a phone.
+   * BASE LAYERS (the switcher chips): Street = our data on a plain
+     backdrop; Satellite = live Esri World Imagery tiles under our
+     roads, aligned through the conversion's own lat/lon frame (see
+     worldToLatLon below), so streets sit on the imagery; Terrain =
+     our stored elevation tint (terrain_tint.png) with faint roads.
+     Switching layers never moves the camera. 3D is deliberately NOT
+     here — the game itself renders the true 3D (incl. Satellite View).
+
+   COORDINATES: game world metres, 1 unit = 1 metre. x grows east,
+   z grows SOUTH (so screen y = z: north is up, like a real map).
+   Camera = {cx, cz, scale} where scale is screen px per metre.
+   ===================================================================== */
+
+const OVERVIEW_URL = 'map-view-overview.json';
+const ZONE_DIR = id => '../../detailed/zones/' + id + '/';
+const CLS_LABEL = ['Highway', 'Major artery', 'Minor artery', 'Local road'];
+/* Road paint widths in metres (used at detail zooms; at wide zooms a
+   pixel floor keeps every street visible — the 1.9.6 lesson: never a
+   highway-only skeleton). */
+const CLS_WIDTH = [26, 15, 11, 7.5];
+const CLS_COLOR = ['#f2a71b', '#ffffff', '#ffffff', '#fdfdf8'];
+const DETAIL_SCALE = 0.25;      // px/m at which true zone detail takes over
+const CACHE_SCALE_MAX = 0.06;   // px/m below which the offscreen world is used
+const MAX_SCALE = 6;            // deepest zoom: 6 px per metre
+
+const cv = document.getElementById('map');
+const ctx = cv.getContext('2d');
+const app = document.getElementById('app');
+
+let VW = 0, VH = 0, DPR = 1;                 // viewport size (CSS px)
+let world = null;                            // overview document
+let roads = [];                              // decoded overview roads
+let zonePaths = [];                          // per zone: [Path2D x class]
+let namedSorted = [];                        // named road indices, label order
+let groups = new Map();                      // "nameIdx|zoneIdx" -> group
+let detail = {};                             // zoneId -> detail record
+let cam = { cx: 0, cz: 0, scale: 0.01 };
+let fitScale = 0.01;
+let layers = { roads: true, buildings: true, labels: true, zones: true };
+let selection = null;                        // {roads:[idx...], name, meta}
+let cacheCanvas = null, cacheDirty = true;   // offscreen whole-world paint (street)
+let overlayCanvas = null, overlayDirty = true; // same, transparent bg (sat/terrain)
+let detailTimer = 0;
+/* Base layer (Google-Maps-style switcher): 'street' (our data on a
+   plain land backdrop), 'satellite' (live Esri World Imagery tiles
+   under our roads), 'terrain' (our stored terrain tint + faint
+   roads). Switching NEVER moves the camera — same centre + zoom. */
+let baseMode = 'street';
+
+/* ---------------- world <-> screen --------------------------------- */
+const w2sx = x => (x - cam.cx) * cam.scale + VW / 2;
+const w2sy = z => (z - cam.cz) * cam.scale + VH / 2;
+const s2wx = px => (px - VW / 2) / cam.scale + cam.cx;
+const s2wz = py => (py - VH / 2) / cam.scale + cam.cz;
+
+function fitRect(b, animate) {
+  // b = [x0, z0, x1, z1]; frame it with a modest margin (the
+  // "photograph" framing Joshua specced for the Map Editor delete flow).
+  const pad = 26;
+  const w = Math.max(1, b[2] - b[0]), h = Math.max(1, b[3] - b[1]);
+  let s = Math.min((VW - pad * 2) / w, (VH - pad * 2) / h);
+  s = Math.max(fitScale * 0.45, Math.min(MAX_SCALE, s));
+  moveCam({ cx: (b[0] + b[2]) / 2, cz: (b[1] + b[3]) / 2, scale: s }, animate);
+}
+function fitWorld(animate) { if (world) fitRect(world.world, animate); }
+
+/* Small camera tween for fit/search jumps (cancelled by any gesture). */
+let tween = null;
+function moveCam(to, animate) {
+  if (!animate) { cam = to; tween = null; afterCam(); return; }
+  tween = { from: { ...cam }, to, t0: performance.now(), dur: 240 };
+  requestDraw();
+}
+function stepTween(now) {
+  if (!tween) return;
+  let t = (now - tween.t0) / tween.dur;
+  if (t >= 1) { cam = tween.to; tween = null; }
+  else {
+    const e = 1 - Math.pow(1 - t, 3);
+    cam = {
+      cx: tween.from.cx + (tween.to.cx - tween.from.cx) * e,
+      cz: tween.from.cz + (tween.to.cz - tween.from.cz) * e,
+      scale: tween.from.scale * Math.pow(tween.to.scale / tween.from.scale, e),
+    };
+  }
+  afterCam();
+}
+
+/* ---------------- drawing pipeline --------------------------------- */
+let drawQueued = false;
+function requestDraw() {
+  if (drawQueued) return;
+  drawQueued = true;
+  requestAnimationFrame(now => {
+    drawQueued = false;
+    stepTween(now);
+    draw();
+    if (tween) requestDraw();
+  });
+}
+function afterCam() {
+  clampCam();
+  updateScaleBar();
+  requestDraw();
+  clearTimeout(detailTimer);
+  detailTimer = setTimeout(ensureDetail, 220);
+}
+function clampCam() {
+  if (!world) return;
+  const [x0, z0, x1, z1] = world.world;
+  const mx = (x1 - x0) * 0.3, mz = (z1 - z0) * 0.3;
+  cam.cx = Math.min(x1 + mx, Math.max(x0 - mx, cam.cx));
+  cam.cz = Math.min(z1 + mz, Math.max(z0 - mz, cam.cz));
+  cam.scale = Math.min(MAX_SCALE, Math.max(fitScale * 0.45, cam.scale));
+}
+
+/* Build a Path2D (world coordinates) for a list of point arrays. */
+function pathFromPolys(polys) {
+  const p = new Path2D();
+  for (const pts of polys) {
+    if (!pts || pts.length < 2) continue;
+    p.moveTo(pts[0], pts[1]);
+    for (let i = 2; i < pts.length; i += 2) p.lineTo(pts[i], pts[i + 1]);
+  }
+  return p;
+}
+
+/* The offscreen whole-world painting: every road, drawn once at a
+   fixed resolution; wide-zoom frames just blit it. Locals get a
+   visible hairline here — the whole network, never a skeleton.
+   Two flavours: street (land painted in) and overlay (transparent,
+   blitted over satellite imagery / terrain tint). */
+function buildCache(overlayOnly) {
+  const cs = 0.055;                                  // px per metre
+  const [x0, z0, x1, z1] = world.world;
+  const w = Math.ceil((x1 - x0) * cs), h = Math.ceil((z1 - z0) * cs);
+  const cnv = document.createElement('canvas');
+  cnv.width = w; cnv.height = h;
+  const c = cnv.getContext('2d');
+  if (!overlayOnly) { c.fillStyle = '#e3e5d8'; c.fillRect(0, 0, w, h); }
+  c.lineCap = 'round'; c.lineJoin = 'round';
+  const pass = (cls, widthPx, color) => {
+    c.strokeStyle = color; c.lineWidth = widthPx; c.beginPath();
+    for (let zi = 0; zi < world.zones.length; zi++) {
+      // Path2D is in world coords; re-stroke it under this transform.
+      c.save(); c.translate(-x0 * cs, -z0 * cs); c.scale(cs, cs);
+      c.lineWidth = widthPx / cs; c.stroke(zonePaths[zi][cls]); c.restore();
+    }
+  };
+  if (layers.roads) {
+    pass(3, 0.9, '#f5f4ec');                        // locals: hairlines
+    pass(2, 1.2, '#fbfbf6');                        // minor arteries
+    pass(1, 2.4, '#c7c1ae'); pass(1, 1.7, '#ffffff'); // majors + casing
+    pass(0, 2.6, '#f2a71b');                        // highways
+  }
+  if (overlayOnly) { overlayCanvas = cnv; overlayDirty = false; }
+  else { cacheCanvas = cnv; cacheDirty = false; }
+  return cnv;
+}
+
+function drawRoadSet(getPath, casing) {
+  // getPath(zoneIdx, cls) -> Path2D|null. Two passes: casing, then fill.
+  const s = cam.scale;
+  ctx.save();
+  ctx.translate(VW / 2, VH / 2); ctx.scale(s, s); ctx.translate(-cam.cx, -cam.cz);
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  const vis = visibleZones();
+  for (const passName of (casing ? ['casing', 'fill'] : ['fill'])) {
+    for (let cls = 3; cls >= 0; cls--) {
+      let lw;
+      if (passName === 'casing') {
+        if (cls === 3) continue;                    // locals: no casing
+        lw = Math.max(CLS_WIDTH[cls] + 2.5, 2.6 / s);
+        ctx.strokeStyle = '#c7c1ae';
+      } else {
+        lw = Math.max(CLS_WIDTH[cls], (cls === 0 ? 1.8 : cls === 3 ? 0.85 : 1.2) / s);
+        ctx.strokeStyle = CLS_COLOR[cls];
+      }
+      ctx.lineWidth = lw;
+      for (const zi of vis) {
+        const p = getPath(zi, cls);
+        if (p) ctx.stroke(p);
+      }
+    }
+  }
+  ctx.restore();
+}
+
+function visibleZones() {
+  const vx0 = s2wx(0), vx1 = s2wx(VW), vz0 = s2wz(0), vz1 = s2wz(VH);
+  const out = [];
+  world.zones.forEach((z, i) => {
+    const b = z.b;
+    if (b[2] >= vx0 && b[0] <= vx1 && b[3] >= vz0 && b[1] <= vz1) out.push(i);
+  });
+  return out;
+}
+
+function draw() {
+  if (!world) return;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const s = cam.scale;
+  const useDetail = s >= DETAIL_SCALE;
+
+  /* --- base layer first --- */
+  if (baseMode === 'satellite') {
+    ctx.fillStyle = '#101208'; ctx.fillRect(0, 0, VW, VH);
+    drawTiles();
+  } else if (baseMode === 'terrain') {
+    ctx.fillStyle = '#dfe3cf'; ctx.fillRect(0, 0, VW, VH);
+    drawTerrainBase();
+  } else {
+    ctx.fillStyle = '#e7e9df'; ctx.fillRect(0, 0, VW, VH);
+  }
+
+  /* --- our roads over the base --- */
+  if (layers.roads && s <= CACHE_SCALE_MAX) {
+    /* Wide zoom: blit the pre-painted world (street flavour carries
+       its own land; satellite/terrain use the transparent overlay). */
+    const streetBase = baseMode === 'street';
+    if (streetBase ? cacheDirty : overlayDirty) buildCache(!streetBase);
+    const cnv = streetBase ? cacheCanvas : overlayCanvas;
+    const [x0, z0] = world.world;
+    const cs = 0.055;
+    ctx.save();
+    if (baseMode === 'terrain') ctx.globalAlpha = 0.55;
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(cnv,
+      (x0 - cam.cx) * s + VW / 2, (z0 - cam.cz) * s + VH / 2,
+      cnv.width / cs * s, cnv.height / cs * s);
+    ctx.restore();
+  } else {
+    /* Live vector drawing, zone-culled. Detail replaces overview per
+       zone once that zone's true data has arrived. Buildings/water
+       underlay belongs to street mode (satellite shows real roofs;
+       terrain stays terrain + roads). */
+    if (useDetail && baseMode === 'street') drawDetailUnderlay();
+    if (layers.roads) {
+      ctx.save();
+      if (baseMode === 'terrain') ctx.globalAlpha = 0.55;
+      if (baseMode === 'satellite') ctx.globalAlpha = 0.94;
+      drawRoadSet((zi, cls) => {
+        const d = detail[world.zones[zi].id];
+        if (useDetail && d && d.loaded) return d.paths[cls];
+        return zonePaths[zi][cls];
+      }, s >= 0.1);
+      ctx.restore();
+    }
+  }
+  if (selection) drawHighlight();
+  if (layers.zones) drawZones();
+  if (layers.labels) drawLabels(s <= CACHE_SCALE_MAX);
+}
+
+/* Water + buildings for zones whose detail has loaded (detail zooms). */
+function drawDetailUnderlay() {
+  const s = cam.scale;
+  ctx.save();
+  ctx.translate(VW / 2, VH / 2); ctx.scale(s, s); ctx.translate(-cam.cx, -cam.cz);
+  for (const zi of visibleZones()) {
+    const d = detail[world.zones[zi].id];
+    if (!d || !d.loaded) continue;
+    if (d.waterFill) { ctx.fillStyle = 'rgba(150,190,225,.55)'; ctx.fill(d.waterFill); }
+    if (d.waterLine) {
+      ctx.strokeStyle = 'rgba(120,170,215,.7)';
+      ctx.lineWidth = Math.max(2, 1 / s); ctx.stroke(d.waterLine);
+    }
+    if (layers.buildings && d.buildings) {
+      ctx.fillStyle = '#ddd3bf'; ctx.fill(d.buildings);
+      ctx.strokeStyle = 'rgba(120,110,95,.35)';
+      ctx.lineWidth = 0.6 / s; ctx.stroke(d.buildings);
+    }
+  }
+  ctx.restore();
+}
+
+function drawHighlight() {
+  const s = cam.scale;
+  const polys = selection.roads.map(i => roads[i].pts);
+  const p = pathFromPolys(polys);
+  ctx.save();
+  ctx.translate(VW / 2, VH / 2); ctx.scale(s, s); ctx.translate(-cam.cx, -cam.cz);
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.strokeStyle = 'rgba(255,255,255,.9)';
+  ctx.lineWidth = Math.max(15, 5.5 / s); ctx.stroke(p);
+  ctx.strokeStyle = '#ff6d00';
+  ctx.lineWidth = Math.max(9, 3.4 / s); ctx.stroke(p);
+  ctx.restore();
+}
+
+function drawZones() {
+  ctx.save();
+  ctx.font = '700 15px system-ui, sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (const z of world.zones) {
+    const b = z.b;
+    const x0 = w2sx(b[0]), y0 = w2sy(b[1]), x1 = w2sx(b[2]), y1 = w2sy(b[3]);
+    if (x1 < 0 || x0 > VW || y1 < 0 || y0 > VH) continue;
+    ctx.strokeStyle = baseMode === 'satellite' ? 'rgba(255,255,255,.6)'
+                                               : 'rgba(110,95,70,.55)';
+    ctx.lineWidth = 1.4; ctx.setLineDash([7, 5]);
+    ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+    ctx.setLineDash([]);
+    if (x1 - x0 > 120 && y1 - y0 > 44) {
+      ctx.fillStyle = baseMode === 'satellite' ? 'rgba(255,255,255,.75)'
+                                               : 'rgba(90,80,60,.6)';
+      ctx.fillText(z.name.toUpperCase(), (x0 + x1) / 2, (y0 + y1) / 2);
+    }
+  }
+  ctx.restore();
+}
+
+/* ---------------- labels ---------------------------------------------
+   Named roads only. A label sits at the road's arc-length midpoint,
+   rotated along the road, haloed, one per screen cell, no repeats of
+   the same name close together — readable, never label soup. */
+function drawLabels(overviewMode) {
+  const s = cam.scale;
+  const minScale = [0, 0.012, 0.07, 0.22];          // per class
+  const fs = overviewMode ? 10.5 : 12;
+  ctx.save();
+  ctx.font = '600 ' + fs + 'px system-ui, sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const cellW = 176, cellH = 48;
+  const cells = new Set(), placedNames = new Map();
+  let drawn = 0;
+  for (const i of namedSorted) {
+    if (drawn >= 90) break;
+    const r = roads[i];
+    if (s < minScale[r.cls]) continue;
+    const b = r.bbox;
+    if (b[2] < s2wx(-60) || b[0] > s2wx(VW + 60) ||
+        b[3] < s2wz(-60) || b[1] > s2wz(VH + 60)) continue;
+    if (r.len * s < 74) continue;                   // too short on screen
+    const mx = w2sx(r.mid[0]), my = w2sy(r.mid[1]);
+    if (mx < -70 || mx > VW + 70 || my < -30 || my > VH + 30) continue;
+    const cell = Math.floor(mx / cellW) + ':' + Math.floor(my / cellH);
+    if (cells.has(cell)) continue;
+    const prev = placedNames.get(r.name);
+    if (prev && Math.hypot(prev[0] - mx, prev[1] - my) < 640) continue;
+    cells.add(cell); placedNames.set(r.name, [mx, my]);
+    ctx.save();
+    ctx.translate(mx, my);
+    let a = r.ang;
+    if (a > Math.PI / 2) a -= Math.PI;
+    if (a < -Math.PI / 2) a += Math.PI;
+    ctx.rotate(a);
+    /* Light text with a dark halo over imagery; dark text with a
+       light halo over our own backdrops. */
+    ctx.lineWidth = 3.2;
+    ctx.strokeStyle = baseMode === 'satellite' ? 'rgba(8,8,8,.62)'
+                                               : 'rgba(247,246,240,.88)';
+    ctx.strokeText(r.name, 0, 0);
+    ctx.fillStyle = baseMode === 'satellite' ? '#ffffff' : '#3c3f38';
+    ctx.fillText(r.name, 0, 0);
+    ctx.restore();
+    drawn++;
+  }
+  ctx.restore();
+}
+
+/* ---------------- scale bar ----------------------------------------- */
+function updateScaleBar() {
+  if (!world) return;
+  const steps = [5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
+  let pick = steps[0];
+  for (const m of steps) if (m * cam.scale <= 118) pick = m;
+  document.getElementById('scaleline').style.width = (pick * cam.scale) + 'px';
+  document.getElementById('scalelabel').textContent =
+    pick < 1000 ? pick + ' m' : (pick / 1000) + ' km';
+  document.getElementById('scaleimp').textContent =
+    pick < 1000 ? '≈ ' + Math.round(pick * 3.28084) + ' ft'
+                : '≈ ' + (pick / 1609.34).toFixed(2) + ' mi';
+}
+
+/* =====================================================================
+   WORLD <-> LAT/LON — the exact frame the map conversion used
+   (map-data-work/full-build/convert.js, CONVERSION-DESIGN §1.4).
+   The game frame is DEFINED from lat/lon, so this is closed-form,
+   not a fit:  xo = (lon + 84.6209)/0.2418·8000,
+   zo = (33.8392 − lat)/0.3184·12000, then the split-zones rescale
+   s = 1609/568 about centre (3772.5, 2009). Anchor check: world
+   (1938.004, 6791.345) <-> lat 33.74110, lon −84.52645 (535 Dollar
+   Mill). This is what lets Esri's imagery tiles and our roads —
+   drawn from the same real streets — sit on top of each other.
+   ===================================================================== */
+const FRAME_S = 1609 / 568;
+function latLonToWorld(lat, lon) {
+  const xo = (lon + 84.6209) / 0.2418 * 8000;
+  const zo = (33.8392 - lat) / 0.3184 * 12000;
+  return [3772.5 + (xo - 3772.5) * FRAME_S, 2009 + (zo - 2009) * FRAME_S];
+}
+function worldToLatLon(x, z) {
+  const xo = (x - 3772.5) / FRAME_S + 3772.5;
+  const zo = (z - 2009) / FRAME_S + 2009;
+  return { lat: 33.8392 - zo * 0.3184 / 12000, lon: xo * 0.2418 / 8000 - 84.6209 };
+}
+
+/* ---------------- satellite tiles (Esri World Imagery) --------------
+   Same source the repo's research satellite map uses
+   (map-data/resource-map-4-satellite.html, read-only reference). Tiles are Web Mercator;
+   each tile is drawn into the screen rectangle of its own lat/lon
+   corners converted through the frame above, so our roads — converted
+   through the SAME frame — land on the imagery roads. */
+const TILE_URL = (z, x, y) =>
+  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/' + z + '/' + y + '/' + x;
+const tileCache = new Map();
+let tilesMissing = false;
+
+function tileZoom() {
+  const c = worldToLatLon(cam.cx, cam.cz);
+  const v = 156543.03392 * Math.cos(c.lat * Math.PI / 180) * cam.scale;
+  return Math.max(10, Math.min(19, Math.round(Math.log2(Math.max(2, v)))));
+}
+function tileNW(z, tx, ty) {
+  const n = Math.pow(2, z);
+  return {
+    lon: tx / n * 360 - 180,
+    lat: Math.atan(Math.sinh(Math.PI * (1 - 2 * ty / n))) * 180 / Math.PI,
+  };
+}
+function drawTiles() {
+  const z = tileZoom(), n = Math.pow(2, z);
+  const nw = worldToLatLon(s2wx(0), s2wz(0));
+  const se = worldToLatLon(s2wx(VW), s2wz(VH));
+  const txOf = lon => Math.floor((lon + 180) / 360 * n);
+  const tyOf = lat => {
+    const r = lat * Math.PI / 180;
+    return Math.floor((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * n);
+  };
+  let missing = false;
+  for (let ty = tyOf(nw.lat); ty <= tyOf(se.lat); ty++) {
+    for (let tx = txOf(nw.lon); tx <= txOf(se.lon); tx++) {
+      const key = z + '/' + tx + '/' + ty;
+      let t = tileCache.get(key);
+      if (!t) {
+        t = { img: new Image(), ok: false, err: false };
+        t.img.onload = () => { t.ok = true; requestDraw(); };
+        /* A failed tile is SETTLED, not "still loading": it draws
+           nothing, and it must not keep the loading pill up forever. */
+        t.img.onerror = () => { t.err = true; requestDraw(); };
+        t.img.src = TILE_URL(z, tx, ty);
+        tileCache.set(key, t);
+        if (tileCache.size > 600) tileCache.delete(tileCache.keys().next().value);
+        missing = true; continue;
+      }
+      if (!t.ok) { if (!t.err) missing = true; continue; }
+      const a = tileNW(z, tx, ty), b = tileNW(z, tx + 1, ty + 1);
+      const aw = latLonToWorld(a.lat, a.lon), bw = latLonToWorld(b.lat, b.lon);
+      ctx.drawImage(t.img, w2sx(aw[0]), w2sy(aw[1]),
+        (bw[0] - aw[0]) * cam.scale, (bw[1] - aw[1]) * cam.scale);
+    }
+  }
+  if (missing !== tilesMissing) { tilesMissing = missing; refreshPill(); }
+}
+
+/* ---------------- terrain tint ---------------------------------------
+   Our own stored terrain: map-data/terrain_tint.png (elevation-band
+   tint, 139–350 m) whose lat/lon bounds live in terrain_bands.json.
+   Drawn through the same frame, so it aligns with the roads. (A true
+   hillshade would need the full heights grid; the tint is the stored
+   terrain picture the repo already carries — v1 ships the tint.) */
+let tintImg = null, tintBounds = null;
+fetch('../../map-data/terrain_bands.json').then(r => r.json()).then(j => {
+  tintBounds = j.bounds;
+  tintImg = new Image();
+  tintImg.onload = () => requestDraw();
+  tintImg.src = '../../map-data/terrain_tint.png';
+}).catch(() => { /* terrain mode falls back to the plain backdrop */ });
+function drawTerrainBase() {
+  if (!tintImg || !tintImg.complete || !tintBounds) return;
+  const aw = latLonToWorld(tintBounds.north, tintBounds.west);
+  const bw = latLonToWorld(tintBounds.south, tintBounds.east);
+  ctx.save(); ctx.globalAlpha = 0.95;
+  ctx.drawImage(tintImg, w2sx(aw[0]), w2sy(aw[1]),
+    (bw[0] - aw[0]) * cam.scale, (bw[1] - aw[1]) * cam.scale);
+  ctx.restore();
+}
+
+/* ---------------- loading pill -------------------------------------- */
+const pillEl = document.getElementById('loadpill');
+const loadingZones = new Set();
+let booted = false;
+function refreshPill() {
+  let txt = null;
+  if (!booted) txt = 'Loading map…';
+  else if (loadingZones.size) txt = 'Loading ' + [...loadingZones].join(', ') + ' detail…';
+  else if (baseMode === 'satellite' && tilesMissing) txt = 'Loading imagery…';
+  pillEl.textContent = txt || '';
+  pillEl.style.display = txt ? 'block' : 'none';
+}
+
+/* ---------------- overview load + decode ----------------------------- */
+function decodeOverview(doc) {
+  world = doc;
+  const [ox, oz] = doc.world;
+  roads = new Array(doc.roads.length);
+  zonePaths = doc.zones.map(() => [ [], [], [], [] ]);
+  const zonePolys = doc.zones.map(() => [ [], [], [], [] ]);
+  doc.roads.forEach((enc, i) => {
+    const cls = enc[0], zi = enc[1], ni = enc[2];
+    const n = (enc.length - 3) / 2;
+    const pts = new Float32Array(n * 2);
+    let x = enc[3] + ox, z = enc[4] + oz;
+    pts[0] = x; pts[1] = z;
+    let x0 = x, z0 = z, x1 = x, z1 = z, len = 0;
+    for (let k = 1; k < n; k++) {
+      const nx = x + enc[3 + k * 2], nz = z + enc[4 + k * 2];
+      len += Math.hypot(nx - x, nz - z);
+      x = nx; z = nz;
+      pts[k * 2] = x; pts[k * 2 + 1] = z;
+      if (x < x0) x0 = x; if (x > x1) x1 = x;
+      if (z < z0) z0 = z; if (z > z1) z1 = z;
+    }
+    /* arc-length midpoint + direction there (for the label) */
+    let acc = 0, mid = [pts[0], pts[1]], ang = 0;
+    for (let k = 1; k < n; k++) {
+      const dx = pts[k * 2] - pts[k * 2 - 2], dz = pts[k * 2 + 1] - pts[k * 2 - 1];
+      const d = Math.hypot(dx, dz);
+      if (acc + d >= len / 2) {
+        const t = d ? (len / 2 - acc) / d : 0;
+        mid = [pts[k * 2 - 2] + dx * t, pts[k * 2 - 1] + dz * t];
+        ang = Math.atan2(dz, dx);
+        break;
+      }
+      acc += d;
+    }
+    const name = ni >= 0 ? doc.names[ni] : null;
+    roads[i] = { cls, zone: zi, name, pts, bbox: [x0, z0, x1, z1], len, mid, ang };
+    zonePolys[zi][cls].push(pts);
+    /* search groups: same name + same zone = one street */
+    if (name) {
+      const key = ni + '|' + zi;
+      let g = groups.get(key);
+      if (!g) {
+        g = { name, zone: zi, roads: [], bbox: [x0, z0, x1, z1], len: 0 };
+        groups.set(key, g);
+      }
+      g.roads.push(i); g.len += len;
+      g.bbox[0] = Math.min(g.bbox[0], x0); g.bbox[1] = Math.min(g.bbox[1], z0);
+      g.bbox[2] = Math.max(g.bbox[2], x1); g.bbox[3] = Math.max(g.bbox[3], z1);
+    }
+  });
+  for (let zi = 0; zi < doc.zones.length; zi++)
+    for (let cls = 0; cls < 4; cls++)
+      zonePaths[zi][cls] = pathFromPolys(zonePolys[zi][cls]);
+  namedSorted = roads.map((r, i) => r.name ? i : -1).filter(i => i >= 0)
+    .sort((a, b) => roads[a].cls - roads[b].cls || roads[b].len - roads[a].len);
+}
+
+/* ---------------- per-zone detail (true geometry) -------------------- */
+function ensureDetail() {
+  if (!world || cam.scale < DETAIL_SCALE * 0.9) return;
+  for (const zi of visibleZones()) {
+    const zid = world.zones[zi].id;
+    if (detail[zid]) continue;
+    detail[zid] = { loaded: false, paths: null };
+    loadingZones.add(world.zones[zi].name); refreshPill();
+    const base = ZONE_DIR(zid);
+    Promise.all([
+      fetch(base + 'roads.json').then(r => r.json()),
+      fetch(base + 'buildings.json').then(r => r.json()),
+      fetch(base + 'water.json').then(r => r.json()).catch(() => null),
+    ]).then(([rj, bj, wj]) => {
+      const d = detail[zid];
+      d.paths = world.classes.map(cls =>
+        pathFromPolys((rj[cls] || []).map(rec => rec.pts.flat())));
+      const bp = new Path2D();
+      for (const b of (bj.buildings || []))
+        bp.rect(b[0] - b[2] / 2, b[1] - b[3] / 2, b[2], b[3]);
+      d.buildings = bp;
+      if (wj && wj.water) {
+        const fill = new Path2D(), line = new Path2D();
+        for (const f of wj.water) {
+          const ring = f[2]; if (!ring || ring.length < 2) continue;
+          const closed = ring[0][0] === ring[ring.length - 1][0] &&
+                         ring[0][1] === ring[ring.length - 1][1];
+          const tgt = closed ? fill : line;
+          tgt.moveTo(ring[0][0], ring[0][1]);
+          for (let k = 1; k < ring.length; k++) tgt.lineTo(ring[k][0], ring[k][1]);
+          if (closed) tgt.closePath();
+        }
+        d.waterFill = fill; d.waterLine = line;
+      }
+      d.loaded = true;
+      loadingZones.delete(world.zones[zi].name); refreshPill();
+      requestDraw();
+    }).catch(() => {
+      /* detail failed (offline?): overview geometry stays on screen */
+      loadingZones.delete(world.zones[zi].name); refreshPill();
+    });
+  }
+}
+
+/* ---------------- selection + info panel ----------------------------- */
+const infoEl = document.getElementById('info');
+const attribEl = document.getElementById('attrib');
+function showInfo(title, meta) {
+  document.getElementById('infoname').textContent = title;
+  document.getElementById('infometa').textContent = meta;
+  infoEl.style.display = 'block';
+  attribEl.style.bottom = (infoEl.offsetHeight + 16) + 'px';
+}
+function hideInfo() {
+  infoEl.style.display = 'none';
+  attribEl.style.bottom = '8px';
+}
+function fmtLen(m) {
+  return m < 1000 ? '≈ ' + Math.round(m) + ' m'
+                  : '≈ ' + (m / 1000).toFixed(2) + ' km';
+}
+function selectRoads(idxs, title, meta) {
+  selection = { roads: idxs };
+  showInfo(title, meta);
+  requestDraw();
+}
+function pickGroup(g) {
+  selectRoads(g.roads, g.name,
+    world.zones[g.zone].name + ' · ' + g.roads.length + ' road segment' +
+    (g.roads.length === 1 ? '' : 's') + ' · total ' + fmtLen(g.len));
+  fitRect(g.bbox, true);
+}
+
+/* Tap hit-test: nearest road within a few screen px of the point. */
+function roadAt(wx, wz) {
+  const s = cam.scale;
+  let best = -1, bestD = Math.max(13 / s, 7);
+  for (let i = 0; i < roads.length; i++) {
+    const r = roads[i], b = r.bbox, pad = Math.max(14 / s, CLS_WIDTH[r.cls]);
+    if (wx < b[0] - pad || wx > b[2] + pad || wz < b[1] - pad || wz > b[3] + pad) continue;
+    const p = r.pts;
+    for (let k = 1; k < p.length / 2; k++) {
+      const ax = p[k * 2 - 2], az = p[k * 2 - 1], bx = p[k * 2], bz = p[k * 2 + 1];
+      const dx = bx - ax, dz = bz - az, L2 = dx * dx + dz * dz;
+      let t = L2 ? ((wx - ax) * dx + (wz - az) * dz) / L2 : 0;
+      t = Math.max(0, Math.min(1, t));
+      const d = Math.hypot(wx - (ax + dx * t), wz - (az + dz * t));
+      if (d < bestD) { bestD = d; best = i; }
+    }
+  }
+  return best;
+}
+
+/* ---------------- input: pan / pinch / wheel / tap -------------------- */
+const pointers = new Map();
+let gesture = null;   // {moved, t0, pinchD, pinchMid}
+cv.addEventListener('pointerdown', e => {
+  cv.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId, [e.clientX, e.clientY]);
+  tween = null;
+  if (pointers.size === 1) {
+    gesture = { moved: 0, t0: performance.now(), x: e.clientX, y: e.clientY };
+  } else if (pointers.size === 2) {
+    const [p, q] = [...pointers.values()];
+    gesture.pinchD = Math.hypot(p[0] - q[0], p[1] - q[1]);
+    gesture.pinchMid = [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];
+    gesture.moved = 99;                              // a pinch is never a tap
+  }
+});
+cv.addEventListener('pointermove', e => {
+  if (!pointers.has(e.pointerId) || !gesture) return;
+  const prev = pointers.get(e.pointerId);
+  pointers.set(e.pointerId, [e.clientX, e.clientY]);
+  if (pointers.size === 1) {
+    const dx = e.clientX - prev[0], dy = e.clientY - prev[1];
+    gesture.moved += Math.abs(dx) + Math.abs(dy);
+    cam.cx -= dx / cam.scale; cam.cz -= dy / cam.scale;
+    afterCam();
+  } else if (pointers.size === 2) {
+    const [p, q] = [...pointers.values()];
+    const d = Math.hypot(p[0] - q[0], p[1] - q[1]);
+    const mid = [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];
+    if (gesture.pinchD > 0) {
+      zoomAt(mid[0], mid[1], d / gesture.pinchD);
+      cam.cx -= (mid[0] - gesture.pinchMid[0]) / cam.scale;
+      cam.cz -= (mid[1] - gesture.pinchMid[1]) / cam.scale;
+      afterCam();
+    }
+    gesture.pinchD = d; gesture.pinchMid = mid;
+  }
+});
+function endPointer(e) {
+  const wasTap = gesture && pointers.size === 1 && gesture.moved < 6 &&
+    performance.now() - gesture.t0 < 450;
+  pointers.delete(e.pointerId);
+  if (pointers.size === 0) {
+    if (wasTap && world) {
+      const i = roadAt(s2wx(e.clientX), s2wz(e.clientY));
+      if (i >= 0) {
+        const r = roads[i];
+        selectRoads([i], r.name || 'Unnamed road',
+          world.zones[r.zone].name + ' · ' + CLS_LABEL[r.cls] +
+          ' · ' + fmtLen(r.len) + ' long');
+      } else { selection = null; hideInfo(); requestDraw(); }
+    }
+    gesture = null;
+  }
+}
+cv.addEventListener('pointerup', endPointer);
+cv.addEventListener('pointercancel', endPointer);
+cv.addEventListener('wheel', e => {
+  e.preventDefault(); tween = null;
+  zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.0016));
+  afterCam();
+}, { passive: false });
+cv.addEventListener('dblclick', e => { zoomAt(e.clientX, e.clientY, 1.6); afterCam(); });
+
+function zoomAt(px, py, factor) {
+  const wx = s2wx(px), wz = s2wz(py);
+  cam.scale = Math.min(MAX_SCALE, Math.max(fitScale * 0.45, cam.scale * factor));
+  cam.cx = wx - (px - VW / 2) / cam.scale;
+  cam.cz = wz - (py - VH / 2) / cam.scale;
+}
+
+/* ---------------- UI wiring ------------------------------------------ */
+document.querySelectorAll('.chip[data-layer]').forEach(ch => {
+  ch.addEventListener('click', () => {
+    const k = ch.dataset.layer;
+    layers[k] = !layers[k];
+    ch.classList.toggle('on', layers[k]);
+    if (k === 'roads') { cacheDirty = true; overlayDirty = true; }
+    requestDraw();
+  });
+});
+const ATTRIB = {
+  street: 'Map data: Surviving Adamsville (OSM-derived)',
+  terrain: 'Terrain: Surviving Adamsville elevation tint (139–350 m) · Roads OSM-derived',
+  satellite: 'Imagery © Esri, Maxar, Earthstar Geographics · Roads © OpenStreetMap contributors',
+};
+document.querySelectorAll('.chip[data-base]').forEach(ch => {
+  ch.addEventListener('click', () => {
+    baseMode = ch.dataset.base;
+    document.querySelectorAll('.chip[data-base]')
+      .forEach(c => c.classList.toggle('on', c === ch));
+    attribEl.textContent = ATTRIB[baseMode];
+    refreshPill();
+    requestDraw();                 // camera untouched: place is kept
+  });
+});
+document.getElementById('zin').addEventListener('click', () => {
+  moveCam({ cx: cam.cx, cz: cam.cz, scale: cam.scale * 1.5 }, true); });
+document.getElementById('zout').addEventListener('click', () => {
+  moveCam({ cx: cam.cx, cz: cam.cz, scale: cam.scale / 1.5 }, true); });
+document.getElementById('zfit').addEventListener('click', () => fitWorld(true));
+document.getElementById('infoclose').addEventListener('click', () => {
+  selection = null; hideInfo(); requestDraw();
+});
+
+/* Search: substring match over the street groups, best first. */
+const qEl = document.getElementById('q');
+const resEl = document.getElementById('results');
+function runSearch() {
+  const q = qEl.value.trim().toLowerCase();
+  if (q.length < 2) { resEl.style.display = 'none'; return; }
+  const hits = [];
+  for (const g of groups.values()) {
+    const nm = g.name.toLowerCase();
+    const at = nm.indexOf(q);
+    if (at >= 0) hits.push({ g, rank: at === 0 ? 0 : 1 });
+  }
+  hits.sort((a, b) => a.rank - b.rank || b.g.len - a.g.len);
+  resEl.innerHTML = '';
+  if (!hits.length) {
+    resEl.innerHTML = '<div class="none">No street matches “' +
+      qEl.value.trim() + '” in the rebuilt map.</div>';
+  }
+  for (const { g } of hits.slice(0, 12)) {
+    const div = document.createElement('div');
+    div.className = 'item';
+    const nm = document.createElement('div'); nm.className = 'nm'; nm.textContent = g.name;
+    const meta = document.createElement('div'); meta.className = 'meta';
+    meta.textContent = world.zones[g.zone].name + ' · ' + g.roads.length +
+      ' segment' + (g.roads.length === 1 ? '' : 's') + ' · ' + fmtLen(g.len);
+    div.appendChild(nm); div.appendChild(meta);
+    div.addEventListener('click', () => {
+      resEl.style.display = 'none'; qEl.value = g.name; qEl.blur();
+      pickGroup(g);
+    });
+    resEl.appendChild(div);
+  }
+  resEl.style.display = 'block';
+}
+qEl.addEventListener('input', runSearch);
+qEl.addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    const first = resEl.querySelector('.item');
+    if (first) first.click();
+  }
+});
+document.getElementById('qclear').addEventListener('click', () => {
+  qEl.value = ''; resEl.style.display = 'none';
+  selection = null; hideInfo(); requestDraw(); qEl.focus();
+});
+document.addEventListener('pointerdown', e => {
+  if (!document.getElementById('searchbox').contains(e.target))
+    resEl.style.display = 'none';
+});
+
+/* ---------------- resize + boot -------------------------------------- */
+function resize() {
+  VW = app.clientWidth; VH = app.clientHeight;
+  DPR = Math.min(2, window.devicePixelRatio || 1);
+  cv.width = Math.round(VW * DPR); cv.height = Math.round(VH * DPR);
+  if (world) {
+    fitScale = Math.min(VW / (world.world[2] - world.world[0]),
+                        VH / (world.world[3] - world.world[1]));
+    clampCam();
+  }
+  requestDraw();
+}
+window.addEventListener('resize', resize);
+
+refreshPill();
+fetch(OVERVIEW_URL).then(r => {
+  if (!r.ok) throw new Error('overview fetch ' + r.status);
+  return r.json();
+}).then(doc => {
+  decodeOverview(doc);
+  resize();
+  fitWorld(false);
+  booted = true; refreshPill();
+  requestDraw();
+}).catch(err => {
+  const f = document.getElementById('fatal');
+  f.style.display = 'block';
+  f.textContent = 'The map data could not be loaded (' + err.message +
+    '). Check your connection and reload. The viewer reads its data ' +
+    'from map-view-overview.json, beside this page.';
+  pillEl.style.display = 'none';
+});
+
+/* Testing/debug surface (used by the headless verification pass). */
+window.MAPVIEW = {
+  cam: () => ({ ...cam }),
+  baseMode: () => baseMode,
+  setBase: m => {
+    document.querySelector('.chip[data-base="' + m + '"]').click(); },
+  setCam: (cx, cz, s) => { cam = { cx, cz, scale: s }; afterCam(); },
+  fitWorld: () => fitWorld(false),
+  worldToLatLon, latLonToWorld,
+  stats: () => ({
+    roads: roads.length, groups: groups.size,
+    detailLoaded: Object.keys(detail).filter(k => detail[k].loaded),
+    tiles: tileCache.size,
+    tilesOk: [...tileCache.values()].filter(t => t.ok).length,
+  }),
+  frameSearch: name => {
+    for (const g of groups.values())
+      if (g.name === name) { pickGroup(g); return g.bbox; }
+    return null;
+  },
+  roadNamed: name => {
+    const i = roads.findIndex(r => r.name === name);
+    return i >= 0 ? { bbox: roads[i].bbox, mid: roads[i].mid } : null;
+  },
+};
+</script>
+</body>
+</html>
