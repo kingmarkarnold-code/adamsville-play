@@ -11515,7 +11515,6 @@ function camSafeDist(lx,ly,lz, tx,ty,tz, wantDist){
 var fpLookYaw=0, fpPitch=0, fpBlend=0, wasFP=false;
 function updateCamera(dt){
   if (window.__satViewActive) return;  // v1.16 SATELLITE VIEW owns the camera
-  if (window.__bballActive) return;  // BASKETBALL mini-game (basketball_court.js) owns the camera while playing
   // ---------- v1.13 FIRST-PERSON interior camera ----------
   // When the player is inside a building: camera at head level (~1.6m),
   // looking where the player faces. Drag to look around (yaw + pitch).
@@ -13105,7 +13104,7 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <script data-dsrc="zoneunlock.js" data-dkey=""></script>
 <script data-dsrc="zoneunlockflow.js" data-dkey=""></script>
 <script data-dsrc="satellite_view.js" data-dkey=""></script>
-<!-- BACKYARD BASKETBALL mini-game stage 1 (Joshua 2026-10-17, from his Draw-for-Mollie sketch): dirt court + goal tree behind 535, gate prompt, full-screen mode, saved progress. Self-contained module; no-op if it fails (files via SA_CRASH). -->
+<!-- BACKYARD BASKETBALL (Joshua 2026-10-17, from his Draw-for-Mollie sketch): the world side — dirt court + goal tree behind 535 and the walk-in invitation. The game itself is the web player at minigames/basketball.html, opened on Yes. Self-contained module; no-op if it fails (files via SA_CRASH). -->
 <script data-dsrc="basketball_court.js" data-dkey=""></script>
 <script data-dsrc="hotreload.js" data-dkey=""></script>
 <!-- MID-SESSION UI UPDATE FLOW (Joshua 2026-10-17): "Download newest UI"
