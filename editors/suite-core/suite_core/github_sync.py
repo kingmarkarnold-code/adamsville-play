@@ -22,6 +22,8 @@ The token is NEVER logged, printed, or included in any push payload.
 
 import json
 import base64
+import hashlib
+import datetime
 import http.client
 import urllib.parse
 from pathlib import Path
@@ -389,10 +391,131 @@ def push_targets(targets, token=None, conn=None):
                                 conn=conn)
             if not ok:
                 return False, f"{path}: {msg}"
+        # 2026-10-18 (game freshness fix): if this leg changed game
+        # data that detailed/map-manifest.json covers, refresh the
+        # manifest entries and bump map_version as the leg's final
+        # step — see maintain_map_manifest() below. The data itself is
+        # already pushed, so a manifest failure must not report the
+        # SAVE as failed; it rides along as a warning suffix instead
+        # (the game's own drift check covers freshness meanwhile).
+        mok, mmsg = maintain_map_manifest(targets, tok, conn=conn)
+        if not mok:
+            return True, ("ok — but the map manifest refresh failed: "
+                          f"{mmsg}")
         return True, "ok"
     finally:
         if own:
             conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Map manifest maintenance (2026-10-18 — the game's freshness fix)
+# ---------------------------------------------------------------------------
+# THE DEFECT (Joshua's live report, 2026-10-18): he deleted a section
+# of road in the Map Editor, the save pushed fine — and his game kept
+# showing the deleted road. Cause: editor saves pushed the changed
+# zone files but never touched detailed/map-manifest.json, whose
+# map_version stamp and per-file hash/size entries are the game's
+# freshness signal (see detailed/mapdelivery.js in the game). The
+# stamp never moved, so the game never re-downloaded anything.
+#
+# THE RULE (Joshua's standing rule for map data: bump the version
+# every time any map data file changes): whenever a push changes a
+# file that detailed/map-manifest.json covers, the push leg ALSO
+# refreshes that file's manifest entry (size + sha256), bumps
+# map_version, and pushes the manifest as the leg's final commit.
+# From then on every game copy sees the stamp move, diffs by hash,
+# and downloads exactly the changed files. (The game ALSO grew a
+# drift check the same day, so copies stay fresh even if a manifest
+# refresh is ever missed — the two fixes back each other up.)
+#
+# SCOPE, deliberately narrow: only files ALREADY LISTED in the
+# manifest are refreshed (adding new entries stays the build
+# pipeline's job), and the bump happens only when at least one listed
+# file actually changed. Pushes of anything else (UI layouts, deck
+# results, drawings, editor files) never touch the manifest.
+
+MAP_MANIFEST_PATH = "detailed/map-manifest.json"
+
+
+def _next_map_version(current):
+    """The next map_version stamp after `current` (YYYY.MM.DD.N).
+
+    Same-day saves increment N; the first save of a new day starts at
+    .1 under today's date; a stamp never moves backwards (a
+    future-dated stamp just increments). Unparseable input starts
+    today at .1. Dates are UTC, matching the manifest's convention.
+    """
+    today = datetime.datetime.now(datetime.timezone.utc).date()
+    stamp = "%04d.%02d.%02d" % (today.year, today.month, today.day)
+    try:
+        parts = str(current).split(".")
+        cur = ".".join(parts[:3])
+        n = int(parts[3])
+    except Exception:
+        return stamp + ".1"
+    if cur == stamp:
+        return "%s.%d" % (stamp, n + 1)
+    if cur < stamp:  # zero-padded dates compare correctly as text
+        return stamp + ".1"
+    return "%s.%d" % (cur, n + 1)
+
+
+def maintain_map_manifest(targets, token=None, conn=None):
+    """
+    Refresh detailed/map-manifest.json after a push that changed
+    manifest-covered game data (see the section note above).
+
+    targets: the same (repo, path, content_bytes, message) list that
+    was just pushed successfully. Returns (True, "ok") when nothing
+    needed doing or the manifest was refreshed; (False, reason) when
+    the refresh itself failed — the data push already landed either
+    way, so the caller decides how loudly to report it.
+    """
+    tok = token or get_token()
+    if not tok:
+        return False, "No GitHub token set."
+    # Group the pushed targets per repo: path -> content bytes.
+    by_repo = {}
+    for repo, path, content, _message in targets:
+        by_repo.setdefault(repo, {})[path] = content
+    for repo, changed in by_repo.items():
+        raw, err = fetch_file(repo, MAP_MANIFEST_PATH, token=tok,
+                              conn=conn)
+        if raw is None:
+            if err and "404" not in err:
+                return False, f"map manifest fetch failed: {err}"
+            # This repo has no map manifest (not the game repo) —
+            # nothing to maintain there.
+            continue
+        try:
+            manifest = json.loads(raw.decode("utf-8"))
+            entries = {e.get("name"): e
+                       for e in manifest.get("files", [])}
+        except Exception as e:
+            return False, f"map manifest unreadable: {e}"
+        touched = []
+        for path, content in changed.items():
+            entry = entries.get(path)
+            if entry is None:
+                continue  # not covered by the manifest — not ours
+            entry["size"] = len(content)
+            entry["sha256"] = hashlib.sha256(content).hexdigest()
+            entry.pop("hash", None)
+            touched.append(path)
+        if not touched:
+            continue
+        manifest["map_version"] = _next_map_version(
+            manifest.get("map_version") or manifest.get("version"))
+        payload = json.dumps(manifest, indent=1).encode("utf-8")
+        ok, msg = push_file(
+            repo, MAP_MANIFEST_PATH, payload,
+            "Suite save: refresh map manifest (map data changed: "
+            + ", ".join(sorted(touched)) + ")",
+            tok, conn=conn)
+        if not ok:
+            return False, f"map manifest push failed: {msg}"
+    return True, "ok"
 
 
 # ---------------------------------------------------------------------------
