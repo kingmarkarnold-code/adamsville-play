@@ -58,6 +58,20 @@
       "description": "Button that pauses the game - freezes the simulation and the music (Escape key does the same on keyboard)"
     },
     {
+      "anchor": "tr",
+      "asset": null,
+      "height": 44,
+      "id": "goto-btn",
+      "label": "\ud83e\udded",
+      "mobile_only": false,
+      "type": "button",
+      "visible": true,
+      "width": 44,
+      "x": 196,
+      "y": 7,
+      "description": "Compass button that opens Go to - search the game's streets and places and jump straight there"
+    },
+    {
       "anchor": "tl",
       "asset": null,
       "height": 44,
@@ -496,6 +510,20 @@
           "description": "Button that pauses the game - freezes the simulation and the music (Escape key does the same on keyboard)"
         },
         {
+          "anchor": "tr",
+          "asset": null,
+          "height": 44,
+          "id": "goto-btn",
+          "label": "\ud83e\udded",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 196,
+          "y": 7,
+          "description": "Compass button that opens Go to - search the game's streets and places and jump straight there"
+        },
+        {
           "anchor": "tl",
           "asset": null,
           "height": 44,
@@ -904,6 +932,20 @@
           "x": 76,
           "y": 7,
           "description": "Button that pauses the game - freezes the simulation and the music (Escape key does the same on keyboard)"
+        },
+        {
+          "anchor": "tr",
+          "asset": null,
+          "height": 44,
+          "id": "goto-btn",
+          "label": "\ud83e\udded",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 196,
+          "y": 7,
+          "description": "Compass button that opens Go to - search the game's streets and places and jump straight there"
         },
         {
           "anchor": "tl",
