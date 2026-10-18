@@ -15,7 +15,7 @@
      2. NO VISIBLE LINES — no painted court lines of any kind.
      3. The mini-game itself STARTS AS A WEB PLAYER: answering Yes opens
         the mini-game's own standalone player page, full screen —
-        detailed/minigames/basketball.html (same Pages origin, so the
+        detailed/basketball.html (same Pages origin, so the
         saved progress in localStorage is shared). The world keeps the
         place and the invitation; the play lives on the page. Modes
         ("1 on 1" / "3 on 3" — Joshua) are chosen on the page.
@@ -72,7 +72,7 @@ var SAVE_KEY = 'sa.basketball.v1';
 
 /* The mini-game's own player page, relative to detailed/ (this file's
    home). Same origin as the game page, so progress carries over. */
-var PLAYER_URL = 'minigames/basketball.html';
+var PLAYER_URL = 'basketball.html';
 
 /* Court layout, stated as offsets from the hero-house centre so the
    court follows the house if its data ever moves. North is -z (the
