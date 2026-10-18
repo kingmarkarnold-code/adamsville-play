@@ -46,7 +46,7 @@ import overpass as overpass_mod  # noqa: E402
 
 # App version shown in the Help -> About dialog (bump with each release).
 # Joshua 2026-10-11: version number must be prominent in About.
-APP_VERSION = "1.9.7"
+APP_VERSION = "1.9.8"
 # Display name and icon-theme name for the About dialog.
 APP_NAME = "Adamsville Map Editor"
 APP_ICON = "adamsville-map-editor-native"
@@ -83,8 +83,6 @@ TOOLS = [
      "shape. The new zone is selected with the Zone tool for refining."),
     ("draw",    "Draw",    "Draw a new road",
      "Draw Road: Click to place points, double-click to finish. (Coming soon)"),
-    ("cut",     "Cut",     "Cut a road into segments",
-     "Cut: Click two points on a road to split it. (Coming soon)"),
     ("extend",  "Extend",  "Stretch a road endpoint",
      "Extend: Click on or near a road — the CLOSEST endpoint (either end) "
      "is auto-selected and highlighted. Then click the destination point "
@@ -173,6 +171,10 @@ class MapEditorApp:
         # --- Canvas + 3D inspector in a horizontal paned ---
         # Left: the 2D map canvas. Right: the dockable 3D road inspection
         # panel (Joshua 2026-10-11). The sash lets Joshua resize them.
+        # One-live-pane rule (1.9.8): which pane is being
+        # manipulated ("map" normally; "3d" while the 3D viewport
+        # is live). Every other pane holds a still.
+        self.live_pane = "map"
         self.canvas = MapCanvas(self)
         self.main_paned = Gtk.HPaned()
         # Delete confirmation bar (1.9.7): the canvas sits inside a
@@ -219,6 +221,7 @@ class MapEditorApp:
         # corner of the window — whenever the app is working in the
         # background, so a busy app never reads as frozen.
         self._build_progress_bar()
+        self._build_heading_box()
         self.set_status(
             "Click a road to select it — then Merge, Join, or "
             "Delete. Drag the map to pan.")
@@ -310,6 +313,25 @@ class MapEditorApp:
                 return True
             if (key_lower == "z" and shift) or key_lower == "y":
                 self.on_redo_clicked()
+                return True
+        # Q / E rotate the shared view (1.9.8): every viewpoint
+        # turns together. Shift = bigger steps. Same text-focus
+        # guard as undo: never steal keys from an entry.
+        if not ctrl:
+            try:
+                focus = self.window.get_focus()
+                if isinstance(focus, (Gtk.Entry, Gtk.TextView,
+                                      Gtk.SearchEntry)):
+                    return False
+            except Exception:
+                pass
+            key = (Gdk.keyval_name(event.keyval) or "").lower()
+            step = 15 if shift else 5
+            if key == "q":
+                self.canvas.rotate_by(-step)
+                return True
+            if key == "e":
+                self.canvas.rotate_by(step)
                 return True
         return False
 
@@ -530,6 +552,31 @@ class MapEditorApp:
         self.delete_button.connect("clicked", self.on_delete_clicked)
         toolbar.insert(self.delete_button, -1)
 
+        # Rename action (1.9.8 — the pencil): renames the SELECTED
+        # PIECE (one record, the piece-scoping Joshua ruled for
+        # Delete). Sits with the other selection actions.
+        self.rename_button = Gtk.ToolButton(label="✎ Rename")
+        self.rename_button.set_tooltip_text(
+            "Rename the selected road piece. Only that piece "
+            "gets the new name — the rest of the street keeps "
+            "its own. With nothing selected, it just says so.")
+        self.rename_button.connect("clicked", self.on_rename_clicked)
+        toolbar.insert(self.rename_button, -1)
+
+        # Detail Edit action (1.9.8): the HANDOFF DOOR to the
+        # separate Detail Editor suite app (Joshua's pivot
+        # 2026-10-18: the detail editor is its own app, element-
+        # agnostic — not a mode inside this one). With a piece
+        # selected it prepares the detail handoff file and
+        # launches the Detail Editor when it is installed.
+        self.detail_button = Gtk.ToolButton(label="Detail Edit")
+        self.detail_button.set_tooltip_text(
+            "Open the selected piece in the Detail Editor — the "
+            "separate suite app for fine detail work (moving, "
+            "adding and deleting points and segments).")
+        self.detail_button.connect("clicked", self.on_detail_clicked)
+        toolbar.insert(self.detail_button, -1)
+
         # Link to Overpass action button (Joshua 2026-10-11).
         # Select 1 road first, then click this, then click an overpass
         # deck on the map. The terrain ramps up to the deck, the road
@@ -656,8 +703,21 @@ class MapEditorApp:
             f"{names[0]}'s nearest endpoint will snap to the nearest "
             f"point on {names[1]}'s edge. "
             "Both roads stay as separate objects.")
+        # Before/After (1.9.8): while the decision is up, the
+        # companion panes hold the comparison stills — Before the
+        # two roads as they are, After the source snapped onto
+        # the target.
+        preview = self.canvas.compute_merge_result()
+        if preview is not None:
+            road_s, road_t, new_s = preview
+            self._open_compare(
+                [road_s, road_t], {id(road_s)}, [new_s],
+                "Before — as they are",
+                "After — first road's end snapped onto the second",
+                [road_s, road_t])
         resp = dialog.run()
         dialog.destroy()
+        self.inspector.clear_compare()
         if resp == Gtk.ResponseType.YES:
             self.canvas.do_merge_from_selection()
 
@@ -681,8 +741,20 @@ class MapEditorApp:
             f"{names[0]}\n{names[1]}\n\n"
             f"They will become one road, keeping {names[0]}'s name, "
             "joined at their nearest endpoints.")
+        # Before/After (1.9.8): Before the two pieces as they
+        # are, After the single joined road.
+        preview = self.canvas.compute_join_result()
+        if preview is not None:
+            road_a, road_b, new_road = preview
+            self._open_compare(
+                [road_a, road_b], {id(road_a), id(road_b)},
+                [new_road],
+                "Before — as they are",
+                "After — joined into one road",
+                [road_a, road_b, new_road])
         resp = dialog.run()
         dialog.destroy()
+        self.inspector.clear_compare()
         if resp == Gtk.ResponseType.YES:
             self.canvas.do_join_from_selection()
 
@@ -1782,6 +1854,8 @@ class MapEditorApp:
         zb = self.tool_buttons.get("zone")
         if zb is not None:
             zb.set_active(True)
+        # The companion panes follow the jump (1.9.8).
+        self.on_camera_changed()
 
     # ------------------------------------------------------------------
     # Status bar
@@ -1964,6 +2038,302 @@ class MapEditorApp:
                 "click an edge to add a pin")
         else:
             self.set_status("No zone selected")
+
+    # ------------------------------------------------------------------
+    # Linked viewpoints (1.9.8): one shared camera, one live pane,
+    # Before/After comparisons.
+    #
+    # The canvas owns the ONE camera (cam_x / cam_y / zoom /
+    # rotation). Every camera move funnels into on_camera_changed
+    # (the canvas calls it after its own moves; pane gestures and
+    # programmatic jumps call it too), which is the single place
+    # the companion panes are told to follow.
+    #
+    # One-live-pane rule (Joshua): at most one pane renders
+    # continuously — the one being manipulated. Making the 3D
+    # viewport live stills the map + elevation panes; touching
+    # the map (or the elevation pane) makes the map live again
+    # and returns the 3D viewport to a still.
+    #
+    # During a delete / join / merge / batch decision the panes
+    # hold Before/After STILLS (compare mode in the inspector
+    # panel): no sync, no redraws, exactly one still refresh per
+    # selection change — Joshua's static-viewports rule.
+    # ------------------------------------------------------------------
+
+    def on_camera_changed(self):
+        """The shared camera moved: sync the companion panes."""
+        insp = getattr(self, "inspector", None)
+        # Heading readout follows the same truth.
+        if hasattr(self, "heading_label"):
+            deg = int(round(self.canvas.rotation)) % 360
+            self.heading_label.set_text(f"Heading {deg:03d}°")
+        if insp is None:
+            return
+        if insp.compare_active():
+            return  # static rule: the stills hold, nothing follows
+        if self.live_pane == "3d":
+            # Only the live pane redraws; the map side holds its
+            # stills (their draw handlers blit the cache).
+            insp.cp_viewer.queue_draw()
+            return
+        insp.elev_viewer.queue_draw()
+        insp.cp_viewer.invalidate_still()
+        # New area on screen: make sure its buildings are coming
+        # (the panel gates this on the pane being awake).
+        insp.request_area_data()
+
+    def note_pane_touched(self, which):
+        """
+        A pane was grabbed for manipulation: it becomes the live
+        pane and every other pane returns to a still. Called by
+        the canvas ("map"), the elevation pane ("map") and the 3D
+        viewport ("3d"). A no-op during comparisons.
+        """
+        insp = getattr(self, "inspector", None)
+        if insp is not None and insp.compare_active():
+            return
+        self.set_live_pane(which)
+
+    def set_live_pane(self, which):
+        """Switch the one live pane ("map" | "3d")."""
+        insp = getattr(self, "inspector", None)
+        if insp is None:
+            self.live_pane = which
+            return
+        self.live_pane = which
+        cp = insp.cp_viewer
+        if which == "3d":
+            cp.live = True
+            self.canvas.stilled = True
+            insp.elev_viewer.stilled = True
+        else:
+            if cp.live:
+                cp.live = False
+                cp.invalidate_still()
+            self.canvas.stilled = False
+            self.canvas._still_surface = None
+            insp.elev_viewer.stilled = False
+            insp.elev_viewer._still_surface = None
+        insp._sync_live_button()
+        self.canvas.queue_draw()
+        cp.queue_draw()
+        insp.elev_viewer.queue_draw()
+
+    # -- Before/After comparisons --------------------------------
+
+    def _snapshot_camera(self):
+        """A private copy of the shared camera (same class, same
+        state) for a comparison's framing."""
+        import copy as _copy
+        return _copy.copy(self.canvas._camera)
+
+    def _compare_camera_for(self, roads):
+        """
+        The framing camera for a comparison: a snapshot fitted to
+        the given roads' combined extent (photograph framing —
+        whole pieces + margin), computed against the Before
+        pane's size so BOTH panes share the exact same centre,
+        zoom and heading.
+        """
+        cam = self._snapshot_camera()
+        xs, zs = [], []
+        for road in roads:
+            for px, pz in road.get("pts") or []:
+                xs.append(px)
+                zs.append(pz)
+        if not xs:
+            return cam
+        insp = self.inspector
+        alloc = insp.cp_viewer.get_allocation()
+        w = max(320, alloc.width)
+        h = max(240, alloc.height)
+        cam.fit_rect(w, h, min(xs), min(zs), max(xs), max(zs),
+                     margin=1.18)
+        return cam
+
+    def _open_compare(self, targets, omit_ids, extra_roads,
+                      before_text, after_text, frame_roads,
+                      cam=None):
+        """
+        Switch the companion panes to a Before/After comparison.
+        targets are lit in Before; omit_ids vanish in After;
+        extra_roads (result pieces) appear only in After. The
+        framing camera is fitted to frame_roads unless `cam`
+        is given (single delete: the main view's own framed
+        camera, so the panes match the photograph exactly).
+        """
+        insp = getattr(self, "inspector", None)
+        if insp is None:
+            return
+        if self.insp_collapsed:
+            self.toggle_inspector()
+        if cam is None:
+            cam = self._compare_camera_for(frame_roads)
+        insp.set_compare(cam, targets, omit_ids,
+                         extra_roads=extra_roads,
+                         before_text=before_text,
+                         after_text=after_text)
+
+    def on_delete_preview_begin(self, roads):
+        """
+        Single-delete caveat: the delete preview just framed the
+        piece(s) in the main view — the panes now show Before
+        (framed exactly like the main view) and After (the same
+        framing with the piece(s) removed).
+        """
+        targets = [road for _cat, _idx, road in roads]
+        # The delete framing IS the main camera's new state; the
+        # comparison uses THAT framing exactly (identical centre,
+        # zoom and heading to the main view's photograph).
+        self._open_compare(
+            targets, {id(r) for r in targets}, [],
+            "Before — as it is now",
+            "After — with the piece removed",
+            targets, cam=self._snapshot_camera())
+
+    def on_delete_preview_end(self):
+        """Delete decided (either way): panes back to synced."""
+        insp = getattr(self, "inspector", None)
+        if insp is not None:
+            insp.clear_compare()
+
+    # -- Detail Edit handoff (the door to the Detail Editor) -----
+
+    # The Detail Editor's suite identity, by the same convention
+    # as every suite app (adamsville-<name>-native).
+    DETAIL_EDITOR_BIN = "adamsville-detail-editor-native"
+    DETAIL_HANDOFF_NAME = "open-in-detail-editor.json"
+
+    def on_detail_clicked(self, _button=None):
+        """
+        Detail Edit: prepare the detail handoff for the selected
+        piece and launch the Detail Editor app.
+
+        The handoff mirrors the suite's street-jump pattern: a
+        JSON file in ~/.local/share/adamsville-suite/ named for
+        the TARGET app, carrying the element's identity (type,
+        zone, category, name) and its points, so the Detail
+        Editor can open on exactly this piece. When the Detail
+        Editor is not installed, a dialog says so plainly — the
+        handoff is still written (it will be there when the app
+        arrives), and nothing pretends to have opened.
+        """
+        sel = self.canvas.selected_roads
+        if not sel:
+            dialog = Gtk.MessageDialog(
+                transient_for=self.window,
+                flags=0,
+                message_type=Gtk.MessageType.INFO,
+                buttons=Gtk.ButtonsType.OK,
+                text="Nothing is selected.")
+            dialog.format_secondary_text(
+                "Click a road to select it first, then press "
+                "Detail Edit.")
+            dialog.run()
+            dialog.destroy()
+            return
+        cat, idx = sel[-1]
+        road = self.canvas._get_road_dict(cat, idx)
+        if road is None:
+            return
+        pts = road.get("pts") or []
+        import json as _json
+        import shutil
+        import subprocess
+        from datetime import datetime, timezone
+        from pathlib import Path as _Path
+        cx = sum(p[0] for p in pts) / len(pts) if pts else 0.0
+        cz = sum(p[1] for p in pts) / len(pts) if pts else 0.0
+        doc = {
+            "element_type": "road",
+            "zone": road.get("_zone") or "",
+            "category": cat,
+            "name": road.get("name") or "",
+            "x": cx,
+            "z": cz,
+            "points": pts,
+            "writtenBy": f"Adamsville Map Editor {APP_VERSION}",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        handoff_dir = (_Path.home() / ".local" / "share"
+                       / "adamsville-suite")
+        try:
+            handoff_dir.mkdir(parents=True, exist_ok=True)
+            (handoff_dir / self.DETAIL_HANDOFF_NAME).write_text(
+                _json.dumps(doc))
+            handoff_ok = True
+        except Exception:
+            handoff_ok = False
+        exe = shutil.which(self.DETAIL_EDITOR_BIN)
+        if exe is None:
+            # Not installed: say so plainly, never fake an open.
+            dialog = Gtk.MessageDialog(
+                transient_for=self.window,
+                flags=0,
+                message_type=Gtk.MessageType.INFO,
+                buttons=Gtk.ButtonsType.OK,
+                text="Detail Editor is not installed.")
+            dialog.format_secondary_text(
+                "The Detail Editor is a separate suite app and "
+                "isn't on this machine yet. "
+                + ("The handoff for this piece has been "
+                   "prepared — it will open there once the app "
+                   "is installed." if handoff_ok else
+                   "The handoff could not be written either."))
+            dialog.run()
+            dialog.destroy()
+            self.set_status(
+                "Detail Edit: the Detail Editor app is not "
+                "installed.")
+            return
+        try:
+            subprocess.Popen([exe],
+                             stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+            self.set_status(
+                "Detail Edit: opened "
+                f"'{doc['name'] or 'Unnamed segment'}' in the "
+                "Detail Editor.")
+        except Exception:
+            self.set_status(
+                "Detail Edit: the Detail Editor could not be "
+                "launched.")
+
+    def begin_batch_delete(self, corners):
+        """
+        Batch delete entry (canvas Shift+drag band released):
+        collect every piece touching the square in the
+        background, then open the batch panel.
+        """
+        import batchdelete
+        batchdelete.collect_and_open(self, corners)
+
+    # -- heading readout ------------------------------------------
+
+    def _build_heading_box(self):
+        """
+        The heading readout + turn buttons at the status bar's
+        right end (left of the progress bar, which stays the
+        corner widget): the shared view's current heading, and
+        the buttons that turn every viewpoint together.
+        """
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
+                      spacing=4)
+        ccw = Gtk.Button(label="⟲")
+        ccw.set_tooltip_text("Turn the view left 15° (all views)")
+        ccw.connect("clicked",
+                    lambda _b: self.canvas.rotate_by(-15))
+        box.pack_start(ccw, False, False, 0)
+        self.heading_label = Gtk.Label(label="Heading 000°")
+        box.pack_start(self.heading_label, False, False, 0)
+        cw = Gtk.Button(label="⟳")
+        cw.set_tooltip_text("Turn the view right 15° (all views)")
+        cw.connect("clicked",
+                   lambda _b: self.canvas.rotate_by(15))
+        box.pack_start(cw, False, False, 0)
+        self.statusbar.pack_end(box, False, False, 4)
+        self.heading_box = box
 
     # ------------------------------------------------------------------
     # Road mutations (Join / Merge / Extend / Delete)
@@ -2344,6 +2714,121 @@ class MapEditorApp:
         self.canvas.selected_roads = []
         self._update_merge_join_buttons()
         return True
+
+    def apply_road_add(self, cat, new_road):
+        """
+        Add a brand-new road record in a category (Detail Edit's
+        middle-segment split creates the second piece this way).
+        Mirrors the add half of apply_road_join: re-drape the new
+        geometry, persist by the standing save rule, rebuild the
+        index. Returns True on success.
+        """
+        if self.roads_data is None:
+            return False
+        self.redrape_road(new_road)
+        self.roads_data.setdefault(cat, []).append(new_road)
+        self._dirty_road_cats.add(cat)
+        self.persist_road_edits()
+        self._rebuild_road_index()
+        return True
+
+    def apply_road_delete_batch(self, picked):
+        """
+        Batch delete commit: remove many records with ONE persist
+        and ONE index rebuild (the single-delete apply persists
+        per record — a batch of dozens must not). picked is a
+        list of (category, road). Returns True when every record
+        was removed.
+        """
+        if self.roads_data is None:
+            return False
+        ok = True
+        for cat, road in picked:
+            if self._remove_road_from_working_copy(cat, road):
+                self._dirty_road_cats.add(cat)
+            else:
+                ok = False
+        self.persist_road_edits()
+        self._rebuild_road_index()
+        self.canvas.selected_roads = []
+        self._update_merge_join_buttons()
+        return ok
+
+    def apply_road_rename(self, cat, road, new_name):
+        """
+        Rename ONE road record in place (the pencil action —
+        piece-scoped like Delete). Persisted by the standing save
+        rule. Returns True on success.
+        """
+        if self.roads_data is None:
+            return False
+        road["name"] = new_name
+        self._dirty_road_cats.add(cat)
+        self.persist_road_edits()
+        self._rebuild_road_index()
+        return True
+
+    def on_rename_clicked(self, _button=None):
+        """
+        ✎ Rename: a small dialog prefilled with the selected
+        piece's current name (blank for the many unnamed pieces).
+        Saving applies the standing save rule; the editor then
+        shows the name that came back from the download.
+        """
+        sel = self.canvas.selected_roads
+        if not sel:
+            dialog = Gtk.MessageDialog(
+                transient_for=self.window,
+                flags=0,
+                message_type=Gtk.MessageType.INFO,
+                buttons=Gtk.ButtonsType.OK,
+                text="Nothing is selected.")
+            dialog.format_secondary_text(
+                "Click a road to select it first, then press "
+                "✎ Rename.")
+            dialog.run()
+            dialog.destroy()
+            return
+        # The piece he clicked last is the piece renamed.
+        cat, idx = sel[-1]
+        road = self.canvas._get_road_dict(cat, idx)
+        if road is None:
+            return
+        dialog = Gtk.Dialog(
+            title="Rename road piece",
+            transient_for=self.window,
+            flags=Gtk.DialogFlags.MODAL,
+            buttons=(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+                     Gtk.STOCK_SAVE, Gtk.ResponseType.OK))
+        dialog.set_default_size(380, -1)
+        box = dialog.get_content_area()
+        label = Gtk.Label(
+            label="New name for this one piece only — the rest "
+                  "of the street keeps its own name. Leave it "
+                  "blank to un-name the piece.")
+        label.set_line_wrap(True)
+        label.set_xalign(0)
+        box.add(label)
+        entry = Gtk.Entry()
+        entry.set_text(road.get("name") or "")
+        entry.set_activates_default(True)
+        box.add(entry)
+        dialog.set_default_response(Gtk.ResponseType.OK)
+        dialog.show_all()
+        resp = dialog.run()
+        new_name = entry.get_text().strip()
+        dialog.destroy()
+        if resp != Gtk.ResponseType.OK:
+            return
+        old_name = road.get("name") or ""
+        if self.apply_road_rename(cat, road, new_name):
+            self.set_status(
+                f"Renamed piece: '{old_name or '(unnamed)'}' → "
+                f"'{new_name or '(unnamed)'}'.")
+            self.inspector.refresh()
+            self.canvas.queue_draw()
+        else:
+            self.set_status("Rename failed: could not save.")
 
     def on_delete_clicked(self, _button=None):
         """

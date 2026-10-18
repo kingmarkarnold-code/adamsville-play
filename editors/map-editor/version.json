@@ -1,6 +1,6 @@
 {
-  "version": "1.9.7",
-  "changelog": "Delete now SHOWS you the road before anything is removed. Click a road to select it, press the Delete button, and the map frames the whole road \u2014 zooming in or out like a photograph with a little of the surrounding streets \u2014 and lights it up in bright pink, with the road's name and the Delete/Cancel choice in a slim bar at the top of the map. Cancel puts the view back exactly where it was. The old Pan and Select modes are gone: dragging the map always moves it, clicking a road always selects it, and Delete is one button that works on whatever is selected (with nothing selected it simply says 'Nothing is selected'). Picking a road can no longer freeze the editor \u2014 a click only registers the pick, the picture is prepared in the background \u2014 and a progress bar in the bottom-right corner now shows whenever the editor is downloading, pushing, or preparing something heavy, so a busy app never looks frozen.",
+  "version": "1.9.8",
+  "changelog": "All three views now show the SAME place. The elevation pane is the map itself \u2014 the rebuilt map data, locked to the main view: pan, zoom or rotate one view and the others follow (use the heading buttons or the Q/E keys to turn). The 3D inspector stays black until you click it, then shows your current area in 3D; its Satellite button shows our own world from directly above. Pictures stay still unless a view is live \u2014 only one view is ever live at a time, which keeps the editor light. Delete, Join and Merge now show Before and After pictures in the side panes while you decide. NEW batch delete: hold Shift and drag a square on the map \u2014 a list appears with a small red picture of each piece, tick boxes, and a confirm button that counts the pieces. NEW rename: the pencil button renames the selected piece. The Cut button is gone. Detail Edit now hands the selected piece to the separate Detail Editor app (it says so plainly if that app is not installed yet).",
   "files": [
     {
       "path": "about.py",
@@ -10,17 +10,17 @@
     {
       "path": "app.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/app.py",
-      "sha256": "36ad58b9f16557bc4a79a14dc8e848bceb14c95a98e171fdee336978e97cb2a0"
+      "sha256": "086a9f89e0894265be7e9431a9f716f92fbcc07180615280978f2a1bd1351c47"
     },
     {
       "path": "data.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/data.py",
-      "sha256": "0defe78af352857db5e9d84dac10ecc38333ec3e6397b9a8f2c758468af4861d"
+      "sha256": "2f43d0702b374668cb491b8dc448b51d2f446ff74516d22dcba39b0e3569f213"
     },
     {
       "path": "gamedata.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/gamedata.py",
-      "sha256": "e212bf1ec5766a59bcfb1e187b1edcc20246001d991d2fadd8508f8fe9125dc8"
+      "sha256": "61ed77b1b94523c9dfc0fb5cb3894837342ef13e55fa9e096922463afa2becda"
     },
     {
       "path": "github_sync.py",
@@ -35,7 +35,7 @@
     {
       "path": "mapcanvas.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/mapcanvas.py",
-      "sha256": "b2e5d04b4b42a934bae307e9d4edd6eda880eaebab16257b8f4c5b1ffba51848"
+      "sha256": "d9ff9f14458707d3aceeca6226946793362d72206e5f8563f8bf63fd6464749a"
     },
     {
       "path": "overpass.py",
@@ -45,7 +45,7 @@
     {
       "path": "roadinspect.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/roadinspect.py",
-      "sha256": "b8eae32562276781ed793b625111bd60bd95cb29ad26a001798d7b52292395de"
+      "sha256": "6355b6cfa86fd9053e1a8551fb1358334b34bd6066a0d07db628d340fb87bdd5"
     },
     {
       "path": "shared_cache.py",
@@ -61,6 +61,16 @@
       "path": "updater.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/updater.py",
       "sha256": "0c36b000830e5661165ac9f636466cd6d8402bab410bcab7da10b3e1e13e3a92"
+    },
+    {
+      "path": "areadata.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/areadata.py",
+      "sha256": "484435e0bb2a3e7f29120b4b24ec0d80b7df770e39c52a6d92964db96bf91f43"
+    },
+    {
+      "path": "batchdelete.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/batchdelete.py",
+      "sha256": "e9aedc54df78a2a1e6e89c5165151f6116ad0f768dc3596f51f9ab48917e5c7a"
     }
   ]
 }

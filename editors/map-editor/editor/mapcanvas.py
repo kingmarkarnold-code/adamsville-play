@@ -8,6 +8,7 @@ Handles pan (drag), zoom (wheel), and tool interactions.
 Joshua's rule: all code commented.
 """
 
+import copy
 import math
 import sys
 import threading
@@ -30,14 +31,37 @@ for _suite_path in ("/usr/share/adamsville-suite",
     if _suite_path not in sys.path:
         sys.path.insert(0, _suite_path)
 try:
-    from adamsville_suite_canvas import Camera2D, point_in_polygon
-    _SHARED_CANVAS = True
+    from adamsville_suite_canvas import point_in_polygon
+    _SHARED_PIP = True
 except ImportError:
-    _SHARED_CANVAS = False
+    _SHARED_PIP = False
+
+try:
+    from adamsville_suite_canvas import Camera2D as _SharedCamera2D
+except ImportError:
+    _SharedCamera2D = None
 
 
-if not _SHARED_CANVAS:
-    # -- Local fallbacks (only used if the shared module is missing) --
+def _camera_supports_rotation(cls):
+    """
+    Probe a Camera2D copy for the 1.9.8 rotation contract.
+
+    Linked viewpoints (Joshua 2026-10-18) made ROTATION part of the
+    camera: one shared heading that every pane reads. Suite copies
+    of adamsville_suite_canvas installed before 1.9.8 have no
+    rotation attribute at all. Constructing a throwaway instance is
+    the honest test — the class is plain numbers, no GTK.
+    """
+    if cls is None:
+        return False
+    try:
+        return hasattr(cls(), "rotation")
+    except Exception:
+        return False
+
+
+if not _SHARED_PIP:
+    # -- Local fallback (only used if the shared module is missing) --
 
     def point_in_polygon(px, py, poly):
         """
@@ -59,55 +83,163 @@ if not _SHARED_CANVAS:
             j = i
         return inside
 
-    class Camera2D:
+
+class _LocalCamera2D:
+    """
+    Camera-centered 2D pan/zoom/rotate controller (bundled copy).
+
+    The camera looks at world point (cam_x, cam_y); zoom is screen
+    pixels per world unit; rotation is the view heading in DEGREES
+    CLOCKWISE on screen (0 = the world's -z edge at the top of the
+    screen, as the editor has always drawn it; 90 = that edge at
+    the right). Every transform below honours rotation, so any
+    view that draws through this camera — the main canvas, the
+    elevation map, the satellite viewpoint — shows the same world
+    turned the same way. That is the whole of the 1.9.8 linked-
+    viewpoints design: ONE camera, many panes, no private copies
+    that can drift apart.
+
+    Rotation math (screen coords, y down): a world offset (dx, dz)
+    from the camera centre lands on screen at
+        (dx*cos - dz*sin, dx*sin + dz*cos) * zoom
+    which turns world features clockwise as rotation grows, and
+    screen_to_world applies the exact inverse.
+    """
+
+    def __init__(self, zoom=0.06, min_zoom=0.02, max_zoom=40.0):
+        self.cam_x = 0.0
+        self.cam_y = 0.0
+        self.zoom = zoom
+        self.min_zoom = min_zoom
+        self.max_zoom = max_zoom
+        # View heading, degrees clockwise on screen, kept in
+        # [0, 360) by set_rotation().
+        self.rotation = 0.0
+
+    # -- rotation -------------------------------------------------
+
+    def set_rotation(self, deg):
+        """Set the heading, normalized into [0, 360)."""
+        self.rotation = float(deg) % 360.0
+
+    def rotate_by(self, delta_deg):
+        """Turn the view by delta degrees (clockwise positive)."""
+        self.set_rotation(self.rotation + float(delta_deg))
+
+    def _rot(self):
+        """(cos, sin) of the current heading."""
+        rad = math.radians(self.rotation)
+        return math.cos(rad), math.sin(rad)
+
+    # -- transforms -------------------------------------------------
+
+    def world_to_screen(self, wx, wz, view_w, view_h):
+        dx = wx - self.cam_x
+        dz = wz - self.cam_y
+        c, s = self._rot()
+        return ((dx * c - dz * s) * self.zoom + view_w / 2,
+                (dx * s + dz * c) * self.zoom + view_h / 2)
+
+    def screen_to_world(self, sx, sy, view_w, view_h):
+        rx = (sx - view_w / 2) / self.zoom
+        ry = (sy - view_h / 2) / self.zoom
+        c, s = self._rot()
+        return (rx * c + ry * s + self.cam_x,
+                -rx * s + ry * c + self.cam_y)
+
+    def zoom_at(self, sx, sy, factor, view_w, view_h):
+        """Zoom keeping the world point under (sx, sy) pinned there.
+        Works at any heading because it round-trips through the
+        two transforms above."""
+        wx0, wz0 = self.screen_to_world(sx, sy, view_w, view_h)
+        self.zoom = max(self.min_zoom,
+                        min(self.max_zoom, self.zoom * factor))
+        wx1, wz1 = self.screen_to_world(sx, sy, view_w, view_h)
+        self.cam_x += wx0 - wx1
+        self.cam_y += wz0 - wz1
+
+    def _screen_delta_to_world(self, dx, dy):
+        """A screen-pixel delta expressed in world units (the
+        inverse rotation, unzoomed). Dragging by (dx, dy) screen
+        pixels moves the PICTURE by this much world travel."""
+        c, s = self._rot()
+        return ((dx * c + dy * s) / self.zoom,
+                (-dx * s + dy * c) / self.zoom)
+
+    def pan_from(self, start_cam_x, start_cam_y, dx, dy):
+        """Pan from a drag start: the picture follows the cursor,
+        so the camera moves opposite the drag delta — at any
+        heading, the delta is first turned into world axes."""
+        wdx, wdz = self._screen_delta_to_world(dx, dy)
+        self.cam_x = start_cam_x - wdx
+        self.cam_y = start_cam_y - wdz
+
+    def pan_by(self, dx, dy):
+        """Incremental pan by a screen-pixel delta."""
+        wdx, wdz = self._screen_delta_to_world(dx, dy)
+        self.cam_x -= wdx
+        self.cam_y -= wdz
+
+    def move_view_by(self, dx, dy):
         """
-        Camera-centered 2D pan/zoom controller (fallback copy).
-        See adamsville_suite_canvas for the documented version.
+        Shift the CAMERA by the world equivalent of the screen
+        vector (dx, dy): the rendered picture then translates by
+        (-dx, -dy) screen pixels. Used to centre a fitted picture
+        in a sub-band of the view (e.g. below the delete bar) at
+        any heading.
         """
-        def __init__(self, zoom=0.06, min_zoom=0.02, max_zoom=40.0):
-            self.cam_x = 0.0
-            self.cam_y = 0.0
-            self.zoom = zoom
-            self.min_zoom = min_zoom
-            self.max_zoom = max_zoom
+        wdx, wdz = self._screen_delta_to_world(dx, dy)
+        self.cam_x += wdx
+        self.cam_y += wdz
 
-        def world_to_screen(self, wx, wz, view_w, view_h):
-            return ((wx - self.cam_x) * self.zoom + view_w / 2,
-                    (wz - self.cam_y) * self.zoom + view_h / 2)
+    def fit_rect(self, view_w, view_h, x0, z0, x1, z1, margin=1.05):
+        """
+        Centre on the rect and zoom so the WHOLE rect is visible
+        at the current heading: the rect's corners are rotated
+        first, and the fit uses the rotated extents. At rotation 0
+        this is exactly the pre-1.9.8 fit.
+        """
+        if view_w <= 0 or view_h <= 0:
+            return
+        cx = (x0 + x1) / 2
+        cy = (z0 + z1) / 2
+        c, s = self._rot()
+        hw = hh = 0.0
+        for px in (x0, x1):
+            for pz in (z0, z1):
+                dx, dz = px - cx, pz - cy
+                hw = max(hw, abs(dx * c - dz * s))
+                hh = max(hh, abs(dx * s + dz * c))
+        w = max(1.0, 2 * hw * margin)
+        h = max(1.0, 2 * hh * margin)
+        self.zoom = min(view_w / w, view_h / h)
+        self.cam_x = cx
+        self.cam_y = cy
 
-        def screen_to_world(self, sx, sy, view_w, view_h):
-            return ((sx - view_w / 2) / self.zoom + self.cam_x,
-                    (sy - view_h / 2) / self.zoom + self.cam_y)
+    def get_viewport(self, view_w, view_h):
+        """
+        Axis-aligned world rect covering the view: the four
+        screen corners turned back into world coords. Under
+        rotation this is a (conservative) superset of the visible
+        area — safe for culling, which is its job.
+        """
+        corners = [self.screen_to_world(sx, sy, view_w, view_h)
+                   for sx in (0, view_w) for sy in (0, view_h)]
+        xs = [p[0] for p in corners]
+        zs = [p[1] for p in corners]
+        return min(xs), min(zs), max(xs), max(zs)
 
-        def zoom_at(self, sx, sy, factor, view_w, view_h):
-            wx0, wz0 = self.screen_to_world(sx, sy, view_w, view_h)
-            self.zoom = max(self.min_zoom,
-                            min(self.max_zoom, self.zoom * factor))
-            wx1, wz1 = self.screen_to_world(sx, sy, view_w, view_h)
-            self.cam_x += wx0 - wx1
-            self.cam_y += wz0 - wz1
 
-        def pan_from(self, start_cam_x, start_cam_y, dx, dy):
-            self.cam_x = start_cam_x - dx / self.zoom
-            self.cam_y = start_cam_y - dy / self.zoom
-
-        def pan_by(self, dx, dy):
-            self.cam_x -= dx / self.zoom
-            self.cam_y -= dy / self.zoom
-
-        def fit_rect(self, view_w, view_h, x0, z0, x1, z1, margin=1.05):
-            if view_w <= 0 or view_h <= 0:
-                return
-            w = max(1.0, (x1 - x0) * margin)
-            h = max(1.0, (z1 - z0) * margin)
-            self.zoom = min(view_w / w, view_h / h)
-            self.cam_x = (x0 + x1) / 2
-            self.cam_y = (z0 + z1) / 2
-
-        def get_viewport(self, view_w, view_h):
-            x0, z0 = self.screen_to_world(0, 0, view_w, view_h)
-            x1, z1 = self.screen_to_world(view_w, view_h, view_w, view_h)
-            return min(x0, x1), min(z0, z1), max(x0, x1), max(z0, z1)
+# The camera class the canvas actually uses: the shared suite copy
+# when it is CURRENT (carries rotation), otherwise the bundled
+# rotation-capable copy above. Linked viewpoints made rotation
+# part of the camera contract; a stale shared copy installed by an
+# older suite app must neither take rotation away nor crash on it,
+# so it is passed over until the suite copy catches up — the same
+# doctrine as the min_zoom pin in MapCanvas.__init__ (1.9.6).
+Camera2D = (_SharedCamera2D if _camera_supports_rotation(_SharedCamera2D)
+            else _LocalCamera2D)
+_SHARED_CANVAS = _SHARED_PIP
 
 
 # Backwards-compatible alias: older code in this file called the local
@@ -151,6 +283,7 @@ DELETE_HIGHLIGHT_RGB = (1.0, 0.05, 0.78)
 # framed picture is fitted into the space BELOW it so the bar can
 # never cover part of the road.
 DELETE_BAR_H = 48
+
 
 # Framing margin for the delete "photograph": the road's bounding
 # box is scaled by this before fitting, so the road sits inside
@@ -286,6 +419,23 @@ class MapCanvas(Gtk.DrawingArea):
         self.drag_start = (0, 0)    # Screen coords where drag started
         self.cam_start = (0, 0)     # Camera position when drag started
         self.mouse_pos = (0, 0)     # Current mouse position (screen)
+        # Rotate drag (1.9.8 linked viewpoints): Shift+drag turns
+        # the shared view. None, or (start_x, start_rotation_deg).
+        # Rotation itself lives in the camera (see the rotation
+        # property below) — this is only gesture bookkeeping.
+        # Batch area-select band (1.9.8): (start_x, start_y, cur_x,
+        # cur_y) in screen px while Shift+drag draws the selection
+        # square for batch delete. (Shift+drag ROTATED the view in
+        # the first 1.9.8 draft; Joshua's batch rule claims the
+        # gesture on the main map — rotation lives on the Q/E keys,
+        # the heading buttons and Shift+drag in the side panes.)
+        self.band_drag = None
+        # One-live-pane rule (1.9.8): while the 3D viewport is the
+        # live pane, the map holds a still (rendered once, then
+        # only blitted) — see on_draw.
+        self.stilled = False
+        self._still_surface = None
+        self.render_count = 0   # scene renders (gate evidence)
 
         # Tool state (set by toolbar). None is the RESTING state
         # (1.9.7 interaction model, Joshua 2026-10-18): there is no
@@ -342,7 +492,8 @@ class MapCanvas(Gtk.DrawingArea):
         # Delete preview state (1.9.7). None when idle; otherwise:
         #   {"roads": [(cat, flat_idx, road_dict), ...] — the current
         #    selection, resolved to records,
-        #    "prev_cam": (cam_x, cam_y, zoom) from before the preview}
+        #    "prev_cam": (cam_x, cam_y, zoom, rotation) from before
+        #    the preview — Cancel restores all four, exactly}
         # While it is set, those roads are drawn lit up whole (see
         # _draw_delete_preview), the view is framed on their full
         # extent, and the app's delete bar names them with the
@@ -416,6 +567,45 @@ class MapCanvas(Gtk.DrawingArea):
     def zoom(self, value):
         self._camera.zoom = value
 
+    @property
+    def rotation(self):
+        """View heading in degrees clockwise (proxied to the shared
+        camera). 1.9.8: THE one heading every viewpoint reads — the
+        main map, the elevation map, the 3D inspector and the
+        satellite viewpoint all turn together because there is
+        only this one number."""
+        return self._camera.rotation
+
+    @rotation.setter
+    def rotation(self, value):
+        self._camera.set_rotation(value)
+
+    def rotate_by(self, delta_deg):
+        """
+        Turn the shared view by delta degrees (clockwise positive)
+        and tell the app so every linked viewpoint redraws. This
+        is the single door every rotate gesture walks through —
+        Shift+drag here, Q/E keys and the status-bar buttons in
+        app.py — so the panes can never disagree about heading.
+        """
+        self._camera.rotate_by(delta_deg)
+        self.queue_draw()
+        self._notify_camera_changed()
+
+    def _notify_camera_changed(self):
+        """
+        Tell the app the shared camera moved (pan / zoom / rotate /
+        fit), so the linked viewpoints (elevation map, inspector)
+        follow. Fail-open: early-init and headless harnesses may
+        build canvases whose app has no such hook yet.
+        """
+        hook = getattr(self.app, "on_camera_changed", None)
+        if hook is not None:
+            try:
+                hook()
+            except Exception:
+                pass
+
     # ------------------------------------------------------------------
     # Coordinate transforms (delegated to the shared Camera2D)
     # ------------------------------------------------------------------
@@ -448,7 +638,12 @@ class MapCanvas(Gtk.DrawingArea):
         world outside the frame), the camera is set directly from
         the world constants — the same math as fit_rect, applied
         through the unclamped cam_x / cam_y / zoom properties.
+
+        1.9.8: "show me the whole map" also means north-up — the
+        heading resets to 0, so the guarantee below is stated (and
+        checked) for the unrotated frame it was written for.
         """
+        self._camera.set_rotation(0.0)
         alloc = self.get_allocation()
         self._camera.fit_rect(alloc.width, alloc.height,
                               WORLD_X0, WORLD_Z0,
@@ -466,6 +661,7 @@ class MapCanvas(Gtk.DrawingArea):
                 self.cam_x = WORLD_X0 + WORLD_W / 2
                 self.cam_y = WORLD_Z0 + WORLD_H / 2
         self.queue_draw()
+        self._notify_camera_changed()
 
     def zoom_at(self, sx, sy, factor):
         """
@@ -475,6 +671,7 @@ class MapCanvas(Gtk.DrawingArea):
         alloc = self.get_allocation()
         self._camera.zoom_at(sx, sy, factor, alloc.width, alloc.height)
         self.queue_draw()
+        self._notify_camera_changed()
 
     def frame_rect(self, x0, z0, x1, z1, top_inset=0):
         """
@@ -500,18 +697,36 @@ class MapCanvas(Gtk.DrawingArea):
         usable_h = h - top_inset
         if w <= 0 or usable_h <= 0:
             return
-        rw = max(1.0, (x1 - x0) * DELETE_FRAME_MARGIN)
-        rh = max(1.0, (z1 - z0) * DELETE_FRAME_MARGIN)
+        # 1.9.8: the fit is computed on the rect's ROTATED extents
+        # (the camera may be turned when a delete is framed; the
+        # photograph must still contain the whole road). At
+        # heading 0 the rotated extents are the rect itself and
+        # this is exactly the 1.9.7 framing.
+        cxr, czr = (x0 + x1) / 2, (z0 + z1) / 2
+        rad = math.radians(self._camera.rotation)
+        c, s = math.cos(rad), math.sin(rad)
+        hw = hh = 0.0
+        for px in (x0, x1):
+            for pz in (z0, z1):
+                dx, dz = px - cxr, pz - czr
+                hw = max(hw, abs(dx * c - dz * s))
+                hh = max(hh, abs(dx * s + dz * c))
+        rw = max(1.0, 2 * hw * DELETE_FRAME_MARGIN)
+        rh = max(1.0, 2 * hh * DELETE_FRAME_MARGIN)
         zoom = min(w / rw, usable_h / rh)
         zoom_cap = min(w, usable_h) / DELETE_FRAME_MIN_SPAN
         zoom = max(MIN_ZOOM, min(zoom, zoom_cap, self._camera.max_zoom))
         self.zoom = zoom
-        self.cam_x = (x0 + x1) / 2
+        self.cam_x = cxr
+        self.cam_y = czr
         # Centre the rectangle in the band BELOW the top inset:
-        # shifting the camera up-screen by half the inset (in world
-        # units) moves the picture down by exactly the inset.
-        self.cam_y = (z0 + z1) / 2 - top_inset / (2.0 * zoom)
+        # shifting the camera by the screen vector (0, -inset/2)
+        # moves the picture DOWN by exactly the inset — expressed
+        # through the camera so it stays true at any heading (at
+        # heading 0 it is the 1.9.7 cam_y adjustment, verbatim).
+        self._camera.move_view_by(0, -top_inset / 2.0)
         self.queue_draw()
+        self._notify_camera_changed()
 
     # ------------------------------------------------------------------
     # Rendering
@@ -519,7 +734,34 @@ class MapCanvas(Gtk.DrawingArea):
 
     def on_draw(self, widget, cr):
         """
-        Cairo draw handler. Called by GTK when the widget needs repainting.
+        Cairo draw handler. Called by GTK when the widget needs
+        repainting. One-live-pane rule: while the map is stilled
+        (the 3D viewport is the live pane), the scene renders
+        ONCE into a cache and later draws only blit it — zero
+        rendering activity until the map is touched again.
+        """
+        if self.stilled:
+            alloc = self.get_allocation()
+            w, h = alloc.width, alloc.height
+            if self._still_surface is None or \
+                    self._still_surface.get_width() != w or \
+                    self._still_surface.get_height() != h:
+                import cairo as _cairo
+                surf = _cairo.ImageSurface(
+                    _cairo.FORMAT_ARGB32, max(2, w), max(2, h))
+                self.render_count += 1
+                self._draw_scene(widget, _cairo.Context(surf))
+                surf.flush()
+                self._still_surface = surf
+            cr.set_source_surface(self._still_surface, 0, 0)
+            cr.paint()
+            return False
+        self.render_count += 1
+        return self._draw_scene(widget, cr)
+
+    def _draw_scene(self, widget, cr):
+        """
+        The map picture itself.
         Draw order: background → zones → roads → selection → overlays.
         """
         alloc = self.get_allocation()
@@ -555,6 +797,9 @@ class MapCanvas(Gtk.DrawingArea):
         # Draw the move-road ghost preview on top of everything else
         # while move-road mode is active (Joshua 2026-10-12).
         self._draw_move_ghost(cr)
+
+        # Batch selection band (1.9.8), topmost.
+        self._draw_band(cr)
 
         # Draw the pending-delete road LAST, on top of everything:
         # while Joshua is deciding, the road he is about to delete
@@ -1524,6 +1769,12 @@ class MapCanvas(Gtk.DrawingArea):
 
     def on_button_press(self, widget, event):
         """Handle mouse button press. Starts pan drag or tool action."""
+        # One-live-pane: touching the map makes it the
+        # live pane (the 3D viewport goes back to a still).
+        try:
+            self.app.note_pane_touched("map")
+        except Exception:
+            pass
         if event.button == 1:  # left click
             # Move-road mode is modal (Joshua 2026-10-12): a left click
             # drops the road at its current ghost position. Shift+click
@@ -1612,6 +1863,17 @@ class MapCanvas(Gtk.DrawingArea):
             # (the ordinary selection, unchanged), clicking empty
             # space clears the selection. A press that turns into a
             # drag simply pans with whatever the press selected.
+            #
+            # 1.9.8 (Joshua's batch rule): Shift+left-drag draws
+            # the batch selection SQUARE — on release, every road
+            # piece touching the square is collected for the batch
+            # delete list. A band drag neither pans nor selects.
+            # (Rotating the shared view lives on the Q/E keys, the
+            # heading buttons, and Shift+drag in the side panes.)
+            if event.state & Gdk.ModifierType.SHIFT_MASK:
+                self.band_drag = (event.x, event.y,
+                                  event.x, event.y)
+                return True
             self.dragging = True
             self.drag_start = (event.x, event.y)
             self.cam_start = (self.cam_x, self.cam_y)
@@ -1630,6 +1892,14 @@ class MapCanvas(Gtk.DrawingArea):
         """End pan drag or pin drag."""
         if event.button in (1, 3):
             self.dragging = False
+            if event.button == 1 and self.band_drag is not None:
+                # The square ends where the button went UP (the
+                # last motion event can lag a step behind it).
+                band = (self.band_drag[0], self.band_drag[1],
+                        event.x, event.y)
+                self.band_drag = None
+                self._finish_band(band)
+                self.queue_draw()
         if event.button == 1 and self.drag_pin is not None:
             # Finished dragging a zone pin: persist the polygon boundary.
             # Pins move freely (no rectangle constraints), so no
@@ -1688,6 +1958,14 @@ class MapCanvas(Gtk.DrawingArea):
             self.queue_draw()
             return True
 
+        # Batch band drag (1.9.8): the square follows the pointer;
+        # the collection happens on release.
+        if self.band_drag is not None:
+            sx, sy, _cx, _cy = self.band_drag
+            self.band_drag = (sx, sy, event.x, event.y)
+            self.queue_draw()
+            return True
+
         if self.dragging:
             dx = event.x - self.drag_start[0]
             dy = event.y - self.drag_start[1]
@@ -1696,6 +1974,7 @@ class MapCanvas(Gtk.DrawingArea):
             self._camera.pan_from(self.cam_start[0], self.cam_start[1],
                                   dx, dy)
             self.queue_draw()
+            self._notify_camera_changed()
             return True
 
         # Hover feedback: hand cursor over a selected zone's pins
@@ -1709,7 +1988,13 @@ class MapCanvas(Gtk.DrawingArea):
         return True
 
     def on_scroll(self, widget, event):
-        """Handle mouse wheel. Zoom centered on cursor."""
+        # One-live-pane: wheeling the map makes it the live pane.
+        try:
+            self.app.note_pane_touched("map")
+        except Exception:
+            pass
+        """Handle mouse wheel. Zoom centered on cursor (the canvas
+        zoom_at already notifies the linked viewpoints)."""
         if event.direction == Gdk.ScrollDirection.UP:
             self.zoom_at(event.x, event.y, 1.2)
         elif event.direction == Gdk.ScrollDirection.DOWN:
@@ -2091,6 +2376,7 @@ class MapCanvas(Gtk.DrawingArea):
         # was a look, not a move.
         if self.delete_preview is not None:
             self.cancel_delete_preview()
+        self.band_drag = None
         self.selected_roads = []
         self.extend_pick = None
         self.divide_pick = None  # cancel any divide-section picking
@@ -2288,11 +2574,124 @@ class MapCanvas(Gtk.DrawingArea):
             "drag pins to refine the shape.")
         self.queue_draw()
 
+
+    # ------------------------------------------------------------------
+    # Batch selection band drawing (1.9.8)
+    # ------------------------------------------------------------------
+
+    def _draw_band(self, cr):
+        """The rubber-band square while Shift+drag draws it."""
+        if self.band_drag is None:
+            return
+        sx, sy, cx, cy = self.band_drag
+        x0, x1 = min(sx, cx), max(sx, cx)
+        y0, y1 = min(sy, cy), max(sy, cy)
+        cr.set_source_rgba(0.35, 0.65, 1.0, 0.16)
+        cr.rectangle(x0, y0, x1 - x0, y1 - y0)
+        cr.fill()
+        cr.set_source_rgba(0.45, 0.75, 1.0, 0.95)
+        cr.set_line_width(1.5)
+        cr.set_dash([6, 4])
+        cr.rectangle(x0, y0, x1 - x0, y1 - y0)
+        cr.stroke()
+        cr.set_dash([])
+
+    def _finish_band(self, band):
+        """
+        Shift+drag released: hand the square to the batch delete
+        flow. A plain Shift+click (no real square) does nothing.
+        The square is passed as its four world corners (the view
+        may be rotated; the collector tests real geometry).
+        """
+        sx, sy, cx, cy = band
+        if abs(cx - sx) < 6 or abs(cy - sy) < 6:
+            self.app.set_status(
+                "Shift+drag draws a square to collect pieces "
+                "for batch delete.")
+            return
+        corners = [self.screen_to_world(sx, sy),
+                   self.screen_to_world(cx, sy),
+                   self.screen_to_world(cx, cy),
+                   self.screen_to_world(sx, cy)]
+        try:
+            self.app.begin_batch_delete(corners)
+        except Exception:
+            pass
+
     # ------------------------------------------------------------------
     # Join: combine the two selected roads into one road object.
     # (Joshua 2026-10-11: select-first workflow — roads are picked in
     # Select mode, then the Join toolbar button asks for confirmation.)
     # ------------------------------------------------------------------
+
+    def compute_join_result(self):
+        """
+        Preview twin of do_join_from_selection: the joined road
+        the commit WOULD create, computed read-only for the
+        Before/After comparison. Returns (road_a, road_b,
+        new_road) or None. KEEP IN STEP with do_join_from_selection.
+        """
+        if len(self.selected_roads) != 2:
+            return None
+        (cat_a, idx_a), (cat_b, idx_b) = self.selected_roads
+        road_a = self._get_road_dict(cat_a, idx_a)
+        road_b = self._get_road_dict(cat_b, idx_b)
+        if road_a is None or road_b is None or road_a is road_b:
+            return None
+        pts_a = [list(p) for p in road_a.get("pts", [])]
+        pts_b = [list(p) for p in road_b.get("pts", [])]
+        if len(pts_a) < 2 or len(pts_b) < 2:
+            return None
+        best = None
+        for ea, pa in ((0, pts_a[0]), (-1, pts_a[-1])):
+            for eb, pb in ((0, pts_b[0]), (-1, pts_b[-1])):
+                d = math.hypot(pa[0] - pb[0], pa[1] - pb[1])
+                if best is None or d < best[0]:
+                    best = (d, ea, eb)
+        _d, ea, eb = best
+        a_pts = pts_a if ea == -1 else pts_a[::-1]
+        b_pts = pts_b if eb == 0 else pts_b[::-1]
+        if math.hypot(a_pts[-1][0] - b_pts[0][0],
+                      a_pts[-1][1] - b_pts[0][1]) < 0.001:
+            joined_pts = a_pts + b_pts[1:]
+        else:
+            joined_pts = a_pts + b_pts
+        new_road = {"name": road_a.get("name", "Unnamed"),
+                    "pts": joined_pts}
+        for k, v in road_a.items():
+            if k not in new_road:
+                new_road[k] = v
+        self._carry_cul_de_sac_to_joined(road_a, road_b, ea, eb,
+                                         new_road)
+        return (road_a, road_b, new_road)
+
+    def compute_merge_result(self):
+        """
+        Preview twin of do_merge_from_selection: the source road
+        as the merge WOULD leave it (its near endpoint snapped
+        onto the target's edge), read-only, for the Before/After
+        comparison. Returns (road_s, road_t, new_road_s) or None.
+        KEEP IN STEP with do_merge_from_selection / _do_merge.
+        """
+        if len(self.selected_roads) != 2:
+            return None
+        (cat_s, idx_s), (cat_t, idx_t) = self.selected_roads
+        road_s = self._get_road_dict(cat_s, idx_s)
+        road_t = self._get_road_dict(cat_t, idx_t)
+        if road_s is None or road_t is None or road_s is road_t:
+            return None
+        pts_s = road_s.get("pts", [])
+        pts_t = road_t.get("pts", [])
+        if len(pts_s) < 2 or len(pts_t) < 2:
+            return None
+        end_s = self._merge_source_end(pts_s, pts_t)
+        ex, ez = pts_s[end_s]
+        tx, tz, _dist = self._closest_point_on_road(ex, ez, pts_t)
+        new_s = copy.deepcopy(road_s)
+        new_pts = [list(p) for p in pts_s]
+        new_pts[end_s] = [tx, tz]
+        new_s["pts"] = new_pts
+        return (road_s, road_t, new_s)
 
     def do_join_from_selection(self):
         """
@@ -2882,7 +3281,10 @@ class MapCanvas(Gtk.DrawingArea):
         min_x, min_z, max_x, max_z, pad = bbox
         self.delete_preview = {
             "roads": roads,
-            "prev_cam": (self.cam_x, self.cam_y, self.zoom),
+            # 1.9.8: prev_cam carries the heading too — Cancel
+            # restores the view EXACTLY, rotation included.
+            "prev_cam": (self.cam_x, self.cam_y, self.zoom,
+                         self.rotation),
         }
         self.frame_rect(min_x - pad, min_z - pad,
                         max_x + pad, max_z + pad,
@@ -2906,6 +3308,12 @@ class MapCanvas(Gtk.DrawingArea):
                 "go back.")
         self.app.show_delete_bar(bar_text, ready=True)
         self.app.set_status(status)
+        # Before/After caveat (1.9.8): the companion panes switch
+        # to the comparison stills for this decision.
+        try:
+            self.app.on_delete_preview_begin(roads)
+        except Exception:
+            pass
         self.queue_draw()
         return False
 
@@ -2946,14 +3354,21 @@ class MapCanvas(Gtk.DrawingArea):
             self.app.hide_delete_bar()
         except Exception:
             pass  # bar not built yet (early init) — nothing to hide
-        cam_x, cam_y, zoom = pv["prev_cam"]
+        cam_x, cam_y, zoom, rotation = pv["prev_cam"]
         self.cam_x, self.cam_y, self.zoom = cam_x, cam_y, zoom
+        self.rotation = rotation
+        # Comparison over (cancel): panes revert to synced views.
+        try:
+            self.app.on_delete_preview_end()
+        except Exception:
+            pass
         try:
             self.app.set_status(
                 "Delete cancelled — nothing was removed.")
         except Exception:
             pass  # status bar not built yet during early init
         self.queue_draw()
+        self._notify_camera_changed()
 
     def confirm_delete_preview(self):
         """
@@ -2985,4 +3400,10 @@ class MapCanvas(Gtk.DrawingArea):
         else:
             self.app.set_status("Delete failed: could not save.")
         self.app.undo_commit()
+        # Comparison over (confirmed): panes revert to the normal
+        # synced views, which now show the post-delete world.
+        try:
+            self.app.on_delete_preview_end()
+        except Exception:
+            pass
         self.queue_draw()
