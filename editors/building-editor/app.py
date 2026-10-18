@@ -89,7 +89,7 @@ from subdivisioncanvas import SubdivisionCanvas
 
 # App version shown in the Help -> About dialog (bump with each release).
 # Joshua 2026-10-11: version number must be prominent in About.
-APP_VERSION = "2.0.1"
+APP_VERSION = "2.0.2"
 
 # ---------------------------------------------------------------------------
 # THE EDITOR UI RULE (Joshua, 2026-10-16 — standing suite principle):
@@ -405,6 +405,17 @@ class AssetEditorWindow(Gtk.Window):
         self.status_ctx = self.status.get_context_id("main")
         vbox.pack_start(self.status, False, False, 0)
 
+        # --- Corner progress bar (2.0.2 — Joshua's progress-bar
+        # law, 2026-10-18): the same facility the Map Editor
+        # shipped in its 1.9.7, so the suite feels like one
+        # program: a small bar at the BOTTOM-RIGHT (the end of the
+        # status bar) that is present whenever the app is doing
+        # background work of any kind — downloads, building-detail
+        # fetches, pushes — so a busy app never reads as frozen.
+        # The full-width MB readout above stays as it was; this
+        # bar is the always-present indicator. See progress_start.
+        self._build_progress_bar()
+
         # --- The game-data tabs exist from the start (1.7.2) ---
         # They fill in as the light lists land; building the Gas
         # Station Review tab is guarded so a failure there can
@@ -615,6 +626,110 @@ class AssetEditorWindow(Gtk.Window):
                     repo, path, progress=progress)
         return _PlainFetcher()
 
+    # -- corner progress bar (2.0.2 — Joshua's progress-bar law,
+    # 2026-10-18): whenever the app is downloading or doing heavy
+    # processing in the background, a progress bar shows in the
+    # BOTTOM-RIGHT corner (the right end of the status bar), so a
+    # busy app never reads as frozen. Real progress where a total
+    # is known; a moving indeterminate pulse where it isn't. It
+    # appears when work starts and clears when work ends, and it
+    # lives inside the status area, so it never covers the editor
+    # or any of its controls.
+    #
+    # Jobs are keyed (several can run at once); the bar shows the
+    # most recently started/updated job. All methods are UI-thread
+    # only — worker threads hop here with GLib.idle_add, exactly
+    # like the download progress callbacks already do. The
+    # facility is the Map Editor 1.9.7's, carried across so the
+    # suite feels like one program.
+    # ------------------------------------------------------------------
+
+    def _build_progress_bar(self):
+        """Build the corner progress widget (hidden while idle)."""
+        self._progress_jobs = {}  # job_id -> {"label", "fraction"}
+        self._progress_pulse_id = None
+        self.progress_box = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        self.progress_label = Gtk.Label(label="")
+        self.progress_bar_widget = Gtk.ProgressBar()
+        self.progress_bar_widget.set_size_request(170, -1)
+        self.progress_box.pack_start(
+            self.progress_label, False, False, 0)
+        self.progress_box.pack_start(
+            self.progress_bar_widget, False, False, 0)
+        self.progress_box.set_no_show_all(True)
+        self.progress_box.hide()
+        self.status.pack_end(self.progress_box, False, False, 4)
+
+    def progress_start(self, job_id, label):
+        """Register a background job and show the corner bar."""
+        if not hasattr(self, "_progress_jobs"):
+            return  # progress UI not built (partial/headless app)
+        self._progress_jobs[job_id] = {"label": label,
+                                       "fraction": None}
+        self._refresh_progress_bar()
+
+    def progress_update(self, job_id, fraction=None, label=None):
+        """Update a job's fraction (0..1) and/or label."""
+        if not hasattr(self, "_progress_jobs"):
+            return  # progress UI not built (partial/headless app)
+        job = self._progress_jobs.get(job_id)
+        if job is None:
+            return
+        if fraction is not None:
+            job["fraction"] = max(0.0, min(1.0, fraction))
+        if label is not None:
+            job["label"] = label
+        self._refresh_progress_bar()
+
+    def progress_finish(self, job_id):
+        """End a background job; the bar clears when none remain."""
+        if not hasattr(self, "_progress_jobs"):
+            return  # progress UI not built (partial/headless app)
+        self._progress_jobs.pop(job_id, None)
+        self._refresh_progress_bar()
+
+    def _refresh_progress_bar(self):
+        """Make the corner bar reflect the current job set."""
+        if not hasattr(self, "progress_box"):
+            return  # progress UI not built (partial/headless app)
+        if not self._progress_jobs:
+            self._stop_progress_pulse()
+            self.progress_box.hide()
+            return
+        job = list(self._progress_jobs.values())[-1]
+        self.progress_label.set_text(job["label"])
+        if job["fraction"] is None:
+            # No known total: indeterminate — keep the pulse moving
+            # so the bar visibly works.
+            self.progress_bar_widget.set_fraction(0.0)
+            if self._progress_pulse_id is None:
+                self._progress_pulse_id = GLib.timeout_add(
+                    120, self._pulse_progress_bar)
+        else:
+            self._stop_progress_pulse()
+            self.progress_bar_widget.set_fraction(job["fraction"])
+        # show() per widget: the box carries no_show_all (so window
+        # show_all never pops it up), and GTK's show_all() honours
+        # that flag even on the widget itself.
+        self.progress_label.show()
+        self.progress_bar_widget.show()
+        self.progress_box.show()
+
+    def _pulse_progress_bar(self):
+        """Indeterminate pulse tick; returns False to stop."""
+        if not any(j["fraction"] is None
+                   for j in self._progress_jobs.values()):
+            self._progress_pulse_id = None
+            return False
+        self.progress_bar_widget.pulse()
+        return True
+
+    def _stop_progress_pulse(self):
+        if self._progress_pulse_id is not None:
+            GLib.source_remove(self._progress_pulse_id)
+            self._progress_pulse_id = None
+
     # -- download progress (worker thread -> GTK thread) --------------
 
     def _dl_progress(self, done, total, path):
@@ -636,6 +751,9 @@ class AssetEditorWindow(Gtk.Window):
                 f"{total / 1048576:.1f} MB")
         frac = (done / total) if total else 1.0
         GLib.idle_add(self._show_progress, frac, text)
+        # 2.0.2: the same numbers drive the corner bar (the
+        # progress-bar law) under the keyed "download" job.
+        GLib.idle_add(self._corner_download_progress, frac, label)
 
     def _show_progress(self, frac, text):
         """GTK thread: move the progress bar (hide at completion)."""
@@ -651,6 +769,23 @@ class AssetEditorWindow(Gtk.Window):
     def _hide_progress(self):
         self.progress_bar.hide()
         self._progress_state.clear()
+        # 2.0.2: a load flow ending also ends the corner bar's
+        # download job (other keyed jobs, if any, keep it up).
+        self.progress_finish("download")
+        return False
+
+    def _corner_download_progress(self, frac, label):
+        """GTK thread (2.0.2): mirror _dl_progress into the corner
+        bar's keyed "download" job — real fraction, file named."""
+        if frac >= 1.0:
+            self.progress_finish("download")
+        elif "download" in self._progress_jobs:
+            self.progress_update(
+                "download", fraction=frac,
+                label=f"Downloading {label}")
+        else:
+            self.progress_start("download", f"Downloading {label}")
+            self.progress_update("download", fraction=frac)
         return False
 
     def _note_stale(self, what):
@@ -977,7 +1112,8 @@ class AssetEditorWindow(Gtk.Window):
 
     # -- Open in Map Editor (1.7.2, Joshua 2026-10-17) -------------------
 
-    def open_in_map_editor(self, zone, x, z, street_name):
+    def open_in_map_editor(self, zone, x, z, street_name,
+                           building=None):
         """
         Hand a location to the Map Editor: write the suite handoff
         file (~/.local/share/adamsville-suite/open-in-map-editor.
@@ -987,6 +1123,17 @@ class AssetEditorWindow(Gtk.Window):
         built into its source now); until then the honest status
         says the location is saved and the jump lands with that
         update.
+
+        2.0.2 (Joshua, 2026-10-18): when a building is in hand at
+        jump time, the caller passes `building` — {name, zone,
+        footprint, at} — and it rides along in the payload, so the
+        Map Editor (1.9.8+) can draw the building where it belongs
+        and select the street it fronts. Joshua's live find: he
+        clicked a road in this editor's 3D view, landed in the Map
+        Editor zoomed to the road, and had no idea where his
+        building was supposed to go — the building simply was not
+        in the handoff. With no building in hand, `building` stays
+        None and the payload is exactly what it has always been.
         """
         from datetime import datetime, timezone
         payload = {
@@ -997,6 +1144,8 @@ class AssetEditorWindow(Gtk.Window):
             "writtenBy": f"building-editor-{APP_VERSION}",
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
+        if building is not None:
+            payload["building"] = building
         try:
             github_sync.SHARED_DIR.mkdir(parents=True, exist_ok=True)
             path = github_sync.SHARED_DIR / "open-in-map-editor.json"
@@ -1172,12 +1321,19 @@ class AssetEditorWindow(Gtk.Window):
         import threading
         from gi.repository import GLib
         self._set_status("Saving to GitHub…")
+        # 2.0.2 (progress-bar law): the whole round trip — push,
+        # close, proof download — is background work; the corner
+        # bar pulses under the keyed "push" job until it lands.
+        # (The proof-download leg also reports real fractions
+        # through _dl_progress's "download" job while it runs.)
+        self.progress_start("push", "Saving to GitHub…")
 
         def worker():
             result = self._round_trip_work()
 
             def done():
                 self._round_trip_apply(*result)
+                self.progress_finish("push")
                 return False
             GLib.idle_add(done)
 
@@ -1699,8 +1855,17 @@ class ZoneInspectorPanel(Gtk.Box):
         the store retained them all).
 
     The view never rotates on its own (auto_rotate stays False and
-    no timer exists): orbit is by dragging empty space, elevation
-    clamped, exactly as Joshua set it in 1.7.0.
+    no timer exists), elevation clamped.
+
+    2.0.2 (Joshua, 2026-10-18) — UNIVERSAL VIEWPORT CONTROLS, the
+    one scheme he set for every viewport in the suite, replacing
+    1.7.0's drag-to-orbit here: click-and-hold DRAG = PAN the view;
+    mouse WHEEL = zoom in/out; the + and − keys = the same zoom;
+    CONTROL+drag = ROTATE (the old orbit motion, now on the
+    modifier). The manipulation grabs are NOT view controls and
+    are unchanged: a plain press on the building still grabs it
+    (roof moves, edges resize, front face heights), and a plain
+    click (press + release, no drag) still picks a street.
     """
 
     view_mode = "3d"
@@ -1777,6 +1942,12 @@ class ZoneInspectorPanel(Gtk.Box):
         self.selected_street = None  # {"name", "x", "z", "zone"}
         self.status_word = None
         self.status_color = None
+        # 2.0.2 universal viewport controls: the view's zoom factor
+        # over the fitted framing, and its pan offset in screen
+        # pixels. Both reset whenever a subject is (re)framed —
+        # see _reset_camera_to_front.
+        self._zoom = 1.0
+        self._pan = [0.0, 0.0]
 
         # -- header: title + close ----------------------------------
         header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
@@ -1812,12 +1983,19 @@ class ZoneInspectorPanel(Gtk.Box):
         self.drawing.add_events(
             Gdk.EventMask.BUTTON_PRESS_MASK
             | Gdk.EventMask.BUTTON_RELEASE_MASK
-            | Gdk.EventMask.POINTER_MOTION_MASK)
+            | Gdk.EventMask.POINTER_MOTION_MASK
+            | Gdk.EventMask.SCROLL_MASK)
         self.drawing.connect("button-press-event", self._on_drag_press)
         self.drawing.connect("button-release-event",
                              self._on_drag_release)
         self.drawing.connect("motion-notify-event", self._on_drag_motion)
         self.drawing.connect("draw", self._on_draw_3d)
+        # 2.0.2 universal viewport controls: wheel zoom, and the
+        # + / − keys zoom too — keys need keyboard focus, which a
+        # press takes (see _on_drag_press's grab_focus).
+        self.drawing.set_can_focus(True)
+        self.drawing.connect("scroll-event", self._on_scroll)
+        self.drawing.connect("key-press-event", self._on_key_press)
         self.status_label = Gtk.Label()
         self.status_label.set_halign(Gtk.Align.START)
         self.status_label.set_valign(Gtk.Align.END)
@@ -1835,16 +2013,19 @@ class ZoneInspectorPanel(Gtk.Box):
         controls = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
                            spacing=4)
         hint = Gtk.Label(
-            label="Drag empty space to look around. Drag the roof "
-                  "to move, an edge to resize, the orange wall for "
-                  "height. Click a street to select it.")
+            label="Drag to pan the view; Ctrl+drag rotates; wheel "
+                  "or +/− zooms. Drag the roof to move, an edge to "
+                  "resize, the orange wall for height. Click a "
+                  "street to select it.")
         hint.set_halign(Gtk.Align.START)
         hint.set_ellipsize(Pango.EllipsizeMode.END)
         hint.set_tooltip_text(
-            "Drag empty space to look around. Drag the roof to "
-            "move the building, a left/right edge for width, a "
-            "front/back edge for depth, the orange front wall up "
-            "or down for height. Click a street to select it.")
+            "Universal viewport controls: drag pans the view, "
+            "Ctrl+drag rotates it, the mouse wheel or the + and − "
+            "keys zoom. Drag the roof to move the building, a "
+            "left/right edge for width, a front/back edge for "
+            "depth, the orange front wall up or down for height. "
+            "Click a street to select it.")
         controls.pack_start(hint, True, True, 0)
         face_btn = Gtk.Button(label="Face front")
         face_btn.set_tooltip_text(
@@ -2136,6 +2317,10 @@ class ZoneInspectorPanel(Gtk.Box):
             self.front_azimuth = azimuth
             self.azimuth = azimuth
         self.elevation = self.DEFAULT_ELEVATION
+        # 2.0.2: reframing also clears the universal controls'
+        # pan/zoom — the default view IS the fitted framing.
+        self._zoom = 1.0
+        self._pan = [0.0, 0.0]
 
     def _on_face_front(self, _widget):
         """Face front: exactly the default view again."""
@@ -2297,15 +2482,21 @@ class ZoneInspectorPanel(Gtk.Box):
         pad = 28
         scale = min((width - 2 * pad) / span_a,
                     (height - 2 * pad) / span_v)
-        scale = max(scale, 0.05)
+        # 2.0.2 universal viewport controls: the fitted scale is
+        # multiplied by the view's zoom factor, and the mapping is
+        # shifted by the pan offset. Both are recorded in _view so
+        # every inverse mapping (picking, manipulation) uses the
+        # same transform the draw used.
+        scale = max(scale * self._zoom, 0.05)
+        ox, oy = self._pan
         self._view = {"scale": scale, "ac_mid": ac_mid,
                       "vt_mid": vt_mid, "w": width, "h": height,
-                      "az": az, "el": el}
+                      "az": az, "el": el, "ox": ox, "oy": oy}
 
         def to_screen(dx, dz, h):
             across, vertical, _d = self._project(dx, dz, h, az, el)
-            return (width / 2 + (across - ac_mid) * scale,
-                    height / 2 + (vertical - vt_mid) * scale)
+            return (width / 2 + (across - ac_mid) * scale + ox,
+                    height / 2 + (vertical - vt_mid) * scale + oy)
         return to_screen
 
     def _screen_to_ground(self, sx, sy):
@@ -2315,8 +2506,11 @@ class ZoneInspectorPanel(Gtk.Box):
         if not v:
             return None
         scale = v["scale"]
-        across = (sx - v["w"] / 2) / scale + v["ac_mid"]
-        vertical = (sy - v["h"] / 2) / scale + v["vt_mid"]
+        # 2.0.2: undo the pan offset the fit applied (see _fit_view).
+        across = (sx - v.get("ox", 0.0) - v["w"] / 2) / scale \
+            + v["ac_mid"]
+        vertical = (sy - v.get("oy", 0.0) - v["h"] / 2) / scale \
+            + v["vt_mid"]
         el = v["el"]
         if abs(math.sin(el)) < 1e-6:
             return None
@@ -2712,25 +2906,49 @@ class ZoneInspectorPanel(Gtk.Box):
         v = self._view
         across, vertical, _d = self._project(
             dx, dz, 0, v["az"], v["el"])
-        return (v["w"] / 2 + (across - v["ac_mid"]) * v["scale"],
-                v["h"] / 2 + (vertical - v["vt_mid"]) * v["scale"])
+        return (v["w"] / 2 + (across - v["ac_mid"]) * v["scale"]
+                + v.get("ox", 0.0),
+                v["h"] / 2 + (vertical - v["vt_mid"]) * v["scale"]
+                + v.get("oy", 0.0))
 
     def _on_open_in_map_editor(self, _widget):
-        """Hand the selected street's location to the Map Editor."""
+        """Hand the selected street's location to the Map Editor.
+
+        2.0.2: when this panel is showing a BUILDING, the building
+        rides along (see AssetEditorWindow.open_in_map_editor):
+        its name, its zone, its footprint ring exactly as the
+        editor holds it right now — drags included, because
+        manipulation rewrites detail["ring"] in place — and the
+        ring's centre. In station mode, or with nothing shown, the
+        handoff is the plain street jump it has always been."""
         s = self.selected_street
         if s:
+            building = None
+            if self.mode == "building" and self.detail:
+                ring = self.detail.get("ring") or []
+                if ring:
+                    cx, cz = zonedata.ring_centroid(ring)
+                    building = {
+                        "name": self.detail.get("name") or "",
+                        "zone": self.zone or s["zone"],
+                        "footprint": [[float(px), float(pz)]
+                                      for px, pz in ring],
+                        "at": [float(cx), float(cz)],
+                    }
             self.app_window.open_in_map_editor(
-                s["zone"], s["x"], s["z"], s["name"])
+                s["zone"], s["x"], s["z"], s["name"],
+                building=building)
 
-    # -- dragging: orbit, manipulation, click-to-pick -----------------------
+    # -- dragging: pan / rotate, manipulation, click-to-pick ----------------
 
     def _classify_grab(self, sx, sy):
         """
         What a press at (sx, sy) grabs, by the manipulation rules:
         ("width"|"depth", side) near a roof edge, "move" inside the
-        roof, "height" inside the front face, else None (orbit /
-        click). Uses the viewed object's BOX rectangle (the same
-        rectangle the number fields describe).
+        roof, "height" inside the front face, else None (a view
+        drag — pan, or rotate with Control held — or a click).
+        Uses the viewed object's BOX rectangle (the same rectangle
+        the number fields describe).
         """
         v = self._cur_values
         if not v or not self._view:
@@ -2776,8 +2994,10 @@ class ZoneInspectorPanel(Gtk.Box):
         v = self._view
         across, vertical, _d = self._project(dx, dz, h,
                                              v["az"], v["el"])
-        return (v["w"] / 2 + (across - v["ac_mid"]) * v["scale"],
-                v["h"] / 2 + (vertical - v["vt_mid"]) * v["scale"])
+        return (v["w"] / 2 + (across - v["ac_mid"]) * v["scale"]
+                + v.get("ox", 0.0),
+                v["h"] / 2 + (vertical - v["vt_mid"]) * v["scale"]
+                + v.get("oy", 0.0))
 
     @staticmethod
     def _point_in_poly(px, py, poly):
@@ -2795,6 +3015,23 @@ class ZoneInspectorPanel(Gtk.Box):
     def _on_drag_press(self, _widget, event):
         if event.button != 1 or self.mode is None:
             return False
+        # Take keyboard focus so the universal controls' + / −
+        # zoom keys land here after any click in the view.
+        try:
+            self.drawing.grab_focus()
+        except Exception:
+            pass
+        # 2.0.2 universal viewport controls: CONTROL held makes
+        # the drag a ROTATE, wherever it starts — the modifier is
+        # the mode switch, so a Ctrl+press never grabs the building
+        # and never pans. (getattr guards: harness-fabricated
+        # events may carry no modifier state at all.)
+        state = getattr(event, "state", 0) or 0
+        try:
+            ctrl_mask = Gdk.ModifierType.CONTROL_MASK
+        except Exception:
+            ctrl_mask = 1 << 2  # GDK's CONTROL_MASK value
+        rotate = bool(state & ctrl_mask)
         # Fresh values first: the grab classification works on the
         # same numbers the tab's fields currently show.
         values = None
@@ -2805,13 +3042,16 @@ class ZoneInspectorPanel(Gtk.Box):
                 values = None
         if values:
             self._cur_values = dict(values)
-        grab = self._classify_grab(event.x, event.y)
+        grab = None if rotate else self._classify_grab(
+            event.x, event.y)
         self._drag = {
-            "kind": grab[0] if grab else "orbit",
+            "kind": "rotate" if rotate
+            else (grab[0] if grab else "pan"),
             "side": grab[1] if grab else 0,
             "sx": event.x, "sy": event.y,
             "x": event.x, "y": event.y,
             "az0": self.azimuth, "el0": self.elevation,
+            "pan0": list(self._pan),
             "start": dict(self._cur_values) if self._cur_values
             else None,
             # The view frame's centre, frozen at press time
@@ -2835,7 +3075,18 @@ class ZoneInspectorPanel(Gtk.Box):
         if abs(event.x - d["sx"]) + abs(event.y - d["sy"]) > 4:
             d["moved"] = True
         kind = d["kind"]
-        if kind == "orbit":
+        if kind == "pan":
+            # 2.0.2 universal controls: a plain drag PANS — the
+            # view's pixel offset follows the pointer exactly, and
+            # the camera angles do not move.
+            self._pan[0] = d["pan0"][0] + (event.x - d["sx"])
+            self._pan[1] = d["pan0"][1] + (event.y - d["sy"])
+            self.drawing.queue_draw()
+            return True
+        if kind == "rotate":
+            # 2.0.2 universal controls: CONTROL+drag ROTATES (the
+            # pre-2.0.2 orbit motion, unchanged maths and clamps)
+            # — and the pan offset does not move.
             self.azimuth = d["az0"] + (event.x - d["sx"]) * 0.01
             self.elevation = max(
                 self.MIN_ELEVATION,
@@ -2900,7 +3151,7 @@ class ZoneInspectorPanel(Gtk.Box):
     def _on_drag_release(self, _widget, event):
         d = self._drag
         self._drag = None
-        if d is not None and d["kind"] == "orbit" and not d["moved"]:
+        if d is not None and d["kind"] == "pan" and not d["moved"]:
             # A click, not a drag: it may be a street pick.
             self.pick_street(event.x, event.y)
         elif d is not None and d["kind"] in (
@@ -2911,6 +3162,72 @@ class ZoneInspectorPanel(Gtk.Box):
             if hook is not None:
                 hook()
         return True
+
+    # -- universal viewport controls: zoom (2.0.2) --------------------------
+
+    # One zoom step, shared by the wheel and the + / − keys so
+    # both feel identical; the factor is clamped so the view can
+    # neither vanish nor blow up without bound.
+    ZOOM_STEP = 1.12
+    ZOOM_MIN = 0.15
+    ZOOM_MAX = 10.0
+
+    def _zoom_by(self, factor):
+        """Multiply the view's zoom factor (clamped); redraw."""
+        self._zoom = max(self.ZOOM_MIN,
+                         min(self.ZOOM_MAX, self._zoom * factor))
+        self.drawing.queue_draw()
+
+    def _on_scroll(self, _widget, event):
+        """Mouse wheel = zoom in/out (universal controls)."""
+        if self.mode is None:
+            return False
+        factor = None
+        direction = None
+        try:
+            direction = event.get_scroll_direction()
+        except Exception:
+            direction = None
+        up = getattr(getattr(Gdk, "ScrollDirection", None),
+                     "UP", None)
+        down = getattr(getattr(Gdk, "ScrollDirection", None),
+                       "DOWN", None)
+        if direction is not None and direction == up:
+            factor = self.ZOOM_STEP
+        elif direction is not None and direction == down:
+            factor = 1.0 / self.ZOOM_STEP
+        else:
+            # Smooth-scroll devices report deltas instead of a
+            # direction: negative dy (scroll up) zooms in.
+            try:
+                _ok, _dx, dy = event.get_scroll_deltas()
+            except Exception:
+                return False
+            if dy < 0:
+                factor = self.ZOOM_STEP
+            elif dy > 0:
+                factor = 1.0 / self.ZOOM_STEP
+            else:
+                return False
+        self._zoom_by(factor)
+        return True
+
+    def _on_key_press(self, _widget, event):
+        """The + and − keys = the same zoom as the wheel
+        (universal controls). Other keys pass through."""
+        keyval = getattr(event, "keyval", None)
+        plus = (getattr(Gdk, "KEY_plus", 0x2B),
+                getattr(Gdk, "KEY_equal", 0x3D),
+                getattr(Gdk, "KEY_KP_Add", 0xFFAB))
+        minus = (getattr(Gdk, "KEY_minus", 0x2D),
+                 getattr(Gdk, "KEY_KP_Subtract", 0xFFAD))
+        if keyval in plus:
+            self._zoom_by(self.ZOOM_STEP)
+            return True
+        if keyval in minus:
+            self._zoom_by(1.0 / self.ZOOM_STEP)
+            return True
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -3521,6 +3838,16 @@ class ZoneBuildingsTab(Gtk.Box):
             name = idx_obj.entries[index].get("name")
         self.app_window._set_status(
             f"Loading {name or f'building #{index}'}…")
+        # 2.0.2 (progress-bar law): the detail fetch is background
+        # work — the corner bar pulses under the keyed "selection"
+        # job from this click until the answer lands (the chunk
+        # downloads inside it also report real fractions under the
+        # "download" job). A superseding selection re-starts the
+        # same key; only the surviving generation finishes it (see
+        # done() below), and hide_inspector finishes it too.
+        self.app_window.progress_start(
+            "selection",
+            f"Loading {name or f'building #{index}'}…")
         import threading
 
         def worker():
@@ -3537,6 +3864,7 @@ class ZoneBuildingsTab(Gtk.Box):
                 if gen != self._sel_gen or self._zone != zone:
                     return False  # superseded — drop the result
                 self.app_window._hide_progress()
+                self.app_window.progress_finish("selection")
                 if err is not None:
                     self.app_window._set_status(err)
                     return False
@@ -3595,6 +3923,9 @@ class ZoneBuildingsTab(Gtk.Box):
         # 2.0.1: hiding also supersedes any in-flight snapshot
         # load — a late result must never reopen the panel.
         self._sel_gen += 1
+        # 2.0.2: a superseded-by-hiding load will never reach its
+        # done(), so its corner-bar job ends here instead.
+        self.app_window.progress_finish("selection")
         if hasattr(self, "inspector"):
             self.inspector.set_visible(False)
 
@@ -4233,10 +4564,17 @@ class GasStationReviewTab(Gtk.Box):
         zone = station.get("zone")
         self._open_gen += 1
         gen = self._open_gen
+        # 2.0.2 (progress-bar law): preparing the station's view
+        # is background work — the corner bar pulses under the
+        # keyed "selection" job until the panel shows (show()
+        # finishes it; a superseding open re-starts the same key).
+        self.app_window.progress_start("selection",
+                                       "Loading station…")
 
         def show(zd):
             if gen != self._open_gen or self._current is not station:
                 return  # superseded while preparing
+            self.app_window.progress_finish("selection")
             self.inspector.show_station(
                 self, station, self._edit(), zd)
             self.inspector.set_visible(True)
