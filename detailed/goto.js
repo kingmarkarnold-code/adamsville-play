@@ -690,6 +690,32 @@ function buildPanel(){
   elStatus = elPanel.querySelector('#goto-status');
 
   elPanel.querySelector('#goto-close').addEventListener('click', closePanel);
+
+  /* Menu currency (2026-10-18, UI Editor 1.9.0): this panel is built
+     here, AFTER menu_layout_apply.js has already run, so the applier
+     cannot reach it — it stashes the parsed menu_layout.json on
+     window.__SA_MENU_LAYOUT instead, and the entries for THIS panel
+     are applied here. Visibility only: the panel's one static button
+     is a ✕ glyph whose menu label is its accessible name ("Close
+     Go to"), and swapping the glyph for words would change the
+     panel's look, not its wording. Defensive throughout — with no
+     stashed document the panel keeps its authored state. */
+  try {
+    var _saDoc = window.__SA_MENU_LAYOUT;
+    var _saMenu = _saDoc && _saDoc.menus && _saDoc.menus.goto;
+    if (_saMenu) {
+      var _saDefs = [];
+      (_saMenu.groups || []).forEach(function (g) {
+        _saDefs = _saDefs.concat(g.items || []);
+      });
+      _saDefs = _saDefs.concat(_saMenu.ungrouped || []);
+      _saDefs.forEach(function (def) {
+        if (!def || !def.id || def.visible !== false) return;
+        var _saEl = elPanel.querySelector('#' + def.id);
+        if (_saEl) _saEl.style.display = 'none';
+      });
+    }
+  } catch (e) { /* menu entries are decoration; the panel stands */ }
   elPanel.addEventListener('click', function(ev){ if (ev.target === elPanel) closePanel(); });
   elInput.addEventListener('input', renderResults);
   document.addEventListener('keydown', function(ev){
