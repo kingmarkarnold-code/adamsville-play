@@ -10,10 +10,11 @@ Joshua's rule: all code commented.
 
 import math
 import sys
+import threading
 from pathlib import Path
 import gi
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gtk, Gdk
+from gi.repository import Gtk, Gdk, GLib
 
 from data import (ROAD_STYLE, WORLD_W, WORLD_H, WORLD_X0, WORLD_Z0,
                   save_zone_edit, zone_bbox,
@@ -131,6 +132,37 @@ MIN_ZOOM = 0.005
 # Zoom below which local roads take the batched overview pass
 # instead of the detailed per-road pass (1.9.6 — see _draw_roads).
 LOCAL_FULL_DETAIL_ZOOM = 0.03
+
+# ------------------------------------------------------------------
+# Delete preview (1.9.7 — Joshua's live report, 2026-10-18).
+#
+# The old Delete flow named the road in a centred modal dialog but
+# never SHOWED it: no highlight, no camera move, just a name to
+# trust blind. Now a pick frames the whole road like a photograph
+# and lights it up in this colour — a hot magenta no road category,
+# zone fill or marker uses, so the lit road cannot be mistaken for
+# anything else on the map — while a slim bar at the top edge of
+# the map (app.py) carries the name and the Delete / Cancel choice.
+# ------------------------------------------------------------------
+DELETE_HIGHLIGHT_RGB = (1.0, 0.05, 0.78)
+
+# Height (px) reserved at the top of the canvas when framing a
+# road for deletion: the confirmation bar rides there, and the
+# framed picture is fitted into the space BELOW it so the bar can
+# never cover part of the road.
+DELETE_BAR_H = 48
+
+# Framing margin for the delete "photograph": the road's bounding
+# box is scaled by this before fitting, so the road sits inside
+# the frame with a modest ring of surrounding area for context —
+# "not a large area, just enough to see the full road".
+DELETE_FRAME_MARGIN = 1.12
+
+# Framing never zooms in past the point where the smaller usable
+# view dimension shows this many world units: a tiny stub still
+# gets its street context instead of one fat line filling the
+# screen.
+DELETE_FRAME_MIN_SPAN = 160.0
 
 # Pin radius in screen pixels for zone polygon vertex handles
 PIN_RADIUS = 12
@@ -255,12 +287,17 @@ class MapCanvas(Gtk.DrawingArea):
         self.cam_start = (0, 0)     # Camera position when drag started
         self.mouse_pos = (0, 0)     # Current mouse position (screen)
 
-        # Tool state (set by toolbar)
-        self.active_tool = "pan"
+        # Tool state (set by toolbar). None is the RESTING state
+        # (1.9.7 interaction model, Joshua 2026-10-18): there is no
+        # Pan mode and no Select mode — dragging the map always
+        # pans, and clicking a road always selects it. Only the
+        # genuine editing tools (zone, fill, extend, ...) set this
+        # to a tool id while they are in use.
+        self.active_tool = None
 
         # Selection state (Joshua 2026-10-11: select-first workflow).
-        # Select mode: click roads to toggle-select them, up to 2 at once.
-        # The Merge / Join toolbar buttons act on the two selected roads.
+        # Click roads to toggle-select them, up to 2 at once. The
+        # Merge / Join / Delete toolbar buttons act on the selection.
         self.selected_roads = []  # list of (cat, flat_idx), max 2
 
         # Road editing state (Extend tool only now).
@@ -301,6 +338,29 @@ class MapCanvas(Gtk.DrawingArea):
         # The road's pts are NOT mutated until commit — on_draw renders
         # a ghost preview at pts + (dx, dz) while the mode is active.
         self.move_road = None
+
+        # Delete preview state (1.9.7). None when idle; otherwise:
+        #   {"roads": [(cat, flat_idx, road_dict), ...] — the current
+        #    selection, resolved to records,
+        #    "prev_cam": (cam_x, cam_y, zoom) from before the preview}
+        # While it is set, those roads are drawn lit up whole (see
+        # _draw_delete_preview), the view is framed on their full
+        # extent, and the app's delete bar names them with the
+        # Delete / Cancel choice. The road dicts are the very
+        # records a confirmed delete removes — the highlight covers
+        # exactly what will be deleted, no more and no less.
+        self.delete_preview = None
+
+        # Delete PREPARATION state (1.9.7 no-stall rule): between
+        # the Delete button press and the preview appearing, the
+        # picked roads' geometry is gathered on a worker thread
+        # (see begin_delete_preview). While a preparation runs,
+        # this holds {"token": int, "roads": [...], "names": [...]};
+        # the token identifies the live preparation so a cancelled
+        # one's late result is dropped instead of popping a preview
+        # Joshua already backed out of.
+        self.delete_prep = None
+        self._delete_prep_token = 0
 
         # Enable mouse events
         self.set_events(
@@ -416,6 +476,43 @@ class MapCanvas(Gtk.DrawingArea):
         self._camera.zoom_at(sx, sy, factor, alloc.width, alloc.height)
         self.queue_draw()
 
+    def frame_rect(self, x0, z0, x1, z1, top_inset=0):
+        """
+        Frame a world rectangle like a photograph (1.9.7): pan and
+        zoom — IN or OUT, whichever the rectangle needs — so the
+        whole rectangle fits the canvas with DELETE_FRAME_MARGIN of
+        breathing room, centred in the area below `top_inset`
+        pixels (the delete bar rides in that top strip, so the
+        picture is fitted underneath it and the bar never covers
+        the road).
+
+        Two clamps keep the framing sane at the extremes: the zoom
+        never drops below the camera's world floor (a road longer
+        than the world cannot occur, but the floor keeps this
+        method honest for any caller), and it never rises past the
+        point where the smaller usable dimension would show less
+        than DELETE_FRAME_MIN_SPAN world units — a five-unit stub
+        still gets its surrounding streets as context instead of
+        filling the screen with one fat line.
+        """
+        alloc = self.get_allocation()
+        w, h = alloc.width, alloc.height
+        usable_h = h - top_inset
+        if w <= 0 or usable_h <= 0:
+            return
+        rw = max(1.0, (x1 - x0) * DELETE_FRAME_MARGIN)
+        rh = max(1.0, (z1 - z0) * DELETE_FRAME_MARGIN)
+        zoom = min(w / rw, usable_h / rh)
+        zoom_cap = min(w, usable_h) / DELETE_FRAME_MIN_SPAN
+        zoom = max(MIN_ZOOM, min(zoom, zoom_cap, self._camera.max_zoom))
+        self.zoom = zoom
+        self.cam_x = (x0 + x1) / 2
+        # Centre the rectangle in the band BELOW the top inset:
+        # shifting the camera up-screen by half the inset (in world
+        # units) moves the picture down by exactly the inset.
+        self.cam_y = (z0 + z1) / 2 - top_inset / (2.0 * zoom)
+        self.queue_draw()
+
     # ------------------------------------------------------------------
     # Rendering
     # ------------------------------------------------------------------
@@ -458,6 +555,11 @@ class MapCanvas(Gtk.DrawingArea):
         # Draw the move-road ghost preview on top of everything else
         # while move-road mode is active (Joshua 2026-10-12).
         self._draw_move_ghost(cr)
+
+        # Draw the pending-delete road LAST, on top of everything:
+        # while Joshua is deciding, the road he is about to delete
+        # must be the most visible thing on the map (1.9.7).
+        self._draw_delete_preview(cr)
 
         return False
 
@@ -1186,6 +1288,43 @@ class MapCanvas(Gtk.DrawingArea):
                     cr.line_to(sx, sy)
             cr.stroke()
 
+    def _draw_delete_preview(self, cr):
+        """
+        Draw the pending-delete road ON TOP of everything (1.9.7).
+
+        One fat magenta stroke through the road's FULL point list,
+        plus a dot on each end so Joshua can see where the road
+        begins and ends. Drawn directly from the road record — no
+        spatial-index culling — so the whole road lights up even
+        where the ordinary passes draw mere hairlines (the zoomed-
+        out overview) and even for the parts of the road outside
+        the current view (Cairo clips them; the in-view part still
+        reads clearly). The width keeps a screen-space floor so
+        the highlight is unmistakable at ANY zoom.
+        """
+        pv = self.delete_preview
+        if pv is None:
+            return
+        cr.set_source_rgb(*DELETE_HIGHLIGHT_RGB)
+        cr.set_line_cap(1)   # round caps
+        cr.set_line_join(1)  # round joins
+        for cat, _idx, road in pv["roads"]:
+            pts = road.get("pts", [])
+            if len(pts) < 2:
+                continue
+            style = ROAD_STYLE[normalize_category(cat)]
+            wmult = WIDTH_MULT.get(
+                road.get("width_class", "standard"), 1.0)
+            cr.set_line_width(
+                max(6.0, style["width"] * wmult * self.zoom + 5.0))
+            self._stroke_road_path(cr, pts)
+            cr.stroke()
+            # Endpoint dots: where this road starts and stops.
+            for px, pz in (pts[0], pts[-1]):
+                sx, sy = self.world_to_screen(px, pz)
+                cr.arc(sx, sy, 5, 0, 2 * math.pi)
+                cr.fill()
+
     # ------------------------------------------------------------------
     # Overpass rendering and picking (Joshua 2026-10-11)
     # ------------------------------------------------------------------
@@ -1416,16 +1555,13 @@ class MapCanvas(Gtk.DrawingArea):
             if self.active_tool == "extend":
                 self._on_extend_click(event)
                 return True
-            if self.active_tool == "delete":
-                self._on_delete_click(event)
-                return True
             if self.active_tool == "fill":
                 self._on_fill_click(event)
                 return True
             if self.active_tool == "zone":
                 # Zone tool: pins first, then boundary edges (click to add a
-                # new pin), then the zone body. No panning here — right-click
-                # still pans, and the Pan tool moves the map.
+                # new pin), then the zone body. A drag that starts on the
+                # zone body still pans (pan is always on).
                 pin = self._pick_zone_pin(event.x, event.y)
                 if pin is not None:
                     # Grab an existing pin: start dragging it.
@@ -1468,19 +1604,20 @@ class MapCanvas(Gtk.DrawingArea):
                         self.queue_draw()
                 return True
 
+            # Resting interaction (1.9.7 model — no Pan mode, no
+            # Select mode): EVERY left press starts a potential pan
+            # drag, from a road or from empty ground alike, because
+            # pan is always on. At rest (no editing tool active) the
+            # press ALSO selects: clicking a road toggle-selects it
+            # (the ordinary selection, unchanged), clicking empty
+            # space clears the selection. A press that turns into a
+            # drag simply pans with whatever the press selected.
             self.dragging = True
             self.drag_start = (event.x, event.y)
             self.cam_start = (self.cam_x, self.cam_y)
 
-            if self.active_tool == "select":
-                # Google Maps feel (Joshua 2026-10-12): a click on a
-                # road selects it WITHOUT panning; a drag that starts
-                # on empty terrain pans the map. Hit-test first so a
-                # road grab never nudges the camera.
-                hit = self._pick_road_at(event.x, event.y)
+            if self.active_tool is None:
                 self._pick_road(event.x, event.y)
-                if hit is not None:
-                    self.dragging = False
 
         elif event.button == 3:  # right click — always pan
             self.dragging = True
@@ -1641,22 +1778,28 @@ class MapCanvas(Gtk.DrawingArea):
 
     def _pick_road(self, sx, sy):
         """
-        Select-mode click: toggle-select the road near the click point.
+        Click select: toggle-select the road near the click point.
         Clicking a selected road deselects it; a third road replaces the
         oldest selection. Clicking empty space clears the selection.
         Searches within 10 screen pixels, prefers wider roads.
+        Candidates come from the spatial index (see _pick_candidates)
+        so a click never scans the whole map on the UI thread.
         """
+        if not self.app.spatial_index:
+            return  # no data yet — nothing to select
         wx, wz = self.screen_to_world(sx, sy)
         # Search radius in world units (10px / zoom)
         radius = 10 / self.zoom
 
         best = None
         best_dist = float("inf")
+        candidates = self._pick_candidates(wx, wz, radius)
         # Check wider roads first
         # (interstate > highway > major_artery > minor_artery > local).
         for cat in CATEGORY_ORDER:
-            for idx, (rcat, road, rx0, rz0, rx1, rz1) in enumerate(
-                    self.app.spatial_index.roads):
+            for idx in candidates:
+                rcat, road, rx0, rz0, rx1, rz1 = \
+                    self.app.spatial_index.roads[idx]
                 if rcat != cat:
                     continue
                 # Quick bbox check (expanded by radius)
@@ -1711,6 +1854,26 @@ class MapCanvas(Gtk.DrawingArea):
     # Road editing helpers (Join / Merge / Extend)
     # ------------------------------------------------------------------
 
+    def _pick_candidates(self, wx, wz, radius):
+        """
+        Flat indices of every road whose bounding box reaches the
+        search box around (wx, wz), from the spatial index.
+
+        1.9.7 NO-STALL RULE: the pick functions used to scan all
+        65,982 records on the UI thread for EVERY click (five
+        category passes, with full point-to-polyline distance math
+        for every record whose box contained the click — at
+        whole-map zoom the 10px tolerance is a ±578-unit net, so
+        thousands of roads got the expensive treatment; on Joshua's
+        laptop that was the freeze he hit picking Fulton Industrial
+        Boulevard in 1.9.5). The spatial index returns exactly the
+        records the old scan's bounding-box test would have passed
+        (deduplicated, box-filtered), so pick results are unchanged
+        — only the wasted work is gone.
+        """
+        return self.app.spatial_index.query(
+            wx - radius, wz - radius, wx + radius, wz + radius)
+
     def _pick_road_at(self, sx, sy):
         """
         Pick the nearest road to a screen point WITHOUT changing selection.
@@ -1724,10 +1887,12 @@ class MapCanvas(Gtk.DrawingArea):
 
         best = None
         best_dist = float("inf")
+        candidates = self._pick_candidates(wx, wz, radius)
         # Widest roads first (interstate > highway > ... > local).
         for cat in CATEGORY_ORDER:
-            for idx, (rcat, road, rx0, rz0, rx1, rz1) in enumerate(
-                    self.app.spatial_index.roads):
+            for idx in candidates:
+                rcat, road, rx0, rz0, rx1, rz1 = \
+                    self.app.spatial_index.roads[idx]
                 if rcat != cat:
                     continue
                 if (wx < rx0 - radius or wx > rx1 + radius or
@@ -1920,6 +2085,12 @@ class MapCanvas(Gtk.DrawingArea):
         Clear the road selection and Extend in-progress picks.
         Called on Escape and whenever the active tool changes.
         """
+        # Delete preview (1.9.7): Escape / a tool switch cancels a
+        # pending delete — the highlight clears and the camera goes
+        # back to where it was before the pick, because the framing
+        # was a look, not a move.
+        if self.delete_preview is not None:
+            self.cancel_delete_preview()
         self.selected_roads = []
         self.extend_pick = None
         self.divide_pick = None  # cancel any divide-section picking
@@ -2561,23 +2732,257 @@ class MapCanvas(Gtk.DrawingArea):
             self.queue_draw()
 
     # ------------------------------------------------------------------
-    # Delete tool: click a road to remove it entirely.
+    # Delete preview (1.9.7). Delete is NOT a tool or a mode: it is
+    # the toolbar's Delete action button acting on the current
+    # selection (app.on_delete_clicked). The preview methods below
+    # are what the button drives.
+    #
+    # Joshua's live report (2026-10-18): the old flow popped a
+    # centred dialog that gave only the road's NAME — the road
+    # itself was never highlighted, so the decision was blind. His
+    # design: pressing Delete ends any window over the map, the
+    # picture minimizes or expands to frame the full selected road
+    # with a little surrounding area — "like a screenshot, a
+    # photograph of the 2D lines" — the road lights up, and the
+    # name + Delete / Cancel present in a slim bar at the map's
+    # edge, never over the picture. Cancel restores the view he
+    # came from.
     # ------------------------------------------------------------------
 
-    def _on_delete_click(self, event):
-        """Delete tool: click a road to delete it (asks for confirmation)."""
-        pick = self._pick_road_at(event.x, event.y)
-        if pick is None:
-            self.app.set_status("Delete: click a road to delete it.")
+    def begin_delete_preview(self, picked):
+        """
+        Start the delete preview for the selected roads — WITHOUT
+        stalling (1.9.7).
+
+        `picked` is a list of (cat, flat_idx, road_dict) — the
+        current selection resolved to records (one road normally;
+        the selection holds at most two).
+
+        The Building Editor 2.0.1 pattern: this method (on the UI
+        thread) only TAKES THE ORDER — it shows the delete bar in
+        its "preparing" state (Cancel live, Delete not yet), starts
+        the corner progress bar, and hands the actual geometry
+        gathering (every point of every picked road) to a worker
+        thread. The framed, lit picture lands via
+        _delete_prep_ready when the worker finishes. The app stays
+        fully responsive in between: pan, zoom, and Cancel all work
+        while a map-spanning road is being prepared.
+        """
+        if self.delete_preview is not None \
+                or self.delete_prep is not None:
+            return  # a preview or preparation already owns the bar
+        roads = [(cat, idx, road) for cat, idx, road in picked
+                 if len(road.get("pts", [])) >= 2]
+        if not roads:
+            # Degenerate records have no line to show; still never
+            # delete blind — say so and stop.
+            self.app.set_status(
+                "Delete: that road has no line to show; "
+                "it was not deleted.")
             return
-        cat, flat_idx, road, _ = pick
-        name = road.get("name") or "Unnamed"
-        if self.app.confirm_delete_road(name):
-            # Undo (Joshua 2026-10-12): snapshot before the delete.
-            self.app.undo_begin("Delete Road")
-            if self.app.apply_road_delete(cat, road):
-                self.app.set_status(f"Deleted road: {name}.")
-            else:
-                self.app.set_status("Delete failed: could not save.")
-            self.app.undo_commit()
+        names = [road.get("name") or "Unnamed"
+                 for _c, _i, road in roads]
+        self._delete_prep_token += 1
+        token = self._delete_prep_token
+        self.delete_prep = {"token": token, "roads": roads,
+                            "names": names}
+        if len(roads) == 1:
+            prep_text = f"Preparing '{names[0]}'…"
+            job_label = f"Preparing '{names[0]}'"
+        else:
+            prep_text = f"Preparing {len(roads)} roads…"
+            job_label = f"Preparing {len(roads)} roads"
+        # The bar goes up NOW, in preparing state, so Cancel is
+        # reachable from the first moment (Joshua's incident: he
+        # could not even reach Cancel during the 1.9.5 stall).
+        self.app.show_delete_bar(prep_text, ready=False)
+        self.app.progress_start("delete-prep", job_label)
+        self.app.set_status(
+            "Delete: preparing the picture… "
+            "Cancel in the bar at the top stops it.")
+
+        def report(frac):
+            # Worker -> UI thread hop for the progress bar.
+            GLib.idle_add(self.app.progress_update,
+                          "delete-prep", frac)
+
+        def worker():
+            try:
+                bbox = self._gather_delete_geometry(roads, report)
+            except Exception:
+                bbox = None  # ready handler reports the failure
+            GLib.idle_add(self._delete_prep_ready, token, bbox)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _gather_delete_geometry(self, roads, report):
+        """
+        Worker-thread half of the delete preview: walk every point
+        of every picked road and compute the union bounding box
+        plus the framing pad. Pure reads of the road records (which
+        nothing mutates during a preparation) — safe off the UI
+        thread. report(fraction) fires as points are consumed, so
+        the corner progress bar shows REAL progress. Returns
+        (min_x, min_z, max_x, max_z, pad), or None if the roads
+        somehow hold no points.
+        """
+        total = sum(len(road.get("pts", []))
+                    for _c, _i, road in roads)
+        if total == 0:
+            return None
+        done_pts = 0
+        min_x = min_z = float("inf")
+        max_x = max_z = float("-inf")
+        pad = 6.0
+        for cat, _idx, road in roads:
+            style = ROAD_STYLE[normalize_category(cat)]
+            wmult = WIDTH_MULT.get(
+                road.get("width_class", "standard"), 1.0)
+            pad = max(pad, style["width"] * wmult / 2.0 + 6.0)
+            pts = road.get("pts", [])
+            for i, p in enumerate(pts):
+                if p[0] < min_x:
+                    min_x = p[0]
+                if p[0] > max_x:
+                    max_x = p[0]
+                if p[1] < min_z:
+                    min_z = p[1]
+                if p[1] > max_z:
+                    max_z = p[1]
+                if i % 64 == 63:
+                    report((done_pts + i + 1) / total)
+            done_pts += len(pts)
+        report(1.0)
+        return (min_x, min_z, max_x, max_z, pad)
+
+    def _delete_prep_ready(self, token, bbox):
+        """
+        UI-thread landing for a finished preparation (idle_add).
+
+        Drops stale results (a preparation Joshua already
+        cancelled). Otherwise: remembers the camera as it is RIGHT
+        NOW (the spot he is looking at when the picture appears —
+        Cancel restores exactly that), frames the roads' FULL
+        combined extent (padded so the fat highlight stroke is
+        never clipped by the frame), flips the delete bar to its
+        decision state, and clears the progress bar.
+        """
+        prep = self.delete_prep
+        if prep is None or prep["token"] != token:
+            return False  # cancelled while gathering — drop it
+        self.delete_prep = None
+        self.app.progress_finish("delete-prep")
+        roads, names = prep["roads"], prep["names"]
+        if bbox is None:
+            self.app.hide_delete_bar()
+            self.app.set_status(
+                "Delete: could not prepare that road; "
+                "nothing was deleted.")
+            return False
+        min_x, min_z, max_x, max_z, pad = bbox
+        self.delete_preview = {
+            "roads": roads,
+            "prev_cam": (self.cam_x, self.cam_y, self.zoom),
+        }
+        self.frame_rect(min_x - pad, min_z - pad,
+                        max_x + pad, max_z + pad,
+                        top_inset=DELETE_BAR_H)
+        if len(roads) == 1:
+            bar_text = (
+                f"Delete '{names[0]}'?  The whole road is lit up "
+                "in pink below — check it, then choose.")
+            status = (
+                f"Delete: '{names[0]}' is lit up in pink — the "
+                "whole road. Delete it in the bar at the top, or "
+                "Cancel to go back.")
+        else:
+            bar_text = (
+                f"Delete {len(roads)} roads "
+                f"('{names[0]}', '{names[1]}')?  They are lit up "
+                "in pink below — check them, then choose.")
+            status = (
+                f"Delete: {len(roads)} roads are lit up in pink. "
+                "Delete them in the bar at the top, or Cancel to "
+                "go back.")
+        self.app.show_delete_bar(bar_text, ready=True)
+        self.app.set_status(status)
+        self.queue_draw()
+        return False
+
+    def cancel_delete_preview(self):
+        """
+        Cancel a pending delete — at ANY stage.
+
+        During preparation (the picture hasn't landed yet): abandon
+        the gathering (its late result will be dropped by token),
+        clear the progress bar and the bar. The camera is NOT
+        touched — the app never moved it, and any panning Joshua
+        did while waiting stands.
+
+        Once the preview is up: clear the highlight, hide the bar,
+        and restore the camera to exactly where it was when the
+        picture appeared. Nothing is deleted; the framing was only
+        a look.
+        """
+        if self.delete_prep is not None:
+            self._delete_prep_token += 1  # invalidate the worker
+            self.delete_prep = None
+            self.app.progress_finish("delete-prep")
+            try:
+                self.app.hide_delete_bar()
+            except Exception:
+                pass  # bar not built yet (early init)
+            try:
+                self.app.set_status(
+                    "Delete cancelled — nothing was removed.")
+            except Exception:
+                pass  # status bar not built yet during early init
+            return
+        pv = self.delete_preview
+        if pv is None:
+            return
+        self.delete_preview = None
+        try:
+            self.app.hide_delete_bar()
+        except Exception:
+            pass  # bar not built yet (early init) — nothing to hide
+        cam_x, cam_y, zoom = pv["prev_cam"]
+        self.cam_x, self.cam_y, self.zoom = cam_x, cam_y, zoom
+        try:
+            self.app.set_status(
+                "Delete cancelled — nothing was removed.")
+        except Exception:
+            pass  # status bar not built yet during early init
+        self.queue_draw()
+
+    def confirm_delete_preview(self):
+        """
+        Confirm a pending delete from the bar's Delete button.
+
+        Removes exactly the records the highlight framed (the app's
+        apply_road_delete path, one undo snapshot around the whole
+        batch, the standing save rule inside each apply) and clears
+        the preview. The view STAYS framed on the spot — calmer
+        than jumping back — so Joshua sees the roads vanish from
+        the picture he was just shown.
+        """
+        pv = self.delete_preview
+        if pv is None:
+            return
+        roads = pv["roads"]
+        self.delete_preview = None
+        self.app.hide_delete_bar()
+        # Undo (Joshua 2026-10-12): snapshot before the delete.
+        self.app.undo_begin("Delete Road")
+        results = [self.app.apply_road_delete(cat, road)
+                   for cat, _idx, road in roads]
+        ok = all(results)
+        if ok and len(roads) == 1:
+            name = roads[0][2].get("name") or "Unnamed"
+            self.app.set_status(f"Deleted road: {name}.")
+        elif ok:
+            self.app.set_status(f"Deleted {len(roads)} roads.")
+        else:
+            self.app.set_status("Delete failed: could not save.")
+        self.app.undo_commit()
         self.queue_draw()
