@@ -1,0 +1,6 @@
+{
+ "version": 1,
+ "updatedBy": "game building-edits wiring (initial empty file \u2014 the Building Editor owns this file)",
+ "note": "Per-building editor dispositions, keyed '<zone>:<buildings.json index>'. status 'skipped' = the game does not build it; the data stays in buildings.json untouched and removing the record restores it. centroid is a build-time safety check: the record applies only while the record at that index still matches it within 1.0u.",
+ "buildings": {}
+}
