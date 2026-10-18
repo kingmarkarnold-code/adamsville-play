@@ -46,7 +46,7 @@ from data import (
     clear_changes_after_push, save_window_state, load_window_state,
     read_text_preview, resource_type, is_image, is_text, is_visual,
     format_size, STAGING_DIR, PREVIEW_DIR, MANIFEST_FILE,
-    save_local_sha, get_remote_sha,
+    save_local_sha, get_remote_sha, served_stale_paths,
 )
 from layout import LayoutTab
 from menus import MenuTab
@@ -54,7 +54,7 @@ from menus import MenuTab
 
 # App version shown in the Help -> About dialog (bump with each release).
 # Joshua 2026-10-11: version number must be prominent in About.
-APP_VERSION = "1.8.0"
+APP_VERSION = "1.9.0"
 # Display name and icon-theme name for the About dialog.
 APP_NAME = "Adamsville UI Editor"
 APP_ICON = "adamsville-ui-editor-native"
@@ -1015,6 +1015,18 @@ class UIEditorApp:
             if needed:
                 # A newer version exists; mention it but don't force it
                 self.set_status(reason + " Use Refresh to update.")
+        # v1.9.0 (SHARED-CACHE.md rule 3): if any download-on-open
+        # was served from the suite shared cache because the fresh
+        # download or its verification failed, SAY SO in the status
+        # bar — a stale serve is never silent.
+        stale = served_stale_paths()
+        if stale:
+            names = ", ".join(
+                p.replace("detailed/", "") for p in stale)
+            self.set_status(
+                f"Offline note: {names} shown from the shared "
+                f"cache (connection failed) — may not be the "
+                f"newest copy.")
         return False  # run once
 
     def on_download_list(self, widget):
