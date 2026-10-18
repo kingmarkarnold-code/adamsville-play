@@ -40,6 +40,19 @@
   hard-capped at 38% with internal scrolling, every flex/grid child in
   the chain carries min-height:0 / min-width:0, and the text block has
   explicit literal colours. See DECISION-DECK-NOTES.md, v0.3.1 section.
+
+  LAYOUT FIX v0.4.1 (2026-10-17): the top strip FAILED on Joshua's
+  smaller test phone — measured, its content demands 822px and the
+  six session buttons began at x=325, off the right edge of a
+  320/360px screen, reachable only by side-scrolling the strip
+  itself (the header's overflow-x:auto). Results — now the gateway
+  to Send-results-to-GitHub — could not be seen or tapped; only
+  Undo showed. The strip now WRAPS instead of side-scrolling, its
+  buttons never shrink below a tappable size, and at <=720px it
+  takes a two-row arrangement (meta row + buttons row), Joshua's
+  screen-class rule. CSS only — the three behaviour modules
+  (DecisionCore / GestureRecognizer / SnapshotView) are
+  byte-identical to v0.4. See DECISION-DECK-NOTES.md, v0.4.1.
   ============================================================================
 -->
 <html lang="en">
@@ -122,9 +135,13 @@
   header{
     flex:0 0 auto; min-width:0;
     background:var(--panel); padding:6px 10px;
-    display:flex; gap:10px; align-items:center; flex-wrap:nowrap;
+    display:flex; gap:10px; row-gap:6px; align-items:center; flex-wrap:wrap;
     border-bottom:2px solid var(--card-edge);
-    overflow-x:auto; /* a crowded strip scrolls sideways, never grows tall */
+    /* v0.4.1: the v0.4 strip used flex-wrap:nowrap + overflow-x:auto
+       ("a crowded strip scrolls sideways") — measured, that put the
+       whole button block off-screen on a phone (see the header
+       comment). The strip WRAPS now: what does not fit moves DOWN a
+       row, never off the screen and never into a scroll trap. */
   }
   header h1{ font-size:17px; margin:0; letter-spacing:.3px; white-space:nowrap; }
   header h1 small{ color:var(--ink-dim); font-size:12px; font-weight:normal; }
@@ -134,7 +151,7 @@
     overflow:hidden; text-overflow:ellipsis; flex:1 1 auto; min-width:0; }
   /* Small icon-style buttons. A fixed size is fine for the buttons
      themselves — they are chrome in the strip, not layout regions. */
-  #stripBtns{ display:flex; gap:6px; margin-left:auto; }
+  #stripBtns{ display:flex; gap:6px; margin-left:auto; flex-wrap:wrap; }
   #stripBtns button, .panel button{
     font-size:14px; font-weight:600; padding:7px 10px; min-height:38px;
     background:#2c2c38; color:var(--ink); border:2px solid var(--card-edge);
@@ -143,6 +160,32 @@
   .panel button{ font-size:16px; padding:9px 14px; min-height:44px; }
   #stripBtns button:active, .panel button:active{ background:#3a3a48; }
   #stripBtns button:disabled{ opacity:.4; cursor:default; }
+  /* v0.4.1: strip buttons NEVER shrink — flex-shrink:0 plus an honest
+     min-width floor keep every one of them a real, tappable button
+     at every width. The squeezing is done by #queueName alone (the
+     ellipsis victim, above) or by the strip growing a row (the
+     narrow-class arrangement below). */
+  #stripBtns button{ flex-shrink:0; min-width:48px; }
+
+  /* ------------- Strip, narrow class (v0.4.1) -------------
+     Joshua's screen-class rule: where one row cannot fit, the strip
+     takes a different ARRANGEMENT instead of crushing anything. At
+     <=720px the strip is two rows: the meta row (title, progress,
+     queue name) and the buttons row under it. The queue name keeps
+     its victim role on the meta row and drops to its own full-width
+     line when even that row is tight (its 35% basis no longer fits,
+     so flex wrapping moves it down whole rather than to a sliver).
+     The six session buttons flow across the buttons row and wrap
+     among themselves, each full-size, growing evenly to fill its
+     line (flex:1 0 auto — grow, never shrink). Nothing scrolls
+     sideways, nothing is pushed off-screen; the item below simply
+     receives whatever height remains (his layout shares). */
+  @media (max-width:720px){
+    header{ padding:6px 8px; gap:8px; }
+    #queueName{ flex-basis:35%; }
+    #stripBtns{ order:5; flex:1 1 100%; margin-left:0; }
+    #stripBtns button{ flex:1 0 auto; min-height:40px; }
+  }
 
   /* Progress bar: a hairline track directly under the strip. */
   #progressTrack{ flex:0 0 auto; height:4px; background:#000; }
