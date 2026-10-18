@@ -28,7 +28,9 @@
    ADAMSVILLE SCALE FIX:
    - Adamsville data is rescaled to TRUE 1:1 (factor 2.833) in its zone files.
    - New Adamsville bounds: x[-832, 8377], z[-4249, 8267].
-   - Other zones remain at original scale until Joshua directs their fix.
+   - (Superseded 2026-10-16/17: the FULL-MAP CONVERSION moved every
+     zone into the converted frame; all seven zone rects now tile the
+     stage rect — see the ZONE_BOUNDS note further down.)
 
    INTEGRATION:
    - zoneunlock.js provides zone definitions and ZONEUNLOCK.zoneAt().
@@ -59,17 +61,56 @@ function getZoneFromURL(){
 var CURRENT_ZONE = getZoneFromURL();
 
 /* ---------------- zone bounds (for transition detection) ----------------
-   These mirror zoneunlock.js. Adamsville bounds are the RESCALED values.
-   Other zones use original bounds. */
+   These are the CONVERTED zone.json bounds — the same numbers
+   zoneunlock.js's ZONES table carries (STEP 2: the seven converted
+   zones tile the stage rect x[-7481,16315] x z[-4249,30878] with no
+   gaps and no overlaps). zoneunlock.js is the SINGLE SOURCE OF TRUTH
+   for zone geometry: at call time the crossing functions below prefer
+   its live table (liveZoneRects), and this literal copy is only the
+   fallback for contexts where zoneunlock.js is absent (headless
+   harnesses, partial loads).
+
+   HISTORY (the bug this replaces, found 2026-10-17): this table used
+   to hold the PRE-conversion "original frame" bounds for every zone
+   except Adamsville. findZoneForPoint() therefore tested the player
+   against a map that no longer exists: a crossing into South Fulton
+   (converted x[-832,8377] x z[8267,30878]) matched the old Union City
+   or Riverdale rects across most of the zone, and matched NOTHING
+   south of z=12200 — so the transition into the unlocked zone's built
+   environment never fired (or fired for the wrong zone), and the
+   player drove into naked space. The two tables disagreed exactly as
+   this file's own STAGE2 note below warned. */
 var ZONE_BOUNDS = {
-  'mableton':    {xMin:-200,  xMax:2147,  zMin:-200,  zMax:4218},
-  'adamsville':  {xMin:-832,  xMax:8377,  zMin:-4249, zMax:8267},  // RESCALED 1:1
-  'downtown':    {xMin:5398,  xMax:8200,  zMin:-200,  zMax:2202},
-  'eastatlanta': {xMin:5398,  xMax:8200,  zMin:2202,  zMax:4218},
-  'unioncity':   {xMin:-200,  xMax:2147,  zMin:4218,  zMax:12200},
-  'southfulton': {xMin:2147,  xMax:5398,  zMin:4218,  zMax:12200},
-  'riverdale':   {xMin:5398,  xMax:8200,  zMin:4218,  zMax:12200},
+  'mableton':    {xMin:-7480.585387323972, xMax:-832.1294014084006,  zMin:-4248.536971831284, zMax:8266.53697183079},
+  'adamsville':  {xMin:-832.1294014084006,  xMax:8377.129401408598,  zMin:-4248.536971831284, zMax:8266.53697183079},
+  'downtown':    {xMin:8377.129401408598,   xMax:16314.485035211088, zMin:-4248.536971831284, zMax:2555.720070422735},
+  'eastatlanta': {xMin:8377.129401408598,   xMax:16314.485035211088, zMin:2555.720070422735,  zMax:8266.53697183079},
+  'unioncity':   {xMin:-7480.585387323972, xMax:-832.1294014084006, zMin:8266.53697183079,   zMax:30877.519366197153},
+  'southfulton': {xMin:-832.1294014084006,  xMax:8377.129401408598,  zMin:8266.53697183079,   zMax:30877.519366197153},
+  'riverdale':   {xMin:8377.129401408598,   xMax:16314.485035211088, zMin:8266.53697183079,   zMax:30877.519366197153}
 };
+
+/* liveZoneRects() — the bounds callers should trust RIGHT NOW:
+   zoneunlock.js's ZONES table when that module is loaded (it always
+   is by the time any crossing check runs — trackPlayer is a per-frame
+   call), else this module's literal converted table. Returns a fresh
+   {id -> rect} map each call; seven zones, so this is cheap. */
+function liveZoneRects(){
+  try{
+    var zs=(typeof window!=='undefined' && window.ZoneUnlock && window.ZoneUnlock.zones)
+      || (typeof ZONEUNLOCK!=='undefined' && ZONEUNLOCK && ZONEUNLOCK.zones) || null;
+    if (zs && zs.length){
+      var out={};
+      for (var i=0;i<zs.length;i++){
+        var z=zs[i];
+        if (z && z.id && isFinite(z.xMin) && isFinite(z.xMax) && isFinite(z.zMin) && isFinite(z.zMax))
+          out[z.id]={xMin:z.xMin, xMax:z.xMax, zMin:z.zMin, zMax:z.zMax};
+      }
+      if (Object.keys(out).length) return out;
+    }
+  }catch(e){}
+  return ZONE_BOUNDS;
+}
 
 /* ---------------- STAGE2: zone.json metadata (conversion cutover) ----------
    CONVERSION-DESIGN SS2.9 / SS5 step 2e: converted zones ship a truthful
@@ -79,11 +120,11 @@ var ZONE_BOUNDS = {
    adopts its bounds for the CURRENT zone over the literal table above.
    The literals remain the fail-open fallback -- a missing or malformed
    zone.json changes nothing.
-   NOTE: zoneunlock.js keeps its OWN literal ZONES table for gameplay
-   unlock logic; this loader change deliberately does NOT rewrite it
-   (flagged as an open item in the Stage 2 report -- the two tables
-   already disagree on rounding for adamsville, and converted bounds
-   will differ more for zones whose literals are still original-frame). */
+   NOTE (updated 2026-10-17): zoneunlock.js's ZONES table is the
+   single source of truth for zone geometry. This loader's literals
+   now carry the same converted bounds, and the crossing functions
+   prefer zoneunlock.js's live table at call time (liveZoneRects) —
+   the open item this note used to flag is resolved. */
 var _zoneMetaById = {};   // zoneId -> parsed zone.json, as delivered
 function _validBounds(b){
   return !!b && isFinite(b.xMin) && isFinite(b.xMax) && isFinite(b.zMin) && isFinite(b.zMax)
@@ -159,11 +200,33 @@ function injectZoneScripts(zoneId){
 
 /* ---------------- zone transition ----------------
    Called when the player crosses into a different zone.
-   Shows a transition UI, then reloads the page with the new zone. */
+   Shows a transition UI, then reloads the page with the new zone.
+   POSITION STASH (2026-10-17): before the reload, the player's exact
+   spot is stashed through ui_update_flow.js's resume machinery
+   (tagged with the TARGET zone, which is the zone the reloaded page
+   will boot into) — so the new page's boot restore puts him right
+   where he crossed, inside the new zone's fully built environment,
+   instead of at the 535 spawn (whose coordinates belong to
+   Adamsville and would strand him in unbuilt space on this page,
+   followed by the crossing check bouncing him straight back).
+   Best-effort and guarded: no UIUpdateFlow -> the reload proceeds
+   exactly as it always did. */
 var _transitioning = false;
 function transitionTo(zoneId){
   if (_transitioning) return;
   _transitioning = true;
+
+  try{
+    if (typeof window!=='undefined' && window.UIUpdateFlow &&
+        typeof UIUpdateFlow.writeStash==='function'){
+      var zn=(typeof window.ZoneUnlock!=='undefined' && ZoneUnlock.zoneById)
+        ? ZoneUnlock.zoneById(zoneId) : null;
+      UIUpdateFlow.writeStash({
+        zone: zoneId,
+        toast: '🗺️ ' + ((zn && zn.name) || zoneId) + ' — its world is loaded around you.'
+      });
+    }
+  }catch(e){}
 
   // Show transition overlay
   try {
@@ -195,7 +258,13 @@ function transitionTo(zoneId){
 function checkZoneCrossing(px, pz){
   if (_transitioning) return null;
 
-  var bounds = ZONE_BOUNDS[CURRENT_ZONE];
+  /* Bounds for the current zone: registered zone.json bounds first
+     (getEffectiveBounds), then the live zone table — the single
+     source of truth — wins over any literal, so this check can never
+     again test the player against the retired pre-conversion frame. */
+  var bounds = getEffectiveBounds(CURRENT_ZONE);
+  var live = liveZoneRects();
+  if (live && live[CURRENT_ZONE]) bounds = live[CURRENT_ZONE];
   if (!bounds) return null;
 
   // Check if player is outside current zone bounds
@@ -207,11 +276,9 @@ function checkZoneCrossing(px, pz){
 
   if (!outside) return null;
 
-  // Player has left the zone — determine which zone they entered.
-  // Check all zone bounds (using original scale for non-Adamsville).
-  // NOTE: With Adamsville rescaled, bounds overlap. We prioritize
-  // the zone whose ORIGINAL bounds contain the point, then map
-  // rescaled Adamsville coordinates back to original for lookup.
+  // Player has left the zone — determine which zone they entered,
+  // using the converted bounds (the seven zones tile the stage with
+  // no overlaps, so plain containment decides).
   var targetZone = findZoneForPoint(px, pz);
   if (targetZone && targetZone !== CURRENT_ZONE){
     return targetZone;
@@ -221,29 +288,30 @@ function checkZoneCrossing(px, pz){
 }
 
 /* ---------------- find zone for a point ----------------
-   Handles the scale discontinuity between rescaled Adamsville and
-   other zones. For points in the rescaled Adamsville area, we check
-   against rescaled bounds. For others, original bounds. */
+   CONVERTED FRAME (2026-10-17): since the full-map conversion every
+   zone lives in the same frame and the seven zone rects tile the
+   stage exactly — there is no scale discontinuity left to handle.
+   findZoneForPoint is a plain containment loop over the live zone
+   table (zoneunlock.js's ZONES via liveZoneRects, else the converted
+   literals). ORIGINAL_BOUNDS is retained ONLY because the public API
+   exports it; it now carries the same converted rects — the
+   pre-conversion "original frame" values it used to hold were the
+   direct cause of crossings resolving to the wrong zone (or to no
+   zone at all south of z=12200). */
 var ORIGINAL_BOUNDS = {
-  'mableton':    {xMin:-200,  xMax:2147,  zMin:-200,  zMax:4218},
-  'adamsville':  {xMin:2147,  xMax:5398,  zMin:-200,  zMax:4218},  // ORIGINAL (pre-scale)
-  'downtown':    {xMin:5398,  xMax:8200,  zMin:-200,  zMax:2202},
-  'eastatlanta': {xMin:5398,  xMax:8200,  zMin:2202,  zMax:4218},
-  'unioncity':   {xMin:-200,  xMax:2147,  zMin:4218,  zMax:12200},
-  'southfulton': {xMin:2147,  xMax:5398,  zMin:4218,  zMax:12200},
-  'riverdale':   {xMin:5398,  xMax:8200,  zMin:4218,  zMax:12200},
+  'mableton':    {xMin:-7480.585387323972, xMax:-832.1294014084006,  zMin:-4248.536971831284, zMax:8266.53697183079},
+  'adamsville':  {xMin:-832.1294014084006,  xMax:8377.129401408598,  zMin:-4248.536971831284, zMax:8266.53697183079},
+  'downtown':    {xMin:8377.129401408598,   xMax:16314.485035211088, zMin:-4248.536971831284, zMax:2555.720070422735},
+  'eastatlanta': {xMin:8377.129401408598,   xMax:16314.485035211088, zMin:2555.720070422735,  zMax:8266.53697183079},
+  'unioncity':   {xMin:-7480.585387323972, xMax:-832.1294014084006, zMin:8266.53697183079,   zMax:30877.519366197153},
+  'southfulton': {xMin:-832.1294014084006,  xMax:8377.129401408598,  zMin:8266.53697183079,   zMax:30877.519366197153},
+  'riverdale':   {xMin:8377.129401408598,   xMax:16314.485035211088, zMin:8266.53697183079,   zMax:30877.519366197153}
 };
 
 function findZoneForPoint(px, pz){
-  // First check rescaled Adamsville bounds
-  var ab = ZONE_BOUNDS['adamsville'];
-  if (px >= ab.xMin && px <= ab.xMax && pz >= ab.zMin && pz <= ab.zMax){
-    return 'adamsville';
-  }
-  // Then check other zones by original bounds
-  for (var zid in ORIGINAL_BOUNDS){
-    if (zid === 'adamsville') continue;
-    var b = ORIGINAL_BOUNDS[zid];
+  var rects = liveZoneRects();
+  for (var zid in rects){
+    var b = rects[zid];
     if (px >= b.xMin && px <= b.xMax && pz >= b.zMin && pz <= b.zMax){
       return zid;
     }
