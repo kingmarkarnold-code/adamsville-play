@@ -89,7 +89,7 @@ from subdivisioncanvas import SubdivisionCanvas
 
 # App version shown in the Help -> About dialog (bump with each release).
 # Joshua 2026-10-11: version number must be prominent in About.
-APP_VERSION = "2.0.0"
+APP_VERSION = "2.0.1"
 
 # ---------------------------------------------------------------------------
 # THE EDITOR UI RULE (Joshua, 2026-10-16 — standing suite principle):
@@ -209,6 +209,111 @@ def legacy_building_in_category(building, category_id):
     if category_id == "walkable":
         return bool(building.get("walkable"))
     return legacy_building_category_id(building) == category_id
+
+
+def paned_opening_share(paned, first_min_share, second_min_px,
+                        second_max_share, vertical=True,
+                        sized_child="second"):
+    """
+    Give a Gtk.Paned its DESIGNED OPENING SHARES (2.0.1, the
+    startup-layout fix — Joshua's layout law: regions open at
+    their designed shares of the viewport, full or empty).
+
+    2.0.0 never positioned the Zone tab's two vertical dividers,
+    and real GTK's first-allocation default put them at 20 px /
+    5 px: the building list opened collapsed to a sliver and
+    the edit/place field rows filled the column from the top
+    (Joshua's live report, 2026-10-18). The suite's other splits
+    were positioned by one-shot idle callbacks; this helper is
+    the robust form of that idea:
+
+    * it acts on the paned's REAL allocations (size > 1), so it
+      works for notebook pages that are not visible yet (an idle
+      callback at startup would measure a 1-px widget and give
+      up);
+    * the SIZED child (the second by default; the first when
+      sized_child="first", for the hero list above the buildings
+      list) gets its natural height, clamped to [second_min_px,
+      second_max_share of the paned] — the field rows below a
+      list are content-sized regions; the flexible child takes
+      the rest, never less than first_min_share of the paned;
+    * the share is (re)applied whenever the paned's SIZE
+      changes — measured on this app (real GTK 3.24): a divider
+      position set while the paned still has its startup size
+      does NOT survive the paned growing to its real size (GTK
+      hands the growth to the first child), so a one-shot set
+      at startup is exactly what does not work. A drag by
+      Joshua does not change the paned's size, so his dragged
+      position is never overridden — only a window resize
+      re-applies the designed share, which is the layout law
+      (shares of the viewport) working as intended.
+    """
+    state = {"size": None, "pos": None}
+
+    def _target(size):
+        if sized_child == "first":
+            # The FIRST child is the content-sized one (the hero
+            # list above the buildings list): it gets its natural
+            # size, clamped; the second child takes the rest.
+            child1 = paned.get_child1()
+            natural = 0
+            if child1 is not None:
+                try:
+                    if vertical:
+                        _min, natural = \
+                            child1.get_preferred_height()
+                    else:
+                        _min, natural = \
+                            child1.get_preferred_width()
+                except Exception:
+                    natural = 0
+            pos = natural or second_min_px
+            pos = max(second_min_px, pos)
+            pos = min(pos, int(size * second_max_share))
+            pos = min(pos, int(size * (1.0 - first_min_share)))
+            return max(0, pos)
+        child2 = paned.get_child2()
+        natural = 0
+        if child2 is not None:
+            try:
+                if vertical:
+                    _min, natural = child2.get_preferred_height()
+                else:
+                    _min, natural = child2.get_preferred_width()
+            except Exception:
+                natural = 0
+        second = natural or second_min_px
+        second = max(second_min_px, second)
+        second = min(second, int(size * second_max_share))
+        pos = size - second
+        pos = max(pos, int(size * first_min_share))
+        return max(0, min(pos, size - 24))
+
+    def _on_allocate(_widget, alloc):
+        size = alloc.height if vertical else alloc.width
+        if size <= 1:
+            return
+        if size == state["size"]:
+            # Same size: either settled (the position is the one
+            # this helper set), clamped by GTK, or dragged by
+            # Joshua — in every case, leave it alone.
+            return
+        pos = _target(size)
+        state["size"] = size
+        state["pos"] = pos
+        if pos != paned.get_position():
+            # Defer the set past this allocation pass.
+            GLib.idle_add(_apply, pos)
+
+    def _apply(pos):
+        # Apply only if the paned has not been resized again
+        # since this target was computed (a newer allocation
+        # will have scheduled its own, fresher target).
+        if state["pos"] == pos:
+            paned.set_position(pos)
+        return False
+
+    paned.connect("size-allocate", _on_allocate)
 
 
 # ---------------------------------------------------------------------------
@@ -731,6 +836,22 @@ class AssetEditorWindow(Gtk.Window):
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def _collect_garbage(self):
+        """Deferred memory hand-back (2.0.1): run a full garbage
+        collection and return freed pages to the OS. Scheduled a
+        couple of seconds after a zone load lands — the
+        collection is real work (~0.2–0.4 s over this app's heap)
+        and does not belong inside a click-to-answer path.
+        Returns False (one-shot timer)."""
+        import gc
+        gc.collect()
+        try:
+            import ctypes
+            ctypes.CDLL("libc.so.6").malloc_trim(0)
+        except Exception:
+            pass
+        return False
+
     def ensure_zone_detail(self, zone, done=None):
         """
         Make sure one zone's SPINE is in memory — the
@@ -763,7 +884,6 @@ class AssetEditorWindow(Gtk.Window):
                 progress=self._dl_progress)
 
             def finish():
-                import gc
                 cbs = self._zone_loads.pop(zone, [])
                 GLib.idle_add(self._hide_progress)
                 if err:
@@ -776,22 +896,44 @@ class AssetEditorWindow(Gtk.Window):
                     for other in list(store.zones):
                         if other != zone:
                             store.unload_zone(other)
-                    gc.collect()
-                    # Return freed memory to the OS where possible.
-                    try:
-                        import ctypes
-                        ctypes.CDLL("libc.so.6").malloc_trim(0)
-                    except Exception:
-                        pass
                     zd = store.zones.get(zone)
                     self._set_status(
                         f"{zone} loaded from GitHub: "
                         f"{len(zd.boxes) if zd else 0} buildings.")
                     self._note_stale("Zone loaded")
-                    if self.zone_tab is not None:
-                        self.zone_tab.refresh()
+                    # 2.0.1: when the zone that landed is the
+                    # one the Zone tab is showing, refresh it
+                    # LIGHTLY (refresh_after_zone_load): its
+                    # building rows come from the light index,
+                    # which a spine load does not change — the
+                    # full refresh() walks the whole index
+                    # (~53k rows for riverdale, measured ~0.3 s
+                    # on the UI thread) and landed in the middle
+                    # of the selection that triggered this load.
+                    # When a DIFFERENT zone's spine lands (e.g. a
+                    # gas station's zone, loaded for its 3D view)
+                    # the tab is not refreshed at all: none of
+                    # its data changed.
+                    if self.zone_tab is not None \
+                            and self.zone_tab._zone == zone:
+                        self.zone_tab.refresh_after_zone_load()
                 for cb in cbs:
                     cb(not err)
+                if not err:
+                    # 2.0.1: the garbage collection that hands
+                    # the dropped zones' memory back is DEFERRED
+                    # until a couple of seconds AFTER the waiting
+                    # selection has been answered. Measured: a
+                    # full gc.collect() over the app heap costs
+                    # ~0.2–0.4 s — run inline here it sat inside
+                    # the click-to-answer path of the very
+                    # selection that triggered this load, and
+                    # even an idle callback fired during the
+                    # load's download window (the loop is idle
+                    # while bytes arrive). The memory still goes
+                    # back — shortly after, never inside an
+                    # answer.
+                    GLib.timeout_add(2000, self._collect_garbage)
                 return False
             GLib.idle_add(finish)
 
@@ -1802,7 +1944,8 @@ class ZoneInspectorPanel(Gtk.Box):
     # -- showing a building ---------------------------------------------
 
     def show_building(self, tab, zd, index, flagged_entry,
-                      neighbours=None):
+                      neighbours=None, front_info=None,
+                      roads_near=None):
         """Point the panel at zone building `index` of ZoneData
         `zd`. The front is derived from the roads near the building
         (parsed transiently, then dropped); the camera opens at eye
@@ -1811,7 +1954,16 @@ class ZoneInspectorPanel(Gtk.Box):
         2.0.0: `neighbours` is the snapshot's read-only context
         (the buildings around the subject, from
         GameStore.open_snapshot) — drawn muted around the subject,
-        never edited through this view."""
+        never edited through this view.
+
+        2.0.1: `front_info` / `roads_near` are the PREPARED front
+        + backdrop (GameStore.prepare_snapshot, gathered on a
+        worker thread) — the normal path passes both and this
+        method then does NO downloads and NO parsing on the UI
+        thread. When they are not passed (direct callers), the
+        front is derived here from the zone's CACHED roads view
+        (ZoneData.roads_view) instead of 2.0.0's per-selection
+        transient parse."""
         self.mode = "building"
         self.tab = tab
         self.zd = zd
@@ -1826,15 +1978,24 @@ class ZoneInspectorPanel(Gtk.Box):
         self.selected_street = None
         self.map_btn.hide()
         self.street_label.set_text("")
-        # One transient parse serves the front + the backdrop.
-        roads = zd.transient_roads()
-        self.front_info = zonedata.building_front(
-            zd, index, flagged_entry, roads=roads)
-        ring = (self.front_info or {}).get("ring") \
-            or self.detail.get("ring") or []
-        self._roads_near = zd.nearby_segments(ring, margin=60.0,
-                                              roads=roads)
-        roads = None  # the parse is dropped here, on purpose
+        # The front + backdrop: prepared on the worker thread by
+        # the normal path (see the docstring). The fallback derives
+        # them from the zone's cached roads view — one parse per
+        # zone, reused, never one parse per selection.
+        if front_info is None:
+            roads, seg_index = zd.roads_view()
+            # `roads or {}`: an empty dict keeps building_front
+            # from falling back to a transient parse — the view
+            # already tried (and failed) to get the roads.
+            front_info = zonedata.building_front(
+                zd, index, flagged_entry, roads=roads or {},
+                seg_index=seg_index)
+            ring = front_info.get("ring") \
+                or self.detail.get("ring") or []
+            roads_near = zd.nearby_segments(
+                ring, margin=60.0, roads=roads or {})
+        self.front_info = front_info
+        self._roads_near = roads_near or []
         self._reset_camera_to_front()
         self._cur_values = {
             "x": self.box[0], "z": self.box[1], "w": self.box[2],
@@ -1897,9 +2058,13 @@ class ZoneInspectorPanel(Gtk.Box):
         ring = self._station_ring()
         self._roads_near = []
         if self.zd is not None:
-            roads = self.zd.transient_roads()
+            # 2.0.1: the zone's cached roads view (built on a
+            # worker thread when the station was opened — see
+            # GasStationReviewTab._on_open_3d), not a per-open
+            # transient parse on the UI thread.
+            roads, _seg_index = self.zd.roads_view()
             self._roads_near = self.zd.nearby_segments(
-                ring, margin=80.0, roads=roads)
+                ring, margin=80.0, roads=roads or {})
             best = None
             ax, az = self.station_anchor
             for _name, pts in self._roads_near:
@@ -2076,14 +2241,17 @@ class ZoneInspectorPanel(Gtk.Box):
                     self.index)
             except Exception:
                 self.neighbours = []
-            roads = self.zd.transient_roads()
+            # 2.0.1: the cached roads view (built when the
+            # building was opened) — a drag-end refresh never
+            # re-parses the zone's roads on the UI thread.
+            roads, seg_index = self.zd.roads_view()
             self.front_info = zonedata.building_front(
-                self.zd, self.index, self.flagged_entry, roads=roads)
+                self.zd, self.index, self.flagged_entry,
+                roads=roads or {}, seg_index=seg_index)
             ring = (self.front_info or {}).get("ring") \
                 or self.detail.get("ring") or []
             self._roads_near = self.zd.nearby_segments(
-                ring, margin=60.0, roads=roads)
-            roads = None
+                ring, margin=60.0, roads=roads or {})
             self._cur_values = {
                 "x": self.box[0], "z": self.box[1], "w": self.box[2],
                 "d": self.box[3], "h": self.box[4]}
@@ -2801,6 +2969,11 @@ class ZoneBuildingsTab(Gtk.Box):
         self._rows = []                # full filtered row dicts
         self._spins_loading = False    # guard: programmatic spin sets
         self._place_retry = False      # place-after-load retry flag
+        # 2.0.1: snapshot-load generation. Every selection bumps
+        # it; a snapshot worker whose generation is no longer
+        # current when it finishes is SUPERSEDED — its result is
+        # dropped, never applied over the newer selection.
+        self._sel_gen = 0
 
         # The left data column: everything this tab shows lives
         # here; the inspector is the right pane of the horizontal
@@ -3008,6 +3181,20 @@ class ZoneBuildingsTab(Gtk.Box):
         self.vpaned.pack1(self.upper_paned, True, True)
         self.vpaned.pack2(lower_box, True, True)
         self.data_box.pack_start(self.vpaned, True, True, 0)
+        # 2.0.1 (Defect 2 — the startup layout collapse): both
+        # vertical dividers get their DESIGNED OPENING SHARES.
+        # The lists block keeps at least 55% of the column and
+        # the edit/place rows below it get their natural height
+        # (at most 45%); inside the lists block the hero list
+        # gets its natural height (at most 35%) and the buildings
+        # list takes the rest, never less than 65% of the block.
+        # In 2.0.0 nothing positioned these dividers and the
+        # editor opened with the list collapsed to ~20 px.
+        paned_opening_share(self.vpaned, first_min_share=0.55,
+                            second_min_px=120, second_max_share=0.45)
+        paned_opening_share(self.upper_paned, first_min_share=0.65,
+                            second_min_px=64, second_max_share=0.35,
+                            sized_child="first")
 
         # --- Split pane: data column (left) + inspector (right) ----
         # The inspector starts hidden; selecting a building shows
@@ -3081,18 +3268,31 @@ class ZoneBuildingsTab(Gtk.Box):
         store = self._store()
         if store is None:
             return [], 0, 0
-        rows = []
-        flagged_n = 0
         idx = store.indexes.get(self._zone)
         if idx is None:
             return [], 0, 0
-        for i, e in enumerate(idx.entries):
-            is_flag = store.flagged.match_point(
-                self._zone, e["x"], e["z"]) is not None
-            flagged_n += 1 if is_flag else 0
-            rows.append({"i": i, "name": e.get("n") or "",
-                         "code": int(e.get("c", 0)),
-                         "flagged": is_flag})
+        # 2.0.1 speed: the flagged set for a zone is computed
+        # ONCE per (index, flagged-list) pair and cached — both
+        # are session-static (a save reloads the index object,
+        # which changes its identity and so refreshes the cache).
+        # The per-entry match_point walk cost ~0.25 s of UI-thread
+        # time on EVERY refresh of a big zone (52,771 entries for
+        # riverdale) — most of it re-answering a question whose
+        # answer cannot change.
+        key = (self._zone, id(idx), id(store.flagged))
+        if getattr(self, "_flag_key", None) == key:
+            flagged_set = self._flag_set
+        else:
+            flagged_set = {
+                i for i, e in enumerate(idx.entries)
+                if store.flagged.match_point(
+                    self._zone, e["x"], e["z"]) is not None}
+            self._flag_key, self._flag_set = key, flagged_set
+        flagged_n = len(flagged_set)
+        rows = [{"i": i, "name": e.get("n") or "",
+                 "code": int(e.get("c", 0)),
+                 "flagged": i in flagged_set}
+                for i, e in enumerate(idx.entries)]
         total = len(idx.entries)
         filt = self._filter_id
         if filt == "flagged":
@@ -3161,25 +3361,12 @@ class ZoneBuildingsTab(Gtk.Box):
                                     hb.get("name") or "",
                                     hb.get("address") or ""])
         self._rows, total, flagged_n = self._build_rows()
+        self._total = total
         for r in self._rows[:self.ROW_CAP]:
             self.store.append([r["i"], r["name"],
                                zonedata.CODE_LABELS.get(r["code"], "?"),
                                "FLAGGED" if r["flagged"] else ""])
-        state = "full records loaded" if zd is not None \
-            else "list only — pick a building to load its zone"
-        info = (f"{self._zone}: {total} buildings, {len(heroes)} hero, "
-                f"{store.flagged.count(self._zone)} flagged in zone "
-                f"({state}; showing {min(self.ROW_CAP, len(self._rows))} "
-                f"of {len(self._rows)} rows)")
-        if zd is not None and zd.dirty:
-            info += " — UNSAVED CHANGES"
-        if self._filter_id != "all":
-            label = self._filter_labels[
-                self._filter_values.index(self._filter_id)]
-            info += f" — filter: {label}"
-        if self._sort_key:
-            info += (f" — sorted by {self._sort_key} "
-                     f"({'A→Z' if self._sort_asc else 'Z→A'})")
+        info = self._info_text(len(heroes))
         self.info_label.set_text(info)
         self.info_label.set_tooltip_text(info)
         # Restore the selection the clear() dropped (see above).
@@ -3192,6 +3379,53 @@ class ZoneBuildingsTab(Gtk.Box):
                     except Exception:
                         pass
                     break
+
+    def _info_text(self, hero_count):
+        """The zone info line, from the CURRENT row set + load
+        state (shared by refresh and refresh_after_zone_load)."""
+        store = self._store()
+        zd = self._zd()
+        state = "full records loaded" if zd is not None \
+            else "list only — pick a building to load its zone"
+        info = (f"{self._zone}: {getattr(self, '_total', 0)} "
+                f"buildings, {hero_count} hero, "
+                f"{store.flagged.count(self._zone) if store else 0} "
+                f"flagged in zone ({state}; showing "
+                f"{min(self.ROW_CAP, len(self._rows))} "
+                f"of {len(self._rows)} rows)")
+        if zd is not None and zd.dirty:
+            info += " — UNSAVED CHANGES"
+        if self._filter_id != "all":
+            label = self._filter_labels[
+                self._filter_values.index(self._filter_id)]
+            info += f" — filter: {label}"
+        if self._sort_key:
+            info += (f" — sorted by {self._sort_key} "
+                     f"({'A→Z' if self._sort_asc else 'Z→A'})")
+        return info
+
+    def refresh_after_zone_load(self):
+        """Light refresh for a zone SPINE landing (2.0.1): the
+        building rows come from the zone's light index, which a
+        spine load does not change — rebuilding them walked the
+        whole index (~53k rows for riverdale, measured ~0.3 s of
+        UI-thread work in the middle of a selection). Only the
+        HERO list (which rides the spine) and the info line's
+        loaded-state text can actually change, so only those are
+        redone here. Selection and scroll state are untouched."""
+        store = self._store()
+        zd = self._zd()
+        if store is None or zd is None:
+            return
+        heroes = zd.hero_list()
+        self.hero_store.clear()
+        for hb in heroes:
+            self.hero_store.append([hb.get("id") or "",
+                                    hb.get("name") or "",
+                                    hb.get("address") or ""])
+        info = self._info_text(len(heroes))
+        self.info_label.set_text(info)
+        self.info_label.set_tooltip_text(info)
 
     def _update_row(self, index):
         """Refresh one visible row in place (after an edit) and its
@@ -3254,23 +3488,85 @@ class ZoneBuildingsTab(Gtk.Box):
         (store.open_snapshot — subject + neighbours, chunk-sized
         downloads only). A snapshot that cannot be generated
         (missing chunk, unreadable data) is reported in the status
-        bar with the reason — loudly, never as an empty view."""
+        bar with the reason — loudly, never as an empty view.
+
+        2.0.1 (Defect 1 — the select freeze): the snapshot is
+        prepared ASYNCHRONOUSLY. In 2.0.0 this method ran
+        open_snapshot + the inspector's roads work SYNCHRONOUSLY
+        on the UI thread: the building's detail chunks and the
+        zone's roads.json (~2.4 MB) downloaded through the shared
+        cache and the roads were parsed + indexed right here, in
+        the click — measured at 5.8 s of frozen UI for the church
+        on a fast machine with a merely slow network, and several
+        seconds even warm (the parse + index were rebuilt per
+        click). Now a worker thread gathers everything (chunk
+        downloads with the MB progress bar, the roads download,
+        the once-per-zone roads parse) and the UI thread only
+        APPLIES the finished snapshot when it lands. Selecting
+        another building supersedes an in-flight load (the
+        generation check in the completion callback); the
+        superseded worker's downloads still warm the caches, so
+        nothing it fetched is wasted."""
         zd = self._zd()
         store = self._store()
         if zd is None or store is None \
                 or not (0 <= index < len(zd.boxes)):
             return
-        try:
-            snap = store.open_snapshot(self._zone, index)
-        except zonedata.ZoneDataError as e:
-            self.app_window._set_status(str(e))
-            return
+        self._sel_gen += 1
+        gen = self._sel_gen
+        zone = self._zone
+        name = None
+        idx_obj = store.indexes.get(zone)
+        if idx_obj is not None and index < len(idx_obj.entries):
+            name = idx_obj.entries[index].get("name")
+        self.app_window._set_status(
+            f"Loading {name or f'building #{index}'}…")
+        import threading
+
+        def worker():
+            try:
+                prep = store.prepare_snapshot(zone, index)
+                err = None
+            except Exception as e:
+                # ZoneDataError or a transport blowup: the reason
+                # is reported verbatim in the status bar (loud,
+                # never an empty view).
+                prep, err = None, str(e)
+
+            def done():
+                if gen != self._sel_gen or self._zone != zone:
+                    return False  # superseded — drop the result
+                self.app_window._hide_progress()
+                if err is not None:
+                    self.app_window._set_status(err)
+                    return False
+                self._apply_snapshot(prep)
+                return False
+            GLib.idle_add(done)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _apply_snapshot(self, prep):
+        """GTK thread: show a snapshot a worker prepared (see
+        show_inspector). Pure widget work — no downloads, no
+        parsing — so applying can never freeze the UI."""
+        zd = prep["zd"]
+        index = prep["index"]
         self.inspector.show_building(
-            self, zd, index, snap["flagged"],
-            neighbours=snap["neighbours"])
+            self, zd, index, prep["flagged"],
+            neighbours=prep["neighbours"],
+            front_info=prep["front"],
+            roads_near=prep["roads_near"])
         self.inspector.set_visible(True)
         self._position_inspector()
         GLib.idle_add(self._position_inspector_idle)
+        if prep.get("roads_error"):
+            # The building is shown; the missing front/backdrop
+            # is named, not silently absent.
+            self.app_window._set_status(
+                f"Building #{index} is shown without its street "
+                f"front: the roads could not be loaded "
+                f"({prep['roads_error']}).")
 
     def _position_inspector(self):
         """Place the split divider: Joshua's dragged position wins;
@@ -3296,6 +3592,9 @@ class ZoneBuildingsTab(Gtk.Box):
     def hide_inspector(self):
         """Hide the inspector panel. The data column was never
         hidden, so there is nothing to restore."""
+        # 2.0.1: hiding also supersedes any in-flight snapshot
+        # load — a late result must never reopen the panel.
+        self._sel_gen += 1
         if hasattr(self, "inspector"):
             self.inspector.set_visible(False)
 
@@ -3522,6 +3821,9 @@ class GasStationReviewTab(Gtk.Box):
         self.edits = None           # zonedata.StationEdits
         self._current = None        # selected station record
         self._show_all = False      # list toggle state
+        # 2.0.1: open-in-3D generation — a newer station (or a
+        # newer open request) supersedes an in-flight roads prep.
+        self._open_gen = 0
         self._spins_loading = False
 
         # The left column: heading, intro, toggle, list, details.
@@ -3650,6 +3952,13 @@ class GasStationReviewTab(Gtk.Box):
         self.vpaned.pack1(scroll, True, True)
         self.vpaned.pack2(detail_box, True, True)
         self.data_box.pack_start(self.vpaned, True, True, 0)
+        # 2.0.1 (Defect 2): the station list's divider gets its
+        # designed opening share too — same unpositioned-divider
+        # bug as the Zone tab's: the list keeps at least half the
+        # column; the details below get their natural height, at
+        # most half.
+        paned_opening_share(self.vpaned, first_min_share=0.50,
+                            second_min_px=140, second_max_share=0.50)
 
         # The 3D inspector (station mode) on the right.
         self.inspector = ZoneInspectorPanel(self)
@@ -3771,6 +4080,9 @@ class GasStationReviewTab(Gtk.Box):
 
     def _on_select(self, selection):
         """Show the selected station's full note + its controls."""
+        # 2.0.1: changing the station supersedes any in-flight
+        # open-in-3D preparation for the previous one.
+        self._open_gen += 1
         model, iter_ = selection.get_selected()
         if iter_ is None:
             self._current = None
@@ -3831,18 +4143,44 @@ class GasStationReviewTab(Gtk.Box):
 
     # -- editing ------------------------------------------------------------
 
+    def _reselect_station(self, sid):
+        """Re-select station `sid`'s row after a list rebuild
+        (2.0.1 fix). refresh_list() clears and re-appends the
+        Gtk model, which clears the tree's selection as a side
+        effect — and the selection handler answers by setting
+        _current to None. In 2.0.0, _on_make_editable then read
+        _current for its status line and CRASHED (AttributeError,
+        printed to stderr; the app carried on with the station
+        deselected and "Open in 3D view" greyed out again, so
+        the flow the status line describes could not be followed
+        without re-selecting the station by hand). The rebuild's
+        row order is stable, so the station's row is found by its
+        stationIndex (the model's hidden last column) and
+        selected again, restoring _current and the controls."""
+        if sid is None:
+            return
+        for row in self.store:
+            if row[6] == sid:
+                self.tree.get_selection().select_path(row.path)
+                return
+
     def _on_make_editable(self, _widget):
         """Flip the selected station to editable (Joshua's
         per-station choice; the default is review-only)."""
         if self._current is None or self.edits is None:
             return
         sid = self._current.get("stationIndex")
+        name = self._current.get("name") or "Station"
         self.edits.set_edit(sid, editable=True)
         self.app_window._mark_unpublished()
         self._refresh_controls()
         self.refresh_list()
+        # The rebuild deselected the station (see
+        # _reselect_station) — put the selection back so the
+        # station stays current and the 3D button stays live.
+        self._reselect_station(sid)
         self.app_window._set_status(
-            f"{self._current.get('name') or 'Station'} is now "
+            f"{name} is now "
             f"editable — open it in the 3D view to adjust it. "
             f"(Unsaved until the next save.)")
 
@@ -3851,12 +4189,13 @@ class GasStationReviewTab(Gtk.Box):
         kept in the overlay, but it no longer opens for editing)."""
         if self._current is None or self.edits is None:
             return
-        self.edits.set_edit(
-            self._current.get("stationIndex"), editable=False)
+        sid = self._current.get("stationIndex")
+        self.edits.set_edit(sid, editable=False)
         self.app_window._mark_unpublished()
         self.hide_inspector()
         self._refresh_controls()
         self.refresh_list()
+        self._reselect_station(sid)
         self.app_window._set_status(
             "Station is review-only again. (Unsaved until save.)")
 
@@ -3880,29 +4219,65 @@ class GasStationReviewTab(Gtk.Box):
     def _on_open_3d(self, _widget):
         """Open the station in the 3D inspector at its real
         location. Its zone's records download on demand for the
-        roads backdrop; without them the station still opens."""
+        roads backdrop; without them the station still opens.
+
+        2.0.1: the zone's roads view (download + parse + index)
+        is prepared on a WORKER thread before the panel opens —
+        in 2.0.0, show_station did that work synchronously in
+        this click (the same select-freeze mechanism as the
+        buildings list). A newer station selection supersedes an
+        in-flight preparation (generation check)."""
         if self._current is None:
             return
         station = self._current
         zone = station.get("zone")
+        self._open_gen += 1
+        gen = self._open_gen
 
         def show(zd):
+            if gen != self._open_gen or self._current is not station:
+                return  # superseded while preparing
             self.inspector.show_station(
                 self, station, self._edit(), zd)
             self.inspector.set_visible(True)
             self._position_inspector()
             GLib.idle_add(self._position_inspector_idle)
 
+        def prep_then_show(zd):
+            """Build zd's roads view off the UI thread, then
+            show. Without a ZoneData the station opens at once
+            (no backdrop, as before)."""
+            if zd is None:
+                show(None)
+                return
+            import threading
+
+            def worker():
+                err = zd.ensure_roads()
+                if not err:
+                    zd.roads_view()
+
+                def done():
+                    if err:
+                        self.app_window._set_status(
+                            f"Station shown without its roads "
+                            f"backdrop: {err}")
+                    show(zd)
+                    return False
+                GLib.idle_add(done)
+
+            threading.Thread(target=worker, daemon=True).start()
+
         store = self.app_window.zone_store
         if store is not None and zone in store.zones:
-            show(store.zones[zone])
+            prep_then_show(store.zones[zone])
         elif zone:
             def done(ok, _station=station):
                 store2 = self.app_window.zone_store
                 zd = store2.zones.get(_station.get("zone")) \
                     if store2 else None
                 if self._current is _station:
-                    show(zd)
+                    prep_then_show(zd)
             self.app_window.ensure_zone_detail(zone, done=done)
         else:
             show(None)
