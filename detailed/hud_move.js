@@ -1,10 +1,33 @@
 /* ============================================================================
-   MOVABLE HUD CONTROLS v1.0 — the player arranges the controls for
-   THEIR screen (Joshua 2026-10-17, live-testing the web player on his
-   phone: "The web player has the UI control overlapping, making it
-   unable to drive in web mobile — allow the user to be able to move
-   the controls on the main UI for the game so they can position them
-   for their screen").
+   MOVABLE HUD CONTROLS v2.0 — the player arranges the controls for
+   THEIR screen (Joshua 2026-10-17, live-testing the web player on
+   his phone: "The web player has the UI control overlapping, making
+   it unable to drive in web mobile — allow the user to be able to
+   move the controls on the main UI for the game so they can position
+   them for their screen").
+
+   v2.0 (Joshua 2026-10-17 21:39): "if some of the controls are
+   unvisible or you can't see them because of the screen there's no
+   way to move them, there's no way to tap on them" — plus his yield
+   rule (21:42): "if I select a control that I want to move it
+   should move the menu so I can move the control around the
+   viewport." Three answers, all in this file:
+     1. SELECT BY LIST — the move bar carries a "Select control"
+        button opening a panel that lists EVERY movable control by
+        name. Picking one selects it (outline + name tag); if it is
+        off-screen or hidden it is BROUGHT BACK to screen centre
+        first, so it can always be reached and then dragged home.
+        Each row also has "Centre it" — the same bring-back as a
+        one-tap rescue, without selecting.
+     2. EDGE LAW — at EVERY layout pass (launch, face switch,
+        resize, rotation), any movable control whose box extends
+        past a screen edge is pulled back inside, override or not.
+        A control can never be lost off-screen on any screen class.
+     3. MENUS YIELD — picking from the list closes the list AND
+        collapses the move bar to a slim edge tab in the same tap,
+        leaving the whole viewport clear for dragging. The tab (one
+        tap) reopens the bar for Done / Reset / Select. Expanded,
+        the bar parks against the top edge as before.
 
    THE DESIGN IN ONE PARAGRAPH:
    ui_layout.json (edited in the UI Editor) stays the source of the
@@ -36,6 +59,12 @@
    !important rules (those hardcoded pins are exactly the overlap
    Joshua hit). Sizes are NOT overridden — the designed size stays;
    only the position is the player's.
+
+   WHY THE v2 UI IS BUILT BY THIS FILE: the Select button, the
+   collapse tab, the list panel and their styles are created at
+   runtime by buildMoveUI() below instead of living in index.html,
+   so the whole feature stays in one file (and one manifest entry)
+   and can never be half-merged away from its behaviour.
 
    MOVE MODE:
      * Entered from Settings ("Move controls") or from the PAUSED
@@ -115,7 +144,8 @@ function saveStore(){
 /* ---------------------------------------------------------------------------
    The draggable set. APPLY_IDS get positions from overrides;
    TARGET_IDS can be grabbed (joy-knob follows joy-base instead of
-   being grabbed). Names are what the floating tag shows mid-drag.
+   being grabbed). Names are what the floating tag shows mid-drag
+   and what the Select list offers (v2).
    --------------------------------------------------------------------------- */
 var NAMES = {
   'hud-title': 'Title', 'hud-sub': 'Subtitle',
@@ -171,6 +201,54 @@ function currentFace(){
 
 function round4(n){ return Math.round(n * 10000) / 10000; }
 
+function rectOf(el){
+  try { return el.getBoundingClientRect(); } catch (e) { return null; }
+}
+
+/* Is this box fully inside the viewport (half-pixel tolerance for
+   sub-pixel rounding at the edges)? */
+function fullyInside(r, vw, vh){
+  return !!r && r.left >= -0.5 && r.top >= -0.5 &&
+         r.right <= vw + 0.5 && r.bottom <= vh + 0.5;
+}
+
+/* Does the element currently need rescuing? True when it has no
+   measurable box (hidden / not placed) or any part of it sits
+   outside the viewport. */
+function needsRescue(el, vw, vh){
+  var r = rectOf(el);
+  if (!r || (!r.width && !r.height)) return true;
+  return !fullyInside(r, vw, vh);
+}
+
+/* ---------------------------------------------------------------------------
+   Placing — the one writer of !important positions. Sets left/top
+   (right/bottom cleared to auto), records the id for Reset, then
+   corrects for self-centring transforms: a few HUD elements centre
+   themselves with translateX(-50%) (e.g. #ver-tag on mobile), so the
+   style left is NOT the visual left. Measure the visual corner once
+   and correct, so the placed spot is the spot the player sees. A
+   hidden element measures all-zero and is skipped (the next layout
+   pass while it's visible corrects it).
+   --------------------------------------------------------------------------- */
+function placeVisual(el, id, wantLeft, wantTop){
+  el.style.setProperty('left', wantLeft + 'px', 'important');
+  el.style.setProperty('top', wantTop + 'px', 'important');
+  el.style.setProperty('right', 'auto', 'important');
+  el.style.setProperty('bottom', 'auto', 'important');
+  if (id) importantSet[id] = true;
+  try {
+    var r = el.getBoundingClientRect();
+    if (r && (r.width || r.height)){
+      var dx = wantLeft - r.left, dy = wantTop - r.top;
+      if (dx || dy){
+        el.style.setProperty('left', (wantLeft + dx) + 'px', 'important');
+        el.style.setProperty('top', (wantTop + dy) + 'px', 'important');
+      }
+    }
+  } catch (e) {}
+}
+
 /* ---------------------------------------------------------------------------
    Applying overrides — called by ui_layout_apply.js after EVERY
    designed-layout pass (startup, resize, hot-reload), so the
@@ -183,27 +261,29 @@ function applyOverride(el, id, face, vw, vh){
   var w = 0, h = 0;
   try { w = el.offsetWidth || 0; h = el.offsetHeight || 0; } catch (e) {}
   var want = clampPos(ov.fx * vw, ov.fy * vh, w, h, vw, vh);
-  el.style.setProperty('left', want.left + 'px', 'important');
-  el.style.setProperty('top', want.top + 'px', 'important');
-  el.style.setProperty('right', 'auto', 'important');
-  el.style.setProperty('bottom', 'auto', 'important');
-  importantSet[id] = true;
-  /* Transform compensation: a few HUD elements centre themselves
-     with translateX(-50%) (e.g. #ver-tag on mobile), so the style
-     left is NOT the visual left the player saved. Measure the
-     visual corner once and correct, so the saved spot is the spot
-     they see. A hidden element measures all-zero and is skipped
-     (the next layout pass while it's visible corrects it). */
-  try {
-    var r = el.getBoundingClientRect();
-    if (r && (r.width || r.height)){
-      var dx = want.left - r.left, dy = want.top - r.top;
-      if (dx || dy){
-        el.style.setProperty('left', (want.left + dx) + 'px', 'important');
-        el.style.setProperty('top', (want.top + dy) + 'px', 'important');
-      }
-    }
-  } catch (e) {}
+  placeVisual(el, id, want.left, want.top);
+  return true;
+}
+
+/* EDGE LAW (v2): an element with NO override sits wherever the
+   designed layout (or a media-query pin) put it — and on a screen
+   the design didn't foresee, that can be partly or wholly off the
+   edge, unreachable. Whenever a layout pass lands, measure every
+   movable control and pull any overflowing box back inside
+   (clamped, never re-centred: as much of the intended position as
+   possible is preserved). Elements the layout pass repositions get
+   their fresh designed styles each pass (its plain assignments
+   supersede these !important ones), so this judges the CURRENT
+   design every time — resize to a smaller screen re-clamps.
+   Hidden elements measure zero and are left alone: there is
+   nothing to lose until they exist on screen. */
+function edgeClamp(el, id, vw, vh){
+  if (!el) return false;
+  var r = rectOf(el);
+  if (!r || (!r.width && !r.height)) return false;
+  if (fullyInside(r, vw, vh)) return false;
+  var p = clampPos(r.left, r.top, r.width, r.height, vw, vh);
+  placeVisual(el, id, p.left, p.top);
   return true;
 }
 
@@ -214,7 +294,12 @@ function onLayoutApplied(mobile){
   if (!vw || !vh || !document.getElementById) return;
   for (var i = 0; i < APPLY_IDS.length; i++){
     var el = document.getElementById(APPLY_IDS[i]);
-    if (el) applyOverride(el, APPLY_IDS[i], face, vw, vh);
+    if (!el) continue;
+    /* The player's own spot wins; everything else answers to the
+       edge law so no designed position can strand a control. */
+    if (!applyOverride(el, APPLY_IDS[i], face, vw, vh)){
+      edgeClamp(el, APPLY_IDS[i], vw, vh);
+    }
   }
 }
 
@@ -233,18 +318,17 @@ function naturalDisplay(el){
   return 'block'; /* divs + the minimap canvas */
 }
 
-function showTag(){
+/* ---------------------------------------------------------------------------
+   The name tag — one floating label, three jobs: it names the
+   control being dragged (v1), and in v2 it also names the control
+   the Select list picked, parked at that control until the player
+   drags or picks another.
+   --------------------------------------------------------------------------- */
+function positionTagAt(el){
   var tag = document.getElementById('hud-move-tag');
-  if (!tag || !drag) return;
-  tag.textContent = NAMES[drag.id] || drag.id;
-  tag.classList.add('show');
-  positionTag();
-}
-function positionTag(){
-  var tag = document.getElementById('hud-move-tag');
-  if (!tag || !drag) return;
+  if (!tag || !el) return;
   try {
-    var r = drag.el.getBoundingClientRect();
+    var r = el.getBoundingClientRect();
     /* Above the control when there's room, below it otherwise. */
     var top = r.top - 34;
     if (top < 4) top = r.bottom + 6;
@@ -252,11 +336,318 @@ function positionTag(){
     tag.style.top = top + 'px';
   } catch (e) {}
 }
+function showTagFor(el, name){
+  var tag = document.getElementById('hud-move-tag');
+  if (!tag || !el) return;
+  tag.textContent = name || el.id;
+  tag.classList.add('show');
+  positionTagAt(el);
+}
+function showTag(){
+  if (!drag) return;
+  showTagFor(drag.el, NAMES[drag.id] || drag.id);
+}
+function positionTag(){
+  if (drag) positionTagAt(drag.el);
+}
 function hideTag(){
   var tag = document.getElementById('hud-move-tag');
   if (tag) tag.classList.remove('show');
 }
 
+/* ---------------------------------------------------------------------------
+   Selection (v2) — the control the player is acting on. It wears a
+   solid outline (the dashed outline means "draggable"; solid means
+   "this one") and keeps the name tag until another takes over.
+   --------------------------------------------------------------------------- */
+var selectedId = null;
+
+function setSelected(id){
+  if (selectedId === id) { if (id) { var cur = document.getElementById(id); if (cur) showTagFor(cur, NAMES[id] || id); } return; }
+  if (selectedId){
+    var prev = document.getElementById(selectedId);
+    if (prev){
+      try { prev.style.removeProperty('outline'); prev.style.removeProperty('outline-offset'); } catch (e) {}
+    }
+  }
+  selectedId = id || null;
+  if (selectedId){
+    var el = document.getElementById(selectedId);
+    if (el){
+      try {
+        el.style.setProperty('outline', '3px solid #ffd75e', 'important');
+        el.style.setProperty('outline-offset', '2px', 'important');
+      } catch (e) {}
+      showTagFor(el, NAMES[selectedId] || selectedId);
+    }
+  } else {
+    hideTag();
+  }
+}
+
+function clearSelected(){
+  setSelected(null);
+}
+
+/* ---------------------------------------------------------------------------
+   Bring-back / rescue (v2) — put a control at screen centre, as a
+   saved override for the active face, so it is reachable NOW and
+   lands somewhere sane whenever the game shows it later. The stick
+   knob rides along by the same translation as its base. Returns
+   true when the control was actually moved (it needed rescuing,
+   or `force` was set).
+   --------------------------------------------------------------------------- */
+function rescueControl(id, force){
+  var el = document.getElementById(id);
+  if (!el) return false;
+  var vw = window.innerWidth || 0, vh = window.innerHeight || 0;
+  if (!vw || !vh) return false;
+  if (!force && !needsRescue(el, vw, vh)) return false;
+  var r = rectOf(el);
+  var w = (r && r.width) || 0, h = (r && r.height) || 0;
+  if (!w) { try { w = el.offsetWidth || 0; } catch (e) {} }
+  if (!h) { try { h = el.offsetHeight || 0; } catch (e) {} }
+  var p = clampPos((vw - w) / 2, (vh - h) / 2, w, h, vw, vh);
+  var face = currentFace();
+  var oldLeft = r ? r.left : null, oldTop = r ? r.top : null;
+  store[face][id] = { fx: round4(p.left / vw), fy: round4(p.top / vh) };
+  placeVisual(el, id, p.left, p.top);
+  if (id === 'joy-base'){
+    var k = document.getElementById('joy-knob');
+    if (k){
+      var kr = rectOf(k);
+      var kw = (kr && kr.width) || 0, kh = (kr && kr.height) || 0;
+      /* Preserve the knob's offset from the base; the pair's
+         resting geometry (knob centred in the base) is the
+         fallback when either rect is unmeasurable. */
+      var dx = (kr && oldLeft !== null) ? (kr.left - oldLeft) : 55;
+      var dy = (kr && oldTop !== null) ? (kr.top - oldTop) : 55;
+      var kp = clampPos(p.left + dx, p.top + dy, kw, kh, vw, vh);
+      store[face]['joy-knob'] = { fx: round4(kp.left / vw), fy: round4(kp.top / vh) };
+      placeVisual(k, 'joy-knob', kp.left, kp.top);
+    }
+  }
+  saveStore();
+  return true;
+}
+
+/* Select a control BY NAME (v2): it becomes the active control; if
+   it is off-screen or hidden it is brought back to centre first so
+   there is always something on screen to grab. Used by the Select
+   list — the list itself closes and the bar collapses (menus
+   yield) before this is called, see pickFromList(). */
+function selectControl(id){
+  if (!inMove) return false;
+  if (TARGET_IDS.indexOf(id) === -1) return false;
+  var el = document.getElementById(id);
+  if (!el) return false;
+  rescueControl(id, false);
+  setSelected(id);
+  return true;
+}
+
+/* "Centre it" (v2): the bring-back on its own — an individual
+   rescue that doesn't change the selection. */
+function centreControl(id){
+  if (!inMove) return false;
+  if (TARGET_IDS.indexOf(id) === -1) return false;
+  if (!document.getElementById(id)) return false;
+  return rescueControl(id, true);
+}
+
+/* The Select list's data: every movable control, by friendly
+   name, with a live hint about the ones in trouble. */
+function selectList(){
+  var vw = window.innerWidth || 0, vh = window.innerHeight || 0;
+  var out = [];
+  for (var i = 0; i < TARGET_IDS.length; i++){
+    var id = TARGET_IDS[i];
+    var el = document.getElementById(id);
+    var hint = '';
+    if (!el) hint = 'not in this build';
+    else if (needsRescue(el, vw, vh)){
+      var r = rectOf(el);
+      hint = (!r || (!r.width && !r.height)) ? 'hidden' : 'off screen';
+    }
+    out.push({ id: id, name: NAMES[id] || id, hint: hint });
+  }
+  return out;
+}
+
+/* ---------------------------------------------------------------------------
+   The v2 move-mode UI — built by this file (see the header for
+   why): the Select button + Hide button inside the existing
+   #hud-move-bar, the slim edge tab that replaces the bar when it
+   collapses, and the Select panel. Styles are injected once.
+   --------------------------------------------------------------------------- */
+var selectBtnEl = null, hideBtnEl = null, tabEl = null, panelEl = null;
+var panelRows = [];      /* [{id, pick, centre}] for the open panel */
+var panelOpen = false;
+var barCollapsed = false;
+
+var MOVE_CSS =
+  '#hud-move-tab{position:fixed;top:0;left:50%;transform:translateX(-50%);z-index:200;' +
+  'display:none;background:rgba(10,14,22,.94);border:2px solid #ffd75e;border-top:none;' +
+  'border-radius:0 0 10px 10px;color:#ffd75e;font-size:13px;font-weight:bold;' +
+  'padding:5px 14px;cursor:pointer;}' +
+  '#hud-move-tab.show{display:block;}' +
+  '#hud-move-panel{position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:203;' +
+  'display:none;width:min(92vw,380px);max-height:62vh;overflow-y:auto;' +
+  'background:rgba(10,14,22,.97);border:2px solid #ffd75e;border-radius:12px;' +
+  'padding:10px;color:#fff;font-size:14px;}' +
+  '#hud-move-panel.show{display:block;}' +
+  '#hud-move-panel .hm-head{display:flex;justify-content:space-between;align-items:center;' +
+  'margin-bottom:8px;color:#ffd75e;font-weight:bold;}' +
+  '#hud-move-panel .hm-row{display:flex;gap:8px;align-items:stretch;margin-bottom:6px;}' +
+  '#hud-move-panel .hm-pick{flex:1;text-align:left;padding:9px 12px;font-size:15px;' +
+  'border-radius:9px;border:none;background:#232b3d;color:#fff;cursor:pointer;}' +
+  '#hud-move-panel .hm-pick .hm-hint{color:#ffd75e;font-size:12px;}' +
+  '#hud-move-panel .hm-centre{padding:9px 10px;font-size:13px;border-radius:9px;' +
+  'border:none;background:#333a4e;color:#fff;white-space:nowrap;cursor:pointer;}' +
+  '#hud-move-panel .hm-close{padding:4px 10px;font-size:14px;border-radius:8px;' +
+  'border:none;background:#333a4e;color:#fff;cursor:pointer;}' +
+  '#hud-move-select{background:#232b3d;color:#fff;}' +
+  '#hud-move-hide{background:#333a4e;color:#fff;}';
+
+function buildMoveUI(){
+  if (panelEl) return; /* built once */
+  try {
+    var st = document.createElement('style');
+    st.id = 'hud-move-style';
+    st.textContent = MOVE_CSS;
+    var host = document.head || document.body;
+    if (host && host.appendChild) host.appendChild(st);
+  } catch (e) { /* styles are decoration; the mechanics below stand alone */ }
+  var bar = document.getElementById('hud-move-bar');
+  try {
+    if (bar && document.createElement){
+      selectBtnEl = document.createElement('button');
+      selectBtnEl.id = 'hud-move-select';
+      selectBtnEl.textContent = 'Select control ▾';
+      selectBtnEl.addEventListener('click', function(){ togglePanel(); });
+      bar.appendChild(selectBtnEl);
+      hideBtnEl = document.createElement('button');
+      hideBtnEl.id = 'hud-move-hide';
+      hideBtnEl.textContent = 'Hide ▾';
+      hideBtnEl.addEventListener('click', function(){ collapseBar(); });
+      bar.appendChild(hideBtnEl);
+    }
+  } catch (e) { selectBtnEl = null; hideBtnEl = null; }
+  try {
+    if (document.createElement && document.body){
+      tabEl = document.createElement('button');
+      tabEl.id = 'hud-move-tab';
+      tabEl.textContent = '✎ Move controls ▴';
+      tabEl.addEventListener('click', function(){ expandBar(); });
+      document.body.appendChild(tabEl);
+      panelEl = document.createElement('div');
+      panelEl.id = 'hud-move-panel';
+      document.body.appendChild(panelEl);
+    }
+  } catch (e) { tabEl = null; panelEl = null; }
+}
+
+/* The bar collapses to the slim tab (v2 yield rule): the drag
+   field is the whole viewport, and the chrome gets out of it.
+   One tap on the tab brings the bar back for Done/Reset/Select. */
+function collapseBar(){
+  if (!inMove || barCollapsed) return;
+  barCollapsed = true;
+  closePanel();
+  var bar = document.getElementById('hud-move-bar');
+  if (bar) bar.classList.remove('show');
+  if (tabEl) tabEl.classList.add('show');
+}
+function expandBar(){
+  if (!inMove || !barCollapsed) return;
+  barCollapsed = false;
+  var bar = document.getElementById('hud-move-bar');
+  if (bar) bar.classList.add('show');
+  if (tabEl) tabEl.classList.remove('show');
+}
+
+/* The Select panel: rebuilt on every open so the hints (off
+   screen / hidden) describe the controls as they are right now.
+   Picking a row — or centring from it — closes the panel AND
+   collapses the bar in the same tap (menus yield): the player is
+   left looking at the control, with the whole viewport to drag
+   in. */
+function buildPanel(){
+  if (!panelEl) return;
+  panelRows = [];
+  while (panelEl.children && panelEl.children.length){
+    panelEl.removeChild(panelEl.children[0]);
+  }
+  var head = document.createElement('div');
+  head.className = 'hm-head';
+  var title = document.createElement('span');
+  title.textContent = 'Select a control to move';
+  head.appendChild(title);
+  var close = document.createElement('button');
+  close.className = 'hm-close';
+  close.textContent = '✕';
+  close.addEventListener('click', function(){ closePanel(); });
+  head.appendChild(close);
+  panelEl.appendChild(head);
+  var items = selectList();
+  for (var i = 0; i < items.length; i++){
+    (function(item){
+      var row = document.createElement('div');
+      row.className = 'hm-row';
+      var pick = document.createElement('button');
+      pick.className = 'hm-pick';
+      pick.textContent = item.name + (item.hint ? '  ' : '');
+      if (item.hint){
+        var hint = document.createElement('span');
+        hint.className = 'hm-hint';
+        hint.textContent = '(' + item.hint + ')';
+        pick.appendChild(hint);
+      }
+      pick.addEventListener('click', function(){ pickFromList(item.id); });
+      row.appendChild(pick);
+      var centre = document.createElement('button');
+      centre.className = 'hm-centre';
+      centre.textContent = 'Centre it';
+      centre.addEventListener('click', function(){ centreFromList(item.id); });
+      row.appendChild(centre);
+      panelEl.appendChild(row);
+      panelRows.push({ id: item.id, row: row, pick: pick, centre: centre });
+    })(items[i]);
+  }
+}
+function openPanel(){
+  if (!inMove || !panelEl) return;
+  buildPanel();
+  panelOpen = true;
+  panelEl.classList.add('show');
+  panelEl.style.display = 'block';
+}
+function closePanel(){
+  panelOpen = false;
+  if (panelEl){
+    panelEl.classList.remove('show');
+    panelEl.style.display = 'none';
+  }
+}
+function togglePanel(){
+  if (panelOpen) closePanel(); else openPanel();
+}
+/* A pick from the list: select the control (bringing it back
+   first if it was lost), then EVERY menu gets out of the way. */
+function pickFromList(id){
+  selectControl(id);
+  closePanel();
+  collapseBar();
+}
+function centreFromList(id){
+  centreControl(id);
+  closePanel();
+  collapseBar();
+}
+
+/* ---------------------------------------------------------------------------
+   Enter / exit
+   --------------------------------------------------------------------------- */
 function enterMoveMode(){
   if (inMove) return;
   inMove = true;
@@ -302,8 +693,13 @@ function enterMoveMode(){
       el.style.setProperty('display', naturalDisplay(el), 'important');
     }
   }
+  /* The bar starts expanded, parked at the top edge; the player
+     can collapse it (or it collapses itself on a list pick). */
+  barCollapsed = false;
   var bar = document.getElementById('hud-move-bar');
   if (bar) bar.classList.add('show');
+  if (tabEl) tabEl.classList.remove('show');
+  closePanel();
   try {
     if (window.Report && Report.note) Report.note('hudmove', {event: 'enter', face: currentFace()});
   } catch (e) {}
@@ -313,7 +709,11 @@ function exitMoveMode(){
   if (!inMove) return;
   inMove = false;
   drag = null;
+  clearSelected();
   hideTag();
+  closePanel();
+  barCollapsed = false;
+  if (tabEl) tabEl.classList.remove('show');
   try { document.body.classList.remove('hud-move-mode'); } catch (e) {}
   for (var i = 0; i < APPLY_IDS.length; i++){
     var el = document.getElementById(APPLY_IDS[i]);
@@ -355,6 +755,7 @@ function resetFace(){
   var face = currentFace();
   store[face] = {};
   saveStore();
+  clearSelected();
   /* Strip this module's !important position props so the designed
      layout (and the media queries) own the controls again... */
   for (var i = 0; i < APPLY_IDS.length; i++){
@@ -400,6 +801,7 @@ function moveDragged(d, dx, dy, vw, vh){
   d.el.style.setProperty('top', p.top + 'px', 'important');
   d.el.style.setProperty('right', 'auto', 'important');
   d.el.style.setProperty('bottom', 'auto', 'important');
+  if (d.id) importantSet[d.id] = true;
   d.curLeft = p.left;
   d.curTop = p.top;
 }
@@ -407,7 +809,7 @@ function moveDragged(d, dx, dy, vw, vh){
 function onPointerDown(e){
   if (!inMove) return;
   var t = dragTargetOf(e);
-  if (!t) return; /* the Done/Reset bar and everything else still work */
+  if (!t) return; /* the bar/tab/panel and everything else still work */
   e.preventDefault();
   e.stopPropagation();
   var r = t.getBoundingClientRect();
@@ -429,6 +831,8 @@ function onPointerDown(e){
                     w: kr.width, h: kr.height, curLeft: kr.left, curTop: kr.top };
     }
   }
+  /* Grabbing a control makes it the selected one (v2). */
+  setSelected(t.id);
   showTag();
 }
 
@@ -462,8 +866,14 @@ function endDrag(e){
   }
   saveStore();
   try { drag.el.style.zIndex = drag.prevZ; } catch (err) {}
+  var doneId = drag.id;
   drag = null;
   hideTag();
+  /* The dropped control stays the selected one; park its tag. */
+  if (selectedId === doneId){
+    var el = document.getElementById(doneId);
+    if (el) showTagFor(el, NAMES[doneId] || doneId);
+  }
 }
 
 /* Any click that lands on a draggable while arranging is a drag
@@ -511,6 +921,7 @@ function bindClick(id, fn){
 }
 
 function init(){
+  buildMoveUI();
   bindClick('set-movecontrols', function(){ enterMoveMode(); });
   bindClick('pause-move', function(){ enterMoveMode(); });
   bindClick('hud-move-done', function(){ exitMoveMode(); });
@@ -524,8 +935,8 @@ function init(){
   } catch (e) {}
   try {
     if (typeof Report !== 'undefined' && Report.setSys){
-      Report.setSys('hudmove', { status: 'ok', version: '1.0',
-        note: 'Player-movable HUD controls; per-face overrides in localStorage (Joshua 2026-10-17)' });
+      Report.setSys('hudmove', { status: 'ok', version: '2.0',
+        note: 'Player-movable HUD controls: drag, select-by-list with bring-back, edge law, menus yield; per-face overrides in localStorage (Joshua 2026-10-17)' });
     }
   } catch (e) {}
 }
@@ -550,6 +961,19 @@ window.HudMove = {
     return JSON.parse(JSON.stringify(store));
   },
   clamp: clampPos,
+  /* v2 — selection, rescue, and the yielding menus */
+  selectList: selectList,
+  select: selectControl,
+  centre: centreControl,
+  selected: function(){ return selectedId; },
+  openPanel: openPanel,
+  closePanel: closePanel,
+  isPanelOpen: function(){ return panelOpen; },
+  panelRows: function(){ return panelRows.slice(); },
+  collapseBar: collapseBar,
+  expandBar: expandBar,
+  isBarCollapsed: function(){ return barCollapsed; },
+  edgeClamp: edgeClamp,
   TARGET_IDS: TARGET_IDS.slice(),
   APPLY_IDS: APPLY_IDS.slice()
 };
