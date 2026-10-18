@@ -136,9 +136,9 @@
     },
     {
       "name": "hud_move.js",
-      "size": 22841,
-      "sha256": "1bf183a66e9d8eae4c89306f3a90f8aa56d306ad0449a689f37b1d242523e247",
-      "hash": "1bf183a66e9d8eae4c89306f3a90f8aa56d306ad0449a689f37b1d242523e247"
+      "size": 40445,
+      "sha256": "64d74c544e0659e4aff77168d5f8496c737375ee924d40585bdd6c65db61e03b",
+      "hash": "64d74c544e0659e4aff77168d5f8496c737375ee924d40585bdd6c65db61e03b"
     },
     {
       "name": "icon.png",
@@ -507,6 +507,6 @@
       "sha256": "7a39238df8f93fba0f8c6ad0a7b84730188d2c72b094f2ffd072d2de0839a747"
     }
   ],
-  "ui_version": "2026.10.17.10",
+  "ui_version": "2026.10.17.11",
   "version": "2026.10.17.9"
 }
