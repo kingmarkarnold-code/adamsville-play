@@ -115,6 +115,23 @@ if not _SHARED_CANVAS:
 _point_in_polygon = point_in_polygon
 
 
+# Lowest zoom the camera may use (screen pixels per world unit).
+# 1.9.6: this floor MUST be small enough that the whole converted
+# world fits the canvas at once. Fitting the world needs
+# zoom ~= min(view_w / WORLD_W, view_h / WORLD_H); at 1366x768 the
+# fit lands near 0.017 — BELOW the old 0.02 floor — so with the old
+# floor the whole-world fit was unreachable by wheel: the first
+# zoom-out gesture clamped UP to 0.02, jumping the view IN and
+# pushing the world's far edges (north Mableton/Adamsville, south
+# Riverdale) out of the frame. 0.005 fits the whole world in any
+# viewport down to ~185x250 px, so a fit is always reachable and
+# always returnable.
+MIN_ZOOM = 0.005
+
+# Zoom below which local roads take the batched overview pass
+# instead of the detailed per-road pass (1.9.6 — see _draw_roads).
+LOCAL_FULL_DETAIL_ZOOM = 0.03
+
 # Pin radius in screen pixels for zone polygon vertex handles
 PIN_RADIUS = 12
 # Max screen-pixel distance from a zone boundary edge for click-to-add-pin
@@ -219,7 +236,14 @@ class MapCanvas(Gtk.DrawingArea):
         # cam_y / zoom names below are properties proxying to the camera
         # so outside code (e.g. app.py) that reads/writes them directly
         # keeps working unchanged.
-        self._camera = Camera2D(zoom=0.06, min_zoom=0.02, max_zoom=40.0)
+        self._camera = Camera2D(zoom=0.06, min_zoom=MIN_ZOOM,
+                                max_zoom=40.0)
+        # 1.9.6: the camera may be the SHARED suite copy, whose own
+        # floor is whatever that copy was built with; pin the floor
+        # the world-fit guarantee needs. Both camera copies (shared
+        # and the local fallback above) expose min_zoom as a plain
+        # attribute, so this works for either.
+        self._camera.min_zoom = MIN_ZOOM
         # Centre of the converted world (its origin is no longer 0,0).
         self.cam_x = WORLD_X0 + WORLD_W / 2
         self.cam_y = WORLD_Z0 + WORLD_H / 2
@@ -354,12 +378,33 @@ class MapCanvas(Gtk.DrawingArea):
         return self._camera.get_viewport(alloc.width, alloc.height)
 
     def fit_view(self):
-        """Zoom to fit the entire world."""
+        """
+        Zoom to fit the entire converted world (all seven zones).
+
+        1.9.6: the fit is GUARANTEED here, not merely delegated to
+        the camera: after asking the camera to fit, the resulting
+        viewport is checked against the world rect, and if a camera
+        copy's own zoom floor clamped the fit (leaving part of the
+        world outside the frame), the camera is set directly from
+        the world constants — the same math as fit_rect, applied
+        through the unclamped cam_x / cam_y / zoom properties.
+        """
         alloc = self.get_allocation()
         self._camera.fit_rect(alloc.width, alloc.height,
                               WORLD_X0, WORLD_Z0,
                               WORLD_X0 + WORLD_W, WORLD_Z0 + WORLD_H,
                               margin=1.05)
+        vx0, vz0, vx1, vz1 = self.get_viewport()
+        if (vx0 > WORLD_X0 or vz0 > WORLD_Z0
+                or vx1 < WORLD_X0 + WORLD_W
+                or vz1 < WORLD_Z0 + WORLD_H):
+            # The camera's fit left world outside the frame. Set
+            # the fit directly so the whole world is in view.
+            if alloc.width > 0 and alloc.height > 0:
+                self.zoom = min(alloc.width / (WORLD_W * 1.05),
+                                alloc.height / (WORLD_H * 1.05))
+                self.cam_x = WORLD_X0 + WORLD_W / 2
+                self.cam_y = WORLD_Z0 + WORLD_H / 2
         self.queue_draw()
 
     def zoom_at(self, sx, sy, factor):
@@ -669,12 +714,20 @@ class MapCanvas(Gtk.DrawingArea):
             by_cat.setdefault(normalize_category(cat), []).append(
                 (road, idx))
 
-        # Minimum screen width to bother drawing (perf optimization)
-        # At very low zoom, skip local roads entirely
-        draw_local = self.zoom > 0.03
-
+        # 1.9.6: local roads are drawn at EVERY zoom. Below
+        # LOCAL_FULL_DETAIL_ZOOM they take the batched overview
+        # pass (one Cairo path, one stroke — see
+        # _draw_roads_overview); at and above it they take the
+        # detailed per-road pass below, like every other category.
+        # Before 1.9.6 local roads were SKIPPED outright below
+        # zoom 0.03 ("perf optimization") — but the whole-world fit
+        # lands near 0.017, so the opening map hid 57,173 of the
+        # map's 65,982 roads (87%): every local street in Mableton,
+        # Union City, the Adamsville / South Fulton extensions and
+        # most of Riverdale simply wasn't there to see.
         for cat in reversed(CATEGORY_ORDER):
-            if cat == "local" and not draw_local:
+            if cat == "local" and self.zoom < LOCAL_FULL_DETAIL_ZOOM:
+                self._draw_roads_overview(cr, by_cat.get("local", []))
                 continue
             style = ROAD_STYLE[cat]
             r, g, b = style["color"]
@@ -730,6 +783,71 @@ class MapCanvas(Gtk.DrawingArea):
                 # Appearance). Thin concrete strips on the selected side(s).
                 if road.get("sidewalk_left") or road.get("sidewalk_right"):
                     self._draw_sidewalks(cr, pts, road, lw)
+
+    def _draw_roads_overview(self, cr, roads):
+        """
+        Fast overview pass for LOCAL roads at low zoom (1.9.6).
+
+        The local roads in the viewport are drawn as 1 px
+        hairlines — the same line width the detailed pass computes
+        at these zooms (max(1.0, width * zoom) = 1.0) — built into
+        ONE Cairo path (one subpath per road, so roads never
+        connect to each other) and stroked once. Two scale culls
+        keep that fast without changing the picture: points closer
+        together than ~0.75 px on screen are decimated (invisible
+        inside a 1 px hairline), and a road whose whole bounding
+        box is ~1 px is skipped (it cannot read as a road at this
+        zoom; it draws in full on zoom-in). Per-road extras (lane
+        paint, sidewalks, cul-de-sac bulbs) are likewise
+        sub-pixel here; they belong to the detailed pass, which
+        takes over as soon as the user zooms in past
+        LOCAL_FULL_DETAIL_ZOOM.
+        """
+        style = ROAD_STYLE["local"]
+        r, g, b = style["color"]
+        cr.set_source_rgb(r, g, b)
+        cr.set_line_width(1.0)
+        cr.set_line_cap(1)   # round caps, same as the detailed pass
+        cr.set_line_join(1)  # round joins
+        # Inlined world->screen transform (same math as
+        # Camera2D.world_to_screen): at overview zoom this pass
+        # walks every local road's points — hundreds of thousands —
+        # so the per-point method call is avoided on purpose.
+        alloc = self.get_allocation()
+        cam_x, cam_y, zoom = self.cam_x, self.cam_y, self.zoom
+        hw, hh = alloc.width / 2, alloc.height / 2
+        for road, _idx in roads:
+            pts = road.get("pts", [])
+            if len(pts) < 2:
+                continue
+            # Roads whose whole bounding box is ~1 screen pixel
+            # cannot read as roads at this zoom (a sub-pixel stub
+            # is at most a faint dot); they draw in full the moment
+            # the user zooms in. Skipping them is what keeps the
+            # overview fast — the network's SHAPE stays complete.
+            xs = [p[0] for p in pts]
+            zs = [p[1] for p in pts]
+            if (max(xs) - min(xs)) * zoom < 1.25 \
+                    and (max(zs) - min(zs)) * zoom < 1.25:
+                continue
+            # Decimation: consecutive points closer than ~0.75 px
+            # on screen are indistinguishable in a 1 px hairline;
+            # keep the first, the last, and any point that moved
+            # far enough from the last KEPT point.
+            first = True
+            kx = ky = None
+            last_i = len(pts) - 1
+            for i, (px, pz) in enumerate(pts):
+                sx = (px - cam_x) * zoom + hw
+                sy = (pz - cam_y) * zoom + hh
+                if first:
+                    cr.move_to(sx, sy)
+                    kx, ky = sx, sy
+                    first = False
+                elif i == last_i or abs(sx - kx) + abs(sy - ky) >= 0.75:
+                    cr.line_to(sx, sy)
+                    kx, ky = sx, sy
+        cr.stroke()
 
     def _draw_road_labels(self, cr, vx0, vz0, vx1, vz1):
         """
