@@ -63,6 +63,107 @@ PREVIEW_DIR = DATA_DIR / "previews"
 
 USER_AGENT = "adamsville-ui-editor-native"
 
+# ---------------------------------------------------------------------------
+# Suite shared download cache (v1.9.0 — Joshua's editor-data rules,
+# 2026-10-17: every editor list is downloaded from GitHub, never
+# baked in, and all editors share ONE download cache so a download
+# by one app serves the rest; standard: editors/SHARED-CACHE.md in
+# the repo). shared_cache.py is vendored next to this file,
+# byte-identical to the suite core copy the Building and Map
+# editors use. Downloads on open route through it (fetch_repo_bytes
+# below); PROOF downloads after a save deliberately do NOT — they
+# must come straight off GitHub (app.py's round trip calls
+# github_sync.fetch_file directly, untouched by this wiring).
+# ---------------------------------------------------------------------------
+try:
+    import shared_cache
+except ImportError:
+    # Cache missing (broken install): downloads still work, just
+    # uncached — fail open, never block the editor opening.
+    shared_cache = None
+
+_FETCHER = None            # the CachedFetcher, built on first use
+_UI_VERSION = None         # the game's ui_version, from the manifest
+_UI_VERSION_TRIED = False
+
+
+def _fetcher():
+    """
+    The app's download-on-open door: a shared_cache.CachedFetcher
+    over github_sync's transport (freshness by the standard's
+    blob-SHA probe — see _fetch_ui_version for why this app does
+    not register the ui-manifest's hashes), or a plain pass-through
+    with the same shape when the cache module is unavailable.
+    """
+    global _FETCHER
+    if _FETCHER is not None:
+        return _FETCHER
+    import github_sync
+    if shared_cache is not None:
+        _FETCHER = shared_cache.CachedFetcher(
+            github_sync.fetch_file,
+            # getattr: a transport without the metadata read still
+            # works — the fetcher then verifies by full download.
+            fetch_meta=getattr(github_sync, "fetch_file_meta", None))
+    else:
+        class _PlainFetcher:
+            """Cache-less fallback with the CachedFetcher shape."""
+            paths_served_stale = []
+
+            def register_manifest(self, raw):
+                pass
+
+            def fetch(self, repo, path, **kwargs):
+                return github_sync.fetch_file(repo, path)
+
+        _FETCHER = _PlainFetcher()
+    return _FETCHER
+
+
+def _fetch_ui_version():
+    """
+    Fetch the game's ui-manifest FRESH (direct Contents API read,
+    never the cache) once per process — only to learn the game's
+    ui_version for the Menus tab's currency line.
+
+    The manifest's per-file sha256 entries are deliberately NOT
+    registered with the cache fetcher. SHARED-CACHE.md's freshness
+    rule offers the blob-SHA probe as a first-class alternative,
+    and this app needs it: the UI Editor's own saves rewrite
+    ui_layout.json / menu_layout.json WITHOUT rewriting
+    ui-manifest.json (only full pushes update it), so the
+    manifest's hashes can lag the very files they describe — and a
+    registered stale hash would make the cache REFUSE the editor's
+    own freshly saved file on the next open (the harness's D7
+    reopen scenario caught exactly that). The probe reads each
+    file's own Contents metadata, which can never lag the file.
+    """
+    global _UI_VERSION, _UI_VERSION_TRIED
+    if _UI_VERSION_TRIED:
+        return
+    _UI_VERSION_TRIED = True
+    try:
+        import github_sync
+        raw, _err = github_sync.fetch_file(REPO, MANIFEST_PATH)
+        if raw:
+            _UI_VERSION = json.loads(
+                raw.decode("utf-8")).get("ui_version")
+    except Exception:
+        _UI_VERSION = None
+
+
+def served_stale_paths():
+    """
+    Repo paths this process served from the shared cache because a
+    fresh download/verification failed (offline). app.py surfaces
+    these in the status bar, per SHARED-CACHE.md rule 3 — a stale
+    serve is always shown, never silent.
+    """
+    try:
+        return list(_fetcher().paths_served_stale)
+    except Exception:
+        return []
+
 # Extensions we can show a thumbnail for
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
 # Extensions treated as readable text for the preview pane
@@ -398,18 +499,26 @@ def left_top_to_xy(el, left, top, vw, vh):
 
 def fetch_repo_bytes(repo_path):
     """
-    v1.7.7: fetch a file's CURRENT bytes from the game repo.
+    Fetch a file's CURRENT bytes from the game repo (download on
+    open — the Layout tab's ui_layout.json, the Menus tab's
+    menu_layout.json and the game's menu-bearing files).
 
-    Goes through the GitHub Contents API (via github_sync.fetch_file,
-    authenticated when the suite token is set). The API always serves
-    the repo's current blob, unlike raw.githubusercontent.com, whose
-    CDN cache can hand back a stale copy — the root cause of the
-    editor opening on an old layout (Joshua 2026-10-16).
+    v1.7.7: goes through the GitHub Contents API (authenticated
+    when the suite token is set), which always serves the repo's
+    current blob, unlike raw.githubusercontent.com, whose CDN
+    cache can hand back a stale copy.
+    v1.9.0: routed through the suite SHARED CACHE (see the section
+    above): when the shared cache already holds these exact bytes
+    (proven against the ui-manifest's sha256), they are served
+    locally with no download; when a download fails, the cache may
+    serve the previous copy and the path is recorded in
+    served_stale_paths() for the status bar. NOT used for proof
+    downloads after a save — those call github_sync.fetch_file
+    directly in app.py, by design.
     Returns the raw bytes, or None if the fetch failed.
     """
     try:
-        import github_sync
-        data, err = github_sync.fetch_file(REPO, repo_path)
+        data, err = _fetcher().fetch(REPO, repo_path)
         if data is not None:
             return data
         print(f"Repo fetch failed for {repo_path}: {err}")
@@ -884,6 +993,41 @@ def load_menu_layout():
     except Exception:
         pass
     return None
+
+
+# ---------------------------------------------------------------------------
+# The game's menu-bearing files (v1.9.0 — menu currency). game_menus.py
+# derives the game's CURRENT menus from these; the Menus tab downloads
+# them on open, through the shared cache like every download-on-open.
+# ---------------------------------------------------------------------------
+GAME_MENU_FILES = ("index.html", "goto.js", "hud_move.js")
+
+
+def download_game_menu_files():
+    """
+    Download the game's menu-bearing files (fresh-or-cache via
+    fetch_repo_bytes). Returns {name: text or None} — a file that
+    could not be fetched is None and its source is simply skipped
+    by the derivation (fail-open: the tab still shows
+    menu_layout.json exactly as downloaded).
+    """
+    out = {}
+    for name in GAME_MENU_FILES:
+        raw = fetch_repo_bytes(f"detailed/{name}")
+        if raw is None:
+            out[name] = None
+            continue
+        try:
+            out[name] = raw.decode("utf-8")
+        except Exception:
+            out[name] = None
+    return out
+
+
+def game_ui_version():
+    """The game's ui_version from the fresh ui-manifest, or None."""
+    _fetch_ui_version()
+    return _UI_VERSION
 
 
 def validate_menu_doc(doc):
