@@ -16,17 +16,26 @@
      7. Respects a manual override from the launcher (Auto/Full/High/Med/Low).
 
    QUALITY LEVELS (0=full → 3=minimum):
-     0 FULL:   NPC stream 150u, shadows all, traffic 40, drawDist as set
-     1 HIGH:   NPC stream 100u, shadows <75u only, traffic 40, drawDist as set
-     2 MEDIUM: NPC stream 60u, shadows off, traffic 24, drawDist forced short
-     3 LOW:    NPC stream 40u, shadows off, traffic 12, drawDist forced short
+     0 FULL:   NPC stream full, shadows all, traffic cap none, drawDist as set
+     1 HIGH:   NPC stream full, shadows <75u only, traffic 40, drawDist as set
+     2 MEDIUM: NPC stream full, shadows off, traffic 24, drawDist forced short
+     3 LOW:    NPC stream full, shadows off, traffic 12, drawDist forced short
+   ("NPC stream full" and the traffic caps are bounded by the half-mile
+   full-draw floor below: levels thin the world BEYOND 800u only. The old
+   npcDist numbers 150/100/60/40 still sit in the LEVELS table as each
+   level's *requested* distance, but applyLevel() clamps what it publishes
+   to >= FULL_DRAW_R, and npc_system.js floors its own radius too.)
 
    HOW THE OVERRIDES REACH THE SYSTEMS:
    This module publishes globals that each system checks per frame:
-     window.__perfNpcDist     — NPC streaming distance override (u)
+     window.__perfNpcDist     — NPC streaming distance override (u);
+                                never published below FULL_DRAW_R
      window.__perfShadowDist  — blob shadow max distance override (u, 0=off)
-     window.__perfTrafficCap  — traffic rendered slot cap override
-     window.__perfDrawDist    — draw distance override ('short'|null)
+     window.__perfTrafficCap  — traffic rendered cap; applies to the field
+                                BEYOND FULL_DRAW_R (inside-circle cars are
+                                exempt — see traffic_system.js assignSlots)
+     window.__perfDrawDist    — draw distance override ('short'|null);
+                                'short' far plane is 1500u, still > 800u
    npc_system.js, traffic_system.js, and blob_shadows.js each have a small
    hook (marked EXPERT #42) that prefers the override when present. Changes
    are smooth, not jarring: NPC/traffic streaming already fades slots in and
@@ -57,6 +66,28 @@ var STEP_UP_ABOVE   = 32;
 var STEP_UP_SECS    = 10;
 var ABSOLUTE_MIN_FPS= 25;
 var FPS_EMA_ALPHA   = 0.08;   /* smoothing: ~12 frames to converge */
+
+/* ---------------- Joshua's half-mile full-draw rule (2026-10-17) --------
+   FULL_DRAW_R = 800 units. The game world is true-scale (1 unit = 1 metre,
+   one mile = 1,609u), so 800u is HALF A MILE. Inside this radius around the
+   player, EVERYTHING is drawn in full — traffic, pedestrians, buildings —
+   automatically, at every quality level. Quality scaling may only thin
+   the world BEYOND the circle, never inside it.
+   This file is the canonical home of the constant: traffic_system.js and
+   npc_system.js read window.FULL_DRAW_R (each keeps an identical 800
+   fallback in case this module ever fails to load). applyLevel() clamps
+   every override it publishes against this floor, and the self-check at
+   the bottom of this file verifies no quality level can violate it.
+   If Joshua retunes the circle, this is the ONE number to change. */
+var FULL_DRAW_R = 800;
+window.FULL_DRAW_R = FULL_DRAW_R;
+
+/* Far planes of the draw-distance presets (index.html's table — kept here
+   only so the level self-check can prove a forced 'short' draw distance
+   still sees past the full-draw circle: 1500 > 800. If index.html's table
+   ever changes, change this mirror too; the check fails loudly either
+   way rather than silently breaking the rule). */
+var DRAWDIST_FAR = { short: 1500, medium: 2500, long: 5000 };
 
 /* ---------------- quality level definitions ---------------- */
 var LEVELS = [
@@ -145,8 +176,14 @@ function applyLevel(lv, force){
   var L = LEVELS[lv];
 
   /* Publish overrides for the hooked systems. null/undefined = "no override,
-     use your default" — so level 0 restores stock behavior exactly. */
-  window.__perfNpcDist     = (lv === 0) ? null : L.npcDist;
+     use your default" — so level 0 restores stock behavior exactly.
+     FULL-DRAW FLOOR (Joshua 2026-10-17): the published NPC distance is
+     clamped to >= FULL_DRAW_R — a quality level may ask for a smaller
+     stream radius, but what it GETS never shrinks drawing inside the
+     half-mile circle. (npc_system.js applies the same floor on its side,
+     so level 0's null is safe too.) The traffic cap is published as-is:
+     traffic_system.js applies it only beyond the circle. */
+  window.__perfNpcDist     = (lv === 0) ? null : Math.max(FULL_DRAW_R, L.npcDist);
   window.__perfShadowDist  = (lv === 0) ? null : L.shadowDist;
   window.__perfTrafficCap  = (lv === 0) ? null : L.trafficCap;
 
@@ -168,7 +205,8 @@ function applyLevel(lv, force){
 
   level = lv;
   updateIndicator();
-  if (!force) log('quality -> ' + L.label + ' (npcDist=' + L.npcDist +
+  if (!force) log('quality -> ' + L.label + ' (npcDist=' +
+    (lv === 0 ? 'stock' : Math.max(FULL_DRAW_R, L.npcDist)) +
     ' shadowDist=' + (L.shadowDist > 1e8 ? 'all' : L.shadowDist) +
     ' trafficCap=' + L.trafficCap + ')');
 }
@@ -234,8 +272,41 @@ function tick(){
   updateIndicator();
 }
 
+/* ---------------- full-draw floor self-check ----------------
+   Verifies the half-mile rule against EVERY quality level, once at boot:
+     (a) each level's effective NPC distance (published value after the
+         applyLevel clamp; level 0's null means npc_system's own floored
+         default) is >= FULL_DRAW_R;
+     (b) any draw distance a level can force still has a far plane beyond
+         FULL_DRAW_R, so the circle is never clipped by the camera.
+   A future level that violates the rule logs a loud error here instead
+   of silently shrinking the player's world. Returns true when clean. */
+function checkFullDrawFloor(){
+  var ok = true;
+  for (var lv = 0; lv < LEVELS.length; lv++){
+    var L = LEVELS[lv];
+    var effNpc = (lv === 0) ? FULL_DRAW_R : Math.max(FULL_DRAW_R, L.npcDist);
+    if (effNpc < FULL_DRAW_R){
+      ok = false;
+      try { console.error('[PerfBudget] FULL-DRAW VIOLATION: level ' + L.label +
+        ' npcDist ' + L.npcDist + ' < FULL_DRAW_R ' + FULL_DRAW_R); } catch(e){}
+    }
+    if (L.drawDist && !(DRAWDIST_FAR[L.drawDist] > FULL_DRAW_R)){
+      ok = false;
+      try { console.error('[PerfBudget] FULL-DRAW VIOLATION: level ' + L.label +
+        ' forces drawDist ' + L.drawDist + ' (far ' + DRAWDIST_FAR[L.drawDist] +
+        ') which does not clear FULL_DRAW_R ' + FULL_DRAW_R); } catch(e){}
+    }
+  }
+  if (ok) log('full-draw floor verified: all ' + LEVELS.length +
+    ' levels keep FULL_DRAW_R=' + FULL_DRAW_R + 'u fully drawn');
+  return ok;
+}
+
 /* ---------------- public API ---------------- */
 window.PerfBudget = {
+  fullDrawR: FULL_DRAW_R,
+  checkFullDrawFloor: checkFullDrawFloor,
   getLevel: function(){ return level; },
   getLevelLabel: function(){ return LEVELS[level].label; },
   getFps: function(){ return Math.round(emaFps); },
@@ -261,6 +332,9 @@ if (manualOverride !== null) {
   applyLevel(startLv, true);
   log('boot auto mode, start level ' + LEVELS[startLv].label);
 }
+
+/* Prove the half-mile floor holds for every level before the first frame. */
+try { checkFullDrawFloor(); } catch(e){}
 
 /* Register on the central tick registry ('render', priority 5 — before
    traffic's 10) per expert #14's rule. Falls back to a direct rAF hook if
