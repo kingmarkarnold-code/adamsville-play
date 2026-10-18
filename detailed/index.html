@@ -4350,7 +4350,12 @@ function groundY(x, z){ try{ if(typeof snapToGround==='function') return snapToG
    buried under the VISIBLE terrain (the "second layer"). terrainMeshY()
    bilinear-samples the same grid the mesh was built from, so roads can sit
    ON the rendered surface. Filled by buildTerrain above. */
-var TERR_H=null;
+var TERR_H;  /* v1.68 (2026-10-18): was `var TERR_H=null;` -- that statement
+   executes AFTER buildTerrain() above has already filled the grid during
+   this same eval, and it nulled the terrain heightfield for the entire
+   session (terrainMeshY() returned its -1e9 sentinel on every call, and
+   every "sit on the rendered mesh" consumer silently fell back). The
+   declaration alone keeps the binding; buildTerrain's fill survives. */
 function terrainMeshY(x,z){
   if(!TERR_H) return -1e9;
   /* v1.8 FIX: fz was (WZ-z)/40 — a Z-FLIP that sampled the MIRRORED terrain.
@@ -4365,7 +4370,21 @@ function terrainMeshY(x,z){
   var ix=Math.floor(fx), iz=Math.floor(fz), u=fx-ix, v=fz-iz;
   var i00=iz*_st+ix;
   var a=TERR_H[i00], b=TERR_H[i00+1], c=TERR_H[i00+_st], d=TERR_H[i00+_st+1];
-  return a+(b-a)*u+(c-a)*v+(a-b-c+d)*u*v;
+  /* v1.68 (2026-10-18, reality check): the terrain MESH is two triangles
+     per quad (PlaneGeometry splits each quad on one diagonal), NOT the
+     bilinear patch this function used to return. On twisted quads the
+     bilinear surface and the drawn triangles differ by up to |twist|/4
+     (measured on the shipped Adamsville grid: 3.2% of road samples sat
+     below the drawn grass, worst 0.063u -- grass bleeding through the
+     road surface in patches while the ride, which follows this
+     function, stayed smooth). Return the exact drawn surface instead:
+     with a=(0,0), b=(+x), c=(+z), d=(+x,+z), the mesh's triangles are
+     (a,c,b) and (c,d,b), split on the u+v=1 diagonal. Everything that
+     seats on "the rendered ground" through this function (road
+     ribbons, snap-to-ground, vehicle rest surfaces) now seats on the
+     surface that is actually drawn. */
+  if (u+v<=1) return a+(b-a)*u+(c-a)*v;
+  return d+(c-d)*(1-u)+(b-d)*(1-v);
 }
 function roadSitY(x,z){
   /* v1.8: SINGLE height source — the rendered mesh itself (the same surface
@@ -8516,6 +8535,13 @@ function checkPlayerVehicleDraw(){
         _pvDrawViolation=true;
         try{ console.error('[PlayerVehicleDraw] LAW VIOLATED: '+bad.join('; ')); }catch(e){}
         try{ if (typeof Report!=='undefined' && Report.noteError) Report.noteError('player-vehicle-draw', bad.join('; ')); }catch(e){}
+        /* v1.68 (2026-10-18): the same violation also goes to the crash
+           log (the Report panel alone never left the device while the
+           upload token was unconfigured). Once per episode, with the
+           camera mode and driving state attached. */
+        try{ if (window.SA_CRASH) SA_CRASH('error',{code:'player-vehicle-hidden',
+          message:bad.join('; ')+' (camMode='+(car?car.camMode:'?')+', driving='+(car?!!car.driving:false)+')',
+          where:'checkPlayerVehicleDraw'}); }catch(e){}
       }
       return false;
     }
@@ -12580,6 +12606,154 @@ try{
     });
   })();
 }catch(e){ /* some embedders disallow redefining — registry still works */ }
+
+
+/* ===== v1.68 WORLD SURFACE PUBLICATION (2026-10-18, reality-check fix) =====
+   Joshua's live report (2026-10-17 23:48 + 2026-10-18 00:06): NO traffic
+   anywhere; the unlocked zone still naked in 3D while the minimap draws
+   it; other cars drawn incompletely (lower chassis missing); his car
+   vanishing and reappearing in chase view while driving; the
+   driver's-seat camera placed UNDER the playing surface.
+   ONE root cause, proven in a real headless boot of these exact bytes:
+   this block runs via indirect eval under "use strict", so NONE of its
+   var/function declarations become globals. (The v1.64 fix published
+   window.keys / window.drive by hand after this trap killed driving
+   input; the animate registry above is the same kind of patch.) Every
+   deferred system that reads the world through global names got
+   undefined instead:
+     - traffic_system.js's boot gate (scene / roadDrawData / player)
+       was never satisfied, so traffic NEVER initialized, on any
+       device, however the launch options were set;
+     - zoneunlock.js playerPos() (car / player) always returned null,
+       so border crossings were never detected, transitionTo never
+       fired, and an unlocked zone's 3D world never built -- while the
+       minimap, which draws unlocked zones from its own data, drew it
+       fine;
+     - collision_material.js surfaceYAt() (terrainMeshY / heightAt /
+       roadSurfaceY all unreachable) fell through to a flat 0, so every
+       vehicle rested at y ~ 0.1 while the ground renders at its real
+       height: chassis buried in the grass, the driven car sinking out
+       of sight wherever the ground rose, and the driver's-seat camera
+       (which sits at car height + eye offset) placed under the
+       surface, looking at the undersides of buildings;
+     - airport.js (scene) and the school plazas (heightAt) and
+       basketball_court.js (scene / player / heightAt) disabled or
+       starved themselves the same way; 51 world names in all were
+       unreachable from outside this block.
+   THE FIX: publish the world's public surface as LIVE window bindings
+   -- get/set pairs that close over this block's own variables, the
+   same pattern as the animate registry directly above. Outside
+   readers now see the real, current values; code inside this block is
+   untouched and keeps using its local bindings directly. */
+(function __publishWorldSurface(){
+  function pub(name, get, set){
+    try{
+      Object.defineProperty(window, name, { configurable:true, enumerable:false, get:get, set:set });
+    }catch(e){ try{ console.error('[world] could not publish '+name+': '+(e&&e.message||e)); }catch(_){} }
+  }
+  pub('scene', function(){ return scene; }, function(v){ try{ scene=v; }catch(e){} });
+  pub('camera', function(){ return camera; }, function(v){ try{ camera=v; }catch(e){} });
+  pub('renderer', function(){ return renderer; }, function(v){ try{ renderer=v; }catch(e){} });
+  pub('player', function(){ return player; }, function(v){ try{ player=v; }catch(e){} });
+  pub('car', function(){ return car; }, function(v){ try{ car=v; }catch(e){} });
+  pub('cars', function(){ return cars; }, function(v){ try{ cars=v; }catch(e){} });
+  pub('roadDrawData', function(){ return roadDrawData; }, function(v){ try{ roadDrawData=v; }catch(e){} });
+  pub('heightAt', function(){ return heightAt; }, function(v){ try{ heightAt=v; }catch(e){} });
+  pub('terrainMeshY', function(){ return terrainMeshY; }, function(v){ try{ terrainMeshY=v; }catch(e){} });
+  pub('roadSurfaceY', function(){ return roadSurfaceY; }, function(v){ try{ roadSurfaceY=v; }catch(e){} });
+  pub('sidewalkSurfaceY', function(){ return sidewalkSurfaceY; }, function(v){ try{ sidewalkSurfaceY=v; }catch(e){} });
+  pub('roadSitY', function(){ return roadSitY; }, function(v){ try{ roadSitY=v; }catch(e){} });
+  pub('snapToGround', function(){ return snapToGround; }, function(v){ try{ snapToGround=v; }catch(e){} });
+  pub('groundRefY', function(){ return groundRefY; }, function(v){ try{ groundRefY=v; }catch(e){} });
+  pub('clampVehY', function(){ return clampVehY; }, function(v){ try{ clampVehY=v; }catch(e){} });
+  pub('onRoad', function(){ return onRoad; }, function(v){ try{ onRoad=v; }catch(e){} });
+  pub('inWater', function(){ return inWater; }, function(v){ try{ inWater=v; }catch(e){} });
+  pub('waterLevelAt', function(){ return waterLevelAt; }, function(v){ try{ waterLevelAt=v; }catch(e){} });
+  pub('waterDepthAt', function(){ return waterDepthAt; }, function(v){ try{ waterDepthAt=v; }catch(e){} });
+  pub('bldgGrid', function(){ return bldgGrid; }, function(v){ try{ bldgGrid=v; }catch(e){} });
+  pub('propGrid', function(){ return propGrid; }, function(v){ try{ propGrid=v; }catch(e){} });
+  pub('colliders', function(){ return colliders; }, function(v){ try{ colliders=v; }catch(e){} });
+  pub('addCollider', function(){ return addCollider; }, function(v){ try{ addCollider=v; }catch(e){} });
+  pub('removeCollider', function(){ return removeCollider; }, function(v){ try{ removeCollider=v; }catch(e){} });
+  pub('gridSegsNear', function(){ return gridSegsNear; }, function(v){ try{ gridSegsNear=v; }catch(e){} });
+  pub('Report', function(){ return Report; }, function(v){ try{ Report=v; }catch(e){} });
+  pub('HOME', function(){ return HOME; }, function(v){ try{ HOME=v; }catch(e){} });
+  pub('heroHouse', function(){ return heroHouse; }, function(v){ try{ heroHouse=v; }catch(e){} });
+  pub('PLACED_HOUSES', function(){ return PLACED_HOUSES; }, function(v){ try{ PLACED_HOUSES=v; }catch(e){} });
+  pub('LANDMARKS', function(){ return LANDMARKS; }, function(v){ try{ LANDMARKS=v; }catch(e){} });
+  pub('WATER', function(){ return WATER; }, function(v){ try{ WATER=v; }catch(e){} });
+  pub('VEHICLE_TYPES', function(){ return VEHICLE_TYPES; }, function(v){ try{ VEHICLE_TYPES=v; }catch(e){} });
+  pub('ASSETVER', function(){ return ASSETVER; }, function(v){ try{ ASSETVER=v; }catch(e){} });
+  pub('MPH_PER_US', function(){ return MPH_PER_US; }, function(v){ try{ MPH_PER_US=v; }catch(e){} });
+  pub('SINK_DEPTH', function(){ return SINK_DEPTH; }, function(v){ try{ SINK_DEPTH=v; }catch(e){} });
+  pub('__regSidewalk', function(){ return __regSidewalk; }, function(v){ try{ __regSidewalk=v; }catch(e){} });
+  pub('bldgGroundY', function(){ return bldgGroundY; }, function(v){ try{ bldgGroundY=v; }catch(e){} });
+  pub('camYaw', function(){ return camYaw; }, function(v){ try{ camYaw=v; }catch(e){} });
+  pub('distToRoadEdge', function(){ return distToRoadEdge; }, function(v){ try{ distToRoadEdge=v; }catch(e){} });
+  pub('ensureRoadSurf', function(){ return ensureRoadSurf; }, function(v){ try{ ensureRoadSurf=v; }catch(e){} });
+  pub('fullMapOpen', function(){ return fullMapOpen; }, function(v){ try{ fullMapOpen=v; }catch(e){} });
+  pub('hemi', function(){ return hemi; }, function(v){ try{ hemi=v; }catch(e){} });
+  pub('sun', function(){ return sun; }, function(v){ try{ sun=v; }catch(e){} });
+  pub('hideNpcDialog', function(){ return hideNpcDialog; }, function(v){ try{ hideNpcDialog=v; }catch(e){} });
+  pub('showNpcDialog', function(){ return showNpcDialog; }, function(v){ try{ showNpcDialog=v; }catch(e){} });
+  pub('labelAt', function(){ return labelAt; }, function(v){ try{ labelAt=v; }catch(e){} });
+  pub('loadSlot', function(){ return loadSlot; }, function(v){ try{ loadSlot=v; }catch(e){} });
+  pub('saveSlot', function(){ return saveSlot; }, function(v){ try{ saveSlot=v; }catch(e){} });
+  pub('look', function(){ return look; }, function(v){ try{ look=v; }catch(e){} });
+  pub('ribbonGeom', function(){ return ribbonGeom; }, function(v){ try{ ribbonGeom=v; }catch(e){} });
+  pub('setDrivingUI', function(){ return setDrivingUI; }, function(v){ try{ setDrivingUI=v; }catch(e){} });
+  pub('showToast', function(){ return showToast; }, function(v){ try{ showToast=v; }catch(e){} });
+  pub('xz', function(){ return xz; }, function(v){ try{ xz=v; }catch(e){} });
+  pub('__tryStartGame', function(){ return __tryStartGame; }, function(v){ try{ __tryStartGame=v; }catch(e){} });
+  pub('mulberry32', function(){ return mulberry32; }, function(v){ try{ mulberry32=v; }catch(e){} });
+  pub('box', function(){ return box; }, function(v){ try{ box=v; }catch(e){} });
+  pub('addSegCollider', function(){ return addSegCollider; }, function(v){ try{ addSegCollider=v; }catch(e){} });
+  pub('groundY', function(){ return groundY; }, function(v){ try{ groundY=v; }catch(e){} });
+  pub('addBldgCollider', function(){ return addBldgCollider; }, function(v){ try{ addBldgCollider=v; }catch(e){} });
+  pub('placeStruct', function(){ return placeStruct; }, function(v){ try{ placeStruct=v; }catch(e){} });
+  pub('resolveCollision', function(){ return resolveCollision; }, function(v){ try{ resolveCollision=v; }catch(e){} });
+  window.__worldPublished = 61;
+})();
+
+/* ===== v1.68 BOOT SELF-REPORT (2026-10-18, Joshua's failure philosophy) =====
+   Once per session, after the game has started and settled, file ONE
+   info entry through the crash log stating what THIS device actually
+   got: the zone loaded, the launch-option traffic flag, how many
+   render ticks are registered, whether traffic exists and how many
+   cars it spawned, the perf level, and whether the world surface
+   above was published. A second entry 30 s later reports the traffic
+   fleet again (it can only spawn after the world exists). If any of
+   tonight's failures ever recur, the facts arrive on the record
+   instead of being discovered by the player. Entries queue locally
+   in the crash log exactly like errors do. */
+(function __bootSelfReport(){
+  function facts(){
+    var o = {};
+    try{ o.ui = window.__UIVER || null; }catch(e){}
+    try{ o.zone = (window.ZONELOADER && ZONELOADER.currentZone) || null; }catch(e){}
+    try{ o.optTraffic = (window.__launchOpts && typeof window.__launchOpts.traffic !== 'undefined') ? window.__launchOpts.traffic : null; }catch(e){}
+    try{ o.worldPublished = window.__worldPublished || 0; }catch(e){}
+    try{ o.simRenderTicks = (window.Sim && Sim.count) ? Sim.count('render') : -1; }catch(e){}
+    try{ o.traffic = (typeof window.TRAFFIC !== 'undefined' && window.TRAFFIC) ? { cars:TRAFFIC.cars.length, rendered:TRAFFIC.rendered } : null; }catch(e){}
+    try{ o.perfLevel = (window.PerfBudget && PerfBudget.getLevel) ? PerfBudget.getLevel() : null; }catch(e){}
+    return o;
+  }
+  function file(code){
+    try{ if (window.SA_CRASH) SA_CRASH('info', { code:code, message:JSON.stringify(facts()), where:'boot self-report' }); }catch(e){}
+  }
+  var filed1 = false;
+  var iv = setInterval(function(){
+    try{
+      if (!filed1 && window.__gameStarted){
+        filed1 = true;
+        setTimeout(function(){ file('boot-self-report'); }, 6000);
+        setTimeout(function(){ file('traffic-followup'); }, 36000);
+        clearInterval(iv);
+      }
+    }catch(e){}
+  }, 2000);
+  setTimeout(function(){ try{ clearInterval(iv); }catch(e){} }, 300000);
+})();
 
 window.addEventListener('resize', function(){
   camera.aspect=window.innerWidth/window.innerHeight;
