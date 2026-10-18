@@ -19,12 +19,18 @@ this stock, never a private copy baked into an app.
   `editors/map-editor/blender/assets/`, where the library sat inside
   one editor's drawer. Same-named models repeat across categories on
   purpose (a dining table and a school table are different stock).*
-- **`vocabularies/`** — *designated, not yet populated.* The Building
-  Editor's pick-lists (floor-plan templates, fence styles, floor
-  types, driveway materials, garage sides, house styles, decoration
-  types) currently live inside the app's code. When they move out —
-  a Building Editor change, made with the app, not by this shelf —
-  their data files land here so any editor can read the same lists.
+- **`vocabularies/`** — *populated 2026-10-17.* The Building Editor's
+  pick-lists (floor-plan templates, fence styles, floor types,
+  driveway materials, garage sides, house styles, decoration types,
+  plus the sibling lists from the same source block — building types,
+  wall materials, roof textures, window/door types, parking types)
+  were copied **verbatim** out of the app's `data.py` into one JSON
+  per vocabulary here (13 files, 76 values, verified order-exact
+  against the live app constants). These files are the canonical
+  lists from now on. The shipped app still reads its baked-in copies;
+  the Building Editor rebuild is what makes the app download these
+  instead — until then, edit a list HERE and mirror it into the app
+  only through that rebuild, never by hand in both places.
 
 ## Still on their home shelves (for now)
 
