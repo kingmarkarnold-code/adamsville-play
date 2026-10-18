@@ -196,9 +196,9 @@
     },
     {
       "name": "mapdelivery.js",
-      "size": 29229,
-      "sha256": "0da1001c523e924f5c80d436a13e55cf1a6851cfa6608ed11dabf99bc81fab65",
-      "hash": "0da1001c523e924f5c80d436a13e55cf1a6851cfa6608ed11dabf99bc81fab65"
+      "size": 36883,
+      "sha256": "8338a587d20a549988cf0450fc110c71dc4e290979fee2e19068aea3d29e278c",
+      "hash": "8338a587d20a549988cf0450fc110c71dc4e290979fee2e19068aea3d29e278c"
     },
     {
       "name": "marriott.js",
@@ -524,6 +524,6 @@
       "sha256": "74d2e3da9d5db086f3724cec9d5d42c2ba52e8561f2223fd467601d1ba8500b8"
     }
   ],
-  "ui_version": "2026.10.18.4",
+  "ui_version": "2026.10.18.5",
   "version": "2026.10.17.9"
 }

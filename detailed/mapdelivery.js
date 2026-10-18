@@ -78,6 +78,18 @@
    manifest on record before warming the store (downloadOne()'s own
    discipline), so unverified bytes can never be served forever.
 
+   2026-10-18 FRESHNESS DRIFT CHECK (Joshua: a road section deleted in
+   the Map Editor, saved and pushed, was still in his game): editor
+   saves change zone files WITHOUT moving map_version and without
+   regenerating this manifest, so the version fast path cannot see
+   them — but Cache Storage would serve the replaced bytes forever.
+   The equal-version path therefore runs driftCheck() before declaring
+   the map current: HEAD probes (headers only) on the fetch-covered
+   files actually sitting in the local store, a size mismatch against
+   the local record re-downloads just that file and repairs the
+   record's entry (size + the fresh bytes' real sha256). A clean map
+   still downloads zero files. Details at driftCheck() below.
+
    TESTABILITY: the factory (create) takes its environment (fetch,
    caches, storage, bridge, clock, sha) by injection, and the pure
    diffManifests() is exported — the Node verification harness drives
@@ -412,11 +424,29 @@ function create(env){
       var remoteVer=manifestVersion(remoteM);
       if (!remoteVer) throw new Error('published manifest has no map_version');
       if (remoteVer===localVer){
-        /* Fast path: same stamp — but still persist the record if it
-           came from the hint, so later launches skip the hint fetch. */
+        /* Same stamp — persist the record if it came from the hint, so
+           later launches skip the hint fetch. */
         if (!readStoredManifest()) writeStoredManifest(remoteM, remote.rawText);
-        log('map is current (v'+localVer+') — zero downloads.');
-        return {status:'current', from:localVer, to:remoteVer, downloads:[], uncovered:[]};
+        if (bridge){
+          /* Bridge mode: the native side runs its own sync at app
+             open — the drift check below is the browser store's. */
+          log('map is current (v'+localVer+') — zero downloads.');
+          return {status:'current', from:localVer, to:remoteVer, downloads:[], uncovered:[]};
+        }
+        /* Same stamp no longer proves same map (2026-10-18 drift fix):
+           an editor save changes zone files without moving the stamp,
+           so before declaring the map current, probe the stored files
+           against the server's own headers and repair any that drifted
+           (see driftCheck). Costs a few header-only responses; a clean
+           map still downloads zero files. */
+        return driftCheck(localM).then(function(drift){
+          if (drift.downloads.length){
+            return {status:'updated', drift:true, from:localVer, to:remoteVer,
+                    downloads:drift.downloads, uncovered:[], bytes:drift.bytes};
+          }
+          log('map is current (v'+localVer+') — zero downloads.');
+          return {status:'current', from:localVer, to:remoteVer, downloads:[], uncovered:[]};
+        });
       }
       var changed=diffManifests(localM, remoteM);
       var covered=[], uncovered=[];
@@ -464,6 +494,132 @@ function create(env){
       log('check did not complete ('+msg+') — running local copy.');
       return {status: /HTTP|fetch|bridge manifest|no fetch/.test(msg) ? 'offline' : 'failed',
               from:localVer, to:'', downloads:[], uncovered:[], error:msg};
+    });
+  }
+
+  /* ----- FRESHNESS DRIFT CHECK (2026-10-18 — Joshua's report: a road
+     section he deleted in the Map Editor, saved and pushed, was still
+     in his game) -----
+     Editor saves push changed zone files straight to the repo: they do
+     NOT move map_version and do NOT regenerate map-manifest.json (the
+     per-file hash/size entries keep describing the pre-save bytes). So
+     the version fast path in runStartupCheck() cannot see those saves,
+     while Cache Storage goes on serving the replaced bytes forever.
+     The server's own headers are the ground truth: GitHub Pages
+     answers a HEAD request with the file's current Content-Length.
+     This check probes ONLY the fetch-covered files that are actually
+     sitting in the local store — the only bytes serveText() could ever
+     serve stale — so a normal launch costs a few header-only responses
+     and zero file downloads.
+     A size mismatch means the server bytes changed under an unmoved
+     stamp: re-download just that file (the manifest's recorded hash
+     describes the OLD bytes in exactly this situation, so it is
+     stripped from the download entry — integrity is re-established by
+     recording the fresh bytes' real sha256 in the local record) and
+     repair the local manifest record (size + sha256), so the record
+     describes reality again and remember()'s integrity check accepts
+     the new bytes from then on.
+     FAIL-OPEN, like everything in this module: any probe or download
+     error leaves the local copy untouched and the game runs it. */
+  function headSize(url){
+    if (!fetchFn) return Promise.resolve(null);
+    return fetchFn(url, {method:'HEAD', cache:'no-store'}).then(function(r){
+      if (!r || !r.ok) return null;
+      var cl=null;
+      try{
+        if (r.headers && typeof r.headers.get==='function'){
+          var v=r.headers.get('content-length');
+          if (v!=null){ var n=parseInt(v, 10); if (isFinite(n) && n>=0) cl=n; }
+        }
+      }catch(e){}
+      return cl;
+    }).catch(function(){ return null; });
+  }
+
+  /* Is this file's bytes sitting in the local store right now? */
+  function cacheHas(name){
+    return cacheOpen().then(function(cache){
+      if (!cache) return false;
+      return cache.match(PUBLISHED_BASE+name).then(function(resp){ return !!resp; });
+    }).catch(function(){ return false; });
+  }
+
+  /* Patch one entry of the local manifest record to describe the bytes
+     actually stored (size + real sha256; hash fields removed when no
+     sha could be computed — never store a hash we did not verify).
+     Persists after each repair so partial progress is kept. */
+  function repairRecordEntry(record, name, size, sha){
+    if (!record || !record.files) return;
+    for (var i=0;i<record.files.length;i++){
+      var e=record.files[i];
+      if (e && e.name===name){
+        e.size=size;
+        if (sha){ e.sha256=sha; delete e.hash; }
+        else { delete e.sha256; delete e.hash; }
+        break;
+      }
+    }
+    writeStoredManifest(record);
+  }
+
+  function driftCheck(baseM){
+    var result={downloads:[], bytes:0};
+    if (!fetchFn || !cachesObj) return Promise.resolve(result);
+    var files=(baseM && baseM.files) || [];
+    var candidates=[];
+    for (var i=0;i<files.length;i++){
+      var e=files[i];
+      if (e && e.name && isFetchCovered(e.name) && typeof e.size==='number') candidates.push(e);
+    }
+    if (!candidates.length) return Promise.resolve(result);
+    /* Presence first (local, free), then HEAD probes (headers only). */
+    return Promise.all(candidates.map(function(e){
+      return cacheHas(e.name).then(function(has){ return has ? e : null; });
+    })).then(function(present){
+      var drifted=[];
+      var probes=[];
+      present.forEach(function(e){
+        if (!e) return;
+        probes.push(headSize(entryUrl(e)).then(function(size){
+          if (size!=null && size!==e.size) drifted.push({entry:e, serverSize:size});
+        }));
+      });
+      return Promise.all(probes).then(function(){ return drifted; });
+    }).then(function(drifted){
+      if (!drifted.length) return result;
+      /* The working record starts from the stored manifest (the
+         client's true local state); absent one, from the baseline the
+         caller passed. Each successful repair is persisted at once. */
+      var working=readStoredManifest();
+      if (!working){
+        try{ working=JSON.parse(JSON.stringify(baseM)); }catch(e){ working=null; }
+      }
+      var chain=Promise.resolve();
+      drifted.forEach(function(d){
+        chain=chain.then(function(){
+          /* Hash stripped on purpose (see the header note): the
+             recorded hash describes the replaced bytes and would make
+             downloadOne() reject the fresh ones. */
+          var dl={name:d.entry.name, url:entryUrl(d.entry), size:d.serverSize};
+          return downloadOne(dl, null).then(function(){
+            return cacheGetText(d.entry.name);
+          }).then(function(text){
+            if (typeof text!=='string') throw new Error('drift readback failed for '+d.entry.name);
+            result.downloads.push(d.entry.name);
+            result.bytes+=text.length;
+            var shaP=sha256Hex ? Promise.resolve(sha256Hex(text)).catch(function(){ return ''; })
+                                : Promise.resolve('');
+            return shaP.then(function(sha){
+              repairRecordEntry(working, d.entry.name, text.length, sha || '');
+              log('drift repaired '+d.entry.name+': server had '+d.serverSize+
+                  ' bytes, local record said '+d.entry.size+' — fresh copy stored.');
+            });
+          }).catch(function(err){
+            log('drift repair skipped '+d.entry.name+' ('+String((err && err.message) || err)+') — local copy kept.');
+          });
+        });
+      });
+      return chain.then(function(){ return result; });
     });
   }
 
@@ -537,6 +693,7 @@ function create(env){
     runStartupCheck: runStartupCheck,
     serveText: serveText,
     remember: remember,
+    driftCheck: driftCheck,
     diffManifests: diffManifests,
     isFetchCovered: isFetchCovered,
     readStoredManifest: readStoredManifest,
