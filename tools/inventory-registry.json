@@ -88,6 +88,16 @@
   },
   {
    "class": "tooling",
+   "pattern": "tools/decision-deck/*.py",
+   "reason": "Decision Deck queue generators (build-road-review-queue.py): they build deck queues out of the game's own zone data. The deck page itself is referenced code; the generators are the tooling that feeds it."
+  },
+  {
+   "class": "stock",
+   "pattern": "tools/decision-deck/queues/*.json",
+   "reason": "Decision Deck queue data files, generated from the game's zone data by the queue generators and loaded by the deck at runtime (the Adamsville road-review queue; the demo-meanings queue that proves gesture meanings come from queue data). Queue data is stock the deck reads — never baked into the deck's code."
+  },
+  {
+   "class": "tooling",
    "pattern": "viewers/*",
    "reason": "Standalone map viewer apps (web / Android / Linux), source of record. They consume the game's published data; nothing in the game references them."
   },
