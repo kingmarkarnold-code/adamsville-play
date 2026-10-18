@@ -57,6 +57,25 @@ try:
 except Exception:
     shared_cache = None
     _SHARED_CACHE_AVAILABLE = False
+# v2.0.0: the pick-list vocabularies from the shared stock shelf
+# (vocab.py). Soft import like the others: if it fails, the design
+# tab shows its "list unavailable" state rather than the editor
+# failing to open.
+try:
+    import vocab as vocab_mod  # noqa: E402
+    _VOCAB_AVAILABLE = True
+except Exception:
+    vocab_mod = None
+    _VOCAB_AVAILABLE = False
+# v2.0.0: Draw for Mollie (suite_draw.py, the Python suite-core
+# drawing citizen). Soft import: a broken draw module costs the
+# Draw tab, never the editor.
+try:
+    import suite_draw  # noqa: E402
+    _DRAW_AVAILABLE = True
+except Exception:
+    suite_draw = None
+    _DRAW_AVAILABLE = False
 from data import (BUILDING_TYPES, WALL_MATERIALS, ROOF_TEXTURES,
                   WINDOW_TYPES, DOOR_TYPES, FLOOR_PLAN_TEMPLATES,
                   HOUSE_STYLES, DRIVEWAY_MATERIALS, GARAGE_SIDES,
@@ -70,7 +89,7 @@ from subdivisioncanvas import SubdivisionCanvas
 
 # App version shown in the Help -> About dialog (bump with each release).
 # Joshua 2026-10-11: version number must be prominent in About.
-APP_VERSION = "1.7.3"
+APP_VERSION = "2.0.0"
 
 # ---------------------------------------------------------------------------
 # THE EDITOR UI RULE (Joshua, 2026-10-16 — standing suite principle):
@@ -110,6 +129,36 @@ UPDATE_SLUG = "building-editor"
 # name onto the game's numeric type code, so a legacy building's
 # category is that code's label (zonedata.CODE_LABELS). An unknown
 # type falls back to code 3 ("Other / special").
+
+def _pick_list(window, const_name, current=None):
+    """
+    The options for one pick-list control (2.0.0, spec §6): the
+    stock-shelf vocabulary the window downloaded (or its download
+    cache) when available; otherwise a list holding ONLY the
+    building's current value (so what the building holds always
+    displays truthfully), or an empty list when there is no current
+    value. A baked-in substitute list is NEVER offered: an
+    unavailable list is a stated state (the tab shows its
+    "list unavailable" note), not a silent fallback.
+    """
+    voc = getattr(window, "vocabularies", None)
+    vals = voc.values(const_name) if voc is not None else None
+    if vals:
+        opts = list(vals)
+        if current is not None and current not in opts:
+            opts.append(current)
+        return opts
+    return [current] if current is not None else []
+
+
+def _pick_missing(window, const_names):
+    """The subset of const_names with no shelf list available —
+    drives the design tab's 'list unavailable' note."""
+    voc = getattr(window, "vocabularies", None)
+    if voc is None:
+        return list(const_names)
+    return [n for n in const_names if voc.values(n) is None]
+
 
 def legacy_building_category_id(building):
     """Category id for one legacy building dict, as a string:
@@ -191,6 +240,19 @@ class AssetEditorWindow(Gtk.Window):
         # makes goes through the suite shared cache (see
         # shared_cache.py and editors/SHARED-CACHE.md).
         self._fetcher = self._build_fetcher()
+        # 2.0.0: bind the store's lazy transport — detail chunks,
+        # roads and materialisation fetch through the same
+        # shared-cache door as every other download.
+        if self.zone_store is not None:
+            self.zone_store.bind_transport(
+                self._fetcher.fetch, self._fetcher.fetch_progress,
+                self._dl_progress)
+        # 2.0.0: the pick-list vocabularies (vocab.py) — loaded
+        # from the stock shelf in _load_lists_on_open; the design
+        # tab reads them through self.vocabularies.
+        self.vocabularies = vocab_mod.Vocabularies(data.DATA_DIR) \
+            if _VOCAB_AVAILABLE else None
+        self.draw_tab = None
         # In-flight zone loads: zone -> [done callbacks].
         self._zone_loads = {}
         self._index_loads = {}
@@ -258,6 +320,23 @@ class AssetEditorWindow(Gtk.Window):
                 traceback.print_exc()
                 self._set_status(
                     f"Gas Station Review tab failed to open: {e}")
+
+        # --- Draw for Mollie (2.0.0) ---
+        # The suite's drawing channel, hosted as its own tab (the
+        # desktop adoption contract: same surface citizen, same
+        # drawings/ folder, same sidecar shape). Guarded like the
+        # gas tab: a broken draw module costs this tab only.
+        if _DRAW_AVAILABLE:
+            try:
+                self.draw_tab = DrawTab(self)
+                self.notebook.append_page(
+                    self.draw_tab,
+                    Gtk.Label(label="Draw for Mollie"))
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                self._set_status(
+                    f"Draw for Mollie tab failed to open: {e}")
 
         # --- Window geometry: restore, then track changes ---
         self._restore_geometry()
@@ -568,6 +647,23 @@ class AssetEditorWindow(Gtk.Window):
             if err:
                 notes.append(err)
 
+            # 2.0.0: the pick-list vocabularies, from the stock
+            # shelf through the same shared-cache door. A list that
+            # cannot be downloaded (and has no cache copy) is
+            # reported ONCE here; the design tab shows its
+            # "list unavailable" state for it.
+            if self.vocabularies is not None:
+                try:
+                    self.vocabularies.load(fetcher.fetch)
+                    missing = self.vocabularies.unavailable()
+                    if missing:
+                        notes.append(
+                            "These pick-lists are unavailable "
+                            "(not downloaded yet): "
+                            + ", ".join(sorted(missing)))
+                except Exception as e:
+                    notes.append(f"Pick-lists failed to load: {e}")
+
             err = store.ensure_index(
                 "adamsville", fetcher.fetch, fetcher.fetch_progress,
                 progress=self._dl_progress)
@@ -637,12 +733,16 @@ class AssetEditorWindow(Gtk.Window):
 
     def ensure_zone_detail(self, zone, done=None):
         """
-        Make sure one zone's FULL building records are in memory —
-        the selection-triggered download of the load-on-demand
-        design. Shows MB progress; on success the previously loaded
-        clean zones are unloaded (a zone with unsaved edits is
-        NEVER unloaded) and the freed memory is returned. done(ok)
-        runs on the GTK thread.
+        Make sure one zone's SPINE is in memory — the
+        selection-triggered load of the 2.0.0 snapshot design (the
+        method keeps its 1.7.2 name; the tabs call it before
+        showing a building). Only the spine downloads here (boxes
+        + zone info); the building's own detail chunk and the
+        roads arrive with the snapshot itself, through the store's
+        bound transport. Shows MB progress for the spine files; on
+        success the previously loaded clean zones are unloaded (a
+        zone with unsaved edits is NEVER unloaded) and the freed
+        memory is returned. done(ok) runs on the GTK thread.
         """
         store = self.zone_store
         if store is None or zone in store.zones:
@@ -657,7 +757,7 @@ class AssetEditorWindow(Gtk.Window):
         import threading
 
         def worker():
-            err = store.ensure_zone(
+            err = store.ensure_spine(
                 zone, self._fetcher.fetch,
                 self._fetcher.fetch_progress,
                 progress=self._dl_progress)
@@ -878,6 +978,17 @@ class AssetEditorWindow(Gtk.Window):
                     "Station edits were NOT pushed (an earlier "
                     "part of the save failed first).")
                 ok_all = False
+        # Issue B fix (prepared in the held 1.7.3 tree, SHIPPED in
+        # 2.0.0): the zone leg's "Nothing to save — no changes."
+        # describes the ZONE files only. When a later leg (design
+        # set / stations) DID save, leading the status with that
+        # line told Joshua his design edit had not saved — when it
+        # had: his Suburban House wall colour reached GitHub in
+        # commit 65bbf45971 (2026-10-17 18:24 EDT) from the very
+        # push whose status opened with "Nothing to save". Scope
+        # the line whenever it is not the whole story.
+        if len(msgs) > 1 and msgs[0] == "Nothing to save — no changes.":
+            msgs[0] = "Zones: no changes."
         if not msgs:
             msgs.append("Nothing to save — no changes.")
         return ok_all, " ".join(msgs), proof
@@ -1517,6 +1628,7 @@ class ZoneInspectorPanel(Gtk.Box):
         self.station_parts = []
         # shared view state:
         self._roads_near = []       # [(name, pts)] backdrop, cached
+        self.neighbours = []        # snapshot context (2.0.0)
         self._view = None           # last draw's transform (inverse)
         self._drag = None
         self._cur_values = None     # {x, z, w, d, h} being viewed
@@ -1689,11 +1801,17 @@ class ZoneInspectorPanel(Gtk.Box):
 
     # -- showing a building ---------------------------------------------
 
-    def show_building(self, tab, zd, index, flagged_entry):
+    def show_building(self, tab, zd, index, flagged_entry,
+                      neighbours=None):
         """Point the panel at zone building `index` of ZoneData
         `zd`. The front is derived from the roads near the building
         (parsed transiently, then dropped); the camera opens at eye
-        level in front of the front wall, framed close."""
+        level in front of the front wall, framed close.
+
+        2.0.0: `neighbours` is the snapshot's read-only context
+        (the buildings around the subject, from
+        GameStore.open_snapshot) — drawn muted around the subject,
+        never edited through this view."""
         self.mode = "building"
         self.tab = tab
         self.zd = zd
@@ -1701,6 +1819,7 @@ class ZoneInspectorPanel(Gtk.Box):
         self.index = index
         self.box = zd.boxes[index]
         self.detail = zd.details[index]
+        self.neighbours = neighbours or []
         self.flagged_entry = flagged_entry
         self.station = None
         self.station_edit = None
@@ -1951,6 +2070,12 @@ class ZoneInspectorPanel(Gtk.Box):
                 and self.index < len(self.zd.boxes):
             self.box = self.zd.boxes[self.index]
             self.detail = self.zd.details[self.index]
+            # 2.0.0: the snapshot's context follows the edit too.
+            try:
+                self.neighbours = self.zd.neighbours_within(
+                    self.index)
+            except Exception:
+                self.neighbours = []
             roads = self.zd.transient_roads()
             self.front_info = zonedata.building_front(
                 self.zd, self.index, self.flagged_entry, roads=roads)
@@ -2103,6 +2228,54 @@ class ZoneInspectorPanel(Gtk.Box):
                     ctx.move_to(sx + 6, sy - 6)
                     ctx.show_text(front_name)
 
+    def _draw_neighbours(self, ctx, to_screen, cx, cz):
+        """The snapshot's context buildings (2.0.0): the subject's
+        neighbours drawn MUTED around it — plain extruded footprints
+        in a flat blue-grey, no front marking, no labels — so the
+        subject is always seen in its place, never alone on a void
+        (Joshua's snapshot rule). Read-only: nothing here is
+        pickable or editable. Painter order: far centres first,
+        matching _draw_building's face sort; the subject draws over
+        them afterwards."""
+        items = []
+        for nb in self.neighbours or []:
+            ring = nb.get("ring") or []
+            if len(ring) < 3:
+                continue
+            ncx, ncz = zonedata.ring_centroid(ring)
+            depth = self._project(ncx - cx, ncz - cz, 0,
+                                  self.azimuth, self.elevation)[2]
+            items.append((depth, nb))
+        items.sort(key=lambda t: t[0])
+        for _depth, nb in items:
+            ring = nb["ring"]
+            hgt = nb.get("height_m") or nb["box"][4]
+            n = len(ring)
+            ctx.set_source_rgb(0.62, 0.66, 0.72)
+            for i in range(n):
+                a = ring[i]
+                b = ring[(i + 1) % n]
+                quad = [(a[0], a[1], 0), (b[0], b[1], 0),
+                        (b[0], b[1], hgt), (a[0], a[1], hgt)]
+                for k, (px, pz, ph) in enumerate(quad):
+                    sx, sy = to_screen(px - cx, pz - cz, ph)
+                    if k == 0:
+                        ctx.move_to(sx, sy)
+                    else:
+                        ctx.line_to(sx, sy)
+                ctx.close_path()
+                ctx.fill()
+            # Roof: the ring at height, a touch lighter.
+            ctx.set_source_rgb(0.70, 0.74, 0.79)
+            for k, p in enumerate(ring):
+                sx, sy = to_screen(p[0] - cx, p[1] - cz, hgt)
+                if k == 0:
+                    ctx.move_to(sx, sy)
+                else:
+                    ctx.line_to(sx, sy)
+            ctx.close_path()
+            ctx.fill()
+
     def _draw_building(self, ctx, width, height):
         det = self.detail or {}
         ring = det.get("ring") or []
@@ -2134,6 +2307,7 @@ class ZoneInspectorPanel(Gtk.Box):
         ctx.close_path()
         ctx.fill()
         self._draw_roads(ctx, to_screen, cx, cz)
+        self._draw_neighbours(ctx, to_screen, cx, cz)
         # Walls, painter-sorted by depth; the front wall is orange.
         fi = self.front_info or {}
         front_edge = fi.get("front_edge")
@@ -2893,33 +3067,33 @@ class ZoneBuildingsTab(Gtk.Box):
 
     def _build_rows(self):
         """The full row set for the current zone + filter, sorted
-        per the active sort. Row: {i, name, code, flagged}."""
+        per the active sort. Row: {i, name, code, flagged}.
+
+        2.0.0: rows ALWAYS come from the zone's light index. The
+        1.7.x "zone loaded" branch re-derived names and flags from
+        the full detail records — under the snapshot model that
+        would fetch every chunk in the zone just to draw a list
+        (the hidden whole-zone load the model bans). The index is
+        regenerated by the editor's own saves, so it cannot show
+        its own edits stale; the FLAGGED marker is centre-based
+        here (match_point) and the LOCK re-checks with the real
+        ring when the building's snapshot opens."""
         store = self._store()
         if store is None:
             return [], 0, 0
-        zd = self._zd()
         rows = []
         flagged_n = 0
-        if zd is not None:
-            for i, (box, det) in enumerate(zip(zd.boxes, zd.details)):
-                is_flag = store.flagged.match(
-                    self._zone, det.get("ring") or []) is not None
-                flagged_n += 1 if is_flag else 0
-                rows.append({"i": i, "name": det.get("name") or "",
-                             "code": int(box[5]), "flagged": is_flag})
-            total = len(zd.boxes)
-        else:
-            idx = store.indexes.get(self._zone)
-            if idx is None:
-                return [], 0, 0
-            for i, e in enumerate(idx.entries):
-                is_flag = store.flagged.match_point(
-                    self._zone, e["x"], e["z"]) is not None
-                flagged_n += 1 if is_flag else 0
-                rows.append({"i": i, "name": e.get("n") or "",
-                             "code": int(e.get("c", 0)),
-                             "flagged": is_flag})
-            total = len(idx.entries)
+        idx = store.indexes.get(self._zone)
+        if idx is None:
+            return [], 0, 0
+        for i, e in enumerate(idx.entries):
+            is_flag = store.flagged.match_point(
+                self._zone, e["x"], e["z"]) is not None
+            flagged_n += 1 if is_flag else 0
+            rows.append({"i": i, "name": e.get("n") or "",
+                         "code": int(e.get("c", 0)),
+                         "flagged": is_flag})
+        total = len(idx.entries)
         filt = self._filter_id
         if filt == "flagged":
             rows = [r for r in rows if r["flagged"]]
@@ -3074,15 +3248,26 @@ class ZoneBuildingsTab(Gtk.Box):
 
     def show_inspector(self, index):
         """Open the 3D inspector on building `index` (right pane).
-        The data column stays fully visible and editable."""
+        The data column stays fully visible and editable.
+
+        2.0.0: opening generates the building's SNAPSHOT first
+        (store.open_snapshot — subject + neighbours, chunk-sized
+        downloads only). A snapshot that cannot be generated
+        (missing chunk, unreadable data) is reported in the status
+        bar with the reason — loudly, never as an empty view."""
         zd = self._zd()
         store = self._store()
         if zd is None or store is None \
                 or not (0 <= index < len(zd.boxes)):
             return
-        flagged_entry = store.flagged.match(
-            self._zone, zd.details[index].get("ring") or [])
-        self.inspector.show_building(self, zd, index, flagged_entry)
+        try:
+            snap = store.open_snapshot(self._zone, index)
+        except zonedata.ZoneDataError as e:
+            self.app_window._set_status(str(e))
+            return
+        self.inspector.show_building(
+            self, zd, index, snap["flagged"],
+            neighbours=snap["neighbours"])
         self.inspector.set_visible(True)
         self._position_inspector()
         GLib.idle_add(self._position_inspector_idle)
@@ -3833,9 +4018,13 @@ class BuildingTab(Gtk.Box):
                          spacing=6)
         self.app_window = window
         self.building = building
-        # Currently selected stock window/door type for placement
-        self.pending_window_type = WINDOW_TYPES[0]
-        self.pending_door_type = DOOR_TYPES[0]
+        # Currently selected stock window/door type for placement.
+        # 2.0.0: starts as None and is set from the shelf-driven
+        # combos when _build_properties fills them; a None pending
+        # type (list unavailable) refuses placement in plain words
+        # rather than stamping a made-up type into the data.
+        self.pending_window_type = None
+        self.pending_door_type = None
 
         # --- Left: preview canvas ---
         left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
@@ -3862,7 +4051,8 @@ class BuildingTab(Gtk.Box):
         # (None when nothing is selected)
         self.selected_parking = None
         # Currently selected decoration type for placement
-        self.pending_decoration_type = DECORATION_TYPES[0]
+        # (2.0.0: None until the shelf-driven combo sets it).
+        self.pending_decoration_type = None
         # Nearby roads for preview context + collision checks
         self.canvas.roads = window.road_index
         left.pack_start(self.canvas, True, True, 0)
@@ -3903,8 +4093,16 @@ class BuildingTab(Gtk.Box):
 
         # --- Right: properties panel (scrollable) ---
         scrolled = Gtk.ScrolledWindow()
+        # Issue A fix (prepared in the held 1.7.3 tree, SHIPPED in
+        # 2.0.0): the vertical bar is ALWAYS shown and
+        # overlay scrolling is off, so there is a real, grabbable
+        # scrollbar on screen at all times — the old 6px overlay
+        # sliver was effectively invisible, one half of why this
+        # pane read as "not scrollable" in Joshua's live report.
+        # (The other half is the wheel guard — see _wheel_proof.)
         scrolled.set_policy(Gtk.PolicyType.NEVER,
-                            Gtk.PolicyType.AUTOMATIC)
+                            Gtk.PolicyType.ALWAYS)
+        scrolled.set_overlay_scrolling(False)
         # 1.7.1: floor lowered 300 -> 260 (rows are label 110px +
         # control; 260 stays usable) — the paned's shrink below
         # handles the rest.
@@ -3912,8 +4110,10 @@ class BuildingTab(Gtk.Box):
         props = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         props.set_border_width(10)
         scrolled.add(props)
-        self._build_properties(props)
+        # props_scroll is assigned BEFORE the controls are built:
+        # the row helpers wheel-proof each control against it.
         self.props_scroll = scrolled
+        self._build_properties(props)
 
         # 1.7.1 LAYOUT (EDITOR UI RULE): the preview canvas is a
         # GRAPHICAL pane, so it sits in an adjustable split like
@@ -3938,6 +4138,51 @@ class BuildingTab(Gtk.Box):
 
     # -- properties panel -------------------------------------------------
 
+    def _wheel_proof(self, widget):
+        """
+        Issue A fix (prepared in the held 1.7.3 tree, SHIPPED in
+        2.0.0). Combo boxes and scales in this panel CONSUME
+        mouse-wheel events: measured in the real app, one wheel
+        tick over a combo CHANGED ITS SELECTION (0 -> 1) instead
+        of scrolling the panel. With 13 combos, 12 spin buttons
+        and 2 scales filling nearly every row's width, the wheel
+        almost never reached the scroller — the pane read as "not
+        scrollable" and two-thirds of the properties were
+        unreachable by wheel (Joshua's live report, 2026-10-17).
+        Forward the wheel to the properties scroller and stop the
+        event: the wheel always scrolls the panel, and it can
+        never silently change a property again. (The forwarding
+        moves the scroller's adjustment directly — re-emitting the
+        event at the scroller does not work under PyGObject: the
+        handler receives a Gdk.EventScroll, which cannot be
+        converted back to the GdkEvent emit() requires; measured
+        2026-10-17, the TypeError silently voided the handler.)
+        """
+        def forward(w, event):
+            scrolled = getattr(self, "props_scroll", None)
+            adj = scrolled.get_vadjustment() \
+                if scrolled is not None else None
+            if adj is not None:
+                dy = getattr(event, "delta_y", 0.0)
+                if not dy:
+                    dy = 1.0 if getattr(event, "direction", None) \
+                        == Gdk.ScrollDirection.DOWN else -1.0
+                # One wheel tick = three step increments, the
+                # scroller's own pace (measured: its handler moves
+                # ~71px per tick on this panel).
+                adj.set_value(adj.get_value()
+                              + dy * adj.get_step_increment() * 3)
+            return True
+
+        def walk(w):
+            if isinstance(w, (Gtk.ComboBoxText, Gtk.Scale,
+                              Gtk.SpinButton)):
+                w.connect("scroll-event", forward)
+            if isinstance(w, Gtk.Container):
+                for c in w.get_children():
+                    walk(c)
+        walk(widget)
+
     def _row(self, parent, label_text, widget):
         """Add a labeled row to the properties panel."""
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
@@ -3946,6 +4191,7 @@ class BuildingTab(Gtk.Box):
         lbl.set_size_request(110, -1)
         row.pack_start(lbl, False, False, 0)
         row.pack_start(widget, True, True, 0)
+        self._wheel_proof(widget)
         parent.pack_start(row, False, False, 0)
 
     def _spin_row(self, parent, label_text, lo, hi, step, handler):
@@ -3962,6 +4208,7 @@ class BuildingTab(Gtk.Box):
         spin = Gtk.SpinButton.new_with_range(lo, hi, step)
         spin.connect("value-changed", handler)
         row.pack_start(spin, True, True, 0)
+        self._wheel_proof(spin)
         parent.pack_start(row, False, False, 0)
         return row, spin
 
@@ -3980,6 +4227,7 @@ class BuildingTab(Gtk.Box):
             combo.append_text(opt)
         combo.connect("changed", handler)
         row.pack_start(combo, True, True, 0)
+        self._wheel_proof(combo)
         parent.pack_start(row, False, False, 0)
         return row, combo
         return row
@@ -3994,6 +4242,17 @@ class BuildingTab(Gtk.Box):
     def _build_properties(self, props):
         """Build all property controls, wired to the building dict."""
         b = self.building
+        # 2.0.0: when a pick-list could not be downloaded (and no
+        # cache copy exists) the tab says so plainly at the top of
+        # the properties pane — never a silent baked-in list. The
+        # text is set at the end of this build, once every control
+        # has read the shelf state.
+        self.vocab_note = Gtk.Label()
+        self.vocab_note.set_line_wrap(True)
+        self.vocab_note.set_halign(Gtk.Align.START)
+        self.vocab_note.set_no_show_all(True)
+        self.vocab_note.hide()
+        props.pack_start(self.vocab_note, False, False, 0)
 
         # --- Identity ---
         self._section(props, "Identity")
@@ -4003,11 +4262,13 @@ class BuildingTab(Gtk.Box):
         self._row(props, "Name:", name_entry)
 
         type_combo = Gtk.ComboBoxText()
-        for t in BUILDING_TYPES:
-            type_combo.append_text(t)
         cur_type = b.get("type", "House")
-        if cur_type in BUILDING_TYPES:
-            type_combo.set_active(BUILDING_TYPES.index(cur_type))
+        type_opts = _pick_list(self.app_window, "BUILDING_TYPES",
+                               cur_type)
+        for t in type_opts:
+            type_combo.append_text(t)
+        if cur_type in type_opts:
+            type_combo.set_active(type_opts.index(cur_type))
         # v1.5.0: routed through _on_type_changed so switching to a
         # residential type warns before removing a parking garage
         # (garages are commercial-only, Joshua 2026-10-11).
@@ -4018,11 +4279,13 @@ class BuildingTab(Gtk.Box):
         # --- Materials ---
         self._section(props, "Materials")
         mat_combo = Gtk.ComboBoxText()
-        for m in WALL_MATERIALS:
-            mat_combo.append_text(m)
         cur_mat = b.get("wall_material", "Brick")
-        if cur_mat in WALL_MATERIALS:
-            mat_combo.set_active(WALL_MATERIALS.index(cur_mat))
+        mat_opts = _pick_list(self.app_window, "WALL_MATERIALS",
+                              cur_mat)
+        for m in mat_opts:
+            mat_combo.append_text(m)
+        if cur_mat in mat_opts:
+            mat_combo.set_active(mat_opts.index(cur_mat))
         mat_combo.connect("changed", lambda c: self._update(
             "wall_material", c.get_active_text()))
         self._row(props, "Wall material:", mat_combo)
@@ -4046,11 +4309,13 @@ class BuildingTab(Gtk.Box):
         self._row(props, "Roof color:", roof_color)
 
         roof_combo = Gtk.ComboBoxText()
-        for r in ROOF_TEXTURES:
-            roof_combo.append_text(r)
         cur_roof = b.get("roof_texture", "Shingle")
-        if cur_roof in ROOF_TEXTURES:
-            roof_combo.set_active(ROOF_TEXTURES.index(cur_roof))
+        roof_opts = _pick_list(self.app_window, "ROOF_TEXTURES",
+                               cur_roof)
+        for r in roof_opts:
+            roof_combo.append_text(r)
+        if cur_roof in roof_opts:
+            roof_combo.set_active(roof_opts.index(cur_roof))
         roof_combo.connect("changed", lambda c: self._update(
             "roof_texture", c.get_active_text()))
         self._row(props, "Roof texture:", roof_combo)
@@ -4123,11 +4388,13 @@ class BuildingTab(Gtk.Box):
         fp_lbl.set_size_request(110, -1)
         self.floor_plan_box.pack_start(fp_lbl, False, False, 0)
         self.fp_combo = Gtk.ComboBoxText()
-        for fp in FLOOR_PLAN_TEMPLATES:
-            self.fp_combo.append_text(fp)
         cur_fp = b.get("floor_plan", "")
-        if cur_fp in FLOOR_PLAN_TEMPLATES:
-            self.fp_combo.set_active(FLOOR_PLAN_TEMPLATES.index(cur_fp))
+        fp_opts = _pick_list(self.app_window, "FLOOR_PLAN_TEMPLATES",
+                             cur_fp or None)
+        for fp in fp_opts:
+            self.fp_combo.append_text(fp)
+        if cur_fp in fp_opts:
+            self.fp_combo.set_active(fp_opts.index(cur_fp))
         self.fp_combo.connect("changed", lambda c: self._update(
             "floor_plan", c.get_active_text() or ""))
         self.floor_plan_box.pack_start(self.fp_combo, True, True, 0)
@@ -4163,20 +4430,24 @@ class BuildingTab(Gtk.Box):
         # --- Stock library ---
         self._section(props, "Stock Library")
         win_combo = Gtk.ComboBoxText()
-        for wt in WINDOW_TYPES:
+        for wt in _pick_list(self.app_window, "WINDOW_TYPES"):
             win_combo.append_text(wt)
-        win_combo.set_active(0)
+        if win_combo.get_model().iter_n_children(None):
+            win_combo.set_active(0)
         win_combo.connect("changed", lambda c: setattr(
             self, "pending_window_type", c.get_active_text()))
         self._row(props, "Window type:", win_combo)
+        self.pending_window_type = win_combo.get_active_text()
 
         door_combo = Gtk.ComboBoxText()
-        for dt in DOOR_TYPES:
+        for dt in _pick_list(self.app_window, "DOOR_TYPES"):
             door_combo.append_text(dt)
-        door_combo.set_active(0)
+        if door_combo.get_model().iter_n_children(None):
+            door_combo.set_active(0)
         door_combo.connect("changed", lambda c: setattr(
             self, "pending_door_type", c.get_active_text()))
         self._row(props, "Door type:", door_combo)
+        self.pending_door_type = door_combo.get_active_text()
 
         # --- Exterior features (v1.1.0, Joshua) ---
         # Toggleable sections so the panel doesn't get overwhelming.
@@ -4216,11 +4487,13 @@ class BuildingTab(Gtk.Box):
         props.pack_start(dw_check, False, False, 0)
 
         dw_mat = Gtk.ComboBoxText()
-        for m in DRIVEWAY_MATERIALS:
-            dw_mat.append_text(m)
         cur_dw = str(dw.get("material", "Concrete"))
-        if cur_dw in DRIVEWAY_MATERIALS:
-            dw_mat.set_active(DRIVEWAY_MATERIALS.index(cur_dw))
+        dw_opts = _pick_list(self.app_window, "DRIVEWAY_MATERIALS",
+                             cur_dw)
+        for m in dw_opts:
+            dw_mat.append_text(m)
+        if cur_dw in dw_opts:
+            dw_mat.set_active(dw_opts.index(cur_dw))
         dw_mat.connect("changed", lambda c: self._update_sub(
             "driveway", "material", c.get_active_text() or "Concrete"))
         self._row(props, "Driveway surface:", dw_mat)
@@ -4238,11 +4511,13 @@ class BuildingTab(Gtk.Box):
         props.pack_start(self.gar_check, False, False, 0)
 
         gar_side = Gtk.ComboBoxText()
-        for s in GARAGE_SIDES:
-            gar_side.append_text(s)
         cur_side = str(gar.get("side", "Right"))
-        if cur_side in GARAGE_SIDES:
-            gar_side.set_active(GARAGE_SIDES.index(cur_side))
+        side_opts = _pick_list(self.app_window, "GARAGE_SIDES",
+                               cur_side)
+        for s in side_opts:
+            gar_side.append_text(s)
+        if cur_side in side_opts:
+            gar_side.set_active(side_opts.index(cur_side))
         gar_side.connect("changed", lambda c: self._update_sub(
             "garage", "side", c.get_active_text() or "Right"))
         self._row(props, "Garage side:", gar_side)
@@ -4273,11 +4548,13 @@ class BuildingTab(Gtk.Box):
         props.pack_start(fence_check, False, False, 0)
 
         fence_style = Gtk.ComboBoxText()
-        for s in FENCE_STYLES:
-            fence_style.append_text(s)
         cur_fs = str(fence.get("style", "Wood"))
-        if cur_fs in FENCE_STYLES:
-            fence_style.set_active(FENCE_STYLES.index(cur_fs))
+        fence_opts = _pick_list(self.app_window, "FENCE_STYLES",
+                                cur_fs)
+        for s in fence_opts:
+            fence_style.append_text(s)
+        if cur_fs in fence_opts:
+            fence_style.set_active(fence_opts.index(cur_fs))
         fence_style.connect("changed", lambda c: self._update_sub(
             "fence", "style", c.get_active_text() or "Wood"))
         self._row(props, "Fence style:", fence_style)
@@ -4319,7 +4596,9 @@ class BuildingTab(Gtk.Box):
         self.floor_type_box.pack_start(floor_sel_row, False, False, 0)
 
         self.floor_type_combo = Gtk.ComboBoxText()
-        for ft in FLOOR_TYPES:
+        self._floor_type_opts = _pick_list(self.app_window,
+                                           "FLOOR_TYPES")
+        for ft in self._floor_type_opts:
             self.floor_type_combo.append_text(ft)
         self.floor_type_combo.connect("changed",
                                      self._on_floor_type_changed)
@@ -4338,16 +4617,18 @@ class BuildingTab(Gtk.Box):
         # --- Decorations (v1.1.0, Joshua) ---
         self._section(props, "Decorations")
         deco_combo = Gtk.ComboBoxText()
-        for dt in DECORATION_TYPES:
+        for dt in _pick_list(self.app_window, "DECORATION_TYPES"):
             deco_combo.append_text(dt)
-        deco_combo.set_active(0)
+        if deco_combo.get_model().iter_n_children(None):
+            deco_combo.set_active(0)
         deco_combo.connect("changed", lambda c: (
             setattr(self, "pending_decoration_type",
-                    c.get_active_text() or DECORATION_TYPES[0]),
+                    c.get_active_text()),
             setattr(self.canvas, "pending_decoration_type",
-                    c.get_active_text() or DECORATION_TYPES[0])))
+                    c.get_active_text())))
         self._row(props, "Decoration:", deco_combo)
         # Sync the canvas's copy for the placement handler
+        self.pending_decoration_type = deco_combo.get_active_text()
         self.canvas.pending_decoration_type = self.pending_decoration_type
         deco_hint = Gtk.Label(
             label="Use 'Add Decoration' mode, then click a wall "
@@ -4412,9 +4693,10 @@ class BuildingTab(Gtk.Box):
         self.park_spr_row, self.park_spr_spin = self._spin_row(
             self.parking_props_box, "Spaces / row:", 1, 30, 1,
             self._on_park_spr_changed)
+        self._park_ori_opts = self._parking_orientations()
         self.park_ori_row, self.park_ori_combo = self._combo_row(
             self.parking_props_box, "Orientation:",
-            PARKING_SPACE_ORIENTATIONS, self._on_park_ori_changed)
+            self._park_ori_opts, self._on_park_ori_changed)
         self.park_levels_row, self.park_levels_spin = self._spin_row(
             self.parking_props_box, "Levels:", 1, 5, 1,
             self._on_park_levels_changed)
@@ -4442,8 +4724,47 @@ class BuildingTab(Gtk.Box):
         self._check_collision()
         # v1.5.0: initial attached-garage availability (residential rule)
         self._refresh_garage_availability()
+        # 2.0.0: say plainly which pick-lists (if any) could not be
+        # loaded — the note at the top of this pane (spec §6).
+        missing = _pick_missing(self.app_window, [
+            "BUILDING_TYPES", "WALL_MATERIALS", "ROOF_TEXTURES",
+            "WINDOW_TYPES", "DOOR_TYPES", "FLOOR_PLAN_TEMPLATES",
+            "DRIVEWAY_MATERIALS", "GARAGE_SIDES", "FENCE_STYLES",
+            "FLOOR_TYPES", "DECORATION_TYPES", "PARKING_TYPES"])
+        if missing:
+            self.vocab_note.set_text(
+                vocab_mod.UNAVAILABLE_NOTE + " Missing: "
+                + ", ".join(sorted(missing)) + ".")
+            self.vocab_note.show()
 
     # -- property helpers -------------------------------------------------
+
+    def _decoration_wall_types(self):
+        """The wall-mounted decoration types (2.0.0): the shelf's
+        placement map when the decoration vocabulary downloaded;
+        otherwise data.py's set. The placement split is record
+        SCHEMA (which face a stored type belongs to), not a
+        pick-list — the pick-list itself never falls back."""
+        voc = getattr(self.app_window, "vocabularies", None)
+        wall = voc.decoration_wall_types() if voc is not None \
+            else None
+        return wall if wall is not None else DECORATION_WALL_TYPES
+
+    def _parking_labels(self):
+        """{parking type: display label} (2.0.0): the shelf's
+        labels when downloaded, else data.py's schema labels."""
+        voc = getattr(self.app_window, "vocabularies", None)
+        labels = voc.parking_labels() if voc is not None else None
+        return labels if labels is not None else PARKING_TYPE_LABELS
+
+    def _parking_orientations(self):
+        """Parking-space orientations (2.0.0): the shelf's list
+        when downloaded, else data.py's schema list."""
+        voc = getattr(self.app_window, "vocabularies", None)
+        ori = voc.parking_orientations() if voc is not None \
+            else None
+        return ori if ori is not None \
+            else list(PARKING_SPACE_ORIENTATIONS)
 
     @staticmethod
     def _hex_to_rgba(hex_color):
@@ -4543,9 +4864,15 @@ class BuildingTab(Gtk.Box):
         # Block the changed signal while setting
         self.floor_type_combo.handler_block_by_func(
             self._on_floor_type_changed)
-        if cur in FLOOR_TYPES:
-            self.floor_type_combo.set_active(FLOOR_TYPES.index(cur))
-        else:
+        opts = getattr(self, "_floor_type_opts", [])
+        if cur and cur not in opts:
+            # A stored type the shelf no longer lists still
+            # displays truthfully (2.0.0 pick-list rule).
+            self.floor_type_combo.append_text(cur)
+            opts.append(cur)
+        if cur in opts:
+            self.floor_type_combo.set_active(opts.index(cur))
+        elif opts:
             self.floor_type_combo.set_active(0)
         self.floor_type_combo.handler_unblock_by_func(
             self._on_floor_type_changed)
@@ -4702,7 +5029,12 @@ class BuildingTab(Gtk.Box):
         {"type", "gx", "gz"} for floor types.
         """
         dtype = info.get("type", "")
-        if dtype in DECORATION_WALL_TYPES:
+        if not dtype:
+            self.app_window._set_status(
+                "The decoration list is unavailable — connect to "
+                "the internet and reopen the editor to load it.")
+            return
+        if dtype in self._decoration_wall_types():
             deco = {"type": dtype,
                     "face": info.get("face", "front"),
                     "x": max(0.02, min(0.85, float(info.get("x", 0.4)))),
@@ -4757,8 +5089,9 @@ class BuildingTab(Gtk.Box):
             if resp != Gtk.ResponseType.OK:
                 # Revert the combo without re-triggering this handler
                 combo.handler_block_by_func(self._on_type_changed)
-                if old_type in BUILDING_TYPES:
-                    combo.set_active(BUILDING_TYPES.index(old_type))
+                _opts = [r[0] for r in combo.get_model()]
+                if old_type in _opts:
+                    combo.set_active(_opts.index(old_type))
                 combo.handler_unblock_by_func(self._on_type_changed)
                 return
             self.building["parking"] = [
@@ -4810,7 +5143,7 @@ class BuildingTab(Gtk.Box):
         self.pending_parking_type = ptype
         self.canvas.pending_parking_type = ptype
         self._set_canvas_mode("add_parking")
-        label = PARKING_TYPE_LABELS.get(ptype, ptype).lower()
+        label = self._parking_labels().get(ptype, ptype).lower()
         self.app_window._set_status(
             f"Click the ground to place a {label}.")
 
@@ -4838,7 +5171,7 @@ class BuildingTab(Gtk.Box):
         self.canvas._selected_item = ("parking", self.selected_parking)
         self._refresh_parking_ui()
         self._set_canvas_mode("view")
-        label = PARKING_TYPE_LABELS.get(ptype, ptype)
+        label = self._parking_labels().get(ptype, ptype)
         self.app_window._set_status(f"{label} placed.")
 
     def _on_parking_selected(self, index):
@@ -4892,7 +5225,7 @@ class BuildingTab(Gtk.Box):
             sel = self.selected_parking
             self.park_sel_label.set_text(
                 "Selected: %s #%d" % (
-                    PARKING_TYPE_LABELS.get(ptype, ptype), sel + 1))
+                    self._parking_labels().get(ptype, ptype), sel + 1))
             # Show only the rows relevant to this type
             self.park_rows_row.set_visible(ptype == "lot")
             self.park_spr_row.set_visible(ptype == "lot")
@@ -4909,9 +5242,9 @@ class BuildingTab(Gtk.Box):
                     float(p.get("rotation", 0.0) or 0.0))
             elif ptype == "space":
                 ori = str(p.get("orientation", "Perpendicular"))
-                if ori in PARKING_SPACE_ORIENTATIONS:
+                if ori in self._park_ori_opts:
                     self.park_ori_combo.set_active(
-                        PARKING_SPACE_ORIENTATIONS.index(ori))
+                        self._park_ori_opts.index(ori))
                 self.park_rot_spin.set_value(
                     float(p.get("rotation", 0.0) or 0.0))
             else:
@@ -5061,6 +5394,12 @@ class BuildingTab(Gtk.Box):
         Place a window or door at the fractional position.
         """
         if self.canvas.mode == "add_window":
+            if not self.pending_window_type:
+                self.app_window._set_status(
+                    "The window-type list is unavailable — connect "
+                    "to the internet and reopen the editor to load "
+                    "it.")
+                return
             # Windows sit on the wall: y fractional up the floor,
             # clamped away from the very top/bottom edges
             win = {"face": face,
@@ -5072,6 +5411,11 @@ class BuildingTab(Gtk.Box):
             self.app_window._set_status(
                 f"Window added on {face} face.")
         elif self.canvas.mode == "add_door":
+            if not self.pending_door_type:
+                self.app_window._set_status(
+                    "The door-type list is unavailable — connect to "
+                    "the internet and reopen the editor to load it.")
+                return
             # Doors always sit on the floor
             door = {"face": face,
                     "x": max(0.02, min(0.86, fx - 0.06)),
@@ -5248,7 +5592,9 @@ class SubdivisionTab(Gtk.Box):
         right.pack_start(name_row, False, False, 0)
 
         self.style_combo = Gtk.ComboBoxText()
-        for s in HOUSE_STYLES:
+        # 2.0.0: house styles come from the stock shelf.
+        self._style_opts = _pick_list(self.app_window, "HOUSE_STYLES")
+        for s in self._style_opts:
             self.style_combo.append_text(s)
         self.style_combo.connect("changed", self._on_style_changed)
         style_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
@@ -5505,9 +5851,11 @@ class SubdivisionTab(Gtk.Box):
         style_row.pack_start(Gtk.Label(label="House style:"),
                              False, False, 0)
         style_combo = Gtk.ComboBoxText()
-        for s in HOUSE_STYLES:
+        _style_opts = _pick_list(self.app_window, "HOUSE_STYLES")
+        for s in _style_opts:
             style_combo.append_text(s)
-        style_combo.set_active(0)
+        if _style_opts:
+            style_combo.set_active(0)
         style_row.pack_start(style_combo, True, True, 0)
         box.pack_start(style_row, False, False, 0)
 
@@ -5534,9 +5882,14 @@ class SubdivisionTab(Gtk.Box):
             self.app_window._set_status("Subdivision creation cancelled.")
             return
 
+        if not style:
+            self.app_window._set_status(
+                "The house-style list is unavailable — connect to "
+                "the internet and reopen the editor to load it.")
+            return
         new_sub = {"name": name,
                    "polygon": [[float(p[0]), float(p[1])] for p in points],
-                   "style": style or HOUSE_STYLES[0]}
+                   "style": style}
         self.subdivisions.append(new_sub)
         self._save()
         self.canvas.selected = len(self.subdivisions) - 1
@@ -5595,8 +5948,13 @@ class SubdivisionTab(Gtk.Box):
         self.name_entry.set_text(sub.get("name", ""))
         self.name_entry.handler_unblock_by_func(self._on_name_changed)
         style = sub.get("style", "")
+        if style and style not in self._style_opts:
+            # A stored style the shelf no longer lists still
+            # displays truthfully (2.0.0 pick-list rule).
+            self.style_combo.append_text(style)
+            self._style_opts.append(style)
         try:
-            active = HOUSE_STYLES.index(style)
+            active = self._style_opts.index(style)
         except ValueError:
             active = -1
         self.style_combo.handler_block_by_func(self._on_style_changed)
@@ -5648,6 +6006,97 @@ class SubdivisionTab(Gtk.Box):
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Draw for Mollie tab (2.0.0 — the suite drawing channel, desktop host)
+# ---------------------------------------------------------------------------
+
+class DrawTab(Gtk.Box):
+    """
+    The editor's host for the suite-core drawing surface
+    (suite_draw.DrawPanel): sketch, caption, Send. The send goes
+    through suite_draw.send_drawing — the suite save law for bytes
+    (push both files on one connection, CLOSE it, re-download on a
+    fresh connection, byte-compare; "sent" only on proof). The
+    drawing stays on screen through any failure, and a retry
+    re-uses the same timestamp until a send verifies, so retrying
+    can never duplicate a drawing (the adoption contract).
+    """
+
+    def __init__(self, app_window):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL,
+                         spacing=4)
+        self.set_border_width(6)
+        self.app_window = app_window
+        # The send identity of the drawing currently on screen:
+        # fixed at the first Send tap, cleared by a verified send.
+        self._send_stamp = None
+        intro = Gtk.Label(
+            label="Draw for Mollie — sketch what words can't say, "
+                  "then Send. The drawing lands in the repo's "
+                  "drawings/ folder where Mollie reads it.")
+        intro.set_halign(Gtk.Align.START)
+        intro.set_line_wrap(True)
+        self.pack_start(intro, False, False, 0)
+        self.panel = suite_draw.DrawPanel()
+        self.pack_start(self.panel, True, True, 0)
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
+                      spacing=6)
+        self.send_btn = Gtk.Button(label="Send drawing to Mollie")
+        self.send_btn.connect("clicked", self._on_send)
+        row.pack_start(self.send_btn, False, False, 0)
+        self.draw_status = Gtk.Label(label="")
+        self.draw_status.set_halign(Gtk.Align.START)
+        self.draw_status.set_line_wrap(True)
+        row.pack_start(self.draw_status, True, True, 0)
+        self.pack_start(row, False, False, 0)
+
+    def _set_draw_status(self, text):
+        self.draw_status.set_text(text)
+        return False
+
+    def _on_send(self, _btn):
+        """Send tap: blank paper and a missing token are refused
+        in plain words BEFORE any network call (the contract);
+        otherwise the round trip runs on a worker thread."""
+        if self.panel.is_blank():
+            self._set_draw_status(
+                "The drawing is blank — draw something first.")
+            return
+        if not github_sync.has_token():
+            self._set_draw_status(
+                "No GitHub token — the drawing is safe on screen. "
+                "Set one in File → Settings, then Send again.")
+            return
+        from datetime import datetime, timezone
+        if self._send_stamp is None:
+            self._send_stamp = datetime.now(timezone.utc)
+        stamp = self._send_stamp
+        png = self.panel.to_png_bytes()
+        caption = self.panel.caption()
+        self.send_btn.set_sensitive(False)
+        self._set_draw_status("Sending…")
+        import threading
+
+        def worker():
+            ok, msg, _path = suite_draw.send_drawing(
+                png, caption, "building-editor", APP_VERSION,
+                github_sync.open_connection,
+                github_sync.push_targets,
+                github_sync.fetch_file, now=stamp)
+
+            def done():
+                self.send_btn.set_sensitive(True)
+                if ok:
+                    # Verified: the NEXT send is a new drawing
+                    # with a fresh timestamp.
+                    self._send_stamp = None
+                self._set_draw_status(msg)
+                return False
+            GLib.idle_add(done)
+
+        threading.Thread(target=worker, daemon=True).start()
+
 
 def main():
     """Launch the asset editor."""
