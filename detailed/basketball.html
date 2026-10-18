@@ -156,6 +156,7 @@
       <h1>🏀 Basketball</h1>
       <p class="where">The backyard court at 535 Dollar Mill Road, from Surviving Adamsville.</p>
       <p class="how">In the main game, walk in between the trees behind the house at 535 and the court will invite you to play.</p>
+      <p class="how">Controls — move with the joystick, the WASD / arrow keys, or a gamepad stick. Shoot (and pick up the ball) with the button below, Space, or gamepad A. Gamepad B asks to leave. A Bluetooth keyboard or controller works the same way.</p>
       <p class="pick">How do you want to play?</p>
       <button class="bigbtn" id="mode-1on1" type="button">1 on 1<span class="last" id="last-1on1" style="display:none">★ Last played</span></button>
       <button class="bigbtn" id="mode-3on3" type="button">3 on 3<span class="last" id="last-3on3" style="display:none">★ Last played</span></button>
@@ -241,6 +242,25 @@
      tightens a little as your level rises.
    Every tuning number lives in the TUNING / SKILL blocks or in a man's
    own attribute block — a later tuning pass changes numbers, not logic.
+
+   v2.1 (Joshua, 2026-10-18) — IN-GAME PLAY + CONTROLLERS:
+   - IN GAME: this same page now also plays INSIDE the main game. The
+     world-side court (basketball_court.js) hosts it in a full-screen
+     overlay when he answers Yes at the goal tree; the world pauses
+     behind it. When the page finds itself embedded (a parent window
+     exists), its "back to the game" links become a CLOSE control that
+     asks the parent to close the overlay, and answering "Leave the
+     court" in the leave prompt closes back to the world too. Opened
+     as its own tab (standalone), nothing about that changes.
+   - INPUT — ONE LAYER, THREE WAYS IN, all feeding the same actions
+     (see the INPUT section below): the touch joystick + on-screen
+     button; the keyboard (WASD / arrows move, Space / Enter is the
+     action button — pick up / shoot); and a standard Gamepad
+     (left stick or D-pad moves, A is the action button, B or Start
+     asks to leave — the leave prompt still gets the last word).
+     His Bluetooth setup — the old phone running a HID app — arrives
+     as keyboard + mouse, so it is covered by the keyboard layer and
+     ordinary clicks, with nothing extra to pair or configure here.
    ============================================================================ */
 (function(){
 'use strict';
@@ -464,6 +484,11 @@ var pendingWin = '';                     // '' | 'you' | 'opp'
 var leaveOpen = false, leaveArmed = true, leavePromptCount = 0;
 var keys = {};                           // keyboard state, by code
 var joyVec = { x: 0, z: 0 };             // joystick vector
+var padVec = { x: 0, z: 0 };             // gamepad vector (third input — see pollGamepad)
+var padPrev = {};                        // last frame's gamepad buttons, for press edges
+var padGuardUntil = 0;                   // leave-prompt guard time (page clock T): pad
+                                         // button edges are ignored until then, so the
+                                         // press that opened the prompt can't answer it
 var keyVec = { x: 0, z: 0 };             // keyboard vector (recomputed per frame)
 var camPos = { x: 3.4, y: 3.8, z: 5.6 }, camLook = { x: 0, y: 1.7, z: -3.2 };
 var T = 0;                               // the page's own clock (seconds)
@@ -753,8 +778,22 @@ function dist2D(ax, az, bx, bz){
 }
 
 /* ============================== input ============================== */
+/* ONE INPUT LAYER, THREE WAYS IN (v2.1) — every device feeds the same
+   two things: a movement vector (inputVector sums joystick + keyboard
+   + gamepad) and the single action entry point ballAction(). Nothing
+   downstream knows or cares which device spoke.
+   - TOUCH: the on-screen joystick (joyVec) + the action button.
+   - KEYBOARD: WASD / arrows (keys -> keyVec), Space / Enter = the
+     action button. This is also the layer a BLUETOOTH KEYBOARD — and
+     Joshua's old phone running its Bluetooth HID app, which presents
+     as keyboard + mouse — speaks, so that controller needs no
+     separate support anywhere: its keys land here, its mouse clicks
+     land on the ordinary buttons.
+   - GAMEPAD: the standard Gamepad API, polled every frame in
+     pollGamepad() below — stick/D-pad -> padVec, A -> ballAction(),
+     B / Start -> the leave question (never a silent quit). */
 function inputVector(){
-  var x = joyVec.x + keyVec.x, z = joyVec.z + keyVec.z;
+  var x = joyVec.x + keyVec.x + padVec.x, z = joyVec.z + keyVec.z + padVec.z;
   var m = Math.sqrt(x * x + z * z);
   if (m > 1){ x /= m; z /= m; }
   return { x: x, z: z, mag: Math.min(1, m) };
@@ -764,6 +803,66 @@ function refreshKeyVec(){
   keyVec.z = (keys['KeyS'] || keys['ArrowDown'] ? 1 : 0) - (keys['KeyW'] || keys['ArrowUp'] ? 1 : 0);
   var m = Math.sqrt(keyVec.x * keyVec.x + keyVec.z * keyVec.z);
   if (m > 1){ keyVec.x /= m; keyVec.z /= m; }
+}
+
+/* ============================== gamepad ============================== */
+/* Standard Gamepad API (v2.1), polled once per frame from animate().
+   Mapping (standard layout): left stick + D-pad move; A (button 0)
+   is the action button; B (1) / Start (9) ask to leave. Buttons act
+   on the PRESS EDGE only — holding one down never repeats it. */
+var PAD_DEADZONE = 0.22;   // stick travel below this reads as centred
+var PAD_A = 0, PAD_B = 1, PAD_START = 9;
+var PAD_UP = 12, PAD_DOWN = 13, PAD_LEFT = 14, PAD_RIGHT = 15;
+
+function padDown(gp, i){
+  var b = gp.buttons && gp.buttons[i];
+  return !!(b && (b.pressed || (typeof b.value === 'number' && b.value > 0.4)));
+}
+function padEdge(gp, i){
+  var d = padDown(gp, i);
+  var was = !!padPrev[i];
+  padPrev[i] = d;
+  return d && !was;
+}
+function pollGamepad(){
+  var gp = null;
+  try{
+    if (typeof navigator !== 'undefined' && navigator.getGamepads){
+      var pads = navigator.getGamepads();
+      for (var i = 0; i < pads.length; i++){ if (pads[i]){ gp = pads[i]; break; } }
+    }
+  }catch(e){ gp = null; }
+  if (!gp){ padVec.x = 0; padVec.z = 0; padPrev = {}; return; }
+
+  /* movement: left stick, dead-zoned, with the D-pad folded in */
+  var ax = (gp.axes && typeof gp.axes[0] === 'number') ? gp.axes[0] : 0;
+  var az = (gp.axes && typeof gp.axes[1] === 'number') ? gp.axes[1] : 0;
+  if (Math.sqrt(ax * ax + az * az) < PAD_DEADZONE){ ax = 0; az = 0; }
+  if (padDown(gp, PAD_LEFT))  ax -= 1;
+  if (padDown(gp, PAD_RIGHT)) ax += 1;
+  if (padDown(gp, PAD_UP))    az -= 1;
+  if (padDown(gp, PAD_DOWN))  az += 1;
+  var m = Math.sqrt(ax * ax + az * az);
+  if (m > 1){ ax /= m; az /= m; }
+  padVec.x = ax; padVec.z = az;
+
+  /* buttons — edges computed for all three even when unused, so a
+     button held across a state change never fires late */
+  var eA = padEdge(gp, PAD_A), eB = padEdge(gp, PAD_B), eS = padEdge(gp, PAD_START);
+  if (leaveOpen){
+    /* The leave question is up: A = "Leave the court", B / Start =
+       "Keep playing" — but only after the guard blink (openLeavePrompt
+       stamps padGuardUntil), so the press that opened the question,
+       or a mashed shoot button, can never answer it by accident. */
+    if (T >= padGuardUntil){
+      if (eA) answerLeave(true);
+      else if (eB || eS) answerLeave(false);
+    }
+    return;
+  }
+  if (phase !== 'game') return;   // menus stay pointer/touch work
+  if (eA) ballAction();                    // A = pick up / shoot
+  else if (eB || eS) openLeavePrompt();    // B / Start = ask to leave (prompt rule)
 }
 
 /* ============================== your movement + the leave prompt ============================== */
@@ -831,6 +930,7 @@ function animateLimbs(fig, moveAmt, phase, hasBall){
 
 function openLeavePrompt(){
   leaveOpen = true;
+  padGuardUntil = T + 0.35;   // gamepad answers wait a blink (see pollGamepad)
   showSheet('leave-screen', true);
   updateActionButton();
 }
@@ -841,6 +941,10 @@ function answerLeave(yesLeave){
     endGame();
     showModeScreen();
     setFeedback('You left the court. The game is over — pick a mode to play again.');
+    /* In the game's overlay, leaving the court leaves the mini-game
+       too — hand the world back. Standalone, stay on the mode
+       screen, exactly as before. */
+    if (EMBEDDED) closeToGame();
   } else {
     var k = 0.88;   // step back in: a nudge toward the middle
     player.x *= k; player.z *= k;
@@ -1415,6 +1519,7 @@ function animate(){
   requestAnimationFrame(animate);
   var dt = Math.min(0.05, clock.getDelta());
   T += dt;
+  pollGamepad();   // v2.1: the gamepad speaks every frame (it also answers the leave prompt)
   if (phase === 'game' && !leaveOpen){
     refreshKeyVec();
     updatePlayer(dt);
@@ -1477,6 +1582,31 @@ function wireJoystick(){
   joy.addEventListener('pointercancel', end);
 }
 
+/* ============================== in-game embedding ============================== */
+/* v2.1: this page has two homes — its own tab (standalone) and the
+   main game's full-screen overlay (basketball_court.js hosts it in an
+   iframe and pauses the world behind it). Embedded is detected
+   structurally: a parent window different from this one. Only two
+   behaviours change when embedded, both about LEAVING:
+   - the "← Surviving Adamsville" links become a close control that
+     asks the parent to close the overlay (navigating the frame to
+     the game's front page would bury the game inside itself);
+   - answering "Leave the court" also closes back to the world
+     (see answerLeave). The win screen and Change mode stay inside,
+     with the close control always in the top bar. */
+var EMBEDDED = false;
+try{ EMBEDDED = !!(window.parent && window.parent !== window); }catch(e){ EMBEDDED = true; }
+
+/* Ask the game to close the overlay and hand the world back. Two
+   routes, both guarded, either sufficient: a postMessage (the parent
+   validates it came from this frame), and — same-origin only — the
+   parent's own BBALL.closeGame() as a direct fallback. The parent's
+   close is idempotent, so both firing is harmless. */
+function closeToGame(){
+  try{ window.parent.postMessage({ type: 'bball-close' }, window.location.origin || '*'); }catch(e){}
+  try{ if (window.parent.BBALL && window.parent.BBALL.closeGame) window.parent.BBALL.closeGame(); }catch(e){}
+}
+
 /* ============================== init ============================== */
 function init(){
   if (typeof THREE === 'undefined') throw new Error('The 3D engine (three.min.js) did not load.');
@@ -1531,6 +1661,20 @@ function init(){
   window.addEventListener('resize', onResize);
   wireJoystick();
 
+  /* v2.1, embedded only: the "back to the game" links (top bar +
+     error card) close the overlay instead of navigating this frame
+     to the game's front page — see the embedding section above. */
+  if (EMBEDDED){
+    var backLinks = document.querySelectorAll('a[href="./"]');
+    for (var bi = 0; bi < backLinks.length; bi++){
+      (function(a){
+        if (a.id === 'back-link') a.textContent = '✕ Close — back to the game';
+        a.setAttribute('href', '#');
+        a.addEventListener('click', function(ev){ ev.preventDefault(); closeToGame(); });
+      })(backLinks[bi]);
+    }
+  }
+
   updateSkillBar();
   /* open: a saved game in progress comes straight back; otherwise
      the mode choice, over the quiet court. */
@@ -1551,8 +1695,9 @@ catch(e){ showError(e); }
 
 /* test/debug surface (also handy later): state snapshots + drivers */
 window.BBALL_PAGE = {
-  version: '2.0.0',
+  version: '2.1.0',
   started: function(){ return started; },
+  embedded: function(){ return EMBEDDED; },
   mode: function(){ return mode; },
   phase: function(){ return phase; },
   baskets: function(){ return progress.baskets; },
@@ -1578,6 +1723,7 @@ window.BBALL_PAGE = {
     defenderPos: function(){ return primaryDef ? { x: primaryDef.position.x, z: primaryDef.position.z } : null; },
     setDefenderPos: function(x, z){ if (primaryDef){ primaryDef.position.x = x; primaryDef.position.z = z; } },
     ballPos: function(){ return ball ? { x: ball.position.x, y: ball.position.y, z: ball.position.z } : null; },
+    padVec: function(){ return { x: padVec.x, z: padVec.z }; },
     dribble: function(){ return ballState === 'dribbling'; },
     lastShot: function(){ return lastShot; },
     leaveShown: function(){ return leaveOpen; },
