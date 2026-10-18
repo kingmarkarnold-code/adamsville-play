@@ -23,8 +23,9 @@
 
 /* ---------------- capacities ---------------- */
 /* Joshua's rule: document the why. Traffic streams max 40 rendered cars;
-   slot 40 carries the player's driven van (it has no shadow otherwise —
-   player.shadow hides while driving). NPC cap matches npc_system.js
+   one reserved slot carries the player's vehicle (exempt from the perf
+   shadow budget under his always-fully-draws law, 2026-10-17 — it has no
+   shadow otherwise: player.shadow hides while driving). NPC cap matches npc_system.js
    MAX_VISIBLE. Bus cap covers the 18 real MARTA routes + headroom. */
 var CAP_TRAFFIC = 44;
 var CAP_NPC     = 40;
@@ -118,21 +119,29 @@ function update(){
      42"): perf budget can limit shadow distance. window.__perfShadowDist is
      null at full quality (all shadows), 0 to disable, or a max distance in
      world units. Player position from the global `player` object. */
-  var shMaxD2 = 1e18, px = 0, pz = 0, hasP = false;
+  var shMaxD2 = 1e18, px = 0, pz = 0, hasP = false, perfOff = false;
   try {
     var _psd = window.__perfShadowDist;
     if (_psd !== null && _psd !== undefined) {
-      if (_psd <= 0) { trafficIM.visible = false; npcIM.visible = false; busIM.visible = false; return; }
-      shMaxD2 = _psd * _psd;
+      if (_psd <= 0) { perfOff = true; shMaxD2 = -1; }
+      else shMaxD2 = _psd * _psd;
     }
     if (typeof player !== 'undefined' && player) { px = player.x || 0; pz = player.z || 0; hasP = true; }
   } catch(e){}
-  trafficIM.visible = on; npcIM.visible = on; busIM.visible = on;
+  /* PLAYER'S VEHICLE EXEMPTION (Joshua's law, 2026-10-17: the player's
+     vehicle always fully draws): a perf "shadows off" level no longer
+     returns early here. perfOff makes the range test below fail for every
+     traffic/NPC/bus shadow (shMaxD2=-1 plus the explicit perfOff check in
+     shInRange), while trafficIM stays visible so the player's vehicle
+     slot — written unconditionally in the traffic pass below — still
+     draws his vehicle's shadow at EVERY quality level. */
+  trafficIM.visible = on; npcIM.visible = on && !perfOff; busIM.visible = on && !perfOff;
   if (!on) return;
 
   var s, ci, c, n, b, i;
   /* Distance filter helper: true if (x,z) is within the perf shadow range. */
   function shInRange(x, z){
+    if (perfOff) return false;   /* perf shadows off: nothing is in range (the player's vehicle slot below never consults this test) */
     if (!hasP || shMaxD2 > 1e17) return true;
     var dx = x - px, dz = z - pz;
     return (dx*dx + dz*dz) <= shMaxD2;
@@ -154,12 +163,19 @@ function update(){
         }
       }
     }
-    /* Player's driven van: player.shadow hides while driving, so the van
-       would otherwise cast nothing. Slot 40 is reserved for it. */
-    if (ti < CAP_TRAFFIC && typeof car !== 'undefined' && car && car.driving && car.mesh){
+    /* Player's vehicle (Joshua's law, 2026-10-17: the player's vehicle
+       always fully draws — shadow included): this reserved slot is EXEMPT
+       from the perf shadow budget. It is written at every quality level
+       (even when perfOff has switched every other blob shadow off), at
+       any distance (no shInRange test), and whether he is driving the
+       vehicle or has parked it and walked away. player.shadow hides
+       while driving, so without this slot the driven vehicle would cast
+       nothing at all. Footprint matches the vehicle kind. */
+    if (ti < CAP_TRAFFIC && typeof car !== 'undefined' && car && car.mesh){
       var p = car.mesh.position;
-      if (isFinite(p.x) && isFinite(p.y) && isFinite(p.z) && shInRange(p.x, p.z)){
-        putShadow(trafficIM, ti++, p.x, p.y, p.z, car.yaw || 0, VAN_W, VAN_L);
+      if (isFinite(p.x) && isFinite(p.y) && isFinite(p.z)) {
+        var _pvVan = (car.kind === 'safari');
+        putShadow(trafficIM, ti++, p.x, p.y, p.z, car.yaw || 0, _pvVan ? VAN_W : CAR_W, _pvVan ? VAN_L : CAR_L);
       }
     }
   }catch(e){}
