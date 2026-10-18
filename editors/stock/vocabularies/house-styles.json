@@ -1,0 +1,30 @@
+{
+  "vocabulary": "house-styles",
+  "title": "House styles (subdivision templates)",
+  "source_constant": "HOUSE_STYLES",
+  "source": "Building Editor data.py constants (shipped app 1.7.2; byte-identical copy in this repo at editors/building-editor/data.py)",
+  "migrated": "2026-10-17 — copied verbatim from the app code onto the shared stock shelf (ONE-SOURCE.md §4). The app still reads its baked-in copy until the Building Editor rebuild adopts this shelf; this file is the canonical list from now on.",
+  "values": [
+    "Style 1",
+    "Style 2",
+    "Style 3",
+    "Style 4",
+    "Style 5",
+    "Style 6",
+    "Style 7",
+    "Style 8",
+    "Style 9",
+    "Style 10",
+    "Style 11",
+    "Style 12",
+    "Style 13",
+    "Style 14",
+    "Style 15",
+    "Style 16",
+    "Style 17",
+    "Style 18",
+    "Style 19",
+    "Style 20"
+  ],
+  "generation_note": "In the app code this constant is COMPUTED — [\"Style %d\" % i for i in range(1, 21)] — not a literal list. The shelf stores the expanded literal list it generates (Style 1 … Style 20). Placeholder names; Joshua designs the actual 20 styles later."
+}
