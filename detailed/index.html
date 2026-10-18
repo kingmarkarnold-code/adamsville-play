@@ -298,6 +298,13 @@
      layout pass refines it at startup; this CSS is the pre-layout fallback. */
   #pause-btn { position:fixed; top:10px; right:64px; z-index:30; width:44px; height:44px;
     border-radius:22px; border:2px solid #fff; background:rgba(0,0,0,.5); color:#fff; font-size:18px; }
+  /* GO TO (Joshua 2026-10-18): the compass button sits top-right, just
+     left of the pause button, in the same HUD button family. Its
+     position is also registered in ui_layout.json (both faces), so the
+     layout pass refines it at startup; this CSS is the pre-layout
+     fallback. Behaviour lives in goto.js. */
+  #goto-btn { position:fixed; top:10px; right:124px; z-index:30; width:44px; height:44px;
+    border-radius:22px; border:2px solid #fff; background:rgba(0,0,0,.5); color:#fff; font-size:18px; }
   /* PAUSED overlay: follows the #help card pattern (dark scrim + card).
      The scrim does NOT capture touches (pointer-events:none; the card
      re-enables them) so the settings gear and the pause button stay
@@ -677,6 +684,11 @@
      simulation and the music; the overlay's Resume (or Escape, or the
      button again) unfreezes both. -->
 <button id="pause-btn" aria-label="Pause game">&#9208;</button>
+<!-- GO TO (Joshua 2026-10-18): search the game's own streets and places
+     and jump straight there — on foot in front of the place with a
+     buffer, in a car on the road by it. Behaviour lives in goto.js
+     (the panel is built by that module). Also in Settings as a row. -->
+<button id="goto-btn" aria-label="Go to a place">&#129517;</button>
 <div id="pause-overlay"><div class="card"><h3>PAUSED</h3><button id="pause-resume">&#9654; Resume</button><button id="pause-move">&#9998; Move controls</button></div></div>
 <!-- ZONE UNLOCK CEREMONY (Joshua 2026-10-17): unlocking a zone pauses
      the game and downloads that zone's data under this overlay
@@ -716,6 +728,10 @@
        controls for this screen (hud_move.js). Entering move mode
        auto-pauses; Done restores play. -->
   <button class="row" id="set-movecontrols">Move controls &#9998;</button>
+  <!-- GO TO (Joshua 2026-10-18): the same Go to panel as the compass
+       button in the web view — search a street or a place by name and
+       the game takes you there. Behaviour lives in goto.js. -->
+  <button class="row" id="set-goto">Go to &#129517;</button>
   <h3>Administrator</h3>
   <button class="row" id="adm-map">Re-download Map <span class="adm-tag" id="adm-map-tag"></span></button>
   <button class="row" id="adm-ui">Re-download UI <span class="adm-tag" id="adm-ui-tag"></span></button>
@@ -13158,6 +13174,11 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
      — pause, close menu, verified background download, stash the spot,
      reload, restore. Wired to #adm-uiflow; boot hook in __tryStartGame. -->
 <script data-dsrc="ui_update_flow.js" data-dkey=""></script>
+<!-- GO TO (Joshua 2026-10-18): search the game's own streets and places
+     (this zone's roads, every zone's places.json, hero buildings) and
+     jump there — buffer-safe landings, locked zones refused plainly,
+     unlocked zones ride the resume stash + zone reload. goto.js. -->
+<script data-dsrc="goto.js" data-dkey=""></script>
 <!-- INTERIOR SYSTEM (2026-10-11): doors, furniture collision, appliances,
      pickupables. Non-invasive hooks (wraps updateActionButton /
      resolveCollision, own #action-btn listener) -- no game-code edits needed. -->
