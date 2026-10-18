@@ -553,6 +553,13 @@ function startFlow(req){
   showButton('zone-load-continue', false);
 
   var results=[];  // per-zone outcome lines for the final summary
+  var newlyCommitted=[];  // names of zones whose unlock COMMITTED in
+    // this ceremony — drives the post-unlock environment refresh in
+    // finish() (Joshua's ruling, 2026-10-17: the environment must
+    // change after an unlock, even if that means an automatic page
+    // refresh). Zones that were already open, or whose download
+    // failed, never land in this list — so a failed download can
+    // never reach the refresh, exactly as the ceremony's law says.
 
   function finish(){
     // Ceremony over: success, partial success, or a cancelled
@@ -567,6 +574,36 @@ function startFlow(req){
     showButton('zone-load-cancel', false);
     _onRetry=null; _onCancel=null;
     _onContinue=function(){
+      /* ENVIRONMENT REFRESH (Joshua's ruling, 2026-10-17): when this
+         ceremony actually unlocked something, Continue does NOT just
+         unpause — the page refreshes so the world rebuilds with the
+         newly unlocked zones in it (the world builds one zone per
+         page load; without the refresh the unlocked zone stayed
+         naked space on entry). The reload rides ui_update_flow's
+         resume stash: his exact spot/zone/heading/in-car state are
+         restored on boot and he does not move — the restore toast
+         tells him the new worlds wait at the boundary. His CURRENT
+         zone stays the page's zone (no teleport): the refresh
+         changes what crossing will find, not where he stands.
+         When nothing committed (all already open, or a cancelled
+         failure with no commits) there is nothing new for a reload
+         to build — plain resume, no refresh. If the stash cannot be
+         written (no live player), fall back to plain resume too:
+         the unlock itself already committed and stands. */
+      if (newlyCommitted.length){
+        try{
+          if (window.UIUpdateFlow && typeof UIUpdateFlow.stashAndReload==='function'){
+            var toast=(newlyCommitted.length===1)
+              ? '🗺️ '+newlyCommitted[0]+' unlocked — its world is ready when you cross.'
+              : '🗺️ '+newlyCommitted.length+' zones unlocked — their worlds are ready when you cross.';
+            if (UIUpdateFlow.stashAndReload({toast:toast})){
+              hideOverlay();
+              busy=false;
+              return;  // the page is reloading; do NOT resume first
+            }
+          }
+        }catch(e){}
+      }
       hideOverlay();
       busy=false;
       resumeGame();
@@ -604,6 +641,7 @@ function startFlow(req){
         try{ committed=req.commit(id); }catch(e){}
         if (res.roads) addZoneRoadsToMinimap(id, res.roads);
         if (committed){
+          newlyCommitted.push(name);
           results.push(res.alreadyLocal
             ? '✓ '+name+' unlocked — already on device, minimap updated.'
             : '✓ '+name+' unlocked — downloaded '+mb(res.bytes)+', minimap updated.');
