@@ -59,6 +59,38 @@
 # This module is pure data + GitHub transport by injected callables
 # (fetch_file / push_targets / open_connection, github_sync's
 # signatures) so the harness can drive it with a stubbed transport.
+#
+# 2.0.0 REWORK (Joshua, 2026-10-18): THE SNAPSHOT MODEL. 1.7.2's
+# load-on-demand still downloaded a building's WHOLE ZONE before it
+# could show one building (19.06 MB for Riverdale) — the weight
+# Joshua's lightweight law rejects. Now selecting a building
+# generates a SNAPSHOT of just that building:
+#
+#   * A zone's SPINE (buildings.json boxes + zone.json + hero list,
+#     ~0.9–1.9 MB) is all that loads before a selection. The detail
+#     records live in editors/building-editor/detail-chunks/<zone>/
+#     as small per-area files (a 2000-unit grid; each chunk holds
+#     the records of the buildings whose centres fall in its cell,
+#     keyed by building index). DetailList fetches ONLY the chunks
+#     a snapshot touches — the subject's cell and its neighbours'.
+#   * Roads stay the game's own roads.json (raw bytes, parsed
+#     transiently), fetched lazily on the zone's first snapshot.
+#   * EDITING a zone is the one moment its full detail set is
+#     assembled (materialize_details, from the same chunks): the
+#     write-back law needs the whole aligned pair to bake a delta
+#     into. Viewing never pays that cost.
+#   * SAVING pushes the zone pair + regenerated light index + the
+#     regenerated chunks of exactly the cells the edits touched
+#     (a delete shifts indexes, so it regenerates every cell), and
+#     the proof leg must return bytes IDENTICAL to what was pushed
+#     AND records identical to what was meant — the byte-proof law
+#     (Issue B: a save may only say "saved" about bytes that were
+#     seen coming back carrying the change).
+#   * The flagged matcher compares AREA centroids (the centre the
+#     flagged list actually stores). 1.7.x compared vertex means,
+#     which drift past the 1.0 tolerance on irregular rings — the
+#     measured reason 1,122 of 1,532 flagged buildings were never
+#     locked. See ring_area_centroid.
 
 import json
 import math
@@ -84,7 +116,58 @@ STATION_EDITS_REPO_PATH = "editors/building-editor/station-edits.json"
 
 # Stamps into the version string of any zone file this editor saves
 # ("<date>-building-editor-<ver>-<zone>").
-EDITOR_VERSION = "1.7.3"
+EDITOR_VERSION = "2.0.0"
+
+# -- detail chunks (2.0.0 snapshot model) ------------------------------
+# buildings_detail.json stays the game's canonical detail file; the
+# EDITOR reads details through chunk files derived from it (and
+# regenerates the chunks it touches when it saves). One chunk per
+# 2000-unit grid cell: {"zone", "cell": [cx, cz], "cellSize",
+# "count", "records": {"<index>": {detail record}}}. A record lives
+# in the cell of its BOX CENTRE. 222 chunks cover all seven zones.
+DETAIL_CHUNK_DIR = "editors/building-editor/detail-chunks"
+DETAIL_CELL = 2000.0
+# How many fetched chunks a zone keeps in memory at once (LRU). A
+# snapshot touches 1–4; 12 leaves headroom for browsing around.
+CHUNK_CACHE_MAX = 12
+# The snapshot's neighbourhood radius (2.0.0 spec §1): the subject
+# is shown WITH the buildings inside this distance, read-only.
+SNAPSHOT_RADIUS = 120.0
+
+
+def detail_cell(x, z):
+    """The detail-chunk cell of a point: (cx, cz) on the
+    DETAIL_CELL grid."""
+    return (int(math.floor(x / DETAIL_CELL)),
+            int(math.floor(z / DETAIL_CELL)))
+
+
+def detail_chunk_path(zone, cell):
+    """Repo path of one detail chunk file."""
+    return f"{DETAIL_CHUNK_DIR}/{zone}/{cell[0]}_{cell[1]}.json"
+
+
+def build_chunk_doc(zone, cell, boxes, details):
+    """
+    The chunk document for one cell from full zone data: the
+    records (keyed by building index) of every building whose box
+    centre falls in `cell`. Shared by the committed generator
+    (generate_detail_chunks.py) and by the save path (which
+    regenerates exactly the cells its edits touched) — one
+    definition, so the two can never drift.
+    """
+    records = {}
+    for i, box in enumerate(boxes):
+        if detail_cell(box[0], box[1]) == cell:
+            records[str(i)] = details[i]
+    return {"zone": zone, "cell": [cell[0], cell[1]],
+            "cellSize": DETAIL_CELL, "count": len(records),
+            "records": records}
+
+
+def chunk_bytes(doc):
+    """Canonical chunk bytes (compact, like the zone files)."""
+    return json.dumps(doc, separators=(",", ":")).encode()
 
 # Download retry policy (1.7.x): network-class errors (connection
 # reset, timeout, DNS ...) get up to this many attempts per file,
@@ -172,6 +255,37 @@ def ring_centroid(ring):
         return (0.0, 0.0)
     return (sum(p[0] for p in pts) / len(pts),
             sum(p[1] for p in pts) / len(pts))
+
+
+def ring_area_centroid(ring):
+    """The ring's TRUE (area-weighted, shoelace) centroid — the
+    centre the conversion stored in the flagged list's entries.
+
+    2.0.0 matcher fix: 1.7.x matched flagged entries against
+    ring_centroid (the vertex MEAN). On a rectangular ring the two
+    centres coincide, but on an irregular ring they drift apart —
+    Elizabeth Baptist Church: 4.57 units — far past the matcher's
+    1.0 tolerance, so the lock silently failed for 1,122 of the
+    1,532 flagged buildings (73%), including the church itself
+    (diagnosis measured an area-centroid match at 1,532/1,532,
+    worst distance 0.0071 units). Falls back to the vertex mean
+    for degenerate (zero-area) rings.
+    """
+    pts = ring[:-1] if len(ring) > 1 and ring[0] == ring[-1] else ring
+    if len(pts) < 3:
+        return ring_centroid(ring)
+    a2 = cx = cz = 0.0
+    n = len(pts)
+    for i in range(n):
+        x1, z1 = pts[i]
+        x2, z2 = pts[(i + 1) % n]
+        cross = x1 * z2 - x2 * z1
+        a2 += cross
+        cx += (x1 + x2) * cross
+        cz += (z1 + z2) * cross
+    if abs(a2) < 1e-9:
+        return ring_centroid(ring)
+    return (cx / (3.0 * a2), cz / (3.0 * a2))
 
 
 def _point_in_polygon(x, z, ring):
@@ -486,9 +600,10 @@ FLAGGED_LOCK_MESSAGE = (
     "deleted in this version of the editor.")
 
 # How close a building's ring centroid must sit to a flagged entry's
-# centroid to count as the same building (converter coordinates are
-# exact; 1 unit of slack covers vertex-mean vs true-centroid drift
-# on non-rectangular rings).
+# centroid to count as the same building. 2.0.0: both sides are now
+# AREA centroids (see ring_area_centroid), so the tolerance only has
+# to cover conversion rounding — measured worst true distance
+# across all 1,532 flagged buildings is 0.0071 units.
 FLAG_MATCH_TOLERANCE = 1.0
 
 
@@ -534,10 +649,13 @@ class FlaggedIndex:
     def match(self, zone, ring):
         """The flagged entry matching this ring's centroid, or
         None. The lock check — run against the building's REAL ring
-        once its zone detail is loaded."""
+        once its snapshot is open. 2.0.0: compares AREA centroids
+        (ring_area_centroid) — the centre the flagged list stores.
+        The 1.7.x vertex-mean comparison is the measured reason
+        most flagged buildings were never locked."""
         if not ring:
             return None
-        cx, cz = ring_centroid(ring)
+        cx, cz = ring_area_centroid(ring)
         return self.match_point(zone, cx, cz)
 
     def match_point(self, zone, x, z):
@@ -766,6 +884,15 @@ class StationEdits:
             return False, (
                 "push reached GitHub but downloading the proof copy "
                 f"back failed: {err} — your save DID reach GitHub"), None
+        # 2.0.0 byte-proof law: the proof copy must be the very
+        # bytes that were pushed — anything else means the save
+        # cannot honestly be called verified.
+        if raw != payload:
+            return False, (
+                "the station-edits copy that came back from GitHub "
+                "is not the file that was just sent — the save is "
+                "NOT verified. Your edits are still on this "
+                "computer; save again."), None
         proof = StationEdits.from_bytes(raw)
         self.edits = proof.edits
         self.dirty = False
@@ -783,70 +910,200 @@ point_in_polygon = _point_in_polygon
 
 
 # ---------------------------------------------------------------------------
+# Detail records, lazily (2.0.0 snapshot model)
+# ---------------------------------------------------------------------------
+
+class DetailList:
+    """
+    A read facade over one zone's detail records that behaves like
+    the list it replaces — len(), [i], iteration — but fetches
+    records CHUNK BY CHUNK (see DETAIL_CHUNK_DIR) only when they
+    are actually touched: opening one building downloads its cell's
+    chunk (~50–400 KB), never the zone's whole detail file
+    (1.7–10.7 MB). Fetched chunks are kept in a small LRU
+    (CHUNK_CACHE_MAX) so neighbouring buildings — the snapshot's
+    context — usually ride in chunks already fetched.
+
+    This facade NEVER writes: the first edit to a zone materialises
+    the full list (ZoneData.materialize_details) and the facade is
+    replaced by the real list, so every write path works on plain
+    data exactly as before.
+    """
+
+    def __init__(self, zd):
+        self._zd = zd
+        self._chunks = {}          # cell -> {"<index>": record}
+        self._lru = []             # cells, least-recent first
+
+    def __len__(self):
+        return len(self._zd.boxes)
+
+    def _chunk(self, cell):
+        """The parsed records dict of one cell ({} when the chunk
+        file does not exist — a cell with no buildings in it)."""
+        if cell in self._chunks:
+            self._lru.remove(cell)
+            self._lru.append(cell)
+            return self._chunks[cell]
+        raw = self._zd.fetch_chunk_raw(cell)
+        records = {}
+        if raw is not None:
+            try:
+                doc = json.loads(raw.decode("utf-8"))
+                records = doc.get("records") or {}
+            except Exception as e:
+                raise ZoneDataError(
+                    f"Zone {self._zd.zone}: detail chunk "
+                    f"{cell[0]}_{cell[1]} is not readable ({e}).")
+        self._chunks[cell] = records
+        self._lru.append(cell)
+        while len(self._lru) > CHUNK_CACHE_MAX:
+            old = self._lru.pop(0)
+            self._chunks.pop(old, None)
+        return records
+
+    def __getitem__(self, i):
+        if isinstance(i, slice):
+            return [self[j] for j in range(*i.indices(len(self)))]
+        n = len(self)
+        if i < 0:
+            i += n
+        if i < 0 or i >= n:
+            raise IndexError(i)
+        box = self._zd.boxes[i]
+        rec = self._chunk(detail_cell(box[0], box[1])).get(str(i))
+        if rec is None:
+            # Loud, never silent (Joshua's failure philosophy): a
+            # building whose record cannot be found is a data
+            # problem he must hear about, not an empty view.
+            raise ZoneDataError(
+                f"Zone {self._zd.zone}: building {i}'s detail "
+                f"record is missing from its detail chunk — the "
+                f"chunk files are out of step with buildings.json. "
+                f"Regenerate them with generate_detail_chunks.py.")
+        return rec
+
+    def __iter__(self):
+        return (self[j] for j in range(len(self)))
+
+    def __contains__(self, item):
+        return any(self[j] == item for j in range(len(self)))
+
+
+# ---------------------------------------------------------------------------
 # One zone's full data (loaded ON DEMAND, 1.7.2)
 # ---------------------------------------------------------------------------
 
 class ZoneData:
     """
-    In-memory copy of one zone's game building files, loaded only
-    when Joshua actually opens that zone (1.7.2 load on demand).
+    One zone's data, held at SNAPSHOT weight (2.0.0).
 
-    boxes:   [[x, z, w, d, h, type], ...]         (from buildings.json)
-    details: [{name, osm_type, height_m, ring, moved}, ...] (aligned)
+    boxes:   [[x, z, w, d, h, type], ...] — the zone's SPINE, from
+             buildings.json. Always fully held once the zone is
+             opened: it is small, and every snapshot needs the
+             centres (neighbourhood, chunk addressing).
+    details: the detail records, index-aligned with boxes — but as
+             a DetailList facade: records are fetched chunk by
+             chunk as snapshots touch them. The FIRST EDIT to the
+             zone materialises the real list (materialize_details)
+             and the facade is replaced by it.
     hero:    parsed hero_buildings.json dict, or None if the zone
              has none (only adamsville ships one today). READ-ONLY:
              listed, never modified.
     zone_meta: parsed zone.json (bounds decide zone attribution).
-    roads_raw: the zone's roads.json BYTES, kept unparsed. The
-             parsed roads of a zone run to ~10 MB and were a real
-             part of the 1.7.1 memory weight; 1.7.2 parses them
-             TRANSIENTLY (transient_roads) when a building is
-             selected, keeps only the segments near that building,
-             and drops the parse.
+    roads_raw: the zone's roads.json BYTES, fetched lazily on the
+             first snapshot and kept unparsed. The parsed roads of
+             a zone run to ~10 MB; they are parsed TRANSIENTLY
+             (transient_roads) when a building is shown, reduced to
+             the segments near it, and dropped.
     dirty:   True once any placement/edit/delete touched this zone.
+    bytes_fetched: detail/roads bytes this zone has downloaded in
+             this session (the snapshot weight accounting the
+             window can show; chunk + roads bytes only — the spine
+             is counted by the loader that fetched it).
     """
 
     def __init__(self, zone):
         self.zone = zone
         self.version = ""
         self.boxes = []
-        self.details = []
+        self.details = DetailList(self)
         self.hero = None
         self.zone_meta = None
         self.roads_raw = None
         self.dirty = False
+        # Set by GameStore when the zone enters the store: the
+        # transport the lazy fetches (chunks, roads, materialise)
+        # go through. A ZoneData with no store can still be built
+        # whole from files (load) — the harness and the chunk
+        # generator do that — but it cannot fetch anything.
+        self.store = None
+        self.bytes_fetched = 0
+        # Pristine copies taken at materialisation (the state
+        # GitHub held when editing began): the save path diffs
+        # against them to know which records — and which chunk
+        # cells — a save must push and prove.
+        self._pristine_boxes = None
+        self._pristine_details = None
+        self._deleted_any = False
 
-    # -- loading --------------------------------------------------------
+    # -- loading ---------------------------------------------------------
 
-    def load(self, files):
+    def load_spine(self, files):
         """
-        Populate from {filename: bytes} as downloaded from GitHub.
-        Raises ZoneDataError if the box/detail pair is misaligned —
-        a misaligned pair must never be edited or re-pushed.
+        Populate the SPINE from {filename: bytes}: buildings.json
+        (boxes), zone.json, hero_buildings.json. NO detail file is
+        read — details arrive per chunk through the DetailList
+        facade. Returns self.
         """
         b = json.loads(files["buildings.json"])
         self.version = b.get("version", "")
         self.boxes = [list(row) for row in b.get("buildings", [])]
-        self.details = json.loads(files["buildings_detail.json"])
-        if len(self.boxes) != len(self.details):
-            raise ZoneDataError(
-                f"Zone {self.zone}: buildings.json has "
-                f"{len(self.boxes)} buildings but buildings_detail.json "
-                f"has {len(self.details)} — refusing to edit a "
-                f"misaligned pair.")
+        self.details = DetailList(self)
         hero_raw = files.get("hero_buildings.json")
         self.hero = json.loads(hero_raw) if hero_raw else None
         meta_raw = files.get("zone.json")
         self.zone_meta = json.loads(meta_raw) if meta_raw else None
-        # 1.7.2: roads stay RAW (see class docstring).
         self.roads_raw = files.get("roads.json")
         self.dirty = False
         return self
 
+    def load(self, files):
+        """
+        Populate WHOLE from {filename: bytes} including
+        buildings_detail.json (which materialises the detail list
+        at once). The 1.7.x entry point, kept for the harness
+        fixtures and the chunk generator, which legitimately work
+        on complete local data. Raises ZoneDataError if the
+        box/detail pair is misaligned — a misaligned pair must
+        never be edited or re-pushed.
+        """
+        self.load_spine(files)
+        raw = files.get("buildings_detail.json")
+        if raw is not None:
+            details = json.loads(raw)
+            if len(self.boxes) != len(details):
+                raise ZoneDataError(
+                    f"Zone {self.zone}: buildings.json has "
+                    f"{len(self.boxes)} buildings but "
+                    f"buildings_detail.json has {len(details)} — "
+                    f"refusing to edit a misaligned pair.")
+            self.details = details
+        return self
+
+    @property
+    def materialized(self):
+        """True when the full detail list is in memory (the zone
+        is in edit mode, or was loaded whole with load())."""
+        return isinstance(self.details, list)
+
     def refresh_buildings(self, files):
         """Replace ONLY the building pair with re-downloaded proof
         bytes (after a successful round trip); hero/zone/roads are
-        untouched. load() semantics for the pair, dirty cleared."""
+        untouched. 2.0.0: the details return to the lazy facade —
+        the proof chunks were pushed in the same round, so the
+        next snapshot re-reads exactly what GitHub now holds.
+        Dirty cleared; pristine copies dropped."""
         b = json.loads(files["buildings.json"])
         details = json.loads(files["buildings_detail.json"])
         boxes = [list(row) for row in b.get("buildings", [])]
@@ -856,17 +1113,139 @@ class ZoneData:
                 f"({len(boxes)} boxes vs {len(details)} details).")
         self.version = b.get("version", "")
         self.boxes = boxes
-        self.details = details
+        self.details = DetailList(self)
+        self._pristine_boxes = None
+        self._pristine_details = None
+        self._deleted_any = False
         self.dirty = False
+
+    # -- lazy fetches (through the owning store's transport) --------------
+
+    def _require_store(self, what):
+        if self.store is None:
+            raise ZoneDataError(
+                f"Zone {self.zone}: cannot {what} — this zone was "
+                f"loaded without a download connection.")
+        return self.store
+
+    def fetch_chunk_raw(self, cell):
+        """Raw bytes of one detail chunk, or None when the chunk
+        file does not exist (404 = a cell with no buildings).
+        Counted in bytes_fetched. Network-class failures raise
+        ZoneDataError — a snapshot must fail loudly, not empty."""
+        store = self._require_store("fetch detail chunks")
+        path = detail_chunk_path(self.zone, cell)
+        raw, err = store.fetch_chunk(self.zone, cell)
+        if raw is None:
+            if err and "404" in err:
+                return None
+            raise ZoneDataError(f"{path}: {err}")
+        self.bytes_fetched += len(raw)
+        return raw
+
+    def ensure_roads(self):
+        """Fetch the zone's roads.json bytes if not held (the
+        first snapshot in a zone pays it once; the bytes stay for
+        transient parses)."""
+        if self.roads_raw is not None:
+            return None
+        store = self._require_store("fetch roads")
+        path = zone_repo_path(self.zone, "roads.json")
+        raw, err = store.fetch_zone_file(self.zone, "roads.json")
+        if raw is None:
+            return err
+        self.roads_raw = raw
+        self.bytes_fetched += len(raw)
+        return None
+
+    def materialize_details(self):
+        """
+        Assemble the zone's FULL detail list from its chunk files
+        — the moment a VIEWED zone becomes an EDITED zone. Takes
+        the pristine copies the save path diffs against. Returns
+        an error string or None. Already-materialised zones (and
+        whole-loaded ones) return at once.
+        """
+        if self.materialized:
+            return None
+        store = self._require_store("load building details")
+        cells = sorted({detail_cell(b[0], b[1]) for b in self.boxes})
+        full = [None] * len(self.boxes)
+        for cell in cells:
+            raw = self.fetch_chunk_raw(cell)
+            if raw is None:
+                continue
+            try:
+                records = json.loads(
+                    raw.decode("utf-8")).get("records") or {}
+            except Exception as e:
+                return (f"{detail_chunk_path(self.zone, cell)}: "
+                        f"{e}")
+            for key, rec in records.items():
+                try:
+                    i = int(key)
+                except (TypeError, ValueError):
+                    continue
+                if 0 <= i < len(full):
+                    full[i] = rec
+        missing = [i for i, rec in enumerate(full) if rec is None]
+        if missing:
+            return (f"Zone {self.zone}: {len(missing)} building "
+                    f"detail records are missing from the detail "
+                    f"chunks (first: {missing[0]}) — the chunk "
+                    f"files are out of step with buildings.json. "
+                    f"Regenerate them with "
+                    f"generate_detail_chunks.py.")
+        import copy as _copy
+        self._pristine_boxes = [list(b) for b in self.boxes]
+        self._pristine_details = _copy.deepcopy(full)
+        self.details = full
+        return None
+
+    # -- the snapshot ------------------------------------------------------
+
+    def neighbours_within(self, index, radius=SNAPSHOT_RADIUS):
+        """
+        The snapshot's context buildings: every OTHER building
+        whose centre sits within `radius` of building `index`'s
+        centre, as [{"index", "box", "ring", "height_m"}] with the
+        records fetched through the lazy facade (only the chunks
+        the neighbourhood touches are downloaded). Read-only
+        context — the editor never edits through this list.
+        """
+        if not (0 <= index < len(self.boxes)):
+            return []
+        cx, cz = self.boxes[index][0], self.boxes[index][1]
+        r2 = radius * radius
+        out = []
+        for j, box in enumerate(self.boxes):
+            if j == index:
+                continue
+            dx, dz = box[0] - cx, box[1] - cz
+            if dx * dx + dz * dz <= r2:
+                det = self.details[j]
+                out.append({"index": j, "box": box,
+                            "ring": det.get("ring") or [],
+                            "height_m": det.get("height_m")
+                            or box[4]})
+        return out
 
     # -- roads (transient) ------------------------------------------------
 
     def transient_roads(self):
         """Parse this zone's roads for ONE use and return the dict
         (or None). The caller drops the result when done — nothing
-        here retains the parse."""
+        here retains the parse. 2.0.0: the raw bytes are fetched
+        lazily on first use (ensure_roads); a fetch failure leaves
+        roads_raw empty and this returns None — the callers treat
+        "no roads" as "no backdrop / no front derivation" exactly
+        as 1.7.x did, and ensure_roads' error is surfaced by the
+        selection path before it gets here."""
         if not self.roads_raw:
-            return None
+            if self.store is not None:
+                self.ensure_roads()
+            if not self.roads_raw:
+                return None
         try:
             return json.loads(self.roads_raw)
         except Exception:
@@ -923,6 +1302,16 @@ class ZoneData:
             raise ZoneDataError(FLAGGED_LOCK_MESSAGE)
 
     # -- edits (box + detail always move together, index-aligned) ---------
+    #
+    # 2.0.0: every edit first MATERIALISES the zone's details (the
+    # snapshot becomes an edit session). A materialisation failure
+    # refuses the edit with the reason — an editor that cannot see
+    # the whole aligned pair must not write half of it.
+
+    def _materialize_or_refuse(self):
+        err = self.materialize_details()
+        if err:
+            raise ZoneDataError(err)
 
     def place(self, x, z, w, d, h, editor_type, name=None):
         """
@@ -932,6 +1321,7 @@ class ZoneData:
         """
         if editor_type not in EDITOR_TYPE_MAP:
             raise ZoneDataError(f"Unknown building type: {editor_type}")
+        self._materialize_or_refuse()
         code, osm_type = EDITOR_TYPE_MAP[editor_type]
         self.boxes.append([x, z, w, d, h, code])
         self.details.append({
@@ -943,6 +1333,7 @@ class ZoneData:
     def move(self, index, new_x, new_z, flagged=None):
         """Move a building: box centre and ring shift together."""
         self._refuse_if_flagged(index, flagged)
+        self._materialize_or_refuse()
         box = self.boxes[index]
         dx, dz = new_x - box[0], new_z - box[1]
         box[0], box[1] = new_x, new_z
@@ -954,6 +1345,7 @@ class ZoneData:
         """Resize a building: box dims + height_m + ring rebuilt from
         the (unchanged) centre, so box and footprint stay consistent."""
         self._refuse_if_flagged(index, flagged)
+        self._materialize_or_refuse()
         box = self.boxes[index]
         box[2], box[3], box[4] = w, d, h
         det = self.details[index]
@@ -962,10 +1354,15 @@ class ZoneData:
         self.dirty = True
 
     def delete(self, index, flagged=None):
-        """Delete a building: BOTH the box and its detail entry go."""
+        """Delete a building: BOTH the box and its detail entry go.
+        2.0.0: a delete SHIFTS the indexes of every later building,
+        so the zone's whole chunk set is regenerated at save time
+        (see chunk_cells_to_push)."""
         self._refuse_if_flagged(index, flagged)
+        self._materialize_or_refuse()
         del self.boxes[index]
         del self.details[index]
+        self._deleted_any = True
         self.dirty = True
 
     # -- hero buildings (read-only listing) --------------------------------
@@ -1007,8 +1404,16 @@ class ZoneData:
         """
         The three files a dirty zone pushes, as {filename: bytes}:
         buildings.json (fresh version + realCount), the detail array,
-        and the regenerated buildings.js twin.
+        and the regenerated buildings.js twin. Requires the zone to
+        be MATERIALISED (build_targets guarantees it) — serialising
+        through the lazy facade would fetch every chunk silently,
+        which is exactly the hidden whole-zone load 2.0.0 bans.
         """
+        if not self.materialized:
+            raise ZoneDataError(
+                f"Zone {self.zone}: payloads requested before the "
+                f"zone's details were loaded — refusing to build a "
+                f"save out of a partial view.")
         version = self.new_version(today)
         buildings_doc = {"version": version,
                          "realCount": len(self.boxes),
@@ -1030,6 +1435,67 @@ class ZoneData:
         return build_index(self.zone, self.boxes, self.details,
                            self.hero_list(), bounds,
                            self.new_version(today))
+
+    # -- save diffing (2.0.0: the write-back law, made measurable) --------
+
+    def changed_indices(self):
+        """
+        The building indexes whose box or detail record differs
+        from the pristine copies taken at materialisation (plus any
+        appended indexes). Empty when pristine copies are missing
+        (a whole-loaded zone) — callers treat that as "unknown",
+        never as "nothing changed". A delete shifts indexes, so
+        after one the honest answer is "everything from the first
+        difference on" — the length check below catches it: when
+        the counts differ, every index from the first mismatch to
+        the end of the longer side counts as changed.
+        """
+        if self._pristine_details is None \
+                or self._pristine_boxes is None:
+            return None
+        old_b, old_d = self._pristine_boxes, self._pristine_details
+        changed = set()
+        n = max(len(old_b), len(self.boxes))
+        for i in range(n):
+            ob = old_b[i] if i < len(old_b) else None
+            nb = self.boxes[i] if i < len(self.boxes) else None
+            od = old_d[i] if i < len(old_d) else None
+            nd = self.details[i] if i < len(self.details) else None
+            if ob != nb or od != nd:
+                changed.add(i)
+        return changed
+
+    def chunk_cells_to_push(self):
+        """
+        The detail-chunk cells a save of this zone must regenerate
+        and push (2.0.0): the cells of every CHANGED building —
+        both its pristine cell and its current cell (a move across
+        a boundary touches two). A delete (index shift) or missing
+        pristine copies regenerate EVERY cell the zone has, on
+        either side of the save. Only meaningful when materialised.
+        """
+        if self._deleted_any or self._pristine_boxes is None:
+            cells = {detail_cell(b[0], b[1]) for b in self.boxes}
+            if self._pristine_boxes:
+                cells |= {detail_cell(b[0], b[1])
+                          for b in self._pristine_boxes}
+            return sorted(cells)
+        cells = set()
+        for i in self.changed_indices() or ():
+            if i < len(self._pristine_boxes):
+                pb = self._pristine_boxes[i]
+                cells.add(detail_cell(pb[0], pb[1]))
+            if i < len(self.boxes):
+                nb = self.boxes[i]
+                cells.add(detail_cell(nb[0], nb[1]))
+        return sorted(cells)
+
+    def chunk_payload(self, cell):
+        """The regenerated chunk file bytes for one cell, from the
+        materialised data (an emptied cell pushes an empty-records
+        chunk — the file stays, its contents say what is)."""
+        return chunk_bytes(build_chunk_doc(
+            self.zone, cell, self.boxes, self.details))
 
 
 def buildings_js_bytes(zone, version, boxes):
@@ -1057,8 +1523,8 @@ def buildings_js_bytes(zone, version, boxes):
 class GameStore:
     """
     indexes:      zone -> BuildingIndex (light; browsable at once)
-    zones:        zone -> ZoneData (FULL data; only zones Joshua
-                  actually opened — the load-on-demand rule)
+    zones:        zone -> ZoneData (spine-loaded; details lazy —
+                  see the ZoneData docstring)
     subdivisions: [{"name", "polygon": [[x, z], ...], "style"}] —
                   editor working data, persisted to
                   SUBDIVISIONS_REPO_PATH through the same round trip.
@@ -1068,7 +1534,7 @@ class GameStore:
     """
 
     def __init__(self, flagged=None):
-        self.zones = {}            # zone name -> ZoneData (loaded only)
+        self.zones = {}            # zone name -> ZoneData (spine-loaded)
         self.indexes = {}          # zone name -> BuildingIndex
         self.subdivisions = []
         self.subdivisions_dirty = False
@@ -1077,11 +1543,50 @@ class GameStore:
         self.review = None
         self.station_edits = StationEdits()
         self._load_order = []      # loaded zones, oldest first
+        # The bound transport (2.0.0): the fetch callables the lazy
+        # per-zone fetches (detail chunks, roads, materialisation)
+        # go through. Bound by the window at startup and by every
+        # ensure_* call, so a ZoneData always fetches the same way
+        # its spine was fetched (through the suite shared cache in
+        # the app; through the stub in the harness).
+        self._fetch = None
+        self._fetch_progress = None
+        self._progress = None
 
     def set_flagged(self, flagged):
         """Adopt the downloaded flagged index (1.7.2: the list is
         downloaded on open, after the store exists)."""
         self.flagged = flagged
+
+    # -- the bound transport (2.0.0) --------------------------------------
+
+    def bind_transport(self, fetch_file, fetch_file_progress=None,
+                       progress=None):
+        """Bind the fetch callables lazy zone loads use. The window
+        binds its shared-cache fetcher once at startup; ensure_*
+        calls rebind to whatever transport loaded them."""
+        if fetch_file is not None:
+            self._fetch = fetch_file
+        if fetch_file_progress is not None:
+            self._fetch_progress = fetch_file_progress
+        if progress is not None:
+            self._progress = progress
+
+    def fetch_chunk(self, zone, cell):
+        """(raw, err) for one detail chunk through the bound
+        transport, with the standard retry policy."""
+        if self._fetch is None:
+            return None, "no download connection is bound"
+        return _fetch_with_retries(
+            self._fetch, detail_chunk_path(zone, cell))
+
+    def fetch_zone_file(self, zone, fname):
+        """(raw, err) for one of a zone's game files through the
+        bound transport, with the standard retry policy."""
+        if self._fetch is None:
+            return None, "no download connection is bound"
+        return _fetch_with_retries(self._fetch,
+                                   zone_repo_path(zone, fname))
 
     # -- light indexes ---------------------------------------------------
 
@@ -1113,21 +1618,25 @@ class GameStore:
                 errors[zone] = err
         return errors
 
-    # -- zone detail, on demand -------------------------------------------
+    # -- zone data, on demand ----------------------------------------------
 
-    def ensure_zone(self, zone, fetch_file, fetch_file_progress=None,
-                    progress=None):
+    def ensure_spine(self, zone, fetch_file, fetch_file_progress=None,
+                     progress=None):
         """
-        Download + parse ONE zone's full building files (the
-        selection-triggered load of the 1.7.2 design). A file that
-        fails is reported AS "<repo path>: <GitHub's message>";
-        hero_buildings.json is optional (only adamsville ships one
-        — a 404 there is normal). Returns an error string or None.
+        Download ONE zone's SPINE (2.0.0): buildings.json +
+        zone.json + hero_buildings.json (404-normal) — the light
+        frame every snapshot hangs on. The detail records are NOT
+        downloaded (they arrive per chunk through the DetailList
+        facade) and neither is roads.json (lazy, first snapshot).
+        A file that fails is reported AS "<repo path>: <GitHub's
+        message>". Returns an error string or None.
         """
+        self.bind_transport(fetch_file, fetch_file_progress, progress)
         if zone in self.zones:
             return None
         files = {}
-        for fname in ZONE_FILES:
+        for fname in ("buildings.json", "zone.json",
+                      "hero_buildings.json"):
             path = zone_repo_path(zone, fname)
             raw, err = _fetch_progress(fetch_file,
                                        fetch_file_progress,
@@ -1139,11 +1648,61 @@ class GameStore:
                 return err
             files[fname] = raw
         try:
-            self.zones[zone] = ZoneData(zone).load(files)
+            zd = ZoneData(zone).load_spine(files)
         except Exception as e:
             return str(e)
+        zd.store = self
+        self.zones[zone] = zd
         self._load_order.append(zone)
         return None
+
+    def ensure_zone(self, zone, fetch_file, fetch_file_progress=None,
+                    progress=None):
+        """
+        The FULL load of one zone (2.0.0): spine + every detail
+        record materialised + roads bytes. Only for actions that
+        genuinely need the whole zone (baking a subdivision). The
+        selection path uses ensure_spine + snapshots instead.
+        Returns an error string or None.
+        """
+        err = self.ensure_spine(zone, fetch_file,
+                                fetch_file_progress, progress)
+        if err:
+            return err
+        zd = self.zones[zone]
+        err = zd.materialize_details()
+        if err:
+            return err
+        return zd.ensure_roads()
+
+    def open_snapshot(self, zone, index):
+        """
+        Generate the SNAPSHOT of one building (2.0.0 spec §1): the
+        subject's record, its flagged entry (if any), and its
+        read-only neighbours within SNAPSHOT_RADIUS — fetching
+        only the detail chunks those records live in. The zone's
+        spine must already be loaded (ensure_spine). Returns a
+        dict {zd, index, detail, flagged, neighbours, bytes}
+        where bytes counts the detail-chunk bytes this snapshot
+        fetched (roads bytes ride in zd.bytes_fetched too — the
+        panel fetches them for the backdrop right after).
+        Raises ZoneDataError on any data problem — loudly.
+        """
+        zd = self.zones.get(zone)
+        if zd is None:
+            raise ZoneDataError(
+                f"Zone {zone} is not loaded — no snapshot can be "
+                f"generated.")
+        if not (0 <= index < len(zd.boxes)):
+            raise ZoneDataError(
+                f"Zone {zone}: no building at index {index}.")
+        before = zd.bytes_fetched
+        detail = zd.details[index]
+        flagged = self.flagged.match(zone, detail.get("ring") or [])
+        neighbours = zd.neighbours_within(index)
+        return {"zd": zd, "index": index, "detail": detail,
+                "flagged": flagged, "neighbours": neighbours,
+                "bytes": zd.bytes_fetched - before}
 
     def unload_zone(self, zone):
         """Drop a loaded zone's full data. ONLY a zone with no
@@ -1301,8 +1860,10 @@ class GameStore:
         (repo, path, bytes, message) push targets for one round trip:
         per dirty zone its three files together PLUS its regenerated
         light index (1.7.2 — the index rides in the same round so the
-        editor's own list can never show its own edits stale), plus
-        the editor subdivisions file when subdivisions changed.
+        editor's own list can never show its own edits stale) PLUS,
+        2.0.0, the regenerated detail chunks of exactly the cells
+        its edits touched (chunk_cells_to_push), plus the editor
+        subdivisions file when subdivisions changed.
         Raises ZoneDataError when any dirty zone's pair is
         misaligned — BEFORE anything is pushed.
         """
@@ -1324,6 +1885,12 @@ class GameStore:
                  index_bytes(zd.index_doc(today)),
                  f"Building editor {EDITOR_VERSION}: refresh "
                  f"{zone} light index"))
+            for cell in zd.chunk_cells_to_push():
+                targets.append(
+                    (REPO, detail_chunk_path(zone, cell),
+                     zd.chunk_payload(cell),
+                     f"Building editor {EDITOR_VERSION}: refresh "
+                     f"{zone} detail chunk {cell[0]}_{cell[1]}"))
         if self.subdivisions_dirty:
             targets.append(
                 (REPO, SUBDIVISIONS_REPO_PATH,
@@ -1353,6 +1920,14 @@ class GameStore:
         the view is not refreshed.
         """
         # Nothing dirty -> nothing to do (zero pushes, zero fetches).
+        # 2.0.0: a dirty zone must be MATERIALISED before its save
+        # can be built (every edit path materialises already; this
+        # is the guarantee, not the expectation — a zone that
+        # cannot be fully loaded must not be half-saved).
+        for zone in self.dirty_zone_names():
+            err = self.zones[zone].materialize_details()
+            if err:
+                return False, err, None
         try:
             targets = self.build_targets(today)
         except ZoneDataError as e:
@@ -1395,6 +1970,48 @@ class GameStore:
                 fresh[path] = raw
         finally:
             proof_conn.close()
+
+        # ---- Stage 3b: BYTE PROOF (2.0.0 — the Issue B law) -----------
+        # Every re-downloaded file must be byte-identical to the
+        # bytes that were pushed. If GitHub's copy differs, the
+        # word "saved" must not be said: the edits stay dirty on
+        # this computer and the message says exactly what happened.
+        pushed = {path: content for _r, path, content, _m in targets}
+        for path, content in pushed.items():
+            if fresh.get(path) != content:
+                return False, (
+                    f"the copy of {path} that came back from "
+                    f"GitHub is not the file that was just sent — "
+                    f"the save is NOT verified. Your edits are "
+                    f"still on this computer; save again."), None
+
+        # ---- Stage 3c: RECORD PROOF (2.0.0) -----------------------------
+        # Byte equality proves the transport; this proves the DATA:
+        # the proof copies of every dirty zone must parse to exactly
+        # the boxes and detail records this save meant to store —
+        # every changed record carrying its new values, every
+        # unchanged record untouched.
+        for zone in self.dirty_zone_names():
+            zd = self.zones[zone]
+            try:
+                proof_boxes = [list(r) for r in json.loads(
+                    fresh[zone_repo_path(zone, "buildings.json")]
+                ).get("buildings", [])]
+                proof_details = json.loads(
+                    fresh[zone_repo_path(zone,
+                                         "buildings_detail.json")])
+            except Exception as e:
+                return False, (
+                    f"the proof copy for {zone} does not parse "
+                    f"({e}) — the save is NOT verified. Your edits "
+                    f"are still on this computer; save again."), None
+            if proof_boxes != zd.boxes \
+                    or proof_details != list(zd.details):
+                return False, (
+                    f"the {zone} data that came back from GitHub "
+                    f"does not match the data that was sent — the "
+                    f"save is NOT verified. Your edits are still "
+                    f"on this computer; save again."), None
 
         # ---- Stage 4: REFRESH FROM THE PROOF COPY ---------------------
         # The view now shows exactly what GitHub holds. Dirty flags
