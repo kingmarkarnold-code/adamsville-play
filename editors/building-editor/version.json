@@ -1,6 +1,6 @@
 {
-  "version": "1.7.3",
-  "changelog": "Fixes the freeze when opening a big building. (1) Opening Elizabeth Baptist Church (and any other large building) no longer freezes the editor: finding which street a building faces used to re-measure every road in the zone for every edge of the building \u2014 over 3 million measurements for that one church. It now measures only the roads near the building and gets the same answer in a fraction of a second (checked identical on 2,260 buildings across all seven zones). Everything else is unchanged from 1.7.2.",
+  "version": "2.0.0",
+  "changelog": "The Building Editor rebuilt light (Joshua's snapshot design). (1) Opening a building no longer loads its whole zone: the editor downloads a light list, the zone's basic shape, and just that building's page of details \u2014 opening Elizabeth Baptist Church now downloads about 1 MB instead of the whole zone and answers in a fraction of a second, and the freeze is gone (the street-facing measurement only looks at nearby streets, with the same answer as before). (2) The properties pane scrolls properly: the mouse wheel now scrolls the pane everywhere, never changes a drop-down by accident, and the scrollbar is always shown. (3) Saving proves itself: after pushing, the editor closes the connection, re-downloads on a fresh one, and only says 'saved' when the bytes that come back contain your change \u2014 a colour edit is the tested case, and a save with no changes now honestly says so once. (4) Design drop-down lists (wall materials, roof textures, window and door types, and the rest) now download from the repo's stock shelf instead of being baked into the app; if a list cannot be downloaded and no earlier copy is cached, the editor says the list is unavailable rather than inventing one. (5) Flagged buildings lock properly: the flagged list holds 1,532 buildings and all 1,532 now lock (the old matching missed most of them on odd-shaped footprints \u2014 the church included). (6) New: a Draw for Mollie tab \u2014 sketch with finger or mouse (five colours, four line sizes, free/straight/curve lines, eraser, undo) and Send files it to the repo's drawings folder, verified the same way saves are.",
   "files": [
     {
       "path": "about.py",
@@ -10,7 +10,7 @@
     {
       "path": "app.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/app.py",
-      "sha256": "a18d5317853faca6367c64b0808720f648ba7ddf3d6e23dbab712ea22107d1da"
+      "sha256": "ed729ffe7ccbb8f9c749b18361e473d1035ad8ab14b4ecbe28fe790f2a6cfeb7"
     },
     {
       "path": "buildingcanvas.py",
@@ -43,14 +43,24 @@
       "sha256": "d76123adcee302159e2316fdeedadb3b3dfee5c0ea6482a0000b4067017a5340"
     },
     {
+      "path": "suite_draw.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/suite_draw.py",
+      "sha256": "6d30a910c07092af7ab76667694aff453263f13ec0d873cf6c681b6445f15a5f"
+    },
+    {
       "path": "updater.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/updater.py",
       "sha256": "0c36b000830e5661165ac9f636466cd6d8402bab410bcab7da10b3e1e13e3a92"
     },
     {
+      "path": "vocab.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/vocab.py",
+      "sha256": "1f44614c8b5d93db102c60032754c42559bd064b0677cc8e71d30e49349c2c05"
+    },
+    {
       "path": "zonedata.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/zonedata.py",
-      "sha256": "28962a166df08a35d50e6c167aa77cb94744eda84958c429d0c60d12359faa31"
+      "sha256": "8500d2f0994e153dd1e0f54911b2cdc3cf561e0fb4aa751641c18434205a7e3b"
     }
   ]
 }
