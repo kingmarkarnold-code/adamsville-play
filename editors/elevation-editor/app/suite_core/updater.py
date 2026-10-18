@@ -10,9 +10,7 @@ has a version file in the repo at
     {"version": "1.0.0",
      "changelog": "what changed, in plain language",
      "files": [{"path": "app.py",
-                "url":  "https://raw.githubusercontent.com/"
-                        "kingmarkarnold-code/adamsville-play/main/"
-                        "editors/<app>/app/app.py",
+                "url":  the file's raw URL in this repo,
                 "sha256": "…"}, …]}
 
 This module is the CHECK half, shared by every app: fetch the
