@@ -10819,6 +10819,19 @@ var MPH_PER_US = 65/30;
 var VAN_TOP_MPH = 165;
 var VAN_TOP_US = VAN_TOP_MPH / MPH_PER_US;   // ~76.2 u/s
 var SPD_SCALE = VAN_TOP_MPH / 65;            // ~2.54 — accel/brake scale factor
+/* ENGINE CURVE (Joshua, 2026-10-17): "the vehicle goes from zero to 60 too
+   fast... it should be a steady incline... I shouldn't be able to go from
+   zero to 100 in two seconds." The old model floored a CONSTANT gas force
+   (22*SPD_SCALE, ~55.9 u/s^2) against a heavy fixed drag — harness-measured
+   at 0-60 mph in 0.6 s and 0-100 in 1.2 s. The engine now pulls with a
+   force that FADES as speed climbs: full PEAK at a standstill, squared
+   taper to zero at ENGINE_TAPER_US. The taper point sits ABOVE the 165 mph
+   cap (x1.25), so the van still creeps the last stretch up to top speed
+   instead of walling off below it. Measured on this curve (ACCEL-NOTES.md):
+   0-60 ~4.5 s, 0-100 ~10.4 s — a steady, unhurried incline where each
+   next mph is slower-won than the last. */
+var ENGINE_PEAK_ACCEL = 8.6;                // u/s^2 at a standstill (~18.6 mph/s, fading)
+var ENGINE_TAPER_US = VAN_TOP_US * 1.25;    // ~95.2 u/s — engine pull fades to zero here
 var SPEED_LIMIT_MPH = { highway:125, arterial:45, local:25, offroad:25 };
 
 function updateCar(dt){
@@ -10869,7 +10882,14 @@ function updateCar(dt){
   var canDrive=!car.dead && car.fuel>0;  // v1.31: engine dead at 100 damage OR empty tank: no throttle, no reverse
   var accel=0;
   if (canDrive){
-    if (_drv.gas) accel+=22*SPD_SCALE;
+    if (_drv.gas){
+      /* Tapered engine pull: _tq = the share of the speed range still
+         ahead of the van. Squared, so the fade is gentle off the line and
+         strong up high (at 90 mph the pull is well under half of 30's). */
+      var _tq = 1 - car.speed/ENGINE_TAPER_US;
+      if (_tq<0) _tq=0; else if (_tq>1) _tq=1;   // at/below 0 (reversing): full launch pull — also brakes the reverse
+      accel += ENGINE_PEAK_ACCEL*_tq*_tq;
+    }
     if (_drv.brake) accel-= car.speed>1?30*SPD_SCALE:12*SPD_SCALE;  // brake or reverse
   }
   if (_drv.hb) accel-= car.speed*4;
@@ -10911,8 +10931,13 @@ function updateCar(dt){
   var fordD = waterDepthAt(car.x, car.z);
   if (fordD>0 && fordD<=WADE_LIMIT) grassSlow *= 0.55;
   car.speed += accel*dt*grassSlow;
-  // drag + rolling resistance
-  car.speed -= car.speed*0.6*dt;
+  // drag + rolling resistance. ENGINE-CURVE v2.0: the old linear drag
+  // (speed*0.6 per second) is GONE — the tapering engine force above is
+  // the whole resistance model now. Any linear drag kept here would fight
+  // the taper and wall the van a hair BELOW its 165 mph cap; with none,
+  // the cap itself stays the top speed, reached gently (~44 s of full
+  // throttle, like a real vehicle near its limit). Coasting still sheds
+  // speed via the no-pedal term below; brake and handbrake are untouched.
   if (!_drv.gas && !_drv.brake) car.speed -= Math.sign(car.speed)*4*SPD_SCALE*dt;
   /* v1.31 DAMAGE PERF (Joshua): a beat-up van loses a little top speed - fair, not punishing. */
   var _dmgScale=1-0.3*((car.damage||0)/100);
