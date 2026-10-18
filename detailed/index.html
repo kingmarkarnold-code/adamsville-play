@@ -312,6 +312,30 @@
     background:#ffd75e; color:#111; font-weight:bold; }
   #pause-move { padding:12px 20px; font-size:17px; border-radius:10px; border:2px solid #ffd75e;
     background:transparent; color:#ffd75e; font-weight:bold; margin-left:10px; }
+  /* ZONE UNLOCK CEREMONY (Joshua 2026-10-17, zoneunlockflow.js): the
+     game pauses and the newly unlocked zone DOWNLOADS under this
+     overlay before its unlock commits. Follows the PAUSED card
+     pattern, but the scrim DOES capture input (pointer-events:auto):
+     mid-ceremony the world state is half-decided, so nothing under
+     the card is reachable until Continue / Cancel. */
+  #zone-load-overlay { position:fixed; inset:0; z-index:500; display:none; align-items:center;
+    justify-content:center; background:rgba(0,0,0,.72); pointer-events:auto; }
+  #zone-load-overlay.show { display:flex; }
+  #zone-load-overlay .card { background:#161b26; border:2px solid #ffd75e; border-radius:14px;
+    padding:26px 34px; text-align:center; max-width:min(92vw,460px); }
+  #zone-load-overlay h3 { margin:0 0 12px 0; color:#ffd75e; font-size:24px; }
+  #zone-load-status { color:#fff; font-size:15px; white-space:pre-line; margin-bottom:14px;
+    min-height:20px; }
+  #zone-load-bar { height:16px; background:#0a0e16; border:1px solid #ffd75e; border-radius:8px;
+    overflow:hidden; margin-bottom:10px; }
+  #zone-load-fill { height:100%; width:0%; background:#ffd75e; transition:width .15s linear; }
+  #zone-load-detail { color:#b9c4d6; font-size:13px; white-space:pre-line; min-height:18px;
+    margin-bottom:14px; }
+  #zone-load-overlay .btnrow { display:flex; gap:10px; justify-content:center; }
+  #zone-load-continue, #zone-load-retry { padding:12px 26px; font-size:17px; border-radius:10px;
+    border:none; background:#ffd75e; color:#111; font-weight:bold; }
+  #zone-load-cancel { padding:12px 20px; font-size:17px; border-radius:10px;
+    border:2px solid #ffd75e; background:transparent; color:#ffd75e; font-weight:bold; }
   /* MOVABLE HUD (Joshua 2026-10-17, hud_move.js): in move mode every
      gameplay control wears a dashed outline so the player can see
      what can be dragged; the bar rides top-centre above everything
@@ -654,6 +678,12 @@
      button again) unfreezes both. -->
 <button id="pause-btn" aria-label="Pause game">&#9208;</button>
 <div id="pause-overlay"><div class="card"><h3>PAUSED</h3><button id="pause-resume">&#9654; Resume</button><button id="pause-move">&#9998; Move controls</button></div></div>
+<!-- ZONE UNLOCK CEREMONY (Joshua 2026-10-17): unlocking a zone pauses
+     the game and downloads that zone's data under this overlay
+     (progress bar with MB figures); the unlock commits only when the
+     data has landed, and the minimap gains the zone's roads.
+     Behaviour lives in zoneunlockflow.js. -->
+<div id="zone-load-overlay"><div class="card"><h3 id="zone-load-title">Unlocking zone</h3><div id="zone-load-status"></div><div id="zone-load-bar"><div id="zone-load-fill"></div></div><div id="zone-load-detail"></div><div class="btnrow"><button id="zone-load-retry" style="display:none">&#8635; Retry download</button><button id="zone-load-cancel" style="display:none">Cancel</button><button id="zone-load-continue" style="display:none">&#9654; Continue</button></div></div></div>
 <!-- MOVABLE HUD (Joshua 2026-10-17): the move-mode bar (shown by
      hud_move.js while arranging controls) + the floating name tag
      that follows the control being dragged. -->
@@ -10464,7 +10494,7 @@ function drawMinimap(dt){
     } else { var m=toMap(w.x,w.z); mm.beginPath(); mm.arc(m[0],m[1],Math.max(3,w.rx/range*R),0,Math.PI*2); mm.fill(); }
   });
   // roads — v1.0: decimated mmPts (14k features); full density would stall the frame
-  roadDrawData.forEach(function(r){
+  function drawMmRoad(r){
     /* v2.1: minimap colors for the new category set */
     var _nc=normRoadCat(r.cat);
     mm.strokeStyle = _nc==='interstate' ? '#c8a03a' : (_nc==='highway' ? '#c8a03a' :
@@ -10477,7 +10507,13 @@ function drawMinimap(dt){
       var m=toMap(p[0],p[1]); i?mm.lineTo(m[0],m[1]):mm.moveTo(m[0],m[1]);
     });
     mm.stroke();
-  });
+  }
+  roadDrawData.forEach(drawMmRoad);
+  /* ZONE UNLOCK (Joshua 2026-10-17): roads of zones the unlock
+     ceremony downloaded (zoneunlockflow.js) draw too — an unlocked
+     zone appears on the minimap at once, not only after the player
+     transitions into it. Same {pts, mmPts, cat, name} shape. */
+  try{ if (window.__mmExtraRoads) window.__mmExtraRoads.forEach(drawMmRoad); }catch(e){}
   // landmarks
   mm.fillStyle='#ffd75e'; mm.font='bold 13px Arial'; mm.textAlign='center';
   LANDMARKS.forEach(function(L){
@@ -10511,8 +10547,12 @@ function drawMinimap(dt){
     var mmTier = mmZoom>=2.75 ? 2 : (mmZoom>=1.5 ? 1 : 0);
     var mmPlaced=[];  // screen-space boxes of drawn labels, for declutter
     var mmByName={};  // cleaned name -> {vis:[[sx,sy]..]} (longest visible run wins)
-    for(var ri=0; ri<roadDrawData.length; ri++){
-      var rr=roadDrawData[ri];
+    /* ZONE UNLOCK (Joshua 2026-10-17): name labels also consider
+       downloaded unlocked zones' roads (zoneunlockflow.js). */
+    var mmLabelSrc=roadDrawData;
+    try{ if (window.__mmExtraRoads && window.__mmExtraRoads.length) mmLabelSrc=roadDrawData.concat(window.__mmExtraRoads); }catch(e){}
+    for(var ri=0; ri<mmLabelSrc.length; ri++){
+      var rr=mmLabelSrc[ri];
       if(!rr.name) continue;
       /* v2.1: label tiers for the new category set (0=always, 1=mid zoom, 2=close zoom) */
       var _nc2=normRoadCat(rr.cat);
@@ -10609,7 +10649,7 @@ function drawFullMap(){
     } else { var m=M(w.x,w.z); g.beginPath(); g.ellipse(m[0],m[1],Math.max(2,w.rx*sc),Math.max(2,w.rz*sc),0,0,Math.PI*2); g.fill(); }
   });
   // roads
-  roadDrawData.forEach(function(r){
+  function drawFmRoad(r){
     /* v2.1: full-map colors for the new category set */
     var _nc3=normRoadCat(r.cat);
     g.strokeStyle = (_nc3==='interstate'||_nc3==='highway') ? '#c8a03a' :
@@ -10618,7 +10658,11 @@ function drawFullMap(){
     g.beginPath();
     r.pts.forEach(function(p,i){ var m=M(p[0],p[1]); i?g.lineTo(m[0],m[1]):g.moveTo(m[0],m[1]); });
     g.stroke();
-  });
+  }
+  roadDrawData.forEach(drawFmRoad);
+  /* ZONE UNLOCK (Joshua 2026-10-17): the full map shows downloaded
+     unlocked zones' roads too — same collection as the minimap. */
+  try{ if (window.__mmExtraRoads) window.__mmExtraRoads.forEach(drawFmRoad); }catch(e){}
   // border
   g.strokeStyle='#e11d48'; g.lineWidth=3; g.beginPath();
   BORDER.forEach(function(p,i){ var m=M(p.x,p.z); i?g.lineTo(m[0],m[1]):g.moveTo(m[0],m[1]); });
@@ -12830,6 +12874,7 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <script data-dsrc="stayawake.js" data-dkey=""></script>
 <script data-dsrc="agentdock.js" data-dkey=""></script>
 <script data-dsrc="zoneunlock.js" data-dkey=""></script>
+<script data-dsrc="zoneunlockflow.js" data-dkey=""></script>
 <script data-dsrc="satellite_view.js" data-dkey=""></script>
 <script data-dsrc="hotreload.js" data-dkey=""></script>
 <!-- INTERIOR SYSTEM (2026-10-11): doors, furniture collision, appliances,
