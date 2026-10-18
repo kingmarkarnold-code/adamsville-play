@@ -1,6 +1,6 @@
 {
-  "version": "1.9.6",
-  "changelog": "The whole map fits the opening view again. (1) Local streets are drawn at every zoom: zoomed all the way out you now see the full road network in every zone, drawn as hairlines in one fast pass, instead of only highways and main roads \u2014 the extension areas of Adamsville, Mableton, Union City and South Fulton, and Riverdale's streets, are on the map from the moment it opens. (2) The zoom floor no longer fights the fit: zooming out with the wheel can always return to the full-map view (before, the first zoom-out jumped the view inward and pushed the far edges off screen). (3) The view re-fits once the data has loaded and the window has settled, so the opening frame always covers all seven zones. Zone boundaries still come from each zone's own current data, so boundary changes show up by themselves.\n\nTwo suite links arrive. (1) 'Open in Map Editor' now works end to end: in the Building Editor, pick a street and choose Open in Map Editor, and this app opens on that street's zone with the street centred and selected (the Building Editor side shipped in its 1.7.2). A handoff is used once and then removed; one older than 48 hours is ignored, and a broken one is set aside so it cannot loop. (2) Downloads now go through the one shared Adamsville suite cache (~/.local/share/adamsville-suite/cache/) \u2014 the same store the other editors use \u2014 so a file another editor already downloaded is reused instead of fetched again. Proof downloads after a save still always come fresh from GitHub.",
+  "version": "1.9.7",
+  "changelog": "Delete now SHOWS you the road before anything is removed. Click a road to select it, press the Delete button, and the map frames the whole road \u2014 zooming in or out like a photograph with a little of the surrounding streets \u2014 and lights it up in bright pink, with the road's name and the Delete/Cancel choice in a slim bar at the top of the map. Cancel puts the view back exactly where it was. The old Pan and Select modes are gone: dragging the map always moves it, clicking a road always selects it, and Delete is one button that works on whatever is selected (with nothing selected it simply says 'Nothing is selected'). Picking a road can no longer freeze the editor \u2014 a click only registers the pick, the picture is prepared in the background \u2014 and a progress bar in the bottom-right corner now shows whenever the editor is downloading, pushing, or preparing something heavy, so a busy app never looks frozen.",
   "files": [
     {
       "path": "about.py",
@@ -10,17 +10,17 @@
     {
       "path": "app.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/app.py",
-      "sha256": "141b0f8692e2db16a975a78c2ea50e92917e9173cbfa207dd931fedd81529ec0"
+      "sha256": "36ad58b9f16557bc4a79a14dc8e848bceb14c95a98e171fdee336978e97cb2a0"
     },
     {
       "path": "data.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/data.py",
-      "sha256": "a2fba0523d94bba7dbf646708862006f6c0b69d1fb59048fd9e4074772a1e84d"
+      "sha256": "0defe78af352857db5e9d84dac10ecc38333ec3e6397b9a8f2c758468af4861d"
     },
     {
       "path": "gamedata.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/gamedata.py",
-      "sha256": "c539e2b9051563d77e62f885783b65213aa5bf6e37291970e6a675f4f1af8d6f"
+      "sha256": "e212bf1ec5766a59bcfb1e187b1edcc20246001d991d2fadd8508f8fe9125dc8"
     },
     {
       "path": "github_sync.py",
@@ -35,7 +35,7 @@
     {
       "path": "mapcanvas.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/mapcanvas.py",
-      "sha256": "af5a959005c545ccd07af0a9aaff6d377d974236e6317cc4cb343e22c0c257b5"
+      "sha256": "b2e5d04b4b42a934bae307e9d4edd6eda880eaebab16257b8f4c5b1ffba51848"
     },
     {
       "path": "overpass.py",
