@@ -491,13 +491,25 @@
   },
   "ui": {
    "manifest": "ui-manifest.json",
-   "version": "2026.10.17.5",
+   "version": "2026.10.17.6",
    "files": [
     {
      "name": "agentdock.js",
      "sha256": "ed5017309e3f077ed4797d923409e4ae2ee5de91fd5a34c52ccc03742824eee3",
      "size": 4982,
      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/agentdock.js"
+    },
+    {
+     "name": "airport.js",
+     "sha256": "0c1e4431e3c6b6d72cc948e6b8d028f8073690ff5f46558ce6c0232e0c8a3876",
+     "size": 12422,
+     "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/airport.js"
+    },
+    {
+     "name": "ambient_audio.js",
+     "sha256": "7885e8a6a851d9dd1bf11a01b676b1a71fd37d121fcd938af00f570b0704814e",
+     "size": 14143,
+     "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/ambient_audio.js"
     },
     {
      "name": "bird_drones.js",
@@ -518,6 +530,12 @@
      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/cityworkforce.js"
     },
     {
+     "name": "clothing_system.js",
+     "sha256": "b808eaeac7894a3129820d2af9d0c4c2d2f550e7ebbc7364ee71ff575fd5e30b",
+     "size": 26943,
+     "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/clothing_system.js"
+    },
+    {
      "name": "clubs_diners.js",
      "sha256": "0d47a4491f345772b1ba6efd78353eeccfacdcd1644e933bdd077e1723805c56",
      "size": 13479,
@@ -528,6 +546,18 @@
      "sha256": "b31a14cd82f74b079d9f8e2a7a5986f36ea729e7274b039d17df5a53c4384a7e",
      "size": 67957,
      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/codeenforce_system.js"
+    },
+    {
+     "name": "collision_material.js",
+     "sha256": "c5e4d0107ef0f1780a44c8e0d177dc02d9c6ed4548cad9347a2fff9113fa3456",
+     "size": 31828,
+     "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/collision_material.js"
+    },
+    {
+     "name": "crashlog.js",
+     "sha256": "18bf986d5d6a385cc128b177433c9f2f9a4cb009b19f40b07fd933d7eb5824c3",
+     "size": 39718,
+     "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/crashlog.js"
     },
     {
      "name": "daycycle.js",
@@ -542,6 +572,12 @@
      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/dialogue_director_npc.js"
     },
     {
+     "name": "engine_sounds.js",
+     "sha256": "8058d96d5ed000d73f16fe03f53bee161f5fec1765bbea4dedd5e85ec990e7e8",
+     "size": 22821,
+     "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/engine_sounds.js"
+    },
+    {
      "name": "face_platform.js",
      "sha256": "e73af808dc0fb1958032975ee4ea2a56e74b5c00cea38a5293c1df8464b141ac",
      "size": 3878,
@@ -554,18 +590,6 @@
      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/gamepad_input.js"
     },
     {
-     "name": "keyboard_remap.js",
-     "sha256": "0fbedc5c2f25f5e05f61d130af394a82331c31cfaa2433381d0bc1ee64095e3d",
-     "size": 35299,
-     "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/keyboard_remap.js"
-    },
-    {
-     "name": "input_diag.js",
-     "sha256": "6bd687896bcc4fe3eef579757ba940c1b73119572f8764daeceff211340514de",
-     "size": 23571,
-     "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/input_diag.js"
-    },
-    {
      "name": "github-config.js",
      "sha256": "a6c08a03f5e264bc89847f7ba1fe286b3f325d58140aa0bbca1ebbdee1556627",
      "size": 3602,
@@ -576,6 +600,12 @@
      "sha256": "91806c24b2f1beddd3bd859fb2960ef60b03f42647cd0966bb0ea52f82011c87",
      "size": 14104,
      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/github_reports.js"
+    },
+    {
+     "name": "gps_system.js",
+     "sha256": "be6880d5b2fafb4b6424a5ee1ee7eb59c40786900d70baa5766f76e04d7e6a43",
+     "size": 25920,
+     "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/gps_system.js"
     },
     {
      "name": "helicopter_system.js",
@@ -603,8 +633,8 @@
     },
     {
      "name": "index.html",
-     "sha256": "f964ffaadcbddddcb981e8e028a878cd425c95ab19eadbfd99da9e98a4114911",
-     "size": 963158,
+     "sha256": "4949036d11040a362682bcce9121de0e8e3bb1448d333b0b46e18fe327f55343",
+     "size": 973410,
      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/index.html"
     },
     {
@@ -614,10 +644,28 @@
      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/infracrew_system.js"
     },
     {
+     "name": "input_diag.js",
+     "sha256": "6bd687896bcc4fe3eef579757ba940c1b73119572f8764daeceff211340514de",
+     "size": 23571,
+     "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/input_diag.js"
+    },
+    {
      "name": "inspector_crew.js",
      "sha256": "1484932740e1a14c7f381386bc9927ac229aca934124e4cdd3cfbb0c6408bf30",
      "size": 23001,
      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/inspector_crew.js"
+    },
+    {
+     "name": "interior_system.js",
+     "sha256": "d664ff9514f8d5e00d64e68a4da8d1f7058f522d0c0d725da00ba550fcee9a3d",
+     "size": 40276,
+     "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/interior_system.js"
+    },
+    {
+     "name": "keyboard_remap.js",
+     "sha256": "0fbedc5c2f25f5e05f61d130af394a82331c31cfaa2433381d0bc1ee64095e3d",
+     "size": 35299,
+     "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/keyboard_remap.js"
     },
     {
      "name": "mapdelivery.js",
@@ -656,6 +704,18 @@
      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/marta_system.js"
     },
     {
+     "name": "menu_layout.json",
+     "sha256": "969c6dd7c46ff1e0632e9c0c3aad34956ea62b88a72726c1a30e9937ea96bb2b",
+     "size": 11017,
+     "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/menu_layout.json"
+    },
+    {
+     "name": "menu_layout_apply.js",
+     "sha256": "96805d61146feeef999ece522c0cc2487e07eaf27e2c72d911289bbdcc2b0e0b",
+     "size": 7842,
+     "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/menu_layout_apply.js"
+    },
+    {
      "name": "mlk_fairburn.js",
      "sha256": "a80b164d16a484bcbe9a42c193e04c5bea548eb98f269961338d755d66b29fe2",
      "size": 5940,
@@ -666,6 +726,18 @@
      "sha256": "da9c4fd1ac4abf81d0f1380338b60e97ea52eb1c89f021247aa9395c3eca4225",
      "size": 94958,
      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/npc_system.js"
+    },
+    {
+     "name": "pause_system.js",
+     "sha256": "92818ccc8ae26280665a087a8560c8bcdfb21b556ea1a7920412de530f2ae0e9",
+     "size": 10784,
+     "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/pause_system.js"
+    },
+    {
+     "name": "perf_budget.js",
+     "sha256": "5195f628a349ad00c9fd93144d90ca31dbade14f8751232061c1ecf8a6e50cbe",
+     "size": 11610,
+     "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/perf_budget.js"
     },
     {
      "name": "player.gif",
@@ -818,6 +890,12 @@
      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/three.min.js"
     },
     {
+     "name": "toon_mats.js",
+     "sha256": "fd01a802a68d0322d9e7de7bf66e217ff9e4773846806dd95325628fa69ea49e",
+     "size": 4954,
+     "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/toon_mats.js"
+    },
+    {
      "name": "traffic_assist.js",
      "sha256": "e8c3ff29b576edb31cf7a8ace6054ea800434e41a7b677e29add611ad2ffd52c",
      "size": 18226,
@@ -828,6 +906,30 @@
      "sha256": "7ff6dbc69d70178a4ad2750efb1c0202c3bb640457e9bb431b7aef6646003b36",
      "size": 65521,
      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/traffic_system.js"
+    },
+    {
+     "name": "truck_restrictions.js",
+     "sha256": "7a9d853b6f0f644c13aaf90d33012c4965a770fa3c9ac90521374343d2c16d02",
+     "size": 7370,
+     "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/truck_restrictions.js"
+    },
+    {
+     "name": "ui_layout.json",
+     "sha256": "a6f871b1027e0f1066575951f8cd5c62fb92310e163d9ea38cbe1d24c2e03a8c",
+     "size": 33591,
+     "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/ui_layout.json"
+    },
+    {
+     "name": "ui_layout_apply.js",
+     "sha256": "25c6d341ad322645618802cfe5d326a14ec9a245dc02f30356f2123414de53d2",
+     "size": 8514,
+     "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/ui_layout_apply.js"
+    },
+    {
+     "name": "ui_sounds.js",
+     "sha256": "898fd4b082314cf1670fd8980a33dbd44064fcbae3a6123c002329b8ca49eb08",
+     "size": 8332,
+     "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/ui_sounds.js"
     },
     {
      "name": "vehicle_avoid.js",
@@ -846,6 +948,18 @@
      "sha256": "ac7b7c70a23514d7e55bf996ed8f5ab549cbfab36db5969b74475d911b5ae8e4",
      "size": 13217,
      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/visual_inspect.js"
+    },
+    {
+     "name": "water_interaction.js",
+     "sha256": "12b50636745520be6881da392b4a1b60415f23d065c80f215fcc6505757e84d9",
+     "size": 22369,
+     "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/water_interaction.js"
+    },
+    {
+     "name": "water_render.js",
+     "sha256": "d7c81b558479113d5e0ab5651a46a681ae5d73f3bbb7ba7737a3cbbd876ca527",
+     "size": 8470,
+     "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/water_render.js"
     },
     {
      "name": "workerhousing.js",
@@ -870,108 +984,6 @@
      "sha256": "1832bc66f3cfc9cf80d915de0191bea4123ac20bfea00097a77202d813b53af0",
      "size": 23892,
      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zoneunlock.js"
-    },
-    {
-     "name": "toon_mats.js",
-     "sha256": "fd01a802a68d0322d9e7de7bf66e217ff9e4773846806dd95325628fa69ea49e",
-     "size": 4954,
-     "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/toon_mats.js"
-    },
-    {
-     "name": "gps_system.js",
-     "sha256": "be6880d5b2fafb4b6424a5ee1ee7eb59c40786900d70baa5766f76e04d7e6a43",
-     "size": 25920,
-     "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/gps_system.js"
-    },
-    {
-     "name": "engine_sounds.js",
-     "sha256": "8058d96d5ed000d73f16fe03f53bee161f5fec1765bbea4dedd5e85ec990e7e8",
-     "size": 22821,
-     "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/engine_sounds.js"
-    },
-    {
-     "name": "ambient_audio.js",
-     "sha256": "7885e8a6a851d9dd1bf11a01b676b1a71fd37d121fcd938af00f570b0704814e",
-     "size": 14143,
-     "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/ambient_audio.js"
-    },
-    {
-     "name": "ui_sounds.js",
-     "sha256": "898fd4b082314cf1670fd8980a33dbd44064fcbae3a6123c002329b8ca49eb08",
-     "size": 8332,
-     "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/ui_sounds.js"
-    },
-    {
-     "name": "perf_budget.js",
-     "sha256": "5195f628a349ad00c9fd93144d90ca31dbade14f8751232061c1ecf8a6e50cbe",
-     "size": 11610,
-     "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/perf_budget.js"
-    },
-    {
-     "name": "interior_system.js",
-     "sha256": "d664ff9514f8d5e00d64e68a4da8d1f7058f522d0c0d725da00ba550fcee9a3d",
-     "size": 40276,
-     "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/interior_system.js"
-    },
-    {
-     "name": "clothing_system.js",
-     "sha256": "b808eaeac7894a3129820d2af9d0c4c2d2f550e7ebbc7364ee71ff575fd5e30b",
-     "size": 26943,
-     "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/clothing_system.js"
-    },
-    {
-     "name": "menu_layout.json",
-     "sha256": "969c6dd7c46ff1e0632e9c0c3aad34956ea62b88a72726c1a30e9937ea96bb2b",
-     "size": 11017,
-     "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/menu_layout.json"
-    },
-    {
-     "name": "menu_layout_apply.js",
-     "sha256": "96805d61146feeef999ece522c0cc2487e07eaf27e2c72d911289bbdcc2b0e0b",
-     "size": 7842,
-     "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/menu_layout_apply.js"
-    },
-    {
-     "name": "ui_layout.json",
-     "sha256": "07edbaf015e7f795db1926e0ad1c6a95e3b05e7ec97e3784eb3c868c1823ae07",
-     "size": 32345,
-     "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/ui_layout.json"
-    },
-    {
-     "name": "ui_layout_apply.js",
-     "sha256": "25c6d341ad322645618802cfe5d326a14ec9a245dc02f30356f2123414de53d2",
-     "size": 8514,
-     "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/ui_layout_apply.js"
-    },
-    {
-     "name": "collision_material.js",
-     "sha256": "c5e4d0107ef0f1780a44c8e0d177dc02d9c6ed4548cad9347a2fff9113fa3456",
-     "size": 31828,
-     "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/collision_material.js"
-    },
-    {
-     "name": "airport.js",
-     "sha256": "0c1e4431e3c6b6d72cc948e6b8d028f8073690ff5f46558ce6c0232e0c8a3876",
-     "size": 12422,
-     "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/airport.js"
-    },
-    {
-     "name": "truck_restrictions.js",
-     "sha256": "7a9d853b6f0f644c13aaf90d33012c4965a770fa3c9ac90521374343d2c16d02",
-     "size": 7370,
-     "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/truck_restrictions.js"
-    },
-    {
-     "name": "water_interaction.js",
-     "sha256": "12b50636745520be6881da392b4a1b60415f23d065c80f215fcc6505757e84d9",
-     "size": 22369,
-     "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/water_interaction.js"
-    },
-    {
-     "name": "water_render.js",
-     "sha256": "d7c81b558479113d5e0ab5651a46a681ae5d73f3bbb7ba7737a3cbbd876ca527",
-     "size": 8470,
-     "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/water_render.js"
     }
    ]
   },
