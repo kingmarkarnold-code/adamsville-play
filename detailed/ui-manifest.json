@@ -20,9 +20,9 @@
     },
     {
       "name": "basketball_court.js",
-      "size": 20623,
-      "sha256": "6bfade7cb61e984aa9853bc72b7088836b457ac6da3227d75828d3d617aae464",
-      "hash": "6bfade7cb61e984aa9853bc72b7088836b457ac6da3227d75828d3d617aae464"
+      "size": 26143,
+      "sha256": "b6678b9971c9f08724f1448a8aac6262f2327c9137aeba437111b42d87584b88",
+      "hash": "b6678b9971c9f08724f1448a8aac6262f2327c9137aeba437111b42d87584b88"
     },
     {
       "name": "bird_drones.js",
@@ -524,6 +524,6 @@
       "sha256": "74d2e3da9d5db086f3724cec9d5d42c2ba52e8561f2223fd467601d1ba8500b8"
     }
   ],
-  "ui_version": "2026.10.17.26",
+  "ui_version": "2026.10.17.27",
   "version": "2026.10.17.9"
 }
