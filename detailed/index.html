@@ -7339,6 +7339,91 @@ function bldgGroundY(x,z,w,d,yaw){
   try{ return snapToGround(x,z,w,d,yaw); }
   catch(e){ try{ return heightAt(x,z); }catch(e2){ return 0; } }
 }
+/* ============================================================================
+   BUILDING EDITS (editor-recorded dispositions — the station-edits
+   pattern applied to buildings, 2026-10-17).
+   The Building Editor records per-building dispositions in
+   editors/building-editor/building-edits.json — today the only status
+   is "skipped": Joshua's third disposition (Placed / Skipped /
+   Flagged). A skipped building is NOT built; its data stays in
+   buildings.json untouched, and removing the record restores it —
+   nothing is ever deleted or moved by this mechanism.
+   Records are keyed "<zone>:<buildings.json index>" (the same index
+   this file's osmBldg#<i> labels and the saved-fix system use) and
+   carry the building's centroid: at build time the record only
+   applies when the record stored at that index still matches the
+   centroid within 1.0u — a mismatch means the data moved under the
+   record, so the building is NOT skipped and the mismatch is logged
+   (never skip the wrong building silently).
+   The fetch races the world build exactly like the station-edits
+   loader in traffic_system.js: it starts now (this block runs well
+   before the build), the promise ALWAYS resolves, and runOsmBuildings
+   is invoked through it (see the call site), so a slow or failed
+   fetch can never leave the world without buildings — 404 simply
+   means "no dispositions recorded yet" and is normal. The game only
+   ever READS the file; the editor owns it. */
+var BUILDING_EDITS={ byKey:{} };
+var buildingEditsReady=(function(){
+  try{
+    if (typeof fetch!=='function') return Promise.resolve(false);
+    var url='https://kingmarkarnold-code.github.io/adamsville-play/editors/building-editor/building-edits.json';
+    var fetched=fetch(url+'?cb='+Date.now(), {cache:'no-store'})
+      .then(function(r){ return (r && r.ok) ? r.json() : null; })
+      .then(function(j){
+        if (j && j.buildings && typeof j.buildings==='object'){
+          BUILDING_EDITS.byKey=j.buildings;
+          var n=0; for (var k in j.buildings) n++;
+          try{ console.log('[building-edits] loaded '+n+' editor disposition record(s)'); }catch(e){}
+          return true;
+        }
+        return false;  // 404 / malformed: no dispositions (normal)
+      })
+      .catch(function(err){
+        // A transport failure is reported, never silently swallowed —
+        // but it must not block the world: build with no dispositions.
+        try{ console.warn('[building-edits] fetch failed — building without editor dispositions:', err); }catch(e){}
+        try{ if (typeof Report!=='undefined' && Report.noteError) Report.noteError('buildingEdits','building-edits.json fetch failed', String(err)); }catch(e){}
+        return false;
+      });
+    // 25s ceiling, same as the station-edits loader: a hung fetch
+    // resolves the gate with whatever state exists (empty = none).
+    return Promise.race([
+      fetched,
+      new Promise(function(res){ setTimeout(function(){
+        try{ console.warn('[building-edits] 25s timeout — building without editor dispositions'); }catch(e){}
+        res(false);
+      }, 25000); })
+    ]);
+  }catch(e){ return Promise.resolve(false); }
+})();
+/* buildingSkipFor(idx) -> true when an editor "skipped" record covers
+   the building at buildings.json index idx IN THE ZONE THIS PAGE
+   BUILT, centroid-verified. Shared by runOsmBuildings, the business
+   pass and residential_detail's fallback — one mechanism, honoured
+   everywhere a building can be built. Exposed on window so the
+   separate residential_detail.js module can consult it too. */
+function buildingSkipFor(idx){
+  try{
+    var recs=BUILDING_EDITS.byKey;
+    if (!recs) return false;
+    var zone=null;
+    try{ if (typeof ZONELOADER!=='undefined' && ZONELOADER.currentZone) zone=ZONELOADER.currentZone; }catch(e){}
+    if (!zone) return false;
+    var rec=recs[zone+':'+idx];
+    if (!rec || rec.status!=='skipped') return false;
+    var b=(typeof OSM_BUILDINGS!=='undefined' && OSM_BUILDINGS) ? OSM_BUILDINGS[idx] : null;
+    if (!b || !rec.centroid) return false;
+    if (Math.hypot(rec.centroid[0]-b[0], rec.centroid[1]-b[1])>1.0){
+      // Data no longer matches the record — do NOT skip, and say so.
+      try{ console.warn('[building-edits] centroid mismatch for '+zone+':'+idx+' — record NOT applied'); }catch(e){}
+      try{ if (typeof Report!=='undefined' && Report.noteError) Report.noteError('buildingEdits','centroid mismatch — skip record not applied', zone+':'+idx); }catch(e){}
+      return false;
+    }
+    return true;
+  }catch(e){ return false; }
+}
+try{ window.BuildingEdits={ skipFor:buildingSkipFor, state:BUILDING_EDITS }; }catch(e){}
+
 /* v2.0 (2026-10-09): DEFERRED INVOCATION — this is now a named function CALLED
    after the final road-grid rebuild (see call site below), so the automatic
    placement check sees ALL roads including Fulton Industrial Blvd and the MLK
@@ -7385,10 +7470,17 @@ function runOsmBuildings(){
         }
       }
     }catch(e){ savedFixes=null; }
-    var kept=[], skippedRoad=0, nudgedBldg=0;
+    var kept=[], skippedRoad=0, nudgedBldg=0, skippedEditor=0;
     for (var i=0;i<OSM_BUILDINGS.length;i++){
       var b=OSM_BUILDINGS[i];  // [x, z, w, d, h, type]
       if (!b || b.length<6) continue;
+      /* Editor disposition (2026-10-17): a "skipped" record in
+         building-edits.json means this building is not built — the
+         data stays, the decision is Joshua's/editor-recorded and
+         reversible. Checked FIRST: a skipped building consumes no
+         saved fix and no placement attempt. Counted and reported
+         (visible in the osmBuildings line), never silent. */
+      if (buildingSkipFor(i)){ skippedEditor++; continue; }
       /* v1.19: Check for a SAVED fix before recalculating. Saved fixes are
          permanent — they survive road data updates and take precedence. */
       var saved=null;
@@ -7672,7 +7764,7 @@ function runOsmBuildings(){
       }
     }catch(e){}
     try{Report.setSys('osmBuildings',{in:OSM_BUILDINGS.length,placed:placed,
-      skippedRoad:skippedRoad,nudged:nudgedBldg,status:'ok',
+      skippedRoad:skippedRoad,skippedEditor:skippedEditor,nudged:nudgedBldg,status:'ok',
       realOSM:(typeof OSM_REAL_COUNT!=='undefined'?OSM_REAL_COUNT:0),
       procedural:OSM_BUILDINGS.length-(typeof OSM_REAL_COUNT!=='undefined'?OSM_REAL_COUNT:0),
       fixPersist:{savedApplied:_fixInfo.savedApplied,totalSaved:_fixInfo.totalSaved,
@@ -7718,10 +7810,13 @@ var BUSINESSES=[];
     var TYPES=['burger','taco','gas','grocery','restaurant','retail','convenience'];
     // collect commercial buildings from kept placements
     // (re-derive from OSM_BUILDINGS type=1; positions are pre-nudge but close enough for signage)
+    // Editor-skipped buildings (building-edits.json) are excluded here
+    // too — the skip is one shared disposition, honoured by every pass
+    // that can put a building (or its signage) into the world.
     var comm=[];
     for(var i=0;i<OSM_BUILDINGS.length;i++){
       var b=OSM_BUILDINGS[i];
-      if(b && b[5]===1) comm.push(b);
+      if(b && b[5]===1 && !buildingSkipFor(i)) comm.push(b);
     }
     // deterministic assignment
     var rng=mulberry32(19951);
@@ -8232,12 +8327,21 @@ try{
    The road grid is now FINAL (every roadDrawData entry included), so
    runOsmBuildings() places all 13k+ OSM buildings against complete data:
    violators are auto-nudged clear and logged to placementViolations
-   (id, original pos, new pos, road name). Never deletes. */
-try{ runOsmBuildings(); }catch(e){ try{Report.noteError('runOsmBuildings','deferred call failed',String(e&&e.stack||e));}catch(x){}
-  /* v1.63 CRASH LOG: a throw out of building spawn is a critical too. */
-  try{ SA_CRASH('critical',{code:'buildings-spawn-crashed',
-    errorName:(e&&e.name)||'Error', message:String(e&&e.message||e),
-    where:'runOsmBuildings() deferred call site (index.html)'}); }catch(y){} }
+   (id, original pos, new pos, road name). Never deletes.
+   2026-10-17: the call is gated on buildingEditsReady (the
+   building-edits.json fetch that started near the loader block above)
+   so editor-recorded "skipped" dispositions are honoured from the
+   first frame — the same promise-gated pattern the station placement
+   uses. The promise ALWAYS resolves (fetch failure = no dispositions,
+   logged), so buildings can never be blocked by it; in the normal
+   case the tiny file has long settled and this runs immediately. */
+buildingEditsReady.then(function(){
+  try{ runOsmBuildings(); }catch(e){ try{Report.noteError('runOsmBuildings','deferred call failed',String(e&&e.stack||e));}catch(x){}
+    /* v1.63 CRASH LOG: a throw out of building spawn is a critical too. */
+    try{ SA_CRASH('critical',{code:'buildings-spawn-crashed',
+      errorName:(e&&e.name)||'Error', message:String(e&&e.message||e),
+      where:'runOsmBuildings() deferred call site (index.html)'}); }catch(y){} }
+});
 /* v1.16 GREEN PHASE: buildings placed (70%) — show real count. */
 try{
   var _bp=0;
