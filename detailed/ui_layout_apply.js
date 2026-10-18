@@ -195,6 +195,18 @@
             applyElement(def, vw, vh, mobile);
           } catch (e) { /* one bad element must not break the rest */ }
         });
+        // MOVABLE HUD (Joshua 2026-10-17): the designed layout is
+        // on — now the player's own per-face position overrides
+        // (hud_move.js) re-assert on top of it. This hook is the
+        // single choke point every layout pass flows through
+        // (startup, resize, hot-reload), so overrides always win
+        // over a fresh design and always re-clamp to the current
+        // screen. Guarded: no HudMove module, no change at all.
+        try {
+          if (window.HudMove && HudMove.onLayoutApplied) {
+            HudMove.onLayoutApplied(mobile);
+          }
+        } catch (e) { /* an override must never break the layout */ }
       })
       .catch(function () {
         /* Missing/corrupt file: leave the HUD exactly as authored. */
