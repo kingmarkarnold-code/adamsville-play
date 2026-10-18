@@ -117,6 +117,12 @@
       "md5": "2c2b3a3eb8844da4922af709f35628e5"
     },
     {
+      "name": "goto.js",
+      "size": 48950,
+      "sha256": "cb9af3929de7ac0615b75d86f8a3754cd5eb4602c66532edfd7a6997e0e35d28",
+      "hash": "cb9af3929de7ac0615b75d86f8a3754cd5eb4602c66532edfd7a6997e0e35d28"
+    },
+    {
       "name": "gps_system.js",
       "size": 25920,
       "sha256": "be6880d5b2fafb4b6424a5ee1ee7eb59c40786900d70baa5766f76e04d7e6a43",
@@ -154,9 +160,9 @@
     },
     {
       "name": "index.html",
-      "size": 999064,
-      "sha256": "a4883cb5977dc06a528e86514f256d7104fe883003fdc24feb5216babb059c40",
-      "hash": "a4883cb5977dc06a528e86514f256d7104fe883003fdc24feb5216babb059c40"
+      "size": 1000539,
+      "sha256": "7c922015a069745278e8e2cb0841d5de353c65e6867a6a5ef345db6e1acef2f4",
+      "hash": "7c922015a069745278e8e2cb0841d5de353c65e6867a6a5ef345db6e1acef2f4"
     },
     {
       "name": "infracrew_system.js",
@@ -438,9 +444,9 @@
     },
     {
       "name": "ui_layout.json",
-      "sha256": "a6f871b1027e0f1066575951f8cd5c62fb92310e163d9ea38cbe1d24c2e03a8c",
-      "size": 33591,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/ui_layout.json"
+      "size": 34822,
+      "sha256": "0b715a2d998b13ded96c0b2b3f4daf1608af7377ec9573216cc9c00bec780def",
+      "hash": "0b715a2d998b13ded96c0b2b3f4daf1608af7377ec9573216cc9c00bec780def"
     },
     {
       "name": "ui_layout_apply.js",
@@ -518,6 +524,6 @@
       "sha256": "74d2e3da9d5db086f3724cec9d5d42c2ba52e8561f2223fd467601d1ba8500b8"
     }
   ],
-  "ui_version": "2026.10.17.21",
+  "ui_version": "2026.10.17.22",
   "version": "2026.10.17.9"
 }
