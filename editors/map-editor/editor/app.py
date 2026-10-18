@@ -46,7 +46,7 @@ import overpass as overpass_mod  # noqa: E402
 
 # App version shown in the Help -> About dialog (bump with each release).
 # Joshua 2026-10-11: version number must be prominent in About.
-APP_VERSION = "1.9.6"
+APP_VERSION = "1.9.7"
 # Display name and icon-theme name for the About dialog.
 APP_NAME = "Adamsville Map Editor"
 APP_ICON = "adamsville-map-editor-native"
@@ -64,13 +64,15 @@ UPDATE_SLUG = "map-editor"
 # ---------------------------------------------------------------------------
 
 # Each tool: (id, label, tooltip, help_text)
+#
+# INTERACTION MODEL (1.9.7, Joshua 2026-10-18): Pan and Select are
+# NOT tools any more — dragging the map always pans, and clicking a
+# road always selects it, with no mode to enter. Delete is not a
+# tool either: it is the toolbar's Delete ACTION button, acting on
+# the current selection (see on_delete_clicked). What remains in
+# this table are the genuine editing tools, entered on purpose and
+# left by clicking the same button again.
 TOOLS = [
-    ("pan",     "Pan",     "Drag to move the map",
-     "Pan: Click and drag to move around the map. Mouse wheel zooms."),
-    ("select",  "Select",  "Click roads to select them (up to 2)",
-     "Select: Click a road to select it; click it again to deselect. "
-     "Select 2 roads, then click Merge or Join in the toolbar. "
-     "Escape or clicking empty space clears the selection."),
     ("zone",    "Zone",    "Select and edit zones",
      "Zone: Click a zone to select it and show its pins. Drag a pin to "
      "reshape the boundary. Click a boundary edge to add a new pin there. "
@@ -83,8 +85,6 @@ TOOLS = [
      "Draw Road: Click to place points, double-click to finish. (Coming soon)"),
     ("cut",     "Cut",     "Cut a road into segments",
      "Cut: Click two points on a road to split it. (Coming soon)"),
-    ("delete",  "Delete",  "Delete the selected road",
-     "Delete: Removes the currently selected road. (Coming soon)"),
     ("extend",  "Extend",  "Stretch a road endpoint",
      "Extend: Click on or near a road — the CLOSEST endpoint (either end) "
      "is auto-selected and highlighted. Then click the destination point "
@@ -175,7 +175,18 @@ class MapEditorApp:
         # panel (Joshua 2026-10-11). The sash lets Joshua resize them.
         self.canvas = MapCanvas(self)
         self.main_paned = Gtk.HPaned()
-        self.main_paned.pack1(self.canvas, resize=True, shrink=False)
+        # Delete confirmation bar (1.9.7): the canvas sits inside a
+        # Gtk.Overlay so the slim Delete / Cancel bar can ride the
+        # TOP EDGE of the map while a road is lit up for deletion.
+        # An overlay — not a layout box — so showing or hiding the
+        # bar never resizes the canvas: the framed "photograph" of
+        # the road keeps the exact geometry it was framed with.
+        self.canvas_overlay = Gtk.Overlay()
+        self.canvas_overlay.add(self.canvas)
+        self._build_delete_bar()
+        self.canvas_overlay.add_overlay(self.delete_bar)
+        self.main_paned.pack1(self.canvas_overlay, resize=True,
+                              shrink=False)
 
         # Inspector wrap: collapse strip on the left edge + the panel.
         # The strip stays visible when collapsed so Joshua can re-expand.
@@ -194,16 +205,23 @@ class MapEditorApp:
         self.main_paned.set_position(980)  # canvas gets most of the width
         vbox.pack_start(self.main_paned, True, True, 0)
 
-        # Default tool is Select (Joshua 2026-10-11: select-first
-        # workflow — pick roads first, then Merge/Join). This fires
-        # on_tool_toggled, which sets canvas.active_tool.
-        self.tool_buttons["select"].set_active(True)
+        # No default tool (1.9.7 interaction model): the editor
+        # rests with NO mode active — dragging pans, clicking a
+        # road selects it. Tools are entered on purpose from the
+        # toolbar and left by clicking the same button again.
 
         # --- Status bar ---
         self.statusbar = Gtk.Statusbar()
         self.status_ctx = self.statusbar.get_context_id("main")
         vbox.pack_start(self.statusbar, False, False, 0)
-        self.set_status("Select 2 roads, then click Merge or Join")
+        # Background-work progress bar (1.9.7, Joshua's suite law):
+        # rides the RIGHT END of the status bar — the bottom-right
+        # corner of the window — whenever the app is working in the
+        # background, so a busy app never reads as frozen.
+        self._build_progress_bar()
+        self.set_status(
+            "Click a road to select it — then Merge, Join, or "
+            "Delete. Drag the map to pan.")
 
         self.window.show_all()
 
@@ -458,21 +476,24 @@ class MapEditorApp:
         toolbar.insert(Gtk.SeparatorToolItem(), -1)
 
         self.tool_buttons = {}
-        first_button = None
 
         for tool_id, label, tooltip, _ in TOOLS:
-            # Radio buttons so only one tool is active at a time
-            if first_button is None:
-                btn = Gtk.RadioToolButton(label=label)
-                first_button = btn
-            else:
-                btn = Gtk.RadioToolButton.new_from_widget(first_button)
-                btn.set_label(label)
+            # Toggle buttons (1.9.7): on_tool_toggled keeps at most
+            # one tool active, and clicking the active tool again
+            # returns to the resting state — no tool at all, where
+            # dragging pans and clicking selects. (These were radio
+            # buttons while Pan/Select were modes; a radio group
+            # would force some tool to always be active.)
+            btn = Gtk.ToggleToolButton(label=label)
             btn.set_tooltip_text(tooltip)
             # Capture tool_id in default arg
             btn.connect("toggled", self.on_tool_toggled, tool_id)
             toolbar.insert(btn, -1)
             self.tool_buttons[tool_id] = btn
+        # Fill is only available while the Zone tool is active
+        # (Joshua 2026-10-11); it starts insensitive and
+        # on_tool_toggled maintains that.
+        self.tool_buttons["fill"].set_sensitive(False)
 
         # Separator, then Merge / Join action buttons (Joshua 2026-10-11:
         # select-first workflow — select 2 roads first, then click one).
@@ -494,6 +515,20 @@ class MapEditorApp:
         self.join_button.connect("clicked", self.on_join_clicked)
         self.join_button.set_sensitive(False)
         toolbar.insert(self.join_button, -1)
+
+        # Delete action button (1.9.7): NOT a tool or mode — it acts
+        # on the current selection, like Merge and Join. With roads
+        # selected it opens the framed delete preview (the map
+        # frames the whole road and lights it up before any
+        # decision); with nothing selected it just says so.
+        self.delete_button = Gtk.ToolButton(label="Delete")
+        self.delete_button.set_tooltip_text(
+            "Delete the selected road(s). First the map frames the "
+            "whole road and lights it up so you can check it — "
+            "nothing is deleted until you confirm. With nothing "
+            "selected, it just says so.")
+        self.delete_button.connect("clicked", self.on_delete_clicked)
+        toolbar.insert(self.delete_button, -1)
 
         # Link to Overpass action button (Joshua 2026-10-11).
         # Select 1 road first, then click this, then click an overpass
@@ -555,8 +590,24 @@ class MapEditorApp:
             self.insp_toggle.set_tooltip_text("Hide 3D inspector")
 
     def on_tool_toggled(self, button, tool_id):
-        """Handle toolbar tool selection."""
+        """
+        Handle toolbar tool toggling (1.9.7 toggle semantics).
+
+        Toggling a tool ON turns every other tool off (at most one
+        editing tool is ever active). Toggling the ACTIVE tool OFF
+        returns the editor to its resting state — no tool, where
+        dragging pans and clicking selects. Programmatic offs done
+        by this handler itself are ignored via _switching_tools so
+        they don't recursively reset the state being set up.
+        """
+        if getattr(self, "_switching_tools", False):
+            return
         if button.get_active():
+            self._switching_tools = True
+            for other_id, other in self.tool_buttons.items():
+                if other_id != tool_id and other.get_active():
+                    other.set_active(False)
+            self._switching_tools = False
             # Clear any in-progress selections when switching tools so
             # stale highlights don't linger.
             self.canvas.clear_tool_state()
@@ -574,6 +625,15 @@ class MapEditorApp:
                 if not getattr(self, "_skip_zone_fit", False):
                     self.canvas.fit_view()
                 self._skip_zone_fit = False
+        elif self.canvas.active_tool == tool_id:
+            # The active tool was clicked again: back to resting.
+            self.canvas.clear_tool_state()
+            self.canvas.active_tool = None
+            fill_btn = self.tool_buttons.get("fill")
+            if fill_btn is not None:
+                fill_btn.set_sensitive(False)
+            self.set_status(
+                "Click a road to select it; drag the map to pan.")
 
     def on_merge_clicked(self, widget):
         """
@@ -1732,6 +1792,110 @@ class MapEditorApp:
         self.statusbar.pop(self.status_ctx)
         self.statusbar.push(self.status_ctx, message)
 
+    # ------------------------------------------------------------------
+    # Background-work progress bar (1.9.7 — Joshua's suite law,
+    # 2026-10-18): whenever the editor is doing background work —
+    # downloading, pushing, or heavy processing like preparing a
+    # delete preview — a progress bar shows in the BOTTOM-RIGHT
+    # corner of the window (the right end of the status bar), so a
+    # busy app never reads as frozen. Real progress where a total
+    # is known; a moving indeterminate pulse where it isn't. It
+    # appears when work starts and clears when work ends, and it
+    # lives inside the status area, so it never covers the map or
+    # any of the map's controls.
+    #
+    # Jobs are keyed (several can run at once); the bar shows the
+    # most recently started/updated job. All methods are UI-thread
+    # only — worker threads hop here with GLib.idle_add, exactly
+    # like the download progress callbacks already do.
+    # ------------------------------------------------------------------
+
+    def _build_progress_bar(self):
+        """Build the corner progress widget (hidden while idle)."""
+        self._progress_jobs = {}  # job_id -> {"label", "fraction"}
+        self._progress_pulse_id = None
+        self.progress_box = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        self.progress_label = Gtk.Label(label="")
+        self.progress_bar_widget = Gtk.ProgressBar()
+        self.progress_bar_widget.set_size_request(170, -1)
+        self.progress_box.pack_start(
+            self.progress_label, False, False, 0)
+        self.progress_box.pack_start(
+            self.progress_bar_widget, False, False, 0)
+        self.progress_box.set_no_show_all(True)
+        self.progress_box.hide()
+        self.statusbar.pack_end(self.progress_box, False, False, 4)
+
+    def progress_start(self, job_id, label):
+        """Register a background job and show the corner bar."""
+        if not hasattr(self, "_progress_jobs"):
+            return  # progress UI not built (partial/headless app)
+        self._progress_jobs[job_id] = {"label": label,
+                                       "fraction": None}
+        self._refresh_progress_bar()
+
+    def progress_update(self, job_id, fraction=None, label=None):
+        """Update a job's fraction (0..1) and/or label."""
+        if not hasattr(self, "_progress_jobs"):
+            return  # progress UI not built (partial/headless app)
+        job = self._progress_jobs.get(job_id)
+        if job is None:
+            return
+        if fraction is not None:
+            job["fraction"] = max(0.0, min(1.0, fraction))
+        if label is not None:
+            job["label"] = label
+        self._refresh_progress_bar()
+
+    def progress_finish(self, job_id):
+        """End a background job; the bar clears when none remain."""
+        if not hasattr(self, "_progress_jobs"):
+            return  # progress UI not built (partial/headless app)
+        self._progress_jobs.pop(job_id, None)
+        self._refresh_progress_bar()
+
+    def _refresh_progress_bar(self):
+        """Make the corner bar reflect the current job set."""
+        if not hasattr(self, "progress_box"):
+            return  # progress UI not built (partial/headless app)
+        if not self._progress_jobs:
+            self._stop_progress_pulse()
+            self.progress_box.hide()
+            return
+        job = list(self._progress_jobs.values())[-1]
+        self.progress_label.set_text(job["label"])
+        if job["fraction"] is None:
+            # No known total: indeterminate — keep the pulse moving
+            # so the bar visibly works.
+            self.progress_bar_widget.set_fraction(0.0)
+            if self._progress_pulse_id is None:
+                self._progress_pulse_id = GLib.timeout_add(
+                    120, self._pulse_progress_bar)
+        else:
+            self._stop_progress_pulse()
+            self.progress_bar_widget.set_fraction(job["fraction"])
+        # show() per widget: the box carries no_show_all (so window
+        # show_all never pops it up), and GTK's show_all() honours
+        # that flag even on the widget itself.
+        self.progress_label.show()
+        self.progress_bar_widget.show()
+        self.progress_box.show()
+
+    def _pulse_progress_bar(self):
+        """Indeterminate pulse tick; returns False to stop."""
+        if not any(j["fraction"] is None
+                   for j in self._progress_jobs.values()):
+            self._progress_pulse_id = None
+            return False
+        self.progress_bar_widget.pulse()
+        return True
+
+    def _stop_progress_pulse(self):
+        if self._progress_pulse_id is not None:
+            GLib.source_remove(self._progress_pulse_id)
+            self._progress_pulse_id = None
+
     def on_roads_selected(self):
         """
         Called by the canvas whenever the road selection changes.
@@ -2181,20 +2345,123 @@ class MapEditorApp:
         self._update_merge_join_buttons()
         return True
 
-    def confirm_delete_road(self, name):
-        """Ask Joshua to confirm before deleting a road. Returns True=OK."""
-        dialog = Gtk.MessageDialog(
-            transient_for=self.window,
-            flags=0,
-            message_type=Gtk.MessageType.WARNING,
-            buttons=Gtk.ButtonsType.YES_NO,
-            text=f"Delete road '{name}'?")
-        dialog.format_secondary_text(
-            "This removes the road entirely. You can undo it with "
-            "Edit → Undo (Ctrl+Z).")
-        response = dialog.run()
-        dialog.destroy()
-        return response == Gtk.ResponseType.YES
+    def on_delete_clicked(self, _button=None):
+        """
+        Delete action button (1.9.7): acts on the current selection.
+
+        With roads selected, the canvas opens the framed delete
+        preview for them (the map frames the whole road, lights it
+        up, and the bar at the top carries the decision). With
+        NOTHING selected, a plain popup says exactly that — and
+        nothing else happens: no preview, no camera move, no
+        delete.
+        """
+        if self.canvas.delete_preview is not None \
+                or self.canvas.delete_prep is not None:
+            # A preview (or its preparation) is already up; the
+            # bar owns the decision.
+            self.set_status(
+                "Delete: finish the road shown first — "
+                "Delete it, or Cancel in the bar at the top.")
+            return
+        picked = []
+        si = self.spatial_index
+        if si is not None:
+            for cat, idx in self.canvas.selected_roads:
+                if 0 <= idx < len(si.roads):
+                    picked.append((cat, idx, si.roads[idx][1]))
+        if not picked:
+            dialog = Gtk.MessageDialog(
+                transient_for=self.window,
+                flags=0,
+                message_type=Gtk.MessageType.INFO,
+                buttons=Gtk.ButtonsType.OK,
+                text="Nothing is selected.")
+            dialog.format_secondary_text(
+                "Click a road to select it first, then press "
+                "Delete.")
+            dialog.run()
+            dialog.destroy()
+            return
+        self.canvas.begin_delete_preview(picked)
+
+    # ------------------------------------------------------------------
+    # Delete confirmation bar (1.9.7 — Joshua's design, 2026-10-18)
+    #
+    # Replaces the old centred YES/NO dialog (confirm_delete_road,
+    # removed): it named the road but never showed it, and it sat
+    # ON TOP of the map. Now, when a road is picked, the canvas
+    # frames and lights the whole road first; this bar then rides
+    # the map's top edge — out of the picture's way — carrying the
+    # name plus the Delete / Cancel decision.
+    # ------------------------------------------------------------------
+
+    def _build_delete_bar(self):
+        """
+        Build the slim delete bar (hidden until a road is picked).
+
+        A dark red-brown band across the top of the map: the road's
+        name on the left, Cancel and Delete buttons on the right.
+        no_show_all + hide() keep it invisible until
+        show_delete_bar() is called, and being an overlay child it
+        never takes layout space away from the canvas.
+        """
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
+                      spacing=8)
+        box.set_margin_start(10)
+        box.set_margin_end(10)
+        box.set_margin_top(6)
+        box.set_margin_bottom(6)
+        self.delete_bar_label = Gtk.Label(label="")
+        self.delete_bar_label.set_xalign(0.0)
+        self.delete_bar_label.override_color(
+            Gtk.StateFlags.NORMAL, Gdk.RGBA(1.0, 1.0, 1.0, 1.0))
+        box.pack_start(self.delete_bar_label, True, True, 0)
+        self.delete_cancel_btn = Gtk.Button(label="Cancel")
+        self.delete_cancel_btn.connect(
+            "clicked",
+            lambda _b: self.canvas.cancel_delete_preview())
+        box.pack_start(self.delete_cancel_btn, False, False, 0)
+        self.delete_confirm_btn = Gtk.Button(label="Delete road")
+        self.delete_confirm_btn.get_style_context().add_class(
+            "destructive-action")
+        self.delete_confirm_btn.connect(
+            "clicked",
+            lambda _b: self.canvas.confirm_delete_preview())
+        box.pack_start(self.delete_confirm_btn, False, False, 0)
+        self.delete_bar_box = box
+        self.delete_bar = Gtk.EventBox()
+        self.delete_bar.add(box)
+        self.delete_bar.override_background_color(
+            Gtk.StateFlags.NORMAL, Gdk.RGBA(0.32, 0.07, 0.07, 0.96))
+        self.delete_bar.set_halign(Gtk.Align.FILL)
+        self.delete_bar.set_valign(Gtk.Align.START)
+        self.delete_bar.set_no_show_all(True)
+        self.delete_bar.hide()
+
+    def show_delete_bar(self, text, ready=True):
+        """
+        Show the delete bar with the text the canvas composed
+        (it names the road or roads that are lit up).
+
+        ready=False is the PREPARING state (1.9.7 no-stall rule):
+        the bar is up from the first moment so Cancel is always
+        reachable, but the Delete button stays insensitive until
+        the framed picture has actually landed — nobody can confirm
+        a deletion they have not seen yet.
+        """
+        self.delete_bar_label.set_text(text)
+        self.delete_confirm_btn.set_sensitive(ready)
+        # NOT show_all(): the bar carries no_show_all (so the main
+        # window's show_all never pops it up at launch), and GTK's
+        # show_all() honours that flag even on the widget itself —
+        # show the band directly, then its contents.
+        self.delete_bar.show()
+        self.delete_bar_box.show_all()
+
+    def hide_delete_bar(self):
+        """Hide the delete bar (after Delete or Cancel)."""
+        self.delete_bar.hide()
 
     # ------------------------------------------------------------------
     # Data download / updates
@@ -2212,11 +2479,15 @@ class MapEditorApp:
         """
         self.canvas.fit_view()
         self.set_status("Downloading game data from GitHub…")
+        # Corner progress bar (1.9.7 suite law): the startup
+        # download is background work — show it in the corner.
+        self.progress_start("download", "Downloading game data…")
 
         def worker():
             ok = download_roads()
 
             def done():
+                self.progress_finish("download")
                 if ok:
                     self._load_data()
                 else:
@@ -2272,12 +2543,18 @@ class MapEditorApp:
         bar.set_text("Connecting…")
         progress.get_content_area().pack_start(bar, True, True, 10)
         progress.show_all()
+        # Corner progress bar too (1.9.7 suite law): the same real
+        # fractions drive both, and the corner bar is the one that
+        # stays visible for every kind of background work.
+        self.progress_start("download", "Downloading…")
 
         def update_progress(frac, text):
             """Thread-safe progress update via GLib.idle_add."""
             def _update():
                 bar.set_fraction(frac)
                 bar.set_text(text)
+                self.progress_update("download", fraction=frac,
+                                     label=f"Downloading… {text}")
                 return False
             GLib.idle_add(_update)
 
@@ -2294,6 +2571,7 @@ class MapEditorApp:
 
             def done():
                 progress.destroy()
+                self.progress_finish("download")
                 if success:
                     self._load_data()
                     self.set_status("Data downloaded successfully.")
@@ -2643,6 +2921,9 @@ class MapEditorApp:
         self._round_trip_in_flight = True
         self._trip_sent_snapshot = {
             path: self.game_model.current_bytes(path) for path in dirty}
+        # Corner progress bar (1.9.7 suite law): a push is
+        # background work with no known total — indeterminate.
+        self.progress_start("push", "Pushing to GitHub…")
 
         def worker():
             ok, err, fresh = _gd.perform_round_trip(
@@ -2665,6 +2946,7 @@ class MapEditorApp:
         queueing behind the one that just ended.
         """
         self._round_trip_in_flight = False
+        self.progress_finish("push")
         on_done(ok, err, fresh)
         if getattr(self, "_round_trip_followup", False):
             self._round_trip_followup = False
