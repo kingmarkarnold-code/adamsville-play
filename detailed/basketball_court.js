@@ -1,5 +1,5 @@
 /* ============================================================================
-   FILE: basketball_court.js — BACKYARD BASKETBALL, the in-world court (v1.1)
+   FILE: basketball_court.js — BACKYARD BASKETBALL, the in-world court (v1.2)
    ----------------------------------------------------------------------------
    JOSHUA'S DESIGN (2026-10-17, hand sketch via the Draw-for-Mollie channel
    + his words): "This is the beginning of the mini-game. It's a basketball
@@ -13,12 +13,20 @@
         The curved line in the sketch is the dirt patch's EDGE (where the
         dirt ends and the grass begins), not a painted marking.
      2. NO VISIBLE LINES — no painted court lines of any kind.
-     3. The mini-game itself STARTS AS A WEB PLAYER: answering Yes opens
-        the mini-game's own standalone player page, full screen —
-        detailed/basketball.html (same Pages origin, so the
-        saved progress in localStorage is shared). The world keeps the
-        place and the invitation; the play lives on the page. Modes
+     3. The mini-game itself STARTS AS A WEB PLAYER: the standalone
+        player page — detailed/basketball.html (same Pages origin, so
+        the saved progress in localStorage is shared). Modes
         ("1 on 1" / "3 on 3" — Joshua) are chosen on the page.
+     4. (v1.2, Joshua 2026-10-18) THE PLAY MOVES IN GAME: answering Yes
+        now opens that same player page FULL SCREEN *inside* the game —
+        a full-viewport overlay hosting basketball.html in an iframe —
+        so he can test the mini-game without leaving the world. The
+        world PAUSES behind it in the game's own pause terms
+        (window.GamePause), the player's keys are cleared so nothing
+        walks behind the overlay, and closing the mini-game (its own
+        leave flow, or its close control) removes the overlay and hands
+        the world back with the player standing exactly where he was.
+        The standalone page is untouched and behaves as before.
 
    WHAT THIS MODULE OWNS (the world side):
    - THE COURT: an elliptical dirt patch in the backyard of the hero
@@ -35,9 +43,9 @@
      exactly like the hero house's own yard pines.
    - THE TRIGGER: walking on foot between the two entrance trees (south
      -> north across the gate line) shows the prompt: "Do you want to
-     play a game?" [Yes] [No]. Yes opens the web player page. No
-     dismisses and the prompt stays away until the player leaves the
-     court area and walks in again.
+     play a game?" [Yes] [No]. Yes opens the mini-game in game (the
+     full-screen overlay above). No dismisses and the prompt stays
+     away until the player leaves the court area and walks in again.
 
    PROGRESS (Joshua): the mini-game saves the player's progress in
    localStorage 'sa.basketball.v1' — lifetime baskets, sessions, and
@@ -52,13 +60,16 @@
    scene, heroHouse, Sim, DOM, storage) is guarded; if anything vital
    is missing the module reports and stays inert.
 
-   HOOKS: the Sim tick registry only ('sim' phase — the gate trigger).
-   No camera, input, or action-button hooks: the play itself lives on
-   the player page, by Joshua's delivery decision.
+   HOOKS: the Sim tick registry only ('sim' phase — the gate trigger),
+   plus a window 'message' listener that exists solely to hear the
+   mini-game overlay ask to close (validated by sender identity).
+   No camera or action-button hooks: the play itself lives on the
+   player page, hosted by the overlay.
 
    PUBLIC API (window.BBALL): version, mode(), baskets(), sessions(),
    lastMode(), rim(), court(), gate(), yes(), no(), playerUrl(),
-   and _ticks (registration proof counters for the test harness).
+   closeGame(), gameOpen(), and _ticks (registration proof counters
+   for the test harness).
    ============================================================================ */
 (function(){
 'use strict';
@@ -124,8 +135,13 @@ var built    = null;    // {court, rim, gate, region} world-space geometry
    stale here after a return trip. */
 var ticks = { sim: 0 };   // tick-run proof counter
 
-/* DOM refs (built lazily by ensureDom). */
-var dom = { prompt: null };
+/* DOM refs (built lazily by ensureDom / ensureGameDom). */
+var dom = { prompt: null, overlay: null, frame: null };
+
+/* In-game mini-game state (v1.2): is the overlay up, and was the world
+   already paused when it opened (so closing restores exactly that)? */
+var gameOpen = false;
+var wasPausedBeforeGame = false;
 
 /* ============================== helpers ============================== */
 
@@ -357,18 +373,14 @@ function showPrompt(){
 function hidePrompt(){
   if (dom.prompt) dom.prompt.classList.remove('show');
 }
-/* Yes: open the mini-game's own web player, full screen. Same Pages
-   origin, so the saved progress (sa.basketball.v1) is shared — the
-   page picks it up from there. The world stays exactly as it is; on
-   return the game page loads fresh at 535 (v1 behaviour, noted in
-   BASKETBALL-COURT-V1-NOTES.md). */
+/* Yes: open the mini-game IN GAME (v1.2) — the player page hosted in
+   a full-screen overlay, the world paused behind it. Same Pages
+   origin, so the saved progress (sa.basketball.v1) is shared. */
 function answerYes(){
   hidePrompt();
   mode = 'roam';
   armed = false;
-  note('open-player', { url: PLAYER_URL });
-  try{ window.location.href = PLAYER_URL; }
-  catch(e){ report('openPlayer', e); }
+  openGame();
 }
 function answerNo(){
   hidePrompt();
@@ -376,6 +388,112 @@ function answerNo(){
   armed = false;   // don't re-ask until he leaves the court area
   note('declined', {});
 }
+
+/* ====================== the in-game mini-game overlay ====================== */
+/* v1.2 (Joshua, 2026-10-18): the mini-game plays WITHOUT leaving the
+   game page. The overlay is one full-viewport layer above every game
+   surface (z-index 99995 — only the crash-report window at 99999 sits
+   higher, deliberately, so a critical error can still reach him) and
+   hosts basketball.html in an iframe. Same origin, so the page reads
+   the same localStorage progress as the standalone tab, and this
+   module can hear its close request. */
+
+function ensureGameDom(){
+  if (dom.overlay) return;
+  var style = document.createElement('style');
+  style.textContent =
+    '#bball-overlay{position:fixed;inset:0;display:none;z-index:99995;background:#10131c;}' +
+    '#bball-overlay.show{display:block;}' +
+    '#bball-overlay iframe{width:100%;height:100%;border:0;display:block;background:#10131c;}';
+  document.head.appendChild(style);
+
+  var overlay = document.createElement('div');
+  overlay.id = 'bball-overlay';
+  var frame = document.createElement('iframe');
+  frame.id = 'bball-frame';
+  frame.title = 'Basketball — 535 Backyard Court';
+  frame.setAttribute('aria-label', 'Basketball mini-game');
+  /* Focus follows the frame as soon as its page is in, so the
+     mini-game's keys (and gamepad) work the moment it appears. */
+  frame.addEventListener('load', function(){
+    try{ if (gameOpen && frame.contentWindow) frame.contentWindow.focus(); }catch(e){}
+  });
+  overlay.appendChild(frame);
+  document.body.appendChild(overlay);
+
+  dom.overlay = overlay;
+  dom.frame = frame;
+}
+
+/* Release any movement keys the world is holding. The world reads
+   window.keys / window.drive (the v1.64 published pair); if the
+   player walks into the gate holding a key and that key's release
+   lands inside the mini-game's frame instead, the world would keep
+   the key "down" forever and walk on its own when play resumes.
+   Clearing on open AND on close makes a stuck key impossible. Only
+   boolean entries are touched — drive's numeric channels are left
+   exactly as they are. */
+function clearGameKeys(){
+  try{
+    if (window.keys){ for (var k in window.keys) if (typeof window.keys[k] === 'boolean') window.keys[k] = false; }
+  }catch(e){}
+  try{
+    if (window.drive){ for (var d in window.drive) if (typeof window.drive[d] === 'boolean') window.drive[d] = false; }
+  }catch(e){}
+}
+
+/* Open the mini-game over the world: pause the world in the game's
+   own terms (window.GamePause — music holds its place, sim steps
+   stop), clear held keys, then load the page and show the layer.
+   The player himself is never moved: he stays standing at the gate. */
+function openGame(){
+  ensureGameDom();
+  if (gameOpen) return;
+  gameOpen = true;
+  wasPausedBeforeGame = false;
+  try{
+    if (window.GamePause && typeof window.GamePause.isPaused === 'function')
+      wasPausedBeforeGame = !!window.GamePause.isPaused();
+  }catch(e){}
+  try{
+    if (window.GamePause && typeof window.GamePause.setPaused === 'function')
+      window.GamePause.setPaused(true);
+  }catch(e){ report('pauseWorld', e); }
+  clearGameKeys();
+  try{ dom.frame.src = PLAYER_URL; }catch(e){ report('openGame', e); }
+  dom.overlay.classList.add('show');
+  note('open-ingame', { url: PLAYER_URL });
+}
+
+/* Close the mini-game and hand the world back: unload the frame (the
+   mini-game fully leaves memory — the suite's single-residency rule),
+   hide the layer, and resume the world unless it was already paused
+   before the game opened. Idempotent: a duplicate close request is
+   a no-op. */
+function closeGame(){
+  if (!gameOpen) return;
+  gameOpen = false;
+  try{ if (dom.frame) dom.frame.src = 'about:blank'; }catch(e){}
+  if (dom.overlay) dom.overlay.classList.remove('show');
+  clearGameKeys();
+  try{
+    if (window.GamePause && typeof window.GamePause.setPaused === 'function' && !wasPausedBeforeGame)
+      window.GamePause.setPaused(false);
+  }catch(e){ report('resumeWorld', e); }
+  try{ window.focus(); }catch(e){}
+  note('close-ingame', {});
+}
+
+/* The mini-game asks to close (its leave flow / close control) with a
+   postMessage. The sender must be OUR frame — identity, not origin
+   strings, so nothing else on the page can fake the request. */
+window.addEventListener('message', function(ev){
+  try{
+    if (!gameOpen || !dom.frame) return;
+    if (ev.source !== dom.frame.contentWindow) return;
+    if (ev.data && ev.data.type === 'bball-close') closeGame();
+  }catch(e){}
+});
 
 /* ============================== the gate trigger ============================== */
 
@@ -462,7 +580,7 @@ function boot(){
 /* ============================== public API ============================== */
 
 window.BBALL = {
-  version: '1.1.0',
+  version: '1.2.0',
   mode: function(){ return mode; },
   baskets: function(){ return loadProgress().baskets; },
   sessions: function(){ return loadProgress().sessions; },
@@ -473,6 +591,11 @@ window.BBALL = {
   yes: function(){ if (mode === 'prompt') answerYes(); },
   no: function(){ if (mode === 'prompt') answerNo(); },
   playerUrl: function(){ return PLAYER_URL; },
+  /* v1.2: the in-game overlay — the mini-game page can also call
+     closeGame() directly (same origin), as a fallback to its
+     postMessage. gameOpen() lets tests (and the page) see the state. */
+  closeGame: function(){ closeGame(); },
+  gameOpen: function(){ return gameOpen; },
   _ticks: ticks
 };
 
