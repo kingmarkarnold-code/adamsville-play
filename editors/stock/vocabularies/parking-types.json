@@ -1,0 +1,23 @@
+{
+  "vocabulary": "parking-types",
+  "title": "Parking types",
+  "source_constant": "PARKING_TYPES",
+  "source": "Building Editor data.py constants (shipped app 1.7.2; byte-identical copy in this repo at editors/building-editor/data.py)",
+  "migrated": "2026-10-17 — copied verbatim from the app code onto the shared stock shelf (ONE-SOURCE.md §4). The app still reads its baked-in copy until the Building Editor rebuild adopts this shelf; this file is the canonical list from now on.",
+  "values": [
+    "lot",
+    "space",
+    "garage"
+  ],
+  "labels": {
+    "lot": "Parking Lot",
+    "space": "Single Space",
+    "garage": "Parking Garage"
+  },
+  "space_orientations": [
+    "Parallel",
+    "Perpendicular",
+    "Angled"
+  ],
+  "labels_note": "Labels from PARKING_TYPE_LABELS; single-space orientation choices from PARKING_SPACE_ORIENTATIONS (same source block)."
+}
