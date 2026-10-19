@@ -1,5 +1,5 @@
 /* ============================================================================
-   FILE: basketball_court.js — BACKYARD BASKETBALL, the in-world court (v1.2)
+   FILE: basketball_court.js — BACKYARD BASKETBALL, the in-world court (v1.3)
    ----------------------------------------------------------------------------
    JOSHUA'S DESIGN (2026-10-17, hand sketch via the Draw-for-Mollie channel
    + his words): "This is the beginning of the mini-game. It's a basketball
@@ -27,6 +27,12 @@
         leave flow, or its close control) removes the overlay and hands
         the world back with the player standing exactly where he was.
         The standalone page is untouched and behaves as before.
+     5. (v1.3, Joshua 2026-10-18) THE TRIGGER MOVES TO THE DIRT: after
+        two live sessions where crossing the invisible gate line gave
+        him no prompt, Joshua ruled: "Let's change that so the dirt by
+        the trees create the pop up." The prompt now fires from an AREA
+        trigger on the dirt patch itself — stepping onto the dirt (on
+        foot) asks the question. The old gate-line crossing is gone.
 
    WHAT THIS MODULE OWNS (the world side):
    - THE COURT: an elliptical dirt patch in the backyard of the hero
@@ -41,11 +47,14 @@
      pines stand along the arc, as in the sketch. Every trunk gets a
      collider that matches its visible size (addCollider -> propGrid),
      exactly like the hero house's own yard pines.
-   - THE TRIGGER: walking on foot between the two entrance trees (south
-     -> north across the gate line) shows the prompt: "Do you want to
-     play a game?" [Yes] [No]. Yes opens the mini-game in game (the
-     full-screen overlay above). No dismisses and the prompt stays
-     away until the player leaves the court area and walks in again.
+   - THE TRIGGER (v1.3): STEPPING ONTO THE DIRT — on foot, anywhere on
+     the dirt patch by the trees — shows the prompt: "Do you want to
+     play a game?" [Yes] [No]. The trigger arms while the player is
+     OFF the dirt; Yes opens the mini-game in game (the full-screen
+     overlay above); No dismisses; and either way the prompt stays
+     away until he steps off the dirt and back on again. Leaving the
+     dirt with the prompt unanswered dismisses it the same way. A
+     vehicle crossing the dirt never fires it (on foot only).
 
    PROGRESS (Joshua): the mini-game saves the player's progress in
    localStorage 'sa.basketball.v1' — lifetime baskets, sessions, and
@@ -60,7 +69,7 @@
    scene, heroHouse, Sim, DOM, storage) is guarded; if anything vital
    is missing the module reports and stays inert.
 
-   HOOKS: the Sim tick registry only ('sim' phase — the gate trigger),
+   HOOKS: the Sim tick registry only ('sim' phase — the dirt trigger),
    plus a window 'message' listener that exists solely to hear the
    mini-game overlay ask to close (validated by sender identity).
    No camera or action-button hooks: the play itself lives on the
@@ -95,8 +104,11 @@ var PATCH_RZ    = 9;                      // patch half-length (z)
 var GOAL_OFF    = { x: 0,     z: -27.5 };  // goal tree, on the north arc
 var RIM_H       = 3.05;                   // regulation rim height (10 ft)
 var RIM_OUT     = 0.78;                   // rim centre, south of trunk centre
-var GATE_Z_OFF  = -9.3;                   // gate line z (between the trees)
-var GATE_HALF_X = 4.0;                    // prompt only between the trunks
+var GATE_Z_OFF  = -9.3;                   // entrance line z (between the trees)
+var GATE_HALF_X = 4.0;                    // entrance width (gate() API geometry)
+/* v1.3: the GATE constants no longer fire anything — the trigger is
+   the dirt itself (see simTick). They remain only so BBALL.gate()
+   can still describe where the entrance between the trees is. */
 
 /* Yard trees: [xOff, zOff, scale] — the two entrance pines first, then
    the arc pines from the sketch. Deterministic on purpose (no rand():
@@ -126,9 +138,10 @@ var COL_ARM       = 0x333333;   // mounting arm
 var booted   = false;   // court built + tick registered
 var bootTries = 0;      // bounded boot polling (see boot())
 var mode     = 'roam';  // 'roam' | 'prompt'  (play lives on the player page)
-var armed    = true;    // gate trigger armed (re-arms outside the court area)
-var prevZ    = null;    // player's z last sim tick (crossing detection)
-var built    = null;    // {court, rim, gate, region} world-space geometry
+var armed    = true;    // dirt trigger armed (re-arms while he's OFF the dirt)
+var onDirt   = false;   // hysteresis-tracked: is he on the dirt right now?
+var wasActive = false;  // (on the dirt AND on foot) last tick — step-on edge
+var built    = null;    // {court, rim, gate} world-space geometry
 
 /* Progress — READ from localStorage (the player page owns the writes).
    Read fresh on each API call so a total earned on the page is never
@@ -309,10 +322,9 @@ function buildCourt(){
     court: court,
     rim: rim,
     goalTree: { x: goalTree.x, z: goalTree.z },
-    gate: { z: hz + GATE_Z_OFF, x0: hx - GATE_HALF_X, x1: hx + GATE_HALF_X },
-    /* court area for re-arming the gate trigger (a touch larger than
-       the dirt, so stepping off the patch counts as leaving) */
-    region: { x0: hx - 8.5, x1: hx + 8.5, z0: hz - 30.5, z1: hz - 9.8 }
+    /* entrance geometry, kept for the gate() API — the v1.3 trigger
+       reads the dirt ellipse (court + PATCH_RX/PATCH_RZ), not this */
+    gate: { z: hz + GATE_Z_OFF, x0: hx - GATE_HALF_X, x1: hx + GATE_HALF_X }
   };
   return built;
 }
@@ -385,7 +397,7 @@ function answerYes(){
 function answerNo(){
   hidePrompt();
   mode = 'roam';
-  armed = false;   // don't re-ask until he leaves the court area
+  armed = false;   // don't re-ask until he leaves the dirt and steps back on
   note('declined', {});
 }
 
@@ -427,7 +439,7 @@ function ensureGameDom(){
 
 /* Release any movement keys the world is holding. The world reads
    window.keys / window.drive (the v1.64 published pair); if the
-   player walks into the gate holding a key and that key's release
+   player walks onto the dirt holding a key and that key's release
    lands inside the mini-game's frame instead, the world would keep
    the key "down" forever and walk on its own when play resumes.
    Clearing on open AND on close makes a stuck key impossible. Only
@@ -445,7 +457,7 @@ function clearGameKeys(){
 /* Open the mini-game over the world: pause the world in the game's
    own terms (window.GamePause — music holds its place, sim steps
    stop), clear held keys, then load the page and show the layer.
-   The player himself is never moved: he stays standing at the gate. */
+   The player himself is never moved: he stays standing on the dirt. */
 function openGame(){
   ensureGameDom();
   if (gameOpen) return;
@@ -495,13 +507,33 @@ window.addEventListener('message', function(ev){
   }catch(e){}
 });
 
-/* ============================== the gate trigger ============================== */
+/* ============================== the dirt trigger (v1.3) ============================== */
+/* Joshua's ruling (2026-10-18): "the dirt by the trees create the pop
+   up." The trigger is the dirt patch itself — an AREA, not a line:
+   stepping onto the dirt on foot asks the question. */
 
-/* Is the player inside the court area (for trigger re-arming)? */
-function inRegion(x, z){
-  var R = built.region;
-  return x > R.x0 && x < R.x1 && z > R.z0 && z < R.z1;
+/* Where (x, z) falls against the dirt ellipse, as a normalized value:
+   <= 1 is on the drawn dirt, > 1 is off it (the patch is drawn at
+   exactly PATCH_RX x PATCH_RZ around the court centre). */
+function dirtValue(x, z){
+  var dx = (x - built.court.x) / PATCH_RX;
+  var dz = (z - built.court.z) / PATCH_RZ;
+  return dx * dx + dz * dz;
 }
+
+/* Hysteresis-tracked on-dirt state. Stepping ON registers at the
+   drawn edge (value <= 1); stepping OFF only registers once he's a
+   clear step past the edge (value > 1.21 = the ellipse grown by
+   10%). The dead band between the two keeps a man standing at the
+   dirt's edge from flickering in and out — and possibly re-firing a
+   prompt he just answered — on sub-step position jitter. */
+function updateDirt(x, z){
+  var v = dirtValue(x, z);
+  if (onDirt){ if (v > 1.21) onDirt = false; }
+  else if (v <= 1.0) onDirt = true;
+  return onDirt;
+}
+
 function onFoot(){
   try{
     if (typeof player === 'undefined' || !player) return false;
@@ -512,29 +544,34 @@ function onFoot(){
   }catch(e){ return false; }
 }
 
-/* 'sim' phase — fixed 30 Hz: the gate trigger + the prompt's
-   walk-away dismissal. That is all the world side needs per-tick;
-   the play itself lives on the player page. */
+/* 'sim' phase — fixed 30 Hz: the dirt trigger + the prompt's
+   step-off dismissal. That is all the world side needs per-tick;
+   the play itself lives on the player page.
+ *
+ * The whole state machine, in Joshua's terms:
+ *  - OFF the dirt: the trigger is armed. Nothing shows.
+ *  - He STEPS ONTO the dirt on foot (the off->on edge): the prompt
+ *    shows. Driving onto the dirt never counts (not on foot), but
+ *    parking on it and getting out DOES — stepping out of the car
+ *    onto the dirt is stepping onto the dirt.
+ *  - ON the dirt after answering (or after a dismissal): no re-ask.
+ *    The trigger re-arms only once he is off the dirt again.
+ *  - Prompt up + he steps OFF the dirt unanswered: dismissed, same
+ *    as No — and stepping back on asks again. */
 function simTick(){
   ticks.sim++;
   if (!built || typeof player === 'undefined' || !player) return;
 
+  var dirt = updateDirt(player.x, player.z);
+  var active = dirt && onFoot();
+
   if (mode === 'roam'){
-    if (!armed && !inRegion(player.x, player.z)) armed = true;
-    if (armed && onFoot() && prevZ !== null){
-      var g = built.gate;
-      /* crossed the gate line south -> north, BETWEEN the two trees */
-      if (prevZ >= g.z && player.z < g.z && player.x > g.x0 && player.x < g.x1){
-        showPrompt();
-      }
-    }
+    if (!dirt) armed = true;                 // arms while OFF the dirt
+    if (armed && active && !wasActive) showPrompt();
   } else if (mode === 'prompt'){
-    /* walked away from the gate instead of answering: same as No */
-    var gg = built.gate;
-    var dx = player.x - (gg.x0 + gg.x1) / 2, dz = player.z - gg.z;
-    if (Math.sqrt(dx * dx + dz * dz) > 7) answerNo();
+    if (!dirt) answerNo();                   // stepped off unanswered
   }
-  prevZ = player.z;
+  wasActive = active;
 }
 
 /* ============================== boot ============================== */
@@ -580,7 +617,7 @@ function boot(){
 /* ============================== public API ============================== */
 
 window.BBALL = {
-  version: '1.2.0',
+  version: '1.3.0',
   mode: function(){ return mode; },
   baskets: function(){ return loadProgress().baskets; },
   sessions: function(){ return loadProgress().sessions; },
