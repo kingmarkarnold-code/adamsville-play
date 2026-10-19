@@ -1262,7 +1262,7 @@ function buildGasStation(sx,sz,brand,colorHex,ov){
   [[-15,-9],[0,-9],[15,-9],[-15,9],[0,9],[15,9]].forEach(function(p){
     setIM(S.colIM,ci+cn,p[0],3.6,p[1]);
     var w=L2W(p[0],p[1]);
-    if (!walkable){ try{ addBldgCollider(w.x,w.z,0.9*fsx); }catch(e){} }
+    if (!walkable){ try{ addBldgCollider(w.x,w.z,Math.sqrt(Math.pow(0.45*fsx,2)+Math.pow(0.45*fsz,2)),undefined,{hw:0.45*fsx,hd:0.45*fsz,yaw:a}); }catch(e){} }  // 2026-10-18: the column's real 0.9x0.9 footprint (was circle r=0.9)
     cn++;
   });
   // 4 pump islands + pump spots (parking positions on approach side)
@@ -1270,7 +1270,7 @@ function buildGasStation(sx,sz,brand,colorHex,ov){
   [-15.75,-5.25,5.25,15.75].forEach(function(px){
     setIM(S.pumpIM,pi,px,1.05,0);
     var w=L2W(px,0);
-    if (!walkable){ try{ addBldgCollider(w.x,w.z,1.4*fsx); }catch(e){} }
+    if (!walkable){ try{ addBldgCollider(w.x,w.z,Math.sqrt(Math.pow(0.7*fsx,2)+Math.pow(0.45*fsz,2)),undefined,{hw:0.7*fsx,hd:0.45*fsz,yaw:a}); }catch(e){} }  // 2026-10-18: the pump's real 1.4x0.9 footprint (was circle r=1.4)
     var sp=L2W(px,4.6);
     pumpSpots.push({x:sp.x,z:sp.z,busy:0});
     GAS_PUMP_SPOTS.push({x:sp.x,z:sp.z});
@@ -1283,7 +1283,7 @@ function buildGasStation(sx,sz,brand,colorHex,ov){
   // kiosk collider (the only big one — everything else is a small post/pump)
   if (!walkable){
     var kw=L2W(18,-14);
-    try{ addBldgCollider(kw.x,kw.z,6*Math.max(fsx,fsz)); }catch(e){}
+    try{ addBldgCollider(kw.x,kw.z,Math.sqrt(Math.pow(4.5*fsx,2)+Math.pow(3.5*fsz,2)),undefined,{hw:4.5*fsx,hd:3.5*fsz,yaw:a}); }catch(e){}  // 2026-10-18: the kiosk's real 9x7 footprint (was circle r=6 -- 2.5u past its short-side walls)
   }
   try{ LANDMARKS.push({x:sx,z:sz,name:brand}); }catch(e){}
   var biz={x:sx,z:sz,y:gy,w:GW,d:GD,h:GH,type:'gas',name:brand,

@@ -62,9 +62,10 @@
     },
     {
       "name": "collision_material.js",
-      "sha256": "c5e4d0107ef0f1780a44c8e0d177dc02d9c6ed4548cad9347a2fff9113fa3456",
-      "size": 31828,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/collision_material.js"
+      "sha256": "aae32ef1b3bce026c7ca08b237228f177351897a099cf38e158e22948c829ae9",
+      "size": 32679,
+      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/collision_material.js",
+      "hash": "aae32ef1b3bce026c7ca08b237228f177351897a099cf38e158e22948c829ae9"
     },
     {
       "name": "crashlog.js",
@@ -160,9 +161,9 @@
     },
     {
       "name": "index.html",
-      "size": 1019433,
-      "sha256": "2f0c277c081f676bebd8a8eeab267f5d791e5f2b724e3b5d1dc7ba7191db31ef",
-      "hash": "2f0c277c081f676bebd8a8eeab267f5d791e5f2b724e3b5d1dc7ba7191db31ef"
+      "size": 1014832,
+      "sha256": "a0748e32fe44ad06ebd3054abd01030bab6bf1abc4f61a0b34b40c2a69738421",
+      "hash": "a0748e32fe44ad06ebd3054abd01030bab6bf1abc4f61a0b34b40c2a69738421"
     },
     {
       "name": "infracrew_system.js",
@@ -298,9 +299,9 @@
     },
     {
       "name": "residential_detail.js",
-      "size": 26316,
-      "sha256": "2efab0ab839027b1502ae00db1b4cb441cceda2fe3f1955882d51bf52c97b10a",
-      "hash": "2efab0ab839027b1502ae00db1b4cb441cceda2fe3f1955882d51bf52c97b10a"
+      "size": 26582,
+      "sha256": "141256f3e21a746dd1f8135db42ed7ec2d71cb566ed4060728504eec861bfae4",
+      "hash": "141256f3e21a746dd1f8135db42ed7ec2d71cb566ed4060728504eec861bfae4"
     },
     {
       "name": "roadcrew_system.js",
@@ -431,9 +432,9 @@
     },
     {
       "name": "traffic_system.js",
-      "size": 76854,
-      "sha256": "f6ae231fe5e2ff89191d4f73ee0a10c44a607101e3f995b556af3586dc060638",
-      "hash": "f6ae231fe5e2ff89191d4f73ee0a10c44a607101e3f995b556af3586dc060638",
+      "size": 77335,
+      "sha256": "437975bc11a0b22b146589393cdf13a51845b752a0b01b7397c9b88eebb63555",
+      "hash": "437975bc11a0b22b146589393cdf13a51845b752a0b01b7397c9b88eebb63555",
       "md5": "9f1fb64d35236660da6edc3c8992a895"
     },
     {
@@ -524,6 +525,6 @@
       "sha256": "74d2e3da9d5db086f3724cec9d5d42c2ba52e8561f2223fd467601d1ba8500b8"
     }
   ],
-  "ui_version": "2026.10.18.8",
+  "ui_version": "2026.10.18.9",
   "version": "2026.10.17.9"
 }

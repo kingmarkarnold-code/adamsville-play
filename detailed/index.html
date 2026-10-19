@@ -2362,36 +2362,6 @@ window.__applyCrewMaster = function(on){
     // START GAME: save prefs, hide launcher, reveal loader
     var bStart = document.getElementById('launch-start');
     if (bStart) bStart.addEventListener('click', function(){ __confirmLaunch(true); });
-    /* RESUME AUTO-CONFIRM (2026-10-18, Go To fix — Joshua's live report:
-       a cross-zone Go To "took me to the launch options instead of my
-       destination"). A page load that carries the game's OWN resume
-       stash (sa_ui_update_resume — ui_update_flow.js's documented shape,
-       written seconds ago by a zone crossing, a Go To jump, an unlock
-       refresh, or a UI-update reload) is the SAME session continuing,
-       not a new launch: the landing is already computed and stashed,
-       and parking the player at the options screen strands it — the
-       stash even goes stale and is silently discarded if he does not
-       tap START GAME within its 10-minute freshness. So: when a FRESH
-       stash tagged for the zone this page is booting is present,
-       confirm with the saved options (already applied to __launchOpts
-       by __loadLaunchOpts above) and go straight to loading + restore.
-       saveOpts=false: the player's saved prefs are NOT rewritten —
-       they are simply the options in force, exactly as if he had
-       tapped START GAME. A cold start (no stash) is untouched: the
-       launcher still waits for an explicit choice (v1.33 law). */
-    try {
-      var _rsRaw = null;
-      try { _rsRaw = localStorage.getItem('sa_ui_update_resume'); } catch(e){}
-      var _rs = null;
-      try { _rs = _rsRaw ? JSON.parse(_rsRaw) : null; } catch(e){}
-      var _rsZone = null;
-      try { _rsZone = new URLSearchParams(window.location.search).get('zone'); } catch(e){}
-      if (_rs && _rs.kind === 'ui-update' && typeof _rs.t === 'number' &&
-          (Date.now() - _rs.t) < 10 * 60 * 1000 && _rs.player &&
-          (!_rs.zone || !_rsZone || _rs.zone === _rsZone)) {
-        __confirmLaunch(false);
-      }
-    } catch(e){}
     /* v1.33 START ANYWAY (Joshua 2026-10-11): secondary button, off to the
        side, for players who don't want to bother with options. Resets to
        defaults for this session (web: everything off, APK: everything on —
@@ -4186,23 +4156,9 @@ var bldgGrid = {};
    colliders now carry an optional height `h` (building top ~= base + h) so the
    third-person camera can raycast against them and pull in instead of clipping
    through walls. Defaults to 4u when not supplied. */
-function addBldgCollider(x, z, r, h, rect){
-  /* 2026-10-18 COLLISION TRUTH (Joshua): a caller that knows the building's
-     real FOOTPRINT passes rect={hw, hd, yaw} (half width/depth + facing
-     yaw) and the entry carries the oriented rectangle; resolveBldgColliders
-     and the material gate then collide with the actual walls. The old
-     circle-only entries reached metres past the walls on a building's
-     short sides (r was half the LONG side or half the diagonal), so the
-     van took crash damage in visibly clear air. `r` stays the bounding
-     radius for the legacy circle consumers (camera pull-in, spawn
-     overlap checks) — for rect entries pass the true bounding radius. */
-  var e={x:x, z:z, r:r, h:(typeof h==='number'?h:4)};
-  if (rect){
-    e.hw=rect.hw; e.hd=rect.hd;
-    e.cy=Math.cos(rect.yaw||0); e.sy=Math.sin(rect.yaw||0);
-  }
+function addBldgCollider(x, z, r, h){
   var k=Math.floor(x/40)+','+Math.floor(z/40);
-  (bldgGrid[k]=bldgGrid[k]||[]).push(e);
+  (bldgGrid[k]=bldgGrid[k]||[]).push({x:x, z:z, r:r, h:(typeof h==='number'?h:4)});
 }
 function resolveBldgColliders(p, radius){
   var cx=Math.floor(p.x/40), cz=Math.floor(p.z/40);
@@ -4210,39 +4166,6 @@ function resolveBldgColliders(p, radius){
     var cell=bldgGrid[gx+','+gz]; if (!cell) continue;
     for (var i=0;i<cell.length;i++){
       var c=cell[i];
-      if (c.hw!==undefined){
-        /* 2026-10-18: oriented-rect footprint. Work in the building's
-           local frame (same rotation convention as the meshes and
-           rotXZ(): world = R(yaw) * local with wx = lx*cy + lz*sy,
-           wz = -lx*sy + lz*cy). Take the closest point on the rectangle
-           to the entity centre and push out to exactly `radius` from
-           it: contact happens at the real wall plus the entity's own
-           size -- never in clear air, never inside the wall. */
-        var rdx=p.x-c.x, rdz=p.z-c.z;
-        var lx=rdx*c.cy - rdz*c.sy, lz=rdx*c.sy + rdz*c.cy;
-        var qx=lx<-c.hw?-c.hw:(lx>c.hw?c.hw:lx);
-        var qz=lz<-c.hd?-c.hd:(lz>c.hd?c.hd:lz);
-        var ex=lx-qx, ez=lz-qz;
-        var ed2=ex*ex+ez*ez;
-        if (ed2>0.000001){
-          var ed=Math.sqrt(ed2);
-          if (ed<radius){
-            var rpush=(radius-ed)/ed;
-            var wpx=ex*rpush, wpz=ez*rpush;
-            p.x += wpx*c.cy + wpz*c.sy;
-            p.z += -wpx*c.sy + wpz*c.cy;
-          }
-        } else {
-          /* Centre is INSIDE the footprint: leave by the nearest face,
-             ending `radius` beyond it. */
-          var pxa=c.hw-Math.abs(lx), pza=c.hd-Math.abs(lz);
-          if (pxa<pza) lx=(lx<0?-1:1)*(c.hw+radius);
-          else lz=(lz<0?-1:1)*(c.hd+radius);
-          p.x = c.x + lx*c.cy + lz*c.sy;
-          p.z = c.z - lx*c.sy + lz*c.cy;
-        }
-        continue;
-      }
       var dx=p.x-c.x, dz=p.z-c.z;
       var d=Math.sqrt(dx*dx+dz*dz), min=c.r+radius;
       if (d < min && d > 0.001){
@@ -7769,7 +7692,7 @@ function runOsmBuildings(){
       if(_top>ch.maxTop) ch.maxTop=_top;
       var _fd=Math.sqrt(bw*bw+bd*bd)/2;
       if(_fd>ch.maxFoot) ch.maxFoot=_fd;
-      addBldgCollider(k2[0],k2[1],Math.sqrt(bw*bw+bd*bd)/2,bh,{hw:bw/2,hd:bd/2,yaw:byaw});  // v1.37 height for camera raycast; 2026-10-18: real footprint rect (was a circle r=max/2+0.5 reaching past the short-side walls)
+      addBldgCollider(k2[0],k2[1],Math.max(bw,bd)/2+0.5,bh);  // v1.37: pass height for camera raycast
       placed++;
     }
     /* v1.46: build per-chunk InstancedMeshes. Each gets frustumCulled=true
@@ -7988,7 +7911,7 @@ var INSPECTOR_BLDG=null;
       band.position.set(bx,gy-0.6+f*6,bz);
       scene.add(band);
     }
-    addBldgCollider(bx,bz,Math.sqrt(bw*bw+bd*bd)/2,bh,{hw:bw/2,hd:bd/2,yaw:0});  // v1.37: 6-story office, bh=36; 2026-10-18: real 40x30 footprint (was circle r=21 -- 6u past the 30-side walls)
+    addBldgCollider(bx,bz,Math.max(bw,bd)/2+1,bh);  // v1.37: 6-story office, bh=36
     // Division offices with signage
     var divisions=[
       {name:"Road Inspection", floor:"3rd Floor",
@@ -8058,7 +7981,7 @@ var PLACES_OF_INTEREST=[];
       spire.rotation.y=Math.PI/4; spire.position.set(0,19,-8); g.add(spire);
       g.position.set(x,gy-0.6,z);
       scene.add(g);
-      addBldgCollider(x,z,Math.sqrt(14*14+22*22)/2,22,{hw:7,hd:11,yaw:0});  // v1.37: h=22 for camera; 2026-10-18: the nave's real 14x22 footprint (was circle r=12 -- 5u past the side walls)
+      addBldgCollider(x,z,12,22);  // v1.37: church steeple+spire ~=22u
       try{
         var sp=makeLabel("Community Church", 26, '#ffffff');
         sp.position.set(x,gy+24,z); scene.add(sp);
@@ -8081,8 +8004,7 @@ var PLACES_OF_INTEREST=[];
       roof.position.y=10.5; g.add(roof);
       g.position.set(x,gy-0.6,z);
       scene.add(g);
-      addBldgCollider(x,z,Math.sqrt(36*36+20*20)/2,11,{hw:18,hd:10,yaw:0});  // v1.37: h=11 for camera; 2026-10-18: main block's real 36x20 footprint
-      addBldgCollider(x+24,z,Math.sqrt(20*20+16*16)/2,11,{hw:10,hd:8,yaw:0});  // 2026-10-18: the wing's real 20x16 footprint (was one circle r=24 -- 14u past the side walls)
+      addBldgCollider(x,z,24,11);  // v1.37: school wing+roof ~=11u
       try{
         var sp=makeLabel("Neighborhood School", 30, '#ffffff');
         sp.position.set(x,gy+16,z); scene.add(sp);

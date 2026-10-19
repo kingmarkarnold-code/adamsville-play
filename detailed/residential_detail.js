@@ -244,7 +244,7 @@ try{
       var gd=l2w(bx,bz,yaw,gx,3.28);
       garageDoors.push({x:gd[0],y:base+1.25,z:gd[1],yaw:yaw,
         sx:4.4,sy:2.5,sz:0.14,c:0xe8e4da});
-      try{ addBldgCollider(gp[0],gp[1],3.6); }catch(e){}
+      try{ addBldgCollider(gp[0],gp[1],Math.sqrt(5.2*5.2+6.4*6.4)/2,undefined,{hw:2.6,hd:3.2,yaw:yaw}); }catch(e){}  // 2026-10-18: the garage's real 5.2x6.4 footprint (was circle r=3.6)
       stats.garages++;
       lat=gx;
     } else if (ptype==='carport' && gClear){
@@ -356,7 +356,7 @@ try{
     try{ stClear=distToRoadEdge(sp[0],sp[1])>=6; }catch(e){}
     if (ah>=8 && stClear){
       stairs.push({x:sp[0],y:base2,z:sp[1],yaw:yaw2,sx:3.2,sy:ah,sz:3.2,c:0x9a938a});
-      try{ addBldgCollider(sp[0],sp[1],2.6); }catch(e){}
+      try{ addBldgCollider(sp[0],sp[1],Math.sqrt(3.2*3.2+3.2*3.2)/2,undefined,{hw:1.6,hd:1.6,yaw:yaw2}); }catch(e){}  // 2026-10-18: the stair block's real 3.2x3.2 footprint (was circle r=2.6)
       stats.stairs++;
     }
     // parking lot on the road side

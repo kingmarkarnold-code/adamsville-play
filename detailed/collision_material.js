@@ -344,6 +344,20 @@ function _isSolidAt(x, z){
           for (var j = 0; j < bcell.length; j++){
             var bc = bcell[j];
             var bdx = x - bc.x, bdz = z - bc.z;
+            if (bc.hw !== undefined){
+              /* 2026-10-18 COLLISION TRUTH (Joshua): rect-footprint
+                 entries -- test the point against the building's real
+                 oriented rectangle (same local-frame math as the
+                 solver in index.html), expanded by the check radius R.
+                 The old circle test (bounding radius + R) marked open
+                 ground beside a house as SOLID metres from its walls. */
+              var blx = bdx * bc.cy - bdz * bc.sy, blz = bdx * bc.sy + bdz * bc.cy;
+              var bqx = blx < -bc.hw ? -bc.hw : (blx > bc.hw ? bc.hw : blx);
+              var bqz = blz < -bc.hd ? -bc.hd : (blz > bc.hd ? bc.hd : blz);
+              var bex = blx - bqx, bez = blz - bqz;
+              if (bex * bex + bez * bez < R * R) return true;
+              continue;
+            }
             var br = (bc.r || 2.0) + R;
             if (bdx*bdx + bdz*bdz < br*br) return true;
           }
