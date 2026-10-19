@@ -787,8 +787,14 @@ class DetailWindow(Gtk.Window):
     # ------------------------------------------------------------------
 
     def _current_page(self):
-        """The PiecePage of the notebook's current page, or None."""
-        n = self.notebook.get_current_page()
+        """The PiecePage of the notebook's current page, or None.
+        Construction-safe: toolbar toggles fire while the window is
+        still being built, before the notebook exists — those early
+        calls mean "no page yet", not a crash."""
+        notebook = getattr(self, "notebook", None)
+        if notebook is None:
+            return None
+        n = notebook.get_current_page()
         if n < 0:
             return None
         widget = self.notebook.get_nth_page(n)
