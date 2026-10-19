@@ -443,6 +443,12 @@
     background:rgba(110,30,30,.85); color:#fff; border:2px solid #ff6666;
     border-radius:10px; padding:10px 16px; font-size:15px; font-weight:bold; }
   #satview-ui { position:fixed; inset:0; z-index:40; display:none; pointer-events:none; }
+  /* Satellite View is a MAP SCREEN (Joshua 2026-10-18): while it is open,
+     the game HUD must not draw over the map. satellite_view.js toggles
+     body.satview-on; every top-level overlay except the 3D canvas (#game),
+     the satellite chrome (#satview-ui) and crash-report windows is hidden
+     until the view closes and the class comes off. */
+  body.satview-on > *:not(#game):not(#satview-ui):not(script):not(style):not([id^="crash"]) { display:none !important; }
   #satview-ui.show { display:block; }
   #satview-touch { position:absolute; inset:0; pointer-events:auto; touch-action:none; cursor:grab; }
   #satview-labels { position:absolute; inset:0; overflow:hidden; pointer-events:none; }
@@ -4180,9 +4186,23 @@ var bldgGrid = {};
    colliders now carry an optional height `h` (building top ~= base + h) so the
    third-person camera can raycast against them and pull in instead of clipping
    through walls. Defaults to 4u when not supplied. */
-function addBldgCollider(x, z, r, h){
+function addBldgCollider(x, z, r, h, rect){
+  /* 2026-10-18 COLLISION TRUTH (Joshua): a caller that knows the building's
+     real FOOTPRINT passes rect={hw, hd, yaw} (half width/depth + facing
+     yaw) and the entry carries the oriented rectangle; resolveBldgColliders
+     and the material gate then collide with the actual walls. The old
+     circle-only entries reached metres past the walls on a building's
+     short sides (r was half the LONG side or half the diagonal), so the
+     van took crash damage in visibly clear air. `r` stays the bounding
+     radius for the legacy circle consumers (camera pull-in, spawn
+     overlap checks) — for rect entries pass the true bounding radius. */
+  var e={x:x, z:z, r:r, h:(typeof h==='number'?h:4)};
+  if (rect){
+    e.hw=rect.hw; e.hd=rect.hd;
+    e.cy=Math.cos(rect.yaw||0); e.sy=Math.sin(rect.yaw||0);
+  }
   var k=Math.floor(x/40)+','+Math.floor(z/40);
-  (bldgGrid[k]=bldgGrid[k]||[]).push({x:x, z:z, r:r, h:(typeof h==='number'?h:4)});
+  (bldgGrid[k]=bldgGrid[k]||[]).push(e);
 }
 function resolveBldgColliders(p, radius){
   var cx=Math.floor(p.x/40), cz=Math.floor(p.z/40);
@@ -4190,6 +4210,39 @@ function resolveBldgColliders(p, radius){
     var cell=bldgGrid[gx+','+gz]; if (!cell) continue;
     for (var i=0;i<cell.length;i++){
       var c=cell[i];
+      if (c.hw!==undefined){
+        /* 2026-10-18: oriented-rect footprint. Work in the building's
+           local frame (same rotation convention as the meshes and
+           rotXZ(): world = R(yaw) * local with wx = lx*cy + lz*sy,
+           wz = -lx*sy + lz*cy). Take the closest point on the rectangle
+           to the entity centre and push out to exactly `radius` from
+           it: contact happens at the real wall plus the entity's own
+           size -- never in clear air, never inside the wall. */
+        var rdx=p.x-c.x, rdz=p.z-c.z;
+        var lx=rdx*c.cy - rdz*c.sy, lz=rdx*c.sy + rdz*c.cy;
+        var qx=lx<-c.hw?-c.hw:(lx>c.hw?c.hw:lx);
+        var qz=lz<-c.hd?-c.hd:(lz>c.hd?c.hd:lz);
+        var ex=lx-qx, ez=lz-qz;
+        var ed2=ex*ex+ez*ez;
+        if (ed2>0.000001){
+          var ed=Math.sqrt(ed2);
+          if (ed<radius){
+            var rpush=(radius-ed)/ed;
+            var wpx=ex*rpush, wpz=ez*rpush;
+            p.x += wpx*c.cy + wpz*c.sy;
+            p.z += -wpx*c.sy + wpz*c.cy;
+          }
+        } else {
+          /* Centre is INSIDE the footprint: leave by the nearest face,
+             ending `radius` beyond it. */
+          var pxa=c.hw-Math.abs(lx), pza=c.hd-Math.abs(lz);
+          if (pxa<pza) lx=(lx<0?-1:1)*(c.hw+radius);
+          else lz=(lz<0?-1:1)*(c.hd+radius);
+          p.x = c.x + lx*c.cy + lz*c.sy;
+          p.z = c.z - lx*c.sy + lz*c.cy;
+        }
+        continue;
+      }
       var dx=p.x-c.x, dz=p.z-c.z;
       var d=Math.sqrt(dx*dx+dz*dz), min=c.r+radius;
       if (d < min && d > 0.001){
@@ -7716,7 +7769,7 @@ function runOsmBuildings(){
       if(_top>ch.maxTop) ch.maxTop=_top;
       var _fd=Math.sqrt(bw*bw+bd*bd)/2;
       if(_fd>ch.maxFoot) ch.maxFoot=_fd;
-      addBldgCollider(k2[0],k2[1],Math.max(bw,bd)/2+0.5,bh);  // v1.37: pass height for camera raycast
+      addBldgCollider(k2[0],k2[1],Math.sqrt(bw*bw+bd*bd)/2,bh,{hw:bw/2,hd:bd/2,yaw:byaw});  // v1.37 height for camera raycast; 2026-10-18: real footprint rect (was a circle r=max/2+0.5 reaching past the short-side walls)
       placed++;
     }
     /* v1.46: build per-chunk InstancedMeshes. Each gets frustumCulled=true
@@ -7935,7 +7988,7 @@ var INSPECTOR_BLDG=null;
       band.position.set(bx,gy-0.6+f*6,bz);
       scene.add(band);
     }
-    addBldgCollider(bx,bz,Math.max(bw,bd)/2+1,bh);  // v1.37: 6-story office, bh=36
+    addBldgCollider(bx,bz,Math.sqrt(bw*bw+bd*bd)/2,bh,{hw:bw/2,hd:bd/2,yaw:0});  // v1.37: 6-story office, bh=36; 2026-10-18: real 40x30 footprint (was circle r=21 -- 6u past the 30-side walls)
     // Division offices with signage
     var divisions=[
       {name:"Road Inspection", floor:"3rd Floor",
@@ -8005,7 +8058,7 @@ var PLACES_OF_INTEREST=[];
       spire.rotation.y=Math.PI/4; spire.position.set(0,19,-8); g.add(spire);
       g.position.set(x,gy-0.6,z);
       scene.add(g);
-      addBldgCollider(x,z,12,22);  // v1.37: church steeple+spire ~=22u
+      addBldgCollider(x,z,Math.sqrt(14*14+22*22)/2,22,{hw:7,hd:11,yaw:0});  // v1.37: h=22 for camera; 2026-10-18: the nave's real 14x22 footprint (was circle r=12 -- 5u past the side walls)
       try{
         var sp=makeLabel("Community Church", 26, '#ffffff');
         sp.position.set(x,gy+24,z); scene.add(sp);
@@ -8028,7 +8081,8 @@ var PLACES_OF_INTEREST=[];
       roof.position.y=10.5; g.add(roof);
       g.position.set(x,gy-0.6,z);
       scene.add(g);
-      addBldgCollider(x,z,24,11);  // v1.37: school wing+roof ~=11u
+      addBldgCollider(x,z,Math.sqrt(36*36+20*20)/2,11,{hw:18,hd:10,yaw:0});  // v1.37: h=11 for camera; 2026-10-18: main block's real 36x20 footprint
+      addBldgCollider(x+24,z,Math.sqrt(20*20+16*16)/2,11,{hw:10,hd:8,yaw:0});  // 2026-10-18: the wing's real 20x16 footprint (was one circle r=24 -- 14u past the side walls)
       try{
         var sp=makeLabel("Neighborhood School", 30, '#ffffff');
         sp.position.set(x,gy+16,z); scene.add(sp);
@@ -10600,9 +10654,12 @@ function fmScreenToWorld(sx, sy){
 }
 /* v1.17 GPS: when pick mode is on, a tap sets the destination instead of
    closing the map. Snaps to the nearest landmark name for the label. */
-function fmGpsTap(sx, sy){
+function fmGpsTap(sx, sy, force){
   try{
-    if (!(window.GPS && GPS.getPickMode())) return false;
+    if (!window.GPS) return false;
+    /* Pick mode is the touch flow; Ctrl/Shift+click (Joshua 2026-10-18)
+       drops a pin directly, so callers with a modifier pass force. */
+    if (!force && !GPS.getPickMode()) return false;
     var w=fmScreenToWorld(sx, sy);
     var nm='Destination', bd=100*100;
     try{
@@ -10628,7 +10685,10 @@ function fmGpsTap(sx, sy){
 // v0.5: tap (not drag) on the map closes it; mouse click still works (guarded
 // against the synthetic click that follows a touch)
 fmCanvas.addEventListener('click', function(e){
-  if (window.GPS && GPS.getPickMode()){ fmGpsTap(e.clientX, e.clientY); return; }
+  /* Ctrl+click or Shift+click drops a navigation pin right here
+     (Joshua 2026-10-18), alongside the Navigate pick-mode flow. */
+  var mod = !!(e && (e.ctrlKey || e.shiftKey));
+  if (window.GPS && (GPS.getPickMode() || (mod && typeof fullMapOpen!=='undefined' && fullMapOpen))){ fmGpsTap(e.clientX, e.clientY, mod); return; }
   if (Date.now()-fmT.lastTouch>600 && Date.now()>(fmT.suppressClickUntil||0)) closeFullMap();
 });
 fmCanvas.addEventListener('touchstart', function(e){
@@ -10739,7 +10799,8 @@ function fmMouseUp(e){
   fmCanvas.style.cursor='grab';
   if (wasTap){ fmT.suppressClickUntil=Date.now()+400; fmT.tapOk=false;
     /* v1.17 GPS: pick mode intercepts the tap to set a destination */
-    if (window.GPS && GPS.getPickMode()){ fmGpsTap(cx, cy); }
+    var mod = !!(e && (e.ctrlKey || e.shiftKey));
+    if (window.GPS && (GPS.getPickMode() || mod)){ fmGpsTap(cx, cy, mod); }
     else closeFullMap(); }
   else if (fmT.mDragged){ fmT.suppressClickUntil=Date.now()+400; fmT.tapOk=false; }  // drag, not a click
   fmT.mDragged=false;

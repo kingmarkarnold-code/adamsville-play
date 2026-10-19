@@ -271,6 +271,11 @@ function open(){
   active = true;
   window.__satViewActive = true;
   uiRoot.classList.add('show');
+  // MAP SCREEN (Joshua 2026-10-18): Satellite View is a map screen, not
+  // a camera move with the game HUD drawn over it. The body class makes
+  // the CSS hide every top-level HUD overlay until close() — the world
+  // picture and this view's own chrome are the whole screen.
+  try{ document.body.classList.add('satview-on'); }catch(e){}
   applyCamera();
 }
 function close(){
@@ -278,6 +283,8 @@ function close(){
   active = false;
   window.__satViewActive = false;
   try{ if (uiRoot) uiRoot.classList.remove('show'); }catch(e){}
+  // Map screen off: the game HUD comes back exactly as it was.
+  try{ document.body.classList.remove('satview-on'); }catch(e){}
   disposeZoneLines();
   clearLabels();
   // Restore fog and camera orientation; the normal updateCamera() takes
