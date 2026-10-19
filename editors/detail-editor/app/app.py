@@ -385,6 +385,11 @@ class DetailWindow(Gtk.Window):
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
                       spacing=4)
         row.set_border_width(4)
+        # The hint label exists BEFORE any toggle can fire: arming
+        # the Select base state below emits "toggled", and the
+        # handler writes the hint — an AttributeError there used to
+        # kill startup (caught by the 1.0.0 launch harness).
+        self.tool_hint = layout_mod.hint_label(TOOLS[0][2])
         self.tool_buttons = {}
         first = None
         for name, label, _hint in TOOLS:
@@ -420,7 +425,6 @@ class DetailWindow(Gtk.Window):
         self.save_button.connect("clicked", self._on_save)
         self.save_button.set_sensitive(False)
         row.pack_start(self.save_button, False, False, 0)
-        self.tool_hint = layout_mod.hint_label(TOOLS[0][2])
         row.pack_start(self.tool_hint, False, False, 8)
         return layout_mod.hscroll_row(row)
 
