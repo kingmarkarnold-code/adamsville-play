@@ -1,0 +1,61 @@
+{
+ "version": "1.0.0",
+ "changelog": "First release of the Detail Editor (Joshua's design, 2026-10-18) \u2014 the standalone suite app the Map Editor's Detail Edit button hands a road piece to. It opens on the whole piece: every point, every segment, and the street face itself. Drag a point to move it (only that piece changes); add or delete points; add or delete segments \u2014 deleting a middle segment breaks the join and the piece saves as two records under the same name; delete a whole section, bulge and face together, leaving the straight edge. Elevation is never touched: points move in the flat plane only and the road's baked heights ride along unchanged. Saves follow the suite rule \u2014 local save, push, fresh download, the verified copy on screen \u2014 and only the piece's own zone is ever written. Built on the shared suite core and one element-agnostic manipulation core, so the next element types reuse the same code instead of growing copies.",
+ "files": [
+  {
+   "path": "app.py",
+   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/app.py",
+   "sha256": "150d2bab25543876d395252cd8b70c375ae9995bdf40818fc0ec8e316c6d237d"
+  },
+  {
+   "path": "detaildata.py",
+   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/detaildata.py",
+   "sha256": "1bb0f55efa2247e2be236e6f83b9c0c5d18c7d5a46b010db0ecee7938b01d44b"
+  },
+  {
+   "path": "detailcanvas.py",
+   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/detailcanvas.py",
+   "sha256": "dad08e47ee0c3daa7a66618c672d74d204cf8558c6ed70ee2aee44f5a1752cb3"
+  },
+  {
+   "path": "element.py",
+   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/element.py",
+   "sha256": "89451e3165bc24c17ddd26f7a0dbe48e4dea51872bb3ddfc77ffd8f738903add"
+  },
+  {
+   "path": "mollie-icon.png",
+   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/mollie-icon.png",
+   "sha256": "28990027fd79e03e2ef8416e8c1d3410ee284ec86383280968b245f08576e768"
+  },
+  {
+   "path": "suite_core/__init__.py",
+   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/suite_core/__init__.py",
+   "sha256": "2e6de5b3806e823ce6602a8975ae59d2b960e1ba9ed93a0e316950d2f78de155"
+  },
+  {
+   "path": "suite_core/about.py",
+   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/suite_core/about.py",
+   "sha256": "7d3d6ceb37bb4c83c5be662f5e32e2cdf3fa4415891445e4154202a6bc9c8fd5"
+  },
+  {
+   "path": "suite_core/github_sync.py",
+   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/suite_core/github_sync.py",
+   "sha256": "30da62de6b36da189acbcbe004ac3208d2ca3206f1a9551acd2a650785eac861"
+  },
+  {
+   "path": "suite_core/layout.py",
+   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/suite_core/layout.py",
+   "sha256": "359760a31f94575de55c03772fe2fe7f9d96805fa6b1d210bad5ef7f916a4c0b"
+  },
+  {
+   "path": "suite_core/shared_cache.py",
+   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/suite_core/shared_cache.py",
+   "sha256": "ce91dd4e9950db9ccc299d2104d96455a8bc1fe237bd0bbc205eaedfd8e7f454"
+  },
+  {
+   "path": "suite_core/updater.py",
+   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/suite_core/updater.py",
+   "sha256": "bd36c9f98f4a5dd74ea652df4057b10c195fbddaaaf023f21de3e32443263110"
+  }
+ ]
+}
