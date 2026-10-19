@@ -172,8 +172,18 @@ class PiecePage:
         self.root.set_position(win._state.get_pane("page-split", 980))
         self.right_pane = right
         self.refresh_info()
-        # The overview frames itself once it has real size.
+        # Both canvases frame themselves once they have real size
+        # (at build time the allocation is still nominal — a fit
+        # computed then would frame for a 1x1 window).
         self.overview.connect("size-allocate", self._overview_sized)
+        self.canvas.connect("size-allocate", self._canvas_sized)
+
+    def _canvas_sized(self, _widget, alloc):
+        """Frame the piece when the canvas first gets real size."""
+        if not getattr(self, "_canvas_fitted", False) \
+                and alloc.width > 50 and alloc.height > 50:
+            self._canvas_fitted = True
+            self.canvas.fit_piece()
 
     def _overview_sized(self, _widget, _alloc):
         """Fit the overview to the piece when it first gets size
