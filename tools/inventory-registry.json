@@ -23,6 +23,11 @@
   },
   {
    "class": "stock",
+   "pattern": "editors/stock/textures/*",
+   "reason": "Real CC0 surface textures (one 1024x1024 JPG colour map per material named in the Building Editor vocabularies), downloaded 2026-10-19 from Poly Haven and ambientCG \u2014 Joshua's Oct 11\u201312 order ('grab some free assets from the internet... brick, wood siding, vinyl siding, planks, brick') carried out for textures at last; the earlier free-assets run brought only the Kenney model kits. Provenance per file in editors/stock/textures/SOURCES.md. Resources only \u2014 no game code references them yet; wiring them into the renderer is a later step on Joshua's ruling."
+  },
+  {
+   "class": "stock",
    "pattern": "editors/ui-editor/ui_layout_default.json",
    "reason": "UI Editor factory-default layout seed. The live stock is detailed/ui_layout.json; this is the reset-to-factory source, labelled as such."
   },

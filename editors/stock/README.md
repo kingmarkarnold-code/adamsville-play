@@ -19,6 +19,13 @@ this stock, never a private copy baked into an app.
   `editors/map-editor/blender/assets/`, where the library sat inside
   one editor's drawer. Same-named models repeat across categories on
   purpose (a dining table and a school table are different stock).*
+- **`textures/`** — *populated 2026-10-19.* Real surface textures:
+  one 1024×1024 JPG colour map (CC0) per material named in the
+  vocabularies — brick, stucco, sidings, shingle, clay tile, thatch,
+  asphalt, gravel, grass, dirt, chain-link, floors. Downloaded from
+  Poly Haven and ambientCG under Joshua's Oct 11–12 order; per-file
+  provenance in `textures/SOURCES.md`. Resources only for now — no
+  program references them yet; the renderer wiring is a later step.
 - **`vocabularies/`** — *populated 2026-10-17.* The Building Editor's
   pick-lists (floor-plan templates, fence styles, floor types,
   driveway materials, garage sides, house styles, decoration types,
