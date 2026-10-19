@@ -753,6 +753,8 @@ function updateMarta(){
     if (t.state==='dwell') doBoardTrain(t);
   }
 }
+/* 2026-10-18 SWITCH AUDIT: boot poll 500ms x 240 tries = 120s (the crew
+   standard; was 250ms = 60s — slow device loads timed trains out). */
 var _bootTries=0;
 var _bootTimer=setInterval(function(){
 
@@ -786,5 +788,5 @@ var _bootTimer=setInterval(function(){
     clearInterval(_bootTimer);
     try{ if(typeof Report!=='undefined') Report.noteError('marta','boot-timeout','deps never ready'); }catch(e){}
   }
-},250);
+},500);
 })();

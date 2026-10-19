@@ -800,8 +800,9 @@ function updateRefNPCs(dt){
 window.updateRefNPCs=function(dt){ updateRefNPCs(dt||0.016); };
 
 /* Boot poller: init runs only when THREE, scene, roadDrawData (>100 roads),
-   PLACED_HOUSES, and animate are all ready — checked every 250ms, giving up
-   with a logged error after 60s (240 tries). Module is single-instance via
+   PLACED_HOUSES, and animate are all ready — checked every 500ms, giving up
+   with a logged error after 120s (240 tries — the crew standard; 2026-10-18
+   SWITCH AUDIT, was 250ms/60s). Module is single-instance via
    window.__refnpcV1. */
 var bootTries=0;
 var bootTimer=setInterval(function(){
@@ -827,6 +828,6 @@ var bootTimer=setInterval(function(){
     clearInterval(bootTimer);
     try{ if(typeof Report!=='undefined') Report.noteError('refnpc','boot-timeout','deps never ready'); }catch(e){}
   }
-},250);
+},500);
 
 })();

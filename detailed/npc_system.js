@@ -1088,8 +1088,11 @@ function initNPCs(){
 }
 
 /* tryInit() — waits for the main script's world (THREE, scene,
-   roadDrawData) to exist, then inits once. ~20s grace (40 × 500ms); after
-   that the NPC system stays off and the game is unaffected. */
+   roadDrawData) to exist, then inits once. 120s grace (240 x 500ms — the
+   crew systems' standard). 2026-10-18 LAUNCHER-SWITCH AUDIT: the old ~20s
+   grace expired on slow device loads before the world finished building,
+   so the NPC population never started while the 120s-window crews did —
+   and it gave up SILENTLY. The give-up below is now on the record. */
 var initTries=0;
 function tryInit(){
   /* v1.34 LAUNCHER SKIP (Joshua 2026-10-11): player unchecked NPCs in launch
@@ -1099,7 +1102,15 @@ function tryInit(){
   try{
     if (typeof THREE==='undefined' || typeof scene==='undefined' ||
         typeof roadDrawData==='undefined' || !roadDrawData || !roadDrawData.length){
-      if (++initTries<40) setTimeout(tryInit,500);   // ~20s grace
+      if (++initTries<240) setTimeout(tryInit,500);   // 120s grace (crew standard)
+      else {
+        /* On the record (Joshua's failure law): a population that never
+           started must say so where QA can see it. */
+        try{ if(typeof Report!=='undefined') Report.noteError('npc','boot-timeout','deps never ready'); }catch(x){}
+        try{ if(window.SA_CRASH) SA_CRASH('error',{code:'npc-boot-timeout',
+          message:'NPC dependencies (scene/roadDrawData) never became ready within 120s; the NPC population did not start',
+          where:'npc_system.js tryInit'}); }catch(x){}
+      }
       return;
     }
     initNPCs();

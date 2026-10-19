@@ -1540,15 +1540,15 @@ var bootTimer=setInterval(function(){
         where:'traffic_system.js initTraffic()'}); }catch(y){}
     }
     clearInterval(bootTimer);
-  } else if (bootTries>240){   // 60s — give up quietly, never break the game
+  } else if (bootTries>240){   // 120s — give up, never break the game (2026-10-18 SWITCH AUDIT: window harmonized to the crew standard; at 60s, slow device loads timed traffic out while the 120s crews survived)
     clearInterval(bootTimer);
     try{ if(typeof Report!=='undefined') Report.noteError('traffic','boot-timeout','deps never ready'); }catch(e){}
     /* v1.63 CRASH LOG: this path used to "give up quietly" — silent
        continuation is banned; the timeout is on the record. */
     try{ if(window.SA_CRASH) SA_CRASH('error',{code:'traffic-boot-timeout',
-      message:'traffic dependencies never became ready within 60s; traffic did not start',
+      message:'traffic dependencies never became ready within 120s; traffic did not start',
       where:'traffic_system.js boot poll'}); }catch(x){}
   }
-},250);
+},500);
 
 })();
