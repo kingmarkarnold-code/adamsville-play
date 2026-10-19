@@ -495,8 +495,20 @@ def maintain_map_manifest(targets, token=None, conn=None):
         except Exception as e:
             return False, f"map manifest unreadable: {e}"
         touched = []
+        # Manifest entry names are relative to the manifest's own
+        # directory ("zones/adamsville/roads.json"), while save
+        # targets carry full repo paths ("detailed/zones/...").
+        # Match either shape: a target naming a covered file must
+        # never slip past on a prefix technicality. (The first cut
+        # of this function matched only the bare entry name, which
+        # real editor saves never produce — their targets are full
+        # repo paths, so the refresh silently never fired. Caught
+        # by the 2026-10-18 freshness re-stamp's stub test.)
+        base = MAP_MANIFEST_PATH.rsplit("/", 1)[0] + "/"
         for path, content in changed.items():
             entry = entries.get(path)
+            if entry is None and path.startswith(base):
+                entry = entries.get(path[len(base):])
             if entry is None:
                 continue  # not covered by the manifest — not ours
             entry["size"] = len(content)
