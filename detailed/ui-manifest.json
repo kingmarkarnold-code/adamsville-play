@@ -125,9 +125,9 @@
     },
     {
       "name": "gps_system.js",
-      "size": 27198,
-      "sha256": "c5deae29ae78c3c89c8c40ee9ad05d23697bd79073abc6f92e1417676caafe0f",
-      "hash": "c5deae29ae78c3c89c8c40ee9ad05d23697bd79073abc6f92e1417676caafe0f"
+      "size": 66012,
+      "sha256": "66d3ffe3b4a34103617c82af90f799c546cc15ec184248c2d79d6e9afb6057d1",
+      "hash": "66d3ffe3b4a34103617c82af90f799c546cc15ec184248c2d79d6e9afb6057d1"
     },
     {
       "name": "helicopter_system.js",
@@ -161,9 +161,9 @@
     },
     {
       "name": "index.html",
-      "size": 1032856,
-      "sha256": "43510dd482e5cd170b8c1c21c35995a92b174be8d2b2fbbd9605fdfbdf8fa3f5",
-      "hash": "43510dd482e5cd170b8c1c21c35995a92b174be8d2b2fbbd9605fdfbdf8fa3f5"
+      "size": 1033149,
+      "sha256": "c8f34b0c36986962a2d879f4fb1d3a915586f0fc35305d635afa420d7164cde3",
+      "hash": "c8f34b0c36986962a2d879f4fb1d3a915586f0fc35305d635afa420d7164cde3"
     },
     {
       "name": "infracrew_system.js",
@@ -525,6 +525,6 @@
       "sha256": "74d2e3da9d5db086f3724cec9d5d42c2ba52e8561f2223fd467601d1ba8500b8"
     }
   ],
-  "ui_version": "2026.10.18.13",
+  "ui_version": "2026.10.18.14",
   "version": "2026.10.17.9"
 }

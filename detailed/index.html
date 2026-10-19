@@ -11350,6 +11350,10 @@ function drawFullMap(){
   });
   /* v1.17 GPS ROUTE (expert report #27): cyan route line + destination label. */
   try{ if(window.GPS) window.GPS.drawFullMapRoute(g, M); }catch(e){}
+  /* GPS REWORK v1.64 (Joshua 2026-10-18): GAS STATION markers — the full
+     map marks the stations actually standing in the world (the traffic
+     system's placed list) as orange pump badges with their names. */
+  try{ if(window.GPS) window.GPS.drawFullMapGasStations(g, M); }catch(e){}
   // v0.6 COMPASS: needle always points to TRUE north, counter-rotating as the map turns
   (function(){
     var _n=Mdir(0,-1), nx=_n[0], ny=_n[1];   // true-north dir in screen space
