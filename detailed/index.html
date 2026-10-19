@@ -7540,7 +7540,73 @@ function buildingSkipFor(idx){
     return true;
   }catch(e){ return false; }
 }
-try{ window.BuildingEdits={ skipFor:buildingSkipFor, state:BUILDING_EDITS }; }catch(e){}
+/* HERO-LOT EXCLUSION (2026-10-18, Joshua: "Fix 535"):
+   A generic OSM record must never be placed on a lot a HERO building
+   already occupies. The render audit found the one genuine double in
+   the world on 535's own lot: the traced OSM box of the real house
+   (adamsville idx 15908 — 1935, 6797.1, 14.76 x 12.32) was placed by
+   the main pass UNDER the detailed hero house (1938, 6791.3), so a
+   plain box stuck out behind it. Same disposition family as the
+   editor skip above: the record is NOT placed, the DATA STAYS in
+   buildings.json untouched, the skip is counted (skippedHero) and
+   reported by name (window.__bldgHeroSkips) — never silent, and it
+   reverses itself the moment the hero building leaves the lot.
+   "On the lot" = at least 20% of the generic record's own footprint
+   (and at least 4 m^2) lies inside the hero footprint — a neighbour
+   merely grazing a hero corner is untouched. Generic records carry
+   no stored angle (facing yaw is computed at placement), so both
+   sides test as axis-aligned boxes; a rotated hero contributes the
+   axis-aligned box around its rotated footprint. Hero footprints
+   come from THIS zone's hero_buildings.json (window.HERO_BUILDINGS,
+   assigned by the deferred loader before the world builds); a zone
+   with no hero data excludes nothing (fail-open, like every other
+   disposition here). */
+var _heroLotRects=null, _heroLotSrc=null;
+function heroLotRects(){
+  try{
+    var src=(typeof window!=='undefined') ? window.HERO_BUILDINGS : null;
+    if (src!==_heroLotSrc){ _heroLotSrc=src; _heroLotRects=null; }
+    if (_heroLotRects) return _heroLotRects;
+    var out=[];
+    var list=(src && src.buildings) ? src.buildings : [];
+    for (var k=0;k<list.length;k++){
+      var h=list[k];
+      if (!h || typeof h.x!=='number' || typeof h.z!=='number' || !h.dimensions) continue;
+      var W=+h.dimensions.W||0, D=+h.dimensions.D||0;
+      if (!(W>0) || !(D>0)) continue;
+      var rot=(+h.rotation||0)*Math.PI/180;
+      var c=Math.abs(Math.cos(rot)), s=Math.abs(Math.sin(rot));
+      var hw=(c*W+s*D)/2, hd=(s*W+c*D)/2;
+      out.push({hero:h, xMin:h.x-hw, xMax:h.x+hw, zMin:h.z-hd, zMax:h.z+hd});
+    }
+    _heroLotRects=out;
+    return out;
+  }catch(e){ return []; }
+}
+/* buildingHeroLotFor(idx) -> the hero record whose lot the building at
+   buildings.json index idx sits on, or null. Shared by runOsmBuildings,
+   the business pass and residential_detail's fallback — one mechanism,
+   honoured everywhere a generic building can be built. Exposed on
+   window (as BuildingEdits.heroLotFor) for the separate
+   residential_detail.js module, like skipFor. */
+function buildingHeroLotFor(idx){
+  try{
+    var b=(typeof OSM_BUILDINGS!=='undefined' && OSM_BUILDINGS) ? OSM_BUILDINGS[idx] : null;
+    if (!b || b.length<6) return null;
+    var lots=heroLotRects();
+    for (var k=0;k<lots.length;k++){
+      var L=lots[k];
+      var ox=Math.min(b[0]+b[2]/2, L.xMax)-Math.max(b[0]-b[2]/2, L.xMin);
+      if (ox<=0) continue;
+      var oz=Math.min(b[1]+b[3]/2, L.zMax)-Math.max(b[1]-b[3]/2, L.zMin);
+      if (oz<=0) continue;
+      var inter=ox*oz;
+      if (inter>=4 && inter>=0.20*(b[2]*b[3])) return L.hero;
+    }
+    return null;
+  }catch(e){ return null; }
+}
+try{ window.BuildingEdits={ skipFor:buildingSkipFor, heroLotFor:buildingHeroLotFor, state:BUILDING_EDITS }; }catch(e){}
 
 /* v2.0 (2026-10-09): DEFERRED INVOCATION — this is now a named function CALLED
    after the final road-grid rebuild (see call site below), so the automatic
@@ -7588,10 +7654,20 @@ function runOsmBuildings(){
         }
       }
     }catch(e){ savedFixes=null; }
-    var kept=[], skippedRoad=0, nudgedBldg=0, skippedEditor=0;
+    var kept=[], skippedRoad=0, nudgedBldg=0, skippedEditor=0, skippedHero=0, heroSkips=[];
     for (var i=0;i<OSM_BUILDINGS.length;i++){
       var b=OSM_BUILDINGS[i];  // [x, z, w, d, h, type]
       if (!b || b.length<6) continue;
+      /* Hero-lot exclusion (2026-10-18, Joshua: "Fix 535"): a generic
+         record sitting on a hero building's lot is never placed — the
+         hero build owns that lot. Checked FIRST, before the editor
+         disposition and before saved fixes, so nothing (including a
+         stale saved fix for the traced box under 535) can resurrect
+         it. Data stays; counted and reported by name. */
+      var heroHit=buildingHeroLotFor(i);
+      if (heroHit){ skippedHero++;
+        heroSkips.push({idx:i, hero:(heroHit.id||heroHit.name||'hero'), x:b[0], z:b[1]});
+        continue; }
       /* Editor disposition (2026-10-17): a "skipped" record in
          building-edits.json means this building is not built — the
          data stays, the decision is Joshua's/editor-recorded and
@@ -7643,6 +7719,16 @@ function runOsmBuildings(){
           var c=bldgFixLoad(); return c?Object.keys(c.fixes).length:0;
         }catch(e){ return 0; } })()
       };
+    }catch(e){}
+    /* Hero-lot exclusion: publish the skips by name (hero id + record
+       index + position) for the watcher/admin panel, and say them out
+       loud in the console — a skip is never silent in this codebase. */
+    try{ window.__bldgHeroSkips=heroSkips; }catch(e){}
+    try{
+      if (heroSkips.length){
+        console.log('[hero-lot] skipped '+heroSkips.length+' generic record(s) on hero lots: '+
+          heroSkips.map(function(s){ return '#'+s.idx+' @('+s.x+','+s.z+') on '+s.hero; }).join('; '));
+      }
     }catch(e){}
     if (!kept.length){
       try{Report.setSys('osmBuildings',{status:'all-skipped',in:OSM_BUILDINGS.length});}catch(e){}
@@ -8130,7 +8216,7 @@ function runOsmBuildings(){
       }
     }catch(e){}
     try{Report.setSys('osmBuildings',{in:OSM_BUILDINGS.length,placed:placed,
-      skippedRoad:skippedRoad,skippedEditor:skippedEditor,nudged:nudgedBldg,status:'ok',
+      skippedRoad:skippedRoad,skippedEditor:skippedEditor,skippedHero:skippedHero,nudged:nudgedBldg,status:'ok',
       realOSM:(typeof OSM_REAL_COUNT!=='undefined'?OSM_REAL_COUNT:0),
       procedural:OSM_BUILDINGS.length-(typeof OSM_REAL_COUNT!=='undefined'?OSM_REAL_COUNT:0),
       fixPersist:{savedApplied:_fixInfo.savedApplied,totalSaved:_fixInfo.totalSaved,
@@ -8179,10 +8265,12 @@ var BUSINESSES=[];
     // Editor-skipped buildings (building-edits.json) are excluded here
     // too — the skip is one shared disposition, honoured by every pass
     // that can put a building (or its signage) into the world.
+    // Hero-lot records (buildingHeroLotFor) are excluded the same way:
+    // no business name or signage on a hero building's lot.
     var comm=[];
     for(var i=0;i<OSM_BUILDINGS.length;i++){
       var b=OSM_BUILDINGS[i];
-      if(b && b[5]===1 && !buildingSkipFor(i)) comm.push(b);
+      if(b && b[5]===1 && !buildingSkipFor(i) && !buildingHeroLotFor(i)) comm.push(b);
     }
     // deterministic assignment
     var rng=mulberry32(19951);
