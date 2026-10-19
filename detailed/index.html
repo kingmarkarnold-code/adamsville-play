@@ -1466,6 +1466,12 @@ window.__startRequested=false;
 window.__gameStarted=false;
 function __earlyStartRequest(){
   window.__startRequested=true;
+  /* LAUNCH FLOW RULE (Joshua 2026-10-18): on a resume boot, stamp every
+     REAL player gesture with its time. __tryStartGame's resume gate
+     compares this stamp against the moment loading finished, so only a
+     deliberate tap made after the downloads can release the start —
+     the game's own auto-start paths never write this stamp. */
+  try{ if (window.__resumeGatePending) window.__resumeTapAt = Date.now(); }catch(e){}
   if(typeof __tryStartGame==='function'){ try{ __tryStartGame(); }catch(e){} }
 }
 try{
@@ -1473,6 +1479,40 @@ try{
   document.addEventListener('touchend',__earlyStartRequest,{capture:true,passive:true});
   document.addEventListener('click',__earlyStartRequest,{capture:true});
 }catch(e){}
+/* ===== LAUNCH FLOW RULE — RESUME START GATE (Joshua 2026-10-18) =====
+   The OPTIONS screen belongs to cold starts ONLY. A later reload that
+   carries the game's own resume stash (UI update, map update, zone
+   jump / Go To, unlock refresh) skips the options, shows the loader's
+   progress bar while everything downloads, and then WAITS for one
+   deliberate tap on START before entering the world — it never rolls
+   straight in on its own (this refines the 2026-10-18 Go To fix, whose
+   resume boots confirmed and started with no tap at all).
+   State (all on window, all inert on cold starts):
+     __resumeGatePending — set by the resume detection in __wireLauncher
+       when a fresh stash is present, BEFORE it confirms the launch.
+     __resumeGateArmedAt — stamped by __armResumeStartGate() the moment
+       the deferred download queue finishes on such a boot.
+     __resumeTapAt — stamped by __earlyStartRequest on real gestures.
+     __resumeGatePassed — latched by __tryStartGame once a qualifying
+       tap (at/after arming) is seen, so later calls pass freely. */
+window.__resumeGatePending = false;
+window.__resumeGateArmedAt = 0;
+window.__resumeTapAt = 0;
+window.__resumeGatePassed = false;
+/* __armResumeStartGate() — called by the deferred queue on completion
+   of a resume boot INSTEAD of starting the game: the downloads are
+   done, so present the START control and wait. The loader status names
+   the step plainly; #load-start is the same control cold starts use,
+   relabelled so the tap he is being asked for is unmistakable. */
+function __armResumeStartGate(){
+  try{
+    window.__resumeGateArmedAt = Date.now();
+    var st = document.getElementById('load-status');
+    if (st){ st.textContent = 'Ready — tap START to continue'; st.style.opacity = '1'; }
+    var s = document.getElementById('load-start');
+    if (s){ s.style.display = 'block'; s.textContent = '▶ START'; }
+  }catch(e){}
+}
 /* ===== v1.22 LAUNCHER OPTIONS (Joshua 2026-10-10) =====
    v1.26 FIX (2026-10-10): MOVED to block 1, BEFORE __wireLauncher.
    __wireLauncher (block 1) does `key in window.__launchOpts` — when this
@@ -2068,10 +2108,20 @@ function __loadDeferredQueueInner(){
     if (idx >= queue.length){
       window.__deferredDone = true;
       window.__deferredLoading = false;
-      /* All scripts loaded — start the game if confirmation requested it. */
+      /* All scripts loaded — start the game if confirmation requested it.
+         LAUNCH FLOW RULE exception (Joshua 2026-10-18): on a RESUME boot
+         (window.__resumeGatePending — a fresh resume stash was found at
+         launch) the downloads finishing is NOT the start. Arm the start
+         gate instead: the loader shows its START control and the game
+         waits for the player's deliberate tap, which __tryStartGame's
+         resume gate then honours. Cold starts are unchanged. */
       if (window.__startGameAfterLoad){
         window.__startGameAfterLoad = false;
-        try{ if (typeof __tryStartGame === 'function') __tryStartGame(); }catch(e){}
+        if (window.__resumeGatePending){
+          try{ __armResumeStartGate(); }catch(e){}
+        } else {
+          try{ if (typeof __tryStartGame === 'function') __tryStartGame(); }catch(e){}
+        }
       }
       return;
     }
@@ -2362,23 +2412,29 @@ window.__applyCrewMaster = function(on){
     // START GAME: save prefs, hide launcher, reveal loader
     var bStart = document.getElementById('launch-start');
     if (bStart) bStart.addEventListener('click', function(){ __confirmLaunch(true); });
-    /* RESUME AUTO-CONFIRM (2026-10-18, Go To fix — Joshua's live report:
-       a cross-zone Go To "took me to the launch options instead of my
-       destination"). A page load that carries the game's OWN resume
-       stash (sa_ui_update_resume — ui_update_flow.js's documented shape,
+    /* RESUME BOOT — OPTIONS SKIPPED, START TAP KEPT (2026-10-18 Go To
+       fix, refined 2026-10-19 by Joshua's LAUNCH FLOW RULE).
+       A page load that carries the game's OWN resume stash
+       (sa_ui_update_resume — ui_update_flow.js's documented shape,
        written seconds ago by a zone crossing, a Go To jump, an unlock
        refresh, or a UI-update reload) is the SAME session continuing,
        not a new launch: the landing is already computed and stashed,
        and parking the player at the options screen strands it — the
-       stash even goes stale and is silently discarded if he does not
-       tap START GAME within its 10-minute freshness. So: when a FRESH
-       stash tagged for the zone this page is booting is present,
-       confirm with the saved options (already applied to __launchOpts
-       by __loadLaunchOpts above) and go straight to loading + restore.
-       saveOpts=false: the player's saved prefs are NOT rewritten —
-       they are simply the options in force, exactly as if he had
-       tapped START GAME. A cold start (no stash) is untouched: the
-       launcher still waits for an explicit choice (v1.33 law). */
+       stash even goes stale and is discarded if the boot waits out its
+       10-minute freshness (the original Go To bug). So the OPTIONS
+       screen is never shown on such a boot: confirm with the saved
+       options (already applied to __launchOpts by __loadLaunchOpts
+       above; saveOpts=false — the saved prefs are NOT rewritten, they
+       are simply the options in force) and go to the loader, whose
+       progress bar shows the downloads.
+       The 2026-10-19 refinement: the boot no longer rolls straight
+       into the world when loading finishes. The start gate is armed
+       first (window.__resumeGatePending) — when the download queue
+       completes, __armResumeStartGate() presents the loader's START
+       control and __tryStartGame waits for ONE deliberate tap before
+       restoring him to exactly where he was. A cold start (no stash)
+       is untouched: the launcher still waits for an explicit choice
+       (v1.33 law), and its START GAME tap remains the start. */
     try {
       var _rsRaw = null;
       try { _rsRaw = localStorage.getItem('sa_ui_update_resume'); } catch(e){}
@@ -2389,6 +2445,13 @@ window.__applyCrewMaster = function(on){
       if (_rs && _rs.kind === 'ui-update' && typeof _rs.t === 'number' &&
           (Date.now() - _rs.t) < 10 * 60 * 1000 && _rs.player &&
           (!_rs.zone || !_rsZone || _rs.zone === _rsZone)) {
+        /* Arm the resume start gate BEFORE confirming: __confirmLaunch
+           starts the download queue, and the queue's completion reads
+           this flag to decide between starting and waiting for the tap. */
+        window.__resumeGatePending = true;
+        window.__resumeGateArmedAt = 0;
+        window.__resumeTapAt = 0;
+        window.__resumeGatePassed = false;
         __confirmLaunch(false);
       }
     } catch(e){}
@@ -13492,6 +13555,35 @@ function __tryStartGame(){
     if(window.__criticalFailed && window.__criticalFailed.length && !window.__criticalAcked){
       try{ if(typeof __showCriticalWarning==='function') __showCriticalWarning(); }catch(e){}
       return false;
+    }
+    /* LAUNCH FLOW RULE — RESUME START GATE (Joshua 2026-10-18): on a
+       resume boot (UI update / map update / zone jump — the boot carried
+       a fresh resume stash, so the options screen was skipped and the
+       loader's progress bar showed the downloads), the game must NOT
+       roll into the world by itself when loading finishes. It waits
+       here for ONE deliberate tap. The tap is recognised by its stamp:
+       __earlyStartRequest sets __resumeTapAt on every real gesture, and
+       a tap counts only if it lands at/after __resumeGateArmedAt (the
+       moment the downloads completed) — so the ~3s __autoStart, a tap
+       made while things were still loading, and every other automatic
+       caller are all refused, while the player's post-download tap (on
+       the START control, or anywhere — the game's standing start idiom)
+       passes and latches the gate open. If the gate never armed (a
+       stuck load rescued by the watchdog/SKIP failsafes), any real tap
+       counts — the player is never trapped by the gate. Cold starts
+       never set __resumeGatePending and never see this block. */
+    if(window.__resumeGatePending && !window.__resumeGatePassed){
+      var _rgTap = window.__resumeTapAt || 0;
+      var _rgArmed = window.__resumeGateArmedAt || 0;
+      if(_rgTap && (!_rgArmed || _rgTap >= _rgArmed)){
+        window.__resumeGatePassed = true;
+      } else {
+        var _rgSt=document.getElementById('load-status');
+        if(_rgSt){ _rgSt.textContent='Ready — tap START to continue'; _rgSt.style.opacity='1'; }
+        var _rgSb=document.getElementById('load-start');
+        if(_rgSb){ _rgSb.style.display='block'; if(_rgArmed) _rgSb.textContent='▶ START'; }
+        return false;
+      }
     }
     l.style.display='none';
     /* v1.13.4: start the animate() loop exactly ONCE. After save-and-exit
