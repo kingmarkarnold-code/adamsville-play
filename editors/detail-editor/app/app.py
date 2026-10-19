@@ -49,7 +49,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import gi
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
-from gi.repository import Gtk, Gdk, GLib
+from gi.repository import Gtk, Gdk, GLib, Pango
 
 from suite_core import about as about_mod
 from suite_core import github_sync
@@ -390,6 +390,16 @@ class DetailWindow(Gtk.Window):
         # handler writes the hint — an AttributeError there used to
         # kill startup (caught by the 1.0.0 launch harness).
         self.tool_hint = layout_mod.hint_label(TOOLS[0][2])
+        # The hint must NOT wrap: inside this sideways-scrolling
+        # row a wrapping label's height request explodes as the
+        # window narrows (measured: a 209 px toolbar on an 820x500
+        # window, button labels centred out of sight). Ellipsised,
+        # with the full text on the tooltip instead — set per tool
+        # in _on_tool_toggled.
+        self.tool_hint.set_line_wrap(False)
+        self.tool_hint.set_ellipsize(Pango.EllipsizeMode.END)
+        self.tool_hint.set_max_width_chars(46)
+        self.tool_hint.set_tooltip_text(TOOLS[0][2])
         self.tool_buttons = {}
         first = None
         for name, label, _hint in TOOLS:
@@ -853,6 +863,7 @@ class DetailWindow(Gtk.Window):
         for _n, _label, hint in TOOLS:
             if _n == name:
                 self.tool_hint.set_text(hint)
+                self.tool_hint.set_tooltip_text(hint)
         page = self._current_page()
         if page is not None:
             page.canvas.set_tool(name)
@@ -1090,6 +1101,7 @@ class DetailWindow(Gtk.Window):
             if page is not None:
                 page.canvas.set_tool("select")
             self.tool_hint.set_text(TOOLS[0][2])
+            self.tool_hint.set_tooltip_text(TOOLS[0][2])
             return True
         if page is None:
             return False
