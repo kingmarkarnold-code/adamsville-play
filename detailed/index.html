@@ -7691,6 +7691,21 @@ function runOsmBuildings(){
           var _om=window.__bldgChunkMeshes[_ok];
           if(_om.bodies) scene.remove(_om.bodies);
           if(_om.roofs) scene.remove(_om.roofs);
+          /* BAKE-AT-LAUNCH (Joshua 2026-10-18): a re-run supersedes any
+             in-flight bake — bump the bake generation so the old slicer
+             stops, stop the old tier timer, and dispose the old baked
+             chunk geometries (per-chunk owned buffers; not disposing them
+             would leak GPU memory on every map update). */
+          try{
+            window.__bakeGen=(window.__bakeGen||0)+1;
+            if(window.__bldgTierTimer){ clearInterval(window.__bldgTierTimer); window.__bldgTierTimer=null; }
+            ['bodies','roofs'].forEach(function(_kind){
+              var _mm=_om[_kind];
+              if(_mm && _mm.userData && _mm.userData.baked && _mm.geometry){
+                try{ _mm.geometry.dispose(); window.__bakeDisposed=(window.__bakeDisposed||0)+1; }catch(e2){}
+              }
+            });
+          }catch(e){}
         }
       }
     }catch(e){}
@@ -7772,6 +7787,48 @@ function runOsmBuildings(){
       addBldgCollider(k2[0],k2[1],Math.sqrt(bw*bw+bd*bd)/2,bh,{hw:bw/2,hd:bd/2,yaw:byaw});  // v1.37 height for camera raycast; 2026-10-18: real footprint rect (was a circle r=max/2+0.5 reaching past the short-side walls)
       placed++;
     }
+    /* ================= BAKE-AT-LAUNCH (Joshua's design, 2026-10-18) =====
+       The bake is a RUNTIME bake, never stored data: at every world build
+       (fresh launch, zone download, map update — all of which funnel into
+       runOsmBuildings), each chunk's buildings are MERGED into one static
+       BufferGeometry per kind (bodies / roofs) with vertex colours,
+       built from the zone's CURRENT data. Editor changes therefore keep
+       changing how the map looks through the normal download path —
+       nothing is frozen, stored data stays the truth — and the merged
+       geometry is created ONCE per bake instead of the instanced meshes
+       being re-submitted whole every frame.
+       CULLING: the merged geometry carries the chunk's bounding sphere
+       on the GEOMETRY (the one place three r128's frustum test reads),
+       so frustumCulled=true is honest — off-view chunks are skipped
+       instead of vertex-processed (all ~24k buildings, every frame,
+       was the v1.63 workaround's cost). This is the v1.63 bug class, so:
+       the sphere is the same generous one the instanced path computes,
+       and there is a KILL SWITCH — localStorage 'sa_bake_launch'='0'
+       (or window.__BAKE_LAUNCH=false before this runs) restores the
+       v1.46/v1.63 instanced build below, byte-for-byte behaviour.
+       DISTANCE TIERS (render audit Option B, Joshua 2026-10-18): in
+       bake mode a 500 ms tick toggles chunk meshes by nearest-point
+       distance — roofs off past the fog-tier distance (fogNear + 75% of
+       the fog band, ~1,200u on the default preset), bodies off past
+       fogFar; both limits are floored at 850u so NOTHING within the
+       800u full-draw radius is ever tiered away, and both boundaries sit
+       inside fog so no pop-in is visible.
+       The placement records (bldgChunks) are retained as the truth for
+       the bake-mode facade: marriott/codeenforce setMatrixAt/setColorAt
+       rewrite ONE building's vertices in its chunk (and update the
+       record, so a write that lands before that chunk's bake slice is
+       still honoured by the bake). ================================ */
+    var BAKE_ON=true;
+    try{
+      if(window.__BAKE_LAUNCH===false) BAKE_ON=false;
+      if(typeof localStorage!=='undefined' && localStorage.getItem('sa_bake_launch')==='0') BAKE_ON=false;
+    }catch(e){}
+    try{ window.__bakeOn=BAKE_ON; }catch(e){}
+    var _bakeState={ mode:BAKE_ON?'bake':'instanced', total:0, done:0, ms:0,
+      runs:(window.__bakeRuns=(window.__bakeRuns||0)+1),
+      disposedGeos:(window.__bakeDisposed||0) };
+    try{ window.__bakeState=_bakeState; }catch(e){}
+    if(!BAKE_ON){
     /* v1.46: build per-chunk InstancedMeshes. Each gets frustumCulled=true
        with an explicit bounding sphere: chunk center, vertical center from
        actual placed extents, radius covering the chunk half-diagonal plus the
@@ -7828,6 +7885,142 @@ function runOsmBuildings(){
       scene.add(_brm); _bcm.roofs=_brm;
       bldgChunkMeshes[_bck]=_bcm;
     }
+    } else {
+      /* ---- BAKE PATH: merge each chunk into static geometry, in
+         time-boxed slices between frames during the loading/build phase
+         so the bake never presents as a frozen game. ------------- */
+      bldgChunkMeshes={};
+      var _bHalfB=Math.sqrt(2)*BLDG_CHUNK/2;
+      var bakeBodyMat=new THREE.MeshLambertMaterial({vertexColors:true});
+      var bakeRoofMat=new THREE.MeshLambertMaterial({vertexColors:true});
+      /* Base shapes, captured once: the same unit box / cone the
+         instanced path instances, so the baked picture is identical. */
+      var bakeBase={
+        bodies:{ pos:bodyGeo.attributes.position.array, nor:bodyGeo.attributes.normal.array,
+                 idx:bodyGeo.index.array, vpc:bodyGeo.attributes.position.count },
+        roofs:{ pos:roofGeo.attributes.position.array, nor:roofGeo.attributes.normal.array,
+                idx:roofGeo.index.array, vpc:roofGeo.attributes.position.count }
+      };
+      var bakeChunks={};   // chunkKey -> {sphere,cx,cy,cz,r, bodies:{recs,mesh,geo}, roofs:{...}}
+      var bakeKeys=[];
+      for (var _bck2 in bldgChunks){
+        if(!bldgChunks.hasOwnProperty(_bck2)) continue;
+        var _bc2=bldgChunks[_bck2];
+        if(!_bc2.bodies.length) continue;
+        var _bp2=_bck2.split('_');
+        /* same generous sphere the instanced path computes — chunk
+           centre with the real offset, radius covering the chunk
+           half-diagonal + vertical extents + largest footprint + 5u. */
+        var _cx2=(parseInt(_bp2[0],10)+0.5)*BLDG_CHUNK-BLDG_XOFF;
+        var _cz2=(parseInt(_bp2[1],10)+0.5)*BLDG_CHUNK-BLDG_ZOFF;
+        var _cy2=(_bc2.minBase+_bc2.maxTop)/2;
+        var _hr2=Math.sqrt(_bHalfB*_bHalfB+((_bc2.maxTop-_bc2.minBase)/2)*((_bc2.maxTop-_bc2.minBase)/2))+_bc2.maxFoot+5;
+        bakeChunks[_bck2]={
+          sphere:new THREE.Sphere(new THREE.Vector3(_cx2,_cy2,_cz2),_hr2),
+          cx:_cx2, cy:_cy2, cz:_cz2, r:_hr2,
+          bodies:{recs:_bc2.bodies, mesh:null, geo:null},
+          roofs:{recs:_bc2.roofs, mesh:null, geo:null}
+        };
+        bakeKeys.push(_bck2);
+      }
+      var _bakeCol=new THREE.Color();
+      function _bakeKind(_entry,_kind){
+        var _slot=_entry[_kind], _recs=_slot.recs, _base=bakeBase[_kind], _n=_recs.length;
+        var _vpc=_base.vpc, _ipc=_base.idx.length;
+        var _pos=new Float32Array(_n*_vpc*3), _nor=new Float32Array(_n*_vpc*3), _colA=new Float32Array(_n*_vpc*3);
+        var _idxA=(_n*_vpc>65535)?new Uint32Array(_n*_ipc):new Uint16Array(_n*_ipc);
+        var _v=new THREE.Vector3(), _nm=new THREE.Matrix3();
+        for(var _i=0;_i<_n;_i++){
+          var _m=_recs[_i].m; _nm.getNormalMatrix(_m);
+          for(var _j=0;_j<_vpc;_j++){
+            _v.fromArray(_base.pos,_j*3).applyMatrix4(_m);
+            _pos[(_i*_vpc+_j)*3]=_v.x; _pos[(_i*_vpc+_j)*3+1]=_v.y; _pos[(_i*_vpc+_j)*3+2]=_v.z;
+            _v.fromArray(_base.nor,_j*3).applyMatrix3(_nm);
+            _nor[(_i*_vpc+_j)*3]=_v.x; _nor[(_i*_vpc+_j)*3+1]=_v.y; _nor[(_i*_vpc+_j)*3+2]=_v.z;
+          }
+          _bakeCol.setHex(_recs[_i].col);
+          for(var _j2=0;_j2<_vpc;_j2++){
+            _colA[(_i*_vpc+_j2)*3]=_bakeCol.r; _colA[(_i*_vpc+_j2)*3+1]=_bakeCol.g; _colA[(_i*_vpc+_j2)*3+2]=_bakeCol.b;
+          }
+          for(var _j3=0;_j3<_ipc;_j3++) _idxA[_i*_ipc+_j3]=_base.idx[_j3]+_i*_vpc;
+        }
+        var _geo=new THREE.BufferGeometry();
+        _geo.setAttribute('position',new THREE.BufferAttribute(_pos,3));
+        _geo.setAttribute('normal',new THREE.BufferAttribute(_nor,3));
+        _geo.setAttribute('color',new THREE.BufferAttribute(_colA,3));
+        _geo.setIndex(new THREE.BufferAttribute(_idxA,1));
+        /* the sphere lives on the GEOMETRY — where r128's frustum test
+           actually looks — so culling this mesh is honest by construction. */
+        _geo.boundingSphere=_entry.sphere.clone();
+        var _mesh=new THREE.Mesh(_geo, _kind==='bodies'?bakeBodyMat:bakeRoofMat);
+        _mesh.frustumCulled=true;
+        _mesh.matrixAutoUpdate=false;
+        _mesh.userData.baked=true;
+        _slot.mesh=_mesh; _slot.geo=_geo;
+        scene.add(_mesh);
+      }
+      /* ---- distance tiers (Option B): nearest-point distance from the
+         camera to the chunk's sphere, so a chunk is only tiered when
+         EVERY building in it is past the limit. ---- */
+      function _bldgTierLimits(){
+        var _fn=(typeof scene!=='undefined'&&scene&&scene.fog)?scene.fog.near:250;
+        var _ff=(typeof scene!=='undefined'&&scene&&scene.fog)?scene.fog.far:1500;
+        return { roof:Math.max(850,_fn+0.75*(_ff-_fn)), body:Math.max(850,_ff) };
+      }
+      function _bldgTierApply(_e){
+        if(!_e||_e.cx===undefined) return;
+        var _cp=camera.position;
+        var _dx=_cp.x-_e.cx, _dy=_cp.y-_e.cy, _dz=_cp.z-_e.cz;
+        var _d=Math.sqrt(_dx*_dx+_dy*_dy+_dz*_dz)-_e.r; if(_d<0) _d=0;
+        var _lim=_bldgTierLimits();
+        if(_e.bodies) _e.bodies.visible=_d<=_lim.body;
+        if(_e.roofs) _e.roofs.visible=_d<=_lim.roof;
+      }
+      function _bldgTierTick(){
+        for(var _k in bldgChunkMeshes){
+          if(!bldgChunkMeshes.hasOwnProperty(_k)) continue;
+          _bldgTierApply(bldgChunkMeshes[_k]);
+        }
+      }
+      function _bakeOneChunk(_key){
+        var _entry=bakeChunks[_key]; if(!_entry) return;
+        _bakeKind(_entry,'bodies'); _bakeKind(_entry,'roofs');
+        var _cm={bodies:_entry.bodies.mesh, roofs:_entry.roofs.mesh,
+                 cx:_entry.cx, cy:_entry.cy, cz:_entry.cz, r:_entry.r};
+        bldgChunkMeshes[_key]=_cm;
+        _bldgTierApply(_cm);   // honour current tiers the moment it appears
+      }
+      _bakeState.total=bakeKeys.length;
+      var _bakeGen=(window.__bakeGen||0);
+      var _bakeIdx=0;
+      var _bakeT0=(typeof performance!=='undefined'?performance.now():Date.now());
+      function _bakeSlice(){
+        if(_bakeGen!==(window.__bakeGen||0)) return;   // superseded by a re-run
+        var _tEnd=(typeof performance!=='undefined'?performance.now():Date.now())+24;
+        while(_bakeIdx<bakeKeys.length){
+          _bakeOneChunk(bakeKeys[_bakeIdx]); _bakeIdx++;
+          if((typeof performance!=='undefined'?performance.now():Date.now())>_tEnd) break;
+        }
+        _bakeState.done=_bakeIdx;
+        _bakeState.disposedGeos=(window.__bakeDisposed||0);
+        if(_bakeIdx<bakeKeys.length){ setTimeout(_bakeSlice,0); }
+        else{
+          _bakeState.ms=Math.round((typeof performance!=='undefined'?performance.now():Date.now())-_bakeT0);
+          try{ Report.note('bldgBake',{chunks:bakeKeys.length,ms:_bakeState.ms,buildings:placed,mode:'bake-at-launch'}); }catch(e){}
+        }
+      }
+      setTimeout(_bakeSlice,0);
+      try{ window.__bldgTierTimer=setInterval(_bldgTierTick,500); }catch(e){}
+      /* QA/diagnostics surface (same spirit as __bldgMeshes): retained
+         records + a per-building vertex locator for verification. */
+      try{ window.__bldgBake={ chunks:bakeChunks, base:bakeBase,
+        locate:function(gi,kind){
+          var _r=bldgChunkIndex[gi]; if(!_r) return null;
+          var _e=bakeChunks[_r[0]]; if(!_e) return null;
+          var _b=bakeBase[kind]; if(!_b) return null;
+          return { key:_r[0], li:_r[1], vStart:_r[1]*_b.vpc, vCount:_b.vpc };
+        } }; }catch(e){}
+    }
     try{ window.__bldgChunkMeshes=bldgChunkMeshes; }catch(e){}
     /* v1.46 FACADE: preserves the window.__bldgMeshes.{bodies,roofs} contract
        used by marriott.js (mqHideExterior) and codeenforce (setInstanceTransform):
@@ -7865,7 +8058,62 @@ function runOsmBuildings(){
       }});
       return f;
     }
-    var bodies=_bldgFacade('bodies'), roofs=_bldgFacade('roofs');
+    /* BAKE MODE facade: same {bodies, roofs, kept} contract, but a
+       setMatrixAt/setColorAt rewrites the ONE building's vertices inside
+       its chunk's merged geometry (from the kind's base shape, exactly
+       like the merge did) and updates the retained record — so a write
+       that lands before that chunk's bake slice is honoured by the bake
+       itself, and one that lands after rewrites the live geometry.
+       Used by marriott.js (mqHideExterior) and codeenforce
+       (setInstanceTransform) exactly as before. */
+    function _bldgBakedFacade(kind){
+      function _slot(gi){
+        var _r=bldgChunkIndex[gi]; if(!_r) return null;
+        var _e=bakeChunks[_r[0]]; if(!_e) return null;
+        return { slot:_e[kind], li:_r[1] };
+      }
+      var f={
+        count: placed,
+        setMatrixAt: function(gi,mat4){
+          var _t=_slot(gi); if(!_t) return;
+          _t.slot.recs[_t.li].m.copy(mat4);
+          var _geo=_t.slot.geo; if(!_geo) return;   // not baked yet — record carries it
+          var _base=bakeBase[kind], _vpc=_base.vpc;
+          var _pos=_geo.attributes.position, _nor=_geo.attributes.normal;
+          var _nm=new THREE.Matrix3().getNormalMatrix(mat4), _v=new THREE.Vector3();
+          for(var _j=0;_j<_vpc;_j++){
+            _v.fromArray(_base.pos,_j*3).applyMatrix4(mat4);
+            _pos.setXYZ(_t.li*_vpc+_j,_v.x,_v.y,_v.z);
+            _v.fromArray(_base.nor,_j*3).applyMatrix3(_nm);
+            _nor.setXYZ(_t.li*_vpc+_j,_v.x,_v.y,_v.z);
+          }
+          _pos.needsUpdate=true; _nor.needsUpdate=true;
+        },
+        setColorAt: function(gi,c){
+          var _t=_slot(gi); if(!_t) return;
+          try{
+            var _col=(c&&typeof c.getHex==='function')?c:new THREE.Color(c);
+            _t.slot.recs[_t.li].col=_col.getHex();
+            var _geo=_t.slot.geo; if(!_geo) return;
+            var _vpc=bakeBase[kind].vpc, _colA=_geo.attributes.color;
+            for(var _j=0;_j<_vpc;_j++) _colA.setXYZ(_t.li*_vpc+_j,_col.r,_col.g,_col.b);
+            _colA.needsUpdate=true;
+          }catch(e){}
+        }
+      };
+      /* The rewrites above apply synchronously, so the instanced
+         facade's needsUpdate fan-out is a deliberate no-op here. */
+      Object.defineProperty(f,'instanceMatrix',{get:function(){
+        return { set needsUpdate(v){} };
+      }});
+      Object.defineProperty(f,'instanceColor',{get:function(){
+        return { set needsUpdate(v){} };
+      }});
+      return f;
+    }
+    var bodies, roofs;
+    if(BAKE_ON){ bodies=_bldgBakedFacade('bodies'); roofs=_bldgBakedFacade('roofs'); }
+    else { bodies=_bldgFacade('bodies'); roofs=_bldgFacade('roofs'); }
     try{ window.__bldgMeshes={bodies:bodies, roofs:roofs, kept:kept}; }catch(e){}
     /* v1.63 CRASH LOG: publish the kept (placed) building records so
        collision diagnostics can name the exact building the player
