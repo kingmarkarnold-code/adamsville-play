@@ -102,10 +102,13 @@ try{
        "skipped" records in this fallback too — otherwise the detail
        pass would hang doors, porches and garages (some with
        colliders) on a building the editor recorded as skipped,
-       recreating an invisible-solid. The preferred path above needs
+       recreating an invisible-solid. Hero-lot records
+       (BuildingEdits.heroLotFor) get the same guard, for the same
+       reason. The preferred path above needs
        no guard: it consumes runOsmBuildings' published kept list,
        which is already skip-free. */
     try{ if (window.BuildingEdits && BuildingEdits.skipFor(i)) continue; }catch(e){}
+    try{ if (window.BuildingEdits && BuildingEdits.heroLotFor && BuildingEdits.heroLotFor(i)) continue; }catch(e){}
     var need=Math.max(b[2],b[3])/2+4;
     if (bldgClear(b[0],b[1],need)){ kept.push([b[0],b[1],b[2],b[3],b[4],b[5],null]); continue; }
     var placed2=null;
