@@ -63,6 +63,11 @@
   },
   {
    "class": "tooling",
+   "pattern": "editors/detail-editor/*.json",
+   "reason": "Detail Editor data (version.json). The Detail Editor (Joshua, 2026-10-18) is a live suite app; its updater reads version.json from this folder, and its app sources live under editors/detail-editor/app/."
+ },
+ {
+   "class": "tooling",
    "pattern": "editors/elevation-editor/*.json",
    "reason": "Elevation Editor data (terrain.json, version.json). The Elevation Editor is parked by Joshua (2026-10-16) and its code still points at its pre-consolidation repo; these files are its data of record, kept with the source set until it is unparked."
   },
