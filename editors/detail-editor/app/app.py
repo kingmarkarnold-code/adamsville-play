@@ -651,6 +651,13 @@ class DetailWindow(Gtk.Window):
                           lambda _b: self._close_page(page))
         tab_box.pack_start(close_btn, False, False, 0)
         tab_box.show_all()
+        # The page content must be SHOWN before it joins the
+        # notebook: the window's own show_all() ran at startup,
+        # before this page existed, and a hidden notebook page
+        # never becomes current and never gets sized — the canvas
+        # would sit at 1x1 forever (caught by the 1.0.0 launch
+        # harness: current page -1, canvas 1x1).
+        page.root.show_all()
         self.notebook.append_page(page.root, tab_box)
         if self.notebook.page_num(self._placeholder) >= 0 \
                 and len(self.pages) == 1:
