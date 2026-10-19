@@ -556,13 +556,27 @@ function maybeRestore(){
   try{ s=JSON.parse(raw); }catch(e){}
   if (!s || s.kind!=='ui-update' || typeof s.t!=='number' || !s.player ||
       (Date.now()-s.t)>STALE_MS){
+    /* A discarded TRIP stash (it carries a caller toast — Go To jumps,
+       zone crossings, unlock refreshes) must never vanish silently
+       (2026-10-18: a stale Go To stash read to Joshua as "dumped at
+       the launch options with no word"). Say so in plain words. */
+    var tripNote=(s && typeof s.toast==='string' && s.toast) ? s.toast : '';
     lsDel(LS_STASH);
+    if (tripNote){
+      logLine('Resume stash too old to use — trip set aside, started fresh.');
+      try{ if (typeof showToast==='function') showToast('That trip took too long to load, so it was set aside — you started at the home spawn. Your place is still in Go to.', 5200); }catch(e){}
+    }
     return false;
   }
   var curZone=null;
   try{ if (typeof ZONELOADER!=='undefined') curZone=ZONELOADER.currentZone; }catch(e){}
   if (s.zone && curZone && s.zone!==curZone){
-    lsDel(LS_STASH);   /* other-context stash — discard silently */
+    var tripNote2=(typeof s.toast==='string' && s.toast) ? s.toast : '';
+    lsDel(LS_STASH);   /* other-context stash — discard, but a trip says why */
+    if (tripNote2){
+      logLine('Resume stash was for zone '+(s.zone||'?')+', this page booted '+(curZone||'?')+' — trip set aside.');
+      try{ if (typeof showToast==='function') showToast('A saved trip to another zone was set aside — you started at the home spawn.', 5200); }catch(e){}
+    }
     return false;
   }
   lsDel(LS_STASH);     /* consume first: no restore loops, ever */
