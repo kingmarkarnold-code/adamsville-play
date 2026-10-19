@@ -2356,6 +2356,36 @@ window.__applyCrewMaster = function(on){
     // START GAME: save prefs, hide launcher, reveal loader
     var bStart = document.getElementById('launch-start');
     if (bStart) bStart.addEventListener('click', function(){ __confirmLaunch(true); });
+    /* RESUME AUTO-CONFIRM (2026-10-18, Go To fix — Joshua's live report:
+       a cross-zone Go To "took me to the launch options instead of my
+       destination"). A page load that carries the game's OWN resume
+       stash (sa_ui_update_resume — ui_update_flow.js's documented shape,
+       written seconds ago by a zone crossing, a Go To jump, an unlock
+       refresh, or a UI-update reload) is the SAME session continuing,
+       not a new launch: the landing is already computed and stashed,
+       and parking the player at the options screen strands it — the
+       stash even goes stale and is silently discarded if he does not
+       tap START GAME within its 10-minute freshness. So: when a FRESH
+       stash tagged for the zone this page is booting is present,
+       confirm with the saved options (already applied to __launchOpts
+       by __loadLaunchOpts above) and go straight to loading + restore.
+       saveOpts=false: the player's saved prefs are NOT rewritten —
+       they are simply the options in force, exactly as if he had
+       tapped START GAME. A cold start (no stash) is untouched: the
+       launcher still waits for an explicit choice (v1.33 law). */
+    try {
+      var _rsRaw = null;
+      try { _rsRaw = localStorage.getItem('sa_ui_update_resume'); } catch(e){}
+      var _rs = null;
+      try { _rs = _rsRaw ? JSON.parse(_rsRaw) : null; } catch(e){}
+      var _rsZone = null;
+      try { _rsZone = new URLSearchParams(window.location.search).get('zone'); } catch(e){}
+      if (_rs && _rs.kind === 'ui-update' && typeof _rs.t === 'number' &&
+          (Date.now() - _rs.t) < 10 * 60 * 1000 && _rs.player &&
+          (!_rs.zone || !_rsZone || _rs.zone === _rsZone)) {
+        __confirmLaunch(false);
+      }
+    } catch(e){}
     /* v1.33 START ANYWAY (Joshua 2026-10-11): secondary button, off to the
        side, for players who don't want to bother with options. Resets to
        defaults for this session (web: everything off, APK: everything on —
