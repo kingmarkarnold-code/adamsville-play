@@ -160,9 +160,9 @@
     },
     {
       "name": "index.html",
-      "size": 1013866,
-      "sha256": "3fe296ea94115e1a14a836bd9b02503b06d7e621162dece2318338ed66bfd79e",
-      "hash": "3fe296ea94115e1a14a836bd9b02503b06d7e621162dece2318338ed66bfd79e"
+      "size": 1015640,
+      "sha256": "ac15e3df07484faa6af0b9d48d8dafc705c88a92cb41a9ed24fc1dcd93644344",
+      "hash": "ac15e3df07484faa6af0b9d48d8dafc705c88a92cb41a9ed24fc1dcd93644344"
     },
     {
       "name": "infracrew_system.js",
@@ -462,8 +462,8 @@
     },
     {
       "name": "ui_update_flow.js",
-      "size": 34352,
-      "sha256": "3105fe5ff42de51d081ea41644e95118dac4618ee033053a09710271c5ef53bf"
+      "size": 35396,
+      "sha256": "562970c4822101286da887e9fe49f1d16b72422a1b876426d94b2561b03becba"
     },
     {
       "name": "vehicle_avoid.js",
@@ -524,6 +524,6 @@
       "sha256": "74d2e3da9d5db086f3724cec9d5d42c2ba52e8561f2223fd467601d1ba8500b8"
     }
   ],
-  "ui_version": "2026.10.18.5",
+  "ui_version": "2026.10.18.6",
   "version": "2026.10.17.9"
 }
