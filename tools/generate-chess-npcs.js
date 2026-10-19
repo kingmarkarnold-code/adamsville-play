@@ -374,7 +374,32 @@ function buildIdentities(games, docs) {
           if (c) gameColours.get(e.id).push(c === 'w' ? 'w' : 'b');
         }
       });
-      entries.push({ key: key, aliases: aliases, gameColours: gameColours });
+      /* The same person can be canonical in more than one book
+         (T. Richards and 'Da King are in both): the books are ONE
+         collection, so a repeated canonical key MERGES into the
+         first entry — union of aliases and game lists. Without this,
+         each book's entry became its own group and the later book's
+         alias list hijacked the shared spellings, splitting one man
+         into two NPCs (seen 2026-10-18: da-king/da-king-2 and
+         t-richards/t-richards-2 from the two-book run). */
+      var existing = null;
+      entries.forEach(function (e) { if (e.key === key) existing = e; });
+      if (existing) {
+        aliases.forEach(function (a) { existing.aliases.add(a); });
+        gameColours.forEach(function (cols, gid) {
+          if (!existing.gameColours.has(gid)) {
+            existing.gameColours.set(gid, cols);
+          } else {
+            cols.forEach(function (c) {
+              if (existing.gameColours.get(gid).indexOf(c) < 0) {
+                existing.gameColours.get(gid).push(c);
+              }
+            });
+          }
+        });
+      } else {
+        entries.push({ key: key, aliases: aliases, gameColours: gameColours });
+      }
     });
   });
 
