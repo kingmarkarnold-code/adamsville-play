@@ -28,7 +28,25 @@
   body {
     margin: 0; padding: 0; overflow: hidden; background: #171310; color: #fff;
     font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    display: flex; flex-direction: column; height: 100vh; height: 100dvh;
+    display: flex; flex-direction: column;
+    /* v2.3.1 (Joshua, 2026-10-24): the Pickup Ball button was NOT
+       VISIBLE on his phone. Root cause: this column was sized with
+       100vh, which counts the FULL screen including the strip that
+       sits under the phone browser's address bar / footer — so the
+       column stood taller than the area he can actually see, and
+       the bottom controls row (Pickup Ball, Defend, Steal) was
+       pushed below the visible area with no way to scroll to it
+       (overflow: hidden). 100dvh only helped where a browser both
+       supports it and keeps it current, and inside the game's
+       overlay frame it tracks the frame, not the visible screen.
+       The fix is his instruction: the page MEASURES the real
+       visible area in JavaScript (window.visualViewport, which
+       excludes the browser bars, falling back to innerHeight) and
+       lays out against that measurement — fitAppHeight() writes it
+       to --app-height and keeps it current as the bars show/hide.
+       The vh/dvh heights below are only the fallback for the first
+       paint, before the first measurement lands. */
+    height: 100vh; height: 100dvh; height: var(--app-height, 100dvh);
   }
   /* ---- top bar ---- */
   #topbar {
@@ -155,6 +173,33 @@
   #error-card h2 { margin: 0 0 8px; font-size: 20px; }
   #error-card p { font-size: 14px; opacity: .85; }
   #error-msg { font-size: 12px; opacity: .6; word-break: break-word; }
+  /* ---- v2.3.1: short screens squeeze the controls, never the
+     court alone — the court flexes (min-height: 0 above), and on a
+     short visible area the bars and buttons give up some height
+     too, so EVERY control stays on screen. These key off the
+     viewport height the browser reports; the layout itself is
+     pinned to the measured --app-height. ---- */
+  @media (max-height: 700px) {
+    #topbar { padding: 6px 10px; }
+    .barbtn { padding: 7px 10px; }
+    #skillbar { padding-bottom: 3px; }
+    #controls { padding-top: 6px; padding-bottom: calc(6px + env(safe-area-inset-bottom)); }
+    #feedback { font-size: 14px; min-height: 18px; margin-bottom: 6px; }
+    #defsteal { margin-bottom: 6px; }
+    .defbtn { min-height: 42px; padding: 9px 16px; font-size: 15px; }
+    #act-btn { min-height: 48px; padding: 10px 26px; font-size: 18px; }
+    #joy { width: 96px; height: 96px; bottom: 10px; left: 10px; }
+    #joy-knob { width: 44px; height: 44px; }
+  }
+  @media (max-height: 560px) {
+    #topbar .title { font-size: 14px; }
+    #feedback { min-height: 16px; margin-bottom: 4px; }
+    #defsteal { margin-bottom: 4px; }
+    .defbtn { min-height: 38px; padding: 7px 12px; font-size: 14px; min-width: 110px; }
+    #act-btn { min-height: 44px; padding: 8px 20px; font-size: 17px; min-width: 180px; }
+    #joy { width: 84px; height: 84px; }
+    #joy-knob { width: 38px; height: 38px; }
+  }
 </style>
 </head>
 <body>
@@ -354,6 +399,27 @@
      stepping out — chasing it, fetching it — is never a call: only
      the ball crossing makes it, decided by last touch. (The
      tree-border leave question is untouched, as in v2.2.)
+
+   v2.3.1 (Joshua, 2026-10-24) — EVERY CONTROL FITS THE SCREEN:
+   - FOUND ON HIS PHONE: the Pickup Ball button was not visible.
+     The page column was sized 100vh, which counts screen hidden
+     under the phone browser's address bar / footer; the column
+     stood taller than the visible area and the whole bottom
+     controls row fell below it, unreachable (no scrolling).
+   - HIS FIX, AS INSTRUCTED: the page MEASURES the screen it
+     actually has — fitAppHeight() reads window.visualViewport
+     (the area left after the browser bars take theirs), falling
+     back to window.innerHeight, writes it to the --app-height
+     CSS variable the body height now uses, and re-measures on
+     every resize / orientation change / visualViewport resize
+     (the bars showing and hiding as he scrolls or rotates).
+     Short screens additionally squeeze the bars and buttons
+     (the max-height rules in the stylesheet) while the court
+     flexes — no control is ever pushed off or clipped.
+   - THE HOST AGREES: the game's overlay (basketball_court.js)
+     now measures its own visible area the same way and sizes
+     the frame to it, so inside the game the frame this page
+     measures IS the truly visible area. No game logic changed.
    ============================================================================ */
 (function(){
 'use strict';
@@ -2174,6 +2240,32 @@ function animate(){
   renderer.render(scene, camera);
 }
 
+/* v2.3.1: MEASURE THE SCREEN WE ACTUALLY HAVE (Joshua's
+   instruction). window.visualViewport reports the area left after
+   the browser's address bar and footer take their share; the old
+   100vh layout counted that hidden strip too and pushed the
+   bottom controls off screen. The measured height is written to
+   the --app-height CSS variable (the body's height uses it), then
+   the canvas is re-fitted. Re-runs whenever the bars show or hide
+   (visualViewport resize), on window resize, and on rotation. */
+var appHeightPx = 0;
+function fitAppHeight(){
+  try{
+    var vv = window.visualViewport;
+    var h = (vv && vv.height) ? vv.height : window.innerHeight;
+    var w = (vv && vv.width) ? vv.width : window.innerWidth;
+    if (h){
+      appHeightPx = Math.round(h);
+      var root = document.documentElement;
+      if (root && root.style && root.style.setProperty){
+        root.style.setProperty('--app-height', appHeightPx + 'px');
+        if (w) root.style.setProperty('--app-width', Math.round(w) + 'px');
+      }
+    }
+  }catch(e){}
+  onResize();
+}
+
 function onResize(){
   try{
     var wrap = el('court-wrap');
@@ -2308,7 +2400,14 @@ function init(){
     }
     if (ev.code === 'KeyF') defendStop('key');
   });
-  window.addEventListener('resize', onResize);
+  /* v2.3.1: the layout follows the MEASURED visible area, so a
+     resize re-measures first, then re-fits the canvas. The
+     visualViewport listener is what catches the phone browser's
+     bars showing and hiding mid-session. */
+  window.addEventListener('resize', fitAppHeight);
+  window.addEventListener('orientationchange', fitAppHeight);
+  if (window.visualViewport && window.visualViewport.addEventListener)
+    window.visualViewport.addEventListener('resize', fitAppHeight);
   wireJoystick();
 
   /* v2.1, embedded only: the "back to the game" links (top bar +
@@ -2335,7 +2434,7 @@ function init(){
     showModeScreen();
   }
   updateActionButton();
-  onResize();
+  fitAppHeight();
   started = true;
   animate();
 }
@@ -2345,7 +2444,7 @@ catch(e){ showError(e); }
 
 /* test/debug surface (also handy later): state snapshots + drivers */
 window.BBALL_PAGE = {
-  version: '2.3.0',
+  version: '2.3.1',
   started: function(){ return started; },
   embedded: function(){ return EMBEDDED; },
   mode: function(){ return mode; },
@@ -2394,6 +2493,7 @@ window.BBALL_PAGE = {
     /* v2.2 debug drivers/readers */
     arena: function(){ return { court: { rx: COURT.rx, rz: COURT.rz }, treeBorder: { rx: TREE_BORDER.rx, rz: TREE_BORDER.rz } }; },
     topSpot: function(){ return { x: TOP_SPOT.x, z: TOP_SPOT.z }; },   // v2.3: the restart spot (the top, far end from the goal)
+    appHeight: function(){ return appHeightPx; },   // v2.3.1: the measured visible height the layout is built on (px, 0 = not measured yet)
     powerOutcome: function(holdSec){ return shotOutcomeForHold(holdSec); },
     charge: function(){
       if (!charging) return { active: false, hold: 0, power: 0, band: '' };
