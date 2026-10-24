@@ -29,6 +29,29 @@
         tap) reopens the bar for Done / Reset / Select. Expanded,
         the bar parks against the top edge as before.
 
+   v2.1 (Joshua 2026-10-24, hands-on): three changes.
+     1. THE LIST DERIVES ITSELF — v2's allow-list was typed by hand,
+        so when the Go To button was added to the game it never
+        joined this list and could not be moved (and its designed
+        spot landed on the settings gear). The movable set is now
+        DERIVED: the ids the designed layout actually placed
+        (published by ui_layout_apply.js as window.__SA_LAYOUT_IDS),
+        plus the built-in names below, plus anything a future
+        system registers via HudMove.register() — minus a short
+        EXCLUDE list (the v2 "not draggable" cases, kept below).
+        Add a control to the game and it appears in the Select
+        list on its own.
+     2. THE MINIMAP RESIZES — resizable controls (the minimap is
+        the first) grow a corner grip while selected in move mode;
+        dragging it saves the size WITH the position in the same
+        per-face override ({fx, fy, fw, fh} — size as viewport
+        fractions too) and both re-apply at every layout pass.
+     3. MEASURED VIEWPORT — every width/height this module clamps
+        or saves against comes from window.SAView (index.html's
+        visualViewport measurement) when present, so positions are
+        judged against the screen the player can actually see, not
+        the strip hidden under the phone browser's bars.
+
    THE DESIGN IN ONE PARAGRAPH:
    ui_layout.json (edited in the UI Editor) stays the source of the
    DESIGNED layout — the defaults every fresh install starts from.
@@ -88,7 +111,8 @@
        pointer-events:none by design and is never a target itself.
      * Text inputs are NEVER draggable (typing is sacred — the
        zone-unlock password box can never end up in this set; the
-       set below is a fixed allow-list of HUD element ids).
+       set is DERIVED (v2.1, see computeIds below) from layout ids
+       and registrations, and a text input is in neither).
      * Escape exits move mode (capture phase, so the pause system
        never sees it and doesn't unpause by accident).
 
@@ -150,6 +174,7 @@ function saveStore(){
 var NAMES = {
   'hud-title': 'Title', 'hud-sub': 'Subtitle',
   'help-btn': 'Settings gear', 'pause-btn': 'Pause button',
+  'goto-btn': 'Go To button',
   'music-btn': 'Music button', 'street-name': 'Street name',
   'ver-tag': 'Version tag', 'inv-btn': 'Inventory button',
   'action-btn': 'Action button', 'minimap': 'Minimap',
@@ -160,8 +185,96 @@ var NAMES = {
   'gas-btn': 'Gas pedal', 'brake-btn': 'Brake pedal',
   'handbrake-btn': 'Handbrake', 'cam-btn': 'Camera button'
 };
-var APPLY_IDS = Object.keys(NAMES);
-var TARGET_IDS = APPLY_IDS.filter(function (id) { return id !== 'joy-knob'; });
+/* NOT movable, even when the designed layout places them (the v2
+   exclusions, with their reasons): gas-bar rides inside #dmg-wrap
+   (the cluster moves as one); satview-btn / gps-nav-btn belong to
+   the full-map overlay, not the gameplay HUD; radio is a
+   hidden-by-design panel; toast and npc-dialog are transient
+   sheets; rec-ind is a status indicator; adm-sendreports is a
+   settings row, not a HUD control. */
+var EXCLUDE = {
+  'gas-bar': 1, 'satview-btn': 1, 'gps-nav-btn': 1, 'radio': 1,
+  'toast': 1, 'npc-dialog': 1, 'rec-ind': 1, 'adm-sendreports': 1
+};
+
+/* Controls the player may RESIZE as well as move (v2.1, Item 4):
+   the minimap is the first; HudMove.register() can flag more. */
+var RESIZABLE = { 'minimap': 1 };
+
+/* Runtime registrations (v2.1): a future system that adds an
+   on-screen control calls HudMove.register(id, {name, resizable})
+   and the control joins the movable set with no edit here. */
+var registered = {};
+
+function isResizable(id){
+  if (RESIZABLE[id]) return true;
+  var r = registered[id];
+  return !!(r && r.resizable);
+}
+
+/* Friendly name for any derived id: the hand-written name wins,
+   then a registered name, then a prettified id ('future-btn' ->
+   'Future button') so a brand-new control still reads well in
+   the Select list before anyone names it properly. */
+function prettify(id){
+  var hadBtn = /-btn$/.test(id);
+  var s = String(id).replace(/-btn$/, '').replace(/[-_]+/g, ' ');
+  s = s.replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+  return hadBtn ? s + ' button' : s;
+}
+function nameFor(id){
+  if (NAMES[id]) return NAMES[id];
+  var r = registered[id];
+  if (r && r.name) return r.name;
+  return prettify(id);
+}
+
+/* The DERIVED movable set (v2.1): designed-layout ids that are
+   actually in the document (ui_layout_apply.js publishes them as
+   window.__SA_LAYOUT_IDS on every pass), plus the built-in names,
+   plus runtime registrations — minus EXCLUDE. Recomputed by
+   refreshIds() at init, on every layout pass, and on register(),
+   so a control added to the game joins the list by itself.
+   joy-knob stays apply-only (it follows joy-base, never a target). */
+var APPLY_IDS = [];
+var TARGET_IDS = [];
+function computeIds(){
+  var seen = {}, out = [];
+  function add(id){
+    if (!id || EXCLUDE[id] || seen[id]) return;
+    seen[id] = 1;
+    /* Presence is part of derivation when the DOM can be asked;
+       in a stubbed harness (no getElementById) fall back to the
+       v2 behaviour of trusting the name list. */
+    if (document && document.getElementById && !document.getElementById(id)) return;
+    out.push(id);
+  }
+  try {
+    var lay = window.__SA_LAYOUT_IDS || [];
+    for (var i = 0; i < lay.length; i++) add(lay[i]);
+  } catch (e) { /* no layout published yet — names below still land */ }
+  var nk = Object.keys(NAMES);
+  for (var j = 0; j < nk.length; j++) add(nk[j]);
+  var rk = Object.keys(registered);
+  for (var k = 0; k < rk.length; k++) add(rk[k]);
+  return out;
+}
+function refreshIds(){
+  APPLY_IDS = computeIds();
+  TARGET_IDS = APPLY_IDS.filter(function (id) { return id !== 'joy-knob'; });
+}
+refreshIds();
+
+/* Public registration for future controls (see `registered`). */
+function registerControl(id, opts){
+  if (!id) return false;
+  registered[id] = {
+    name: (opts && opts.name) || null,
+    resizable: !!(opts && opts.resizable)
+  };
+  refreshIds();
+  return true;
+}
 
 /* Element ids this module has given inline !important positions to,
    so Reset knows exactly what to strip. */
@@ -170,6 +283,25 @@ var importantSet = {};
 /* ---------------------------------------------------------------------------
    Small helpers
    --------------------------------------------------------------------------- */
+/* The MEASURED visible viewport (v2.1): index.html's SAView reads
+   window.visualViewport — the area left after the phone browser's
+   address bar and footer — and keeps it current. Every clamp,
+   rescue and saved fraction in this module is judged against
+   these, so a control can never be placed (or left) in the
+   hidden strip. Falls back to the window size when SAView is
+   absent (older shell, harness). */
+function visW(){
+  try {
+    if (window.SAView && SAView.width) return SAView.width() || window.innerWidth || 0;
+  } catch (e) { /* fall through to the window size */ }
+  return window.innerWidth || 0;
+}
+function visH(){
+  try {
+    if (window.SAView && SAView.height) return SAView.height() || window.innerHeight || 0;
+  } catch (e) { /* fall through to the window size */ }
+  return window.innerHeight || 0;
+}
 /* Clamp a proposed top-left so the element stays fully on screen. */
 function clampPos(left, top, w, h, vw, vh){
   var maxL = Math.max(0, vw - (w || 0));
@@ -221,6 +353,33 @@ function needsRescue(el, vw, vh){
   return !fullyInside(r, vw, vh);
 }
 
+/* A saved SIZE for a resizable control (v2.1): fw/fh are viewport
+   fractions exactly like fx/fy, applied with !important priority
+   so they beat the designed size and the mobile media-query pins,
+   the same way positions do. Elements without fw/fh keep the
+   designed size — the v1/v2 rule ("sizes are NOT overridden")
+   still holds for every non-resizable control. */
+function applySizeOverride(el, id, ov, vw, vh){
+  if (!el || !ov) return;
+  if (typeof ov.fw === 'number' && ov.fw > 0)
+    el.style.setProperty('width', Math.round(ov.fw * vw) + 'px', 'important');
+  if (typeof ov.fh === 'number' && ov.fh > 0)
+    el.style.setProperty('height', Math.round(ov.fh * vh) + 'px', 'important');
+  if (typeof ov.fw === 'number' || typeof ov.fh === 'number')
+    if (id) importantSet[id] = true;
+}
+
+/* Save a position for a control, PRESERVING any size it carries
+   (and vice versa in the resize path): position and size are two
+   halves of one override, and neither save may erase the other. */
+function savePos(id, face, fx, fy){
+  var prev = store[face][id] || {};
+  var ov = { fx: fx, fy: fy };
+  if (typeof prev.fw === 'number') ov.fw = prev.fw;
+  if (typeof prev.fh === 'number') ov.fh = prev.fh;
+  store[face][id] = ov;
+}
+
 /* ---------------------------------------------------------------------------
    Placing — the one writer of !important positions. Sets left/top
    (right/bottom cleared to auto), records the id for Reset, then
@@ -258,6 +417,10 @@ function applyOverride(el, id, face, vw, vh){
   if (!el || !id) return false;
   var ov = store[face] && store[face][id];
   if (!ov || typeof ov.fx !== 'number' || typeof ov.fy !== 'number') return false;
+  /* v2.1: a saved size lands FIRST, so the position clamp below
+     measures the box the player actually sees (a resized minimap
+     must still fit fully inside the visible screen). */
+  applySizeOverride(el, id, ov, vw, vh);
   var w = 0, h = 0;
   try { w = el.offsetWidth || 0; h = el.offsetHeight || 0; } catch (e) {}
   var want = clampPos(ov.fx * vw, ov.fy * vh, w, h, vw, vh);
@@ -290,7 +453,10 @@ function edgeClamp(el, id, vw, vh){
 function onLayoutApplied(mobile){
   var face = mobile ? 'mobile' : 'desktop';
   lastFace = face;
-  var vw = window.innerWidth || 0, vh = window.innerHeight || 0;
+  /* The layout pass may have just published fresh layout ids —
+     re-derive the movable set before judging positions (v2.1). */
+  refreshIds();
+  var vw = visW(), vh = visH();
   if (!vw || !vh || !document.getElementById) return;
   for (var i = 0; i < APPLY_IDS.length; i++){
     var el = document.getElementById(APPLY_IDS[i]);
@@ -301,6 +467,9 @@ function onLayoutApplied(mobile){
       edgeClamp(el, APPLY_IDS[i], vw, vh);
     }
   }
+  /* A layout pass mid-arranging (resize / rotation) moves the
+     selected control — its resize grip follows it (v2.1). */
+  if (inMove) positionResizeHandle();
 }
 
 /* ---------------------------------------------------------------------------
@@ -332,7 +501,7 @@ function positionTagAt(el){
     /* Above the control when there's room, below it otherwise. */
     var top = r.top - 34;
     if (top < 4) top = r.bottom + 6;
-    tag.style.left = Math.max(4, Math.min(r.left, (window.innerWidth || 0) - 90)) + 'px';
+    tag.style.left = Math.max(4, Math.min(r.left, visW() - 90)) + 'px';
     tag.style.top = top + 'px';
   } catch (e) {}
 }
@@ -345,7 +514,7 @@ function showTagFor(el, name){
 }
 function showTag(){
   if (!drag) return;
-  showTagFor(drag.el, NAMES[drag.id] || drag.id);
+  showTagFor(drag.el, nameFor(drag.id));
 }
 function positionTag(){
   if (drag) positionTagAt(drag.el);
@@ -363,7 +532,7 @@ function hideTag(){
 var selectedId = null;
 
 function setSelected(id){
-  if (selectedId === id) { if (id) { var cur = document.getElementById(id); if (cur) showTagFor(cur, NAMES[id] || id); } return; }
+  if (selectedId === id) { if (id) { var cur = document.getElementById(id); if (cur) showTagFor(cur, nameFor(id)); } positionResizeHandle(); return; }
   if (selectedId){
     var prev = document.getElementById(selectedId);
     if (prev){
@@ -378,11 +547,14 @@ function setSelected(id){
         el.style.setProperty('outline', '3px solid #ffd75e', 'important');
         el.style.setProperty('outline-offset', '2px', 'important');
       } catch (e) {}
-      showTagFor(el, NAMES[selectedId] || selectedId);
+      showTagFor(el, nameFor(selectedId));
     }
   } else {
     hideTag();
   }
+  /* The resize grip belongs to the newly selected control (and
+     only shows when that control is resizable) — v2.1. */
+  positionResizeHandle();
 }
 
 function clearSelected(){
@@ -400,7 +572,7 @@ function clearSelected(){
 function rescueControl(id, force){
   var el = document.getElementById(id);
   if (!el) return false;
-  var vw = window.innerWidth || 0, vh = window.innerHeight || 0;
+  var vw = visW(), vh = visH();
   if (!vw || !vh) return false;
   if (!force && !needsRescue(el, vw, vh)) return false;
   var r = rectOf(el);
@@ -410,7 +582,9 @@ function rescueControl(id, force){
   var p = clampPos((vw - w) / 2, (vh - h) / 2, w, h, vw, vh);
   var face = currentFace();
   var oldLeft = r ? r.left : null, oldTop = r ? r.top : null;
-  store[face][id] = { fx: round4(p.left / vw), fy: round4(p.top / vh) };
+  /* savePos (not a bare write): a rescue moves the control, it
+     must not erase a size the player gave it (v2.1). */
+  savePos(id, face, round4(p.left / vw), round4(p.top / vh));
   placeVisual(el, id, p.left, p.top);
   if (id === 'joy-base'){
     var k = document.getElementById('joy-knob');
@@ -423,7 +597,7 @@ function rescueControl(id, force){
       var dx = (kr && oldLeft !== null) ? (kr.left - oldLeft) : 55;
       var dy = (kr && oldTop !== null) ? (kr.top - oldTop) : 55;
       var kp = clampPos(p.left + dx, p.top + dy, kw, kh, vw, vh);
-      store[face]['joy-knob'] = { fx: round4(kp.left / vw), fy: round4(kp.top / vh) };
+      savePos('joy-knob', face, round4(kp.left / vw), round4(kp.top / vh));
       placeVisual(k, 'joy-knob', kp.left, kp.top);
     }
   }
@@ -458,7 +632,7 @@ function centreControl(id){
 /* The Select list's data: every movable control, by friendly
    name, with a live hint about the ones in trouble. */
 function selectList(){
-  var vw = window.innerWidth || 0, vh = window.innerHeight || 0;
+  var vw = visW(), vh = visH();
   var out = [];
   for (var i = 0; i < TARGET_IDS.length; i++){
     var id = TARGET_IDS[i];
@@ -469,7 +643,7 @@ function selectList(){
       var r = rectOf(el);
       hint = (!r || (!r.width && !r.height)) ? 'hidden' : 'off screen';
     }
-    out.push({ id: id, name: NAMES[id] || id, hint: hint });
+    out.push({ id: id, name: nameFor(id), hint: hint });
   }
   return out;
 }
@@ -481,6 +655,8 @@ function selectList(){
    collapses, and the Select panel. Styles are injected once.
    --------------------------------------------------------------------------- */
 var selectBtnEl = null, hideBtnEl = null, tabEl = null, panelEl = null;
+var resizeEl = null;      /* the resize grip (v2.1) */
+var rdrag = null;         /* the live resize drag, or null */
 var panelRows = [];      /* [{id, pick, centre}] for the open panel */
 var panelOpen = false;
 var barCollapsed = false;
@@ -507,7 +683,16 @@ var MOVE_CSS =
   '#hud-move-panel .hm-close{padding:4px 10px;font-size:14px;border-radius:8px;' +
   'border:none;background:#333a4e;color:#fff;cursor:pointer;}' +
   '#hud-move-select{background:#232b3d;color:#fff;}' +
-  '#hud-move-hide{background:#333a4e;color:#fff;}';
+  '#hud-move-hide{background:#333a4e;color:#fff;}' +
+  /* The resize grip (v2.1): a yellow corner square that rides the
+     selected RESIZABLE control's bottom-right corner in move mode.
+     Dragging it resizes the control; the size saves with the
+     position in the same override. */
+  '#hud-move-resize{position:fixed;z-index:205;display:none;width:26px;height:26px;' +
+  'border-radius:6px;background:#ffd75e;border:2px solid #111;color:#111;' +
+  'font-size:16px;line-height:23px;text-align:center;cursor:nwse-resize;' +
+  'touch-action:none;user-select:none;-webkit-user-select:none;}' +
+  '#hud-move-resize.show{display:block;}';
 
 function buildMoveUI(){
   if (panelEl) return; /* built once */
@@ -545,7 +730,41 @@ function buildMoveUI(){
       document.body.appendChild(panelEl);
     }
   } catch (e) { tabEl = null; panelEl = null; }
+  /* The resize grip (v2.1) — one element, repositioned onto the
+     selected resizable control's corner by positionResizeHandle.
+     Its pointer handling lives in the document capture handlers
+     below (onPointerDown checks for it before the drag logic). */
+  try {
+    if (document.createElement && document.body){
+      resizeEl = document.createElement('div');
+      resizeEl.id = 'hud-move-resize';
+      resizeEl.textContent = '⤡';
+      resizeEl.title = 'Drag to resize';
+      document.body.appendChild(resizeEl);
+    }
+  } catch (e) { resizeEl = null; }
   applyMenuLayoutEntries();
+}
+
+/* Park the resize grip on the selected control's bottom-right
+   corner — or hide it: it shows ONLY in move mode, ONLY when the
+   selected control is resizable and measurable on screen. */
+function positionResizeHandle(){
+  if (!resizeEl) return;
+  var show = false;
+  try {
+    if (inMove && selectedId && isResizable(selectedId)){
+      var el = document.getElementById(selectedId);
+      var r = el ? rectOf(el) : null;
+      if (r && (r.width || r.height)){
+        resizeEl.style.left = Math.round(r.right - 13) + 'px';
+        resizeEl.style.top = Math.round(r.bottom - 13) + 'px';
+        show = true;
+      }
+    }
+  } catch (e) { show = false; }
+  if (show) resizeEl.classList.add('show');
+  else resizeEl.classList.remove('show');
 }
 
 /* Menu currency (2026-10-18, UI Editor 1.9.0): menu_layout_apply.js
@@ -745,6 +964,7 @@ function exitMoveMode(){
   if (!inMove) return;
   inMove = false;
   drag = null;
+  rdrag = null; /* an interrupted resize simply keeps its last size */
   clearSelected();
   hideTag();
   closePanel();
@@ -793,7 +1013,9 @@ function resetFace(){
   saveStore();
   clearSelected();
   /* Strip this module's !important position props so the designed
-     layout (and the media queries) own the controls again... */
+     layout (and the media queries) own the controls again. v2.1:
+     sizes go too — a reset face forgets resized controls as well
+     as moved ones, or the "reset" would only be half true. */
   for (var i = 0; i < APPLY_IDS.length; i++){
     var id = APPLY_IDS[i];
     if (!importantSet[id]) continue;
@@ -803,6 +1025,8 @@ function resetFace(){
       el.style.removeProperty('top');
       el.style.removeProperty('right');
       el.style.removeProperty('bottom');
+      el.style.removeProperty('width');
+      el.style.removeProperty('height');
     }
     importantSet[id] = false;
   }
@@ -844,6 +1068,26 @@ function moveDragged(d, dx, dy, vw, vh){
 
 function onPointerDown(e){
   if (!inMove) return;
+  /* The resize grip first (v2.1): it sits ON the selected
+     control's corner, and a press there means "resize", never
+     "drag the control" — the grip is not inside the control's
+     element, so without this branch the press would fall through
+     to the canvas and do nothing at all. */
+  if (resizeEl && e.target === resizeEl && selectedId && isResizable(selectedId)){
+    var sel = document.getElementById(selectedId);
+    var sr = sel ? rectOf(sel) : null;
+    if (sel && sr){
+      e.preventDefault();
+      e.stopPropagation();
+      rdrag = {
+        id: selectedId, el: sel, pid: e.pointerId,
+        sx: e.clientX, sy: e.clientY,
+        w: sr.width, h: sr.height, left: sr.left, top: sr.top
+      };
+      try { resizeEl.setPointerCapture(e.pointerId); } catch (err) {}
+      return;
+    }
+  }
   var t = dragTargetOf(e);
   if (!t) return; /* the bar/tab/panel and everything else still work */
   e.preventDefault();
@@ -873,31 +1117,76 @@ function onPointerDown(e){
 }
 
 function onPointerMove(e){
+  /* A live RESIZE (v2.1): the control grows/shrinks with the
+     pointer, floored at 60px (smaller stops being a control) and
+     capped at the visible screen. Position never changes — the
+     grip tracks the moving corner. */
+  if (inMove && rdrag && e.pointerId === rdrag.pid){
+    e.preventDefault();
+    var rvw = visW(), rvh = visH();
+    var nw = Math.min(Math.max(60, rdrag.w + (e.clientX - rdrag.sx)), rvw || 60);
+    var nh = Math.min(Math.max(60, rdrag.h + (e.clientY - rdrag.sy)), rvh || 60);
+    rdrag.curW = nw; rdrag.curH = nh;
+    rdrag.el.style.setProperty('width', Math.round(nw) + 'px', 'important');
+    rdrag.el.style.setProperty('height', Math.round(nh) + 'px', 'important');
+    if (rdrag.id) importantSet[rdrag.id] = true;
+    positionResizeHandle();
+    positionTagAt(rdrag.el);
+    return;
+  }
   if (!inMove || !drag || e.pointerId !== drag.pid) return;
   e.preventDefault();
-  var vw = window.innerWidth || 0, vh = window.innerHeight || 0;
+  var vw = visW(), vh = visH();
   var dx = e.clientX - drag.sx, dy = e.clientY - drag.sy;
   moveDragged(drag, dx, dy, vw, vh);
   if (drag.knob) moveDragged(drag.knob, dx, dy, vw, vh);
   positionTag();
+  /* Dragging the selected control moves its grip along (v2.1). */
+  if (drag.id === selectedId) positionResizeHandle();
 }
 
 function endDrag(e){
+  /* A finished RESIZE (v2.1): the size saves WITH the control's
+     current position in the one per-face override, so a reload
+     restores both together. Position is re-read from the live
+     rect (a resize never moves the control, but its saved spot
+     should still be the spot it visibly sits in). */
+  if (rdrag && (!e || e.pointerId === rdrag.pid)){
+    var rvw = visW() || 1, rvh = visH() || 1;
+    var rface = currentFace();
+    var rr = rectOf(rdrag.el);
+    var rLeft = rr ? rr.left : rdrag.left, rTop = rr ? rr.top : rdrag.top;
+    var rov = store[rface][rdrag.id] || {};
+    rov.fx = round4(rLeft / rvw);
+    rov.fy = round4(rTop / rvh);
+    if (rdrag.curW != null) rov.fw = round4(rdrag.curW / rvw);
+    if (rdrag.curH != null) rov.fh = round4(rdrag.curH / rvh);
+    store[rface][rdrag.id] = rov;
+    importantSet[rdrag.id] = true;
+    saveStore();
+    var rDone = rdrag.id;
+    rdrag = null;
+    if (selectedId === rDone){
+      var rel = document.getElementById(rDone);
+      if (rel) showTagFor(rel, nameFor(rDone));
+    }
+    positionResizeHandle();
+    return;
+  }
   if (!drag || (e && e.pointerId !== drag.pid)) return;
-  var vw = window.innerWidth || 1, vh = window.innerHeight || 1;
+  var vw = visW() || 1, vh = visH() || 1;
   var face = currentFace();
   /* Save as viewport fractions of the VISUAL corner — the spot
-     the player actually sees the control in. */
-  store[face][drag.id] = {
-    fx: round4((drag.curLeft != null ? drag.curLeft : drag.left) / vw),
-    fy: round4((drag.curTop != null ? drag.curTop : drag.top) / vh)
-  };
+     the player actually sees the control in. savePos preserves
+     any size half of the override (v2.1). */
+  savePos(drag.id, face,
+    round4((drag.curLeft != null ? drag.curLeft : drag.left) / vw),
+    round4((drag.curTop != null ? drag.curTop : drag.top) / vh));
   importantSet[drag.id] = true;
   if (drag.knob){
-    store[face][drag.knob.id] = {
-      fx: round4(drag.knob.curLeft / vw),
-      fy: round4(drag.knob.curTop / vh)
-    };
+    savePos(drag.knob.id, face,
+      round4(drag.knob.curLeft / vw),
+      round4(drag.knob.curTop / vh));
     importantSet[drag.knob.id] = true;
   }
   saveStore();
@@ -908,8 +1197,9 @@ function endDrag(e){
   /* The dropped control stays the selected one; park its tag. */
   if (selectedId === doneId){
     var el = document.getElementById(doneId);
-    if (el) showTagFor(el, NAMES[doneId] || doneId);
+    if (el) showTagFor(el, nameFor(doneId));
   }
+  positionResizeHandle();
 }
 
 /* Any click that lands on a draggable while arranging is a drag
@@ -957,6 +1247,7 @@ function bindClick(id, fn){
 }
 
 function init(){
+  refreshIds(); /* the DOM is parsed by now — derive the real set */
   buildMoveUI();
   bindClick('set-movecontrols', function(){ enterMoveMode(); });
   bindClick('pause-move', function(){ enterMoveMode(); });
@@ -971,8 +1262,8 @@ function init(){
   } catch (e) {}
   try {
     if (typeof Report !== 'undefined' && Report.setSys){
-      Report.setSys('hudmove', { status: 'ok', version: '2.0',
-        note: 'Player-movable HUD controls: drag, select-by-list with bring-back, edge law, menus yield; per-face overrides in localStorage (Joshua 2026-10-17)' });
+      Report.setSys('hudmove', { status: 'ok', version: '2.1',
+        note: 'Player-movable HUD controls: drag, select-by-list with bring-back, edge law, menus yield; per-face overrides in localStorage (Joshua 2026-10-17). v2.1 (2026-10-24): the movable list DERIVES from the designed layout + registrations (Go To joins automatically), the minimap resizes (size saves with position), and all measuring uses the visualViewport-visible area via SAView.' });
     }
   } catch (e) {}
 }
@@ -1010,8 +1301,15 @@ window.HudMove = {
   expandBar: expandBar,
   isBarCollapsed: function(){ return barCollapsed; },
   edgeClamp: edgeClamp,
-  TARGET_IDS: TARGET_IDS.slice(),
-  APPLY_IDS: APPLY_IDS.slice()
+  /* v2.1 — the derived registry: future controls register
+     themselves; TARGET_IDS / APPLY_IDS report the CURRENT derived
+     set (recomputed at init, on layout passes, and on register). */
+  register: registerControl,
+  refreshIds: refreshIds,
+  isResizable: isResizable,
+  nameFor: nameFor,
+  get TARGET_IDS(){ return TARGET_IDS.slice(); },
+  get APPLY_IDS(){ return APPLY_IDS.slice(); }
 };
 
 })();
