@@ -52,7 +52,7 @@ import overpass as overpass_mod  # noqa: E402
 
 # App version shown in the Help -> About dialog (bump with each release).
 # Joshua 2026-10-11: version number must be prominent in About.
-APP_VERSION = "1.9.10"
+APP_VERSION = "1.9.11"
 # Display name and icon-theme name for the About dialog.
 APP_NAME = "Adamsville Map Editor"
 APP_ICON = "adamsville-map-editor-native"
@@ -88,7 +88,11 @@ TOOLS = [
      "surrounding boundaries and creates a new zone filling that exact "
      "shape. The new zone is selected with the Zone tool for refining."),
     ("draw",    "Draw",    "Draw a new road",
-     "Draw Road: Click to place points, double-click to finish. (Coming soon)"),
+     "Draw Road: Click Draw, then press and drag on the map to lay "
+     "the new road's line — let go to add it. Panning is OFF while "
+     "Draw is on (the drag belongs to the new road). The road is "
+     "saved like any other edit. Click Draw again to turn it off "
+     "and get pan back."),
     ("extend",  "Extend",  "Stretch a road endpoint",
      "Extend: Click on or near a road — the CLOSEST endpoint (either end) "
      "is auto-selected and highlighted. Then click the destination point "
@@ -159,6 +163,11 @@ class MapEditorApp:
         self._stacked_token = 0
         self._stacked_running = False
         self._stacked_results = []
+
+        # Lasso selection (1.9.11): the collection runs on a
+        # worker thread; the token drops a stale landing if a
+        # second lasso is drawn while the first still collects.
+        self._lasso_token = 0
 
         # --- Main window ---
         # Native GTK window with standard decorations (min/max/close)
@@ -571,15 +580,15 @@ class MapEditorApp:
 
         self.merge_button = Gtk.ToolButton(label="Merge")
         self.merge_button.set_tooltip_text(
-            "Merge the 2 selected roads (connect for traffic flow). "
-            "First selected = source, second = target.")
+            "Merge exactly 2 selected roads (connect for traffic "
+            "flow). First selected = source, second = target.")
         self.merge_button.connect("clicked", self.on_merge_clicked)
         self.merge_button.set_sensitive(False)
         toolbar.insert(self.merge_button, -1)
 
         self.join_button = Gtk.ToolButton(label="Join")
         self.join_button.set_tooltip_text(
-            "Join the 2 selected roads into one road object "
+            "Join 2 or more selected roads into one road object "
             "(keeps the first road's name).")
         self.join_button.connect("clicked", self.on_join_clicked)
         self.join_button.set_sensitive(False)
@@ -729,15 +738,13 @@ class MapEditorApp:
             # Joshua 2026-10-11: Fill is ONLY available in Zone mode.
             # Clicking the Zone toolbar button zooms out to the full map
             # first so Joshua sees every zone before filling gaps.
-            # (zoom_to_zone sets _skip_zone_fit so the Zones menu keeps
-            # its zoom-to-specific-zone behavior.)
+            # (A Zones-MENU jump never comes through here — 1.9.11:
+            # zoom_to_zone arms no tool at all; see there.)
             fill_btn = self.tool_buttons.get("fill")
             if fill_btn is not None:
                 fill_btn.set_sensitive(tool_id == "zone")
             if tool_id == "zone":
-                if not getattr(self, "_skip_zone_fit", False):
-                    self.canvas.fit_view()
-                self._skip_zone_fit = False
+                self.canvas.fit_view()
         elif self.canvas.active_tool == tool_id:
             # The active tool was clicked again: back to resting.
             self.canvas.clear_tool_state()
@@ -755,7 +762,21 @@ class MapEditorApp:
         (Joshua 2026-10-11: select-first workflow.)
         """
         sel = self.canvas.selected_roads
+        # One-object rule (1.9.11): Merge never touches a grp
+        # piece — say so plainly instead of opening a dialog.
+        if self.canvas.selection_grp_values():
+            self.set_status(
+                "Merge: a paired object (one piece in several "
+                "runs) is already one piece — Merge leaves it "
+                "as it is. Nothing was changed.")
+            return
         if len(sel) != 2:
+            # Merge is a 2-piece operation (1.9.11): with a chain
+            # selected, say so in plain words — Join is the one
+            # that takes 2 or more.
+            self.set_status(
+                f"Merge needs exactly 2 pieces — {len(sel)} "
+                "selected. Join works with 2 or more.")
             return  # button is disabled anyway; belt and suspenders
         names = [self.canvas._road_name_of(c, i) for c, i in sel]
         dialog = Gtk.MessageDialog(
@@ -792,11 +813,23 @@ class MapEditorApp:
 
     def on_join_clicked(self, widget):
         """
-        Join toolbar button: ask for confirmation, then join the two
-        selected roads into a single road object.
+        Join toolbar button: ask for confirmation, then join the
+        selected roads into a single road object. Two pieces take
+        the pair path; 3+ pieces take the chain path (1.9.11).
         (Joshua 2026-10-11: select-first workflow.)
         """
         sel = self.canvas.selected_roads
+        # One-object rule (1.9.11): a grp piece is already one
+        # object — Join must never disturb the pairing.
+        if self.canvas.selection_grp_values():
+            self.set_status(
+                "Join: a paired object (one piece in several "
+                "runs) is already one piece — it can't be joined "
+                "again. Nothing was changed.")
+            return
+        if len(sel) >= 3:
+            self._on_join_chain_clicked(sel)
+            return
         if len(sel) != 2:
             return  # button is disabled anyway; belt and suspenders
         names = [self.canvas._road_name_of(c, i) for c, i in sel]
@@ -828,6 +861,53 @@ class MapEditorApp:
         self.inspector.clear_compare()
         if resp == Gtk.ResponseType.YES:
             self.canvas.do_join_from_selection()
+
+    def _on_join_chain_clicked(self, sel):
+        """
+        Chain Join (1.9.11): the Join button with 3+ pieces
+        selected. Same shape as the pair flow — a plain-words
+        confirmation with the Before/After stills — then the
+        canvas commits through join_chain. The result keeps the
+        FIRST-selected piece's name.
+        """
+        preview = self.canvas.compute_join_chain_result()
+        if preview is None:
+            self.set_status(
+                "Join: those pieces could not be chained "
+                "together. Nothing was changed.")
+            return
+        records, new_road = preview
+        roads = [road for _c, _i, road in records]
+        names = [self.canvas._road_name_of(c, i) for c, i in sel]
+        listed = "\n".join(names[:6])
+        if len(names) > 6:
+            listed += f"\n… and {len(names) - 6} more"
+        dialog = Gtk.MessageDialog(
+            transient_for=self.window,
+            flags=0,
+            message_type=Gtk.MessageType.QUESTION,
+            buttons=Gtk.ButtonsType.YES_NO,
+            text=f"Do you want to join these {len(names)} "
+                 "pieces together?")
+        dialog.format_secondary_text(
+            f"{listed}\n\n"
+            f"They will become one road, keeping {names[0]}'s "
+            "name. Every space between the pieces is formed for "
+            "them — straight when the ends run straight, curved "
+            "when they bend — so the joined road is a single "
+            "piece.")
+        # Before/After (1.9.8): Before the pieces as they are,
+        # After the single joined road.
+        self._open_compare(
+            roads, {id(r) for r in roads}, [new_road],
+            "Before — as they are",
+            f"After — {len(names)} pieces joined into one road",
+            roads + [new_road])
+        resp = dialog.run()
+        dialog.destroy()
+        self.inspector.clear_compare()
+        if resp == Gtk.ResponseType.YES:
+            self.canvas.do_join_chain_from_selection()
 
     # ------------------------------------------------------------------
     # Overpass linking (Joshua 2026-10-11)
@@ -1913,18 +1993,18 @@ class MapEditorApp:
         self.canvas.zoom = min(zw, zh)
         self.canvas.cam_x = (bx0 + bx1) / 2
         self.canvas.cam_y = (bz0 + bz1) / 2
-        # Select the zone so its corner pins are shown and draggable
+        # Select the zone so its boundary is the one shown.
         self.canvas.selected_zone = idx
         self.canvas.drag_pin = None
         self.canvas.queue_draw()
         self.on_zone_selected(zone["name"])
-        # Switch to the Zone tool so the pins are immediately usable.
-        # Skip the auto-fit-to-full-map: zoom_to_zone already framed
-        # this specific zone (Joshua 2026-10-11).
-        self._skip_zone_fit = True
-        zb = self.tool_buttons.get("zone")
-        if zb is not None:
-            zb.set_active(True)
+        # Startup state (1.9.11 — Joshua's 1.9.9 hands-on ruling):
+        # arriving somewhere NEVER arms a tool. An earlier version
+        # switched the Zone tool on here, so a jump (or the editor
+        # opening on a jump) started with a tool armed; now the
+        # editor stays at rest — pan, zoom and select live, no
+        # tool — and the Zone tool is entered only by its own
+        # toolbar button, on purpose.
         # The companion panes follow the jump (1.9.8).
         self.on_camera_changed()
 
@@ -2048,7 +2128,29 @@ class MapEditorApp:
         """
         sel = self.canvas.selected_roads
         names = [self.canvas._road_name_of(c, i) for c, i in sel]
-        if len(names) == 2:
+        grp_values = self.canvas.selection_grp_values()
+        if grp_values and len(sel) == \
+                len(self.canvas.grp_members(*sel[0])) and \
+                len(grp_values) == 1:
+            # The whole selection is ONE grp object (1.9.11).
+            self.set_status(
+                f"Selected: {names[0]} — one object in "
+                f"{len(sel)} runs. Delete removes the whole "
+                "object; Merge and Join leave paired objects "
+                "as they are.")
+        elif grp_values:
+            self.set_status(
+                f"Selected: {len(sel)} pieces, including a "
+                "paired object (one piece in several runs). "
+                "Merge and Join leave paired objects alone; "
+                "Delete removes everything selected.")
+        elif len(names) >= 3:
+            self.set_status(
+                f"Selected: {names[0]} + {names[1]} + "
+                f"{len(names) - 2} more — click Join to make "
+                "them one road, or Delete. Merge needs exactly "
+                "2 pieces.")
+        elif len(names) == 2:
             self.set_status(
                 f"Selected: {names[0]} + {names[1]} — click Merge or Join")
         elif len(names) == 1:
@@ -2056,7 +2158,9 @@ class MapEditorApp:
                 f"Selected: {names[0]} — select one more road, "
                 "then click Merge or Join")
         else:
-            self.set_status("Select 2 roads, then click Merge or Join")
+            self.set_status(
+                "Click a road to select it. Join works with 2 "
+                "or more pieces; Merge uses exactly 2.")
         self._update_merge_join_buttons()
         # Edit → Road Appearance only makes sense with a selection.
         # (Joshua 2026-10-11.)
@@ -2085,6 +2189,20 @@ class MapEditorApp:
         insp = getattr(self, "inspector", None)
         if insp is not None:
             insp.refresh()
+            # 3D still pane (1.9.11 — the 1.9.9 black-pane defect):
+            # a FRESH click-pick wakes the pane and frames its
+            # still on the CLICKED point (the canvas recorded it
+            # in _pick_road / shift_click_add). Selections made
+            # any other way (panel rows, the lasso, a jump) carry
+            # no fresh pick and leave the pane as it was.
+            if getattr(self.canvas, "_pick_fresh", False):
+                self.canvas._pick_fresh = False
+                if sel and self.canvas.last_pick_world is not None:
+                    try:
+                        insp.show_selection_still(
+                            *self.canvas.last_pick_world)
+                    except Exception:
+                        pass
         # 1.9.10: the Pieces panel lists the selection's
         # contents — refresh it with every selection change.
         self._refresh_pieces_panel()
@@ -2151,18 +2269,45 @@ class MapEditorApp:
         frame it and light it alone (canvas.isolated), the rest
         of the selection drawn quiet. The selection itself does
         not change: Merge / Join / Delete still see all of it.
+
+        1.9.11: for a grp object the ONE piece is the whole
+        object — every run is framed together and lit bright
+        (the canvas lights the object's runs as one).
         """
         canvas = self.canvas
         if (cat, idx) not in canvas.selected_roads:
             return
         canvas.isolated = (cat, idx)
-        canvas.frame_piece(cat, idx)
+        members = canvas.grp_members(cat, idx)
         name = canvas._road_name_of(cat, idx)
-        self.set_status(
-            f"Showing '{name}' by itself — it is framed and lit "
-            "bright; the rest of the selection is still selected "
-            "(drawn pale). 'Show all' in the Pieces panel ends "
-            "this.")
+        if len(members) > 1 and self.spatial_index is not None:
+            # Frame the union of every run, with the same pad
+            # the delete framing uses, so no run is clipped.
+            boxes = []
+            for _mc, mi in members:
+                if 0 <= mi < len(self.spatial_index.roads):
+                    _c, _r, x0, z0, x1, z1 = \
+                        self.spatial_index.roads[mi]
+                    boxes.append((x0, z0, x1, z1))
+            if boxes:
+                canvas.frame_rect(
+                    min(b[0] for b in boxes) - 12,
+                    min(b[1] for b in boxes) - 12,
+                    max(b[2] for b in boxes) + 12,
+                    max(b[3] for b in boxes) + 12)
+            self.set_status(
+                f"Showing '{name}' by itself — one object in "
+                f"{len(members)} runs, all framed and lit "
+                "bright; the rest of the selection is still "
+                "selected (drawn pale). 'Show all' in the "
+                "Pieces panel ends this.")
+        else:
+            canvas.frame_piece(cat, idx)
+            self.set_status(
+                f"Showing '{name}' by itself — it is framed and lit "
+                "bright; the rest of the selection is still selected "
+                "(drawn pale). 'Show all' in the Pieces panel ends "
+                "this.")
         canvas.queue_draw()
         self._refresh_pieces_panel()
 
@@ -2181,6 +2326,10 @@ class MapEditorApp:
         (on_delete_clicked's machinery, one record). No new
         delete path: the bar owns the decision, Cancel restores
         the view, and the standing save rule applies inside.
+
+        1.9.11: for a grp object, THAT ONE piece is the whole
+        object — every run goes into the framed picture, and
+        confirming removes every run.
         """
         canvas = self.canvas
         if canvas.delete_preview is not None \
@@ -2189,7 +2338,14 @@ class MapEditorApp:
                 "Delete: finish the road shown first — "
                 "Delete it, or Cancel in the bar at the top.")
             return
-        canvas.begin_delete_preview([(cat, idx, road)])
+        picked = []
+        for key in canvas.grp_members(cat, idx):
+            rec = canvas._get_road_dict(*key)
+            if rec is not None:
+                picked.append((key[0], key[1], rec))
+        if not picked:
+            picked = [(cat, idx, road)]
+        canvas.begin_delete_preview(picked)
 
     def _stacked_entries(self):
         """
@@ -2338,14 +2494,36 @@ class MapEditorApp:
 
     def _update_merge_join_buttons(self):
         """
-        Enable the Merge/Join toolbar buttons only when exactly 2
-        roads are selected (Joshua 2026-10-11).
-        Also updates the Link to Overpass button (1 road selected).
+        Merge/Join toolbar buttons from the selection (1.9.11):
+        Merge takes EXACTLY 2 pieces; Join takes 2 OR MORE
+        (chains included). A selection containing a grp object
+        disables both — those records are already one object,
+        and neither operation may disturb the pairing; the
+        status line says so in plain words (on_roads_selected).
+        Also updates the Link to Overpass button (1 road).
         """
-        two = len(self.canvas.selected_roads) == 2
+        sel = self.canvas.selected_roads
+        grp = bool(self.canvas.selection_grp_values()) \
+            if sel else False
         try:
-            self.merge_button.set_sensitive(two)
-            self.join_button.set_sensitive(two)
+            self.merge_button.set_sensitive(
+                len(sel) == 2 and not grp)
+            self.join_button.set_sensitive(
+                len(sel) >= 2 and not grp)
+            if grp:
+                tip = ("A paired object (one piece in several "
+                       "runs) is selected — it is already one "
+                       "piece, so Merge and Join leave it alone.")
+                self.merge_button.set_tooltip_text(tip)
+                self.join_button.set_tooltip_text(tip)
+            else:
+                self.merge_button.set_tooltip_text(
+                    "Merge exactly 2 selected roads (connect "
+                    "for traffic flow). First selected = source, "
+                    "second = target.")
+                self.join_button.set_tooltip_text(
+                    "Join 2 or more selected roads into one "
+                    "road object (keeps the first road's name).")
         except AttributeError:
             pass  # toolbar not built yet during early init
         # Link to Overpass needs exactly 1 selected road.
@@ -2354,9 +2532,17 @@ class MapEditorApp:
     def on_zone_selected(self, name):
         """Called by canvas when a zone is selected/deselected."""
         if name:
-            self.set_status(
-                f"Zone: {name} — drag pins to reshape, "
-                "click an edge to add a pin")
+            if getattr(self.canvas, "active_tool", None) == "zone":
+                self.set_status(
+                    f"Zone: {name} — drag pins to reshape, "
+                    "click an edge to add a pin")
+            else:
+                # 1.9.11: a zone JUMP selects the zone but arms
+                # no tool — the pins are not live until the Zone
+                # tool is chosen on purpose.
+                self.set_status(
+                    f"Zone: {name} — pan, zoom and road "
+                    "selection are live; no tool is armed.")
         else:
             self.set_status("No zone selected")
 
@@ -2625,6 +2811,69 @@ class MapEditorApp:
             self.set_status(
                 "Detail Edit: the Detail Editor could not be "
                 "launched.")
+
+    def begin_lasso_select(self, polygon):
+        """
+        Lasso entry (1.9.11, Joshua's 1.9.9 hands-on ruling):
+        the canvas recognised a Shift+drag whose path looped
+        back to its start. Every piece whose line touches or
+        lies inside the closed line is ADDED to the selection —
+        the lasso only selects; what happens to the pieces
+        (Merge / Join / Delete) is his separate choice, exactly
+        like any other selection.
+
+        The collection is the batch collector's polygon test
+        (spatial-index prefiltered, exact geometry) on a worker
+        thread under the corner progress bar — a lasso over a
+        dense area must never stall the app. A grp object the
+        lasso touches joins whole (one-object rule).
+        """
+        import batchdelete
+
+        self._lasso_token += 1
+        token = self._lasso_token
+        self.progress_start("lasso-select",
+                            "Collecting pieces in the lasso…")
+        self.set_status(
+            "Lasso: collecting the pieces inside your line…")
+
+        def worker():
+            try:
+                records = batchdelete.collect_records(self, polygon)
+            except Exception:
+                records = None  # landing reports the failure
+
+            def land():
+                if token != self._lasso_token:
+                    return False  # superseded — drop it
+                self.progress_finish("lasso-select")
+                if records is None:
+                    self.set_status(
+                        "Lasso: the collection failed — the "
+                        "selection was not changed.")
+                    return False
+                keys = [(cat, idx) for cat, idx, _r in records]
+                # One-object rule: an object the lasso touches
+                # is selected whole, runs and all.
+                keys = self.canvas.expand_with_grp(keys)
+                added = [k for k in keys
+                         if k not in self.canvas.selected_roads]
+                if not added:
+                    self.set_status(
+                        "Lasso: no new pieces inside that line "
+                        "(anything there is already selected).")
+                    return False
+                self.canvas.selected_roads.extend(added)
+                self.on_roads_selected()
+                self.canvas.queue_draw()
+                self.set_status(
+                    f"Lasso: {len(added)} pieces added to the "
+                    "selection — now choose Merge, Join, or "
+                    "Delete. (The lasso only selects.)")
+                return False
+            GLib.idle_add(land)
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def begin_batch_delete(self, corners):
         """
@@ -3017,6 +3266,39 @@ class MapEditorApp:
         self._rebuild_road_index()
         return True
 
+    def apply_road_join_multi(self, cat_new, picked, new_road):
+        """
+        Chain Join commit (1.9.11): remove EVERY picked record
+        (3+ pieces, `picked` in selection order as (cat,
+        flat_idx, road) triples) and add the one joined road in
+        the first piece's category. One persist, one index
+        rebuild — the chain is a single edit. All records are
+        verified present BEFORE anything is removed, so a stale
+        pick can never half-apply a chain.
+        """
+        if self.roads_data is None or not picked:
+            return False
+        for cat, _idx, road in picked:
+            if not any(r is road
+                       for r in self.roads_data.get(cat, [])):
+                return False
+        first_road = picked[0][2]
+        removed = [self._remove_road_from_working_copy(cat, road)
+                   for cat, _idx, road in picked]
+        if not all(removed):
+            return False
+        # The joined road keeps the first piece's zone
+        # attribution, like the pair join.
+        if "_zone" in first_road:
+            new_road["_zone"] = first_road["_zone"]
+        self.redrape_road(new_road)
+        self.roads_data.setdefault(cat_new, []).append(new_road)
+        for cat, _idx, _road in picked:
+            self._dirty_road_cats.add(cat)
+        self.persist_road_edits()
+        self._rebuild_road_index()
+        return True
+
     def apply_road_modify(self, cat, road, geometry=False):
         """
         Merge/Extend commit: the road dict was already mutated in place
@@ -3067,6 +3349,38 @@ class MapEditorApp:
         self._dirty_road_cats.add(cat)
         self.persist_road_edits()
         self._rebuild_road_index()
+        return True
+
+    def add_drawn_road(self, points):
+        """
+        Draw tool commit (1.9.11): add the dragged line as ONE
+        new local road through apply_road_add — the standing
+        save path (re-drape, persist with the map_version
+        re-stamp inside persist_road_edits, index rebuild).
+        One undo step for the whole road. The new piece is left
+        selected, so Joshua sees exactly what was added and can
+        rename or adjust it straight away. Returns True when
+        the road landed.
+        """
+        if self.roads_data is None:
+            return False
+        new_road = {"name": "",
+                    "pts": [[float(x), float(z)] for x, z in points]}
+        self.undo_begin("Draw Road")
+        ok = self.apply_road_add("local", new_road)
+        self.undo_commit()
+        if not ok:
+            self.set_status("Draw: the new road could not be saved.")
+            return False
+        # Select the new piece (its key in the rebuilt index).
+        found = self._flat_index_of(new_road)
+        if found is not None:
+            self.canvas.selected_roads = [found]
+            self.on_roads_selected()
+        self.canvas.queue_draw()
+        self.set_status(
+            f"Draw: new road added ({len(points)} points). "
+            "It is selected — Rename gives it a name.")
         return True
 
     def apply_road_delete_batch(self, picked):
@@ -3189,7 +3503,14 @@ class MapEditorApp:
         picked = []
         si = self.spatial_index
         if si is not None:
-            for cat, idx in self.canvas.selected_roads:
+            # One-object rule (1.9.11): the selection is expanded
+            # through the grp pairing first, so Delete always
+            # takes a paired object WHOLE — every run framed,
+            # every run removed — even if a stale selection
+            # somehow holds only one of its runs.
+            keys = self.canvas.expand_with_grp(
+                list(self.canvas.selected_roads))
+            for cat, idx in keys:
                 if 0 <= idx < len(si.roads):
                     picked.append((cat, idx, si.roads[idx][1]))
         if not picked:
@@ -4078,6 +4399,38 @@ class MapEditorApp:
         lines = []
         for tool_id, label, tooltip, help_text in TOOLS:
             lines.append(f"• {label}: {help_text}")
+        # 1.9.11: the selection gestures (Joshua's selection
+        # model) — selecting is not a tool, so it is explained
+        # here, not in TOOLS.
+        lines.append(
+            "• Selecting pieces: click a road to select it; "
+            "click it again to unselect; click empty ground to "
+            "clear. Shift+click ADDS the piece under the click "
+            "(it works any time, even while a Merge or Join "
+            "question is open). Ctrl+click takes ONE piece back "
+            "out (Ctrl+drag still turns the view). There is no "
+            "limit on how many pieces can be selected.")
+        lines.append(
+            "• Lasso: hold Shift and drag a line that LOOPS BACK "
+            "to where it started, then let go — every piece "
+            "touching or inside your closed line is added to "
+            "the selection. The lasso only selects; afterwards "
+            "you choose Merge, Join, or Delete yourself. (A "
+            "Shift+drag that does not loop back keeps the older "
+            "meaning: the square for batch delete.)")
+        lines.append(
+            "• Paired objects: some pieces are ONE object in "
+            "several runs (the two sides of a split road). "
+            "Clicking any run selects the whole object, the "
+            "Pieces panel lists it as one entry, and Delete "
+            "removes the whole object. Merge and Join leave "
+            "paired objects as they are — they are already one "
+            "piece.")
+        lines.append(
+            "• Join and Merge: Join takes 2 or more selected "
+            "pieces and makes them one road (every space between "
+            "them is formed, straight or curved as their ends "
+            "run). Merge takes exactly 2 pieces.")
         # 1.9.10: the Pieces panel + Find stacked are actions,
         # not tools, so they are not in TOOLS — explain them here.
         lines.append(
