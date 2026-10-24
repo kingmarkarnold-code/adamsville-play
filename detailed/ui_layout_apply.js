@@ -284,8 +284,15 @@
    * Idempotent — safe to re-run (e.g. after resize or hot-reload).
    */
   function applyUILayout() {
-    var vw = window.innerWidth || CANON_W;
-    var vh = window.innerHeight || CANON_H;
+    // MEASURED VIEWPORT (Joshua 2026-10-24, same fix as basketball
+    // v2.3.1): window.innerWidth/innerHeight can count the strip
+    // hidden under the phone browser's address bar / footer, so
+    // bottom-anchored controls landed where the player cannot see
+    // them. index.html's SAView measures window.visualViewport —
+    // the area actually visible — and this pass lays out against
+    // THAT. Falls back to the window size when SAView is absent.
+    var vw = (window.SAView && SAView.width()) || window.innerWidth || CANON_W;
+    var vh = (window.SAView && SAView.height()) || window.innerHeight || CANON_H;
     var mobile = isMobileViewport();
 
     var url = "ui_layout.json";
@@ -311,12 +318,24 @@
         var list = pickLayoutElements(doc, mobile);
         if (!list) return;
         var placedButtons = [];
+        var presentIds = [];
         list.forEach(function (def) {
           try {
+            // MOVABLE-HUD REGISTRY (2026-10-24): hud_move.js no
+            // longer keeps a hand-typed allow-list — the ids this
+            // pass actually placed (element exists in the DOM) are
+            // published here, and hud_move DERIVES its movable /
+            // select-by-list set from them. A control added to the
+            // designed layout joins the move-controls list by
+            // itself (this is how Go To gets in).
+            if (def && def.id && document.getElementById(def.id)) {
+              presentIds.push(def.id);
+            }
             var placed = applyElement(def, vw, vh, mobile);
             if (placed) placedButtons.push(placed);
           } catch (e) { /* one bad element must not break the rest */ }
         });
+        try { window.__SA_LAYOUT_IDS = presentIds; } catch (e) { /* registry is an enhancement, never a dependency */ }
         // Buttons that ended up on top of each other get stacked so
         // every one of them stays tappable (satellite/nav fix). Runs
         // before the HudMove hook below, so the player's own dragged
