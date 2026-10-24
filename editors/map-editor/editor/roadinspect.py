@@ -47,6 +47,7 @@ Purpose (Joshua 2026-10-11, still the point of the 3D view):
 Joshua's rule: all code commented.
 """
 
+import copy
 import math
 
 import cairo
@@ -105,6 +106,13 @@ AREA_MAX_SPAN = 3500.0
 # ...and never less: zoomed hard in, the 3D view still shows a
 # readable neighbourhood rather than one road filling the pane.
 AREA_MIN_SPAN = 240.0
+
+# The selection still's span (1.9.11): when a click selects a
+# piece, the still frames the CLICKED POINT at street level —
+# this many world units across, centred exactly where he
+# clicked, so the picture is the spot he picked, not the whole
+# area the 2D view happens to cover.
+EYE_STILL_SPAN = 240.0
 
 
 class _PatchSampler:
@@ -500,11 +508,14 @@ class ControlPointViewer(Gtk.DrawingArea):
 
     The pane is BLACK — pure black, nothing drawn — until it is
     first clicked (Joshua's rule); the click that wakes it does
-    nothing else. Once awake: drag pans the shared camera,
-    Ctrl+drag rotates it, the wheel zooms it — every other view
-    follows, because there is only one camera. Endpoint picking
-    and endpoint snapping (the pane's original job) still work in
-    3D mode on the selected road.
+    nothing else. 1.9.11: a click that SELECTS a piece on the
+    map also wakes it — framing a still on the clicked point at
+    street level (wake_at) — because in 1.9.9 selecting left it
+    black, the defect Joshua reported. Once awake: drag pans
+    the shared camera, Ctrl+drag rotates it, the wheel zooms
+    it — every other view follows, because there is only one
+    camera. Endpoint picking and endpoint snapping (the pane's
+    original job) still work in 3D mode on the selected road.
 
     During a delete confirmation the pane leaves all of that and
     holds the BEFORE still (see RoadInspectorPanel compare mode).
@@ -526,6 +537,16 @@ class ControlPointViewer(Gtk.DrawingArea):
         self._still_dirty = True
         self._still_scheduled = False
         self.still_render_count = 0  # gate instrumentation
+        # The eye focus (1.9.11): the world point of Joshua's
+        # last click-pick, when the still is framing THAT spot
+        # (see wake_at). None = the still follows the shared
+        # camera as before. This is the fix for the 1.9.9 defect
+        # (the pane stayed black after selecting): the pane only
+        # ever woke on clicks IN the pane, and map selections
+        # merely marked its still stale — a stale still on a
+        # sleeping pane renders nothing, forever. Now a map
+        # selection wakes it and hands it the clicked point.
+        self._eye_focus = None
         # Drag state: None | ("pan", x, y, cam_x, cam_y) |
         # ("rotate", x, start_rotation).
         self._drag = None
@@ -574,11 +595,35 @@ class ControlPointViewer(Gtk.DrawingArea):
         return math.radians(35.0) + math.radians(heading)
 
     def focus_point(self):
-        """The world point this pane is centred on (the camera's)."""
+        """The world point this pane is centred on: the eye
+        focus while a selection still is framed on a click,
+        otherwise the shared camera's centre."""
+        if self._eye_focus is not None:
+            return self._eye_focus
         canvas = self._canvas()
         if canvas is None:
             return (0.0, 0.0)
         return (canvas.cam_x, canvas.cam_y)
+
+    def wake_at(self, wx, wz):
+        """
+        Wake the pane ON a world point (1.9.11): the still will
+        frame (wx, wz) at street level (EYE_STILL_SPAN across).
+        Called by the panel when a map click selects a piece —
+        the activation the 1.9.9 build never had, which is why
+        selecting left this pane black. The pane stays a STILL
+        (one render per selection — the one-live-canvas rule);
+        it does not become a live canvas.
+        """
+        self._eye_focus = (float(wx), float(wz))
+        self.awake = True
+        # The framed spot needs its buildings, like any wake.
+        try:
+            self.panel.request_area_data()
+        except Exception:
+            pass
+        self.invalidate_still()
+        self.queue_draw()
 
     # -- the still (render-once picture) ---------------------------
 
@@ -683,7 +728,16 @@ class ControlPointViewer(Gtk.DrawingArea):
         The world rect the 3D view renders: centred on the shared
         camera centre, spanning the main view's span clamped to
         [AREA_MIN_SPAN, AREA_MAX_SPAN] — current area only.
+
+        1.9.11: while an eye focus stands (a click just selected
+        a piece), the rect is the street-level square around the
+        CLICKED point instead — the still shows the spot he
+        picked, at the scale he picked it at.
         """
+        if self._eye_focus is not None:
+            fx, fz = self._eye_focus
+            half = EYE_STILL_SPAN / 2
+            return (fx - half, fz - half, fx + half, fz + half)
         canvas = self._canvas()
         if canvas is None:
             return (-100.0, -100.0, 100.0, 100.0)
@@ -722,7 +776,10 @@ class ControlPointViewer(Gtk.DrawingArea):
         rect = self._patch_rect()
         sampler = self._patch_sampler(rect)
         angle = self._view_angle()
-        cx, cy = canvas.cam_x, canvas.cam_y
+        # The picture centres on the PATCH — the shared camera
+        # normally, the clicked point while an eye focus stands
+        # (1.9.11) — never on a road's head or foot.
+        cx, cy = (rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2
         cos_a, sin_a = math.cos(angle), math.sin(angle)
 
         def project(wx, wz, y=0.0):
@@ -848,8 +905,10 @@ class ControlPointViewer(Gtk.DrawingArea):
         items = store.query(zones, *rect)
         if not items:
             return
-        canvas = self._canvas()
-        cx, cy = canvas.cam_x, canvas.cam_y
+        # Depth is measured from the PATCH centre (the clicked
+        # point while an eye focus stands — 1.9.11), matching
+        # the projection the picture is drawn with.
+        cx, cy = (rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2
         # Nearest first is wrong for painters: draw far-to-near by
         # rotated depth (u + v in view space grows away from us).
         angle = self._view_angle()
@@ -905,6 +964,16 @@ class ControlPointViewer(Gtk.DrawingArea):
                               "from above once the map has loaded.")
             return
         cam = canvas._camera
+        if self._eye_focus is not None:
+            # Selection still (1.9.11): the satellite picture,
+            # too, frames the CLICKED point at street level —
+            # through a private copy of the shared camera, so
+            # the shared camera itself never moves.
+            cam = copy.copy(cam)
+            cam.cam_x, cam.cam_y = self._eye_focus
+            cam.zoom = max(cam.min_zoom,
+                           min(cam.max_zoom,
+                               min(w, h) / EYE_STILL_SPAN))
         vp = cam.get_viewport(w, h)
         # Ground: a height grid over exactly this pane's viewport.
         key = (round(vp[0] / 50), round(vp[1] / 50),
@@ -1480,6 +1549,12 @@ class ControlPointViewer(Gtk.DrawingArea):
         # batch panel) — Joshua's static-viewports rule.
         if panel.compare_active():
             return True
+        # A press IN this pane ends the selection framing
+        # (1.9.11): the pane goes back to following the shared
+        # camera — his own touch outranks the last click's.
+        if self._eye_focus is not None:
+            self._eye_focus = None
+            self.invalidate_still()
         if not self.awake:
             # The wake click: turn the pane on, fetch the area's
             # buildings, and SWALLOW the click — it must not move
@@ -2231,6 +2306,22 @@ class RoadInspectorPanel(Gtk.VBox):
         cr.set_source_rgb(1, 1, 1)
         cr.move_to(13, 20)
         cr.show_text(text)
+
+    # -- the selection still (1.9.11) --------------------------------
+
+    def show_selection_still(self, wx, wz):
+        """
+        A map click just selected a piece at world point
+        (wx, wz): wake the area pane and frame its still on
+        THAT point at street level (the viewer's wake_at).
+        This is the activation path whose absence left the pane
+        black after selecting in 1.9.9. During a comparison the
+        stills belong to the decision — the click's picture
+        waits (compare mode is untouched).
+        """
+        if self.compare_active():
+            return
+        self.cp_viewer.wake_at(wx, wz)
 
     # -- refresh (selection / data changed) ---------------------------
 
