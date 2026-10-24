@@ -22,6 +22,11 @@ from data import (ROAD_STYLE, WORLD_W, WORLD_H, WORLD_X0, WORLD_Z0,
                     normalize_category, CATEGORY_ORDER, CATEGORY_LABELS,
                     DIVIDABLE_CATEGORIES, DIVIDER_TYPES)
 
+# Merge/Join geometry (1.9.10): the segment-based draw-back and
+# the smart formed-section join live in their own pure module
+# (mergejoin.py) so the preview and the commit share one core.
+import mergejoin
+
 # Shared canvas helpers (pan/zoom math, hit testing). All suite apps
 # install the same file; fall back to local copies if it is missing
 # (e.g. running from source without installing). Joshua 2026-10-11:
@@ -454,6 +459,17 @@ class MapCanvas(Gtk.DrawingArea):
         # Click roads to toggle-select them, up to 2 at once. The
         # Merge / Join / Delete toolbar buttons act on the selection.
         self.selected_roads = []  # list of (cat, flat_idx), max 2
+
+        # Isolation (1.9.10): one selected piece singled out from
+        # the Pieces panel — it is framed and lit BRIGHT while
+        # the rest of the selection stays selected but is drawn
+        # quiet, so a piece buried under another selected piece
+        # becomes visible by itself (Joshua's Blender recording,
+        # 2026-10-23: 4 objects selected, only 3 visible, no way
+        # to single out the fourth). A (cat, flat_idx) key from
+        # selected_roads, or None. Pure view state: the selection
+        # itself never changes when a piece is isolated.
+        self.isolated = None
 
         # Road editing state (Extend tool only now).
         # Extend: click near a road -> closest endpoint auto-selected
@@ -1513,7 +1529,18 @@ class MapCanvas(Gtk.DrawingArea):
                     cr.show_text(lab)
 
     def _draw_selection(self, cr):
-        """Draw a yellow highlight around each selected road (up to 2)."""
+        """Draw a yellow highlight around each selected road (up to 2).
+
+        1.9.10: while a piece is ISOLATED (singled out from the
+        Pieces panel), the isolated piece keeps the bright fat
+        yellow and every other selected piece is drawn QUIET —
+        thin and translucent — so the isolated piece can be seen
+        by itself even where the pieces lie on the same ground.
+        The selection itself is unchanged; only the drawing is.
+        """
+        iso = self.isolated
+        isolating = iso is not None and iso in self.selected_roads \
+            and len(self.selected_roads) > 1
         for cat, idx in self.selected_roads:
             if idx >= len(self.app.spatial_index.roads):
                 continue
@@ -1527,9 +1554,16 @@ class MapCanvas(Gtk.DrawingArea):
             style = ROAD_STYLE[normalize_category(cat)]
             wmult = WIDTH_MULT.get(
                 road.get("width_class", "standard"), 1.0)
-            cr.set_source_rgb(1.0, 1.0, 0.0)
-            cr.set_line_width(
-                max(2.0, style["width"] * wmult * self.zoom + 4))
+            if isolating and (cat, idx) != iso:
+                # Quiet: thin, translucent grey — present (it is
+                # still selected) but not competing.
+                cr.set_source_rgba(0.8, 0.8, 0.8, 0.45)
+                cr.set_line_width(max(
+                    1.5, style["width"] * wmult * self.zoom * 0.4))
+            else:
+                cr.set_source_rgb(1.0, 1.0, 0.0)
+                cr.set_line_width(
+                    max(2.0, style["width"] * wmult * self.zoom + 4))
             cr.set_line_cap(1)
             cr.set_line_join(1)
             first = True
@@ -1541,6 +1575,30 @@ class MapCanvas(Gtk.DrawingArea):
                 else:
                     cr.line_to(sx, sy)
             cr.stroke()
+
+    def frame_piece(self, cat, idx):
+        """
+        Frame ONE indexed piece like a photograph (1.9.10): pan
+        and zoom so its whole extent fits with the same modest
+        margin the delete framing uses. The Pieces panel's
+        isolate + the stacked finder's reveal both land here.
+        Returns False when the piece is not in the index.
+        """
+        if self.app.spatial_index is None:
+            return False
+        if idx < 0 or idx >= len(self.app.spatial_index.roads):
+            return False
+        rcat, road, x0, z0, x1, z1 = \
+            self.app.spatial_index.roads[idx]
+        # Pad by half the road's width + a few metres, like the
+        # delete preparation's framing pad, so the fat highlight
+        # stroke is never clipped by the frame.
+        style = ROAD_STYLE[normalize_category(rcat)]
+        wmult = WIDTH_MULT.get(
+            road.get("width_class", "standard"), 1.0)
+        pad = style["width"] * wmult / 2.0 + 6.0
+        self.frame_rect(x0 - pad, z0 - pad, x1 + pad, z1 + pad)
+        return True
 
     def _draw_delete_preview(self, cr):
         """
@@ -2409,6 +2467,9 @@ class MapCanvas(Gtk.DrawingArea):
         # A tool switch is his own move: the jump ghost clears.
         self.jump_ghost = None
         self.selected_roads = []
+        # 1.9.10: the selection is gone, so any isolation (one
+        # piece singled out of it) goes with it.
+        self.isolated = None
         self.extend_pick = None
         self.divide_pick = None  # cancel any divide-section picking
         self.link_overpass_mode = False  # cancel overpass linking
@@ -2724,7 +2785,9 @@ class MapCanvas(Gtk.DrawingArea):
         Preview twin of do_join_from_selection: the joined road
         the commit WOULD create, computed read-only for the
         Before/After comparison. Returns (road_a, road_b,
-        new_road) or None. KEEP IN STEP with do_join_from_selection.
+        new_road) or None. Both halves call mergejoin.join_pair
+        — the same geometry core — so the preview and the
+        commit can never diverge (1.9.10).
         """
         if len(self.selected_roads) != 2:
             return None
@@ -2737,20 +2800,14 @@ class MapCanvas(Gtk.DrawingArea):
         pts_b = [list(p) for p in road_b.get("pts", [])]
         if len(pts_a) < 2 or len(pts_b) < 2:
             return None
-        best = None
-        for ea, pa in ((0, pts_a[0]), (-1, pts_a[-1])):
-            for eb, pb in ((0, pts_b[0]), (-1, pts_b[-1])):
-                d = math.hypot(pa[0] - pb[0], pa[1] - pb[1])
-                if best is None or d < best[0]:
-                    best = (d, ea, eb)
-        _d, ea, eb = best
-        a_pts = pts_a if ea == -1 else pts_a[::-1]
-        b_pts = pts_b if eb == 0 else pts_b[::-1]
-        if math.hypot(a_pts[-1][0] - b_pts[0][0],
-                      a_pts[-1][1] - b_pts[0][1]) < 0.001:
-            joined_pts = a_pts + b_pts[1:]
-        else:
-            joined_pts = a_pts + b_pts
+        res = mergejoin.join_pair(pts_a, pts_b)
+        if res is None:
+            return None
+        joined_pts = [list(p) for p in res["pts"]]
+        # Endpoint indices in this file's 0 / -1 convention for
+        # the cul-de-sac carry-over.
+        ea = 0 if res["a_end"] == 0 else -1
+        eb = 0 if res["b_end"] == 0 else -1
         new_road = {"name": road_a.get("name", "Unnamed"),
                     "pts": joined_pts}
         for k, v in road_a.items():
@@ -2763,10 +2820,11 @@ class MapCanvas(Gtk.DrawingArea):
     def compute_merge_result(self):
         """
         Preview twin of do_merge_from_selection: the source road
-        as the merge WOULD leave it (its near endpoint snapped
-        onto the target's edge), read-only, for the Before/After
-        comparison. Returns (road_s, road_t, new_road_s) or None.
-        KEEP IN STEP with do_merge_from_selection / _do_merge.
+        as the merge WOULD leave it, read-only, for the
+        Before/After comparison. Returns (road_s, road_t,
+        new_road_s) or None. Both halves call
+        mergejoin.merge_result — the same geometry core — so
+        the preview and the commit can never diverge (1.9.10).
         """
         if len(self.selected_roads) != 2:
             return None
@@ -2779,21 +2837,22 @@ class MapCanvas(Gtk.DrawingArea):
         pts_t = road_t.get("pts", [])
         if len(pts_s) < 2 or len(pts_t) < 2:
             return None
-        end_s = self._merge_source_end(pts_s, pts_t)
-        ex, ez = pts_s[end_s]
-        tx, tz, _dist = self._closest_point_on_road(ex, ez, pts_t)
+        res = mergejoin.merge_result(
+            pts_s, pts_t, self._road_half_width(cat_t, road_t))
+        if res is None:
+            return None
         new_s = copy.deepcopy(road_s)
-        new_pts = [list(p) for p in pts_s]
-        new_pts[end_s] = [tx, tz]
-        new_s["pts"] = new_pts
+        new_s["pts"] = [list(p) for p in res["new_source_pts"]]
         return (road_s, road_t, new_s)
 
     def do_join_from_selection(self):
         """
         Join the two selected roads into one road object.
         Called after Joshua confirms the Join dialog. The result keeps
-        the first-selected road's name and category; both roads join at
-        their nearest endpoints.
+        the first-selected road's name and category; the space
+        between the nearest ends is formed (straight or curved,
+        as the ends dictate — mergejoin.form_section) and the
+        result is a single record.
         """
         if len(self.selected_roads) != 2:
             return
@@ -2822,31 +2881,28 @@ class MapCanvas(Gtk.DrawingArea):
             self.queue_draw()
             return
 
+        # Form the joined line with the shared geometry core
+        # (1.9.10, Joshua's diagrams): nearest ends, and the
+        # space between them FORMED — straight when the ends
+        # run straight, a smooth arc when they bend. The result
+        # is ONE road. (Computed before the undo snapshot so a
+        # failure here pushes nothing.)
+        res = mergejoin.join_pair(pts_a, pts_b)
+        if res is None:
+            self.app.set_status("Join failed: a road has too few points.")
+            self.app._update_merge_join_buttons()
+            self.queue_draw()
+            return
+        joined_pts = [list(p) for p in res["pts"]]
+        # Endpoint indices in this file's 0 / -1 convention for
+        # the cul-de-sac carry-over.
+        ea = 0 if res["a_end"] == 0 else -1
+        eb = 0 if res["b_end"] == 0 else -1
+        section_kind = res["sections"][0]["kind"]
+
         # Undo (Joshua 2026-10-12): one undo step for the whole join.
         # (Placed after validation so failed joins push nothing.)
         self.app.undo_begin("Join Roads")
-
-        # Find the nearest endpoint pair (4 combinations).
-        # ea/eb: 0 = first point, -1 = last point.
-        best = None
-        for ea, pa in ((0, pts_a[0]), (-1, pts_a[-1])):
-            for eb, pb in ((0, pts_b[0]), (-1, pts_b[-1])):
-                d = math.hypot(pa[0] - pb[0], pa[1] - pb[1])
-                if best is None or d < best[0]:
-                    best = (d, ea, eb)
-        _, ea, eb = best
-
-        # Orient both so the touching ends meet in the middle:
-        # A's connecting end goes last, B's connecting end goes first.
-        a_pts = pts_a if ea == -1 else pts_a[::-1]
-        b_pts = pts_b if eb == 0 else pts_b[::-1]
-        # Skip B's first point if it duplicates A's last (avoid zero-length
-        # segment); otherwise the gap segment bridges the two roads.
-        if math.hypot(a_pts[-1][0] - b_pts[0][0],
-                      a_pts[-1][1] - b_pts[0][1]) < 0.001:
-            joined_pts = a_pts + b_pts[1:]
-        else:
-            joined_pts = a_pts + b_pts
 
         # New road keeps Road A's name/category; preserve A's other fields.
         new_road = {"name": road_a.get("name", "Unnamed"),
@@ -2862,9 +2918,12 @@ class MapCanvas(Gtk.DrawingArea):
 
         ok = self.app.apply_road_join(cat_a, road_a, cat_b, road_b, new_road)
         if ok:
+            formed = ("formed straight across the space"
+                      if section_kind == "straight"
+                      else "formed in a curve across the space")
             self.app.set_status(
                 f"{name_a} + {name_b} \u2192 {new_road['name']} "
-                f"({len(joined_pts)} pts)")
+                f"({len(joined_pts)} pts; {formed})")
         else:
             self.app.set_status("Join failed: could not update road data.")
         # Undo (Joshua 2026-10-12): commit the join. A failed join
@@ -2877,13 +2936,36 @@ class MapCanvas(Gtk.DrawingArea):
     # Merge: connect the two selected roads for traffic flow.
     # (Joshua 2026-10-11: select-first workflow — roads are picked in
     # Select mode, then the Merge toolbar button asks for confirmation.)
-    # (Joshua 2026-10-12: merge is a snap — the source endpoint moves to
-    # the nearest point on the target road's edge. No auto-extend.)
+    # (Joshua 2026-10-12: merge was a snap — the source endpoint moved
+    # to the nearest point on the target road.)
+    # (1.9.10, Joshua 2026-10-23, the approved diagrams supersede the
+    # snap for the overshoot case: the part of the source lying over
+    # the target is DRAWN BACK to the first of the target's near-edge
+    # segments it reaches — segment-based, never the closest point,
+    # never the far side — and the source's end section is laid along
+    # that edge: straight on a straight edge, following the curve on
+    # a curving edge, a mouth along the edge on a diagonal meeting.
+    # The geometry lives in mergejoin.merge_result. The plain snap
+    # survives there for the case the diagrams do not cover: a source
+    # that never reaches the target's edge at all.)
     # ------------------------------------------------------------------
 
     # Dead-end check tolerance in world units: an endpoint within this
     # distance of another road is not a dead end (cul-de-sac check).
     MERGE_SNAP_TOLERANCE = 50.0
+
+    def _road_half_width(self, cat, road):
+        """
+        Half a road's world width (its centreline-to-edge
+        distance), using the editor's own style table and the
+        road's width class — the same numbers the canvas draws
+        with. Merge geometry measures the target's edge from
+        this.
+        """
+        style = ROAD_STYLE[normalize_category(cat)]
+        wmult = WIDTH_MULT.get(road.get("width_class", "standard"),
+                               1.0)
+        return style["width"] * wmult / 2.0
 
     def _merge_source_end(self, pts_s, pts_t):
         """
@@ -2898,10 +2980,11 @@ class MapCanvas(Gtk.DrawingArea):
     def do_merge_from_selection(self):
         """
         Merge the two selected roads (selection-based workflow).
-        The first-selected road is the source, the second is the target.
-        The source endpoint nearest the target road snaps onto the
-        target road's edge. Both roads stay separate
-        objects. Called after Joshua confirms the Merge dialog.
+        The first-selected road is the source, the second is the
+        target. The source is drawn back onto the target's near
+        edge (mergejoin.merge_result); both roads stay separate
+        objects and the target is never modified. Called after
+        Joshua confirms the Merge dialog.
         """
         if len(self.selected_roads) != 2:
             return
@@ -2927,42 +3010,43 @@ class MapCanvas(Gtk.DrawingArea):
             self.app._update_merge_join_buttons()
             self.queue_draw()
             return
-        end_s = self._merge_source_end(pts_s, pts_t)
+        # The geometry (before the undo snapshot, so a degenerate
+        # pair pushes nothing): draw-back onto the near edge, or
+        # the standing snap when the source never reaches it.
+        res = mergejoin.merge_result(
+            pts_s, pts_t, self._road_half_width(cat_t, road_t))
+        if res is None:
+            self.app.set_status("Merge failed: nothing sensible to merge.")
+            self.app._update_merge_join_buttons()
+            self.queue_draw()
+            return
         # Undo (Joshua 2026-10-12): one undo step for the whole merge.
         self.app.undo_begin("Merge Roads")
-        self._do_merge(cat_s, road_s, end_s, cat_t, road_t)
+        self._do_merge(cat_s, road_s, cat_t, road_t, res)
         self.app.undo_commit()
         self.app._update_merge_join_buttons()
         self.queue_draw()
 
-    def _do_merge(self, cat_s, road_s, end_s, cat_t, road_t):
+    def _do_merge(self, cat_s, road_s, cat_t, road_t, res):
         """
-        Merge: snap road_s's endpoint onto road_t's edge.
-        (Joshua 2026-10-12: merge works like a snap — the source
-        endpoint moves to the nearest point on the target road's
-        edge. The old "find the point, then extend geometry" branch
-        is gone: it stretched roads clear across the map instead of
-        snapping.)
-        Both roads stay separate objects; only the source endpoint moves.
+        Apply a computed merge (mergejoin.merge_result): replace
+        the source's points with the drawn-back line. Only the
+        SOURCE changes — the target record is never written
+        (its cul-de-sac flags are re-checked, as before, because
+        the merge may have closed one of its dead ends; that
+        re-check touches flags only, never its line).
         """
-        pts_s = road_s.get("pts", [])
-        pts_t = road_t.get("pts", [])
-        if len(pts_s) < 2 or len(pts_t) < 2:
-            self.app.set_status("Merge failed: a road has too few points.")
-            return
-        ex, ez = pts_s[end_s]
-        # Snap target: nearest point on the target road's edge to the
-        # source endpoint.
-        tx, tz, dist = self._closest_point_on_road(ex, ez, pts_t)
         name_s = road_s.get("name") or "Unnamed"
         name_t = road_t.get("name") or "Unnamed"
-
-        new_pts = [list(p) for p in pts_s]
-        # Snap: move the endpoint onto the target road's edge. No
-        # auto-extend — the endpoint simply relocates to (tx, tz).
-        new_pts[end_s] = [tx, tz]
-        action = f"snapped ({dist:.0f}u)"
-        road_s["pts"] = new_pts
+        road_s["pts"] = [list(p) for p in res["new_source_pts"]]
+        if res["kind"] == "edge":
+            action = "drawn back onto the near edge"
+            if res["mouth_length"] > 0.75:
+                action += (f"; its end runs "
+                           f"{res['mouth_length']:.0f} m along the edge")
+        else:
+            # No overshoot: the standing snap.
+            action = "snapped onto the target"
         # Cul-de-sac (Joshua 2026-10-11): the moved end is now
         # connected — drop its turnaround bulb if it had one. Also
         # re-check the target road: the merge may have closed one of
@@ -2970,7 +3054,7 @@ class MapCanvas(Gtk.DrawingArea):
         self.refresh_cul_de_sac(cat_s, road_s)
         if self.refresh_cul_de_sac(cat_t, road_t):
             self.app.apply_road_modify(cat_t, road_t)
-        # Merge moved a point — a geometry edit (1.9.0 re-drape).
+        # Merge moved points — a geometry edit (1.9.0 re-drape).
         if self.app.apply_road_modify(cat_s, road_s, geometry=True):
             self.app.set_status(f"Merged {name_s} \u2192 {name_t} ({action}).")
         else:
