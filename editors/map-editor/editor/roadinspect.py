@@ -22,17 +22,22 @@ camera of its own.
   real satellite photography; Joshua's definition). The selected
   road keeps its 2026-10-11 treatment in 3D: clickable endpoints
   and snap-to-road (double-click or the Snap button).
-- ElevationMapViewer (bottom, in the "Elevation" frame): the
-  rebuilt map itself, centred on the EXACT same world point as the
-  main view, at the same true game scale (1 unit = 1 metre, same
-  zoom, same heading). The elevation information the pane exists
-  to show is kept as a readout above the map — the selected road's
-  name, its elevation offset, and the ground range along it — and
-  the offset is still adjustable there (the ▲ / ▼ steppers), which
-  is what the old side-profile drag did. What changed: the pane's
-  PICTURE is now the map (the old side-view profile is retired),
-  and dragging in the pane pans the shared camera like everywhere
-  else.
+- ResourceMapViewer (bottom, in the "Resource map" frame;
+  1.9.12 — Joshua's design clarification): the RESOURCE MAP —
+  the reference map data the world was built FROM (the repo's
+  map-data/game-map/roads.json, already in world coordinates) —
+  shown at the SAME location and zoom as the top viewer, so he
+  can compare where streets currently are in our world against
+  where the reference says they should be. It is reference
+  material only: the pane never edits it (map-data/ is
+  read-only by standing rule), and it draws NO game data. The
+  views stay linked both ways: the pane follows the shared
+  camera (and the top pane's selection framing — a click that
+  selects a road frames the same clicked point here), and
+  dragging in the pane pans the shared camera like everywhere
+  else. The readout line above the pane still carries the
+  selected road's elevation offset with its ▲ / ▼ steppers
+  (that is what the readout is FOR — it is not the pane).
 
 Gestures are the same in every pane (the sync law): drag pans the
 shared camera, Ctrl+drag rotates it, the wheel zooms it. Panes
@@ -49,6 +54,7 @@ Joshua's rule: all code commented.
 
 import copy
 import math
+import threading
 
 import cairo
 import json
@@ -491,6 +497,162 @@ def _draw_north_arrow(cr, cam, w, h):
     cr.move_to(w / 2, h / 2 - 7)
     cr.line_to(w / 2, h / 2 + 7)
     cr.stroke()
+
+
+# ---------------------------------------------------------------------------
+# The resource map (reference) — 1.9.12
+# ---------------------------------------------------------------------------
+# The repo's map-data/game-map/roads.json: the reference roads the
+# game world was built from, ALREADY in world coordinates (its
+# header names the origin and "1 unit = 1 meter"), as records
+# [name, highway_class, width, [[x, z], ...], [ys...]]. It is
+# REFERENCE material — the bottom pane only ever reads it
+# (map-data/ is never edited, by standing rule).
+
+RESOURCE_ROADS_PATH = "map-data/game-map/roads.json"
+
+# Resource highway class -> the editor's road category, so the
+# reference draws in the same colours/widths as the game map.
+RESOURCE_CATEGORY = {
+    "motorway": "interstate", "motorway_link": "interstate",
+    "trunk": "highway", "trunk_link": "highway",
+    "primary": "highway", "primary_link": "highway",
+    "secondary": "major_artery", "secondary_link": "major_artery",
+    "tertiary": "minor_artery", "tertiary_link": "minor_artery",
+}
+
+
+def resource_category(highway_class):
+    """Editor category for a resource-map highway class."""
+    return RESOURCE_CATEGORY.get(highway_class or "", "local")
+
+
+class ResourceRoadsStore:
+    """
+    The resource-map roads, fetched ONCE per run in the
+    background and kept in memory behind a uniform-grid index —
+    the BuildingsStore pattern, for one whole-world file instead
+    of per-zone files. States: "absent" (never asked), "loading"
+    (worker in flight), "ready" (parsed + indexed), "failed"
+    (fetch or parse failed; a later ensure() retries). The store
+    owns no transport: the caller passes fetch_bytes(path) ->
+    bytes | None, so the app wires its own GitHub read and the
+    harness can drive the store with fixture bytes through the
+    same door (ingest()).
+    """
+
+    CELL = 512.0
+
+    def __init__(self):
+        self._records = []   # [(category, name, pts)]
+        self._grid = {}      # (gx, gz) -> [record index]
+        self._state = "absent"
+        self._lock = threading.Lock()
+
+    def state(self):
+        with self._lock:
+            return self._state
+
+    def count(self):
+        with self._lock:
+            return len(self._records)
+
+    def ingest(self, doc):
+        """
+        Install a parsed resource document and build the grid.
+        Called by the fetch worker on completion, and directly
+        by tests seeding known data — one door, same result.
+        Records with fewer than 2 points draw nothing and are
+        skipped, exactly as the map treats them.
+        """
+        records = []
+        grid = {}
+        for rec in (doc or {}).get("roads") or []:
+            try:
+                name = rec[0] or ""
+                pts = rec[3] or []
+            except Exception:
+                continue
+            if len(pts) < 2:
+                continue
+            cat = resource_category(rec[1] if len(rec) > 1
+                                    else "")
+            xs = [p[0] for p in pts]
+            zs = [p[1] for p in pts]
+            ri = len(records)
+            records.append((cat, name, pts))
+            gx0 = int(math.floor(min(xs) / self.CELL))
+            gx1 = int(math.floor(max(xs) / self.CELL))
+            gz0 = int(math.floor(min(zs) / self.CELL))
+            gz1 = int(math.floor(max(zs) / self.CELL))
+            for gx in range(gx0, gx1 + 1):
+                for gz in range(gz0, gz1 + 1):
+                    grid.setdefault((gx, gz), []).append(ri)
+        with self._lock:
+            self._records = records
+            self._grid = grid
+            self._state = "ready"
+
+    def ensure(self, fetch_bytes, on_ready):
+        """
+        Start the one background fetch if it isn't running/done.
+        fetch_bytes runs on the worker; on_ready(ok) is posted
+        back through GLib.idle_add. Returns True when a fetch was
+        started.
+        """
+        with self._lock:
+            if self._state in ("loading", "ready"):
+                return False
+            self._state = "loading"
+
+        def _work():
+            ok = False
+            try:
+                blob = fetch_bytes(RESOURCE_ROADS_PATH)
+                if blob:
+                    doc = json.loads(blob.decode("utf-8"))
+                    self.ingest(doc)
+                    ok = True
+            except Exception:
+                ok = False
+            if not ok:
+                with self._lock:
+                    if self._state == "loading":
+                        self._state = "failed"
+            GLib.idle_add(on_ready, ok)
+
+        threading.Thread(target=_work, daemon=True,
+                         name="resource-roads").start()
+        return True
+
+    def query(self, x0, z0, x1, z1):
+        """[(category, name, pts)] whose bbox meets the rect —
+        the pane's draw list for one viewport."""
+        with self._lock:
+            if self._state != "ready":
+                return []
+            records = self._records
+            grid = self._grid
+        out = []
+        seen = set()
+        gx0 = int(math.floor(x0 / self.CELL))
+        gx1 = int(math.floor(x1 / self.CELL))
+        gz0 = int(math.floor(z0 / self.CELL))
+        gz1 = int(math.floor(z1 / self.CELL))
+        for gx in range(gx0, gx1 + 1):
+            for gz in range(gz0, gz1 + 1):
+                for ri in grid.get((gx, gz), ()):
+                    if ri in seen:
+                        continue
+                    seen.add(ri)
+                    cat, name, pts = records[ri]
+                    xs = [p[0] for p in pts]
+                    zs = [p[1] for p in pts]
+                    if max(xs) < x0 or min(xs) > x1 \
+                            or max(zs) < z0 or min(zs) > z1:
+                        continue
+                    out.append((cat, name, pts))
+        return out
 
 
 class ControlPointViewer(Gtk.DrawingArea):
@@ -1691,23 +1853,30 @@ def _sat_road_width(road):
             "minor": 7.0, "local": 5.5}.get(road.get("category"), 5.5)
 
 
-class ElevationMapViewer(Gtk.DrawingArea):
+class ResourceMapViewer(Gtk.DrawingArea):
     """
-    The bottom companion pane (the "Elevation" frame). 1.9.8:
-    the pane's picture is the REBUILT MAP ITSELF — the same roads
-    and building blocks the main canvas shows, drawn through the
-    SAME shared camera, so it is always centred on exactly the
-    world point the main view is centred on, at the same zoom
-    and heading, at true game scale (1 unit = 1 metre — it is
-    literally the same transform). The elevation information the
-    pane exists to show lives in the readout line above it (the
-    selected road's ground range + its elevation offset, with
-    steppers) — see RoadInspectorPanel.update_elev_readout.
+    The bottom companion pane (the "Resource map" frame).
+    1.9.12 — Joshua's design clarification: this pane is NOT a
+    second view of our world. It shows the RESOURCE MAP — the
+    reference roads the world was built from (the repo's
+    map-data reference, read-only) — at the SAME location and
+    zoom as the top viewer (see RoadInspectorPanel.
+    resource_camera), so he can compare where streets currently
+    are against where the reference says they should be. It
+    draws no game data at all. (1.9.8–1.9.11 this pane drew the
+    rebuilt game map; Joshua's clarification supersedes that.)
+    The elevation readout line above the pane — the selected
+    road's ground range + its elevation offset, with steppers —
+    is unchanged; it was never the pane itself (see
+    RoadInspectorPanel.update_elev_readout).
 
     Gestures mirror the main view: drag pans the shared camera,
-    Ctrl+drag rotates it, the wheel zooms it around the pointer.
-    During a delete/join/merge confirmation the pane holds the
-    AFTER still instead (compare mode) and ignores gestures.
+    Ctrl+drag rotates it, the wheel zooms it around the pointer
+    — the views stay linked both ways. During a delete/join/
+    merge confirmation the pane holds the AFTER still instead
+    (compare mode); in the delete preview a click there adds
+    the clicked piece to the deletion (1.9.12) — see
+    RoadInspectorPanel.compare_after_clicked.
     """
 
     def __init__(self, panel):
@@ -1765,30 +1934,83 @@ class ElevationMapViewer(Gtk.DrawingArea):
         # Background: the editor's map paper tone.
         cr.set_source_rgb(0.09, 0.10, 0.12)
         cr.paint()
-        canvas = self._canvas()
-        if canvas is None or getattr(self.app, "game_model", None) is None:
+        # 1.9.12: the picture is the RESOURCE MAP (reference) —
+        # the reference roads the world was built from, through
+        # the pane's locked camera (same place + zoom as the top
+        # viewer). NO game roads or buildings are drawn here any
+        # more: comparing our world against the reference is the
+        # pane's whole job, and mixing the two would hide exactly
+        # the differences Joshua is looking for.
+        store = panel.resources
+        if store.state() != "ready":
+            # The reference is still downloading (or failed):
+            # say so plainly in the pane rather than showing a
+            # misleadingly empty map.
+            msg = ("Resource map unavailable — the reference "
+                   "could not be downloaded."
+                   if store.state() == "failed" else
+                   "Resource map (reference) — loading…")
+            cr.set_source_rgb(0.75, 0.78, 0.82)
+            cr.select_font_face("Sans", cairo.FONT_SLANT_NORMAL,
+                                cairo.FONT_WEIGHT_NORMAL)
+            cr.set_font_size(12)
+            ext = cr.text_extents(msg)
+            cr.move_to(max(4, (w - ext.width) / 2),
+                       max(14, h / 2))
+            cr.show_text(msg)
             return False
-        cam = canvas._camera
+        cam = panel.resource_camera(w, h)
+        if cam is None:
+            return False
+        from data import ROAD_STYLE
         vp = cam.get_viewport(w, h)
-        zones = _zone_ids_for_rect(vp)
-        _draw_map_buildings(cr, self.app, panel.buildings, cam,
-                            w, h, zones)
-        sel_ids = set()
-        canvas2 = self._canvas()
-        if canvas2 is not None:
-            for cat, idx in getattr(canvas2, "selected_roads",
-                                    []) or []:
-                road = canvas2._get_road_dict(cat, idx)
-                if road is not None:
-                    sel_ids.add(id(road))
-        _draw_map_roads(cr, self.app, cam, w, h,
-                        selected_ids=sel_ids, thin_locals=True)
+        cr.set_line_cap(cairo.LINE_CAP_ROUND)
+        cr.set_line_join(cairo.LINE_JOIN_ROUND)
+        for cat, _name, pts in store.query(*vp):
+            style = ROAD_STYLE.get(cat, ROAD_STYLE["local"])
+            cr.set_source_rgb(*style["color"])
+            cr.set_line_width(max(0.8, style["width"] * cam.zoom))
+            for j, (wx, wz) in enumerate(pts):
+                sx, sy = cam.world_to_screen(wx, wz, w, h)
+                cr.line_to(sx, sy) if j else cr.move_to(sx, sy)
+            cr.stroke()
         _draw_north_arrow(cr, cam, w, h)
+        # Caption chip, top-left: this picture is the REFERENCE,
+        # never our world — labelled on the picture itself so a
+        # screenshot can never confuse the two.
+        cr.set_source_rgba(0, 0, 0, 0.55)
+        cr.rectangle(6, 6, 178, 20)
+        cr.fill()
+        cr.set_source_rgb(0.92, 0.94, 0.97)
+        cr.select_font_face("Sans", cairo.FONT_SLANT_NORMAL,
+                            cairo.FONT_WEIGHT_BOLD)
+        cr.set_font_size(11)
+        cr.move_to(12, 20)
+        cr.show_text("Resource map (reference)")
         return False
 
     def _on_press(self, _w, event):
         if self.panel.compare_active():
-            return True     # holding a still: no gestures
+            # Holding a still: no gestures. 1.9.12 exception —
+            # in the DELETE preview the After picture is
+            # clickable: a left click adds the piece under it
+            # to the deletion (panel.compare_after_clicked).
+            if event.button == 1 \
+                    and self.panel.compare_after_pickable():
+                alloc = self.get_allocation()
+                self.panel.compare_after_clicked(
+                    event.x, event.y,
+                    max(2, alloc.width), max(2, alloc.height))
+            return True
+        # 1.9.12: grabbing this pane re-locks it to the shared
+        # camera — drop the top pane's selection eye-focus, so
+        # this pane's picture (which prefers the eye focus while
+        # one is set, exactly like the top pane's own still)
+        # follows the shared centre again from this grab on.
+        try:
+            self.panel.clear_eye_focus()
+        except Exception:
+            pass
         try:
             self.app.note_pane_touched("map")
         except Exception:
@@ -1853,9 +2075,12 @@ class RoadInspectorPanel(Gtk.VBox):
     """
     The right-hand dock: header (title + 3D/Satellite toggle +
     the viewport's Still/Live state button), the area viewpoint
-    (ControlPointViewer), and the Elevation frame — now a synced
-    map (ElevationMapViewer) under an elevation readout line with
-    offset steppers.
+    (ControlPointViewer), and the Resource map frame — the
+    reference map (ResourceMapViewer, 1.9.12) under the selected
+    road's elevation readout line with offset steppers. The
+    readout is about the SELECTED ROAD's elevation; the pane
+    under it is the resource/reference map — the labels say
+    exactly that, separately, so the two are never confused.
 
     The panel also owns DELETE/JOIN/MERGE COMPARE MODE: while a
     confirmation is up, the two companion panes stop following
@@ -1879,6 +2104,10 @@ class RoadInspectorPanel(Gtk.VBox):
         self.view_mode = "3d"
         # Lazy per-zone buildings for the area viewpoints.
         self.buildings = BuildingsStore()
+        # The resource map (reference roads) for the bottom
+        # pane — one whole-world reference file, fetched once
+        # in the background (1.9.12).
+        self.resources = ResourceRoadsStore()
         # Compare mode state (see the class docstring).
         self._compare = None
         self._stills = {"before": None, "after": None}
@@ -1926,10 +2155,17 @@ class RoadInspectorPanel(Gtk.VBox):
         frame.add(overlay)
         vpaned.pack1(frame, resize=True, shrink=True)
 
-        # --- Elevation frame: readout + steppers over the map.
+        # --- Resource map frame: the selected road's elevation
+        # readout + steppers over the RESOURCE (reference) map.
+        # The readout line is labelled "Road elevation" because
+        # that is what IT is; the frame — the pane — is labelled
+        # for the resource map it shows (1.9.12 label audit:
+        # nothing around this pane calls the PANE "elevation"
+        # any more).
         elev_box = Gtk.VBox(spacing=2)
         readout_row = Gtk.HBox(spacing=4)
-        self._elev_label = Gtk.Label(label="Elevation — select a road")
+        self._elev_label = Gtk.Label(
+            label="Road elevation — select a road")
         self._elev_label.set_xalign(0)
         self._elev_label.set_ellipsize(Pango.EllipsizeMode.END)
         readout_row.pack_start(self._elev_label, True, True, 2)
@@ -1948,10 +2184,16 @@ class RoadInspectorPanel(Gtk.VBox):
         elev_box.pack_start(readout_row, False, False, 0)
         # The attribute name stays `elev_viewer`: refresh() and
         # anything outside this module that redraws the pane
-        # keeps working across the 1.9.8 change.
-        self.elev_viewer = ElevationMapViewer(self)
+        # keeps working across the 1.9.8 change — and across
+        # the 1.9.12 rename of the viewer class itself to
+        # ResourceMapViewer (the pane's job changed; the
+        # attribute is plumbing, not a label).
+        self.elev_viewer = ResourceMapViewer(self)
         elev_box.pack_start(self.elev_viewer, True, True, 0)
-        eframe = Gtk.Frame(label="Elevation — map")
+        eframe = Gtk.Frame(label="Resource map — reference")
+        # Kept as an attribute so the gates can read the pane's
+        # title back and prove the label audit (1.9.12).
+        self._resource_frame = eframe
         eframe.add(elev_box)
         vpaned.pack2(eframe, resize=True, shrink=True)
         vpaned.set_position(300)
@@ -2074,6 +2316,87 @@ class RoadInspectorPanel(Gtk.VBox):
                 except Exception:
                     pass
 
+    # -- resource map (reference) data — 1.9.12 --------------------
+
+    def _fetch_resource_bytes(self, path):
+        """
+        Worker-side fetch of the resource-map reference file
+        through the suite plumbing (shared cache first, GitHub
+        on a miss) — the same door the buildings fetch uses.
+        Runs ON the ResourceRoadsStore worker thread.
+        """
+        try:
+            import github_sync
+            import gamedata
+            data, _err = github_sync.fetch_file(gamedata.GAME_REPO,
+                                                path)
+            return data
+        except Exception:
+            return None
+
+    def _on_resource_ready(self, ok):
+        try:
+            self.app.progress_finish("resource-roads")
+        except Exception:
+            pass
+        # The bottom pane may be holding its "loading…" caption;
+        # one redraw swaps in the reference (or the failure note).
+        self.elev_viewer.queue_draw()
+
+    def request_resource_data(self):
+        """
+        Make sure the resource-map reference is on its way
+        (background download + corner progress bar). The store
+        fetches once per run; later calls are no-ops. Called by
+        the app when data loads (open + Check for Updates).
+        """
+        started = self.resources.ensure(self._fetch_resource_bytes,
+                                        self._on_resource_ready)
+        if started:
+            try:
+                self.app.progress_start(
+                    "resource-roads",
+                    "Downloading the resource map (reference)…")
+            except Exception:
+                pass
+
+    def resource_camera(self, w, h):
+        """
+        The camera the bottom (resource map) pane draws through:
+        the SAME place and zoom as the top viewer. While the top
+        pane holds a selection still (its eye focus — the point
+        a click selected), the bottom pane frames THAT point at
+        the same street-level zoom, through a private copy of
+        the shared camera (the shared camera itself never
+        moves) — the construction the top pane's own satellite
+        still uses. Otherwise the shared camera itself. None
+        before the canvas exists.
+        """
+        canvas = getattr(self.app, "canvas", None)
+        if canvas is None:
+            return None
+        cam = canvas._camera
+        focus = self.cp_viewer._eye_focus
+        if focus is not None:
+            cam = copy.copy(cam)
+            cam.cam_x, cam.cam_y = focus
+            cam.zoom = max(cam.min_zoom,
+                           min(cam.max_zoom,
+                               min(w, h) / EYE_STILL_SPAN))
+        return cam
+
+    def clear_eye_focus(self):
+        """
+        Drop the top pane's selection eye-focus (the bottom
+        pane calls this when Joshua grabs it): both panes then
+        follow the shared camera's centre again. The top pane's
+        still re-renders once for its new framing.
+        """
+        if self.cp_viewer._eye_focus is not None:
+            self.cp_viewer._eye_focus = None
+            self.cp_viewer.invalidate_still()
+            self.cp_viewer.queue_draw()
+
     # -- elevation readout + steppers -------------------------------
 
     def _first_selected_road(self):
@@ -2090,14 +2413,16 @@ class RoadInspectorPanel(Gtk.VBox):
 
     def update_elev_readout(self):
         """
-        The elevation pane's information, kept from the old
-        profile pane in words: which road, its ground height
-        range (from its converter-draped ys) and its elevation
-        offset (the value the steppers change).
+        The elevation READOUT's information (the line above the
+        resource map pane), kept from the old profile pane in
+        words: which road, its ground height range (from its
+        converter-draped ys) and its elevation offset (the value
+        the steppers change).
         """
         got = self._first_selected_road()
         if got is None:
-            self._elev_label.set_text("Elevation — select a road")
+            self._elev_label.set_text(
+                "Road elevation — select a road")
             self._btn_elev_down.set_sensitive(False)
             self._btn_elev_up.set_sensitive(False)
             return
@@ -2110,7 +2435,8 @@ class RoadInspectorPanel(Gtk.VBox):
         else:
             ground = "ground —"
         self._elev_label.set_text(
-            f"Elevation — {name}: offset {off:+.1f} u · {ground}")
+            f"Road elevation — {name}: offset {off:+.1f} u · "
+            f"{ground}")
         self._btn_elev_down.set_sensitive(True)
         self._btn_elev_up.set_sensitive(True)
 
@@ -2145,7 +2471,8 @@ class RoadInspectorPanel(Gtk.VBox):
 
     def set_compare(self, cam, target_roads, omit_ids,
                     extra_roads=(), before_text="Before — as it is now",
-                    after_text="After — with the change applied"):
+                    after_text="After — with the change applied",
+                    on_after_pick=None):
         """
         Open the Before/After comparison. `cam` is the framing
         camera BOTH panes share (identical centre/zoom/heading);
@@ -2153,6 +2480,12 @@ class RoadInspectorPanel(Gtk.VBox):
         in After; extra_roads (road dicts not in the model, e.g.
         a joined result) appear only in After. Both stills render
         once, here.
+
+        on_after_pick (1.9.12) — the owner's click-to-add handler
+        for the After picture, called (cat, idx, road) when a
+        click in the After still lands on a road still drawn
+        there. Only the delete preview registers one; every other
+        comparison keeps its stills inert.
         """
         self._compare = {
             "cam": cam,
@@ -2161,6 +2494,7 @@ class RoadInspectorPanel(Gtk.VBox):
             "extra": list(extra_roads),
             "before_text": before_text,
             "after_text": after_text,
+            "on_after_pick": on_after_pick,
         }
         self._stills = {"before": None, "after": None}
         self.render_compare_still("before")
@@ -2168,10 +2502,17 @@ class RoadInspectorPanel(Gtk.VBox):
         self.cp_viewer.queue_draw()
         self.elev_viewer.queue_draw()
 
-    def update_compare(self, omit_ids=None, extra_roads=None):
+    def update_compare(self, omit_ids=None, extra_roads=None,
+                       target_roads=None):
         """
         A selection change mid-comparison: refresh each still
         EXACTLY once (Joshua's rule), then still again.
+
+        target_roads (1.9.12) replaces the Before targets when
+        given — the delete preview passes its GROWN set after a
+        piece is added through the After picture, so the new
+        piece lights up in Before exactly like the originals.
+        The on_after_pick handler is preserved across updates.
         """
         if self._compare is None:
             return
@@ -2179,10 +2520,86 @@ class RoadInspectorPanel(Gtk.VBox):
             self._compare["omit"] = set(omit_ids)
         if extra_roads is not None:
             self._compare["extra"] = list(extra_roads)
+        if target_roads is not None:
+            self._compare["targets"] = list(target_roads)
         self.render_compare_still("before")
         self.render_compare_still("after")
         self.cp_viewer.queue_draw()
         self.elev_viewer.queue_draw()
+
+    # -- After-picture picking (1.9.12) ---------------------------
+
+    def compare_after_pickable(self):
+        """True while a comparison with an After-picture
+        click-to-add handler is up (the delete preview)."""
+        cmp = self._compare
+        return cmp is not None \
+            and cmp.get("on_after_pick") is not None
+
+    def pick_compare_after(self, sx, sy, w, h):
+        """
+        The road record nearest a click in the After still, as
+        (cat, flat_idx, road) or None. The click is resolved in
+        the comparison camera's own framing (the stills' pinned
+        camera), candidates come from the spatial index over a
+        small world box around the point, roads already omitted
+        from the After picture are NOT pickable (they are not
+        drawn there), and the nearest record wins. Distances use
+        the main canvas's own point-to-road measure, so the
+        After picture picks exactly like the map does.
+        """
+        cmp = self._compare
+        if cmp is None:
+            return None
+        app = self.app
+        canvas = getattr(app, "canvas", None)
+        if canvas is None \
+                or getattr(app, "spatial_index", None) is None:
+            return None
+        cam = cmp["cam"]
+        wx, wz = cam.screen_to_world(sx, sy, w, h)
+        tol = 10.0 / max(cam.zoom, 1e-6)
+        best = None
+        best_d = None
+        for cat, fi, road in _roads_in_rect(
+                app, (wx - tol, wz - tol, wx + tol, wz + tol)):
+            if id(road) in cmp["omit"]:
+                continue
+            pts = road.get("pts") or []
+            if len(pts) < 2:
+                continue
+            d = canvas._point_to_road_dist(wx, wz, pts)
+            if d is None or d > tol:
+                continue
+            if best is None or d < best_d:
+                best = (cat, fi, road)
+                best_d = d
+        return best
+
+    def compare_after_clicked(self, sx, sy, w, h):
+        """
+        A click landed in the After still. When the comparison
+        registered a click-to-add handler (the delete preview),
+        resolve the piece under the click and hand it to the
+        handler; a click that lands on empty ground says so in
+        the status instead of silently doing nothing. Returns
+        True when the click was consumed by the After picture.
+        """
+        cmp = self._compare
+        if cmp is None or cmp.get("on_after_pick") is None:
+            return False
+        hit = self.pick_compare_after(sx, sy, w, h)
+        if hit is None:
+            try:
+                self.app.set_status(
+                    "After picture: that click missed every "
+                    "road — nothing was added.")
+            except Exception:
+                pass
+            return True
+        cat, idx, road = hit
+        cmp["on_after_pick"](cat, idx, road)
+        return True
 
     def clear_compare(self):
         """Close the comparison; both panes show the live synced
