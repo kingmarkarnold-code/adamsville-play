@@ -17,6 +17,9 @@ half of the fix, in two side-by-side sections:
   piece into the ordinary delete confirmation flow (the framed
   picture + the bar at the top of the map) — no new delete
   path, and Delete still removes the selected piece only.
+  1.9.11: records sharing a "grp" value are ONE piece — one
+  row for the whole object (every run named), isolation frames
+  all its runs, and its Delete removes the whole object.
 
   STACKED PIECES — the Find stacked button (here and on the
   toolbar) scans the loaded data in the background (the corner
@@ -166,6 +169,11 @@ class PiecesPanel(Gtk.Box):
         app's on_roads_selected funnels here). A piece whose
         isolation is active gets its row re-selected (without
         re-firing the isolate action).
+
+        1.9.11: records sharing a "grp" value are ONE piece —
+        they get ONE row (naming every run), however many of
+        them the selection holds. The title counts PIECES
+        (objects), not records.
         """
         app = self.app
         canvas = app.canvas
@@ -174,13 +182,27 @@ class PiecesPanel(Gtk.Box):
         for child in self.sel_list.get_children():
             self.sel_list.remove(child)
         self._sel_data = {}
+        seen = set()
         for cat, idx in sel:
+            if (cat, idx) in seen:
+                continue
             road = canvas._get_road_dict(cat, idx)
             if road is None:
                 continue
-            row = self._selection_row(cat, idx, road)
+            # The whole object this key belongs to (just itself
+            # when unpaired), resolved to live records.
+            member_keys = canvas.grp_members(cat, idx)
+            members = []
+            for key in member_keys:
+                rec = canvas._get_road_dict(*key)
+                if rec is not None:
+                    members.append((key[0], key[1], rec))
+                    seen.add(key)
+            if not members:
+                continue
+            row = self._selection_row(cat, idx, road, members)
             self.sel_list.add(row)
-            if canvas.isolated == (cat, idx):
+            if canvas.isolated in member_keys:
                 self.sel_list.select_row(row)
         self._rebuilding = False
         self.sel_list.show_all()
@@ -190,8 +212,18 @@ class PiecesPanel(Gtk.Box):
         self.sel_empty.set_visible(n == 0)
         self.show_all_btn.set_sensitive(canvas.isolated is not None)
 
-    def _selection_row(self, cat, idx, road):
-        """One selected piece: name, class + length, Delete."""
+    def _selection_row(self, cat, idx, road, members=None):
+        """
+        One selected piece: name, class + length, Delete.
+
+        With `members` (1.9.11) — every (cat, idx, road) of a
+        grp object — the row is the OBJECT: it says "One
+        object" with the run count, names every run, and totals
+        their length. Its Delete sends the whole object into
+        the framed confirmation (the app expands the pairing).
+        """
+        if members is None:
+            members = [(cat, idx, road)]
         box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
                       spacing=6)
         texts = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
@@ -200,20 +232,48 @@ class PiecesPanel(Gtk.Box):
         name_label.set_xalign(0)
         name_label.set_ellipsize(3)  # Pango EllipsizeMode.END
         texts.pack_start(name_label, False, False, 0)
-        meta = Gtk.Label(
-            label=f"{CATEGORY_LABELS[normalize_category(cat)]}"
-                  f" · {stacked.road_length(road.get('pts') or []):.0f} m"
-                  f" · {self.app.zone_display_name(road.get('_zone'))}")
-        meta.set_xalign(0)
-        texts.pack_start(meta, False, False, 0)
+        if len(members) > 1:
+            total = sum(
+                stacked.road_length(r.get("pts") or [])
+                for _c, _i, r in members)
+            meta = Gtk.Label(
+                label=f"One object · {len(members)} runs"
+                      f" · {total:.0f} m in all"
+                      f" · {self.app.zone_display_name(road.get('_zone'))}")
+            meta.set_xalign(0)
+            texts.pack_start(meta, False, False, 0)
+            # Name every run — the runs are the object, and a
+            # run with a different name must not hide.
+            runs = Gtk.Label(
+                label="Runs: " + " · ".join(
+                    stacked.display_name(r)
+                    for _c, _i, r in members))
+            runs.set_xalign(0)
+            runs.set_ellipsize(3)  # Pango EllipsizeMode.END
+            texts.pack_start(runs, False, False, 0)
+        else:
+            meta = Gtk.Label(
+                label=f"{CATEGORY_LABELS[normalize_category(cat)]}"
+                      f" · {stacked.road_length(road.get('pts') or []):.0f} m"
+                      f" · {self.app.zone_display_name(road.get('_zone'))}")
+            meta.set_xalign(0)
+            texts.pack_start(meta, False, False, 0)
         box.pack_start(texts, True, True, 0)
         # Delete for THIS piece only — the ordinary framed
-        # confirmation flow, via the app.
+        # confirmation flow, via the app. (For a grp object,
+        # "this piece" IS the whole object.)
         del_btn = Gtk.Button(label="Delete")
-        del_btn.set_tooltip_text(
-            "Delete this one piece. The map frames it and "
-            "lights it up first — nothing is removed until you "
-            "confirm in the bar at the top.")
+        if len(members) > 1:
+            del_btn.set_tooltip_text(
+                "Delete this whole object (all its runs). The "
+                "map frames every run and lights them up first "
+                "— nothing is removed until you confirm in the "
+                "bar at the top.")
+        else:
+            del_btn.set_tooltip_text(
+                "Delete this one piece. The map frames it and "
+                "lights it up first — nothing is removed until you "
+                "confirm in the bar at the top.")
         del_btn.connect(
             "clicked",
             lambda _b, c=cat, i=idx, r=road:
