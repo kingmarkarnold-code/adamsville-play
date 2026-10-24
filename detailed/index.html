@@ -87,10 +87,18 @@
        ... and (orientation:landscape) .......... landscape: horizontal
                                                  spread, center kept clear -->
 <style>
-  html, body { margin:0; padding:0; width:100%; height:100%; overflow:hidden;
+  html, body { margin:0; padding:0; width:100%; overflow:hidden;
     background:#0b0e14; touch-action:none; -webkit-user-select:none; user-select:none;
-    font-family: Arial, Helvetica, sans-serif; }
-  #game { position:fixed; inset:0; }
+    font-family: Arial, Helvetica, sans-serif;
+    /* VISIBLE-AREA HEIGHT (Joshua 2026-10-24, same fix as basketball
+       v2.3.1): the page stands exactly as tall as the screen the
+       player can SEE. --app-height is measured in JavaScript from
+       window.visualViewport (the area left after the browser's
+       address bar and footer) by the SAView script below; the vh /
+       dvh lines are only the fallback for the first paint, before
+       the first measurement lands. */
+    height:100%; height:100vh; height:100dvh; height:var(--app-height, 100dvh); }
+  #game { position:fixed; inset:0; height:var(--app-height, 100dvh); }
   canvas { display:block; }
   /* v1.21: HUD title sits alone in the top-left corner (Joshua's rule —
      no icons overlapping the title). Icon buttons live in a row at top:96px
@@ -625,7 +633,9 @@
       width:90px!important;height:110px!important;border-radius:12px!important;}
     #music-btn{top:68px!important;left:8px!important;right:auto!important;}
     #ce-btn{left:68px!important;top:8px!important;bottom:auto!important;}
-    #rc-btn{left:128px!important;top:8px!important;bottom:auto!important;}
+    /* #rc-btn pin removed 2026-10-24: the road-crew button no
+       longer exists on the game view (crew reports live in the
+       Administrator menu now — Joshua). */
     /* v1.34 #30 THUMB REACH: action button moved from top-right to lower-right thumb zone
        (Maya Patel UI/UX). Mobile: bottom:140px (portrait) / bottom:200px (landscape).
        Desktop unchanged (top-right is fine for mouse). Mode-tag may sit behind the
@@ -659,7 +669,6 @@
     #cam-btn{left:8px!important;top:52px!important;}
     #street-name{top:8px!important;left:8px!important;max-width:55vw;}
     #ce-btn{left:8px!important;top:96px!important;}
-    #rc-btn{left:68px!important;top:96px!important;}
     #action-btn{top:auto!important;right:8px!important;bottom:140px!important;}
     #help-btn{top:10px!important;right:12px!important;}
     #steer-left{left:8px!important;bottom:148px!important;}
@@ -678,7 +687,6 @@
     #cam-btn{left:216px!important;top:8px!important;bottom:auto!important;}
     #street-name{top:54px!important;left:276px!important;max-width:30vw;}  /* v1.33: below daycycle HUD */
     #ce-btn{left:8px!important;top:110px!important;bottom:auto!important;}
-    #rc-btn{left:68px!important;top:110px!important;bottom:auto!important;}
     #action-btn{top:auto!important;right:8px!important;bottom:200px!important;}
     #help-btn{top:8px!important;right:12px!important;}
     #steer-left{left:8px!important;bottom:110px!important;}
@@ -691,6 +699,64 @@
     #dmg-wrap{bottom:140px!important;}
   }
 </style>
+<!-- ===== VISIBLE VIEWPORT MEASUREMENT (Joshua 2026-10-24) =====
+     Same reshaping as basketball v2.3.1, applied to the main game.
+     window.visualViewport reports the area left after the phone
+     browser's address bar and footer take their share;
+     window.innerHeight can count that hidden strip too, which is
+     how controls ended up where the player cannot see or tap them.
+     SAView measures the visible area, publishes it as the
+     --app-height / --app-width CSS variables (the page and #game
+     heights above stand on it), and re-measures whenever the bars
+     show or hide (visualViewport resize), on window resize, and on
+     rotation. A visualViewport change also re-fires a window
+     resize so the game's existing resize paths (renderer,
+     ui_layout_apply.js, hud_move.js) re-run against the new
+     visible size. ui_layout_apply.js and hud_move.js read their
+     viewport through SAView.width()/height() when present.
+     Fully guarded: no visualViewport (old engine) = plain
+     innerWidth/innerHeight behaviour, exactly as before. -->
+<script>
+window.SAView = (function(){
+  'use strict';
+  var w = 0, h = 0;
+  function measure(){
+    try {
+      var vv = window.visualViewport;
+      w = Math.round((vv && vv.width) ? vv.width : (window.innerWidth || 0));
+      h = Math.round((vv && vv.height) ? vv.height : (window.innerHeight || 0));
+      var root = document.documentElement;
+      if (root && root.style && root.style.setProperty && h){
+        root.style.setProperty('--app-height', h + 'px');
+        if (w) root.style.setProperty('--app-width', w + 'px');
+      }
+    } catch (e) { /* measurement is an enhancement, never a dependency */ }
+    return { w: w, h: h };
+  }
+  function onBarsChanged(){
+    var before = h;
+    measure();
+    /* The bars showing/hiding changed the visible area without a
+       page resize on some browsers — re-fire one so every existing
+       resize listener re-lays-out against the new measurement. */
+    if (h && h !== before){
+      try { window.dispatchEvent(new Event('resize')); } catch (e) {}
+    }
+  }
+  measure();
+  try { window.addEventListener('resize', measure); } catch (e) {}
+  try { window.addEventListener('orientationchange', onBarsChanged); } catch (e) {}
+  try {
+    if (window.visualViewport && window.visualViewport.addEventListener)
+      window.visualViewport.addEventListener('resize', onBarsChanged);
+  } catch (e) {}
+  return {
+    width: function(){ return w || window.innerWidth || 0; },
+    height: function(){ return h || window.innerHeight || 0; },
+    measure: measure
+  };
+})();
+</script>
 </head>
 <!-- ===== BODY: every HUD/DOM element the game drives. No logic here - just
      layout; the inline scripts below wire it all up. ===== -->
@@ -837,6 +903,11 @@
   <button class="row" id="adm-uiflow">Download newest UI</button>
   <div id="adm-hrlog"></div>
   <button class="row" id="adm-dispatch">&#128679; Road Dispatch Log</button>
+  <!-- CREW REPORTS (Joshua 2026-10-24): the construction crews'
+       reports no longer appear on the game view — this row opens
+       the reports view (crew_reports_view.js) listing what the
+       road and infrastructure crews have filed. -->
+  <button class="row" id="adm-crewreports">&#128203; Crew Reports</button>
   <button class="row" id="adm-testconn">&#128268; Test Connection</button>
   <!-- v1.12.11: "Send Reports to Mollie" — Joshua's spec (2026-10-11).
        One-tap export: collects the local Report data and uploads it to
@@ -4223,7 +4294,12 @@ window.addEventListener('keydown', function(e){
 }, true);
 var renderer = new THREE.WebGLRenderer({ antialias: _useAA });
 renderer.setPixelRatio(_pixelRatio);
-renderer.setSize(window.innerWidth, window.innerHeight);
+/* Canvas size = the MEASURED visible area (SAView, head script;
+   Joshua 2026-10-24) so the 3D view never renders into the strip
+   hidden under the phone browser's bars. Falls back to the window
+   size when SAView is absent. */
+renderer.setSize((window.SAView && SAView.width()) || window.innerWidth,
+                 (window.SAView && SAView.height()) || window.innerHeight);
 renderer.outputEncoding = THREE.sRGBEncoding;
 container.appendChild(renderer.domElement);
 
@@ -4253,7 +4329,8 @@ scene.fog = new THREE.Fog(0x9fc7e8, _ddCfg.fogNear, _ddCfg.fogFar);
 
 /* v1.25: camera far plane follows the draw distance preset. */
 var _camFar = _ddCfg.far;
-var camera = new THREE.PerspectiveCamera(62, window.innerWidth/window.innerHeight, 0.5, _camFar);  // v0.6: tighter depth range = less z-fight on mobile GPUs
+/* Aspect from the same measured visible area as the renderer. */
+var camera = new THREE.PerspectiveCamera(62, ((window.SAView && SAView.width()) || window.innerWidth)/((window.SAView && SAView.height()) || window.innerHeight), 0.5, _camFar);  // v0.6: tighter depth range = less z-fight on mobile GPUs
 
 var hemi = new THREE.HemisphereLight(0xcfe8ff, 0x4a7c3a, 0.95);
 scene.add(hemi);
@@ -13437,9 +13514,14 @@ try{
 })();
 
 window.addEventListener('resize', function(){
-  camera.aspect=window.innerWidth/window.innerHeight;
+  /* Resize against the MEASURED visible area (SAView) — a resize
+     can be the browser bars showing/hiding, and the canvas must
+     track the screen the player can actually see (2026-10-24). */
+  var _rvw = (window.SAView && SAView.width()) || window.innerWidth;
+  var _rvh = (window.SAView && SAView.height()) || window.innerHeight;
+  camera.aspect=_rvw/_rvh;
   camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setSize(_rvw, _rvh);
   if (fullMapOpen) drawFullMap();
 });
 window.addEventListener('keydown', function(e){
@@ -14028,6 +14110,11 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <script data-dsrc="surveyfleet_system.js" data-dkey="survey"></script>
 <script data-dsrc="cityworkforce.js" data-dkey=""></script>
 <script data-dsrc="inspector_crew.js" data-dkey="inspector"></script>
+<!-- CREW REPORTS VIEW (Joshua 2026-10-24): the Administrator menu's
+     "Crew Reports" view — the construction crews' reports live
+     here now, not on the game view. Reads ROADCREW.log /
+     INFRACREW.log lazily when opened, so load order is safe. -->
+<script data-dsrc="crew_reports_view.js" data-dkey=""></script>
 <script data-dsrc="police_system.js" data-dkey=""></script>
 <script data-dsrc="github-config.js" data-dkey=""></script>
 <script data-dsrc="github_reports.js" data-dkey=""></script>
