@@ -1,54 +1,83 @@
 /* ============================================================
-   SURVIVING ADAMSVILLE — GitHub report uploader
+   SURVIVING ADAMSVILLE — Report sender (relay edition)
    FILE: github_reports.js
    ------------------------------------------------------------
    WHAT THIS DOES:
-   Sends the game's diagnostic reports to the GitHub repo as
-   timestamped JSON files in the `reports/` folder, so Joshua
-   (and Mollie) can see inspector findings, stuck vehicles,
-   errors, and performance warnings without needing the phone
-   the game ran on.
+   Sends the game's diagnostic reports to Joshua (via Mollie)
+   so inspector findings, stuck vehicles, errors, and
+   performance warnings can be seen without needing the phone
+   the game ran on. Reports still land as files in the GitHub
+   repo's `reports/` folder — the relay puts them there.
 
-   HOW IT WORKS:
+   HOW IT WORKS (Joshua's ruling, 2026-10-24 — NO KEY IN GAME):
+   * Players must never need a GitHub key, so the game no
+     longer talks to GitHub directly. It POSTs each batch of
+     reports as plain JSON to ONE relay address
+     (GITHUB_CONFIG.REPORT_RELAY_URL in github-config.js).
+     The relay is a small Google Apps Script web app running
+     under Joshua's Google account; the GitHub key lives on
+     the relay's side only (its private Script Properties)
+     and is never sent to, or stored in, the game.
+   * The direct-to-GitHub token upload that used to live in
+     this file was REMOVED on 2026-10-24 (its token was dead,
+     and any working key shipped in a public game file can be
+     read by anyone who downloads the game). There is no token
+     code left here on purpose — do not re-add one.
+
+   QUEUEING (unchanged behaviour):
    * All existing Report.note() / Report.noteError() calls are
      wrapped automatically — every system that already logs to
-     the Report panel also queues a GitHub-bound report. No
-     changes to other files needed.
+     the Report panel also queues a report here. No changes to
+     other files needed.
    * Reports sit in a memory queue. Every flushIntervalMs
-     (default 5 minutes, see github-config.js) the queue is
-     uploaded in ONE batch: reports are grouped by type and each
-     group becomes a single file, e.g.
-       reports/2026-10-11-003012-inspector-finding.json
-     so a busy 5 minutes costs ~4 API calls, not hundreds.
+     (default 5 minutes, see github-config.js) the whole queue
+     is sent in ONE bundle: one POST, and the relay writes one
+     file per bundle, e.g.
+       reports/2026-10-24-153012-a17-5g.json
    * A final flush runs when the page hides/closes
-     (pagehide + visibilitychange), using fetch keepalive so the
-     upload survives page teardown.
-   * The GitHub token comes from github-config.js
-     (window.GITHUB_CONFIG.token) or from browser storage via
-     GitHubReports.setToken() — storage wins. No token = no
-     uploads, silently. Nothing here ever prompts or throws.
+     (pagehide + visibilitychange) with fetch keepalive, so
+     the send is attempted even as the page tears down.
+   * If the relay address is not set yet, or a send fails, the
+     reports STAY in the queue and the next flush retries —
+     and the manual/export behaviour (Report.shareJson etc.)
+     is untouched, so no report is lost because the relay is
+     absent. The only way a queued report is dropped is the
+     maxQueue cap (oldest first), exactly as before.
+
+   ONE HONEST LIMIT (browser security rules, not a bug):
+   * Apps Script web apps do not answer browser "CORS"
+     permission checks, so the game sends with
+     Content-Type text/plain and fetch mode "no-cors". That
+     means the browser delivers the bundle to the relay but
+     will not let the game READ the relay's reply. A resolved
+     send therefore means "Google accepted the delivery",
+     not "the relay confirmed the file landed". Failures we
+     CAN see (no network, relay address missing) keep the
+     queue intact. Mollie verifies real arrivals by watching
+     the repo's reports/ folder.
 
    SECURITY:
-   * The token is sent ONLY to https://api.github.com, never
-     anywhere else. It is never logged or written to a file.
-   * Anyone who downloads the game can read a token pasted into
-     github-config.js — that is why Joshua's token must be a
-     fine-grained token limited to Contents:read/write on ONLY
-     the adamsville-play repo (see github-config.js).
+   * No key, token, or credential exists in this file or in
+     github-config.js. The only thing sent besides the reports
+     is a client tag (REPORT_CLIENT_TAG) which is NOT a secret
+     — the relay uses it only to ignore obvious junk posts.
    * Every network call is wrapped in try/catch. Diagnostics
      must never break the game — Joshua's standing rule.
 
    API:
    * GitHubReports.queue(type, details) — queue one report now.
-   * GitHubReports.flush() — upload the queue immediately.
-   * GitHubReports.setToken(t) — store a token in this browser
-     only (localStorage). Returns true on success.
-   * GitHubReports.clearToken() — forget the stored token.
-   * GitHubReports.status() — {enabled,hasToken,queued,
-     lastFlush,lastError} for debugging.
+   * GitHubReports.flush() — send the queue immediately.
+     Returns a Promise for true (handed to the relay) / false
+     (not configured, empty queue, or send failed — queue kept).
+   * GitHubReports.status() — {enabled, configured, hasRelay,
+     hasToken, queued, lastFlush, lastError}. `hasToken` is a
+     LEGACY ALIAS kept only so older callers (the "Send
+     Reports to Mollie" button in index.html) keep working:
+     it now reports whether a sending path is configured
+     (the relay), NOT whether a token exists. No token exists.
    ------------------------------------------------------------
-   Documentation comments are required on all game code — Joshua's
-   standing rule. This file follows it.
+   Documentation comments are required on all game code —
+   Joshua's standing rule. This file follows it.
    ============================================================ */
 window.GitHubReports = (function(){
   'use strict';
@@ -57,27 +86,18 @@ window.GitHubReports = (function(){
 
   function pad(n){ return (n<10?'0':'')+n; }
 
-  /* Local-time stamp for filenames: 2026-10-11-003012 */
+  /* Local-time stamp for bundle names: 2026-10-24-153012 */
   function fileTs(d){
     d = d || new Date();
     return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+
       '-'+pad(d.getHours())+pad(d.getMinutes())+pad(d.getSeconds());
   }
 
-  /* Keep filenames safe: lowercase, dashes, no weird chars. */
+  /* Keep names safe: lowercase, dashes, no weird chars. */
   function slug(s){
     s = String(s==null?'report':s).toLowerCase().replace(/[^a-z0-9]+/g,'-')
       .replace(/^-+|-+$/g,'');
     return s || 'report';
-  }
-
-  /* UTF-8 safe base64 for the Contents API. */
-  function b64encodeUtf8(str){
-    try{
-      if(typeof btoa!=='undefined')
-        return btoa(unescape(encodeURIComponent(str)));
-    }catch(e){}
-    return null;
   }
 
   /* Random session id so reports from one play session group together. */
@@ -97,7 +117,41 @@ window.GitHubReports = (function(){
     return null;
   }
 
-  /* ---------- configuration / token ---------- */
+  /* Short device label for the report filename, e.g. "a17-5g".
+     Best-effort from the user agent; purely cosmetic. */
+  function deviceLabel(){
+    try{
+      var ua = '';
+      if(typeof navigator!=='undefined' && navigator.userAgent)
+        ua = String(navigator.userAgent);
+      var m = ua.match(/\(([^)]*)\)/);
+      var inside = m ? m[1] : '';
+      var parts = inside.split(';');
+      var model = '';
+      for(var i=parts.length-1;i>=0;i--){
+        var p = parts[i].trim();
+        if(p && !/^(android|linux)/i.test(p)){ model = p; break; }
+      }
+      return slug(model || 'player').substring(0,24) || 'player';
+    }catch(e){}
+    return 'player';
+  }
+
+  /* Device/app info sent with every bundle — helps Mollie tell
+     whose phone a report came from. No identifiers, no accounts. */
+  function deviceInfo(){
+    var info = { label: deviceLabel() };
+    try{
+      if(typeof navigator!=='undefined'){
+        info.userAgent = String(navigator.userAgent||'');
+        info.platform = String(navigator.platform||'');
+        info.language = String(navigator.language||'');
+      }
+    }catch(e){}
+    return info;
+  }
+
+  /* ---------- configuration ---------- */
 
   function cfg(){
     try{
@@ -107,22 +161,33 @@ window.GitHubReports = (function(){
     return {};
   }
 
-  /* Token resolution order: browser storage first (private),
-     github-config.js second. Empty string = not configured. */
-  function getToken(){
+  function isEnabled(){
+    try{ return cfg().enabled !== false; }catch(e){ return true; }
+  }
+
+  /* The relay address, "" until Joshua's one-time setup is done
+     and Mollie pastes the deployed /exec URL into the config. */
+  function relayUrl(){
     try{
-      var t = null;
-      if(typeof localStorage!=='undefined')
-        t = localStorage.getItem('sa_github_token');
-      if(t) return t;
-      var c = cfg();
-      if(c && c.token) return String(c.token);
+      var u = cfg().REPORT_RELAY_URL;
+      if(typeof u==='string' && /^https:\/\//i.test(u.trim()))
+        return u.trim();
     }catch(e){}
     return '';
   }
 
-  function isEnabled(){
-    try{ return cfg().enabled !== false; }catch(e){ return true; }
+  function clientTag(){
+    try{
+      var t = cfg().REPORT_CLIENT_TAG;
+      if(typeof t==='string' && t) return t;
+    }catch(e){}
+    return 'surviving-adamsville-game';
+  }
+
+  /* A sending path exists only when sending is enabled AND the
+     relay address has been filled in. */
+  function isConfigured(){
+    return isEnabled() && !!relayUrl();
   }
 
   function flushMs(){
@@ -145,9 +210,8 @@ window.GitHubReports = (function(){
 
   var queue = [];          // pending report objects
   var flushing = false;    // re-entrancy guard
-  var lastFlush = null;    // ISO string of last successful flush
+  var lastFlush = null;    // ISO string of last successful send
   var lastError = null;    // last failure reason (for status())
-  var flushSeq = 0;        // guarantees unique filenames
 
   /* Queue one report. type: short slug-ish string. details: anything
      JSON-serializable (object preferred). */
@@ -166,96 +230,80 @@ window.GitHubReports = (function(){
     }catch(e){ /* diagnostics never break the game */ }
   }
 
-  /* ---------- GitHub Contents API ---------- */
+  /* ---------- the relay send ---------- */
 
-  function apiPut(path, contentB64, message, keepalive){
-    var c = cfg();
-    var repo = c.repo || 'kingmarkarnold-code/adamsville-play';
-    var url = 'https://api.github.com/repos/'+repo+'/contents/'+path;
-    var headers = {
-      'Accept': 'application/vnd.github+json',
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer '+getToken()
-    };
-    var body = JSON.stringify({
-      message: message,
-      content: contentB64
-    });
-    var opts = { method:'PUT', headers:headers, body:body };
-    if(keepalive){ try{ opts.keepalive = true; }catch(e){} }
-    return fetch(url, opts).then(function(resp){
-      if(!resp.ok)
-        throw new Error('GitHub API '+resp.status);
-      return resp.json();
-    });
-  }
-
-  /* Upload the whole queue, grouped by type: one file per type per
-     flush. Returns a Promise. Never rejects — failures are recorded
-     in lastError and the queue is kept for the next retry. */
+  /* POST the whole queue to the relay as ONE JSON bundle.
+     Returns a Promise. Never rejects — failures are recorded in
+     lastError and the queue is kept whole for the next retry.
+     keepalive: true for the page-hide send (see header: with
+     no-cors the browser cannot show us the relay's reply, so a
+     resolved send means Google accepted the delivery). */
   function flush(keepalive){
     if(flushing) return Promise.resolve(false);
     if(!isEnabled()) return Promise.resolve(false);
-    if(!getToken()) return Promise.resolve(false);  // not configured: silent
     if(queue.length===0) return Promise.resolve(false);
+    var url = relayUrl();
+    if(!url){
+      // Relay not set up yet: stay silent, keep every report queued.
+      lastError = 'relay not configured';
+      return Promise.resolve(false);
+    }
     flushing = true;
 
-    var groups = {};   // type -> [reports]
     var items = queue.splice(0, queue.length);
-    for(var i=0;i<items.length;i++){
-      var t = items[i].type || 'report';
-      (groups[t] = groups[t] || []).push(items[i]);
+    var bundle;
+    try{
+      bundle = JSON.stringify({
+        clientTag: clientTag(),
+        app: 'Surviving Adamsville',
+        repo: String(cfg().repo || 'kingmarkarnold-code/adamsville-play'),
+        sentAt: new Date().toISOString(),
+        bundleStamp: fileTs(),
+        session: sessionId,
+        device: deviceInfo(),
+        count: items.length,
+        reports: items
+      });
+    }catch(e){
+      // Could not even build the bundle: put the reports back.
+      queue = items.concat(queue);
+      flushing = false;
+      lastError = 'bundle serialize failed';
+      return Promise.resolve(false);
     }
 
-    var c = cfg();
-    var dir = (c.reportsDir || 'reports').replace(/^\/+|\/+$/g,'') || 'reports';
-    var stamp = fileTs();
-    flushSeq++;
-    var seq = flushSeq;
-    var types = Object.keys(groups);
-    var chain = Promise.resolve(true);
+    var opts = {
+      method: 'POST',
+      // text/plain + no-cors: the only combination an Apps Script
+      // web app accepts from a browser without a CORS preflight
+      // (which Apps Script cannot answer). Body is still JSON text.
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: bundle,
+      mode: 'no-cors'
+    };
+    if(keepalive){ try{ opts.keepalive = true; }catch(e){} }
 
-    types.forEach(function(t, idx){
-      chain = chain.then(function(){
-        var payload;
-        try{
-          payload = JSON.stringify({
-            app: 'Surviving Adamsville',
-            reportType: t,
-            exportedAt: new Date().toISOString(),
-            session: sessionId,
-            count: groups[t].length,
-            reports: groups[t]
-          });
-        }catch(e){
-          payload = '{"error":"serialize failed"}';
-        }
-        if(payload.length > 50000)   // sanity cap per file
-          payload = payload.substring(0,50000)+'...[truncated]';
-        var b64 = b64encodeUtf8(payload);
-        if(!b64) throw new Error('base64 encode failed');
-        var path = dir+'/'+stamp+'-'+t+(seq>1?'-'+seq:'')+
-          (idx>0?'-'+idx:'')+'.json';
-        return apiPut(path, b64,
-          'Game report: '+t+' ('+groups[t].length+') @ '+stamp,
-          keepalive).then(function(){ return true; });
-      });
-    });
-
-    return chain.then(function(){
+    var sent;
+    try{
+      sent = fetch(url, opts);
+    }catch(e){
+      sent = Promise.reject(e);
+    }
+    return sent.then(function(){
       flushing = false;
       lastFlush = new Date().toISOString();
       lastError = null;
       try{
         if(typeof Report!=='undefined' && Report.setSys)
           Report.setSys('githubReports',
-            { lastFlush:lastFlush, queued:queue.length, ok:true });
+            { lastFlush:lastFlush, queued:queue.length, ok:true,
+              via:'relay' });
       }catch(e){}
       return true;
     }).catch(function(err){
       flushing = false;
-      // Put the batch back at the FRONT so nothing is lost; the
-      // next flush retries. Cap still applies.
+      // Send failed: put the batch back at the FRONT so nothing is
+      // lost; the next flush retries. Cap still applies.
       try{
         queue = items.concat(queue);
         var cap = maxQueue();
@@ -266,7 +314,7 @@ window.GitHubReports = (function(){
         if(typeof Report!=='undefined' && Report.setSys)
           Report.setSys('githubReports',
             { lastFlush:lastFlush, queued:queue.length, ok:false,
-              error:lastError });
+              error:lastError, via:'relay' });
       }catch(e3){}
       return false;
     });
@@ -278,7 +326,7 @@ window.GitHubReports = (function(){
     try{
       if(typeof Report==='undefined' || !Report || hookReport.done) return;
       hookReport.done = true;
-      // Wrap note(): every panel log also queues a GitHub report.
+      // Wrap note(): every panel log also queues a report.
       if(typeof Report.note==='function'){
         var origNote = Report.note;
         Report.note = function(category, msgOrObj){
@@ -287,7 +335,7 @@ window.GitHubReports = (function(){
             var details = (msgOrObj && typeof msgOrObj==='object')
               ? msgOrObj : { message: String(msgOrObj==null?'':msgOrObj) };
             details._category = cat;
-            // Map known categories to the report-type filenames
+            // Map known categories to the report-type names
             // Joshua asked for.
             var type = cat;
             if(cat==='crewinspector') type = 'inspector-finding';
@@ -343,7 +391,7 @@ window.GitHubReports = (function(){
       timerId = setInterval(function(){ flush(false); }, flushMs());
     }catch(e){}
     // Final flush when the page hides or closes. keepalive lets the
-    // PUT survive teardown in modern browsers.
+    // POST survive teardown in modern browsers.
     try{
       var finalFlush = function(){ flush(true); };
       if(typeof document!=='undefined'){
@@ -358,7 +406,7 @@ window.GitHubReports = (function(){
     try{
       if(typeof Report!=='undefined' && Report.setSys)
         Report.setSys('githubReports',
-          { ok:null, queued:0, note:'uploader armed' });
+          { ok:null, queued:0, note:'report sender armed (relay)' });
     }catch(e){}
   }
 
@@ -375,27 +423,18 @@ window.GitHubReports = (function(){
   return {
     queue: queueReport,
     flush: function(){ return flush(false); },
-    setToken: function(t){
-      try{
-        if(typeof localStorage==='undefined') return false;
-        t = String(t||'').trim();
-        if(!t) return false;
-        localStorage.setItem('sa_github_token', t);
-        lastError = null;
-        return true;
-      }catch(e){ return false; }
-    },
-    clearToken: function(){
-      try{
-        if(typeof localStorage!=='undefined')
-          localStorage.removeItem('sa_github_token');
-        return true;
-      }catch(e){ return false; }
-    },
     status: function(){
+      var configured = isConfigured();
       return {
         enabled: isEnabled(),
-        hasToken: !!getToken(),
+        configured: configured,
+        hasRelay: configured,
+        relayUrl: relayUrl(),
+        /* Legacy alias for older callers (index.html's "Send
+           Reports to Mollie" button checks this before sending).
+           It now means "a sending path is configured" — the
+           relay. There is NO token in the game any more. */
+        hasToken: configured,
         queued: queue.length,
         lastFlush: lastFlush,
         lastError: lastError
