@@ -6,9 +6,11 @@
    collapsible dock:
      - Collapsed: single "📋" (Agent Reports) toggle button
      - Expanded: the toggle + all agent buttons in a horizontal row
-   Buttons collected: rc-btn (road crew 🚧), ic-btn (infrastructure 🔧),
-   sf-btn (survey fleet 🗺️), ce-btn (code enforcement 🏢),
-   heli-btn (helicopter 🚁).
+   Buttons collected: sf-btn (survey fleet 🗺️), ce-btn (code
+   enforcement 🏢), heli-btn (helicopter 🚁).
+   (2026-10-24: rc-btn / ic-btn left this list because the buttons
+   themselves are gone — Joshua moved the road + infrastructure
+   crews' reports into the Administrator menu, off the game view.)
    Each module still owns its button and panel — the dock only re-parents
    the button elements and overrides their position CSS. Click handlers,
    panels, and titles are untouched.
@@ -22,7 +24,7 @@ if (window.__agentdock) return;  // single instance
 window.__agentdock = true;
 
 /* The agent button IDs this dock collects, in display order. */
-var AGENT_BTNS = ['rc-btn','ic-btn','sf-btn','ce-btn','heli-btn'];
+var AGENT_BTNS = ['sf-btn','ce-btn','heli-btn'];
 
 var dock=null, toggleBtn=null, tray=null, expanded=false;
 var collected=[];  // {el, origParent}
@@ -85,7 +87,7 @@ function collect(id){
 }
 
 /* Boot poll: agent modules create their buttons on their own schedule.
-   Poll every 500ms until all five are docked (or 60s timeout). */
+   Poll every 500ms until all of them are docked (or 60s timeout). */
 var tries=0;
 function poll(){
   tries++;
@@ -98,8 +100,8 @@ function poll(){
   if (pending===0 || tries>120){
     try{
       if (typeof Report!=='undefined') Report.setSys('agentdock',{
-        status:'ok', version:'1.0',
-        note:'docked '+collected.length+'/5 agent buttons into collapsible group'
+        status:'ok', version:'1.1',
+        note:'docked '+collected.length+'/'+AGENT_BTNS.length+' agent buttons into collapsible group (road/infra crew buttons retired to the Administrator menu 2026-10-24)'
       });
     }catch(e){}
     return;  // done
