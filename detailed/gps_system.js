@@ -54,6 +54,81 @@
         (hooked in index.html) marks the stations that actually stand in
         the world (the traffic system's placed list) as pump badges.
 
+   v1.65 STREET-ROUTING FIX (Joshua 2026-10-24, live test: "the GPS is
+   navigating but it's also allowing you to navigate through fields and
+   grass — it needs to tell you how to turn just like a regular GPS
+   would in real life. It needs to take into account the street layouts
+   and go from there"). Diagnosis (measured in the Node harness against
+   all seven zones' road geometry — see GPS-STREET-ROUTING-FIX notes):
+     - CROSS-ZONE SLASH: the graph covered ONLY the loaded zone, so a
+       pin in another zone routed by streets to the zone edge and then
+       drew ONE straight leg (measured 6,119u to downtown, 11,517u to
+       south Fulton; 20-39% of those routes off-road).
+     - POCKET OVERSHOOT: a destination in a disconnected street pocket
+       (the Cascade/Danforth island, 186 nodes, no link to the main
+       network in the baked data) got a 1,070u straight leg clear to
+       the destination, even though the pocket's own streets run
+       alongside the leg for most of its length.
+     - JUNCTION CHORDS: the drawn line joined consecutive A* hops
+       road-point to road-point; where one junction node aggregates
+       endpoints/crossings up to ~90u apart, the join cut straight
+       across corners and blocks (worst measured cut 52u long, 36u off
+       the road, inside routes labelled 'streets').
+     - SILENT CONNECTORS: the first/last stretch from the player or to
+       the door was drawn with no label, and turns carried no street
+       names at all — guidance never said what to turn ONTO.
+   The fix, in this file:
+     1. LAZY MULTI-ZONE GRAPH — when a pin (or the player) sits in a
+        zone the graph doesn't cover, that zone's roads.json is fetched
+        (MapDelivery store first, then network — the goto.js pattern),
+        its junction graph is built, junctions are stitched across the
+        zone seam with the SAME rules used inside a zone (endpoint
+        clusters 25u, T-joins 14u, front-hemisphere gap bridges 110u,
+        all grade-checked), and the result is merged into G. Zones the
+        straight line crosses are included, so through-routes work.
+        The interim route shows meanwhile and upgrades when the street
+        graph lands (the v1.64 graph-upgrade pattern). Boot is
+        untouched: the current zone still builds exactly as before.
+     2. A* uses a binary heap (same optimal cost; the merged graph can
+        hold 3-4x the nodes and the old array-scan pop got slow).
+     3. POLYLINE TRUTH — pathToPolyline picks the parallel edge that
+        actually belongs to the junction (nearest the node positions)
+        and inserts the junction node's own position between hops, so
+        the line goes THROUGH junctions like a driven route instead of
+        chord-ing across them. Every polyline vertex remembers which
+        road produced it (route.ptRoad).
+     4. HONEST LEGS — endpoint snaps now reach 400u (a house or a
+        station set back from its street still routes along that
+        street); every off-road portion of a route is an explicit,
+        labelled leg (route.legs): 'start' (head to the street),
+        'end' (off-road to the door), 'gap' (the street data does not
+        connect — the route follows streets as far as they go, lands
+        on the destination pocket's nearest street, and follows the
+        pocket's streets in; only the true data gap is straight).
+     5. TURN-BY-TURN WITH STREET NAMES — instructions come from real
+        turns AND street changes; each names the street being turned
+        onto ("↰ onto Cascade Rd SW · 394 ft", "⬆ Continue on …"),
+        with the placeholder handled gracefully ("onto the next
+        street"). When the next feature is an off-road leg, the band
+        says so instead ("⚠ No street route — direct 0.66 mi").
+     6. NEIGHBOUR RETRY (v1.65.2) — if a route still ends in a gap
+        leg, the destination zone's neighbouring tiles are pulled in
+        once: a pocket that is an island inside its own zone may
+        connect around the back through a neighbour (the Cascade
+        pocket joins the network via South Fulton and then routes
+        all-street the long way around, like a real GPS).
+
+   v1.65.2 also fixes four defects the verify harness caught in the
+   first v1.65 build, each documented at its site: buildGpsRoadIndex
+   silently ignoring the records a zone merge passed it (every merged
+   zone was a second copy of Adamsville); the seam stitch skipping
+   already-folded border ends (zones merged but never joined — fixed
+   by trySeamFold) and its quadratic node rewrite (reverse indexes);
+   fold-centroid waypoints dragging the drawn line off-road and
+   doubling it back in spikes (25u believability bound + anti-spike
+   dedupe); and turn instructions sliding to the sharpest bend of a
+   cluster instead of firing where the maneuver starts.
+
    Documentation comments are required on all game code — Joshua's rule.
    ============================================================================ */
 (function(){
@@ -137,6 +212,14 @@ var guideTarget=null;        // {x,z} lookahead point the arrows aim at
 var guideNextTurn=null;      // next turn ahead {d, idx, ang}, or null
 var guideRemaining=0;        // along-route distance left (u)
 var guideMs=0;               // last guidance computation time (ms)
+/* v1.65 state: the next off-road leg ahead (route.legs entry with
+   dFrom/dTo filled by annotateRoute), and the lazy multi-zone graph
+   extension — which zones' roads are merged into G, whether an
+   extension fetch/build is in flight, and the pin waiting on it. */
+var guideLeg=null;           // next off-road leg ahead, or null
+var graphZones=[];           // zone ids whose roads are IN G (own graph)
+var graphExtending=false;    // a zone extension is being fetched/built
+var pendingDest=null;        // {x,z,name} the in-flight extension serves
 
 /* ---------------------------------------------------------------------------
    fmtDist(u) — PLAYER-FACING distance text (Joshua's orders 2026-10-24:
@@ -236,9 +319,15 @@ function buildRoutingGraph(roads, jx){
 /* buildGpsRoadIndex() — arc-length tables over every roadDrawData entry.
    Record shape matches the traffic road index ({r, cum, len, name, cat,
    w}) so the graph builders below can share one shape. */
-function buildGpsRoadIndex(){
+function buildGpsRoadIndex(srcOpt){
   var idx=[];
-  var src=(typeof roadDrawData!=='undefined')?roadDrawData:[];
+  /* srcOpt: an explicit record array (zone extension builds). The
+     original signature took no argument and always read the global
+     roadDrawData — a zone merge that passed its records in had them
+     silently ignored and re-indexed the boot zone instead (v1.65.2
+     fix, caught by the verify harness: every "merged" zone was a
+     second copy of Adamsville). */
+  var src=srcOpt||((typeof roadDrawData!=='undefined')?roadDrawData:[]);
   for (var i=0;i<src.length;i++){
     var r=src[i];
     if (!r||!r.pts||r.pts.length<2||!r.ys||r.ys.length!==r.pts.length) continue;
@@ -533,34 +622,601 @@ function buildOwnGraph(){
     var prevRoute=route;
     G=g2; graphSource='own'; ownGraphBuilt=true;
     buildNodeGrid(G.nodePos);
+    /* v1.65: remember which zone this graph covers, so a pin in
+       another zone can extend it (see ensureGraphForRoute). The player
+       is standing in the loaded zone by definition; if that lookup
+       ever fails, fall back to the middle of the road extents. */
+    var bootZone=zoneOfPoint(playerPos().x, playerPos().z);
+    if (!bootZone && idx.length){
+      var bx0=1e18, bx1=-1e18, bz0=1e18, bz1=-1e18;
+      for (var bi=0;bi<idx.length;bi++){
+        var bp=idx[bi].r.pts[0];
+        if (bp[0]<bx0) bx0=bp[0]; if (bp[0]>bx1) bx1=bp[0];
+        if (bp[1]<bz0) bz0=bp[1]; if (bp[1]>bz1) bz1=bp[1];
+      }
+      bootZone=zoneOfPoint((bx0+bx1)/2, (bz0+bz1)/2);
+    }
+    graphZones=bootZone?[bootZone]:[];
     try{
       var edgeCount=0, ks=Object.keys(G.adj);
       for (var i=0;i<ks.length;i++) edgeCount+=G.adj[ks[i]].length;
       if (typeof Report!=='undefined') Report.setSys('gps',{status:'ok',
-        version:'1.64', nodes:G.nNodes, edges:Math.round(edgeCount/2),
-        isolatedRoads:G.nIsolated, source:'own',
+        version:'1.65.2', nodes:G.nNodes, edges:Math.round(edgeCount/2),
+        isolatedRoads:G.nIsolated, source:'own', zones:graphZones.slice(),
         junctionBuildMs:jx.buildMs, crossings:jx.nCross,
         gapBridges:jx.nGap||0,
-        note:'GPS graph from roadDrawData (traffic-independent); routes follow streets'});
+        note:'GPS graph from roadDrawData (traffic-independent); routes follow streets; other zones merge in lazily on cross-zone pins'});
     }catch(e){}
     if (prevRoute){
-      var res=computeRoute(prevRoute.destX, prevRoute.destZ,
-                           prevRoute.destName, playerPos());
-      if (res && res.route){
-        var wasDirect=(prevRoute.quality==='direct');
-        route=res.route; route.quality=res.quality;
-        annotateRoute(route);
-        guideIdx=0; guideProg=0; offRouteCount=0; lastRouteSetAt=Date.now();
-        rebuildRouteMesh();
-        if (wasDirect && res.quality!=='direct'){
-          try{ showToast('\uD83E\uDDED Route updated — now following the streets', 2200); }catch(e){}
-        }
-      }
+      rerouteActiveDest(prevRoute.quality);
     }
+    /* v1.65: a pin placed while only the traffic graph (or no graph)
+       existed may target a zone this graph doesn't cover either —
+       extend now that the own graph is the base. */
+    maybeExtendForRoute();
   }catch(e){
     ownGraphFailed=true;
     try{ if(typeof Report!=='undefined') Report.noteError('gps','own graph build failed',String(e&&e.message||e)); }catch(x){}
   }
+}
+
+/* ---------------------------------------------------------------------------
+   rerouteActiveDest(prevQuality) — recompute the active route on the
+   current graph (used when the graph changes under a live pin: the own
+   graph landing, or a zone extension merging in). Announces only an
+   IMPROVEMENT, so upgrades feel like the GPS catching up, not nagging.
+   --------------------------------------------------------------------------- */
+function rerouteActiveDest(prevQuality){
+  if (!route) return;
+  var res=computeRoute(route.destX, route.destZ, route.destName, playerPos());
+  if (!res || !res.route) return;
+  route=res.route; route.quality=res.quality;
+  annotateRoute(route);
+  guideIdx=0; guideProg=0; offRouteCount=0; lastRouteSetAt=Date.now();
+  rebuildRouteMesh();
+  var improved=(prevQuality==='direct' && res.quality!=='direct') ||
+               (prevQuality==='partial' && res.quality==='streets');
+  if (improved){
+    try{ showToast('\uD83E\uDDED Route updated — now following the streets', 2200); }catch(e){}
+  }
+  try{ if (typeof Report!=='undefined') Report.note('gps',
+    'route recomputed on graph change: '+Math.round(route.dist)+
+    'u, quality '+res.quality); }catch(e){}
+}
+
+/* ===========================================================================
+   v1.65 LAZY MULTI-ZONE GRAPH — the boot graph covers the loaded zone
+   (roadDrawData). A pin in another zone used to fall to a straight leg
+   kilometres long. Now the graph EXTENDS on demand: the needed zones'
+   roads.json are fetched (MapDelivery's local store first, then the
+   network — the same discipline goto.js uses for cross-zone landings),
+   each zone's junction graph is built with the same builder, junctions
+   are stitched across the seam, and everything merges into G. Boot
+   cost is unchanged; a cross-zone pin pays a one-off fetch+build per
+   new zone per session, with the interim route on screen meanwhile.
+   =========================================================================== */
+/* Zone rectangles — fallback copy of zoneloader.js's ZONE_BOUNDS (the
+   live ZONEUNLOCK.zoneAt() is preferred whenever it is loaded). */
+var GPS_ZONE_RECTS={
+  'mableton':    {xMin:-7480.585387323972, xMax:-832.1294014084006,  zMin:-4248.536971831284, zMax:8266.53697183079},
+  'adamsville':  {xMin:-832.1294014084006,  xMax:8377.129401408598,  zMin:-4248.536971831284, zMax:8266.53697183079},
+  'downtown':    {xMin:8377.129401408598,   xMax:16314.485035211088, zMin:-4248.536971831284, zMax:2555.720070422735},
+  'eastatlanta': {xMin:8377.129401408598,   xMax:16314.485035211088, zMin:2555.720070422735,  zMax:8266.53697183079},
+  'unioncity':   {xMin:-7480.585387323972, xMax:-832.1294014084006,  zMin:8266.53697183079,   zMax:30877.519366197153},
+  'southfulton': {xMin:-832.1294014084006,  xMax:8377.129401408598,  zMin:8266.53697183079,   zMax:30877.519366197153},
+  'riverdale':   {xMin:8377.129401408598,   xMax:16314.485035211088, zMin:8266.53697183079,   zMax:30877.519366197153}
+};
+function zoneOfPoint(x, z){
+  try{
+    if (typeof ZONEUNLOCK!=='undefined' && ZONEUNLOCK && ZONEUNLOCK.zoneAt){
+      var id=ZONEUNLOCK.zoneAt(x, z);
+      if (id) return id;
+    }
+  }catch(e){}
+  for (var k in GPS_ZONE_RECTS){
+    var r=GPS_ZONE_RECTS[k];
+    if (x>=r.xMin && x<=r.xMax && z>=r.zMin && z<=r.zMax) return k;
+  }
+  return null;
+}
+/* zonesNeededFor(from, dest) — the zones a street route between the
+   two points may need: both endpoint zones plus every zone the
+   straight line between them crosses (sampled every 100u — the zone
+   tiles are thousands of units wide, so a crossed zone can't hide). */
+function zonesNeededFor(from, dest){
+  var set={}, out=[];
+  function add(x, z){
+    var id=zoneOfPoint(x, z);
+    if (id && !set[id]){ set[id]=1; out.push(id); }
+  }
+  add(from.x, from.z); add(dest.x, dest.z);
+  var d=Math.hypot(dest.x-from.x, dest.z-from.z);
+  var steps=Math.max(1, Math.ceil(d/100));
+  for (var i=1;i<steps;i++)
+    add(from.x+(dest.x-from.x)*i/steps, from.z+(dest.z-from.z)*i/steps);
+  return out;
+}
+/* fetchZoneRoadsText(zid) — the zone's roads.json, local map store
+   first (MapDelivery.serveText — which resolves null on a miss), then
+   a plain cache-busted fetch. Mirrors goto.js's fetchZoneText. */
+function fetchZoneRoadsText(zid){
+  var path='zones/'+zid+'/roads.json';
+  function network(){
+    var v='';
+    try{ v=window.__MAPVER||''; }catch(e){}
+    var url=path+(v?('?v='+encodeURIComponent(v)):'');
+    return fetch(url, {cache:'no-store'}).then(function(r){
+      if (!r || !r.ok) throw new Error(path+' — HTTP '+(r&&r.status));
+      return r.text();
+    });
+  }
+  try{
+    if (typeof MapDelivery!=='undefined' && MapDelivery.serveText){
+      return MapDelivery.serveText(path).then(function(t){
+        return (t!==null && t!==undefined)? t : network();
+      }, function(){ return network(); });
+    }
+  }catch(e){}
+  return network();
+}
+/* flattenZoneRoads(data) — a zone roads.json ({class: [records]}) in
+   the roadDrawData record shape buildGpsRoadIndex consumes. */
+function flattenZoneRoads(data){
+  var out=[];
+  var W={interstate:34, highway:22, major_artery:20, minor_artery:18.4, local:7.2};
+  try{
+    if (typeof ROAD_WIDTHS!=='undefined' && ROAD_WIDTHS) W=ROAD_WIDTHS;
+  }catch(e){}
+  for (var k in data){
+    var arr=data[k]; if (!arr) continue;
+    for (var i=0;i<arr.length;i++){
+      var r=arr[i];
+      out.push({pts:r.pts, ys:r.ys, name:r.name, cat:k, w:W[k]||10});
+    }
+  }
+  return out;
+}
+/* stitchZoneJunctions(idx, jx) — join junctions ACROSS a zone seam in
+   a combined index/junction structure (the per-zone builders only
+   ever saw their own zone's geometry, so a street clipped at the
+   boundary has its two halves in different junction graphs). Only
+   road ends that are connected to NOTHING are attempted, with the
+   builder's own rules in the builder's order: endpoint clusters
+   (25u, grade-checked, merging any pre-existing nodes the two sides
+   already assigned), endpoint-on-segment T-joins (14u), then
+   front-hemisphere gap bridges (110u). Returns the stitch count. */
+function stitchZoneJunctions(idx, jx, roadOff){
+  var JX_GRADE=3;
+  var nodes=jx.nodes, endNode=jx.endNode, crossByRoad=jx.crossByRoad;
+  var NCELL=40, ngrid={};
+  function nKey(x,z){ return Math.floor(x/NCELL)+','+Math.floor(z/NCELL); }
+  function nodeAdd(N){
+    var ni=nodes.length; nodes.push(N);
+    var k=nKey(N.x,N.z); (ngrid[k]=ngrid[k]||[]).push(ni);
+    return ni;
+  }
+  nodes.forEach(function(N, ni){
+    var k=nKey(N.x,N.z); (ngrid[k]=ngrid[k]||[]).push(ni);
+  });
+  function nodeNear(x, z, r){
+    var gx=Math.floor(x/NCELL), gz=Math.floor(z/NCELL), R=Math.ceil(r/NCELL);
+    for (var ix=gx-R;ix<=gx+R;ix++) for (var iz=gz-R;iz<=gz+R;iz++){
+      var a=ngrid[ix+','+iz]; if(!a) continue;
+      for (var i=0;i<a.length;i++){
+        var N=nodes[a[i]], dx=N.x-x, dz=N.z-z;
+        if (dx*dx+dz*dz<r*r) return a[i];
+      }
+    }
+    return -1;
+  }
+  function roadSegT(R,s,t){ return R.cum[s]+t*((R.cum[s+1]-R.cum[s])||0); }
+  function segYat(R,s,t){ var ys=R.r.ys; return ys[s]+(ys[s+1]-ys[s])*t; }
+  /* segment grid over the combined index */
+  var SCELL=100, sgrid={};
+  idx.forEach(function(R, ri){
+    var pts=R.r.pts;
+    for (var s=0;s<pts.length-1;s++){
+      var a=pts[s], b=pts[s+1];
+      var x0=Math.floor(Math.min(a[0],b[0])/SCELL),
+          x1=Math.floor(Math.max(a[0],b[0])/SCELL),
+          z0=Math.floor(Math.min(a[1],b[1])/SCELL),
+          z1=Math.floor(Math.max(a[1],b[1])/SCELL);
+      for (var gx=x0;gx<=x1;gx++) for (var gz=z0;gz<=z1;gz++){
+        var k=gx+','+gz; (sgrid[k]=sgrid[k]||[]).push({ri:ri,s:s});
+      }
+    }
+  });
+  /* road ends + an ends grid for cluster lookups */
+  var ends=[];
+  idx.forEach(function(R, ri){
+    for (var e=0;e<2;e++){
+      var p=R.r.pts[e===0?0:R.r.pts.length-1];
+      ends.push({ri:ri, end:e, x:p[0], z:p[1],
+                 y:(R.r.ys?R.r.ys[e===0?0:R.r.ys.length-1]:0)});
+    }
+  });
+  var ECELL=50, egrid={};
+  ends.forEach(function(E){
+    var k=Math.floor(E.x/ECELL)+','+Math.floor(E.z/ECELL);
+    (egrid[k]=egrid[k]||[]).push(E);
+  });
+  function endConnected(ri, e){
+    if (endNode[ri+':'+e]!==undefined) return true;
+    var R=idx[ri], list=crossByRoad[ri]||[];
+    var segSpan=(e===0)? (R.cum[1]-R.cum[0]) : (R.len-R.cum[R.cum.length-2]);
+    for (var i=0;i<list.length;i++){
+      var dEnd=(e===0)? list[i].segT : (R.len-list[i].segT);
+      if (dEnd<=segSpan+15) return true;
+    }
+    return false;
+  }
+  /* rewriteNode(loser, winner) — two zone builds may have assigned
+     DIFFERENT nodes to what is physically one seam junction; folding
+     the loser into the winner (every endNode + cross reference) is
+     what actually joins the two halves for A*. Folds go through
+     reverse indexes (node -> its end keys / cross entries) built
+     once here: rescanning the whole junction graph per fold is
+     quadratic — with thousands of seam folds a merge took minutes
+     (measured in the harness; v1.65.2 fix). Assignments made during
+     this stitch register through regEnd/regCross so the indexes
+     stay truthful. */
+  var endsByNode={}, crossByNode={};
+  for (var k0 in endNode){
+    var n0=endNode[k0];
+    (endsByNode[n0]=endsByNode[n0]||[]).push(k0);
+  }
+  crossByRoad.forEach(function(list){
+    list.forEach(function(en){
+      (crossByNode[en.node]=crossByNode[en.node]||[]).push(en);
+    });
+  });
+  function regEnd(k, n){
+    endNode[k]=n;
+    (endsByNode[n]=endsByNode[n]||[]).push(k);
+  }
+  function regCross(ri, en){
+    crossByRoad[ri].push(en);
+    (crossByNode[en.node]=crossByNode[en.node]||[]).push(en);
+  }
+  function rewriteNode(loser, winner){
+    if (loser===winner) return;
+    var ek=endsByNode[loser]||[];
+    ek.forEach(function(k){ endNode[k]=winner; });
+    if (ek.length){
+      (endsByNode[winner]=endsByNode[winner]||[]).push.apply(
+        endsByNode[winner], ek);
+      endsByNode[loser]=[];
+    }
+    var ce=crossByNode[loser]||[];
+    ce.forEach(function(en){ en.node=winner; });
+    if (ce.length){
+      (crossByNode[winner]=crossByNode[winner]||[]).push.apply(
+        crossByNode[winner], ce);
+      crossByNode[loser]=[];
+    }
+  }
+  function tryCluster(E){
+    var gx=Math.floor(E.x/ECELL), gz=Math.floor(E.z/ECELL), group=[E];
+    for (var ix=gx-1;ix<=gx+1;ix++) for (var iz=gz-1;iz<=gz+1;iz++){
+      var arr=egrid[ix+','+iz]; if(!arr) continue;
+      for (var i=0;i<arr.length;i++){
+        var B=arr[i]; if (B===E) continue;
+        var dx=B.x-E.x, dz=B.z-E.z;
+        if (dx*dx+dz*dz>25*25) continue;
+        if (Math.abs(B.y-E.y)>JX_GRADE) continue;
+        group.push(B);
+      }
+    }
+    if (group.length<2) return false;
+    var winner=-1, sx=0, sz=0, sy=0;
+    group.forEach(function(B){
+      sx+=B.x; sz+=B.z; sy+=B.y;
+      var en=endNode[B.ri+':'+B.end];
+      if (en!==undefined && winner<0) winner=en;
+    });
+    if (winner<0){
+      winner=nodeNear(sx/group.length, sz/group.length, 25);
+      if (winner<0)
+        winner=nodeAdd({x:sx/group.length, z:sz/group.length,
+                        y:sy/group.length, kind:'stitch'});
+    }
+    group.forEach(function(B){
+      var k=B.ri+':'+B.end, en=endNode[k];
+      if (en===undefined) regEnd(k, winner);
+      else if (en!==winner) rewriteNode(en, winner);
+    });
+    return true;
+  }
+  function tryTee(E){
+    var gx=Math.floor(E.x/SCELL), gz=Math.floor(E.z/SCELL), best=null;
+    for (var ix=gx-1;ix<=gx+1;ix++) for (var iz=gz-1;iz<=gz+1;iz++){
+      var arr=sgrid[ix+','+iz]; if(!arr) continue;
+      for (var i=0;i<arr.length;i++){
+        var sg=arr[i]; if (sg.ri===E.ri) continue;
+        var R=idx[sg.ri], a=R.r.pts[sg.s], b=R.r.pts[sg.s+1];
+        var abx=b[0]-a[0], abz=b[1]-a[1], L2=abx*abx+abz*abz;
+        if (L2<1e-6) continue;
+        var t=((E.x-a[0])*abx+(E.z-a[1])*abz)/L2;
+        if (t<0||t>1) continue;
+        var px=a[0]+abx*t, pz=a[1]+abz*t;
+        var dx=E.x-px, dz=E.z-pz, d2=dx*dx+dz*dz;
+        if (d2>14*14) continue;
+        if (Math.abs(segYat(R,sg.s,t)-E.y)>JX_GRADE) continue;
+        if (!best || d2<best.d2)
+          best={ri:sg.ri, s:sg.s, t:t, x:px, z:pz, y:segYat(R,sg.s,t), d2:d2};
+      }
+    }
+    if (!best) return false;
+    var ni=nodeNear(best.x, best.z, 25);
+    if (ni<0) ni=nodeAdd({x:best.x, z:best.z, y:best.y, kind:'stitch'});
+    regEnd(E.ri+':'+E.end, ni);
+    regCross(best.ri, {segT:roadSegT(idx[best.ri],best.s,best.t),
+                               node:ni});
+    return true;
+  }
+  function tryGap(E){
+    var GAP_R=110;
+    var R=idx[E.ri], pts=R.r.pts, ys=R.r.ys;
+    var pi=(E.end===0)?0:pts.length-1, pj=(E.end===0)?1:pts.length-2;
+    var ex=pts[pi][0], ez=pts[pi][1], ey=ys[pi];
+    var hx=ex-pts[pj][0], hz=ez-pts[pj][1];
+    var hl=Math.sqrt(hx*hx+hz*hz); if (hl<0.01) return false; hx/=hl; hz/=hl;
+    var best=null, seenSeg={};
+    var gx=Math.floor(ex/SCELL), gz=Math.floor(ez/SCELL),
+        RR=Math.ceil(GAP_R/SCELL);
+    for (var ix=gx-RR;ix<=gx+RR;ix++) for (var iz=gz-RR;iz<=gz+RR;iz++){
+      var cell=sgrid[ix+','+iz]; if(!cell) continue;
+      for (var ci=0;ci<cell.length;ci++){
+        var sg=cell[ci], key=sg.ri+':'+sg.s;
+        if (seenSeg[key]) continue; seenSeg[key]=1;
+        if (sg.ri===E.ri) continue;
+        var B=idx[sg.ri]; if (!B) continue;
+        var a=B.r.pts[sg.s], b=B.r.pts[sg.s+1]; if (!a||!b) continue;
+        var abx=b[0]-a[0], abz=b[1]-a[1], L2=abx*abx+abz*abz||1;
+        var tt=((ex-a[0])*abx+(ez-a[1])*abz)/L2;
+        tt=Math.max(0, Math.min(1, tt));
+        var qx=a[0]+tt*abx, qz=a[1]+tt*abz;
+        var dx=qx-ex, dz=qz-ez, d2=dx*dx+dz*dz;
+        if (d2>GAP_R*GAP_R || d2<1) continue;
+        var d=Math.sqrt(d2);
+        if ((dx*hx+dz*hz)/d<0) continue;   // front hemisphere only
+        var qy=segYat(B, sg.s, tt);
+        if (Math.abs(qy-ey)>JX_GRADE) continue;
+        if (!best || d<best.d) best={d:d, rj:sg.ri, sj:sg.s, t:tt, x:qx, z:qz, y:qy};
+      }
+    }
+    if (!best) return false;
+    var ni=nodeNear(best.x, best.z, 35);
+    if (ni<0) ni=nodeAdd({x:best.x, z:best.z, y:best.y, kind:'stitch'});
+    regCross(best.rj, {segT:roadSegT(idx[best.rj], best.sj, best.t),
+                               node:ni});
+    regEnd(E.ri+':'+E.end, ni);
+    return true;
+  }
+  /* trySeamFold(E) — THE seam join (v1.65.1). Each zone's own build
+     folds its border ends into its own nodes, so by stitch time both
+     halves of a border crossing are already "connected" — to two
+     DIFFERENT nodes a few units apart, and the endConnected skip
+     below never looks at them. (First version of this stitch missed
+     exactly that: zones merged, zero seams joined, cross-zone routes
+     still fell to the gap fallback.) So: any end whose 25u cluster
+     mixes ends from BOTH sides of the merge (ri below/above roadOff)
+     with two or more distinct assigned nodes gets those nodes folded
+     into one. Groups inside a single side are left exactly as that
+     side's build decided them. */
+  function trySeamFold(E){
+    var gx=Math.floor(E.x/ECELL), gz=Math.floor(E.z/ECELL);
+    var group=[], hasOld=false, hasNew=false, nodesSeen=[], seenN={};
+    for (var ix=gx-1;ix<=gx+1;ix++) for (var iz=gz-1;iz<=gz+1;iz++){
+      var arr=egrid[ix+','+iz]; if(!arr) continue;
+      for (var i=0;i<arr.length;i++){
+        var B=arr[i];
+        var dx=B.x-E.x, dz=B.z-E.z;
+        if (dx*dx+dz*dz>25*25) continue;
+        if (Math.abs(B.y-E.y)>JX_GRADE) continue;
+        group.push(B);
+        if (B.ri<roadOff) hasOld=true; else hasNew=true;
+        var en=endNode[B.ri+':'+B.end];
+        if (en!==undefined && !seenN[en]){ seenN[en]=1; nodesSeen.push(en); }
+      }
+    }
+    if (!hasOld || !hasNew || nodesSeen.length<2) return false;
+    var winner=nodesSeen[0];
+    for (var gi=0;gi<group.length;gi++){
+      if (group[gi].ri<roadOff){
+        var wen=endNode[group[gi].ri+':'+group[gi].end];
+        if (wen!==undefined){ winner=wen; break; }
+      }
+    }
+    nodesSeen.forEach(function(n){ if (n!==winner) rewriteNode(n, winner); });
+    group.forEach(function(B){
+      var k=B.ri+':'+B.end;
+      if (endNode[k]===undefined) regEnd(k, winner);
+    });
+    return true;
+  }
+  var nStitch=0;
+  for (var pass=0; pass<2; pass++){
+    var progressed=false;
+    for (var ei=0;ei<ends.length;ei++){
+      var E=ends[ei];
+      if (trySeamFold(E)){ nStitch++; progressed=true; continue; }
+      if (endConnected(E.ri, E.end)) continue;
+      if (tryCluster(E) || tryTee(E) || tryGap(E)){
+        nStitch++; progressed=true;
+      }
+    }
+    if (!progressed) break;
+  }
+  /* sort + dedupe every cross list, the builder's own final pass */
+  crossByRoad.forEach(function(a, ri){
+    a.sort(function(p,q){ return p.segT-q.segT; });
+    var w=[], last=-1;
+    for (var i=0;i<a.length;i++){
+      if (a[i].node===last) continue;
+      w.push(a[i]); last=a[i].node;
+    }
+    jx.crossByRoad[ri]=w;
+  });
+  return nStitch;
+}
+/* buildZoneIntoGraph(zid, text) — build one fetched zone's junction
+   graph, stitch it against everything already in G, merge, and swap
+   the enlarged graph in atomically. The build runs inside a timeout
+   so the caller (a pin tap) paints its interim route first. */
+function buildZoneIntoGraph(zid, text){
+  return new Promise(function(resolve, reject){
+    setTimeout(function(){
+      try{
+        var data=JSON.parse(text);
+        var idx=buildGpsRoadIndex(flattenZoneRoads(data));
+        if (idx.length<10){
+          reject(new Error('zone '+zid+': only '+idx.length+' usable roads'));
+          return;
+        }
+        var jx=buildGpsJunctionGraph(idx);
+        var roadOff=G.roadsRef.length, nodeOff=G.jx.nodes.length;
+        var cIdx=G.roadsRef.concat(idx);
+        var cNodes=G.jx.nodes.concat(jx.nodes);
+        var cEnd={};
+        for (var k in G.jx.endNode) cEnd[k]=G.jx.endNode[k];
+        Object.keys(jx.endNode).forEach(function(kk){
+          var p=kk.split(':');
+          cEnd[(parseInt(p[0],10)+roadOff)+':'+p[1]]=jx.endNode[kk]+nodeOff;
+        });
+        var cCross=G.jx.crossByRoad.slice();
+        jx.crossByRoad.forEach(function(list){
+          cCross.push(list.map(function(en){
+            return {segT:en.segT, node:en.node+nodeOff};
+          }));
+        });
+        var cJx={nodes:cNodes, endNode:cEnd, crossByRoad:cCross};
+        var nStitch=stitchZoneJunctions(cIdx, cJx, roadOff);
+        var g2=buildRoutingGraph(cIdx, cJx);
+        G=g2; buildNodeGrid(G.nodePos);
+        if (graphZones.indexOf(zid)<0) graphZones.push(zid);
+        try{ if (typeof Report!=='undefined') Report.note('gps',
+          'graph extended with zone '+zid+': +'+idx.length+' roads, '+
+          nStitch+' seam stitches; graph now '+G.nNodes+' nodes, zones '+
+          graphZones.join(',')); }catch(e){}
+        resolve(true);
+      }catch(e){ reject(e); }
+    }, 30);
+  });
+}
+/* ensureGraphForRoute(from, dest) — if a street route between the two
+   points needs zones the graph doesn't have, fetch + build + merge
+   them (async), then recompute the active route on the bigger graph.
+   Returns true when an extension was started (the caller can word its
+   toast as "finding the street route…" instead of a final answer). */
+function ensureGraphForRoute(from, dest){
+  try{
+    if (graphExtending) return false;
+    if (!G || graphSource!=='own'){
+      /* extensions merge into the OWN graph only — force that build
+         first (a pin tap already does this when no graph exists; its
+         completion hook re-enters via maybeExtendForRoute). */
+      try{ buildOwnGraph(); }catch(e){}
+      return graphExtending;
+    }
+    var need=zonesNeededFor(from, dest).filter(function(z){
+      return graphZones.indexOf(z)<0;
+    });
+    if (!need.length) return false;
+    pendingDest={x:dest.x, z:dest.z, name:dest.name};
+    return extendGraphWith(need);
+  }catch(e){
+    graphExtending=false;
+    return false;
+  }
+}
+/* extendGraphWith(need) — fetch + build + merge the named zones into
+   G (sequentially: each merge re-stitches against the growing graph),
+   then recompute the active route on the bigger graph and re-check
+   both extension triggers. Caller has already set pendingDest and
+   verified no extension is running. Returns true (it always starts). */
+function extendGraphWith(need){
+  graphExtending=true;
+  var texts={};
+  var fetches=need.map(function(zid){
+    return fetchZoneRoadsText(zid).then(function(t){ texts[zid]=t; });
+  });
+  Promise.all(fetches).then(function(){
+    var chain=Promise.resolve();
+    need.forEach(function(zid){
+      chain=chain.then(function(){ return buildZoneIntoGraph(zid, texts[zid]); });
+    });
+    return chain;
+  }).then(function(){
+    graphExtending=false; pendingDest=null;
+    rerouteActiveDest(route? route.quality : null);
+    maybeExtendForRoute();
+    maybeGapRetry();
+  }, function(err){
+    graphExtending=false; pendingDest=null;
+    try{ if (typeof Report!=='undefined') Report.noteError('gps',
+      'zone graph extension failed', String(err&&err.message||err)); }catch(e){}
+  });
+  return true;
+}
+/* neighborZonesOf(zid) — zones sharing a tile edge with zid. */
+function neighborZonesOf(zid){
+  var r=GPS_ZONE_RECTS[zid]; if (!r) return [];
+  var out=[];
+  for (var k in GPS_ZONE_RECTS){
+    if (k===zid) continue;
+    var o=GPS_ZONE_RECTS[k];
+    var shareV=(Math.abs(o.xMax-r.xMin)<1 || Math.abs(o.xMin-r.xMax)<1) &&
+               Math.min(o.zMax, r.zMax)>Math.max(o.zMin, r.zMin);
+    var shareH=(Math.abs(o.zMax-r.zMin)<1 || Math.abs(o.zMin-r.zMax)<1) &&
+               Math.min(o.xMax, r.xMax)>Math.max(o.xMin, r.xMin);
+    if (shareV || shareH) out.push(k);
+  }
+  return out;
+}
+/* maybeGapRetry() — v1.65.2 second-stage extension. A route that
+   still ends in a GAP leg means the destination's street pocket is
+   not connected to the player's network IN THE GRAPH SO FAR — but
+   the pocket may join the network around the back, through a
+   NEIGHBOURING zone the straight line never crosses (measured: the
+   Cascade/Danforth pocket is an island inside Adamsville alone, yet
+   connects south into South Fulton; with that zone merged, the same
+   pin routes all-street the long way around — what a real GPS does).
+   So once per destination, when a gap route is showing, pull the
+   destination zone's neighbours in too and recompute. Bounded: one
+   retry per destination point, only while a gap leg is showing. */
+var gapRetryKey=null;
+function maybeGapRetry(){
+  try{
+    if (!route || graphExtending || !G || graphSource!=='own') return false;
+    if (route.quality!=='partial') return false;
+    var hasGap=false;
+    (route.legs||[]).forEach(function(l){ if (l.kind==='gap') hasGap=true; });
+    if (!hasGap) return false;
+    var key=Math.round(route.destX)+','+Math.round(route.destZ);
+    if (gapRetryKey===key) return false;
+    var dz=zoneOfPoint(route.destX, route.destZ);
+    if (!dz) return false;
+    var missing=neighborZonesOf(dz).filter(function(z){
+      return graphZones.indexOf(z)<0;
+    });
+    gapRetryKey=key;   // one retry per destination, whatever happens
+    if (!missing.length) return false;
+    try{ showToast('\uD83E\uDDED Checking the streets around '+
+      (route.destName||'the destination')+' for a way in\u2026', 2400); }catch(e){}
+    pendingDest={x:route.destX, z:route.destZ, name:route.destName};
+    return extendGraphWith(missing);
+  }catch(e){ return false; }
+}
+/* maybeExtendForRoute() — extension check for the ACTIVE route (used
+   after graph swaps, when a pin set earlier may still be waiting for
+   its zones to arrive). */
+function maybeExtendForRoute(){
+  try{
+    if (!route || graphExtending) return;
+    ensureGraphForRoute(playerPos(),
+      {x:route.destX, z:route.destZ, name:route.destName});
+  }catch(e){}
 }
 
 /* ---------------------------------------------------------------------------
@@ -611,16 +1267,50 @@ function astar(start, goal){
     var dx=pos[n].x-gx, dz=pos[n].z-gz;
     return Math.sqrt(dx*dx+dz*dz);
   }
-  var open=[start];           // simple array; graph is small (~2k nodes)
-  var gScore={}, fScore={}, came={}, inOpen={}, closed={};
-  gScore[start]=0; fScore[start]=h(start); inOpen[start]=true;
+  /* v1.65: binary-heap open list (the pre-1.65 linear-scan pop was
+     fine at ~2-6k nodes but seconds-slow on a merged multi-zone
+     graph). Heap entries are IMMUTABLE [f, node] pairs: when a node
+     is improved it is pushed again with its new key, and the stale
+     entry is recognised on pop (its key no longer matches the node's
+     best known f) and skipped. Same optimal cost as before — the
+     Euclidean heuristic is consistent, so a node's first non-stale
+     pop is final. NOTE: score lookups must test for undefined, never
+     `||` — the start node's gScore is legitimately 0, and 0||x is x
+     (that exact slip killed an earlier draft of this rewrite: the
+     search died at the start node and every route fell to direct). */
+  var gScore={}, fScore={}, came={}, closed={};
+  function gOf(n){ return gScore[n]===undefined? 1e18 : gScore[n]; }
+  var heap=[];
+  function hPush(f, n){
+    heap.push([f, n]);
+    var i=heap.length-1;
+    while (i>0){
+      var p=(i-1)>>1;
+      if (heap[p][0]<=heap[i][0]) break;
+      var t=heap[p]; heap[p]=heap[i]; heap[i]=t; i=p;
+    }
+  }
+  function hPop(){
+    var top=heap[0], last=heap.pop();
+    if (heap.length){
+      heap[0]=last;
+      var i=0;
+      for (;;){
+        var l=2*i+1, r=l+1, m=i;
+        if (l<heap.length && heap[l][0]<heap[m][0]) m=l;
+        if (r<heap.length && heap[r][0]<heap[m][0]) m=r;
+        if (m===i) break;
+        var t=heap[m]; heap[m]=heap[i]; heap[i]=t; i=m;
+      }
+    }
+    return top;
+  }
+  gScore[start]=0; fScore[start]=h(start); hPush(fScore[start], start);
   var guard=0;
-  while (open.length && guard++<20000){
-    // pop lowest fScore
-    var bi=0;
-    for (var i=1;i<open.length;i++) if ((fScore[open[i]]||1e18)<(fScore[open[bi]]||1e18)) bi=i;
-    var cur=open.splice(bi,1)[0];
-    inOpen[cur]=false;
+  while (heap.length && guard++<1000000){
+    var topE=hPop(), cur=topE[1];
+    if (closed[cur]) continue;
+    if (topE[0]>(fScore[cur]||1e18)+1e-9) continue;   // stale entry
     if (cur===goal){
       var path=[cur];
       while (came[cur]!==undefined){ cur=came[cur]; path.push(cur); }
@@ -632,10 +1322,10 @@ function astar(start, goal){
     for (var e=0;e<edges.length;e++){
       var nb=edges[e].to;
       if (closed[nb]) continue;
-      var tg=(gScore[cur]||1e18)+edges[e].w;
-      if (!inOpen[nb] || tg<(gScore[nb]||1e18)){
+      var tg=gOf(cur)+edges[e].w;
+      if (tg<gOf(nb)){
         came[nb]=cur; gScore[nb]=tg; fScore[nb]=tg+h(nb);
-        if (!inOpen[nb]){ open.push(nb); inOpen[nb]=true; }
+        hPush(fScore[nb], nb);
       }
     }
   }
@@ -659,34 +1349,81 @@ function roadPointAt(R, segT){
 
 /* ---------------------------------------------------------------------------
    pathToPolyline(nodePath) — expand node hops into a road-following
-   [{x,z}] polyline using each edge's stored road + arc range. Decimates
-   to keep the point count sane for the 3D ribbon + canvas drawing.
+   polyline using each edge's stored road + arc range. Decimates to
+   keep the point count sane for the 3D ribbon + canvas drawing.
+   v1.65 returns {pts, roads}: roads[i] is the roadsRef index that
+   produced pts[i] (-1 for an inserted junction waypoint), which is
+   what turn-by-turn street naming reads.
+   Two truth fixes over the pre-1.65 version:
+     - PARALLEL EDGES: two nodes can be joined by several edges
+       (divided carriageways, duplicate records). The old code drew
+       the FIRST; A* may have costed another. Now the edge whose arc
+       endpoints sit closest to the two node positions wins — the
+       carriageway the junction actually belongs to.
+     - JUNCTION WAYPOINTS: one node can aggregate endpoints and
+       crossings up to ~90u apart (transitive endpoint clustering),
+       so hop N's road point and hop N+1's road point are NOT the
+       same place; joining them directly chorded across corners and
+       blocks (measured: cuts up to ~200u inside 'streets' routes).
+       The node's own position is now inserted between hops whenever
+       it sits off both arc points, so the line travels THROUGH the
+       junction the way a driven route does.
    --------------------------------------------------------------------------- */
 function pathToPolyline(nodePath){
-  var adj=G.adj, roads=(G&&G.roadsRef)||[];
-  var out=[];
-  function pushPt(x,z){
+  var adj=G.adj, roads=(G&&G.roadsRef)||[], pos=G.nodePos;
+  var out=[], outRoad=[];
+  function pushPt(x, z, ri){
     var n=out.length;
     if (n>0){
       var dx=x-out[n-1].x, dz=z-out[n-1].z;
       if (dx*dx+dz*dz<25) return;   // decimate: min 5u spacing
     }
-    out.push({x:x, z:z});
+    out.push({x:x, z:z}); outRoad.push(ri);
   }
+  function pickEdge(a, b){
+    var edges=adj[a]||[], best=null, bestScore=1e18;
+    for (var e=0;e<edges.length;e++){
+      if (edges[e].to!==b) continue;
+      var R=roads[edges[e].ri]; if (!R) continue;
+      var pa=roadPointAt(R, edges[e].tA), pb=roadPointAt(R, edges[e].tB);
+      var score=Math.hypot(pa.x-pos[a].x, pa.z-pos[a].z)+
+                Math.hypot(pb.x-pos[b].x, pb.z-pos[b].z);
+      if (score<bestScore){ bestScore=score; best=edges[e]; }
+    }
+    return best;
+  }
+  var prevEnd=null;   // last point sampled for the previous hop
   for (var i=0;i<nodePath.length-1;i++){
     var a=nodePath[i], b=nodePath[i+1];
-    var edge=null, edges=adj[a]||[];
-    for (var e=0;e<edges.length;e++) if (edges[e].to===b){ edge=edges[e]; break; }
+    var edge=pickEdge(a, b);
     if (!edge) continue;
     var R=roads[edge.ri];
+    if (!R) continue;
+    var first=roadPointAt(R, edge.tA);
+    if (prevEnd){
+      var np=pos[a];
+      var dPrev=Math.hypot(np.x-prevEnd.x, np.z-prevEnd.z);
+      var dNext=Math.hypot(np.x-first.x, np.z-first.z);
+      /* v1.65.2: insert the junction waypoint only when the node's
+         stored position is a believable junction point — more than
+         3u from both arc ends (else it adds nothing) but within 25u
+         of both. Fold centroids can sit 40u+ off the roads they join
+         (phantom folds); detouring to one of those walks the route
+         through grass at the junction, which is the very complaint
+         this build fixes. When the node is a phantom, the two arc
+         ends — both on real road geometry — carry the join. */
+      if (dPrev>3 && dNext>3 && dPrev<=25 && dNext<=25)
+        pushPt(np.x, np.z, -1);
+    }
     var t0=edge.tA, t1=edge.tB, steps=Math.max(2, Math.ceil(Math.abs(t1-t0)/40));
     for (var s=0;s<=steps;s++){
       var t=t0+(t1-t0)*s/steps;
       var p=roadPointAt(R,t);
-      pushPt(p.x, p.z);
+      pushPt(p.x, p.z, edge.ri);
+      if (s===steps) prevEnd=p;
     }
   }
-  return out;
+  return {pts:out, roads:outRoad};
 }
 
 /* ---------------------------------------------------------------------------
@@ -713,9 +1450,14 @@ function playerPos(){
                  always named as such, never dressed up as a route.
    --------------------------------------------------------------------------- */
 function directRoute(x, z, name, from){
+  var d=Math.hypot(x-from.x, z-from.z);
   return {pts:[{x:from.x,z:from.z},{x:x,z:z}], destX:x, destZ:z,
-          destName:name||'Destination',
-          dist:Math.hypot(x-from.x,z-from.z), quality:'direct'};
+          destName:name||'Destination', dist:d, quality:'direct',
+          /* v1.65: even a direct route declares its one off-road leg,
+             so guidance can say "no street route" instead of implying
+             the line is a road. */
+          ptRoad:[-1,-1],
+          legs:[{kind:'gap', fromIdx:0, toIdx:1, len:d, street:null}]};
 }
 
 /* pointRoadSnapG(x, z, maxD) — the closest point on any road in the
@@ -788,9 +1530,25 @@ function pathCost(nodePath){
   }
   return c;
 }
+/* bfsComponent(seeds) — the set of graph nodes reachable from the
+   seed nodes (one connected street network). Used by computeRoute's
+   disconnected-destination plan. */
+function bfsComponent(seeds){
+  var reach={}, stack=[];
+  seeds.forEach(function(n){
+    if (!reach[n]){ reach[n]=1; stack.push(n); }
+  });
+  while (stack.length){
+    var cn=stack.pop(), ce=G.adj[cn]||[];
+    for (var ei=0;ei<ce.length;ei++)
+      if (!reach[ce[ei].to]){ reach[ce[ei].to]=1; stack.push(ce[ei].to); }
+  }
+  return reach;
+}
 function computeRoute(x, z, name, from){
   name=name||'Destination';
   if (!G) return {route:directRoute(x, z, name, from), quality:'direct'};
+  var roads=G.roadsRef;
   var nA=nearestNode(from.x, from.z);
   var nB=nearestNode(x, z, 100000);   // closest graph node, wherever it is
   if (nA<0 || nB<0)
@@ -822,37 +1580,49 @@ function computeRoute(x, z, name, from){
         pz-G.nodePos[nearNode].z), roadRi:-1, segT:0});
     return out;
   }
-  var pSnap=pointRoadSnapG(from.x, from.z, 60);
-  var dSnap=pointRoadSnapG(x, z, 60);
+  /* v1.65: endpoint snaps reach 400u (was 60u). A destination set
+     back from its street — a school parcel, a gas-station lot, a
+     house — used to fall back to its nearest JUNCTION and cut the
+     last stretch straight; now it brackets on its own street and
+     only the final approach is an off-road leg (labelled as one in
+     route.legs). Same for the player's own position. */
+  var pSnap=pointRoadSnapG(from.x, from.z, 400);
+  var dSnap=pointRoadSnapG(x, z, 400);
   var sCands=bracketCands(pSnap, nA, from.x, from.z);
   var gCands=bracketCands(dSnap, nB, x, z);
-  var best=null;
-  for (var si=0;si<sCands.length;si++) for (var gi=0;gi<gCands.length;gi++){
-    var sc=sCands[si], gc=gCands[gi];
-    var path=(sc.node===gc.node)? [sc.node] : astar(sc.node, gc.node);
-    if (!path) continue;
-    var cost=sc.legLen+pathCost(path)+gc.legLen;
-    if (!best || cost<best.cost) best={path:path, sc:sc, gc:gc, cost:cost};
-  }
-  if (!best){
-    /* v1.64.1 REACHABLE-NODE FALLBACK: the destination's road pocket
-       is not connected to the player's network at all (measured on
-       Adamsville: the Cascade/Burton subdivisions have NO road link
-       to the Campbellton/Dollar Mill network — a ~280u roadless band
-       in the baked data; Cascade Road's northern stretch is absent).
-       Faking a street there would be a lie, and a bare straight line
-       wastes the network that DOES reach toward it. So: route by
-       streets to the reachable node CLOSEST to the destination, then
-       one straight final leg — quality 'partial', named as such in
-       the toast. One BFS marks the player's whole component (a few
-       ms), so no repeated failed A* searches. */
-    var reach={}, stack=[];
-    sCands.forEach(function(c){ if (!reach[c.node]){ reach[c.node]=1; stack.push(c.node); } });
-    while (stack.length){
-      var cn=stack.pop(), ce=G.adj[cn]||[];
-      for (var ei=0;ei<ce.length;ei++)
-        if (!reach[ce[ei].to]){ reach[ce[ei].to]=1; stack.push(ce[ei].to); }
+  /* bestPathBetween(fC, tC) — cheapest bracket-to-bracket A* over
+     the candidate pairs; {path, sc, gc, cost} or null. */
+  function bestPathBetween(fC, tC){
+    var best=null;
+    for (var si=0;si<fC.length;si++) for (var gi=0;gi<tC.length;gi++){
+      var sc=fC[si], gc=tC[gi];
+      var path=(sc.node===gc.node)? [sc.node] : astar(sc.node, gc.node);
+      if (!path) continue;
+      var cost=sc.legLen+pathCost(path)+gc.legLen;
+      if (!best || cost<best.cost) best={path:path, sc:sc, gc:gc, cost:cost};
     }
+    return best;
+  }
+  var best=bestPathBetween(sCands, gCands);
+  var pocket=null;   // disconnected-destination plan (see below)
+  if (!best){
+    /* DISCONNECTED-DESTINATION PLAN (v1.65, replacing the v1.64.1
+       reachable-node fallback). The destination's street pocket is
+       not connected to the player's network in the data (measured on
+       Adamsville: the Cascade/Danforth pocket — 186 junction nodes
+       around Cascade Rd SW / Danforth Rd SW — has NO road link to
+       the Campbellton/Dollar Mill network; a roadless band in the
+       baked data). The v1.64.1 fallback drew ONE straight line from
+       the nearest reachable junction clear to the destination —
+       measured 1,070u, most of it alongside the pocket's own
+       streets. Faking a street across the band would be a lie, so
+       now: streets as far as the player's network reaches, ONE
+       straight 'gap' leg that lands on the pocket's street point
+       nearest the network, then the pocket's own streets in to the
+       door. If the destination has no street at all (no snap, or its
+       road carries no junctions), the gap leg runs from the network
+       edge to the destination itself and guidance says so. */
+    var reach=bfsComponent(sCands.map(function(c){ return c.node; }));
     var nearGoal=-1, nearD=Infinity;
     for (var nk in reach){
       var np=G.nodePos[nk];
@@ -860,63 +1630,226 @@ function computeRoute(x, z, name, from){
       if (nd<nearD){ nearD=nd; nearGoal=+nk; }
     }
     if (nearGoal>=0){
-      var sc0=sCands[0], path0=astar(sc0.node, nearGoal);
-      if (path0) best={path:path0, sc:sc0,
-                       gc:{node:nearGoal, legLen:nearD, roadRi:-1, segT:0},
-                       cost:sc0.legLen+pathCost(path0)+nearD};
-      /* quality resolves to 'partial' below on its own: this goal
-         candidate is off-road (roadRi -1) with a leg far over 60u. */
+      var main=null;
+      for (var mi=0;mi<sCands.length;mi++){
+        var mp=(sCands[mi].node===nearGoal)? [nearGoal]
+                                           : astar(sCands[mi].node, nearGoal);
+        if (!mp) continue;
+        var mc=sCands[mi].legLen+pathCost(mp);
+        if (!main || mc<main.cost)
+          main={path:mp, sc:sCands[mi],
+                gc:{node:nearGoal, legLen:0, roadRi:-1, segT:0}, cost:mc};
+      }
+      if (main && dSnap && gCands[0].roadRi>=0){
+        /* the destination pocket's component, and its street point
+           nearest the network edge node */
+        var compD=bfsComponent(gCands.map(function(c){ return c.node; }));
+        var roadSeen={}, land=null;
+        var ngp=G.nodePos[nearGoal];
+        for (var cn in compD){
+          var ce=G.adj[cn]||[];
+          for (var ei2=0;ei2<ce.length;ei2++){
+            var ri2=ce[ei2].ri;
+            if (roadSeen[ri2]) continue; roadSeen[ri2]=1;
+            var R2=roads[ri2]; if (!R2) continue;
+            var pp2=R2.r.pts;
+            for (var si2=0;si2<pp2.length-1;si2++){
+              var a2=pp2[si2], b2=pp2[si2+1];
+              var abx=b2[0]-a2[0], abz=b2[1]-a2[1], L2=abx*abx+abz*abz||1;
+              var tt=((ngp.x-a2[0])*abx+(ngp.z-a2[1])*abz)/L2;
+              tt=Math.max(0, Math.min(1, tt));
+              var qx=a2[0]+tt*abx, qz=a2[1]+tt*abz;
+              var dd=Math.hypot(ngp.x-qx, ngp.z-qz);
+              if (!land || dd<land.d)
+                land={ri:ri2,
+                      segT:R2.cum[si2]+tt*(R2.cum[si2+1]-R2.cum[si2]),
+                      x:qx, z:qz, d:dd};
+            }
+          }
+        }
+        if (land){
+          var landSnap={ri:land.ri, segT:land.segT, d:0, x:land.x, z:land.z};
+          var eCands=bracketCands(landSnap, gCands[0].node, land.x, land.z);
+          var inner=bestPathBetween(eCands, gCands);
+          if (inner) pocket={main:main, land:land, inner:inner};
+        }
+      }
+      if (!pocket && main) pocket={main:main, land:null, inner:null};
     }
   }
-  if (!best)
+  if (!best && !pocket)
     return {route:directRoute(x, z, name, from), quality:'direct'};
-  var pts=[{x:from.x, z:from.z}];
-  if (best.sc.roadRi>=0)
-    pts=pts.concat(sampleRoadPts(best.sc.roadRi, best.sc.snapSegT, best.sc.segT));
-  pts=pts.concat(pathToPolyline(best.path));
-  if (best.gc.roadRi>=0)
-    pts=pts.concat(sampleRoadPts(best.gc.roadRi, best.gc.segT, best.gc.snapSegT));
-  pts.push({x:x, z:z});
-  /* drop consecutive near-duplicate join points (keep first + last) */
-  var clean=[pts[0]];
-  for (var ci=1;ci<pts.length-1;ci++){
-    var lp=clean[clean.length-1];
-    if (Math.hypot(pts[ci].x-lp.x, pts[ci].z-lp.z)>=3) clean.push(pts[ci]);
+  /* ---------- assembly (v1.65) ----------
+     The polyline is built piece by piece so every vertex knows which
+     road produced it (ptRoad, -1 = off-road or a junction waypoint)
+     and every off-road stretch is recorded as an explicit leg:
+       {kind:'start'} player -> his street (street = its name)
+       {kind:'end'}   the street -> the destination's door
+       {kind:'gap'}   across a place the street data does not connect
+     Junction joins pass through the junction node's own position
+     when it sits off the sampled line, so joins don't chord. */
+  var pts=[], ptRoad=[], legs=[];
+  function AP(px, pz, ri){
+    var l=pts[pts.length-1];
+    if (l && Math.hypot(px-l.x, pz-l.z)<3) return pts.length-1;
+    /* v1.65.2 anti-spike: a junction node's stored position can sit
+       BEHIND the arc progress (its fold centroid equals a point the
+       route already sampled a few vertices back). Appending it makes
+       the polyline double back on itself in a 20-30u spike — drawn
+       as a zigzag, measured as wild fake "turns" (a -180° U-turn
+       showed up in annotation). A point within 6u of any of the
+       previous four is a revisit, not progress: skip it. Genuine
+       revisits (a loop route passing a junction again) are many
+       vertices apart and unaffected. */
+    for (var q=Math.max(0, pts.length-5); q<pts.length-1; q++)
+      if (Math.hypot(px-pts[q].x, pz-pts[q].z)<6) return pts.length-1;
+    pts.push({x:px, z:pz}); ptRoad.push(ri); return pts.length-1;
   }
-  clean.push(pts[pts.length-1]);
-  pts=clean;
-  /* quality: streets when both ends joined their roads (or were
-     already at a junction); a straight off-road end leg over 60u
-     makes it partial (e.g. a pin dropped in a park or another zone). */
-  var offLeg=0;
-  if (best.sc.roadRi<0) offLeg=Math.max(offLeg, best.sc.legLen);
-  if (best.gc.roadRi<0) offLeg=Math.max(offLeg, best.gc.legLen);
-  var quality=(offLeg>60)?'partial':'streets';
+  function APF(px, pz, ri){
+    pts.push({x:px, z:pz}); ptRoad.push(ri); return pts.length-1;
+  }
+  function joinVia(node){
+    if (node===undefined || node===null || node<0) return;
+    var np=G.nodePos[node], l=pts[pts.length-1];
+    /* same 25u believability bound as pathToPolyline's waypoints:
+       a phantom fold centroid is not a place the route should visit */
+    if (l){
+      var jd=Math.hypot(np.x-l.x, np.z-l.z);
+      if (jd>3 && jd<=25) AP(np.x, np.z, -1);
+    }
+  }
+  function sampleInto(ri, t0, t1){
+    var sp=sampleRoadPts(ri, t0, t1);
+    for (var i=0;i<sp.length;i++) AP(sp[i].x, sp[i].z, ri);
+  }
+  function pathInto(nodePath){
+    var pp=pathToPolyline(nodePath);
+    for (var i=0;i<pp.pts.length;i++) AP(pp.pts[i].x, pp.pts[i].z, pp.roads[i]);
+  }
+  function roadName(ri){
+    var R=roads[ri];
+    return R? (R.name||null) : null;
+  }
+  function startInto(sc){
+    APF(from.x, from.z, -1);
+    if (sc.roadRi>=0){
+      var sp=roadPointAt(roads[sc.roadRi], sc.snapSegT);
+      var spi=AP(sp.x, sp.z, sc.roadRi);
+      if (pSnap && pSnap.d>2)
+        legs.push({kind:'start', fromIdx:0, toIdx:spi, len:pSnap.d,
+                   street:roadName(sc.roadRi)});
+      sampleInto(sc.roadRi, sc.snapSegT, sc.segT);
+      joinVia(sc.node);
+    } else {
+      var ni=AP(G.nodePos[sc.node].x, G.nodePos[sc.node].z, -1);
+      legs.push({kind:'start', fromIdx:0, toIdx:ni, len:sc.legLen,
+                 street:null});
+    }
+  }
+  function endInto(gc){
+    if (gc.roadRi>=0){
+      joinVia(gc.node);
+      sampleInto(gc.roadRi, gc.segT, gc.snapSegT);
+      var dp=roadPointAt(roads[gc.roadRi], gc.snapSegT);
+      var dpi=AP(dp.x, dp.z, gc.roadRi);
+      var di=APF(x, z, -1);
+      if (dSnap && dSnap.d>2)
+        legs.push({kind:'end', fromIdx:dpi, toIdx:di, len:dSnap.d,
+                   street:roadName(gc.roadRi)});
+    } else {
+      var li=pts.length-1;
+      var di2=APF(x, z, -1);
+      legs.push({kind:'end', fromIdx:li, toIdx:di2, len:gc.legLen,
+                 street:null});
+    }
+  }
+  if (best){
+    startInto(best.sc);
+    pathInto(best.path);
+    endInto(best.gc);
+  } else {
+    startInto(pocket.main.sc);
+    pathInto(pocket.main.path);
+    if (pocket.land){
+      joinVia(pocket.main.gc.node);
+      var lf=pts.length-1;
+      var li2=APF(pocket.land.x, pocket.land.z, pocket.land.ri);
+      legs.push({kind:'gap', fromIdx:lf, toIdx:li2, len:pocket.land.d,
+                 street:null});
+      sampleInto(pocket.land.ri, pocket.land.segT, pocket.inner.sc.segT);
+      joinVia(pocket.inner.sc.node);
+      pathInto(pocket.inner.path);
+      endInto(pocket.inner.gc);
+    } else {
+      var ngp2=G.nodePos[pocket.main.gc.node];
+      var lf2=pts.length-1;
+      var di3=APF(x, z, -1);
+      legs.push({kind:'gap', fromIdx:lf2, toIdx:di3,
+                 len:Math.hypot(x-ngp2.x, z-ngp2.z), street:null});
+    }
+  }
+  /* quality: 'streets' when the whole trip runs on roads except
+     driveway-scale legs (<=60u, the pre-1.65 threshold); any gap leg
+     or longer off-road stretch makes it 'partial', named as such. */
+  var hasGap=false, maxLeg=0;
+  legs.forEach(function(l){
+    if (l.kind==='gap') hasGap=true;
+    if (l.len>maxLeg) maxLeg=l.len;
+  });
+  var quality=hasGap? 'partial' : (maxLeg>60? 'partial' : 'streets');
   var dist=0;
   for (var di=1;di<pts.length;di++)
     dist+=Math.hypot(pts[di].x-pts[di-1].x, pts[di].z-pts[di-1].z);
-  return {route:{pts:pts, destX:x, destZ:z, destName:name, dist:dist,
-                 quality:quality},
+  return {route:{pts:pts, ptRoad:ptRoad, legs:legs, destX:x, destZ:z,
+                 destName:name, dist:dist, quality:quality},
           quality:quality};
 }
 
+/* roadDisplayName(ri) — the name guidance may speak for a road, or
+   null when the record carries no real name (the 'Unnamed St'
+   placeholder and build fallbacks are not names a driver can use;
+   guidance falls back to "the next street" phrasing for those). */
+function roadDisplayName(ri){
+  if (!G || !G.roadsRef) return null;
+  var R=G.roadsRef[ri];
+  if (!R || !R.name) return null;
+  if (R.name==='Unnamed St' || /^road#\d+$/.test(R.name)) return null;
+  return R.name;
+}
+
 /* annotateRoute(rt) — precompute what guidance needs: cumulative
-   distance along the polyline, and the list of real turns. A turn is a
-   direction change of 30°+ measured over a ±20u window (so a curving
-   street doesn't spam micro-turns); turns closer than 45u merge into
-   the sharper one. Guidance reads these — it never recomputes them. */
+   distance along the polyline, the instruction list, and the off-road
+   legs' along-route spans. An instruction is either a real TURN (a
+   direction change of 30°+ measured over a ±20u window, so a curving
+   street doesn't spam micro-turns; turns closer than 30u merge into
+   the sharper one) or a CONTINUE (v1.65: the route changes streets
+   without a bend — a real GPS still names the new street). Every
+   instruction names the street being turned onto, read from the
+   polyline's road attribution (rt.ptRoad): the first attributed road
+   at/after the instruction point. Guidance reads these — it never
+   recomputes them. */
 function annotateRoute(rt){
   var pts=rt.pts, cum=[0];
   for (var i=1;i<pts.length;i++)
     cum.push(cum[i-1]+Math.hypot(pts[i].x-pts[i-1].x, pts[i].z-pts[i-1].z));
   rt.cum=cum; rt.totalDist=cum[cum.length-1]||0;
-  rt.turns=[];
+  var legs=rt.legs||[];
+  legs.forEach(function(l){
+    l.dFrom=cum[Math.min(l.fromIdx, cum.length-1)]||0;
+    l.dTo=cum[Math.min(l.toIdx, cum.length-1)]||0;
+  });
+  var startLeg=null, endLeg=null;
+  legs.forEach(function(l){
+    if (l.kind==='start') startLeg=l;
+    if (l.kind==='end') endLeg=l;
+  });
   function heading(a,b){ return Math.atan2(b.x-a.x, b.z-a.z); }
   function wrapPi(a){
     while (a>Math.PI) a-=2*Math.PI;
     while (a<-Math.PI) a+=2*Math.PI;
     return a;
   }
+  var turns=[];
   for (var j=1;j<pts.length-1;j++){
     var back=j, fwd=j;
     while (back>0 && cum[j]-cum[back]<20) back--;
@@ -924,13 +1857,88 @@ function annotateRoute(rt){
     if (fwd===j || back===j) continue;
     var deg=wrapPi(heading(pts[j],pts[fwd])-heading(pts[back],pts[j]))*180/Math.PI;
     if (Math.abs(deg)<30) continue;
-    var last=rt.turns[rt.turns.length-1];
-    if (last && cum[j]-last.d<45){
-      if (Math.abs(deg)>Math.abs(last.ang)){ last.ang=deg; last.d=cum[j]; last.idx=j; }
+    var last=turns[turns.length-1];
+    if (last && cum[j]-last.d<30){
+      /* v1.65.2: a merged cluster keeps the FIRST bend's position —
+         the instruction must fire where the maneuver STARTS. The
+         pre-1.65.2 rule slid the position to the sharpest bend,
+         which in a junction complex (several bends across ~180u)
+         put the instruction 60-100u past the first deviation, and
+         guidance spoke late. The angle still adopts the sharpest
+         bend in the cluster, so the glyph stays honest. */
+      if (Math.abs(deg)>Math.abs(last.ang)) last.ang=deg;
       continue;
     }
-    rt.turns.push({d:cum[j], idx:j, ang:deg});
+    turns.push({d:cum[j], idx:j, ang:deg});
   }
+  /* suppress "turns" that are really the endpoint connectors (the
+     angle between the player's yard and his street is not a turn,
+     and the door approach is not one either — the legs speak for
+     those stretches). */
+  if (rt.ptRoad){
+    turns=turns.filter(function(t){
+      if (startLeg && t.idx<=startLeg.toIdx) return false;
+      if (endLeg && t.idx>=endLeg.fromIdx) return false;
+      return true;
+    });
+    /* attach street names: the street AFTER the instruction point */
+    function roadAfter(idx){
+      for (var i=idx;i<rt.ptRoad.length;i++)
+        if (rt.ptRoad[i]>=0) return rt.ptRoad[i];
+      return -1;
+    }
+    function roadBefore(idx){
+      for (var i=idx-1;i>=0;i--)
+        if (rt.ptRoad[i]>=0) return rt.ptRoad[i];
+      return -1;
+    }
+    turns.forEach(function(t){
+      var ra=roadAfter(t.idx), rb=roadBefore(t.idx);
+      t.name=(ra>=0)? roadDisplayName(ra) : null;
+      t.streetChange=(ra>=0 && rb>=0 && ra!==rb);
+      t.cont=false;
+    });
+    /* CONTINUE instructions at street changes with no bend */
+    var conts=[], lastRi=-1;
+    for (var ci=0;ci<rt.ptRoad.length;ci++){
+      var ri=rt.ptRoad[ci];
+      if (ri<0) continue;
+      if (lastRi>=0 && ri!==lastRi){
+        var nmNew=roadDisplayName(ri), nmOld=roadDisplayName(lastRi);
+        var inLeg=false;
+        for (var li=0;li<legs.length;li++)
+          if (ci>legs[li].fromIdx && ci<=legs[li].toIdx){ inLeg=true; break; }
+        if (!inLeg && nmNew && nmNew!==nmOld)
+          conts.push({d:cum[ci], idx:ci, ang:0, cont:true,
+                      name:nmNew, streetChange:true});
+      }
+      lastRi=ri;
+    }
+    conts.forEach(function(c){
+      for (var ti=0;ti<turns.length;ti++)
+        if (Math.abs(turns[ti].d-c.d)<45) return;   // a turn covers it
+      turns.push(c);
+    });
+    turns.sort(function(a,b){ return a.d-b.d; });
+  }
+  rt.turns=turns;
+}
+
+/* instructionText(ins, distU) — the guidance band's words for one
+   instruction (v1.65): glyph + the street being turned onto + the
+   distance to it, e.g. "↰ onto Cascade Rd SW · 394 ft". A change onto
+   an unnamed street reads "onto the next street"; a plain bend on a
+   named street still names it; a bend on an unnamed street is just
+   "Turn". Continues read "⬆ Continue on <street>". */
+function instructionText(ins, distU){
+  var d=fmtDist(Math.max(0, distU));
+  if (ins.cont)
+    return '\u2B06 '+(ins.name? ('Continue on '+ins.name) : 'Continue straight')+
+           ' \u00B7 '+d;
+  var g=turnGlyph(ins.ang);
+  if (ins.name) return g+' onto '+ins.name+' \u00B7 '+d;
+  if (ins.streetChange) return g+' onto the next street \u00B7 '+d;
+  return g+' Turn \u00B7 '+d;
 }
 
 /* turnGlyph(angDeg) — GPS-style instruction arrow for a signed turn.
@@ -939,6 +1947,7 @@ function annotateRoute(rt){
    against known turns in the boot harness (see GPS-REWORK-NOTES.md). */
 function turnGlyph(ang){
   var a=Math.abs(ang), left=ang>0;
+  if (a<12) return '\u2B06';                   // straight ⬆ (continues)
   if (a>=150) return left?'\u21A9':'\u21AA';   // U-turn ↩ / ↪
   if (a>=115) return left?'\u21B2':'\u21B3';   // sharp ↲ / ↳
   if (a>=50)  return left?'\u21B0':'\u21B1';   // turn ↰ / ↱
@@ -996,7 +2005,23 @@ function updateGuidance(p){
   for (var k=0;k<turns.length;k++){
     if (turns[k].d>guideProg+15){ guideNextTurn=turns[k]; break; }
   }
-  if (guideNextTurn && (guideNextTurn.d-guideProg)<85){
+  /* v1.65: the next off-road leg ahead, if any — when it is nearer
+     than the next turn, the arrows aim along it and the band speaks
+     for it (a driver about to leave the street network should hear
+     that, not a turn instruction for a junction past the gap). */
+  guideLeg=null;
+  var legs=route.legs||[];
+  for (var li=0;li<legs.length;li++){
+    if ((legs[li].dTo||0)>guideProg+5){ guideLeg=legs[li]; break; }
+  }
+  var legD=guideLeg? (guideLeg.dFrom-guideProg) : Infinity;
+  var turnD=guideNextTurn? (guideNextTurn.d-guideProg) : Infinity;
+  if (guideLeg && legD<turnD){
+    if (guideProg<guideLeg.dFrom-5)
+      guideTarget=pointAtDist(route, guideLeg.dFrom);
+    else
+      guideTarget=pointAtDist(route, Math.min(guideLeg.dTo, guideProg+55));
+  } else if (guideNextTurn && turnD<85){
     var tp=pts[guideNextTurn.idx];
     guideTarget={x:tp.x, z:tp.z};
   } else {
@@ -1020,6 +2045,10 @@ function rerouteNow(){
     fmtDist(route.dist), 2200); }catch(e){}
   try{ if(typeof Report!=='undefined') Report.note('gps',
     'auto-reroute: '+Math.round(route.dist)+'u, quality '+res.quality); }catch(e){}
+  /* v1.65: a reroute can also discover the destination needs zones
+     the graph doesn't have (e.g. the pin predates the extension). */
+  maybeExtendForRoute();
+  maybeGapRetry();
 }
 
 /* setDestination(x, z, name) — route from the player, draw, announce. */
@@ -1047,16 +2076,39 @@ function setDestination(x, z, name){
     var cb=document.getElementById('gps-clear-btn');
     if (cb) cb.style.display='block';
   }catch(e){}
+  /* v1.65: if this pin needs zones the graph doesn't have yet, start
+     the extension now — the toast below then promises the street
+     route is being found instead of presenting the interim answer
+     (streets-to-the-edge plus a straight leg) as final. */
+  var extStarted=false;
+  try{ extStarted=ensureGraphForRoute(from, {x:x, z:z, name:name}); }catch(e){}
   /* Player-facing toast distances via fmtDist — feet under a
      mile, miles over (Joshua 2026-10-24) — the Report.note below stays in raw units (internal). */
   try{
-    if (res.quality==='partial'){
+    if (extStarted && res.quality!=='streets'){
       showToast('\uD83E\uDDED Navigating to '+(route.destName)+
         ' \u2014 '+fmtDist(route.dist)+
-        ' (streets, then direct \u2014 destination past the loaded roads)', 3000);
+        ' (finding the street route\u2026)', 3000);
+    } else if (res.quality==='partial'){
+      var gapLeg=null, maxLeg=0;
+      (route.legs||[]).forEach(function(l){
+        if (l.kind==='gap') gapLeg=l;
+        if (l.len>maxLeg) maxLeg=l.len;
+      });
+      if (gapLeg){
+        showToast('\uD83E\uDDED Navigating to '+(route.destName)+
+          ' \u2014 '+fmtDist(route.dist)+
+          ' (streets as far as they go \u2014 no street connects across a '+
+          fmtDist(gapLeg.len)+' gap in the map data)', 3400);
+      } else {
+        showToast('\uD83E\uDDED Navigating to '+(route.destName)+
+          ' \u2014 '+fmtDist(route.dist)+
+          ' (streets, then '+fmtDist(maxLeg)+' off-road to the door)', 3000);
+      }
     } else if (res.quality==='direct'){
       showToast('\uD83E\uDDF5 Navigating to '+(route.destName)+
-        ' \u2014 '+fmtDist(route.dist)+' (direct)', 2600);
+        ' \u2014 '+fmtDist(route.dist)+
+        ' (direct \u2014 no street route in the map data)', 2600);
     } else {
       showToast('\uD83E\uDDED Navigating to '+(route.destName)+
         ' \u2014 '+fmtDist(route.dist), 2600);
@@ -1065,6 +2117,10 @@ function setDestination(x, z, name){
   try{ if(typeof Report!=='undefined') Report.note('gps',
     'route set: '+(route.destName)+' '+Math.round(route.dist)+'u, '+
     route.pts.length+' pts, quality '+res.quality); }catch(e){}
+  /* v1.65.2: a gap route to a same-zone pocket (nothing for the
+     line-based extension to fetch) still gets its one neighbour
+     retry — the pocket may connect around the back. */
+  maybeGapRetry();
   return true;
 }
 
@@ -1306,24 +2362,39 @@ function debugState(){
     for (var i=0;i<ks.length;i++) ec+=G.adj[ks[i]].length;
   }
   return {
-    version:'1.64',
+    version:'1.65.2',
     graph:G?{source:graphSource, nodes:G.nNodes,
-             edges:Math.round(ec/2), isolated:G.nIsolated}:null,
+             edges:Math.round(ec/2), isolated:G.nIsolated,
+             zones:graphZones.slice(), extending:graphExtending}:null,
     ownBuilt:ownGraphBuilt, ownFailed:ownGraphFailed,
     route:route?{quality:route.quality||'?', dist:Math.round(route.dist),
                  pts:route.pts.length, turns:(route.turns||[]).length,
                  totalDist:Math.round(route.totalDist||0),
                  ptsList:route.pts.map(function(p){
                    return [Math.round(p.x), Math.round(p.z)]; }),
+                 ptRoad:(route.ptRoad||[]).slice(),
+                 legsList:(route.legs||[]).map(function(l){
+                   return {kind:l.kind, fromIdx:l.fromIdx, toIdx:l.toIdx,
+                           len:Math.round(l.len), street:l.street||null,
+                           dFrom:Math.round(l.dFrom||0),
+                           dTo:Math.round(l.dTo||0)}; }),
                  turnsList:(route.turns||[]).map(function(t){
                    return {d:Math.round(t.d), idx:t.idx,
-                           ang:Math.round(t.ang), glyph:turnGlyph(t.ang)}; })}:null,
+                           ang:Math.round(t.ang), glyph:turnGlyph(t.ang),
+                           name:t.name||null, cont:!!t.cont,
+                           streetChange:!!t.streetChange}; })}:null,
     guidance:{prog:Math.round(guideProg),
               off:(guideOff===1e9?-1:Math.round(guideOff)),
               remaining:Math.round(guideRemaining),
               nextTurn:guideNextTurn?{inU:Math.round(guideNextTurn.d-guideProg),
                                       ang:Math.round(guideNextTurn.ang),
-                                      glyph:turnGlyph(guideNextTurn.ang)}:null,
+                                      glyph:turnGlyph(guideNextTurn.ang),
+                                      name:guideNextTurn.name||null,
+                                      text:instructionText(guideNextTurn,
+                                        guideNextTurn.d-guideProg)}:null,
+              nextLeg:guideLeg?{kind:guideLeg.kind,
+                                inU:Math.round(guideLeg.dFrom-guideProg),
+                                len:Math.round(guideLeg.len)}:null,
               target:guideTarget},
     gasStations:(function(){
       try{ return (window.TRAFFIC && window.TRAFFIC.gas) ?
@@ -1352,7 +2423,7 @@ window.GPS={
   drawFullMapRoute:drawFullMapRoute,
   drawFullMapGasStations:drawFullMapGasStations,
   _debug:debugState,
-  version:'1.64'
+  version:'1.65.2'
 };
 // per-frame ticks on the central registry (expert #14); interval fallback
 // when Sim isn't available yet — independent of the graph boot poll.
@@ -1406,7 +2477,7 @@ function initGPS(){
   try{
     var edgeCount=0, ks=Object.keys(G.adj);
     for (var i=0;i<ks.length;i++) edgeCount+=G.adj[ks[i]].length;
-    if (typeof Report!=='undefined') Report.setSys('gps',{status:'ok',version:'1.64',
+    if (typeof Report!=='undefined') Report.setSys('gps',{status:'ok',version:'1.65.2',
       nodes:G.nNodes, edges:Math.round(edgeCount/2), isolatedRoads:G.nIsolated,
       source:'traffic (interim)',
       note:'A* over #7 junction graph; route follows real roads only'});
@@ -1499,9 +2570,28 @@ function hudArrowTick(){
   var rel=bearing-viewYaw;
   if (hudArrowIcon) hudArrowIcon.style.transform='rotate('+(rel*180/Math.PI)+'deg)';
   if (hudArrowTurn){
-    if (guideNextTurn && (guideNextTurn.d-guideProg)<=500){
-      hudArrowTurn.textContent=turnGlyph(guideNextTurn.ang)+' '+
-        fmtDist(Math.max(0, guideNextTurn.d-guideProg));
+    /* v1.65: the band speaks for whichever feature comes first — an
+       off-road leg (named as what it is) or the next instruction
+       (glyph + the street being turned onto + distance). */
+    var featTxt=null;
+    var legD2=guideLeg? (guideLeg.dFrom-guideProg) : Infinity;
+    var turnD2=guideNextTurn? (guideNextTurn.d-guideProg) : Infinity;
+    if (guideLeg && legD2<turnD2 && legD2<=500){
+      var legLeft=Math.max(0, guideLeg.dTo-guideProg);
+      if (guideLeg.kind==='gap'){
+        featTxt='\u26A0 No street route \u2014 direct '+fmtDist(legLeft);
+      } else if (guideLeg.kind==='start'){
+        featTxt='\uD83E\uDDED Head to '+(guideLeg.street||'the street')+
+          (legLeft>15? ' \u00B7 '+fmtDist(legLeft) : '');
+      } else {
+        featTxt='\u26A0 Off-road \u2014 '+(route.destName||'destination')+
+          ' '+fmtDist(legLeft);
+      }
+    } else if (guideNextTurn && turnD2<=500){
+      featTxt=instructionText(guideNextTurn, turnD2);
+    }
+    if (featTxt){
+      hudArrowTurn.textContent=featTxt;
       hudArrowTurn.style.display='block';
     } else {
       hudArrowTurn.style.display='none';
