@@ -55,6 +55,19 @@ VERSION_FILE = DATA_DIR / "version.json"
 WINDOW_FILE = DATA_DIR / "window.json"
 ZONE_EDITS_FILE = DATA_DIR / "zone_edits.json"
 CUSTOM_ZONES_FILE = DATA_DIR / "custom_zones.json"
+# 1.9.12: the staged-baseline sidecar. Every local-cache stage
+# (save_local_cache) records, per repo path, the sha256 of the
+# BASELINE bytes the staged content was derived from — the GitHub
+# bytes the session's edits sit on top of. The download-on-open
+# guard (download_roads) reads it to tell a genuine unpublished
+# edit (staged content differs from a base that is STILL what
+# GitHub holds) apart from a stale cache (the repo moved on after
+# the cache was staged — the staged bytes are simply an old
+# download, and loading them would silently revert the repo's
+# newer data on the next save: the 2026-10-24 incident, where a
+# first save rewrote a whole zone with weeks-old geometry and
+# wiped its grp pairings).
+CACHE_BASELINES_FILE = DATA_DIR / "cache_baselines.json"
 # Legacy 1.8.x files, kept as names only so old code paths that mention
 # them fail soft instead of crashing; 1.9.0 never reads or writes them.
 ROADS_FILE = DATA_DIR / "roads.json"
@@ -474,9 +487,45 @@ def save_local_cache(model):
                       json.dumps(model.zone_edits, indent=2).encode("utf-8"))
         _atomic_write(CUSTOM_ZONES_FILE,
                       json.dumps(model.custom_zones, indent=2).encode("utf-8"))
+        # 1.9.12: record WHICH GitHub bytes this stage is based on
+        # (see CACHE_BASELINES_FILE above). Without this the
+        # download-on-open guard cannot tell unpublished edits
+        # from a stale cache.
+        _write_cache_baselines(model)
         return True, None
     except Exception as e:
         return False, str(e)
+
+
+def _write_cache_baselines(model):
+    """
+    Write the staged-baseline sidecar: {repo path: sha256 of the
+    baseline bytes} for every baseline the model holds. Called by
+    save_local_cache AFTER the staged files are written, so the
+    sidecar always describes the stage it sits beside.
+    """
+    import hashlib
+    doc = {}
+    for path, blob in (model.baselines or {}).items():
+        if blob:
+            doc[path] = hashlib.sha256(blob).hexdigest()
+    _atomic_write(CACHE_BASELINES_FILE,
+                  json.dumps(doc, indent=1).encode("utf-8"))
+
+
+def _read_cache_baselines():
+    """The staged-baseline sidecar as {repo path: sha256 hex};
+    {} when absent (a cache staged before 1.9.12) or unreadable."""
+    try:
+        if CACHE_BASELINES_FILE.exists():
+            doc = json.loads(
+                CACHE_BASELINES_FILE.read_bytes().decode("utf-8"))
+            if isinstance(doc, dict):
+                return {k: v for k, v in doc.items()
+                        if isinstance(v, str)}
+    except Exception:
+        pass
+    return {}
 
 
 def load_local_model():
@@ -593,49 +642,134 @@ LAST_DOWNLOAD_ERROR = None
 # once the load settles. None when the guard did not fire.
 LAST_DOWNLOAD_WARNING = None
 
+# 1.9.12: set by download_roads() when staged cache files were
+# NOT loaded because their base had moved on (a stale cache, not
+# unpublished edits — see _staged_cache_decision). Plain-language
+# text; the app surfaces it like the warning, but it does NOT
+# mark the session unpublished (the fresh download is the truth
+# and nothing local is owed to GitHub). None when nothing stale
+# was found.
+LAST_DOWNLOAD_NOTICE = None
 
-def _staged_unpublished_paths(model):
-    """
-    Repo paths whose STAGED local-cache bytes differ from the just-
-    downloaded model's baselines — i.e. edits that were saved
-    locally (the local-save leg of a round trip stages them) but
-    never reached GitHub. Only files the cache actually stages are
-    compared, byte for byte; a cache file identical to its baseline
-    is a published save, not an unpublished edit.
-    """
-    diffs = []
 
-    def _differs(local_path, repo_path):
-        """True when a staged cache file disagrees with baseline."""
+def _staged_cache_decision(model):
+    """
+    Per-path verdicts for staged local-cache files that differ
+    from the just-downloaded model's baselines (1.9.12 — replaces
+    _staged_unpublished_paths and its all-or-nothing guard).
+
+    A staged file that differs from the fresh baseline is one of
+    two very different things, and the old guard could not tell
+    them apart — it treated BOTH as "unpublished edits" and loaded
+    the whole cache instead of the download:
+
+      * "keep"  — a genuine unpublished edit: the sidecar
+        (CACHE_BASELINES_FILE, written by save_local_cache)
+        records that the staged content was derived from the
+        VERY bytes GitHub still holds, so loading it loses
+        nothing and publishes later as exactly that edit.
+      * "stale" — the repo moved on after the cache was staged
+        (or the cache predates the sidecar, so its base is
+        unknowable): the staged bytes are an OLD DOWNLOAD, not
+        an edit. Loading them re-baselines old data against the
+        new repo, and the next save then pushes the old data
+        over the new — the 2026-10-24 incident (a first save
+        rewrote the adamsville zone wholesale: ~25% of its
+        geometry points gone, its grp pairings wiped).
+
+    A staged file identical to its baseline needs no decision
+    (a published save). A file GitHub does not have yet (no
+    baseline — the editor's own overlay working files) counts as
+    "keep" when it holds real data, unless the sidecar shows it
+    was based on bytes GitHub has since changed/deleted.
+    Returns {repo_path: "keep" | "stale"}.
+    """
+    import hashlib
+    sidecar = _read_cache_baselines()
+
+    def _verdict(local_path, repo_path):
         try:
             if not local_path.exists():
-                return False
+                return None
             blob = local_path.read_bytes()
         except Exception:
-            return False
+            return None
         base = model.baselines.get(repo_path)
-        if base is not None:
-            return blob != base
-        # No baseline: the file doesn't exist on GitHub yet, so the
-        # staged copy is unpublished exactly when it holds real data
-        # (an empty overlay working file is not an edit).
-        try:
-            parsed = json.loads(blob.decode("utf-8"))
-        except Exception:
-            return False
-        return bool(parsed)
+        if base is not None and blob == base:
+            return None  # staged == GitHub: nothing to decide
+        recorded = sidecar.get(repo_path)
+        if recorded is not None:
+            # The stage declared its base: keep only when that
+            # base is byte-for-byte what GitHub holds NOW.
+            if base is not None and recorded == \
+                    hashlib.sha256(base).hexdigest():
+                return "keep"
+            return "stale"
+        if base is None:
+            # Not on GitHub and no declared base: local work,
+            # unpublished exactly when it holds real data (an
+            # empty overlay working file is not an edit).
+            try:
+                parsed = json.loads(blob.decode("utf-8"))
+            except Exception:
+                return "stale"
+            return "keep" if parsed else None
+        # Differs from GitHub and declares no base: unknowable —
+        # the pre-1.9.12 cache shape that caused the incident.
+        return "stale"
 
+    out = {}
     for zid in ZONE_IDS:
-        if _differs(ZONES_CACHE_DIR / zid / "roads.json",
-                    gamedata.zone_roads_path(zid)):
-            diffs.append(gamedata.zone_roads_path(zid))
-    if _differs(OVERPASSES_FILE, gamedata.OVERPASSES_PATH):
-        diffs.append(gamedata.OVERPASSES_PATH)
-    if _differs(ZONE_EDITS_FILE, gamedata.ZONE_EDITS_PATH):
-        diffs.append(gamedata.ZONE_EDITS_PATH)
-    if _differs(CUSTOM_ZONES_FILE, gamedata.CUSTOM_ZONES_PATH):
-        diffs.append(gamedata.CUSTOM_ZONES_PATH)
-    return diffs
+        v = _verdict(ZONES_CACHE_DIR / zid / "roads.json",
+                     gamedata.zone_roads_path(zid))
+        if v:
+            out[gamedata.zone_roads_path(zid)] = v
+    for local_path, repo_path in (
+            (OVERPASSES_FILE, gamedata.OVERPASSES_PATH),
+            (ZONE_EDITS_FILE, gamedata.ZONE_EDITS_PATH),
+            (CUSTOM_ZONES_FILE, gamedata.CUSTOM_ZONES_PATH)):
+        v = _verdict(local_path, repo_path)
+        if v:
+            out[repo_path] = v
+    return out
+
+
+def _preserve_staged_files(repo_paths):
+    """
+    Copy staged cache files that are about to be superseded by
+    the fresh download into a timestamped "superseded" folder
+    inside the cache dir, so discarding a stale stage never
+    destroys the only copy of whatever it held. Returns the
+    folder Path, or None when nothing was preserved.
+    """
+    import shutil
+    import time
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    dest = DATA_DIR / f"superseded-{stamp}"
+    made = False
+    for repo_path in repo_paths:
+        if repo_path == gamedata.OVERPASSES_PATH:
+            src = OVERPASSES_FILE
+            name = "overpasses.json"
+        elif repo_path == gamedata.ZONE_EDITS_PATH:
+            src = ZONE_EDITS_FILE
+            name = "zone_edits.json"
+        elif repo_path == gamedata.CUSTOM_ZONES_PATH:
+            src = CUSTOM_ZONES_FILE
+            name = "custom_zones.json"
+        else:
+            # detailed/zones/<zid>/roads.json
+            zid = repo_path.split("/")[2]
+            src = ZONES_CACHE_DIR / zid / "roads.json"
+            name = f"{zid}-roads.json"
+        try:
+            if src.exists():
+                dest.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dest / name)
+                made = True
+        except Exception:
+            pass
+    return dest if made else None
 
 
 def download_roads(progress_callback=None):
@@ -647,73 +781,106 @@ def download_roads(progress_callback=None):
     app's dialog. The optional progress callback is invoked once
     per fetched file.
 
-    1.9.4 UNPUBLISHED-EDITS GUARD: before the downloaded model is
-    adopted, the staged local cache is compared against the
-    downloaded baselines. If they differ, this computer holds edits
-    that were saved locally but never pushed (e.g. a push that
-    failed — Joshua's road join, 2026-10-16, whose staged copy a
-    relaunch then silently overwrote with GitHub's bytes). In that
-    case the CACHE is loaded instead of the download, the staged
-    files on disk are left untouched, and LAST_DOWNLOAD_WARNING is
-    set so the app can tell the user their changes were kept. The
-    kept model is re-baselined against the downloaded bytes, so the
-    kept edits still count as unpublished and one Push publishes
-    them. This mirrors the Check-for-Updates guard ("push first so
-    a refresh can't hide them") for the open path, which had no
-    such protection.
+    1.9.4 UNPUBLISHED-EDITS GUARD, REBUILT 1.9.12: before the
+    downloaded model is adopted, every staged local-cache file
+    that differs from the fresh baselines gets a verdict from
+    _staged_cache_decision. Files judged "keep" (genuine
+    unpublished edits — staged on the very bytes GitHub still
+    holds, e.g. a push that failed: Joshua's road join,
+    2026-10-16, whose staged copy a relaunch once silently
+    overwrote) are adopted INTO the downloaded model, path by
+    path, and LAST_DOWNLOAD_WARNING tells the user their changes
+    were kept. Files judged "stale" (the repo moved on after the
+    cache was staged, or the cache predates the sidecar that
+    records its base) are NOT loaded — the fresh download is the
+    truth — their staged copies are preserved under a
+    "superseded-<time>" folder in the cache dir before the cache
+    is re-staged, and LAST_DOWNLOAD_NOTICE says what happened.
+
+    The 1.9.4 guard this replaces loaded the WHOLE cache whenever
+    ANY staged file differed and re-baselined it against the new
+    download; it could not tell edits from an old download, so on
+    2026-10-24 a first save pushed a weeks-old cached zone over
+    the current repo (geometry simplified by an old conversion,
+    grp pairings wiped). Per-path verdicts + the recorded base
+    are the fix: a save now only ever pushes records that
+    actually changed on top of the current GitHub bytes.
     """
-    global LAST_DOWNLOAD_ERROR, LAST_DOWNLOAD_WARNING
+    global LAST_DOWNLOAD_ERROR, LAST_DOWNLOAD_WARNING, \
+        LAST_DOWNLOAD_NOTICE
     import github_sync as _sync
     LAST_DOWNLOAD_WARNING = None
+    LAST_DOWNLOAD_NOTICE = None
     model, err = gamedata.download_game_data(_sync)
     if model is None:
         LAST_DOWNLOAD_ERROR = err
         print(f"Download failed: {err}")
         return False
     LAST_DOWNLOAD_ERROR = None
-    # --- 1.9.4 guard: never let a relaunch discard staged edits ---
-    unpublished = _staged_unpublished_paths(model)
-    if unpublished:
+    # --- 1.9.12 guard: per-path verdicts on the staged cache -----
+    decision = _staged_cache_decision(model)
+    keep = sorted(p for p, v in decision.items() if v == "keep")
+    stale = sorted(p for p, v in decision.items() if v == "stale")
+    kept_any = False
+    if keep:
         cache_model = load_local_model()
         if cache_model is not None:
-            # Re-baseline the kept model against what GitHub holds
-            # NOW (the download we just made), so the kept edits
-            # diff — and push — exactly as unpublished changes.
-            # Paths GitHub doesn't have yet lose their cache
-            # baseline, which the dirty check reads as "dirty when
-            # it holds data" — also correct for a kept edit.
-            for path in cache_model.pushable_paths():
-                if path in model.baselines:
-                    cache_model.baselines[path] = model.baselines[path]
-                else:
-                    cache_model.baselines.pop(path, None)
-            # The roads.js twins carry no state of their own, but
-            # their baselines decide whether a save re-pushes them;
-            # take GitHub's current twin bytes as the baseline.
+            # Adopt ONLY the kept paths' content into the fresh
+            # model; its baselines stay the downloaded bytes, so
+            # each kept file diffs — and later pushes — as exactly
+            # the unpublished edit it is, and nothing else does.
             for zid in ZONE_IDS:
-                twin = gamedata.zone_roads_js_path(zid)
-                if twin in model.baselines:
-                    cache_model.baselines[twin] = model.baselines[twin]
-            if cache_model.elev is None:
-                cache_model.elev = model.elev
-            set_game_model(cache_model)
+                rp = gamedata.zone_roads_path(zid)
+                if rp in keep and zid in cache_model.zones \
+                        and zid in model.zones:
+                    model.zones[zid]["roads"] = \
+                        cache_model.zones[zid]["roads"]
+                    kept_any = True
+            if gamedata.OVERPASSES_PATH in keep:
+                model.overpass_doc = cache_model.overpass_doc
+                kept_any = True
+            if gamedata.ZONE_EDITS_PATH in keep:
+                model.zone_edits = cache_model.zone_edits
+                kept_any = True
+            if gamedata.CUSTOM_ZONES_PATH in keep:
+                model.custom_zones = cache_model.custom_zones
+                kept_any = True
+        if kept_any:
             LAST_DOWNLOAD_WARNING = (
                 "Kept your unpublished changes: this computer had "
                 "edits that were never pushed to GitHub, so I loaded "
-                "those instead of the fresh download. Push when "
+                "those on top of the fresh download. Push when "
                 "you're ready (File → Push to GitHub) to publish "
                 "them.")
             print("Download-on-open kept staged unpublished edits "
-                  f"instead of the download: {unpublished}")
-            if progress_callback:
-                progress_callback(1, 1)
-            return True
-        # The cache claimed edits but couldn't be loaded whole —
-        # fall through to adopting the download rather than lose
-        # the map entirely; the staged files stay on disk either way.
-        print("Staged cache differed but could not be loaded; "
-              "adopting the download.")
+                  f"on top of the download: {keep}")
+        else:
+            # The cache claimed edits but couldn't be loaded —
+            # the fresh download stands; nothing is re-baselined.
+            print("Staged cache held edits but could not be "
+                  "loaded; adopting the download.")
+            keep = []
+    if stale:
+        # Preserve the superseded staged copies BEFORE the cache
+        # is re-staged below — discarding a stale stage must not
+        # destroy the only copy of whatever it held.
+        folder = _preserve_staged_files(stale)
+        where = (f" Copies were kept in the '{folder.name}' "
+                 "folder inside the editor's data folder."
+                 if folder is not None else "")
+        LAST_DOWNLOAD_NOTICE = (
+            "Some older changes saved on this computer were NOT "
+            "loaded: the map on GitHub is newer than the copy "
+            "they were made on, so the fresh download was loaded "
+            "instead." + where)
+        print(f"Download-on-open set aside stale staged files: "
+              f"{stale}")
     set_game_model(model)
+    # Re-stage from the ADOPTED model (fresh download + any kept
+    # edits): kept paths are written back byte-identically, stale
+    # paths are replaced by the fresh bytes (their old copies were
+    # preserved above), and the sidecar now records the base this
+    # stage truly sits on — so the next open judges cleanly.
     ok, lerr = save_local_cache(model)
     if not ok:
         print(f"Download ok but local cache failed: {lerr}")
