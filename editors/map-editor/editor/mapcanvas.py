@@ -424,13 +424,21 @@ class MapCanvas(Gtk.DrawingArea):
         self.drag_start = (0, 0)    # Screen coords where drag started
         self.cam_start = (0, 0)     # Camera position when drag started
         self.mouse_pos = (0, 0)     # Current mouse position (screen)
-        # Batch area-select band (1.9.8): (start_x, start_y, cur_x,
-        # cur_y) in screen px while Shift+drag draws the selection
-        # square for batch delete. (Rotation lives on the Q/E keys,
-        # the heading buttons, and Control+drag in any pane —
-        # Joshua's universal controls, 1.9.9; the Control+drag
-        # bookkeeping state is ctrl_drag, below.)
+        # Shift+drag state (1.9.8 band, 1.9.11 lasso): band_drag is
+        # (start_x, start_y, cur_x, cur_y) in screen px while a
+        # Shift+drag is in progress, and band_path is the freeform
+        # screen path the pointer actually took. On release the
+        # gesture resolves three ways (see on_button_release): a
+        # plain Shift+click ADDS the piece under the click; a path
+        # that loops back to its start is the LASSO — pieces inside
+        # it join the selection; any other drag keeps the 1.9.8
+        # behaviour, the batch-delete square between press and
+        # release. (Rotation lives on the Q/E keys, the heading
+        # buttons, and Control+drag in any pane — Joshua's
+        # universal controls, 1.9.9; the Control+drag bookkeeping
+        # state is ctrl_drag, below.)
         self.band_drag = None
+        self.band_path = None
         # Street-jump GHOST (1.9.9): when a Building Editor jump
         # carries a building, its footprint + name are drawn here
         # as reference context — {"name", "footprint", "at"} or
@@ -456,9 +464,35 @@ class MapCanvas(Gtk.DrawingArea):
         self.active_tool = None
 
         # Selection state (Joshua 2026-10-11: select-first workflow).
-        # Click roads to toggle-select them, up to 2 at once. The
-        # Merge / Join / Delete toolbar buttons act on the selection.
-        self.selected_roads = []  # list of (cat, flat_idx), max 2
+        # Click roads to toggle-select them. 1.9.11 (Joshua's word,
+        # 2026-10-24): the old cap of 2 is GONE — Join works on
+        # chains of 2+ pieces, so the selection holds as many pieces
+        # as he picks (click, Shift+click, or the lasso). The Merge /
+        # Join / Delete toolbar buttons act on the selection.
+        self.selected_roads = []  # list of (cat, flat_idx), no cap
+
+        # One-object pairings (1.9.11, Joshua's Question 4 / Spot 2
+        # rulings): records sharing a "grp" value are ONE piece.
+        # The selection stores the member keys (all existing
+        # machinery works on keys), and every UI path that adds or
+        # removes a piece expands through the pairing, so an object
+        # is always selected — and deleted — whole. The grp lookup
+        # cache is keyed by the spatial index object and rebuilt
+        # when the index is (see _grp_map).
+        self._grp_cache = None      # (id(spatial_index), {grp: keys})
+        # The last successful click-pick's world point (1.9.11):
+        # the 3D still pane frames its picture on this point —
+        # the viewpoint sits where he clicked, not at a road's
+        # head or foot (his 1.9.9 still-pane ruling). _pick_fresh
+        # marks a pick the app has not yet reacted to.
+        self.last_pick_world = None
+        self._pick_fresh = False
+
+        # Draw tool state (1.9.11 — the 1.9.9 Draw did nothing):
+        # while the Draw tool is active, a left drag collects
+        # world points here instead of panning; on release the
+        # points become a new road. None while not drawing.
+        self.draw_drag = None
 
         # Isolation (1.9.10): one selected piece singled out from
         # the Pieces panel — it is framed and lit BRIGHT while
@@ -894,6 +928,25 @@ class MapCanvas(Gtk.DrawingArea):
             si = self.divide_pick["start"]
             if 0 <= si < len(pts):
                 self._draw_endpoint_marker(cr, pts[si], (0, 1, 1))
+
+        # Draw tool (1.9.11): the line being laid, live under the
+        # pointer — a bright cyan trace through the points the
+        # drag has collected so far, so the road he is drawing
+        # is visible before he lets go.
+        if self.draw_drag:
+            cr.set_source_rgb(0.3, 0.9, 1.0)
+            cr.set_line_width(3)
+            cr.set_line_cap(1)
+            cr.set_line_join(1)
+            first = True
+            for px, pz in self.draw_drag:
+                sx, sy = self.world_to_screen(px, pz)
+                if first:
+                    cr.move_to(sx, sy)
+                    first = False
+                else:
+                    cr.line_to(sx, sy)
+            cr.stroke()
 
     def _draw_endpoint_marker(self, cr, world_pt, rgb):
         """
@@ -1529,7 +1582,7 @@ class MapCanvas(Gtk.DrawingArea):
                     cr.show_text(lab)
 
     def _draw_selection(self, cr):
-        """Draw a yellow highlight around each selected road (up to 2).
+        """Draw a yellow highlight around each selected road.
 
         1.9.10: while a piece is ISOLATED (singled out from the
         Pieces panel), the isolated piece keeps the bright fat
@@ -1537,10 +1590,16 @@ class MapCanvas(Gtk.DrawingArea):
         thin and translucent — so the isolated piece can be seen
         by itself even where the pieces lie on the same ground.
         The selection itself is unchanged; only the drawing is.
+
+        1.9.11: isolating one run of a grp object lights the
+        WHOLE object bright — the runs are one piece, so the
+        picture treats them as one.
         """
         iso = self.isolated
         isolating = iso is not None and iso in self.selected_roads \
             and len(self.selected_roads) > 1
+        iso_keys = set(self.grp_members(*iso)) if iso is not None \
+            else set()
         for cat, idx in self.selected_roads:
             if idx >= len(self.app.spatial_index.roads):
                 continue
@@ -1554,7 +1613,7 @@ class MapCanvas(Gtk.DrawingArea):
             style = ROAD_STYLE[normalize_category(cat)]
             wmult = WIDTH_MULT.get(
                 road.get("width_class", "standard"), 1.0)
-            if isolating and (cat, idx) != iso:
+            if isolating and (cat, idx) not in iso_keys:
                 # Quiet: thin, translucent grey — present (it is
                 # still selected) but not competing.
                 cr.set_source_rgba(0.8, 0.8, 0.8, 0.45)
@@ -1872,6 +1931,16 @@ class MapCanvas(Gtk.DrawingArea):
                 return True
             # Road editing tools handle their own clicks (no pan drag).
             # Shift+click is the documented gesture; plain click works too.
+            # Draw tool (1.9.11 — in 1.9.9 selecting Draw did
+            # nothing at all): the drag BELONGS to drawing while
+            # Draw is active, so panning is disabled and the drag
+            # collects the new road's points (Joshua's ruling).
+            # Points land on release (see _finish_draw).
+            if self.active_tool == "draw":
+                wx, wz = self.screen_to_world(event.x, event.y)
+                self.draw_drag = [(wx, wz)]
+                self.queue_draw()
+                return True
             if self.active_tool == "extend":
                 self._on_extend_click(event)
                 return True
@@ -1943,11 +2012,18 @@ class MapCanvas(Gtk.DrawingArea):
             if event.state & Gdk.ModifierType.SHIFT_MASK:
                 self.band_drag = (event.x, event.y,
                                   event.x, event.y)
+                # 1.9.11: remember the path itself — on release
+                # it decides between Shift+click (add), the lasso
+                # (a loop back to the start), and the band square.
+                self.band_path = [(event.x, event.y)]
                 return True
             # Universal controls: Control+drag rotates (it never
             # picks and never pans).
             if event.state & Gdk.ModifierType.CONTROL_MASK:
-                self.ctrl_drag = (event.x, self.rotation)
+                # (press x, press y, rotation at press): release
+                # tells a Ctrl+click (no travel — deselect one
+                # piece) from a Ctrl+drag (travel — rotation).
+                self.ctrl_drag = (event.x, event.y, self.rotation)
                 return True
             self.dragging = True
             self.drag_start = (event.x, event.y)
@@ -1957,6 +2033,10 @@ class MapCanvas(Gtk.DrawingArea):
                 self._pick_road(event.x, event.y)
 
         elif event.button == 3:  # right click — always pan
+            # …except while Draw is active: Draw owns the drags
+            # and panning is disabled (Joshua's Draw ruling).
+            if self.active_tool == "draw":
+                return True
             self.dragging = True
             self.drag_start = (event.x, event.y)
             self.cam_start = (self.cam_x, self.cam_y)
@@ -1966,16 +2046,37 @@ class MapCanvas(Gtk.DrawingArea):
     def on_button_release(self, widget, event):
         """End pan drag or pin drag."""
         if event.button == 1:
-            self.ctrl_drag = None
+            # Ctrl+click: the press started a possible rotation;
+            # if the pointer never really travelled, it was a
+            # click — take the piece under it out of the
+            # selection (Joshua's Ctrl+click rule, 1.9.11).
+            if self.ctrl_drag is not None:
+                x0, y0, _rot0 = self.ctrl_drag
+                self.ctrl_drag = None
+                if math.hypot(event.x - x0, event.y - y0) < 6:
+                    self.ctrl_click_remove(event.x, event.y)
+            # Draw tool: the drag ends — the collected points
+            # become a new road (see _finish_draw).
+            if self.draw_drag is not None:
+                pts = self.draw_drag
+                self.draw_drag = None
+                wx, wz = self.screen_to_world(event.x, event.y)
+                lx, lz = pts[-1]
+                if math.hypot(wx - lx, wz - lz) >= 1.0:
+                    pts = pts + [(wx, wz)]
+                self._finish_draw(pts)
+                self.queue_draw()
         if event.button in (1, 3):
             self.dragging = False
             if event.button == 1 and self.band_drag is not None:
-                # The square ends where the button went UP (the
+                # The gesture ends where the button went UP (the
                 # last motion event can lag a step behind it).
                 band = (self.band_drag[0], self.band_drag[1],
                         event.x, event.y)
+                path = self.band_path
                 self.band_drag = None
-                self._finish_band(band)
+                self.band_path = None
+                self._finish_shift_drag(band, path)
                 self.queue_draw()
         if event.button == 1 and self.drag_pin is not None:
             # Finished dragging a zone pin: persist the polygon boundary.
@@ -2008,8 +2109,20 @@ class MapCanvas(Gtk.DrawingArea):
         # Universal controls (1.9.9): a Control+drag in progress
         # rotates the shared view — horizontally, like the panes.
         if self.ctrl_drag is not None:
-            x0, rot0 = self.ctrl_drag
+            x0, _y0, rot0 = self.ctrl_drag
             self.rotation = rot0 + (event.x - x0) * 0.4
+            return True
+
+        # Draw tool (1.9.11): while a draw drag runs, the pointer
+        # lays the new road's points — one every few metres, so a
+        # steady drag makes a smooth line and a shaky one does
+        # not make a thicket. Nothing pans (Draw owns the drag).
+        if self.draw_drag is not None:
+            wx, wz = self.screen_to_world(event.x, event.y)
+            lx, lz = self.draw_drag[-1]
+            if math.hypot(wx - lx, wz - lz) >= 3.0:
+                self.draw_drag.append((wx, wz))
+                self.queue_draw()
             return True
 
         # Move-road mode is modal (Joshua 2026-10-12): the ghost
@@ -2042,11 +2155,16 @@ class MapCanvas(Gtk.DrawingArea):
             self.queue_draw()
             return True
 
-        # Batch band drag (1.9.8): the square follows the pointer;
-        # the collection happens on release.
+        # Shift+drag in progress (1.9.8 band / 1.9.11 lasso):
+        # the square follows the pointer and the freeform path is
+        # recorded; what the gesture MEANS is decided on release.
         if self.band_drag is not None:
             sx, sy, _cx, _cy = self.band_drag
             self.band_drag = (sx, sy, event.x, event.y)
+            if self.band_path is not None:
+                lx, ly = self.band_path[-1]
+                if math.hypot(event.x - lx, event.y - ly) >= 2.0:
+                    self.band_path.append((event.x, event.y))
             self.queue_draw()
             return True
 
@@ -2147,17 +2265,92 @@ class MapCanvas(Gtk.DrawingArea):
             self.app.ask_divider_type(pick["cat"], pick["idx"],
                                       pick["road"], a, b)
 
-    def _pick_road(self, sx, sy):
+    # ------------------------------------------------------------------
+    # One-object pairings (1.9.11): records sharing a "grp" value
+    # ------------------------------------------------------------------
+    # Joshua's Question 4 / Spot 2 rulings (2026-10-24): where a
+    # road exists as two runs — split by a crossing road, or the
+    # two carriageways of a median stretch — the runs are ONE
+    # piece. The data pass writes a shared "grp" value onto each
+    # run's record; the editor treats the group as a single
+    # object everywhere: selecting any run selects all of them,
+    # the Pieces panel lists them as one entry, and Delete
+    # removes the whole object. When no record carries "grp" the
+    # map is empty of pairings and every behaviour below reduces
+    # to the single-record case, exactly as before.
+
+    def _grp_map(self):
         """
-        Click select: toggle-select the road near the click point.
-        Clicking a selected road deselects it; a third road replaces the
-        oldest selection. Clicking empty space clears the selection.
-        Searches within 10 screen pixels, prefers wider roads.
-        Candidates come from the spatial index (see _pick_candidates)
-        so a click never scans the whole map on the UI thread.
+        {grp value: [(cat, flat_idx), ...]} over the current
+        spatial index. Built lazily and cached against the index
+        object itself (an index rebuild replaces the object, so
+        a stale pairing can never survive an edit).
         """
-        if not self.app.spatial_index:
-            return  # no data yet — nothing to select
+        si = self.app.spatial_index
+        if si is None:
+            return {}
+        cache = self._grp_cache
+        if cache is not None and cache[0] is si:
+            return cache[1]
+        out = {}
+        for flat, entry in enumerate(si.roads):
+            road = entry[1]
+            grp = road.get("grp") if isinstance(road, dict) else None
+            if grp:
+                out.setdefault(grp, []).append((entry[0], flat))
+        self._grp_cache = (si, out)
+        return out
+
+    def grp_value(self, cat, idx):
+        """The "grp" pairing value of one indexed record, or None."""
+        road = self._get_road_dict(cat, idx)
+        if road is None:
+            return None
+        return road.get("grp") or None
+
+    def grp_members(self, cat, idx):
+        """
+        Every selection key belonging to the same object as
+        (cat, idx): the key itself first, then its grp partners
+        in index order. An unpaired record returns just itself.
+        """
+        key = (cat, idx)
+        grp = self.grp_value(cat, idx)
+        if not grp:
+            return [key]
+        members = self._grp_map().get(grp) or [key]
+        return [key] + [k for k in members if k != key]
+
+    def expand_with_grp(self, keys):
+        """
+        Expand a key list so every grp object it touches appears
+        whole, partners following the member that pulled them
+        in. Order-preserving and duplicate-free.
+        """
+        out = []
+        for key in keys:
+            for member in self.grp_members(*key):
+                if member not in out:
+                    out.append(member)
+        return out
+
+    def selection_grp_values(self):
+        """The grp values present in the current selection."""
+        values = []
+        for cat, idx in self.selected_roads:
+            grp = self.grp_value(cat, idx)
+            if grp and grp not in values:
+                values.append(grp)
+        return values
+
+    def _pick_key(self, sx, sy):
+        """
+        The (cat, flat_idx) of the road nearest a screen point,
+        or None. Searches within 10 screen pixels, prefers wider
+        roads. Candidates come from the spatial index (see
+        _pick_candidates) so a click never scans the whole map on
+        the UI thread.
+        """
         wx, wz = self.screen_to_world(sx, sy)
         # Search radius in world units (10px / zoom)
         radius = 10 / self.zoom
@@ -2182,22 +2375,91 @@ class MapCanvas(Gtk.DrawingArea):
                 if dist < radius and dist < best_dist:
                     best_dist = dist
                     best = (cat, idx)
+        return best
 
-        # Toggle-select into the selection list (max 2 roads).
+    def _pick_road(self, sx, sy):
+        """
+        Click select: toggle-select the road near the click point.
+        Clicking a selected road deselects it; clicking empty
+        space clears the selection. 1.9.11: no count cap (Join
+        works on chains), and a click on one run of a grp object
+        selects — or deselects — the WHOLE object. A successful
+        pick also records the click's world point: the 3D still
+        pane frames its picture there (player's-eye ruling).
+        """
+        if not self.app.spatial_index:
+            return  # no data yet — nothing to select
+        best = self._pick_key(sx, sy)
         if best is None:
             # Clicked empty space: clear the selection.
             self.selected_roads = []
         else:
             key = (best[0], best[1])
             if key in self.selected_roads:
-                # Already selected: deselect it.
-                self.selected_roads.remove(key)
-            elif len(self.selected_roads) < 2:
-                self.selected_roads.append(key)
+                # Already selected: deselect it — the whole
+                # object, when it is one (grp partners leave too).
+                drop = set(self.grp_members(*key))
+                self.selected_roads = [
+                    k for k in self.selected_roads if k not in drop]
             else:
-                # Third click: drop the oldest, keep the newest two.
-                self.selected_roads.pop(0)
-                self.selected_roads.append(key)
+                for member in self.grp_members(*key):
+                    if member not in self.selected_roads:
+                        self.selected_roads.append(member)
+            # The still pane's viewpoint: where he clicked.
+            self.last_pick_world = self.screen_to_world(sx, sy)
+            self._pick_fresh = True
+        self.app.on_roads_selected()
+        self.queue_draw()
+
+    def shift_click_add(self, sx, sy):
+        """
+        Shift+click (1.9.11, Joshua's selection model): ADD the
+        piece under the click to the selection — never removes,
+        never replaces, and it works mid-flow (the selection
+        simply grows; any open panel sees the new contents via
+        on_roads_selected). A grp object is added whole.
+        """
+        if not self.app.spatial_index:
+            return
+        best = self._pick_key(sx, sy)
+        if best is None:
+            self.app.set_status(
+                "Shift+click adds a piece — that click missed "
+                "every road.")
+            return
+        key = (best[0], best[1])
+        added = [m for m in self.grp_members(*key)
+                 if m not in self.selected_roads]
+        if not added:
+            self.app.set_status(
+                "That piece is already in the selection.")
+            return
+        self.selected_roads.extend(added)
+        self.last_pick_world = self.screen_to_world(sx, sy)
+        self._pick_fresh = True
+        self.app.on_roads_selected()
+        self.queue_draw()
+
+    def ctrl_click_remove(self, sx, sy):
+        """
+        Ctrl+click (1.9.11, Joshua's selection model): take the
+        ONE piece under the click OUT of the selection (its whole
+        grp object, when paired). A Ctrl+click that does not
+        land on a selected piece changes nothing — Ctrl+drag is
+        rotation, and this only fires for a click that did not
+        turn into a drag.
+        """
+        if not self.app.spatial_index:
+            return
+        best = self._pick_key(sx, sy)
+        if best is None:
+            return
+        key = (best[0], best[1])
+        if key not in self.selected_roads:
+            return
+        drop = set(self.grp_members(*key))
+        self.selected_roads = [
+            k for k in self.selected_roads if k not in drop]
         self.app.on_roads_selected()
         self.queue_draw()
 
@@ -2463,7 +2725,11 @@ class MapCanvas(Gtk.DrawingArea):
         if self.delete_preview is not None:
             self.cancel_delete_preview()
         self.band_drag = None
+        self.band_path = None
         self.ctrl_drag = None
+        # Draw (1.9.11): a tool switch or Escape abandons a
+        # half-drawn line — nothing is added.
+        self.draw_drag = None
         # A tool switch is his own move: the jump ghost clears.
         self.jump_ghost = None
         self.selected_roads = []
@@ -2736,7 +3002,13 @@ class MapCanvas(Gtk.DrawingArea):
     # ------------------------------------------------------------------
 
     def _draw_band(self, cr):
-        """The rubber-band square while Shift+drag draws it."""
+        """
+        The Shift+drag feedback while the gesture is in progress:
+        the 1.9.8 batch square (translucent) PLUS the pointer's
+        actual freeform path (1.9.11) — the path is what makes a
+        lasso a lasso, so Joshua can see the line he is drawing
+        and whether it has looped back to its start.
+        """
         if self.band_drag is None:
             return
         sx, sy, cx, cy = self.band_drag
@@ -2751,12 +3023,27 @@ class MapCanvas(Gtk.DrawingArea):
         cr.rectangle(x0, y0, x1 - x0, y1 - y0)
         cr.stroke()
         cr.set_dash([])
+        # The freeform path itself, solid and bright.
+        path = self.band_path or []
+        if len(path) >= 2:
+            cr.set_source_rgba(0.55, 0.85, 1.0, 0.95)
+            cr.set_line_width(2.0)
+            for i, (px, py) in enumerate(path):
+                if i == 0:
+                    cr.move_to(px, py)
+                else:
+                    cr.line_to(px, py)
+            cr.stroke()
+            # Start marker: the spot the path must come back to
+            # for the gesture to count as a lasso.
+            cr.arc(path[0][0], path[0][1], 4, 0, 2 * math.pi)
+            cr.fill()
 
     def _finish_band(self, band):
         """
-        Shift+drag released: hand the square to the batch delete
-        flow. A plain Shift+click (no real square) does nothing.
-        The square is passed as its four world corners (the view
+        A non-lasso Shift+drag released: hand the square to the
+        batch delete flow (the standing 1.9.8 behaviour). The
+        square is passed as its four world corners (the view
         may be rotated; the collector tests real geometry).
         """
         sx, sy, cx, cy = band
@@ -2775,10 +3062,166 @@ class MapCanvas(Gtk.DrawingArea):
             pass
 
     # ------------------------------------------------------------------
-    # Join: combine the two selected roads into one road object.
-    # (Joshua 2026-10-11: select-first workflow — roads are picked in
-    # Select mode, then the Join toolbar button asks for confirmation.)
+    # Shift gestures (1.9.11): Shift+click adds, the lasso selects
     # ------------------------------------------------------------------
+    # Joshua's selection model (1.9.9 hands-on, built 1.9.11):
+    # Shift is his ADD key. Three releases are possible:
+    #   * the pointer barely moved — a Shift+CLICK: add the piece
+    #     under it (never removes, works mid-flow);
+    #   * the path travelled and LOOPED BACK to its start — the
+    #     LASSO: every piece touching or inside the closed line
+    #     is ADDED to the selection (selection only — he then
+    #     chooses Merge / Join / Delete himself);
+    #   * anything else — the standing 1.9.8 batch square.
+    # A loop is recognised generously (release within 26 px of
+    # the press point, at least 60 px travelled, at least 8
+    # recorded points) so a hand-drawn loop counts even when it
+    # does not close pixel-perfectly.
+
+    @staticmethod
+    def _path_length(path):
+        """Total travel of a screen path, in pixels."""
+        return sum(math.hypot(b[0] - a[0], b[1] - a[1])
+                   for a, b in zip(path, path[1:]))
+
+    def _finish_shift_drag(self, band, path):
+        """Resolve a released Shift+drag (see the section note)."""
+        sx, sy, cx, cy = band
+        path = list(path or [])
+        # The release point itself belongs to the path (the last
+        # motion event can lag a step behind it).
+        if not path or math.hypot(cx - path[-1][0],
+                                  cy - path[-1][1]) > 0.5:
+            path.append((cx, cy))
+        # A click is judged by how far the pointer TRAVELLED in
+        # all, never by where it ended: a lasso's whole point is
+        # that it ends where it started, so end-to-end distance
+        # would call every loop a click.
+        travelled = self._path_length(path)
+        if travelled < 6:
+            # Shift+click: add the piece under the click.
+            self.shift_click_add(cx, cy)
+            return
+        if len(path) >= 8 and travelled >= 60:
+            gap = math.hypot(path[-1][0] - path[0][0],
+                             path[-1][1] - path[0][1])
+            if gap <= 26:
+                # The lasso: the path becomes a world polygon
+                # (the view may be rotated — screen_to_world
+                # honours the heading) and the app collects the
+                # pieces inside it in the background.
+                polygon = [self.screen_to_world(px, py)
+                           for px, py in path]
+                try:
+                    self.app.begin_lasso_select(polygon)
+                except Exception:
+                    self.app.set_status(
+                        "Lasso: the collection could not start.")
+                return
+        self._finish_band(band)
+
+    # ------------------------------------------------------------------
+    # Draw tool (1.9.11): the drag lays a new road
+    # ------------------------------------------------------------------
+    # While Draw is active the drag belongs to drawing (panning
+    # is disabled — see on_button_press / on_motion). On release
+    # the collected points are simplified (Douglas–Peucker, so a
+    # steady hand's line keeps its shape and a shaky one loses
+    # its noise) and committed through the app's standing save
+    # path as ONE new local road.
+
+    @staticmethod
+    def _simplify_line(points, tolerance=1.5):
+        """
+        Douglas–Peucker simplification of a world point list.
+        Points within `tolerance` world units of the line between
+        their neighbours are dropped; the endpoints always stay.
+        Iterative (an explicit stack) so a long drag can never
+        hit the recursion limit.
+        """
+        pts = [tuple(map(float, p)) for p in points]
+        if len(pts) <= 2:
+            return pts
+        keep = {0, len(pts) - 1}
+        stack = [(0, len(pts) - 1)]
+        while stack:
+            lo, hi = stack.pop()
+            ax, az = pts[lo]
+            bx, bz = pts[hi]
+            vx, vz = bx - ax, bz - az
+            seg_len = math.hypot(vx, vz)
+            worst_i, worst_d = None, tolerance
+            for i in range(lo + 1, hi):
+                px, pz = pts[i]
+                if seg_len < 1e-9:
+                    d = math.hypot(px - ax, pz - az)
+                else:
+                    d = abs(vx * (pz - az) - vz * (px - ax)) \
+                        / seg_len
+                if d > worst_d:
+                    worst_i, worst_d = i, d
+            if worst_i is not None:
+                keep.add(worst_i)
+                stack.append((lo, worst_i))
+                stack.append((worst_i, hi))
+        return [pts[i] for i in sorted(keep)]
+
+    def _finish_draw(self, raw_points):
+        """
+        Draw release: simplify the dragged line and add it as a
+        new road through the app (which owns the save path and
+        the undo step). A click or a tiny scribble adds nothing.
+        """
+        pts = self._simplify_line(raw_points, tolerance=1.5)
+        # Drop any near-duplicate neighbours the simplification
+        # left behind, then measure the line: a road needs a
+        # real run of ground, not a dot.
+        clean = []
+        for p in pts:
+            if not clean or math.hypot(p[0] - clean[-1][0],
+                                       p[1] - clean[-1][1]) >= 0.5:
+                clean.append(p)
+        length = self._path_length(clean)
+        if len(clean) < 2 or length < 5.0:
+            self.app.set_status(
+                "Draw: drag a longer line to lay a road — "
+                "that was too short, so nothing was added.")
+            return
+        try:
+            added = self.app.add_drawn_road(clean)
+        except Exception:
+            added = False
+        if not added:
+            self.app.set_status(
+                "Draw: the new road could not be added.")
+
+    # ------------------------------------------------------------------
+    # Join: combine the selected roads into one road object.
+    # (Joshua 2026-10-11: select-first workflow — roads are picked in
+    # Select mode, then the Join toolbar button asks for confirmation.
+    # 1.9.11: Join works on CHAINS of 2+ pieces — the pair keeps its
+    # gate-proven path below; 3+ pieces go through join_chain.)
+    # ------------------------------------------------------------------
+
+    def _selected_records(self):
+        """
+        The selection resolved to (cat, flat_idx, road_dict)
+        triples, in selection order — or None when any key no
+        longer resolves or one record is somehow selected twice.
+        Shared by the chain-join preview and commit so they can
+        never disagree about what is selected.
+        """
+        out = []
+        seen_ids = set()
+        for cat, idx in self.selected_roads:
+            road = self._get_road_dict(cat, idx)
+            if road is None or id(road) in seen_ids:
+                return None
+            if len(road.get("pts", [])) < 2:
+                return None
+            seen_ids.add(id(road))
+            out.append((cat, idx, road))
+        return out
 
     def compute_join_result(self):
         """
@@ -2791,6 +3234,8 @@ class MapCanvas(Gtk.DrawingArea):
         """
         if len(self.selected_roads) != 2:
             return None
+        if self.selection_grp_values():
+            return None  # grp object: already one piece (1.9.11)
         (cat_a, idx_a), (cat_b, idx_b) = self.selected_roads
         road_a = self._get_road_dict(cat_a, idx_a)
         road_b = self._get_road_dict(cat_b, idx_b)
@@ -2817,6 +3262,160 @@ class MapCanvas(Gtk.DrawingArea):
                                          new_road)
         return (road_a, road_b, new_road)
 
+    # ------------------------------------------------------------------
+    # Chain Join (1.9.11): 3+ selected pieces become ONE road.
+    # mergejoin.join_chain finds every space between the pieces
+    # (in chain order, nearest ends) and forms each one with the
+    # same form_section the pair join uses — straight or curved
+    # as the ends dictate, per Joshua's approved diagrams. The
+    # result keeps the FIRST-selected piece's name and category.
+    # A selection containing a grp object is refused: those
+    # records are already one object, and joining must never
+    # disturb the pairing.
+    # ------------------------------------------------------------------
+
+    def _carry_cul_de_sac_to_chain(self, records, order, joined_pts,
+                                   new_road):
+        """
+        Chain version of the pair carry-over: only the joined
+        road's two OUTER ends can keep a turnaround bulb — every
+        inner end is a connection now. `order` is join_chain's
+        chain order (indices into `records`); the outer end of
+        the first / last piece in the chain is whichever of its
+        endpoints the joined line actually starts / ends on.
+        """
+        new_road.pop("cul_de_sac", None)
+        new_road.pop("cul_de_sac_end", None)
+        new_road.pop("cul_de_sac_radius", None)
+        if not order or len(joined_pts) < 2:
+            return
+
+        def outer_end(road, target):
+            """'start' / 'end': which of road's ends sits on
+            the joined line's point `target`."""
+            pts = road.get("pts", [])
+            d0 = math.hypot(pts[0][0] - target[0],
+                            pts[0][1] - target[1])
+            d1 = math.hypot(pts[-1][0] - target[0],
+                            pts[-1][1] - target[1])
+            return "start" if d0 <= d1 else "end"
+
+        first_road = records[order[0]][2]
+        if first_road.get("cul_de_sac") and \
+                first_road.get("cul_de_sac_end", "end") == \
+                outer_end(first_road, joined_pts[0]):
+            new_road["cul_de_sac"] = True
+            new_road["cul_de_sac_end"] = "start"
+            new_road["cul_de_sac_radius"] = float(
+                first_road.get("cul_de_sac_radius",
+                               self.CUL_DE_SAC_DEFAULT_RADIUS))
+            return
+        last_road = records[order[-1]][2]
+        if last_road.get("cul_de_sac") and \
+                last_road.get("cul_de_sac_end", "end") == \
+                outer_end(last_road, joined_pts[-1]):
+            new_road["cul_de_sac"] = True
+            new_road["cul_de_sac_end"] = "end"
+            new_road["cul_de_sac_radius"] = float(
+                last_road.get("cul_de_sac_radius",
+                               self.CUL_DE_SAC_DEFAULT_RADIUS))
+
+    def compute_join_chain_result(self):
+        """
+        Preview twin of do_join_chain_from_selection: the joined
+        road a chain commit WOULD create, read-only, for the
+        Before/After comparison. Returns (records, new_road) —
+        records in selection order — or None. Both halves call
+        mergejoin.join_chain on the same inputs, so the preview
+        and the commit can never diverge.
+        """
+        if len(self.selected_roads) < 3:
+            return None
+        if self.selection_grp_values():
+            return None  # a grp object is already one piece
+        records = self._selected_records()
+        if records is None:
+            return None
+        pieces_pts = [[list(p) for p in road.get("pts", [])]
+                      for _c, _i, road in records]
+        res = mergejoin.join_chain(pieces_pts)
+        if res is None:
+            return None
+        joined_pts = [list(p) for p in res["pts"]]
+        first = records[0][2]
+        new_road = {"name": first.get("name", "Unnamed"),
+                    "pts": joined_pts}
+        for k, v in first.items():
+            if k not in new_road:
+                new_road[k] = v
+        self._carry_cul_de_sac_to_chain(records, res["order"],
+                                        joined_pts, new_road)
+        return (records, new_road)
+
+    def do_join_chain_from_selection(self):
+        """
+        Chain Join commit: replace the 3+ selected pieces with
+        the single joined road (the app's apply_road_join_multi
+        path — one persist, one index rebuild), keeping the
+        first-selected piece's name and category. Called after
+        Joshua confirms the Join dialog.
+        """
+        if len(self.selected_roads) < 3:
+            return
+        if self.selection_grp_values():
+            self.app.set_status(
+                "Join: a paired object (one piece in several "
+                "runs) is already one piece — it can't be joined "
+                "again. Nothing was changed.")
+            return
+        records = self._selected_records()
+        count = len(self.selected_roads)
+        self.selected_roads = []
+        if records is None:
+            self.app.set_status(
+                "Join failed: a selected road is no longer "
+                "available.")
+            self.app._update_merge_join_buttons()
+            self.queue_draw()
+            return
+        pieces_pts = [[list(p) for p in road.get("pts", [])]
+                      for _c, _i, road in records]
+        res = mergejoin.join_chain(pieces_pts)
+        if res is None:
+            self.app.set_status(
+                "Join failed: those pieces could not be chained.")
+            self.app._update_merge_join_buttons()
+            self.queue_draw()
+            return
+        joined_pts = [list(p) for p in res["pts"]]
+        first_cat, _first_idx, first_road = records[0]
+        new_road = {"name": first_road.get("name", "Unnamed"),
+                    "pts": joined_pts}
+        for k, v in first_road.items():
+            if k not in new_road:
+                new_road[k] = v
+        self._carry_cul_de_sac_to_chain(records, res["order"],
+                                        joined_pts, new_road)
+        # Undo (Joshua 2026-10-12): one step for the whole chain.
+        self.app.undo_begin("Join Roads")
+        ok = self.app.apply_road_join_multi(first_cat, records,
+                                            new_road)
+        if ok:
+            kinds = [s["kind"] for s in res["sections"]]
+            formed = ", ".join(
+                "straight" if k == "straight" else "curved"
+                for k in kinds)
+            self.app.set_status(
+                f"Joined {count} pieces into "
+                f"'{new_road['name']}' ({len(joined_pts)} pts; "
+                f"{len(kinds)} spaces formed: {formed}).")
+        else:
+            self.app.set_status(
+                "Join failed: could not update road data.")
+        self.app.undo_commit()
+        self.app._update_merge_join_buttons()
+        self.queue_draw()
+
     def compute_merge_result(self):
         """
         Preview twin of do_merge_from_selection: the source road
@@ -2828,6 +3427,8 @@ class MapCanvas(Gtk.DrawingArea):
         """
         if len(self.selected_roads) != 2:
             return None
+        if self.selection_grp_values():
+            return None  # grp object: Merge leaves it alone (1.9.11)
         (cat_s, idx_s), (cat_t, idx_t) = self.selected_roads
         road_s = self._get_road_dict(cat_s, idx_s)
         road_t = self._get_road_dict(cat_t, idx_t)
@@ -2855,6 +3456,14 @@ class MapCanvas(Gtk.DrawingArea):
         result is a single record.
         """
         if len(self.selected_roads) != 2:
+            return
+        # One-object rule (1.9.11): a grp piece is already one
+        # object — Join must never disturb the pairing.
+        if self.selection_grp_values():
+            self.app.set_status(
+                "Join: a paired object (one piece in several "
+                "runs) is already one piece — it can't be joined "
+                "again. Nothing was changed.")
             return
         (cat_a, idx_a), (cat_b, idx_b) = self.selected_roads
         road_a = self._get_road_dict(cat_a, idx_a)
@@ -2987,6 +3596,14 @@ class MapCanvas(Gtk.DrawingArea):
         Joshua confirms the Merge dialog.
         """
         if len(self.selected_roads) != 2:
+            return
+        # One-object rule (1.9.11): Merge never touches a grp
+        # piece — its records are already one object.
+        if self.selection_grp_values():
+            self.app.set_status(
+                "Merge: a paired object (one piece in several "
+                "runs) is already one piece — Merge leaves it "
+                "as it is. Nothing was changed.")
             return
         (cat_s, idx_s), (cat_t, idx_t) = self.selected_roads
         road_s = self._get_road_dict(cat_s, idx_s)
@@ -3333,8 +3950,10 @@ class MapCanvas(Gtk.DrawingArea):
         stalling (1.9.7).
 
         `picked` is a list of (cat, flat_idx, road_dict) — the
-        current selection resolved to records (one road normally;
-        the selection holds at most two).
+        current selection resolved to records. One road normally;
+        1.9.11 selections can hold more (a chain, a lasso take),
+        and a grp object arrives as ALL of its runs, so the
+        framed picture shows the whole object.
 
         The Building Editor 2.0.1 pattern: this method (on the UI
         thread) only TAKES THE ORDER — it shows the delete bar in
@@ -3360,11 +3979,24 @@ class MapCanvas(Gtk.DrawingArea):
             return
         names = [road.get("name") or "Unnamed"
                  for _c, _i, road in roads]
+        # One-object rule (1.9.11): when every record in the
+        # picture shares one grp value, the picture is ONE
+        # object in several runs — the bar and the status say
+        # so, in those words, so the decision is never mistaken
+        # for deleting several separate roads.
+        grp_vals = [road.get("grp") for _c, _i, road in roads]
+        grp_object = len(roads) > 1 and grp_vals[0] \
+            and all(g == grp_vals[0] for g in grp_vals)
         self._delete_prep_token += 1
         token = self._delete_prep_token
         self.delete_prep = {"token": token, "roads": roads,
-                            "names": names}
-        if len(roads) == 1:
+                            "names": names,
+                            "grp_object": bool(grp_object)}
+        if grp_object:
+            prep_text = (f"Preparing '{names[0]}' "
+                         f"({len(roads)} runs, one object)…")
+            job_label = f"Preparing '{names[0]}'"
+        elif len(roads) == 1:
             prep_text = f"Preparing '{names[0]}'…"
             job_label = f"Preparing '{names[0]}'"
         else:
@@ -3468,7 +4100,17 @@ class MapCanvas(Gtk.DrawingArea):
         self.frame_rect(min_x - pad, min_z - pad,
                         max_x + pad, max_z + pad,
                         top_inset=DELETE_BAR_H)
-        if len(roads) == 1:
+        if prep.get("grp_object"):
+            bar_text = (
+                f"Delete '{names[0]}'?  All {len(roads)} runs of "
+                "this one object are lit up in pink below — "
+                "check them, then choose.")
+            status = (
+                f"Delete: '{names[0]}' is ONE object in "
+                f"{len(roads)} runs — every run is lit up in "
+                "pink. Delete it in the bar at the top, or "
+                "Cancel to go back.")
+        elif len(roads) == 1:
             bar_text = (
                 f"Delete '{names[0]}'?  The whole road is lit up "
                 "in pink below — check it, then choose.")
@@ -3477,10 +4119,16 @@ class MapCanvas(Gtk.DrawingArea):
                 "whole road. Delete it in the bar at the top, or "
                 "Cancel to go back.")
         else:
+            # Name the first two and count the rest — a lasso or
+            # chain selection can hold many records, and the bar
+            # must stay one readable line.
+            named = f"'{names[0]}', '{names[1]}'"
+            if len(roads) > 2:
+                named += f" and {len(roads) - 2} more"
             bar_text = (
-                f"Delete {len(roads)} roads "
-                f"('{names[0]}', '{names[1]}')?  They are lit up "
-                "in pink below — check them, then choose.")
+                f"Delete {len(roads)} roads ({named})?  They "
+                "are lit up in pink below — check them, then "
+                "choose.")
             status = (
                 f"Delete: {len(roads)} roads are lit up in pink. "
                 "Delete them in the bar at the top, or Cancel to "
@@ -3571,7 +4219,17 @@ class MapCanvas(Gtk.DrawingArea):
         results = [self.app.apply_road_delete(cat, road)
                    for cat, _idx, road in roads]
         ok = all(results)
-        if ok and len(roads) == 1:
+        # One-object rule (1.9.11): a whole grp object reports
+        # as what it was — one object, however many runs.
+        grp_vals = [road.get("grp") for _c, _i, road in roads]
+        grp_object = len(roads) > 1 and grp_vals[0] \
+            and all(g == grp_vals[0] for g in grp_vals)
+        if ok and grp_object:
+            name = roads[0][2].get("name") or "Unnamed"
+            self.app.set_status(
+                f"Deleted one object: {name} "
+                f"({len(roads)} runs).")
+        elif ok and len(roads) == 1:
             name = roads[0][2].get("name") or "Unnamed"
             self.app.set_status(f"Deleted road: {name}.")
         elif ok:
