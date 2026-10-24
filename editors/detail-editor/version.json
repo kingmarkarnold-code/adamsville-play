@@ -1,16 +1,16 @@
 {
- "version": "1.0.0",
- "changelog": "First release of the Detail Editor (Joshua's design, 2026-10-18) \u2014 the standalone suite app the Map Editor's Detail Edit button hands a road piece to. It opens on the whole piece: every point, every segment, and the street face itself. Drag a point to move it (only that piece changes); add or delete points; add or delete segments \u2014 deleting a middle segment breaks the join and the piece saves as two records under the same name; delete a whole section, bulge and face together, leaving the straight edge. Elevation is never touched: points move in the flat plane only and the road's baked heights ride along unchanged. Saves follow the suite rule \u2014 local save, push, fresh download, the verified copy on screen \u2014 and only the piece's own zone is ever written. Built on the shared suite core and one element-agnostic manipulation core, so the next element types reuse the same code instead of growing copies.",
+ "version": "1.1.0",
+ "changelog": "New in 1.1.0 \u2014 rename a street from its tab (Joshua, 2026-10-24). Every open piece's tab now carries a pencil on the LEFT of the name; the close X stays on the right. Clicking the pencil turns the tab's name into a text field, right there in the tab: type the new name and press Enter (or click away) to confirm it; Esc cancels and leaves the name untouched. It works on any street, named or unnamed alike \u2014 for an unnamed piece (whose stored name is the game's placeholder 'Unnamed St') the field starts EMPTY with that placeholder showing, and confirming the field empty keeps the piece unnamed. Only the open piece's own record is renamed: other pieces that happen to share the old name keep it. The new name is a changed variable like any other edit \u2014 it marks the piece unsaved and rides the same save round trip (local save, push, fresh download, the verified copy on screen), and after a middle-segment split the resulting records share the new name, exactly as they shared the old one.",
  "files": [
   {
    "path": "app.py",
    "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/app.py",
-   "sha256": "4dc6b81accb9dc0f45fd2087b5b6a93313fad13352c76103564dbee0d0ac9b95"
+   "sha256": "478d5bf8c254b69840ffc5662d072e0f6ece9cf7479669feb94977a5e7a1e537"
   },
   {
    "path": "detaildata.py",
    "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/detaildata.py",
-   "sha256": "1bb0f55efa2247e2be236e6f83b9c0c5d18c7d5a46b010db0ecee7938b01d44b"
+   "sha256": "9cdc5b85ce436488a82e652db1816f44757f773a7e773d5468f522fb49e79936"
   },
   {
    "path": "detailcanvas.py",
