@@ -47,6 +47,15 @@
        The vh/dvh heights below are only the fallback for the first
        paint, before the first measurement lands. */
     height: 100vh; height: 100dvh; height: var(--app-height, 100dvh);
+    /* v2.4.1 (Joshua, 2026-10-24): HOLDING Shoot on his phone made
+       the browser SELECT TEXT on the page instead of charging the
+       shot. This is a game page — it never gives up text. No
+       selection and no long-press callout, anywhere on the page;
+       the buttons also refuse gesture reinterpretation (below),
+       and a contextmenu guard in the script stops the long-press
+       menu itself. */
+    -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none;
   }
   /* ---- top bar ---- */
   #topbar {
@@ -135,6 +144,11 @@
   }
   #act-btn:active { background: #c95f1f; }
   #act-btn[disabled] { background: #555; color: #bbb; }
+  /* v2.4.1: every button is a tap-or-hold target, never a scroll,
+     pinch or select gesture — touch-action: none keeps the browser
+     from reinterpreting a hold (above all on Shoot, whose hold
+     charges the shot) and from cancelling it mid-charge. */
+  .barbtn, .bigbtn, #act-btn, .defbtn { touch-action: none; }
   /* ---- hold-to-shoot power meter (v2.2): fills while Shoot is held ---- */
   #power-wrap {
     display: none; align-items: center; gap: 8px; max-width: 420px; margin: 0 auto 8px;
@@ -206,7 +220,7 @@
 
 <div id="topbar">
   <span class="title">🏀 Basketball — 535 Backyard Court</span>
-  <span class="vtag">v2.4</span>
+  <span class="vtag">v2.4.1</span>
   <span class="spacer"></span>
   <span id="score-readout">You: 0</span>
   <span id="baskets-readout">Baskets: 0</span>
@@ -232,6 +246,10 @@
       <p class="pick">How do you want to play?</p>
       <button class="bigbtn" id="mode-1on1" type="button">1 on 1<span class="last" id="last-1on1" style="display:none">★ Last played</span></button>
       <button class="bigbtn" id="mode-3on3" type="button">3 on 3<span class="sub">Still to come — picking it records your choice; the decision screens come first</span><span class="last" id="last-3on3" style="display:none">★ Last played</span></button>
+      <!-- v2.4.1: Quick Play — the shortcut door (see quickPlay).
+           Hidden until there is something to quick-play: a game in
+           progress (it continues that game) or a remembered setup. -->
+      <button class="bigbtn grey" id="quick-play" type="button" style="display:none">⚡ Quick Play<span class="sub" id="quick-sub"></span></button>
       <p id="mode-baskets">Your baskets: 0</p>
     </div>
   </div>
@@ -469,6 +487,41 @@
      pick still stands (startGame is told to keep it). The court
      code can already seat both teams; full team play is the
      later build this decision screen is waiting for.
+
+   v2.4.1 (Joshua, 2026-10-24) — THE HOLD IS THE GAME'S:
+   - Hands-on defect: HOLDING the Shoot button on his phone made
+     the browser SELECT TEXT on the page instead of simply holding
+     (the hold charges the power meter). The page now refuses
+     selection outright — user-select: none and
+     -webkit-touch-callout: none on the body, which covers the
+     score banner, the announcements and every button — every
+     button carries touch-action: none so a press is never
+     reinterpreted as a scroll/select gesture and a hold is never
+     cancelled mid-charge, and a page-wide contextmenu guard
+     stops the long-press menu (Android Chrome). No game logic
+     changed: the press/release handlers and the power-meter
+     timing are exactly as they were in v2.4.
+   - ENTRY ALWAYS SHOWS THE DECISIONS (his ruling, same day):
+     entering the court used to resume a saved in-progress game
+     silently, straight into gameplay. Now entry ALWAYS lands on
+     the selection flow — mode first, then Make it, Take it —
+     even when a game is in progress and his choices are
+     remembered. The remembered choices stay pre-selected (the
+     ★ Last played stars); he confirms or changes them.
+   - QUICK PLAY (new): the mode screen carries a Quick Play
+     button — the one tap that skips the screens. With a game in
+     progress it resumes that game exactly as it was (the
+     continue door); with none, it starts a NEW game from his
+     last selections wholesale (mode + Make it, Take it +
+     opponent). It passes the same honesty gate as a manual
+     pick: a recorded 3-on-3 choice lands on the same "still to
+     come" notice — never a fake 3-on-3 start. On a first-ever
+     entry (nothing remembered, no game saved) the button is
+     hidden; there is nothing to quick-play yet. The manual
+     flow stays his "change it up" path: walking the screens
+     and picking an opponent starts a NEW game that replaces
+     any in-progress save. The end popup's Play again is
+     unchanged.
    ============================================================================ */
 (function(){
 'use strict';
@@ -2309,6 +2362,34 @@ function saveAndExit(){
   updateActionButton();
 }
 
+/* QUICK PLAY (v2.4.1, Joshua): the mode screen's shortcut door.
+   Entering the court always lands on the selection flow (see
+   init), so this is the one tap that skips the screens using what
+   he played last:
+   - a game in progress comes back exactly as it was — this is the
+     continue door;
+   - otherwise a NEW game starts from his remembered selections
+     wholesale: last mode, last Make it, Take it choice, last
+     opponent;
+   - the 3-on-3 honesty gate applies here too: a recorded 3-on-3
+     pick goes through chooseMode and lands on the same "still to
+     come" notice a manual pick gets — never a fake 3-on-3 start. */
+function quickPlay(){
+  if (progress.game){
+    var g = progress.game;
+    startGame(g.mode, g.opp, { restored: true, score: g.score, oppScore: g.oppScore, makeItTakeIt: g.makeItTakeIt === true });
+    return;
+  }
+  if (progress.lastMode === '3on3'){ chooseMode('3on3'); return; }
+  if (progress.lastMode){
+    startGame(progress.lastMode, progress.lastOpponent || rotateCast().name, { makeItTakeIt: !!progress.lastMakeItTakeIt });
+    return;
+  }
+  /* nothing remembered (first-ever entry): the button is hidden in
+     that state; if it is somehow reached, stay on the mode screen */
+  showModeScreen();
+}
+
 function showModeScreen(){
   phase = 'mode';
   keepModePick = false;
@@ -2318,9 +2399,30 @@ function showModeScreen(){
   var l1 = el('last-1on1'), l3 = el('last-3on3');
   if (l1) l1.style.display = (progress.lastMode === '1on1') ? 'block' : 'none';
   if (l3) l3.style.display = (progress.lastMode === '3on3') ? 'block' : 'none';
+  /* v2.4.1: Quick Play shows only when there is something to
+     quick-play, and its sub-line says exactly what it will do.
+     First-ever entry (nothing remembered, no game saved): hidden —
+     the two mode buttons above are the way in. */
+  var qp = el('quick-play'), qs = el('quick-sub');
+  if (qp){
+    if (progress.game){
+      qp.style.display = 'block';
+      if (qs) qs.textContent = 'Continue your game against ' + progress.game.opp +
+        ' — You ' + progress.game.score + ' · ' + progress.game.opp + ' ' + progress.game.oppScore;
+    } else if (progress.lastMode){
+      qp.style.display = 'block';
+      if (qs) qs.textContent = 'Your last setup — ' + (progress.lastMode === '3on3' ? '3 on 3' : '1 on 1') +
+        (progress.lastOpponent ? ' against ' + progress.lastOpponent : '') +
+        (progress.lastMakeItTakeIt ? ', Make it Take it' : ', Standard');
+    } else {
+      qp.style.display = 'none';
+    }
+  }
   /* v2.2: if a Save and Exit is on record, say the level he comes
      back to (his skill restores from the same save) */
-  if (progress.exitLevel > 0)
+  if (progress.game)
+    setFeedback('Choose how you want to play. Your game against ' + progress.game.opp + ' is saved — Quick Play picks it back up.');
+  else if (progress.exitLevel > 0)
     setFeedback('Choose how you want to play. You left your last game at Skill Lv ' + progress.exitLevel + ' — that level is yours when you step back in.');
   else
     setFeedback('Choose how you want to play.');
@@ -2484,6 +2586,9 @@ function init(){
 
   el('mode-1on1').addEventListener('click', function(){ chooseMode('1on1'); });
   el('mode-3on3').addEventListener('click', function(){ chooseMode('3on3'); });
+  /* v2.4.1: Quick Play — skip the screens, play the last setup
+     (or pick the saved game back up) */
+  el('quick-play').addEventListener('click', function(){ quickPlay(); });
   /* v2.4: the Make it, Take it step's two buttons */
   el('mitt-yes').addEventListener('click', function(){ chooseMitt(true); });
   el('mitt-no').addEventListener('click', function(){ chooseMitt(false); });
@@ -2516,6 +2621,11 @@ function init(){
   actBtn.addEventListener('pointerup', function(ev){ ev.preventDefault(); actionRelease(); });
   actBtn.addEventListener('pointercancel', function(){ cancelCharge(); });
   actBtn.addEventListener('pointerleave', function(){ /* sliding off mid-hold keeps the charge until release */ });
+  /* v2.4.1: a long press must never open the browser's context
+     menu / text callout (Android Chrome) — the hold belongs to the
+     game (it charges the shot). Text selection itself is off in
+     the CSS (body + buttons); this stops the menu. */
+  document.addEventListener('contextmenu', function(ev){ ev.preventDefault(); });
   /* v2.2: your two defensive controls — Defend is held, Steal is one press */
   var defBtn = el('defend-btn'), stlBtn = el('steal-btn');
   defBtn.addEventListener('pointerdown', function(ev){ ev.preventDefault(); defendStart('btn'); });
@@ -2565,14 +2675,16 @@ function init(){
   }
 
   updateSkillBar();
-  /* open: a saved game in progress comes straight back; otherwise
-     the mode choice, over the quiet court. */
-  if (progress.game){
-    startGame(progress.game.mode, progress.game.opp, { restored: true, score: progress.game.score, oppScore: progress.game.oppScore, makeItTakeIt: progress.game.makeItTakeIt === true });
-  } else {
-    buildCourt(null);
-    showModeScreen();
-  }
+  /* v2.4.1 (Joshua): entering the court ALWAYS lands on the
+     selection flow — pick 1 on 1 / 3 on 3, then Make it, Take it —
+     every time, even with a game in progress and every choice
+     remembered. Nothing resumes silently. The remembered choices
+     stay pre-selected (the ★ Last played stars), and the mode
+     screen's Quick Play button is the door that picks the saved
+     game back up, or starts his last setup in one tap. The quiet
+     court waits underneath, as it did for a fresh entry. */
+  buildCourt(null);
+  showModeScreen();
   updateActionButton();
   fitAppHeight();
   started = true;
@@ -2584,7 +2696,7 @@ catch(e){ showError(e); }
 
 /* test/debug surface (also handy later): state snapshots + drivers */
 window.BBALL_PAGE = {
-  version: '2.4.0',
+  version: '2.4.1',
   started: function(){ return started; },
   embedded: function(){ return EMBEDDED; },
   mode: function(){ return mode; },
@@ -2604,6 +2716,8 @@ window.BBALL_PAGE = {
   /* v2.4 surface: the Make it, Take it step + his remembered choice */
   chooseMitt: chooseMitt,
   lastMakeItTakeIt: function(){ return !!progress.lastMakeItTakeIt; },
+  /* v2.4.1 surface: Quick Play — the mode screen's shortcut door */
+  quickPlay: quickPlay,
   /* v2.4 surface: the 3-on-3 notice — proceed knowingly, or go back */
   playOneOnOneInstead: playOneOnOneInstead,
   comingBack: comingBack,
