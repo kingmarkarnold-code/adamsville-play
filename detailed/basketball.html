@@ -161,7 +161,7 @@
 
 <div id="topbar">
   <span class="title">🏀 Basketball — 535 Backyard Court</span>
-  <span class="vtag">v2.2</span>
+  <span class="vtag">v2.3</span>
   <span class="spacer"></span>
   <span id="score-readout">You: 0</span>
   <span id="baskets-readout">Baskets: 0</span>
@@ -335,6 +335,25 @@
      where your saved level is shown). Your level itself was always
      restored from your saved XP — the exit record now names the
      level you finished at, and that is the level you come back to.
+
+   v2.3 (Joshua, 2026-10-24) — OUT OF BOUNDS, LAST TOUCH + THE TOP:
+   - LAST TOUCH DECIDES every ball-out, loose balls included (the
+     v2.2 rule, now stated for all cases): the ball leaves the court
+     and it is the OTHER man's ball — his shot that flies out, a
+     ball that slips out of his hands, same call.
+   - THE RESTART IS AT THE TOP: in Joshua's terms the area around
+     the goal is the KEY and "the top" is the opposite end of the
+     court. The man receiving the ball restarts THERE — the far end
+     from the goal — with the ball in his possession (TOP_SPOT;
+     restarts used to leave men where they stood, and the old start
+     spot sits in the goal's half, so it is not the top).
+   - WHOSE FEET COUNT DEPENDS ON THE BALL: while a man HOLDS the
+     ball, his stepping out is out on him too (the ball in his
+     possession is out with him), and the held ball itself crossing
+     the line is out on him. While the ball is LOOSE, a man
+     stepping out — chasing it, fetching it — is never a call: only
+     the ball crossing makes it, decided by last touch. (The
+     tree-border leave question is untouched, as in v2.2.)
    ============================================================================ */
 (function(){
 'use strict';
@@ -422,6 +441,16 @@ var TREE_BORDER = { rx: 8.8, rz: 10.5 };
 var GOAL_TREE = { x: 0, z: -8.2 };
 var RIM = { x: 0, y: 3.05, z: -7.42 };        // rim centre (tree z + 0.78)
 var START_SPOT = { x: 0, z: -2.0 };           // where you start each game
+/* THE TOP (v2.3, Joshua's terminology): the area around the goal is
+   the KEY; "the top" is the OPPOSITE end of the court from the goal.
+   The rim sits at the north edge (z = -7.42, the key); the top is
+   the far south end — TOP_SPOT, well inside the dirt down there.
+   (START_SPOT above, z = -2.0, sits in the goal's half, so it is
+   NOT the top and no longer serves as the restart spot.) Every
+   restart puts the man with the ball HERE, in his hands, and his
+   opponent on the rim line 1.15 m in front of him (defenderAnchor —
+   the same defensive post a game is built with). */
+var TOP_SPOT = { x: 0, z: 6.0 };
 var GRAVITY = 9.8, BALL_R = 0.12;
 var WALK_SPEED = 3.4;                          // your pace, main-game walking feel
 var FIG_R = 0.35;                              // a player's personal space (court margin)
@@ -621,7 +650,8 @@ var ball = null, ballState = 'ready',   // 'ready' | 'held' | 'dribbling' | 'sho
     ballVel = { x: 0, y: 0, z: 0 }, ballScored = false, flyT = 0;
 var possession = 'you';       // 'you' | 'opp' — whose turn it is with the ball
 var lastTouch = '';           // v2.2: '' | 'you' | 'opp' — who touched the ball last
-                              // (the out-of-bounds call is made off this man)
+                              // (v2.3: this decides EVERY ball-out — the other
+                              // man restarts at the top with the ball)
 var lastCall = null;          // v2.2: {off, to, text} — the most recent out-of-bounds call
 var callBannerUntil = 0;      // v2.2: page-clock time the call banner stays up
 var charging = null;          // v2.2: {startT} while Shoot is held and charging, else null
@@ -1085,9 +1115,12 @@ function updatePlayer(dt){
     player.face = Math.atan2(iv.x, iv.z);
     /* a quicker, bouncier stride than the old walk (v2.2 movement) */
     player.stepPhase += dt * 10.5 * iv.mag;
-    /* v2.2 OUT OF BOUNDS: carrying the ball off the dirt is out on
-       YOU — the call gives it to him. (With no ball, or chasing a
-       loose one, stepping out is just stepping out.) */
+    /* OUT OF BOUNDS, the HOLDER's feet (v2.2; v2.3 keeps it for the
+       held case only): while the ball is in your hands or on your
+       dribble, YOUR stepping off the dirt is out on you — he
+       restarts at the top with it. The moment the ball is loose
+       (not held / not dribbling), this check does not run at all:
+       chasing a loose ball off the dirt is never a call. */
     if ((ballState === 'held' || ballState === 'dribbling') && !insideCourt(player.x, player.z, FIG_R)){
       callOutOfBounds('you');
     }
@@ -1191,18 +1224,30 @@ function answerLeave(yesLeave){
   updateActionButton();
 }
 
-/* ============================== out of bounds (v2.2) ==============================
+/* ============================== out of bounds (v2.2, clarified in v2.3) ==============================
    Joshua's rule, in his words: the ball is out on the LAST PERSON
    THAT HAD IT — "if I had the ball and I shot it and the ball goes
    out, the ball's out on me, so the other player automatically gets
-   it, and vice versa." lastTouch is kept at every touch (pickup,
-   your release, his recovery, his steal, his shot, a block swat —
-   the swat is his touch). When the call is made, the other side is
-   INBOUNDED the ball and play continues; the call is announced on
-   screen in plain words. The triggers live where they happen: the
-   man with the ball stepping off the dirt (updatePlayer), the ball
-   touching down outside the dirt (stepBall), and the ball settling
-   outside the dirt (settleDeadBall). */
+   it, and vice versa." v2.3 states it for EVERY ball-out, loose
+   balls included: a shot that flies out untouched, a ball that
+   slips out of a man's hands and rolls out — last touch decides,
+   and the other man restarts AT THE TOP (TOP_SPOT: the far end of
+   the court, opposite the goal — the area around the goal is the
+   KEY) with the ball in his possession, his opponent on the
+   defensive post in front of him. The triggers live where they
+   happen:
+   - the ball touching down outside the dirt (stepBall) and the
+     ball settling outside the dirt (settleDeadBall): loose outs,
+     decided by lastTouch;
+   - the HOLDER stepping off the dirt with the ball in his hands
+     (updatePlayer, you; his figure is clamped to the dirt) and the
+     HELD ball itself crossing the line (checkHeldBallOut, run
+     every frame after the ball is placed): a held ball is out on
+     its holder whichever of him or it crosses first.
+   While the ball is LOOSE, no man's feet can make a call — a
+   chaser stepping off the dirt to fetch it is play on. lastTouch
+   is kept at every touch (pickup, your release, his recovery, his
+   steal, his shot, a block swat — the swat is his touch). */
 /* Show the call: the big banner, the feedback line, and the book. */
 function announceCall(text){
   var b = el('call-banner');
@@ -1210,20 +1255,26 @@ function announceCall(text){
   callBannerUntil = T + 3.0;   // animate() takes it down again
   setFeedback(text);
 }
-function inboundBall(to){
-  /* Hand the ball to a side where play can continue: yours arrives
-     in your hands (and if you are standing off the dirt, you are
-     stepped back onto it — an inbound starts on the court); his
-     arrives in his hands and his offence begins. */
+/* THE RESTART (v2.3): 'side' restarts at the top with the ball in
+   his possession; the other man goes to the standard defensive
+   post — defenderAnchor on the rim line, 1.15 m in front of the
+   man with the ball, the post buildCourt opens every game with. */
+function restartAtTop(side){
   shotAnim = null;
   player.jumpY = 0;
   charging = null;
   stealPressure = 0;
-  possession = to;
-  if (to === 'you'){
-    if (!insideCourt(player.x, player.z, FIG_R)){
-      var c = clampInside(player.x, player.z, FIG_R);
-      player.x = c.x; player.z = c.z;
+  shotCtx = null;
+  possession = side;
+  if (side === 'you'){
+    player.x = TOP_SPOT.x; player.z = TOP_SPOT.z;
+    player.face = Math.PI;                       // facing the rim, as at a game's start
+    player.speed = 0;
+    if (primaryDef){
+      var a = defenderAnchor({ x: player.x, z: player.z }, 1.15);
+      primaryDef.position.set(a.x, 0, a.z);
+      primaryDef.userData.vel.x = 0; primaryDef.userData.vel.z = 0;
+      faceToward(primaryDef, player.x, player.z);
     }
     ballState = 'held';
     lastTouch = 'you';
@@ -1233,6 +1284,16 @@ function inboundBall(to){
     var hp = handPos();
     if (ball) ball.position.set(hp.x, HAND_Y + 0.12, hp.z);
   } else {
+    if (primaryDef){
+      primaryDef.position.set(TOP_SPOT.x, 0, TOP_SPOT.z);
+      primaryDef.userData.vel.x = 0; primaryDef.userData.vel.z = 0;
+      faceToward(primaryDef, RIM.x, RIM.z);
+    }
+    /* you take the defensive post in front of him */
+    var dp = defenderAnchor({ x: TOP_SPOT.x, z: TOP_SPOT.z }, 1.15);
+    player.x = dp.x; player.z = dp.z;
+    player.face = Math.atan2(TOP_SPOT.x - player.x, TOP_SPOT.z - player.z);
+    player.speed = 0;
     ballState = 'ophold';
     lastTouch = 'opp';
     oppBrain.state = 'approach';
@@ -1247,6 +1308,9 @@ function inboundBall(to){
   }
   updateActionButton();
 }
+/* THE CALL (v2.2 rule; v2.3: every ball-out lands here): out on
+   the man who touched it last — the other side restarts at the
+   top with the ball. */
 function callOutOfBounds(offWho){
   if (!game || phase !== 'game' || pendingWin) return false;
   var to = (offWho === 'you') ? 'opp' : 'you';
@@ -1254,10 +1318,24 @@ function callOutOfBounds(offWho){
     ? "Out of bounds — off you. " + (game ? game.opp : 'Opponent') + "'s ball."
     : "Out of bounds — off " + (game ? game.opp : 'him') + ". Your ball.";
   lastCall = { off: offWho, to: to, text: text };
-  shotCtx = null;
   announceCall(text);
-  inboundBall(to);
+  restartAtTop(to);
   return true;
+}
+/* The HELD ball crossing the line (v2.3): while a man holds the
+   ball — in his hands or on his dribble — the ball itself leaving
+   the dirt is out on him, just as his own feet stepping out is
+   (updatePlayer). Run every frame after the ball is placed; loose
+   balls are not checked here (their outs are the touchdown and
+   settle triggers, on last touch), and nobody's FEET are ever
+   checked against a loose ball. */
+function checkHeldBallOut(){
+  if (!ball || !game || phase !== 'game' || pendingWin) return;
+  if (ballState === 'held' || ballState === 'dribbling'){
+    if (!insideCourt(ball.position.x, ball.position.z, 0)) callOutOfBounds('you');
+  } else if (ballState === 'ophold' || ballState === 'oppdribble'){
+    if (!insideCourt(ball.position.x, ball.position.z, 0)) callOutOfBounds('opp');
+  }
 }
 
 /* ============================== moving a figure toward a point ============================== */
@@ -1817,10 +1895,11 @@ function stepBall(dt){
 
   if (ball.position.y <= BALL_R){
     ball.position.y = BALL_R;
-    /* v2.2 OUT OF BOUNDS: the ball touching down OUTSIDE the dirt is
-       out — off the last man who touched it — the moment it lands,
-       exactly as it would be whistled on a real court. A made basket
-       is never out (the score stands, the turnover logic runs). */
+    /* OUT OF BOUNDS at the touchdown: the ball touching down
+       OUTSIDE the dirt is out — off the last man who touched it —
+       the moment it lands, exactly as it would be whistled on a
+       real court (v2.2; v2.3: the other man restarts at the top).
+       A made basket is never out (the score stands). */
     if (!ballScored && !insideCourt(ball.position.x, ball.position.z, 0)){
       if (callOutOfBounds(lastTouch === 'opp' ? 'opp' : 'you')) return;
     }
@@ -1869,10 +1948,11 @@ function onBasket(by){
    over. Your make or a block of your shot -> he fetches it and his
    offence begins. Anything else -> it's loose, and yours to take. */
 function settleDeadBall(){
-  /* v2.2 OUT OF BOUNDS at the settle: a ball that comes to rest
+  /* OUT OF BOUNDS at the settle: a ball that comes to rest
      outside the dirt (it flew out high, or timed out in flight out
-     there) is out on the last touch — the other side is inbounded.
-     Checked BEFORE the old clamp pulled it back onto the dirt. */
+     there) is out on the last touch — the other man restarts at
+     the top with it. Checked BEFORE the old clamp pulled it back
+     onto the dirt. */
   if (!ballScored && game && phase === 'game' && !pendingWin &&
       !insideCourt(ball.position.x, ball.position.z, 0)){
     ballState = 'dead';
@@ -2065,6 +2145,7 @@ function animate(){
   updateBallCarry(dt);
   updateOppBall(dt);
   stepBall(dt);
+  checkHeldBallOut();   // v2.3: a HELD ball crossing the line is out on its holder
   /* v2.2 housekeeping: the call banner lives for its few seconds,
      the power meter tracks a charging hold, and the defence
      buttons track range/cooldown as men move (cached DOM writes) */
@@ -2264,7 +2345,7 @@ catch(e){ showError(e); }
 
 /* test/debug surface (also handy later): state snapshots + drivers */
 window.BBALL_PAGE = {
-  version: '2.2.0',
+  version: '2.3.0',
   started: function(){ return started; },
   embedded: function(){ return EMBEDDED; },
   mode: function(){ return mode; },
@@ -2312,6 +2393,7 @@ window.BBALL_PAGE = {
     oppState: function(){ return oppBrain.state; },
     /* v2.2 debug drivers/readers */
     arena: function(){ return { court: { rx: COURT.rx, rz: COURT.rz }, treeBorder: { rx: TREE_BORDER.rx, rz: TREE_BORDER.rz } }; },
+    topSpot: function(){ return { x: TOP_SPOT.x, z: TOP_SPOT.z }; },   // v2.3: the restart spot (the top, far end from the goal)
     powerOutcome: function(holdSec){ return shotOutcomeForHold(holdSec); },
     charge: function(){
       if (!charging) return { active: false, hold: 0, power: 0, band: '' };
