@@ -1,91 +1,91 @@
 {
-  "version": "1.9.10",
-  "changelog": "Three things. (1) A Pieces panel under the map lists every piece in your selection by name \u2014 including one buried under another piece, which could not be seen or clicked before. Clicking a row shows that one piece by itself, framed and lit bright, and each row's Delete removes just that one piece through the usual framed confirmation. A Find stacked button scans the whole map in the background (progress bar in the corner) and lists pieces lying on top of other pieces \u2014 exact duplicates, zero-length records, pieces covered by another road \u2014 each saying why in plain words; the finder itself never deletes anything. (2) Merge now draws the selected road back to the first edge of the other road it actually reaches \u2014 never across it \u2014 and lines its end up along that edge: straight on a straight edge, following the curve on a curving edge, a mouth along the edge on a diagonal meeting. (3) Join forms the space between the two pieces \u2014 straight when their ends run straight, a smooth curve when they bend \u2014 and the result is one single road.",
-  "files": [
-    {
-      "path": "about.py",
-      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/about.py",
-      "sha256": "0b172aa3a3e94c80136473f95f42cef62f26927cfb9a8644f9aa14a4b3463140"
-    },
-    {
-      "path": "app.py",
-      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/app.py",
-      "sha256": "1d55b3602a9bccb2cdfa35d339f456bae86553aa737203616e280cbe5c13f5e5"
-    },
-    {
-      "path": "data.py",
-      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/data.py",
-      "sha256": "17eee4321e987fdbb0d202410638567028a88ce088d9505a218514b1e868c4aa"
-    },
-    {
-      "path": "gamedata.py",
-      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/gamedata.py",
-      "sha256": "4cc3a7845cd973b326395f98b076b25d1d6bc83a0aa9e67f877a4163742f667a"
-    },
-    {
-      "path": "github_sync.py",
-      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/github_sync.py",
-      "sha256": "00727441d1d9d66d0fd17d774aae47a6b94063e67f2e379f668a313cc333cc9e"
-    },
-    {
-      "path": "ground.py",
-      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/ground.py",
-      "sha256": "e9bd4994bf20bf339a0f4ff307f40b4d8b10dafe0fff4ddb548538f6dde3083a"
-    },
-    {
-      "path": "mapcanvas.py",
-      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/mapcanvas.py",
-      "sha256": "baec83e7b29047f5589b26362fb4e8440587999ec952c70e2b4474e11071368e"
-    },
-    {
-      "path": "overpass.py",
-      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/overpass.py",
-      "sha256": "9cdd2766f6d4da08ec6730f0a72eeac52e81befc415e46bcaf73ee4ec2b633cf"
-    },
-    {
-      "path": "roadinspect.py",
-      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/roadinspect.py",
-      "sha256": "22de52d484bc2bfcca7e28d3adac01afeeb29c6a6abbd722763caea729a290d1"
-    },
-    {
-      "path": "shared_cache.py",
-      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/shared_cache.py",
-      "sha256": "86e16770fdea09e684c882870f730a794e2d64a807c3f06195dcd3254dedbde5"
-    },
-    {
-      "path": "undo.py",
-      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/undo.py",
-      "sha256": "fd81519489702ebc71fb8b13b927dea408054a483d68ba6d6b0b3fbe7123706b"
-    },
-    {
-      "path": "updater.py",
-      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/updater.py",
-      "sha256": "0c36b000830e5661165ac9f636466cd6d8402bab410bcab7da10b3e1e13e3a92"
-    },
-    {
-      "path": "areadata.py",
-      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/areadata.py",
-      "sha256": "484435e0bb2a3e7f29120b4b24ec0d80b7df770e39c52a6d92964db96bf91f43"
-    },
-    {
-      "path": "batchdelete.py",
-      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/batchdelete.py",
-      "sha256": "e9aedc54df78a2a1e6e89c5165151f6116ad0f768dc3596f51f9ab48917e5c7a"
-    },
-    {
-      "path": "mergejoin.py",
-      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/mergejoin.py",
-      "sha256": "02b7fb6cc1a9c211bfca8fcd8f45a6ed86b6053b4410cbf161ab2eb5671e47ec"
-    },
-    {
-      "path": "piecespanel.py",
-      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/piecespanel.py",
-      "sha256": "0933d470fa970fbd8e8a70ab166cfc9be182f9fd74fed06a22025b11976cb3b1"
-    },
-    {
-      "path": "stacked.py",
-      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/stacked.py",
-      "sha256": "3cca8cdf9f4cd278cfad4cafba2416b73b7f4bd378d0a94907db8edbf0488a2d"
-    }
-  ]
+    "version": "1.9.11",
+    "changelog": "Six things. (1) Paired objects: where one road exists as two runs (split by a crossing road, or the two sides of a median stretch), the runs are now ONE piece in the editor whenever the data marks them with a shared 'grp' value \u2014 clicking any run selects the whole object, the Pieces panel lists it as one entry naming every run, and Delete removes the whole object through the usual framed check. Merge and Join leave paired objects alone. Where no grp marks exist, nothing changes. (2) Join takes chains: select 3 or more pieces and Join makes them one road, forming every space between them straight or curved as their ends run. Merge still takes exactly 2. Shift+click adds a piece at any time; Ctrl+click takes one piece out. (3) Lasso: hold Shift and drag a line that loops back to its start \u2014 every piece inside is added to the selection (the lasso only selects; you then choose what to do). (4) Draw works: with Draw on, dragging lays a new road and panning is off; let go to add it, saved like any edit. (5) The editor opens with no tool armed, and zone or building jumps arm nothing either. (6) Selecting a piece now wakes the 3D still pane, framed on the exact spot you clicked at street level \u2014 it no longer stays black after selecting.",
+    "files": [
+        {
+            "path": "about.py",
+            "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/about.py",
+            "sha256": "0b172aa3a3e94c80136473f95f42cef62f26927cfb9a8644f9aa14a4b3463140"
+        },
+        {
+            "path": "app.py",
+            "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/app.py",
+            "sha256": "16db78a948db45d34773a4d0afd6603e92cffbaca6ef1ba5bf7b430a4e35774c"
+        },
+        {
+            "path": "data.py",
+            "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/data.py",
+            "sha256": "17eee4321e987fdbb0d202410638567028a88ce088d9505a218514b1e868c4aa"
+        },
+        {
+            "path": "gamedata.py",
+            "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/gamedata.py",
+            "sha256": "4cc3a7845cd973b326395f98b076b25d1d6bc83a0aa9e67f877a4163742f667a"
+        },
+        {
+            "path": "github_sync.py",
+            "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/github_sync.py",
+            "sha256": "00727441d1d9d66d0fd17d774aae47a6b94063e67f2e379f668a313cc333cc9e"
+        },
+        {
+            "path": "ground.py",
+            "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/ground.py",
+            "sha256": "e9bd4994bf20bf339a0f4ff307f40b4d8b10dafe0fff4ddb548538f6dde3083a"
+        },
+        {
+            "path": "mapcanvas.py",
+            "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/mapcanvas.py",
+            "sha256": "2075968da5e18563b2ae7b27d9ef94d943ba39ddb15c9d085fac058f4ef56166"
+        },
+        {
+            "path": "overpass.py",
+            "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/overpass.py",
+            "sha256": "9cdd2766f6d4da08ec6730f0a72eeac52e81befc415e46bcaf73ee4ec2b633cf"
+        },
+        {
+            "path": "roadinspect.py",
+            "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/roadinspect.py",
+            "sha256": "f0bc27b2911b9f752577eac06c5486a4ff4425fa866e2340b83e776742133a00"
+        },
+        {
+            "path": "shared_cache.py",
+            "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/shared_cache.py",
+            "sha256": "86e16770fdea09e684c882870f730a794e2d64a807c3f06195dcd3254dedbde5"
+        },
+        {
+            "path": "undo.py",
+            "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/undo.py",
+            "sha256": "fd81519489702ebc71fb8b13b927dea408054a483d68ba6d6b0b3fbe7123706b"
+        },
+        {
+            "path": "updater.py",
+            "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/updater.py",
+            "sha256": "0c36b000830e5661165ac9f636466cd6d8402bab410bcab7da10b3e1e13e3a92"
+        },
+        {
+            "path": "areadata.py",
+            "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/areadata.py",
+            "sha256": "484435e0bb2a3e7f29120b4b24ec0d80b7df770e39c52a6d92964db96bf91f43"
+        },
+        {
+            "path": "batchdelete.py",
+            "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/batchdelete.py",
+            "sha256": "e9aedc54df78a2a1e6e89c5165151f6116ad0f768dc3596f51f9ab48917e5c7a"
+        },
+        {
+            "path": "mergejoin.py",
+            "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/mergejoin.py",
+            "sha256": "02b7fb6cc1a9c211bfca8fcd8f45a6ed86b6053b4410cbf161ab2eb5671e47ec"
+        },
+        {
+            "path": "piecespanel.py",
+            "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/piecespanel.py",
+            "sha256": "d1dca3754d6b1ff8f9754c578e1265ddf8de727bb3bf9473222a96014fd8c665"
+        },
+        {
+            "path": "stacked.py",
+            "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/stacked.py",
+            "sha256": "3cca8cdf9f4cd278cfad4cafba2416b73b7f4bd378d0a94907db8edbf0488a2d"
+        }
+    ]
 }
