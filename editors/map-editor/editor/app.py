@@ -52,7 +52,7 @@ import overpass as overpass_mod  # noqa: E402
 
 # App version shown in the Help -> About dialog (bump with each release).
 # Joshua 2026-10-11: version number must be prominent in About.
-APP_VERSION = "1.9.11"
+APP_VERSION = "1.9.12"
 # Display name and icon-theme name for the About dialog.
 APP_NAME = "Adamsville Map Editor"
 APP_ICON = "adamsville-map-editor-native"
@@ -216,9 +216,9 @@ class MapEditorApp:
         # canvas column, in a vertical paned whose sash Joshua
         # can drag — including nearly shut. It does NOT share
         # the inspector's column: the inspector's own internal
-        # split (area view over elevation view at a fixed 300)
-        # needs the column's full height, and squeezing it
-        # starved the elevation pane. The canvas's framing math
+        # split (area view over resource map view at a fixed
+        # 300) needs the column's full height, and squeezing it
+        # starved the bottom pane. The canvas's framing math
         # is all allocation-relative, so a shorter canvas is
         # safe; the initial sash position is set in
         # _initial_setup once the real height is known.
@@ -315,6 +315,7 @@ class MapEditorApp:
         Escape: clear Join/Merge/Extend in-progress selections.
         Ctrl+Z: undo. Ctrl+Y or Ctrl+Shift+Z: redo.
         (Joshua 2026-10-12: undo/redo keyboard shortcuts.)
+        Delete: the Delete button's keyboard twin (1.9.12).
         Move-road mode (Joshua 2026-10-12): Enter drops the road,
         Escape cancels the move.
         """
@@ -389,6 +390,28 @@ class MapEditorApp:
                 self.canvas.zoom_at(alloc.width / 2,
                                     alloc.height / 2, 0.8)
                 return True
+        # Delete key (1.9.12, Joshua): the keyboard twin of the
+        # Delete BUTTON — it runs on_delete_clicked itself, so the
+        # behaviour is identical by construction: the framed
+        # preview + bar for a selection, the "Nothing is selected"
+        # popup for an empty one, the "finish the road shown
+        # first" note while a preview already owns the bar. Same
+        # text-focus guard as the keys above (never steal Delete
+        # from an entry being typed in), and never mid-move (the
+        # move mode's keys are handled at the top; a drop is in
+        # progress, not a delete decision).
+        if event.keyval in (Gdk.KEY_Delete, Gdk.KEY_KP_Delete):
+            if getattr(self.canvas, "move_road", None) is not None:
+                return False
+            try:
+                focus = self.window.get_focus()
+                if isinstance(focus, (Gtk.Entry, Gtk.TextView,
+                                      Gtk.SearchEntry)):
+                    return False
+            except Exception:
+                pass
+            self.on_delete_clicked()
+            return True
         return False
 
     # ------------------------------------------------------------------
@@ -2558,9 +2581,9 @@ class MapEditorApp:
     #
     # One-live-pane rule (Joshua): at most one pane renders
     # continuously — the one being manipulated. Making the 3D
-    # viewport live stills the map + elevation panes; touching
-    # the map (or the elevation pane) makes the map live again
-    # and returns the 3D viewport to a still.
+    # viewport live stills the map + resource panes; touching
+    # the map (or the resource map pane) makes the map live
+    # again and returns the 3D viewport to a still.
     #
     # During a delete / join / merge / batch decision the panes
     # hold Before/After STILLS (compare mode in the inspector
@@ -2594,8 +2617,8 @@ class MapEditorApp:
         """
         A pane was grabbed for manipulation: it becomes the live
         pane and every other pane returns to a still. Called by
-        the canvas ("map"), the elevation pane ("map") and the 3D
-        viewport ("3d"). A no-op during comparisons.
+        the canvas ("map"), the resource map pane ("map") and
+        the 3D viewport ("3d"). A no-op during comparisons.
         """
         insp = getattr(self, "inspector", None)
         if insp is not None and insp.compare_active():
@@ -2661,7 +2684,7 @@ class MapEditorApp:
 
     def _open_compare(self, targets, omit_ids, extra_roads,
                       before_text, after_text, frame_roads,
-                      cam=None):
+                      cam=None, on_after_pick=None):
         """
         Switch the companion panes to a Before/After comparison.
         targets are lit in Before; omit_ids vanish in After;
@@ -2669,6 +2692,9 @@ class MapEditorApp:
         framing camera is fitted to frame_roads unless `cam`
         is given (single delete: the main view's own framed
         camera, so the panes match the photograph exactly).
+        on_after_pick (1.9.12) is the comparison owner's
+        click-to-add handler for the After picture; only the
+        delete preview registers one.
         """
         insp = getattr(self, "inspector", None)
         if insp is None:
@@ -2680,7 +2706,8 @@ class MapEditorApp:
         insp.set_compare(cam, targets, omit_ids,
                          extra_roads=extra_roads,
                          before_text=before_text,
-                         after_text=after_text)
+                         after_text=after_text,
+                         on_after_pick=on_after_pick)
 
     def on_delete_preview_begin(self, roads):
         """
@@ -2697,7 +2724,93 @@ class MapEditorApp:
             targets, {id(r) for r in targets}, [],
             "Before — as it is now",
             "After — with the piece removed",
-            targets, cam=self._snapshot_camera())
+            targets, cam=self._snapshot_camera(),
+            on_after_pick=self.add_piece_from_after_picture)
+
+    def add_piece_from_after_picture(self, cat, idx, road):
+        """
+        Click-to-add from the After picture (1.9.12, Joshua's
+        order): while the delete picture is up, the After still
+        shows what remains — including pieces that were UNDER
+        the ones being deleted (stacked/buried pieces the main
+        view could not be clicked on). Clicking such a piece in
+        the After picture adds it to THIS deletion, exactly as
+        if it had been selected in the main view:
+
+          * the piece joins the framed set (canvas.delete_
+            preview["roads"]) — the very records a confirmed
+            delete removes;
+          * it joins the main selection too, expanded through
+            the grp pairing exactly like a main-view click (a
+            paired object arrives WHOLE), so the Pieces panel
+            and every count agree;
+          * the Before still re-renders with the piece lit, the
+            After still with it gone (one refresh each — the
+            static-viewports rule), and the delete bar's words
+            are recomposed for the grown set;
+          * repeatable — he can keep clicking revealed pieces
+            until he confirms or cancels. Cancel restores the
+            selection snapshot and never touched the data.
+        """
+        canvas = self.canvas
+        pv = canvas.delete_preview
+        if pv is None:
+            return  # the picture closed under the click — ignore
+        members = canvas.grp_members(cat, idx)
+        in_picture = {(c, i) for c, i, _r in pv["roads"]}
+        new_keys = [k for k in members if k not in in_picture]
+        if not new_keys:
+            self.set_status(
+                "That piece is already in the delete picture.")
+            return
+        added_names = []
+        for key in new_keys:
+            rec = canvas._get_road_dict(*key)
+            if rec is None:
+                continue
+            # The main selection takes the whole object, exactly
+            # like a main-view click (grp partners included).
+            if key not in canvas.selected_roads:
+                canvas.selected_roads.append(key)
+            # The picture takes the drawable records — the same
+            # >= 2-point rule begin_delete_preview applies to
+            # the set it opens with.
+            if len(rec.get("pts", [])) >= 2:
+                pv["roads"].append((key[0], key[1], rec))
+                added_names.append(rec.get("name") or "Unnamed")
+        if not added_names:
+            return
+        # Selection bookkeeping through the standing funnel, so
+        # the Pieces panel and button states see the grown set.
+        self.on_roads_selected()
+        # Bar + status recomposed for the set as it now stands.
+        bar_text, _status = canvas.delete_picture_texts(pv["roads"])
+        self.show_delete_bar(bar_text, ready=True)
+        total = len(pv["roads"])
+        if len(added_names) == 1:
+            self.set_status(
+                f"Added '{added_names[0]}' from the After "
+                f"picture — {total} "
+                f"{'road is' if total == 1 else 'roads are'} "
+                "now in the delete picture, lit in the Before "
+                "picture and gone from the After. Click another "
+                "revealed piece to add it too, or Delete / "
+                "Cancel in the bar.")
+        else:
+            self.set_status(
+                f"Added {len(added_names)} runs of "
+                f"'{added_names[0]}' (one object) from the After "
+                f"picture — {total} roads are now in the delete "
+                "picture, lit in the Before picture and gone "
+                "from the After.")
+        # Both stills refresh exactly once with the grown set.
+        insp = getattr(self, "inspector", None)
+        if insp is not None and insp.compare_active():
+            targets = [r for _c, _i, r in pv["roads"]]
+            insp.update_compare(
+                omit_ids={id(r) for r in targets},
+                target_roads=targets)
+        canvas.queue_draw()
 
     def on_delete_preview_end(self):
         """Delete decided (either way): panes back to synced."""
@@ -3811,6 +3924,14 @@ class MapEditorApp:
             # (download-on-open guard in data.download_roads), tell
             # the user their changes were kept once the load settles.
             self._surface_download_warning()
+            # 1.9.12: the bottom pane shows the RESOURCE MAP —
+            # start its one background fetch now that data has
+            # loaded (the store fetches once per run; a refresh
+            # through here is a no-op while it is loading/ready).
+            try:
+                self.inspector.request_resource_data()
+            except Exception:
+                pass
             # 1.9.5 (ready-in-source 2026-10-17): a suite handoff
             # from the Building Editor may be waiting — open at the
             # street it names. See _consume_open_handoff.
@@ -4041,16 +4162,25 @@ class MapEditorApp:
         them that way. The status is set from a queued idle callback
         so it lands AFTER _load_data's own "Loaded … roads." status
         instead of being overwritten by it. Consumes the warning.
+
+        1.9.12: data.LAST_DOWNLOAD_NOTICE (stale staged files set
+        aside for the fresh download) is surfaced the same way but
+        does NOT mark the session unpublished — nothing local is
+        owed to GitHub in that case; the download is the truth.
         """
         import data as _data_mod
         warn = getattr(_data_mod, "LAST_DOWNLOAD_WARNING", None)
-        if not warn:
+        notice = getattr(_data_mod, "LAST_DOWNLOAD_NOTICE", None)
+        if not warn and not notice:
             return
         _data_mod.LAST_DOWNLOAD_WARNING = None
-        self._unpublished = True
+        _data_mod.LAST_DOWNLOAD_NOTICE = None
+        if warn:
+            self._unpublished = True
+        text = " ".join(t for t in (warn, notice) if t)
 
         def _show():
-            self.set_status(warn)
+            self.set_status(text)
             return False
         GLib.idle_add(_show)
 
