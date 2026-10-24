@@ -2,9 +2,9 @@
   "files": [
     {
       "name": "agentdock.js",
-      "size": 4982,
-      "sha256": "ed5017309e3f077ed4797d923409e4ae2ee5de91fd5a34c52ccc03742824eee3",
-      "hash": "ed5017309e3f077ed4797d923409e4ae2ee5de91fd5a34c52ccc03742824eee3"
+      "size": 5200,
+      "sha256": "698b65a29019e53c6f71e4f2951c7086e108dd3ce694f7e1ffdd1baec3bcf1c8",
+      "hash": "698b65a29019e53c6f71e4f2951c7086e108dd3ce694f7e1ffdd1baec3bcf1c8"
     },
     {
       "name": "airport.js",
@@ -78,6 +78,12 @@
       "size": 39718,
       "sha256": "18bf986d5d6a385cc128b177433c9f2f9a4cb009b19f40b07fd933d7eb5824c3",
       "hash": "18bf986d5d6a385cc128b177433c9f2f9a4cb009b19f40b07fd933d7eb5824c3"
+    },
+    {
+      "name": "crew_reports_view.js",
+      "size": 8307,
+      "sha256": "d168da879958c4751f32fbc2db8bca6d456104c59d0bc9d4693df9a6a3fe6e1b",
+      "hash": "d168da879958c4751f32fbc2db8bca6d456104c59d0bc9d4693df9a6a3fe6e1b"
     },
     {
       "name": "daycycle.js",
@@ -155,9 +161,9 @@
     },
     {
       "name": "hud_move.js",
-      "size": 41969,
-      "sha256": "7ee72c440e3b58d0c76bac9af0a5c68f049f34fe3579f0c99ce2249b94c1b4fb",
-      "hash": "7ee72c440e3b58d0c76bac9af0a5c68f049f34fe3579f0c99ce2249b94c1b4fb"
+      "size": 55250,
+      "sha256": "88835ab71096eab678bf8918e264be8851ab527c617c27217d25296f7fe9eb55",
+      "hash": "88835ab71096eab678bf8918e264be8851ab527c617c27217d25296f7fe9eb55"
     },
     {
       "name": "icon.png",
@@ -167,15 +173,15 @@
     },
     {
       "name": "index.html",
-      "size": 1054273,
-      "sha256": "33b710d42151c7550f2a0a77ecb3702e97b54de4fafb67e829153189290548b8",
-      "hash": "33b710d42151c7550f2a0a77ecb3702e97b54de4fafb67e829153189290548b8"
+      "size": 1058795,
+      "sha256": "6e5bb59727f605026d7057ce6029065082a7c538c87de890eae8d0d71b2b1447",
+      "hash": "6e5bb59727f605026d7057ce6029065082a7c538c87de890eae8d0d71b2b1447"
     },
     {
       "name": "infracrew_system.js",
-      "size": 40158,
-      "sha256": "8c10361682983d68e2b0bf71133ae91b6db19cd90fea6bf01b5fac743355a511",
-      "hash": "8c10361682983d68e2b0bf71133ae91b6db19cd90fea6bf01b5fac743355a511",
+      "size": 40219,
+      "sha256": "1c44dd6827b16b4814b736c1062159fa498ba424113f361791b67cf2dc82dc22",
+      "hash": "1c44dd6827b16b4814b736c1062159fa498ba424113f361791b67cf2dc82dc22",
       "md5": "70fc117796afd2ca861ecd504101a767"
     },
     {
@@ -186,8 +192,8 @@
     },
     {
       "name": "inspector_crew.js",
-      "size": 23001,
-      "sha256": "1484932740e1a14c7f381386bc9927ac229aca934124e4cdd3cfbb0c6408bf30"
+      "size": 22944,
+      "sha256": "033b823d1694fc9f63729c43055944cbb2e899fa04746025c667c0695f5896bc"
     },
     {
       "name": "interior_system.js",
@@ -311,9 +317,9 @@
     },
     {
       "name": "roadcrew_system.js",
-      "size": 60028,
-      "sha256": "1e5870a036e353b73b839ba8c598ff686e9cd5c7d879f5e1a24a7f7ac49de044",
-      "hash": "1e5870a036e353b73b839ba8c598ff686e9cd5c7d879f5e1a24a7f7ac49de044",
+      "size": 60602,
+      "sha256": "840378d4042416383d90de05a8e256bb90912991cb42dbb60bf5c1cae6978bcc",
+      "hash": "840378d4042416383d90de05a8e256bb90912991cb42dbb60bf5c1cae6978bcc",
       "md5": "d01d621faafecefce0cbd31b7fff9bbf"
     },
     {
@@ -451,15 +457,15 @@
     },
     {
       "name": "ui_layout.json",
-      "size": 34822,
-      "sha256": "0b715a2d998b13ded96c0b2b3f4daf1608af7377ec9573216cc9c00bec780def",
-      "hash": "0b715a2d998b13ded96c0b2b3f4daf1608af7377ec9573216cc9c00bec780def"
+      "size": 34829,
+      "sha256": "0a5eb2eed20f148eeb26eb021d57af9c590e5e9e1cd8650deb1c2c9b272d0348",
+      "hash": "0a5eb2eed20f148eeb26eb021d57af9c590e5e9e1cd8650deb1c2c9b272d0348"
     },
     {
       "name": "ui_layout_apply.js",
-      "size": 15422,
-      "sha256": "acd460e30009ff2a93fc3de06a54999e791cc474de60d889c933f9d7039a11e5",
-      "hash": "acd460e30009ff2a93fc3de06a54999e791cc474de60d889c933f9d7039a11e5"
+      "size": 16685,
+      "sha256": "11a0b443f1d0a8c05d1699ae60309c0afe724adfd8cc14f0769a4933260f79a2",
+      "hash": "11a0b443f1d0a8c05d1699ae60309c0afe724adfd8cc14f0769a4933260f79a2"
     },
     {
       "name": "ui_sounds.js",
@@ -531,6 +537,6 @@
       "sha256": "74d2e3da9d5db086f3724cec9d5d42c2ba52e8561f2223fd467601d1ba8500b8"
     }
   ],
-  "ui_version": "2026.10.24.4",
+  "ui_version": "2026.10.24.5",
   "version": "2026.10.17.9"
 }
