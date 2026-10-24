@@ -67,8 +67,8 @@
       "type": "button",
       "visible": true,
       "width": 44,
-      "x": 196,
-      "y": 7,
+      "x": 136,
+      "y": 180,
       "description": "Compass button that opens Go to - search the game's streets and places and jump straight there"
     },
     {
@@ -519,8 +519,8 @@
           "type": "button",
           "visible": true,
           "width": 44,
-          "x": 196,
-          "y": 7,
+          "x": 136,
+          "y": 180,
           "description": "Compass button that opens Go to - search the game's streets and places and jump straight there"
         },
         {
@@ -943,8 +943,8 @@
           "type": "button",
           "visible": true,
           "width": 44,
-          "x": 196,
-          "y": 7,
+          "x": 136,
+          "y": 180,
           "description": "Compass button that opens Go to - search the game's streets and places and jump straight there"
         },
         {
