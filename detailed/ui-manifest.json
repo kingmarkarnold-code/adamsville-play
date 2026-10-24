@@ -20,9 +20,9 @@
     },
     {
       "name": "basketball.html",
-      "size": 126196,
-      "sha256": "6251e93eaead8ecf06dcdeccac55caa070ff06434ab018d6e88d3055ca0345cb",
-      "hash": "6251e93eaead8ecf06dcdeccac55caa070ff06434ab018d6e88d3055ca0345cb"
+      "size": 134740,
+      "sha256": "0d629fd0e27236d4642f622aeea006254b1a43aa71776f4f33a7eb3f2a00ab8f",
+      "hash": "0d629fd0e27236d4642f622aeea006254b1a43aa71776f4f33a7eb3f2a00ab8f"
     },
     {
       "name": "basketball_court.js",
@@ -531,6 +531,6 @@
       "sha256": "74d2e3da9d5db086f3724cec9d5d42c2ba52e8561f2223fd467601d1ba8500b8"
     }
   ],
-  "ui_version": "2026.10.24.3",
+  "ui_version": "2026.10.24.4",
   "version": "2026.10.17.9"
 }
