@@ -202,6 +202,30 @@
   #adv-zone-list .adv-status { float:right; font-size:13px; font-weight:normal; }
   #advprops #adv-back { margin-top:12px; padding:10px 18px; font-size:15px; border-radius:10px; border:none;
     background:#ffd75e; color:#111; font-weight:bold; width:100%; }
+  /* SETTINGS SUBMENUS (Joshua 2026-10-24): Player Controls / Sound /
+     Administrator panels — same show/hide submenu pattern and card
+     styling as #gameplay and #advprops above, so every screen face
+     (mobile/desktop) treats them identically. Cards scroll when long
+     (Editor UI rule: nothing clipped off-screen). */
+  #playercontrols, #soundmenu, #adminmenu { position:fixed; inset:0; z-index:40; display:none; align-items:center; justify-content:center;
+    background:rgba(0,0,0,.72); color:#fff; padding:12px; box-sizing:border-box; }
+  #playercontrols.show, #soundmenu.show, #adminmenu.show { display:flex; }
+  #playercontrols .card, #soundmenu .card, #adminmenu .card { background:#161b26; border-radius:14px; padding:20px 22px; max-width:430px; width:82%;
+    max-height:92vh; max-height:92dvh; overflow-y:auto; -webkit-overflow-scrolling:touch; box-sizing:border-box; }
+  #playercontrols h3, #soundmenu h3, #adminmenu h3 { margin:0 0 12px 0; color:#ffd75e; font-size:clamp(17px,5vw,22px); }
+  #playercontrols .row, #soundmenu .row, #adminmenu .row { display:block; width:100%; margin:8px 0; padding:12px 14px; font-size:16px; font-weight:bold;
+    border-radius:10px; border:2px solid #444; background:#222836; color:#fff; text-align:left; box-sizing:border-box; }
+  #playercontrols .row:active, #soundmenu .row:active, #adminmenu .row:active { background:#2d3547; }
+  #playercontrols #pc-back, #soundmenu #snd-back, #adminmenu #admin-back { margin-top:12px; padding:10px 18px; font-size:15px; border-radius:10px; border:none;
+    background:#ffd75e; color:#111; font-weight:bold; width:100%; }
+  /* The Administrator status tags used to be styled as '#settings
+     .adm-tag' — the rows now live in #adminmenu, so the same rules are
+     carried over for that panel (the #settings copies stay for any
+     other consumer). */
+  #adminmenu .adm-tag { float:right; font-size:12px; font-weight:normal; color:#8a93a8; }
+  #adminmenu .adm-tag.ready { color:#ff3b30; font-weight:bold; }
+  #adminmenu .adm-tag.ok { color:#39ff6a; }
+  #adminmenu .adm-tag.restart { color:#ffcc00; font-weight:bold; }
   /* STEP2: zone password dialog — cloned from #adm-confirm. */
   #advpass { position:fixed; inset:0; z-index:60; display:none; align-items:center; justify-content:center;
     background:rgba(0,0,0,.78); color:#fff; }
@@ -709,36 +733,89 @@
 <div id="hud-move-tag"></div>
 <div id="radio"><button id="radio-prev">&#9664;</button><span id="radio-name"></span><button id="radio-next">&#9654;</button></div>
 <!-- ===== SETTINGS PANEL (opens from the gear button) =====
-     Top: Settings rows (How to play, Music, View report, Record, Gameplay).
-     Bottom: ADMINISTRATOR section - per-type Re-download buttons (Map / UI /
-     Vehicles / Music, each with a live status tag: adm-map-tag, adm-ui-tag,
-     adm-vehicles-tag, adm-music-tag), Live UI updates toggle + check/apply,
-     Stay Awake toggle (adm-stayawake, wired by stayawake.js), Road Dispatch
-     Log, Test Connection, status line (#adm-status) and the diagnostics box
-     (#adm-diag).
-     Re-downloads are wired by ASSETVER.boot() -> confirmRedownload(). -->
+     SHORT top page (Joshua 2026-10-24 submenu restructure): How to play,
+     Record, and one entry row per section — Player Controls, Sound,
+     Gameplay, Advanced Properties, Administrator, Go to — plus Close.
+     Each section is its own submenu page (panels below, same show/hide
+     pattern as Gameplay): Player Controls = Move controls + the
+     Keyboard Keys / Controller Buttons sections; Sound = Music /
+     Engine / UI-sound rows; Administrator = per-type Re-download
+     buttons (Map / UI / Vehicles / Music, each with a live status tag:
+     adm-map-tag, adm-ui-tag, adm-vehicles-tag, adm-music-tag), Live UI
+     updates toggle + check/apply, Stay Awake toggle (adm-stayawake,
+     wired by stayawake.js), Road Dispatch Log, Test Connection, Send
+     Reports, status line (#adm-status) and the diagnostics box
+     (#adm-diag). Re-downloads are wired by ASSETVER.boot() ->
+     confirmRedownload(). -->
 <div id="settings"><div class="card">
   <h3>Settings</h3>
   <button class="row" id="set-help">How to play</button>
-  <button class="row" id="set-music">Music: ON</button>
-  <button class="row" id="set-engine">Engine sounds: ON</button>
-  <!-- EXPERT #39 (2026-10-11): UI sounds toggle. -->
-  <button class="row" id="set-uisounds">UI sounds: ON</button>
   <!-- v1.12.10: "View report" button removed per Joshua — reports go to GitHub now. -->
   <button class="row" id="set-record">Record: OFF</button>
+  <!-- SETTINGS SUBMENUS (Joshua 2026-10-24): the Settings menu got
+       too long, so its sections are now menus of their own, on the
+       same show/hide pattern as the Gameplay submenu: tapping a
+       section row hides Settings and shows that section's own
+       page; its Back button returns here. This top page stays
+       SHORT — only section entries and the one-tap rows remain.
+       Player Controls / Sound / Administrator are the panels
+       right below this one; Gameplay and Advanced Properties
+       keep their existing panels. NO control changed what it
+       does: every moved row kept its exact id, handler and
+       saved-setting key — only its home panel moved. -->
+  <button class="row" id="set-playercontrols">Player Controls &#9654;</button>
+  <button class="row" id="set-sound">Sound &#9654;</button>
   <button class="row" id="set-gameplay">Gameplay &#9654;</button>
   <!-- STEP2 (Joshua 2026-10-16): zone password unlocking lives under
        Advanced Properties (panel + wiring below). -->
   <button class="row" id="set-advprops">Advanced Properties &#9654;</button>
-  <!-- MOVABLE HUD (Joshua 2026-10-17): arrange the gameplay
-       controls for this screen (hud_move.js). Entering move mode
-       auto-pauses; Done restores play. -->
-  <button class="row" id="set-movecontrols">Move controls &#9998;</button>
+  <button class="row" id="set-admin">Administrator &#9654;</button>
   <!-- GO TO (Joshua 2026-10-18): the same Go to panel as the compass
        button in the web view — search a street or a place by name and
        the game takes you there. Behaviour lives in goto.js. -->
   <button class="row" id="set-goto">Go to &#129517;</button>
-  <h3>Administrator</h3>
+  <button id="set-close">Close</button>
+</div></div>
+<!-- ===== PLAYER CONTROLS SUBMENU (Joshua 2026-10-24) =====
+     Opened from Settings -> "Player Controls" (same transition as
+     Gameplay: Settings hides, this page shows; Back returns).
+     Holds the Move controls row (moved here unchanged) and, in
+     #pc-host, the "Keyboard Keys" and "Controller Buttons"
+     sections that keyboard_remap.js / gamepad_input.js inject
+     into the Settings card — the wiring below relocates those
+     two section elements here whole (ids and listeners intact)
+     as soon as they appear. -->
+<div id="playercontrols"><div class="card">
+  <h3>Player Controls</h3>
+  <!-- MOVABLE HUD (Joshua 2026-10-17): arrange the gameplay
+       controls for this screen (hud_move.js). Entering move mode
+       auto-pauses; Done restores play. -->
+  <button class="row" id="set-movecontrols">Move controls &#9998;</button>
+  <div id="pc-host"></div>
+  <button id="pc-back">Back</button>
+</div></div>
+<!-- ===== SOUND SUBMENU (Joshua 2026-10-24) =====
+     Opened from Settings -> "Sound". The three sound rows moved
+     here unchanged (ids/handlers/keys preserved). -->
+<div id="soundmenu"><div class="card">
+  <h3>Sound</h3>
+  <button class="row" id="set-music">Music: ON</button>
+  <button class="row" id="set-engine">Engine sounds: ON</button>
+  <!-- EXPERT #39 (2026-10-11): UI sounds toggle. -->
+  <button class="row" id="set-uisounds">UI sounds: ON</button>
+  <button id="snd-back">Back</button>
+</div></div>
+<!-- ===== ADMINISTRATOR SUBMENU (Joshua 2026-10-24) =====
+     Opened from Settings -> "Administrator". Everything that was
+     the Settings panel's Administrator section moved here
+     unchanged (per-type Re-download buttons with their live
+     status tags, Live UI updates, Stay Awake, Road Dispatch Log,
+     Test Connection, Send Reports, status line, diagnostics
+     box). #adm-host additionally receives the "Input Diagnostics"
+     section that input_diag.js injects into the Settings card —
+     relocated whole by the wiring below. Re-downloads are wired
+     by ASSETVER.boot() -> confirmRedownload(). -->
+<div id="adminmenu"><div class="card">
   <button class="row" id="adm-map">Re-download Map <span class="adm-tag" id="adm-map-tag"></span></button>
   <button class="row" id="adm-ui">Re-download UI <span class="adm-tag" id="adm-ui-tag"></span></button>
   <button class="row" id="adm-vehicles">Re-download Vehicles <span class="adm-tag" id="adm-vehicles-tag"></span></button>
@@ -768,7 +845,8 @@
   <button class="row" id="adm-sendreports">&#128228; Send Reports to Mollie</button>
   <div id="adm-status"></div>
   <div id="adm-diag" style="font-size:11px;color:#9fb3c8;white-space:pre-wrap;word-break:break-all;max-height:200px;overflow-y:auto;margin:4px 0;"></div>
-  <button id="set-close">Close</button>
+  <div id="adm-host"></div>
+  <button id="admin-back">Back</button>
 </div></div>
 <!-- ===== RE-DOWNLOAD CONFIRMATION DIALOG (Joshua's rule: ask first) =====
      Shown by ASSETVER.confirmRedownload() before any manual re-download:
@@ -2661,9 +2739,15 @@ function sendReportsToMollie(){
     var st = null;
     try{ st = window.GitHubReports.status(); }catch(e){}
     if(!st || !st.hasToken){
-      /* No token configured: the uploader would silently no-op, so
-         tell the player why instead of pretending it worked. */
-      try{ showToast('No GitHub token set — reports cannot be sent yet', 3500); }catch(e){}
+      /* No sending path configured (2026-10-24: reports now send
+         keylessly through the report relay — REPORT_RELAY_URL in
+         github-config.js — and GitHubReports.status().hasToken is the
+         legacy-named flag for "a sending path is configured"; the game
+         holds no GitHub token anymore). Without a sending path the
+         uploader would silently no-op, so tell the player why instead
+         of pretending it worked. Trigger and behaviour unchanged —
+         wording only. */
+      try{ showToast('Reports aren\'t set up to send yet — they are saved on this device', 3500); }catch(e){}
       return;
     }
     /* Collect the local report payload. Report.shareJson() is the
@@ -5800,6 +5884,19 @@ try{ __parseSet('Placing street furniture', '', 40); }catch(e){}
     }
     // caps for performance
     lights=lights.slice(0,60); stops=stops.slice(0,150);  // v1.10.1 road-pass-1: raised caps
+    /* SIGNS OFF (Joshua 2026-10-24): SignRules.ENABLED is the master
+       switch in sign_rules.js. While it is false, stop signs and
+       street-name signs do not spawn: their collections are emptied
+       here, before any mesh or collider is built from them, so no sign
+       posts, boards, text sprites, or colliders are created for them.
+       Nothing is deleted — the collection code above stays intact and
+       runs again the moment the flag flips back to true. TRAFFIC
+       LIGHTS ARE NOT SIGNS: lights[] is untouched and traffic lights
+       keep spawning exactly as before. (The posts InstancedMesh below
+       is shared, so with signs off it simply carries only the traffic
+       lights' posts.) */
+    var signsOff=(typeof SignRules!=='undefined' && SignRules.ENABLED===false);
+    if (signsOff){ stops=[]; nameSigns=[]; }
     // --- instanced meshes ---
     var m4=new THREE.Matrix4(), qt=new THREE.Quaternion(), eul=new THREE.Euler(),
         pv=new THREE.Vector3(), sv=new THREE.Vector3(1,1,1);
@@ -5876,12 +5973,19 @@ try{ __parseSet('Placing street furniture', '', 40); }catch(e){}
       pv.set(s.x, s.y+3.6, s.z); m4.compose(pv,qt,sv); bulbY.setMatrixAt(i,m4);
       pv.set(s.x, s.y+3.05, s.z); m4.compose(pv,qt,sv); bulbG.setMatrixAt(i,m4);
     });
+    /* SIGNS OFF guard (Joshua 2026-10-24): an InstancedMesh whose count
+       is left at its constructor size would draw one un-placed instance
+       at the world origin. Pin the sign meshes' counts to the real
+       collection sizes — 0 while signs are disabled, so nothing renders
+       — exactly as posts.count is pinned to pi below. */
+    boards.count=nameSigns.length; stopMesh.count=stops.length;
     posts.count=pi;
     [posts,boards,stopMesh,housMesh,bulbR,bulbY,bulbG].forEach(function(m){
       m.instanceMatrix.needsUpdate=true; scene.add(m);
     });
     try{Report.setSys('furniture',{intersections:found.length, trafficLights:lights.length,
-      stopSigns:stops.length, streetSigns:nameSigns.length, status:'ok'});}catch(e){}
+      stopSigns:stops.length, streetSigns:nameSigns.length,
+      signs:(signsOff?'disabled-2026-10-24':'enabled'), status:'ok'});}catch(e){}
   }catch(e){ try{Report.noteError('furniture','build failed',String(e&&e.stack||e));}catch(x){} }
 })();
 /* ================= v1.10.1 HIGHWAY EXIT SIGNS (road-pass-1) =================
@@ -5891,6 +5995,15 @@ try{ __parseSet('Placing street furniture', '', 40); }catch(e){}
    Guarded: no-ops cleanly if EXIT_SIGNS is absent. */
 (function exitSigns(){
   try{
+    /* SIGNS OFF (Joshua 2026-10-24): highway exit signs do not spawn
+       while SignRules.ENABLED is false (master switch in
+       sign_rules.js). Early return: no meshes, no colliders, no text
+       sprites. The EXIT_SIGNS data and this builder stay intact —
+       flipping the flag back to true restores every exit sign. */
+    if (typeof SignRules!=='undefined' && SignRules.ENABLED===false){
+      try{Report.setSys('exitsigns',{signs:0, signs:'disabled-2026-10-24', status:'ok'});}catch(e){}
+      return;
+    }
     if (typeof EXIT_SIGNS==='undefined' || !EXIT_SIGNS.length) return;
     var postG=new THREE.CylinderGeometry(0.12,0.12,5.2,6); postG.translate(0,2.6,0);
     var posts=new THREE.InstancedMesh(postG, new THREE.MeshLambertMaterial({color:0x8a8f96}), EXIT_SIGNS.length*2);
@@ -10892,6 +11005,73 @@ document.getElementById('adv-back').addEventListener('click', function(){
   document.getElementById('advprops').classList.remove('show');
   document.getElementById('settings').classList.add('show');
 });
+
+/* ============ SETTINGS SUBMENUS (Joshua 2026-10-24) ============
+   Joshua: the Settings menu got too long, so its sections became
+   menus of their own — the same transition the Save/Gameplay flow
+   already uses: tapping a section row hides Settings and shows that
+   section's own page; Back on that page hides it and returns to
+   Settings. Navigation ONLY: every moved control kept its exact id,
+   event handler and saved-setting key, so nothing behaves differently.
+   Player Controls hosts Move controls plus the Keyboard Keys /
+   Controller Buttons sections; Sound hosts the three sound rows;
+   Administrator hosts the whole former Administrator section plus
+   the Input Diagnostics section (see the relocation poll below). */
+function openSettingsSub(panelId){
+  document.getElementById('settings').classList.remove('show');
+  document.getElementById(panelId).classList.add('show');
+}
+function closeSettingsSub(panelId){
+  document.getElementById(panelId).classList.remove('show');
+  document.getElementById('settings').classList.add('show');
+}
+document.getElementById('set-playercontrols').addEventListener('click', function(){ openSettingsSub('playercontrols'); });
+document.getElementById('pc-back').addEventListener('click', function(){ closeSettingsSub('playercontrols'); });
+document.getElementById('set-sound').addEventListener('click', function(){ openSettingsSub('soundmenu'); });
+document.getElementById('snd-back').addEventListener('click', function(){ closeSettingsSub('soundmenu'); });
+document.getElementById('set-admin').addEventListener('click', function(){ openSettingsSub('adminmenu'); });
+document.getElementById('admin-back').addEventListener('click', function(){ closeSettingsSub('adminmenu'); });
+/* Move controls now opens from the Player Controls page: hud_move.js
+   closes #settings when move mode starts (its own wiring, unchanged);
+   this extra listener closes the Player Controls page too, so the
+   panel never covers the controls being arranged. */
+document.getElementById('set-movecontrols').addEventListener('click', function(){
+  document.getElementById('playercontrols').classList.remove('show');
+});
+/* The two Administrator actions whose flows close every menu before
+   downloading while you play (ui_update_flow.js closes #settings and
+   friends itself): close the Administrator page as well, so it can
+   never be left covering the game mid-flow. */
+['adm-uiflow','adm-hrapply'].forEach(function(id){
+  var b=document.getElementById(id);
+  if (b) b.addEventListener('click', function(){
+    document.getElementById('adminmenu').classList.remove('show');
+  });
+});
+/* Relocate the three sections other modules inject into the Settings
+   card (keyboard_remap.js -> #kb-remap "Keyboard Keys",
+   gamepad_input.js -> #gp-remap "Controller Buttons", input_diag.js
+   -> #input-diag "Input Diagnostics"). They are whole DOM elements
+   with their listeners and state attached, so moving the element
+   moves the working section — ids, handlers and saved keys are
+   untouched and the modules' own by-id lookups keep finding them.
+   The poll mirrors those modules' own retry-until-injected pattern
+   and stops once every section has landed (or after ~30 s). */
+(function relocateSettingsSections(){
+  var jobs=[['kb-remap','pc-host'],['gp-remap','pc-host'],['input-diag','adm-host']];
+  var tries=0;
+  var timer=setInterval(function(){
+    tries++;
+    var done=true;
+    jobs.forEach(function(job){
+      var sec=document.getElementById(job[0]);
+      var host=document.getElementById(job[1]);
+      if (sec && host && sec.parentNode!==host) host.appendChild(sec);
+      if (!sec || (host && sec.parentNode!==host)) done=false;
+    });
+    if (done || tries>=120) clearInterval(timer);
+  }, 250);
+})();
 // "Unlock All Zones" row -> password prompt in ALL mode.
 document.getElementById('adv-unlock-all').addEventListener('click', function(){
   if(!window.ZoneUnlock){
