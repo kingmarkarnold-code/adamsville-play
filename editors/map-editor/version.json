@@ -1,6 +1,6 @@
 {
-  "version": "1.9.9",
-  "changelog": "Two things. (1) Building jumps carry the building: from the Building Editor, click a road in the 3D view and the Map Editor now opens with the building itself drawn where it belongs \u2014 a pale-blue ghost outline with its name \u2014 its road already selected, and the view framed to show both. The ghost is reference only and clears the moment you click, scroll or turn the view yourself. (2) Universal controls everywhere: drag pans, the wheel zooms, + and - zoom, and Control+drag rotates \u2014 the same in the map, the elevation pane and the 3D inspector (the inspector follows them while it is live).",
+  "version": "1.9.10",
+  "changelog": "Three things. (1) A Pieces panel under the map lists every piece in your selection by name \u2014 including one buried under another piece, which could not be seen or clicked before. Clicking a row shows that one piece by itself, framed and lit bright, and each row's Delete removes just that one piece through the usual framed confirmation. A Find stacked button scans the whole map in the background (progress bar in the corner) and lists pieces lying on top of other pieces \u2014 exact duplicates, zero-length records, pieces covered by another road \u2014 each saying why in plain words; the finder itself never deletes anything. (2) Merge now draws the selected road back to the first edge of the other road it actually reaches \u2014 never across it \u2014 and lines its end up along that edge: straight on a straight edge, following the curve on a curving edge, a mouth along the edge on a diagonal meeting. (3) Join forms the space between the two pieces \u2014 straight when their ends run straight, a smooth curve when they bend \u2014 and the result is one single road.",
   "files": [
     {
       "path": "about.py",
@@ -10,7 +10,7 @@
     {
       "path": "app.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/app.py",
-      "sha256": "23fdb74ce45f4144bfaa50c46b6428bf562a38eecf7de4070579ad4a13706626"
+      "sha256": "1d55b3602a9bccb2cdfa35d339f456bae86553aa737203616e280cbe5c13f5e5"
     },
     {
       "path": "data.py",
@@ -35,7 +35,7 @@
     {
       "path": "mapcanvas.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/mapcanvas.py",
-      "sha256": "fa7f260ea3f597e8d76e1eb0f7e8a03acee4a1cfbc1020415bdc90157deb9429"
+      "sha256": "baec83e7b29047f5589b26362fb4e8440587999ec952c70e2b4474e11071368e"
     },
     {
       "path": "overpass.py",
@@ -71,6 +71,21 @@
       "path": "batchdelete.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/batchdelete.py",
       "sha256": "e9aedc54df78a2a1e6e89c5165151f6116ad0f768dc3596f51f9ab48917e5c7a"
+    },
+    {
+      "path": "mergejoin.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/mergejoin.py",
+      "sha256": "02b7fb6cc1a9c211bfca8fcd8f45a6ed86b6053b4410cbf161ab2eb5671e47ec"
+    },
+    {
+      "path": "piecespanel.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/piecespanel.py",
+      "sha256": "0933d470fa970fbd8e8a70ab166cfc9be182f9fd74fed06a22025b11976cb3b1"
+    },
+    {
+      "path": "stacked.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/stacked.py",
+      "sha256": "3cca8cdf9f4cd278cfad4cafba2416b73b7f4bd378d0a94907db8edbf0488a2d"
     }
   ]
 }
