@@ -410,6 +410,25 @@ function answerNo(){
    the same localStorage progress as the standalone tab, and this
    module can hear its close request. */
 
+/* Overlay sizing by MEASUREMENT (Joshua, 2026-10-24): the framed
+   page measures its own frame to lay out its controls, so the frame
+   must be exactly the area he can SEE. position:fixed inset:0 can
+   still cover screen hidden under a phone browser's address bar /
+   footer, which would hand the page a taller frame than the visible
+   area and push its bottom controls (the Pickup Ball button) off
+   screen in game too. So while the game is open, the overlay's
+   height is set from window.visualViewport — the visible area after
+   the browser bars take theirs — falling back to innerHeight, and
+   re-measured whenever the bars show/hide or the phone rotates. */
+function fitOverlay(){
+  if (!dom.overlay || !gameOpen) return;
+  try{
+    var vv = window.visualViewport;
+    var h = (vv && vv.height) ? vv.height : window.innerHeight;
+    if (h) dom.overlay.style.height = Math.round(h) + 'px';
+  }catch(e){}
+}
+
 function ensureGameDom(){
   if (dom.overlay) return;
   var style = document.createElement('style');
@@ -435,6 +454,13 @@ function ensureGameDom(){
 
   dom.overlay = overlay;
   dom.frame = frame;
+
+  /* Keep the overlay fitted to the measured visible area while the
+     game is open (fitOverlay no-ops when it is closed). */
+  window.addEventListener('resize', fitOverlay);
+  window.addEventListener('orientationchange', fitOverlay);
+  if (window.visualViewport && window.visualViewport.addEventListener)
+    window.visualViewport.addEventListener('resize', fitOverlay);
 }
 
 /* Release any movement keys the world is holding. The world reads
@@ -474,6 +500,7 @@ function openGame(){
   clearGameKeys();
   try{ dom.frame.src = PLAYER_URL; }catch(e){ report('openGame', e); }
   dom.overlay.classList.add('show');
+  fitOverlay();   // size the frame to the visible area before first paint settles
   note('open-ingame', { url: PLAYER_URL });
 }
 
