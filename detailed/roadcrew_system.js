@@ -57,13 +57,17 @@
         true specs from the audit, and live status) + lead supervisor NPC.
      2. PATROL UNITS — 2 road-crew trucks driving real road polylines. When a
         unit comes within discovery range of a structural defect it stops,
-        radios dispatch (log + toast), and resumes patrol.
+        radios dispatch (log only — no viewport toast since 2026-10-24),
+        and resumes patrol.
      3. REPAIR RESPONSE — dispatch sends a crew truck + 2 workers to the site.
         They place ROAD WORK AHEAD signs, cones, and DETOUR markers, work for
         a while (repair animation), then lay a fresh asphalt patch, pull the
         signs, and leave. Defect marked FIXED in the dispatch log.
-     4. DISPATCH LOG — HUD button (🚧) opens a panel: defects, true specs,
-        status, and a timestamped event log. Persists in localStorage.
+     4. DISPATCH LOG — a panel (defects, true specs, status, and a
+        timestamped event log) opened from the Administrator menu
+        ("Road Dispatch Log" / "Crew Reports"). Persists in
+        localStorage. (Was a 🚧 HUD button until 2026-10-24 —
+        Joshua moved crew reports off the game view.)
 
    Defect truth data is embedded from the Street View audit
    (streetview-audit/discrepancies.json) — the dispatch "reference database".
@@ -612,7 +616,10 @@ function updatePatrol(u, dt){
       dlog('Unit '+u.no+' found defect '+d.id+' ('+d.street+') — radioed dispatch.');
       /* v1.18 veteran field note — the patrolman reads it with 30-year eyes. */
       try{ if(typeof VeteranCrew!=='undefined') dlog('Unit '+u.no+' field note: "'+VeteranCrew.fieldNote('road')+'"'); }catch(e){}
-      toast('🚧 Road crew found a road defect ('+d.street+') — dispatch notified');
+      /* No viewport toast (Joshua 2026-10-24): crew reports are
+         recorded in the dispatch log above and read in the
+         Administrator menu — they no longer appear on the game
+         view. */
       setTimeout(function(){
         if (d.state!=='found') return;
         d.state='dispatched';
@@ -840,7 +847,8 @@ function dispatchRepair(d){
     }
   }catch(e){}
   dlog('Repair crew on site at '+d.id+' ('+d.street+') — signs, cones and detour placed.');
-  toast('🚧 Repair crew working on '+d.street+' — detour in place');
+  /* No viewport toast (Joshua 2026-10-24): logged above; reports
+     are read in the Administrator menu, not on the game view. */
   try{ Report.setSys('roadcrew', sysReport()); }catch(e){}
 }
 /* finishRepair(job) — end of the 75s work window: lays the fresh asphalt
@@ -875,7 +883,8 @@ function finishRepair(job){
   scene.remove(job.group);
   d.state='fixed';
   dlog(d.id+' ('+d.street+') REPAIRED — fresh asphalt laid per true specs. Crew clear.');
-  toast('✅ '+d.street+' repaired — road is fixed');
+  /* No viewport toast (Joshua 2026-10-24): logged above; reports
+     are read in the Administrator menu, not on the game view. */
   saveLS();
   try{ Report.setSys('roadcrew', sysReport()); }catch(e){}
   refreshBoard(); refreshPanel();
@@ -1004,8 +1013,14 @@ function updateJobs(dt){
       if (j.group.visible!==_wantVis) j.group.visible=_wantVis;
     }
     if (j.vet && typeof VeteranCrew!=='undefined'){
+      /* The veteran foreman's ctx.toast carried his filed reports
+         ("Foreman filed RPT-…", "signed off — fix verified") to the
+         game view. Joshua 2026-10-24: reports are recorded, not
+         displayed — so the ctx toast now writes into the dispatch
+         log instead of the viewport. The reports themselves are
+         still generated and filed exactly as before (ctx.log). */
       var ph=VeteranCrew.updateJob(j, dt, {time:RC.time,
-        log:function(m){ dlog(m); }, toast:function(m){ toast(m); }});
+        log:function(m){ dlog(m); }, toast:function(m){ dlog(m); }});
       if (ph==='fixing'){ j.t+=dt; rcFixTick(j,dt); }
       else if (ph==='done'){ finishRepair(j); RC.jobs.splice(i,1); }
       rcWorkZoneNudge(j);
@@ -1037,17 +1052,18 @@ function rcWorkZoneNudge(j){
   }catch(e){}
 }
 
-/* ---------------- HUD: dispatch button + log panel ---------------- */
+/* ---------------- dispatch log panel (Administrator menu) ----------------
+   Joshua 2026-10-24: the 🚧 button that used to sit on the game
+   view is GONE — crew reports do not occupy the viewport anymore.
+   The panel itself stays: it is opened from the Administrator
+   menu ("Road Dispatch Log" / "Crew Reports"), never from the
+   game view. window.toggleDispatchLog + ROADCREW.toggle remain
+   the open/close path, unchanged. */
 function buildUI(){
   if (RC.uiBuilt) return; RC.uiBuilt=true;
   try{
     var css=document.createElement('style');
     css.textContent=
-      /* v1.21: icon sits in the HUD icon row at top:96px, adjacent to the
-         backpack (#inv-btn at left:12px). Title corner is left clear. */
-      '#rc-btn{position:fixed;left:132px;top:96px;z-index:20;width:52px;height:52px;border-radius:12px;'+
-      'border:2px solid #ffb02e;background:rgba(20,24,34,.88);color:#ffb02e;font-size:24px;}'+
-      '@media (max-width:820px),(pointer:coarse){#rc-btn{left:90px!important;top:52px!important;bottom:auto!important;}}'+
       '#rc-panel{position:fixed;inset:0;z-index:50;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.72);}'+
       '#rc-panel.show{display:flex;}'+
       '#rc-panel .card{background:#161b26;border-radius:14px;padding:20px 22px;max-width:470px;width:88%;max-height:74vh;display:flex;flex-direction:column;}'+
@@ -1062,10 +1078,6 @@ function buildUI(){
       '.rc-log .lt{color:#8a93a6;margin-right:8px;}'+
       '#rc-close{margin-top:12px;padding:10px 18px;font-size:15px;border-radius:10px;border:none;background:#ffb02e;color:#111;font-weight:bold;width:100%;}';
     document.head.appendChild(css);
-    var btn=document.createElement('button');
-    btn.id='rc-btn'; btn.title='Road dispatch log'; btn.innerHTML='🚧';
-    btn.addEventListener('click', function(){ togglePanel(); });
-    document.body.appendChild(btn);
     var panel=document.createElement('div');
     panel.id='rc-panel';
     panel.innerHTML='<div class="card"><h3>🚧 Road Dispatch</h3>'+
@@ -1121,7 +1133,8 @@ function fallbackCheck(dt){
     if (d._age>FALLBACK_T){
       d.state='found';
       dlog('Driver report: defect '+d.id+' ('+d.street+') called in by a motorist — dispatching.');
-      toast('🚧 Driver reported a road defect ('+d.street+') — dispatch notified');
+      /* No viewport toast (Joshua 2026-10-24): logged above;
+         reports are read in the Administrator menu. */
       setTimeout(function(){
         if (d.state!=='found') return;
         d.state='dispatched';
