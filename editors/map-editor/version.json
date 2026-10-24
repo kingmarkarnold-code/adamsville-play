@@ -1,6 +1,6 @@
 {
-    "version": "1.9.11",
-    "changelog": "Six things. (1) Paired objects: where one road exists as two runs (split by a crossing road, or the two sides of a median stretch), the runs are now ONE piece in the editor whenever the data marks them with a shared 'grp' value \u2014 clicking any run selects the whole object, the Pieces panel lists it as one entry naming every run, and Delete removes the whole object through the usual framed check. Merge and Join leave paired objects alone. Where no grp marks exist, nothing changes. (2) Join takes chains: select 3 or more pieces and Join makes them one road, forming every space between them straight or curved as their ends run. Merge still takes exactly 2. Shift+click adds a piece at any time; Ctrl+click takes one piece out. (3) Lasso: hold Shift and drag a line that loops back to its start \u2014 every piece inside is added to the selection (the lasso only selects; you then choose what to do). (4) Draw works: with Draw on, dragging lays a new road and panning is off; let go to add it, saved like any edit. (5) The editor opens with no tool armed, and zone or building jumps arm nothing either. (6) Selecting a piece now wakes the 3D still pane, framed on the exact spot you clicked at street level \u2014 it no longer stays black after selecting.",
+    "version": "1.9.12",
+    "changelog": "Four things. (1) SAVE FIX - the important one. A bug could make the editor load an old copy of the map stored on this computer instead of the newest map from GitHub, and the next save would then write that old map over the new one (this is what rewrote whole zones on Oct 24). The editor now records exactly which GitHub copy its saved work is based on. Work based on an older copy is never loaded over the newer map: it is set aside in a 'superseded' folder inside the editor's data folder, the fresh download is used, and you are told. Real unpublished edits made on the current copy are still kept, as before. A save now only ever changes the pieces you actually edited - every other record is written back exactly as it came. (2) Delete review: the After picture is now clickable. When deleting several pieces reveals pieces that were underneath them, click a revealed piece in the After picture to add it to the same deletion (if it is one run of a paired object, its partner is added too). The Before picture lights it, the After picture redraws without it, and you can keep clicking to add more. Cancel still restores everything, including your selection. (3) The Delete key on the keyboard now starts the same delete flow as the Delete button, including the 'Nothing is selected' popup. (4) The bottom pane is now the RESOURCE MAP: it shows the reference map the world was built from, at the same place and zoom as the top view, so you can compare where streets are with where they should be; it follows the road you select. Its labels now say so - 'Resource map - reference' - and the elevation line above it is labelled 'Road elevation'.",
     "files": [
         {
             "path": "about.py",
@@ -10,12 +10,12 @@
         {
             "path": "app.py",
             "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/app.py",
-            "sha256": "16db78a948db45d34773a4d0afd6603e92cffbaca6ef1ba5bf7b430a4e35774c"
+            "sha256": "73ea29614966b61d503d7232c66ba5d39b9f8057f8911c1f29de92d4481cec32"
         },
         {
             "path": "data.py",
             "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/data.py",
-            "sha256": "17eee4321e987fdbb0d202410638567028a88ce088d9505a218514b1e868c4aa"
+            "sha256": "b5e25b2536dd8e47d6c7278e0400143c20dadef1afe50cfd208ee62d63b437ee"
         },
         {
             "path": "gamedata.py",
@@ -35,7 +35,7 @@
         {
             "path": "mapcanvas.py",
             "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/mapcanvas.py",
-            "sha256": "2075968da5e18563b2ae7b27d9ef94d943ba39ddb15c9d085fac058f4ef56166"
+            "sha256": "09a917f530808fe96b77242f37d9c41e8ed2bdff704dd6475f836618be179f8c"
         },
         {
             "path": "overpass.py",
@@ -45,7 +45,7 @@
         {
             "path": "roadinspect.py",
             "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/roadinspect.py",
-            "sha256": "f0bc27b2911b9f752577eac06c5486a4ff4425fa866e2340b83e776742133a00"
+            "sha256": "684f90a31dc55fbf0e443a69ae7bfd5de2d45e4ba7ea506961712462038af53f"
         },
         {
             "path": "shared_cache.py",
