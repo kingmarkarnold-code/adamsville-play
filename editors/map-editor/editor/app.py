@@ -40,13 +40,19 @@ from data import (
 )
 from mapcanvas import MapCanvas, _direction_words
 from roadinspect import RoadInspectorPanel  # noqa: E402 -- 3D road inspector
+# Pieces panel (1.9.10): the selection contents list + the
+# stacked-pieces finder dock (Joshua's Blender recording,
+# 2026-10-23 — a selection must list what it contains, and
+# stacked pieces must be findable by name).
+from piecespanel import PiecesPanel  # noqa: E402
+import stacked as stacked_mod  # noqa: E402 -- the finder scan (pure)
 # Overpass linking + smart pillar placement (Joshua 2026-10-11).
 import overpass as overpass_mod  # noqa: E402
 
 
 # App version shown in the Help -> About dialog (bump with each release).
 # Joshua 2026-10-11: version number must be prominent in About.
-APP_VERSION = "1.9.9"
+APP_VERSION = "1.9.10"
 # Display name and icon-theme name for the About dialog.
 APP_NAME = "Adamsville Map Editor"
 APP_ICON = "adamsville-map-editor-native"
@@ -145,6 +151,15 @@ class MapEditorApp:
         from gi.repository import GLib as _GLib
         _GLib.timeout_add_seconds(300, self._auto_push_tick)
 
+        # Pieces panel state (1.9.10): the stacked-finder scan
+        # runs on a worker thread; the token drops a stale result
+        # if a second scan is started, and _stacked_results holds
+        # the last finished scan's rows (result dicts from
+        # stacked.py) for the panel.
+        self._stacked_token = 0
+        self._stacked_running = False
+        self._stacked_results = []
+
         # --- Main window ---
         # Native GTK window with standard decorations (min/max/close)
         self.window = Gtk.Window(title="Adamsville Map Editor")
@@ -187,7 +202,24 @@ class MapEditorApp:
         self.canvas_overlay.add(self.canvas)
         self._build_delete_bar()
         self.canvas_overlay.add_overlay(self.delete_bar)
-        self.main_paned.pack1(self.canvas_overlay, resize=True,
+        # 1.9.10: the Pieces panel (selection contents list +
+        # stacked-pieces finder) docks BELOW the map in the
+        # canvas column, in a vertical paned whose sash Joshua
+        # can drag — including nearly shut. It does NOT share
+        # the inspector's column: the inspector's own internal
+        # split (area view over elevation view at a fixed 300)
+        # needs the column's full height, and squeezing it
+        # starved the elevation pane. The canvas's framing math
+        # is all allocation-relative, so a shorter canvas is
+        # safe; the initial sash position is set in
+        # _initial_setup once the real height is known.
+        self.pieces_panel = PiecesPanel(self)
+        self.canvas_paned = Gtk.VPaned()
+        self.canvas_paned.pack1(self.canvas_overlay, resize=True,
+                                shrink=False)
+        self.canvas_paned.pack2(self.pieces_panel, resize=False,
+                                shrink=True)
+        self.main_paned.pack1(self.canvas_paned, resize=True,
                               shrink=False)
 
         # Inspector wrap: collapse strip on the left edge + the panel.
@@ -592,6 +624,25 @@ class MapEditorApp:
         self.detail_button.connect("clicked", self.on_detail_clicked)
         toolbar.insert(self.detail_button, -1)
 
+        # Find Stacked action (1.9.10): NOT a tool or mode — it
+        # runs the stacked-pieces scan over the loaded data in
+        # the background and fills the Pieces panel's results
+        # list (the same button lives in the panel itself). It
+        # never deletes anything: each found piece is framed and
+        # selected when clicked, and removal is the ordinary
+        # Delete flow.
+        self.find_stacked_button = Gtk.ToolButton(
+            label="Find stacked")
+        self.find_stacked_button.set_tooltip_text(
+            "Find pieces lying on top of other pieces — "
+            "duplicates, zero-length records, covered pieces. "
+            "They are listed by name in the Pieces panel so a "
+            "buried piece can be checked and deleted. The scan "
+            "runs in the background and deletes nothing.")
+        self.find_stacked_button.connect(
+            "clicked", lambda _b: self.start_find_stacked())
+        toolbar.insert(self.find_stacked_button, -1)
+
         # Link to Overpass action button (Joshua 2026-10-11).
         # Select 1 road first, then click this, then click an overpass
         # deck on the map. The terrain ramps up to the deck, the road
@@ -715,20 +766,23 @@ class MapEditorApp:
             text="Do you want to merge these together?")
         dialog.format_secondary_text(
             f"Source: {names[0]}\nTarget: {names[1]}\n\n"
-            f"{names[0]}'s nearest endpoint will snap to the nearest "
-            f"point on {names[1]}'s edge. "
-            "Both roads stay as separate objects.")
+            f"The part of {names[0]} lying over {names[1]} is "
+            f"drawn back to the first of {names[1]}'s edges it "
+            "reaches, and its end is lined up along that edge — "
+            "straight, curved or diagonal as the meeting lies. "
+            "Both roads stay as separate objects, and "
+            f"{names[1]} itself is not changed.")
         # Before/After (1.9.8): while the decision is up, the
         # companion panes hold the comparison stills — Before the
-        # two roads as they are, After the source snapped onto
-        # the target.
+        # two roads as they are, After the source drawn back onto
+        # the target's near edge.
         preview = self.canvas.compute_merge_result()
         if preview is not None:
             road_s, road_t, new_s = preview
             self._open_compare(
                 [road_s, road_t], {id(road_s)}, [new_s],
                 "Before — as they are",
-                "After — first road's end snapped onto the second",
+                "After — first road drawn back onto the second's near edge",
                 [road_s, road_t])
         resp = dialog.run()
         dialog.destroy()
@@ -754,8 +808,10 @@ class MapEditorApp:
             text="Do you want to join these together?")
         dialog.format_secondary_text(
             f"{names[0]}\n{names[1]}\n\n"
-            f"They will become one road, keeping {names[0]}'s name, "
-            "joined at their nearest endpoints.")
+            f"They will become one road, keeping {names[0]}'s name. "
+            "The space between them is formed for them — straight "
+            "when their ends run straight, curved when they bend — "
+            "so the joined road is a single piece.")
         # Before/After (1.9.8): Before the two pieces as they
         # are, After the single joined road.
         preview = self.canvas.compute_join_result()
@@ -2029,6 +2085,256 @@ class MapEditorApp:
         insp = getattr(self, "inspector", None)
         if insp is not None:
             insp.refresh()
+        # 1.9.10: the Pieces panel lists the selection's
+        # contents — refresh it with every selection change.
+        self._refresh_pieces_panel()
+
+    # ------------------------------------------------------------------
+    # Pieces panel + stacked finder (1.9.10, Joshua 2026-10-23)
+    #
+    # From his Blender recording: he selected one spot, the count
+    # said 4 objects, only 3 were visible — a piece stacked on
+    # the same ground was invisible, unclickable, and nothing
+    # listed what the selection contained, so the extra piece
+    # could not be singled out or removed. The Pieces panel
+    # (docked below the map) lists EVERY selected piece by
+    # name; clicking a row isolates it (framed, lit alone, the
+    # rest of the selection quiet). Find Stacked
+    # scans the loaded data for pieces lying on other pieces and
+    # lists them for review. Removal is ALWAYS the ordinary
+    # framed Delete flow — nothing here deletes directly.
+    # ------------------------------------------------------------------
+
+    def zone_display_name(self, zone_id):
+        """Display name for a zone id ('eastatlanta' -> 'East
+        Atlanta'), from the loaded zone list; falls back to the
+        id itself, capitalised."""
+        if not zone_id:
+            return "—"
+        try:
+            import data as _data_mod
+            for zone in _data_mod.ZONES:
+                if zone.get("zone_id") == zone_id:
+                    return zone.get("name", zone_id)
+        except Exception:
+            pass
+        return zone_id.capitalize()
+
+    def _refresh_pieces_panel(self):
+        """
+        Sync the Pieces panel with the canvas selection, and
+        hold the isolation invariant: an isolated piece that is
+        no longer selected stops being isolated (the drawing
+        falls back to lighting the whole selection alike).
+        """
+        panel = getattr(self, "pieces_panel", None)
+        if panel is None:
+            return  # dock not built yet during early init
+        canvas = self.canvas
+        if canvas.isolated is not None \
+                and canvas.isolated not in canvas.selected_roads:
+            canvas.isolated = None
+        panel.refresh_selection()
+        # Stale stacked rows (a piece deleted since the scan)
+        # are dropped: build the live-record id set once per
+        # refresh — a few milliseconds over the whole map, and
+        # refreshes happen per selection change, not per frame.
+        if self._stacked_results and self.roads_data:
+            live_ids = {id(r) for lst in self.roads_data.values()
+                        for r in lst}
+            panel.prune_results(live_ids)
+            self._stacked_results = list(panel._results)
+
+    def isolate_selected_piece(self, cat, idx):
+        """
+        Pieces-panel row click: single ONE selected piece out —
+        frame it and light it alone (canvas.isolated), the rest
+        of the selection drawn quiet. The selection itself does
+        not change: Merge / Join / Delete still see all of it.
+        """
+        canvas = self.canvas
+        if (cat, idx) not in canvas.selected_roads:
+            return
+        canvas.isolated = (cat, idx)
+        canvas.frame_piece(cat, idx)
+        name = canvas._road_name_of(cat, idx)
+        self.set_status(
+            f"Showing '{name}' by itself — it is framed and lit "
+            "bright; the rest of the selection is still selected "
+            "(drawn pale). 'Show all' in the Pieces panel ends "
+            "this.")
+        canvas.queue_draw()
+        self._refresh_pieces_panel()
+
+    def clear_isolation(self):
+        """End an isolation: every selected piece lights alike."""
+        if self.canvas.isolated is not None:
+            self.canvas.isolated = None
+            self.canvas.queue_draw()
+        self._refresh_pieces_panel()
+
+    def delete_one_piece(self, cat, idx, road):
+        """
+        A Pieces-panel row's Delete button: send THAT ONE piece
+        into the ordinary delete confirmation flow — the same
+        framed picture + top bar the toolbar Delete button opens
+        (on_delete_clicked's machinery, one record). No new
+        delete path: the bar owns the decision, Cancel restores
+        the view, and the standing save rule applies inside.
+        """
+        canvas = self.canvas
+        if canvas.delete_preview is not None \
+                or canvas.delete_prep is not None:
+            self.set_status(
+                "Delete: finish the road shown first — "
+                "Delete it, or Cancel in the bar at the top.")
+            return
+        canvas.begin_delete_preview([(cat, idx, road)])
+
+    def _stacked_entries(self):
+        """
+        Build the finder scan's entry list from the working
+        copy: one entry per record, carrying its category, its
+        zone, and its index WITHIN that zone + category (the
+        numbering the audit and the zone files use — e.g.
+        adamsville major_artery 173). The merged working copy
+        holds each zone's records contiguously in file order
+        (gamedata.merged_roads), so a per-(zone, category)
+        counter reproduces the file indices exactly.
+        """
+        entries = []
+        counters = {}
+        for cat, roads in (self.roads_data or {}).items():
+            for road in roads:
+                zone = road.get("_zone") or ""
+                key = (zone, cat)
+                idx = counters.get(key, 0)
+                counters[key] = idx + 1
+                entries.append({"cat": cat, "zone": zone,
+                                "idx": idx, "road": road})
+        return entries
+
+    def start_find_stacked(self):
+        """
+        Find Stacked: scan the loaded data for stacked pieces
+        on a worker thread (Progress Bar Law — the corner bar
+        runs for the whole scan), then fill the Pieces panel's
+        results list. Read-only: the scan never mutates a
+        record, so the data counts are identical afterwards.
+        """
+        if self._stacked_running:
+            self.set_status(
+                "Find stacked: a scan is already running — "
+                "watch the progress bar in the corner.")
+            return
+        if not self.roads_data:
+            self.set_status(
+                "Find stacked: no map data is loaded yet.")
+            return
+        self._stacked_token += 1
+        token = self._stacked_token
+        self._stacked_running = True
+        panel = getattr(self, "pieces_panel", None)
+        if panel is not None:
+            panel.set_scanning(True)
+        self.progress_start("find-stacked",
+                            "Looking for stacked pieces…")
+        self.set_status(
+            "Find stacked: scanning the loaded map in the "
+            "background — nothing will be deleted.")
+        entries = self._stacked_entries()
+
+        def report(frac):
+            # Worker -> UI thread hop for the progress bar.
+            GLib.idle_add(self.progress_update,
+                          "find-stacked", frac)
+
+        def worker():
+            try:
+                results = stacked_mod.scan_stacked(
+                    entries, on_progress=report)
+            except Exception:
+                results = None  # landing reports the failure
+            GLib.idle_add(self._find_stacked_done, token, results)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _find_stacked_done(self, token, results):
+        """UI-thread landing for a finished stacked scan."""
+        if token != self._stacked_token:
+            return False  # superseded — drop it
+        self._stacked_running = False
+        self.progress_finish("find-stacked")
+        panel = getattr(self, "pieces_panel", None)
+        if panel is not None:
+            panel.set_scanning(False)
+        if results is None:
+            self.set_status(
+                "Find stacked: the scan failed — the map data "
+                "was not changed.")
+            return False
+        self._stacked_results = results
+        if panel is not None:
+            panel.show_results(results)
+        certain = sum(1 for r in results
+                      if r["tier"] == stacked_mod.TIER_CERTAIN)
+        self.set_status(
+            f"Find stacked: {len(results)} pieces found "
+            f"({certain} certain, {len(results) - certain} to "
+            "review). Click one in the Pieces panel to see it; "
+            "nothing was deleted.")
+        return False
+
+    def _flat_index_of(self, road):
+        """
+        The spatial-index (cat, flat_idx) for a live road dict,
+        by identity — the mapping the canvas selection uses.
+        None when the record is not indexed (a record with fewer
+        than 2 points has no line to index).
+        """
+        si = self.spatial_index
+        if si is None:
+            return None
+        for flat, (cat, indexed, *_rest) in enumerate(si.roads):
+            if indexed is road:
+                return (cat, flat)
+        return None
+
+    def reveal_stacked_piece(self, result):
+        """
+        Stacked-results row click: select the found piece and
+        frame it, exactly as if Joshua had clicked it on the
+        map — from there the ordinary actions (Delete included)
+        apply. A record the index cannot hold (no line) is
+        framed by its own points and explained instead.
+        """
+        road = result["road"]
+        canvas = self.canvas
+        found = self._flat_index_of(road)
+        name = stacked_mod.display_name(road)
+        if found is None:
+            # Not in the spatial index (fewer than 2 points):
+            # frame the spot from the record's own points.
+            pts = road.get("pts") or []
+            if pts:
+                xs = [p[0] for p in pts]
+                zs = [p[1] for p in pts]
+                canvas.frame_rect(min(xs) - 30, min(zs) - 30,
+                                  max(xs) + 30, max(zs) + 30)
+            self.set_status(
+                f"'{name}': {result['why']}. This piece has no "
+                "line to select — the map is framed on its spot.")
+            return
+        cat, flat = found
+        canvas.selected_roads = [(cat, flat)]
+        canvas.isolated = None
+        self.on_roads_selected()
+        canvas.frame_piece(cat, flat)
+        self.set_status(
+            f"'{name}': {result['why']}. It is selected and "
+            "framed — check it, then Delete removes just this "
+            "piece.")
+        canvas.queue_draw()
 
     def _update_merge_join_buttons(self):
         """
@@ -2212,6 +2518,11 @@ class MapEditorApp:
         insp = getattr(self, "inspector", None)
         if insp is not None:
             insp.clear_compare()
+        # 1.9.10: a confirmed delete cleared the selection
+        # inside apply_road_delete (which does not funnel
+        # through on_roads_selected) — resync the Pieces panel
+        # here so its list never shows a deleted piece.
+        self._refresh_pieces_panel()
 
     # -- Detail Edit handoff (the door to the Detail Editor) -----
 
@@ -2533,6 +2844,17 @@ class MapEditorApp:
         # longer be valid — clear them.
         try:
             self.canvas.selected_roads = []
+            self.canvas.isolated = None
+        except Exception:
+            pass
+        # 1.9.10: the restored records are fresh dicts — the
+        # Pieces panel's selection list and any stacked results
+        # point at the pre-restore records. Resync the list and
+        # drop the stale results.
+        self._stacked_results = []
+        try:
+            self.pieces_panel.reset_results()
+            self._refresh_pieces_panel()
         except Exception:
             pass
         self._update_merge_join_buttons()
@@ -2977,6 +3299,15 @@ class MapEditorApp:
         back to the local cache; only when there is no cache at all do
         we prompt.
         """
+        # 1.9.10: give the Pieces panel its starting share of
+        # the canvas column (~200 px at the bottom) now that the
+        # paned has a real height; the sash stays draggable.
+        try:
+            alloc = self.canvas_paned.get_allocation()
+            if alloc.height > 300:
+                self.canvas_paned.set_position(alloc.height - 205)
+        except Exception:
+            pass
         self.canvas.fit_view()
         self.set_status("Downloading game data from GitHub…")
         # Corner progress bar (1.9.7 suite law): the startup
@@ -3109,6 +3440,15 @@ class MapEditorApp:
             self.game_model = _data_mod.GAME_MODEL
             self._ground = None  # rebuilt lazily from the model's elev
             self.roads_data = self.game_model.merged_roads()
+            # 1.9.10: a fresh load replaces every record, so any
+            # stacked results from a previous scan point at dead
+            # dicts — drop them (the panel says a fresh Find
+            # stacked is needed, never a stale row).
+            self._stacked_results = []
+            try:
+                self.pieces_panel.reset_results()
+            except Exception:
+                pass
             # Overpasses: the model's list (the game's
             # detailed/overpasses.json content, taken as-is).
             self.overpasses = load_overpasses()
@@ -3738,6 +4078,26 @@ class MapEditorApp:
         lines = []
         for tool_id, label, tooltip, help_text in TOOLS:
             lines.append(f"• {label}: {help_text}")
+        # 1.9.10: the Pieces panel + Find stacked are actions,
+        # not tools, so they are not in TOOLS — explain them here.
+        lines.append(
+            "• Selected pieces (Pieces panel, right side): every "
+            "piece in the current selection is listed by name. "
+            "Click a row to see that piece by itself — the map "
+            "frames it and lights it bright while the rest of "
+            "the selection stays selected but pale. That is how "
+            "a piece buried under another one can be seen. Each "
+            "row's Delete button deletes just that piece, "
+            "through the usual framed check.")
+        lines.append(
+            "• Find stacked: scans the loaded map for pieces "
+            "lying on top of other pieces — exact duplicates, "
+            "zero-length records that draw nothing, and pieces "
+            "mostly covered by another road — and lists them by "
+            "name in the Pieces panel with the reason for each. "
+            "Click a found piece to see it on the map. The scan "
+            "never deletes anything; removing a piece is always "
+            "the ordinary Delete, after you check it.")
         buf.set_text("\n\n".join(lines))
 
         scrolled.add(textview)
