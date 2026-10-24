@@ -45,7 +45,7 @@
         only when no street route exists at all, and says so.
      2. TURN-BY-TURN GUIDANCE — the floating top arrow (proven in 1.63)
         now follows the ROUTE: it aims at a lookahead point on the
-        polyline, shows the next real turn's arrow + distance ("↰ 120u")
+        polyline, shows the next real turn's arrow + distance ("↰ 0.07 mi")
         and the along-route distance remaining — not a straight-line
         bearing to the destination.
      3. AUTOMATIC REROUTING — sustained >40u off the route line re-routes
@@ -137,6 +137,23 @@ var guideTarget=null;        // {x,z} lookahead point the arrows aim at
 var guideNextTurn=null;      // next turn ahead {d, idx, ang}, or null
 var guideRemaining=0;        // along-route distance left (u)
 var guideMs=0;               // last guidance computation time (ms)
+
+/* ---------------------------------------------------------------------------
+   fmtDist(u) — PLAYER-FACING distance text (Joshua's orders 2026-10-24:
+   "do the math for the players — show mileage, not units", then refined
+   the same day: short distances under one mile read in FEET). The game
+   world is built at 1 unit = 1 metre, so 1 mile = 1609.344 units and
+   1 unit = 3.28084 feet. EVERY distance the player sees (the HUD arrow
+   band, the route-set / reroute toasts) goes through this one helper:
+   under a mile it reads in whole feet (120u -> "394 ft"); a mile or
+   more reads in miles with two decimals (1932u -> "1.20 mi", the exact
+   case Joshua saw in his demo). Display only: routing math, off-route
+   thresholds, and the internal Report/console diagnostics stay in raw
+   units.
+   --------------------------------------------------------------------------- */
+function fmtDist(u){ u=Math.max(0, u||0);
+  if (u<1609.344) return Math.round(u*3.28084)+' ft';
+  return (u/1609.344).toFixed(2)+' mi'; }
 
 /* ---------------------------------------------------------------------------
    buildRoutingGraph(roads, jx) — adjacency over junction nodes.
@@ -1000,7 +1017,7 @@ function rerouteNow(){
   guideIdx=0; guideProg=0; lastRouteSetAt=Date.now();
   rebuildRouteMesh();
   try{ showToast('\uD83D\uDD04 Rerouting — new route '+
-    Math.round(route.dist)+'u', 2200); }catch(e){}
+    fmtDist(route.dist), 2200); }catch(e){}
   try{ if(typeof Report!=='undefined') Report.note('gps',
     'auto-reroute: '+Math.round(route.dist)+'u, quality '+res.quality); }catch(e){}
 }
@@ -1030,17 +1047,19 @@ function setDestination(x, z, name){
     var cb=document.getElementById('gps-clear-btn');
     if (cb) cb.style.display='block';
   }catch(e){}
+  /* Player-facing toast distances via fmtDist — feet under a
+     mile, miles over (Joshua 2026-10-24) — the Report.note below stays in raw units (internal). */
   try{
     if (res.quality==='partial'){
       showToast('\uD83E\uDDED Navigating to '+(route.destName)+
-        ' \u2014 '+Math.round(route.dist)+
-        'u (streets, then direct \u2014 destination past the loaded roads)', 3000);
+        ' \u2014 '+fmtDist(route.dist)+
+        ' (streets, then direct \u2014 destination past the loaded roads)', 3000);
     } else if (res.quality==='direct'){
       showToast('\uD83E\uDDF5 Navigating to '+(route.destName)+
-        ' \u2014 '+Math.round(route.dist)+'u (direct)', 2600);
+        ' \u2014 '+fmtDist(route.dist)+' (direct)', 2600);
     } else {
       showToast('\uD83E\uDDED Navigating to '+(route.destName)+
-        ' \u2014 '+Math.round(route.dist)+'u', 2600);
+        ' \u2014 '+fmtDist(route.dist), 2600);
     }
   }catch(e){}
   try{ if(typeof Report!=='undefined') Report.note('gps',
@@ -1463,7 +1482,9 @@ function hudArrowTick(){
      as it nears) — pre-1.64 it pointed in a straight line at the
      destination, which sent you cross-country. The distance is the
      along-route distance remaining, and when a turn is within 500u
-     the turn line shows its arrow + distance, like a real GPS. */
+     the turn line shows its arrow + distance, like a real GPS.
+     Both rendered distances go through fmtDist — feet under a mile,
+     miles over (Joshua 2026-10-24); the 500u above stays internal. */
   updateGuidance(p);
   var tgt=guideTarget||{x:route.destX, z:route.destZ};
   var dx=tgt.x-p.x, dz=tgt.z-p.z;
@@ -1480,14 +1501,14 @@ function hudArrowTick(){
   if (hudArrowTurn){
     if (guideNextTurn && (guideNextTurn.d-guideProg)<=500){
       hudArrowTurn.textContent=turnGlyph(guideNextTurn.ang)+' '+
-        Math.max(0, Math.round(guideNextTurn.d-guideProg))+'u';
+        fmtDist(Math.max(0, guideNextTurn.d-guideProg));
       hudArrowTurn.style.display='block';
     } else {
       hudArrowTurn.style.display='none';
     }
   }
   if (hudArrowDist) hudArrowDist.textContent=(route.destName||'Destination')+
-    ' \u2022 '+Math.round(guideRemaining||Math.hypot(route.destX-p.x, route.destZ-p.z))+'u';
+    ' \u2022 '+fmtDist(guideRemaining||Math.hypot(route.destX-p.x, route.destZ-p.z));
 }
 
 })();
