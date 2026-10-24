@@ -167,27 +167,35 @@ function buildStops(){
     });
   });
   if (!allStops.length) return;
+  /* SIGNS OFF (Joshua 2026-10-24): while SignRules.ENABLED is false
+     (master switch in sign_rules.js), the bus-stop SIGN BOARD mesh is
+     not created or added — road signs do not spawn, per Joshua's order.
+     ONLY the visual sign board is gated: stop positions (including the
+     SignRules.place() validation above), the pole mesh, the pole
+     colliders, MB.stops, bus dwell behaviour and request-stop all keep
+     working exactly as before. Flip the flag back to true and the
+     boards return with no other change. */
+  var signsOff=(typeof SignRules!=='undefined' && SignRules.ENABLED===false);
   // instanced poles + sign boards
   var poleGeo=new THREE.BoxGeometry(0.18,3.2,0.18);
   var signGeo=new THREE.BoxGeometry(1.1,0.7,0.08);
   var poleMesh=new THREE.InstancedMesh(poleGeo, vehMat(0x707880), allStops.length);
     poleMesh.frustumCulled=false; // v1.17 FIX: InstancedMesh spans the map — r128 culls it as a tiny sphere at origin, making meshes invisible
-  var signMesh=new THREE.InstancedMesh(signGeo, vehMat(0x1a5fb4), allStops.length);
-    signMesh.frustumCulled=false; // v1.17 FIX: InstancedMesh spans the map — r128 culls it as a tiny sphere at origin, making meshes invisible
+  var signMesh=signsOff?null:new THREE.InstancedMesh(signGeo, vehMat(0x1a5fb4), allStops.length);
+    if (signMesh) signMesh.frustumCulled=false; // v1.17 FIX: InstancedMesh spans the map — r128 culls it as a tiny sphere at origin, making meshes invisible
   var m4=new THREE.Matrix4();
   allStops.forEach(function(s,i){
     var gy=groundY(s.x,s.z);
     m4.makeTranslation(s.x, gy+1.6, s.z);
     poleMesh.setMatrixAt(i, m4);
-    m4.makeTranslation(s.x, gy+3.4, s.z);
-    signMesh.setMatrixAt(i, m4);
+    if (signMesh){ m4.makeTranslation(s.x, gy+3.4, s.z); signMesh.setMatrixAt(i, m4); }
     s.gy=gy;
     MB.stops.push(s);
     try{ if(typeof addCollider==='function') addCollider(s.x, s.z, 0.35); }catch(e){}  // v2.1: solid bus-stop poles
   });
   poleMesh.instanceMatrix.needsUpdate=true;
-  signMesh.instanceMatrix.needsUpdate=true;
-  scene.add(poleMesh); scene.add(signMesh);
+  if (signMesh) signMesh.instanceMatrix.needsUpdate=true;
+  scene.add(poleMesh); if (signMesh) scene.add(signMesh);
 }
 
 /* ---------------- buses ---------------- */
