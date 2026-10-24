@@ -1,75 +1,78 @@
 /* ============================================================
-   SURVIVING ADAMSVILLE — GitHub report upload configuration
+   SURVIVING ADAMSVILLE — Report sending configuration
    FILE: github-config.js
    ------------------------------------------------------------
    WHAT THIS FILE DOES:
-   Lets the game send diagnostic reports (inspector findings,
-   stuck vehicles, errors, performance warnings) to your GitHub
-   repo as timestamped files in the `reports/` folder, instead of
-   only keeping them on the phone.
+   Tells the game WHERE to send diagnostic reports (inspector
+   findings, stuck vehicles, errors, performance warnings).
+   The reports still end up as timestamped files in the
+   `reports/` folder of the GitHub repo — but the game no
+   longer talks to GitHub itself.
 
-   HOW TO TURN IT ON (pick ONE option):
+   HOW IT WORKS NOW — THE RELAY (Joshua's ruling, 2026-10-24):
+   * Players must NEVER need a GitHub key. Other people will
+     play this game, and a key inside a public game file can
+     be read by anyone who downloads the game.
+   * So the game sends its reports to ONE middleman address —
+     the "relay" — with NO key at all. The relay is a small
+     Google Apps Script web app running under Joshua's own
+     Google account. The relay holds the GitHub key on ITS
+     side only (in its private Script Properties) and writes
+     each report into the repo's reports/ folder.
+   * The only setting that matters is REPORT_RELAY_URL below:
+     the relay's web address (it ends in "/exec").
+   * Until that address is filled in, sending is OFF: reports
+     stay queued on the device and the manual/export behaviour
+     is the fallback. No report is lost just because the relay
+     address is empty — the queue simply waits.
 
-   OPTION A — paste your token here (simplest):
-     1. On your phone or laptop, open:
-        https://github.com/settings/tokens?type=beta
-     2. Click "Generate new token".
-     3. Token name: "adamsville-game-reports".
-     4. Expiration: pick whatever you like (90 days is fine).
-     5. Under "Repository access" choose "Only select repositories"
-        and pick: kingmarkarnold-code/adamsville-play
-     6. Under "Permissions" -> "Repository permissions", set
-        "Contents" to "Read and write". Leave everything else
-        at "No access".
-     7. Click "Generate token", COPY the token (it starts with
-        github_pat_...). You only see it once.
-     8. Paste it between the quotes on the `token:` line below,
-        then tell Mollie "the token is in" so she can push the
-        updated file to the repo.
-
-   OPTION B — keep the token OFF the repo (more private):
-     1. Do steps 1-7 above to create the token.
-     2. Do NOT paste it in this file. Instead, open the game in
-        your browser, open the developer console (F12), and run:
-            GitHubReports.setToken("paste-your-token-here")
-        The token is saved in the browser's own storage on that
-        device only — it never goes into the repo or the game files.
-
+   There is deliberately NO token setting in this file any
+   more. The old direct-to-GitHub upload (token pasted here,
+   or stored per-device with GitHubReports.setToken) was
+   removed on 2026-10-24 because its token died and because
+   shipping any working key in a public game is not safe.
+   Do not paste a token here — nothing reads one any more.
+   (Two older helpers, crashlog.js and worldfix_sync.js, still
+   look for a token in this config / browser storage. With no
+   token anywhere they simply stay off, exactly as they have
+   since the old token died. Wiring them through the relay is
+   a separate job, not part of this file.)
    ------------------------------------------------------------
-   SECURITY WARNING — READ THIS:
-   * Anyone who downloads the game can read this file. If you use
-     Option A, they can read your token too.
-   * That is why the token must be LIMITED: Contents "Read and
-     write" on ONLY the adamsville-play repo, nothing else.
-   * Worst case if someone steals it: they can add junk report
-     files to your repo. They CANNOT read your other repos,
-     delete anything important, or touch your account.
-   * If a token ever leaks, delete it at the URL above and make
-     a new one. Takes 2 minutes.
-   ------------------------------------------------------------
-   Documentation comments are required on all game code — Joshua's
-   standing rule. This file follows it.
+   Documentation comments are required on all game code —
+   Joshua's standing rule. This file follows it.
    ============================================================ */
 
 window.GITHUB_CONFIG = {
-  /* Paste your fine-grained token between the quotes (Option A),
-     or leave empty and use GitHubReports.setToken() (Option B).
-     Token placed 2026-10-11 per Joshua's explicit authorization —
-     he understands it is visible to anyone who reads this file. */
-  token: "",
+  /* The relay's web address. SET THIS to the deployed Google
+     Apps Script relay URL (it ends in "/exec") once Joshua has
+     finished the one-time relay setup — see
+     game-map/report-relay/SETUP.md. The game itself holds
+     NO key; this address is not a secret, it is just where
+     reports are posted. Leave it "" (empty) until the relay
+     exists: reports then stay queued locally, nothing sends. */
+  REPORT_RELAY_URL: "",
 
-  /* Which repo receives the reports. Do not change unless you
-     move the game to a different repository. */
+  /* Client tag sent with every report bundle. This is NOT a
+     password and NOT a credential — the relay uses it only to
+     ignore random junk posts that are obviously not from the
+     game. Anyone who reads this file can read the tag, and
+     that is fine: the worst it allows is posting a junk report
+     file into the reports/ folder. */
+  REPORT_CLIENT_TAG: "surviving-adamsville-game",
+
+  /* Which repo the reports end up in (the relay writes them;
+     kept here so every report bundle can name its destination
+     and older helpers can still find it). */
   repo: "kingmarkarnold-code/adamsville-play",
 
-  /* Folder inside the repo where report files are written. */
+  /* Folder inside the repo where the relay writes report files. */
   reportsDir: "reports",
 
-  /* Master switch. Reports only upload when this is true AND a
-     token is present (from this file or browser storage). */
+  /* Master switch. Reports only send when this is true AND
+     REPORT_RELAY_URL is set. */
   enabled: true,
 
-  /* How often (milliseconds) queued reports are uploaded in one
+  /* How often (milliseconds) queued reports are sent in one
      batch. 5 minutes = 300000. */
   flushIntervalMs: 5 * 60 * 1000,
 
