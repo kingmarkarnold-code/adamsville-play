@@ -20,15 +20,15 @@
     },
     {
       "name": "basketball.html",
-      "size": 120731,
-      "sha256": "5c6ecd4f5c78b43d7187c9f783c0981eb79f950b9938e0bbcc69d3ec69df3b2a",
-      "hash": "5c6ecd4f5c78b43d7187c9f783c0981eb79f950b9938e0bbcc69d3ec69df3b2a"
+      "size": 126196,
+      "sha256": "6251e93eaead8ecf06dcdeccac55caa070ff06434ab018d6e88d3055ca0345cb",
+      "hash": "6251e93eaead8ecf06dcdeccac55caa070ff06434ab018d6e88d3055ca0345cb"
     },
     {
       "name": "basketball_court.js",
-      "size": 28274,
-      "sha256": "9fce3c9aa3e0ab89e7569d1904dd0899f015240f1870d6eed91d13b0e5135965",
-      "hash": "9fce3c9aa3e0ab89e7569d1904dd0899f015240f1870d6eed91d13b0e5135965"
+      "size": 29656,
+      "sha256": "e104dcfd2ab482f7e84aaf4707bdf69a01ac4c469bb6eec5c02107cb6a4f8112",
+      "hash": "e104dcfd2ab482f7e84aaf4707bdf69a01ac4c469bb6eec5c02107cb6a4f8112"
     },
     {
       "name": "bird_drones.js",
@@ -531,6 +531,6 @@
       "sha256": "74d2e3da9d5db086f3724cec9d5d42c2ba52e8561f2223fd467601d1ba8500b8"
     }
   ],
-  "ui_version": "2026.10.24.2",
+  "ui_version": "2026.10.24.3",
   "version": "2026.10.17.9"
 }
