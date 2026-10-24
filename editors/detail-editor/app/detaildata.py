@@ -19,6 +19,13 @@ Everything this app reads or writes, in one module:
     elevation data: this app never reads elev.json, lifts files or
     the ys heights as heights — see the adapter note below.
 
+  * NAMES — a record's "name" is its street name; a road with no
+    name carries the game's own placeholder, the literal
+    "Unnamed St" (the converted data holds thousands, and the Map
+    Editor uses the same constant). Renaming a piece (the tab's
+    pencil, 1.1.0) edits ONLY that record's name on its session
+    template, so it rides the same save as any geometry edit.
+
   * THE ROAD ADAPTER — translates one road record (a PIECE) to and
     from the element core's Element (element.py). A record is
     {"name", "pts": [[x, z], ...], "ys": [...], maybe "ramp": 1}.
@@ -57,7 +64,11 @@ from pathlib import Path
 from element import Element
 
 # This editor's version (About dialog, the roads.js twin header).
-EDITOR_VERSION = "1.0.0"
+EDITOR_VERSION = "1.1.0"
+
+# The game's own name for a road with no name: the converted data
+# carries this literal, so a rename to "no name" writes exactly it.
+UNNAMED_NAME = "Unnamed St"
 
 # The one repo everything lives in.
 GAME_REPO = "kingmarkarnold-code/adamsville-play"
@@ -504,8 +515,8 @@ class PieceSession:
 
     @property
     def name(self):
-        """The piece's street name (or the suite's placeholder)."""
-        return self.template.get("name") or "Unnamed segment"
+        """The piece's street name (or the game's placeholder)."""
+        return self.template.get("name") or UNNAMED_NAME
 
     @property
     def zone_id(self):
@@ -520,6 +531,25 @@ class PieceSession:
         """Note an edit (the app saves per zone; a session is dirty
         until its zone's save lands and rebinds it)."""
         self.dirty = True
+
+    def rename(self, raw):
+        """
+        Rename this piece — and only this piece. The name rides
+        the session TEMPLATE, so the write-back carries it into
+        every record the piece becomes (a split's records share
+        the new name, exactly as they shared the old one), and the
+        existing save round trip pushes it like any other changed
+        variable. Pieces that merely happen to share the old name
+        are NOT renamed: their records are never touched. The text
+        is trimmed; an empty field means "no name", which the game
+        writes as UNNAMED_NAME. Returns the new name, or None when
+        nothing actually changed.
+        """
+        new = (raw or "").strip() or UNNAMED_NAME
+        if new == (self.template.get("name") or ""):
+            return None
+        self.template["name"] = new
+        return new
 
     def apply_to_doc(self):
         """
