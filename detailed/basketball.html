@@ -206,7 +206,7 @@
 
 <div id="topbar">
   <span class="title">🏀 Basketball — 535 Backyard Court</span>
-  <span class="vtag">v2.3</span>
+  <span class="vtag">v2.4</span>
   <span class="spacer"></span>
   <span id="score-readout">You: 0</span>
   <span id="baskets-readout">Baskets: 0</span>
@@ -231,8 +231,28 @@
       <p class="how">Controls — move with the joystick, the WASD / arrow keys, or a gamepad stick. Pick up the ball with the button below, Space, or gamepad A — and HOLD that same button to charge your shot: the longer you hold, the harder it goes, and letting go at the perfect moment is what makes it. Release too soon and it falls short; hold too long and it goes too hard. When HE has the ball, use the Defend and Steal buttons below (keys F and G, gamepad Y and X). Gamepad B asks to leave. A Bluetooth keyboard or controller works the same way.</p>
       <p class="pick">How do you want to play?</p>
       <button class="bigbtn" id="mode-1on1" type="button">1 on 1<span class="last" id="last-1on1" style="display:none">★ Last played</span></button>
-      <button class="bigbtn" id="mode-3on3" type="button">3 on 3<span class="last" id="last-3on3" style="display:none">★ Last played</span></button>
+      <button class="bigbtn" id="mode-3on3" type="button">3 on 3<span class="sub">Still to come — picking it records your choice; the decision screens come first</span><span class="last" id="last-3on3" style="display:none">★ Last played</span></button>
       <p id="mode-baskets">Your baskets: 0</p>
+    </div>
+  </div>
+
+  <!-- make it, take it: decided after the mode, before the opponent (v2.4) -->
+  <div id="mitt-screen" class="sheet">
+    <div id="mitt-panel" class="panel">
+      <h2>Make it, Take it?</h2>
+      <p class="how">After a made basket, the ball restarts at the top — the far end of the court, opposite the goal. <b>Make it, Take it:</b> the man who just scored takes it from the top. <b>Standard:</b> the other man takes it from the top.</p>
+      <button class="bigbtn" id="mitt-yes" type="button">Make it, Take it<span class="sub">Whoever scores takes the ball from the top</span><span class="last" id="last-mitt-yes" style="display:none">★ Last played</span></button>
+      <button class="bigbtn" id="mitt-no" type="button">Standard<span class="sub">The other man takes the ball from the top</span><span class="last" id="last-mitt-no" style="display:none">★ Last played</span></button>
+    </div>
+  </div>
+
+  <!-- 3 on 3 chosen: recorded, and honestly still to come (v2.4 ruling) -->
+  <div id="coming-screen" class="sheet">
+    <div id="coming-panel" class="panel">
+      <h2>3 on 3 — still to come</h2>
+      <p class="how">Full 3-on-3 play isn't built yet, so there's no 3-on-3 match to start today — and this page won't quietly start a 1-on-1 game and call it 3 on 3. Your 3-on-3 pick is remembered for next time.</p>
+      <button class="bigbtn" id="coming-play1" type="button">Play 1 on 1 instead<span class="sub">Same court, your man, first to 10</span></button>
+      <button class="bigbtn grey" id="coming-back" type="button">← Back — choose again</button>
     </div>
   </div>
 
@@ -420,22 +440,52 @@
      now measures its own visible area the same way and sizes
      the frame to it, so inside the game the frame this page
      measures IS the truly visible area. No game logic changed.
+
+   v2.4 (Joshua, 2026-10-24) — MAKE IT, TAKE IT (his decision flow):
+   - BEFORE PLAY, TWO DECISIONS, IN HIS ORDER: first 1 on 1 or
+     3 on 3 (the mode screen, as before), THEN "Make it, Take it"
+     or not (a new screen between the mode and the opponent pick).
+     Both are remembered on the device (lastMode /
+     lastMakeItTakeIt in 'sa.basketball.v1') and pre-selected —
+     starred "Last played" — next time, so a returning player can
+     start fast; the defaults are 1 on 1 and Make it Take it NO
+     (the standard).
+   - THE RULE: after a MADE basket the ball restarts AT THE TOP
+     (TOP_SPOT, the far end opposite the goal — the v2.3 restart)
+     either way. Make it Take it YES: the man who just scored
+     takes it from the top. NO: the other man takes it from the
+     top. It applies to your baskets and his alike, and the
+     feedback line announces it as it happens ("Make it, take it
+     — your ball from the top" / "His ball from the top"). A made
+     basket no longer leaves a dead ball to fetch. Blocked shots,
+     misses, steals and out-of-bounds calls are untouched.
+   - 3 ON 3: HIS RULING — "Decision screens first — 3-on-3 comes
+     later." Picking 3 on 3 RECORDS the pick (remembered and
+     starred like everything else), and then the page says to
+     his face that 3-on-3 play itself is still to come: no match
+     starts, and no 1-on-1 game is quietly dressed up under a
+     3-on-3 name. He can go back and choose again, or knowingly
+     play 1 on 1 instead — and if he does, his recorded 3-on-3
+     pick still stands (startGame is told to keep it). The court
+     code can already seat both teams; full team play is the
+     later build this decision screen is waiting for.
    ============================================================================ */
 (function(){
 'use strict';
 
 /* ============================== saved progress ============================== */
 /* Shared with the main game page (same origin): {v, baskets, sessions,
-   lastMode, lastOpponent, skillXp, game}. Written the moment anything
-   changes. 'game' is the game in progress {mode, opp, score, oppScore,
-   target} or null — it is what brings a half-finished game back after
-   a reload. */
+   lastMode, lastOpponent, lastMakeItTakeIt, skillXp, game}. Written
+   the moment anything changes. 'game' is the game in progress {mode,
+   opp, score, oppScore, target, makeItTakeIt} or null — it is what
+   brings a half-finished game back after a reload, house rule and
+   all (v2.4). */
 var SAVE_KEY = 'sa.basketball.v1';
 var ERROR_KEY = 'sa.basketball.error';
 
 function loadProgress(){
-  var fresh = { v: 1, baskets: 0, sessions: 0, lastMode: '', lastOpponent: '', skillXp: 0, game: null,
-                exitLevel: 0, exitSummary: null };
+  var fresh = { v: 1, baskets: 0, sessions: 0, lastMode: '', lastOpponent: '', lastMakeItTakeIt: false,
+                skillXp: 0, game: null, exitLevel: 0, exitSummary: null };
   try{
     var raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return fresh;
@@ -451,6 +501,9 @@ function loadProgress(){
     if (p.exitSummary && typeof p.exitSummary === 'object')
       fresh.exitSummary = p.exitSummary;
     if (p.lastMode === '1on1' || p.lastMode === '3on3') fresh.lastMode = p.lastMode;
+    /* v2.4: his standing Make it, Take it choice (default: the
+       standard, NO) — pre-selected on the decision screen */
+    fresh.lastMakeItTakeIt = p.lastMakeItTakeIt === true;
     if (typeof p.lastOpponent === 'string' && castByName(p.lastOpponent)) fresh.lastOpponent = p.lastOpponent;
     if (p.game && typeof p.game === 'object' &&
         (p.game.mode === '1on1' || p.game.mode === '3on3') && castByName(p.game.opp)){
@@ -458,7 +511,8 @@ function loadProgress(){
       var oc = Math.max(0, parseInt(p.game.oppScore, 10) || 0);
       var tg = (p.game.mode === '1on1') ? 10 : 21;
       if (sc < tg && oc < tg)
-        fresh.game = { mode: p.game.mode, opp: p.game.opp, score: sc, oppScore: oc, target: tg };
+        fresh.game = { mode: p.game.mode, opp: p.game.opp, score: sc, oppScore: oc, target: tg,
+                       makeItTakeIt: p.game.makeItTakeIt === true };
     }
     return fresh;
   }catch(e){ return fresh; }
@@ -701,9 +755,11 @@ var PINES = [
 var TEAM_SPOTS = [ { x: -3.4, z: -3.2 }, { x: 3.3, z: -4.4 } ];
 
 /* ============================== state ============================== */
-var phase = 'mode';           // 'mode' | 'pick' | 'game' | 'win'
+var phase = 'mode';           // 'mode' | 'mitt' | 'coming' | 'pick' | 'game' | 'win'  (v2.4: 'mitt' is the Make it, Take it step; 'coming' is the 3-on-3 notice)
 var mode = '';                // the mode of the game on the court
 var pendingMode = '';         // mode chosen, opponent not yet picked
+var pendingMakeItTakeIt = false;  // v2.4: the Make it, Take it choice in flight (seeded from his last one)
+var keepModePick = false;         // v2.4: a knowingly-substituted game (1 on 1 for a 3-on-3 pick) must not overwrite the recorded pick
 var game = null;              // {mode, opp, score, oppScore, target} while a game is on
 var figures = [];             // the other figures on the court (not you)
 var primaryDef = null;        // the figure guarding you (your opponent)
@@ -1988,31 +2044,31 @@ function onBasket(by){
   if (by === 'opp'){
     if (game){
       game.oppScore++;
-      progress.game = { mode: game.mode, opp: game.opp, score: game.score, oppScore: game.oppScore, target: game.target };
       if (game.oppScore >= game.target) pendingWin = 'opp';
     }
-    saveProgress();
+    saveGameState();   // v2.4: the one writer of the saved game (carries the house rule too)
     updateReadout();
     if (pendingWin) setFeedback(game.opp + ' scores — that reaches ' + game.target + '.');
-    else setFeedback(game.opp + ' scores. ' + game.opp + ': ' + game.oppScore + ' — your ball when it settles.');
+    else setFeedback(game.opp + ' scores. ' + game.opp + ': ' + game.oppScore + '.');
     return;
   }
   progress.baskets++;
   addSkill(SKILL.GAIN_PER_MAKE);
   if (game){
     game.score++;
-    progress.game = { mode: game.mode, opp: game.opp, score: game.score, oppScore: game.oppScore, target: game.target };
     if (game.score >= game.target) pendingWin = 'you';
   }
-  saveProgress();
+  saveGameState();
   updateReadout();
   if (pendingWin) setFeedback('Basket! That reaches ' + game.target + '! 🏆');
   else if (game) setFeedback('Basket! 🏀  You: ' + game.score + ' · ' + game.opp + ': ' + game.oppScore + ' — first to ' + game.target + '.');
   else setFeedback('Basket! 🏀');
 }
 /* The ball has come to rest: keep it on the dirt, then hand the turn
-   over. Your make or a block of your shot -> he fetches it and his
-   offence begins. Anything else -> it's loose, and yours to take. */
+   over. A MAKE restarts at the top under the game's Make it, Take
+   it rule (v2.4 — scorer takes it, or the other man does). A block
+   of your shot -> he fetches it and his offence begins. Anything
+   else -> it's loose, and yours to take. */
 function settleDeadBall(){
   /* OUT OF BOUNDS at the settle: a ball that comes to rest
      outside the dirt (it flew out high, or timed out in flight out
@@ -2051,7 +2107,22 @@ function settleDeadBall(){
   var ctx = shotCtx; shotCtx = null;
   if (!ballScored && ctx && ctx.by === 'you' && !ctx.blocked)
     setFeedback('Off the mark. Get the ball and go again.');
-  if (ctx && ctx.by === 'you' && (ctx.made || ctx.blocked) && game){
+  if (ctx && ctx.made && game){
+    /* v2.4 MAKE IT, TAKE IT (Joshua's decision, made before the
+       game): a made basket restarts AT THE TOP either way — rule
+       ON, the scorer takes it from the top; rule OFF (standard),
+       the other man does. Announced as it happens, in the same
+       words either direction. */
+    var scorer = ctx.by;
+    var taker = game.makeItTakeIt ? scorer : (scorer === 'you' ? 'opp' : 'you');
+    if (game.makeItTakeIt)
+      setFeedback(scorer === 'you' ? 'Make it, take it — your ball from the top.'
+                                   : 'Make it, take it — ' + game.opp + "'s ball from the top.");
+    else
+      setFeedback(taker === 'you' ? 'Your ball from the top.'
+                                  : game.opp + "'s ball from the top.");
+    restartAtTop(taker);
+  } else if (ctx && ctx.by === 'you' && ctx.blocked && game){
     startOppRecovery();
   } else {
     possession = 'you';
@@ -2061,7 +2132,8 @@ function settleDeadBall(){
 
 /* ============================== game flow ============================== */
 function saveGameState(){
-  progress.game = game ? { mode: game.mode, opp: game.opp, score: game.score, oppScore: game.oppScore, target: game.target } : null;
+  progress.game = game ? { mode: game.mode, opp: game.opp, score: game.score, oppScore: game.oppScore,
+                           target: game.target, makeItTakeIt: !!game.makeItTakeIt } : null;
   saveProgress();
 }
 function startGame(m, oppName, opts){
@@ -2073,14 +2145,24 @@ function startGame(m, oppName, opts){
   player.face = Math.PI; player.speed = 0; player.idleFor = 0; player.jumpY = 0;
   leaveArmed = true; leaveOpen = false; pendingWin = '';
   stealPressure = 0;
-  game = { mode: m, opp: plan.opp.name, score: opts.score || 0, oppScore: opts.oppScore || 0, target: TARGETS[m] };
-  progress.lastMode = m;
+  /* v2.4: the game's house rule. An explicit choice wins; "Play
+     again" keeps the rule of the game just finished; anything else
+     falls back to his remembered choice (default NO, the standard). */
+  var mittRule = (typeof opts.makeItTakeIt === 'boolean') ? opts.makeItTakeIt
+               : (game && typeof game.makeItTakeIt === 'boolean') ? game.makeItTakeIt
+               : !!progress.lastMakeItTakeIt;
+  game = { mode: m, opp: plan.opp.name, score: opts.score || 0, oppScore: opts.oppScore || 0,
+           target: TARGETS[m], makeItTakeIt: mittRule };
+  /* v2.4: a game knowingly substituted for a recorded pick (1 on 1
+     played from the 3-on-3 notice) leaves the pick standing */
+  if (!opts.keepModePick) progress.lastMode = m;
   progress.lastOpponent = plan.opp.name;
   if (!opts.restored) progress.sessions++;
   saveGameState();
   buildCourt(plan);
   phase = 'game';
-  showSheet('mode-screen', false); showSheet('pick-screen', false);
+  showSheet('mode-screen', false); showSheet('mitt-screen', false); showSheet('coming-screen', false);
+  showSheet('pick-screen', false);
   showSheet('leave-screen', false); showSheet('win-screen', false);
   var rb = el('rosterbar');
   if (rb){ rb.textContent = rosterText(plan, m); rb.style.display = 'block'; }
@@ -2110,8 +2192,57 @@ function chooseMode(m){
   pendingMode = m;
   progress.lastMode = m;
   saveProgress();
-  phase = 'pick';
+  /* v2.4: Joshua's order — the mode first, THEN Make it, Take it,
+     then the opponent. The rule step opens pre-set to his last
+     choice (default NO, the standard). */
+  pendingMakeItTakeIt = !!progress.lastMakeItTakeIt;
   showSheet('mode-screen', false);
+  if (m === '3on3'){
+    /* v2.4, his ruling: "Decision screens first — 3-on-3 comes
+       later." The pick is recorded above (and remembered); the
+       mode itself is not playable yet, and the page says so
+       plainly instead of starting anything under its name. */
+    phase = 'coming';
+    showSheet('coming-screen', true);
+    setFeedback('3 on 3 is still to come — your pick is remembered.');
+  } else {
+    phase = 'mitt';
+    showMittScreen();
+  }
+  updateActionButton();
+}
+/* From the 3-on-3 notice: knowingly play 1 on 1 instead. The
+   recorded 3-on-3 pick stands — keepModePick tells startGame to
+   leave lastMode alone for the substituted game. */
+function playOneOnOneInstead(){
+  pendingMode = '1on1';
+  keepModePick = true;
+  phase = 'mitt';
+  showSheet('coming-screen', false);
+  showMittScreen();
+  updateActionButton();
+}
+/* From the 3-on-3 notice: back to the mode choice, nothing started. */
+function comingBack(){
+  showSheet('coming-screen', false);
+  showModeScreen();
+  updateActionButton();
+}
+/* The Make it, Take it step (v2.4): what the rule is, the two
+   choices, and a star on the one he played last. */
+function showMittScreen(){
+  showSheet('mitt-screen', true);
+  var y = el('last-mitt-yes'), n = el('last-mitt-no');
+  if (y) y.style.display = progress.lastMakeItTakeIt ? 'block' : 'none';
+  if (n) n.style.display = progress.lastMakeItTakeIt ? 'none' : 'block';
+  setFeedback((pendingMode === '3on3' ? '3 on 3' : '1 on 1') + ' — now decide: Make it, Take it?');
+}
+function chooseMitt(yes){
+  pendingMakeItTakeIt = !!yes;
+  progress.lastMakeItTakeIt = pendingMakeItTakeIt;
+  saveProgress();
+  phase = 'pick';
+  showSheet('mitt-screen', false);
   showPickScreen();
   updateActionButton();
 }
@@ -2126,7 +2257,8 @@ function showPickScreen(){
 function pickOpponent(name){
   progress.lastOpponent = name;
   saveProgress();
-  startGame(pendingMode || progress.lastMode || '1on1', name, {});
+  var keep = keepModePick; keepModePick = false;   // the flag is spent by this start
+  startGame(pendingMode || progress.lastMode || '1on1', name, { makeItTakeIt: pendingMakeItTakeIt, keepModePick: keep });
 }
 function showWin(winner){
   phase = 'win';
@@ -2179,6 +2311,8 @@ function saveAndExit(){
 
 function showModeScreen(){
   phase = 'mode';
+  keepModePick = false;
+  showSheet('mitt-screen', false); showSheet('coming-screen', false);
   showSheet('pick-screen', false); showSheet('leave-screen', false); showSheet('win-screen', false);
   showSheet('mode-screen', true);
   var l1 = el('last-1on1'), l3 = el('last-3on3');
@@ -2350,6 +2484,12 @@ function init(){
 
   el('mode-1on1').addEventListener('click', function(){ chooseMode('1on1'); });
   el('mode-3on3').addEventListener('click', function(){ chooseMode('3on3'); });
+  /* v2.4: the Make it, Take it step's two buttons */
+  el('mitt-yes').addEventListener('click', function(){ chooseMitt(true); });
+  el('mitt-no').addEventListener('click', function(){ chooseMitt(false); });
+  /* v2.4: the 3-on-3 notice's two ways onward */
+  el('coming-play1').addEventListener('click', function(){ playOneOnOneInstead(); });
+  el('coming-back').addEventListener('click', function(){ comingBack(); });
   el('pick-opp-0').addEventListener('click', function(){ pickOpponent(CAST[0].name); });
   el('pick-opp-1').addEventListener('click', function(){ pickOpponent(CAST[1].name); });
   el('pick-opp-2').addEventListener('click', function(){ pickOpponent(CAST[2].name); });
@@ -2428,7 +2568,7 @@ function init(){
   /* open: a saved game in progress comes straight back; otherwise
      the mode choice, over the quiet court. */
   if (progress.game){
-    startGame(progress.game.mode, progress.game.opp, { restored: true, score: progress.game.score, oppScore: progress.game.oppScore });
+    startGame(progress.game.mode, progress.game.opp, { restored: true, score: progress.game.score, oppScore: progress.game.oppScore, makeItTakeIt: progress.game.makeItTakeIt === true });
   } else {
     buildCourt(null);
     showModeScreen();
@@ -2444,7 +2584,7 @@ catch(e){ showError(e); }
 
 /* test/debug surface (also handy later): state snapshots + drivers */
 window.BBALL_PAGE = {
-  version: '2.3.1',
+  version: '2.4.0',
   started: function(){ return started; },
   embedded: function(){ return EMBEDDED; },
   mode: function(){ return mode; },
@@ -2458,9 +2598,15 @@ window.BBALL_PAGE = {
   figures: function(){ return figures.length + (you ? 1 : 0); },
   ballState: function(){ return ballState; },
   possession: function(){ return possession; },
-  game: function(){ return game ? { mode: game.mode, opp: game.opp, score: game.score, oppScore: game.oppScore, target: game.target } : null; },
+  game: function(){ return game ? { mode: game.mode, opp: game.opp, score: game.score, oppScore: game.oppScore, target: game.target, makeItTakeIt: !!game.makeItTakeIt } : null; },
   startMode: startMode,
   chooseMode: chooseMode,
+  /* v2.4 surface: the Make it, Take it step + his remembered choice */
+  chooseMitt: chooseMitt,
+  lastMakeItTakeIt: function(){ return !!progress.lastMakeItTakeIt; },
+  /* v2.4 surface: the 3-on-3 notice — proceed knowingly, or go back */
+  playOneOnOneInstead: playOneOnOneInstead,
+  comingBack: comingBack,
   pickOpponent: pickOpponent,
   action: ballAction,
   /* v2.2 surface: hold-to-shoot, your defence, out of bounds, save & exit */
