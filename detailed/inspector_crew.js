@@ -20,8 +20,9 @@
          perimeter overlaps this team's site.
      The inspector IDENTIFIES problems only — it never fixes anything.
      Findings get a red "⚠" marker at the spot and are reported:
-       - showToast() when the player is within 120u (no spam from far away)
-       - Report panel note (Report.note)
+       - Report panel note (Report.note) — recorded, not displayed
+         on the game view (Joshua 2026-10-24: crew reports live in
+         the Administrator menu now; the old showToast is gone)
        - window.CrewInspector.findings() log (newest last, capped at 40)
 
    VISUAL IDENTITY (Joshua: "different color hard hat? glowing eyes?"):
@@ -72,8 +73,8 @@ var FX_R=25;
 var FX_CAP=24;
 /* PAIR_CAP — max in-radius colliders used for pairwise overlap checks. */
 var PAIR_CAP=60;
-/* TOAST_R — only toast the player about findings within this range. */
-var TOAST_R=120;
+/* TOAST_R removed 2026-10-24 with the finding toast it gated
+   (Joshua): findings are recorded, not shown on the game view. */
 /* FINDING_CAP — findings log cap. */
 var FINDING_CAP=40;
 
@@ -87,10 +88,9 @@ function _ilog(msg){
   }catch(e){}
   try{ console.log('[CrewInspector] '+msg); }catch(e){}
 }
-/* _toast(msg) — player-facing toast, guarded. */
-function _toast(msg, ms){
-  try{ if (typeof showToast==='function') showToast(msg, ms||3200); }catch(e){}
-}
+/* _toast removed 2026-10-24 (Joshua): inspector findings are
+   crew reports — they are recorded via _ilog/Report.note exactly
+   as before, but no longer displayed on the game view. */
 function _nowT(){
   var d=new Date();
   function p(n){ return (n<10?'0':'')+n; }
@@ -117,15 +117,8 @@ function _gY(x,z){
   }catch(e){}
   return 0;
 }
-/* _playerXZ() — player position or null. */
-function _playerXZ(){
-  try{
-    if (typeof player!=='undefined' && player &&
-        isFinite(player.x) && isFinite(player.z))
-      return {x:player.x, z:player.z};
-  }catch(e){}
-  return null;
-}
+/* _playerXZ() removed 2026-10-24: its only caller was the
+   finding toast's range check, removed with the toast (above). */
 
 /* ================= inspector figure =================
    Blocky worker in the same style as roadcrew's makeWorker(), but visually
@@ -333,15 +326,9 @@ function addFinding(rec, type, msg, fx, fz){
       }
     }catch(e){}
     _ilog('['+rec.kind+' @ '+f.x+','+f.z+'] '+type+': '+msg);
-    /* Toast the player only if they're close enough to care. */
-    try{
-      var p=_playerXZ();
-      if (p){
-        var dx=p.x-fx, dz=p.z-fz;
-        if (dx*dx+dz*dz < TOAST_R*TOAST_R)
-          _toast('🔍 Inspector: '+msg, 3600);
-      }
-    }catch(e){}
+    /* No viewport toast (Joshua 2026-10-24): the finding is
+       recorded by _ilog above; crew reports are read in the
+       Administrator menu, not on the game view. */
   }catch(e){}
 }
 function clearMarkers(rec){
