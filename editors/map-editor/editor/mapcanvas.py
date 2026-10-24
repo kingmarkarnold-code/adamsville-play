@@ -548,13 +548,20 @@ class MapCanvas(Gtk.DrawingArea):
         #   {"roads": [(cat, flat_idx, road_dict), ...] — the current
         #    selection, resolved to records,
         #    "prev_cam": (cam_x, cam_y, zoom, rotation) from before
-        #    the preview — Cancel restores all four, exactly}
+        #    the preview — Cancel restores all four, exactly,
+        #    "prev_selection": the selection keys from before the
+        #    preview (1.9.12) — Cancel restores them too}
         # While it is set, those roads are drawn lit up whole (see
         # _draw_delete_preview), the view is framed on their full
         # extent, and the app's delete bar names them with the
         # Delete / Cancel choice. The road dicts are the very
         # records a confirmed delete removes — the highlight covers
         # exactly what will be deleted, no more and no less.
+        # 1.9.12: while the picture is up, clicking a revealed
+        # piece in the companion panes' AFTER still adds it to
+        # "roads" (and to the selection) — the set can grow until
+        # Joshua confirms or cancels (app.add_piece_from_after_
+        # picture).
         self.delete_preview = None
 
         # Delete PREPARATION state (1.9.7 no-stall rule): between
@@ -3944,6 +3951,56 @@ class MapCanvas(Gtk.DrawingArea):
     # came from.
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def delete_picture_texts(roads):
+        """
+        The delete bar's line + the status line for a set of
+        framed roads — ONE composer for the picture, used when
+        the picture opens (_delete_prep_ready) and again whenever
+        a piece is added through the After picture (1.9.12, app.
+        add_piece_from_after_picture), so the words always
+        describe the set exactly as it stands. A set that is one
+        grp object says so; a single road is named; several roads
+        name the first two and count the rest (the bar stays one
+        readable line however long a lasso take runs).
+        """
+        names = [road.get("name") or "Unnamed"
+                 for _c, _i, road in roads]
+        grp_vals = [road.get("grp") for _c, _i, road in roads]
+        grp_object = len(roads) > 1 and grp_vals[0] \
+            and all(g == grp_vals[0] for g in grp_vals)
+        if grp_object:
+            bar_text = (
+                f"Delete '{names[0]}'?  All {len(roads)} runs of "
+                "this one object are lit up in pink below — "
+                "check them, then choose.")
+            status = (
+                f"Delete: '{names[0]}' is ONE object in "
+                f"{len(roads)} runs — every run is lit up in "
+                "pink. Delete it in the bar at the top, or "
+                "Cancel to go back.")
+        elif len(roads) == 1:
+            bar_text = (
+                f"Delete '{names[0]}'?  The whole road is lit up "
+                "in pink below — check it, then choose.")
+            status = (
+                f"Delete: '{names[0]}' is lit up in pink — the "
+                "whole road. Delete it in the bar at the top, or "
+                "Cancel to go back.")
+        else:
+            named = f"'{names[0]}', '{names[1]}'"
+            if len(roads) > 2:
+                named += f" and {len(roads) - 2} more"
+            bar_text = (
+                f"Delete {len(roads)} roads ({named})?  They "
+                "are lit up in pink below — check them, then "
+                "choose.")
+            status = (
+                f"Delete: {len(roads)} roads are lit up in pink. "
+                "Delete them in the bar at the top, or Cancel to "
+                "go back.")
+        return bar_text, status
+
     def begin_delete_preview(self, picked):
         """
         Start the delete preview for the selected roads — WITHOUT
@@ -3991,7 +4048,16 @@ class MapCanvas(Gtk.DrawingArea):
         token = self._delete_prep_token
         self.delete_prep = {"token": token, "roads": roads,
                             "names": names,
-                            "grp_object": bool(grp_object)}
+                            "grp_object": bool(grp_object),
+                            # 1.9.12: the selection as it stands when
+                            # the picture opens. Pieces added through
+                            # the After picture join the selection
+                            # (see app.add_piece_from_after_picture);
+                            # Cancel restores THIS selection, so an
+                            # abandoned decision leaves nothing
+                            # half-changed behind.
+                            "prev_selection":
+                                list(self.selected_roads)}
         if grp_object:
             prep_text = (f"Preparing '{names[0]}' "
                          f"({len(roads)} runs, one object)…")
@@ -4082,7 +4148,7 @@ class MapCanvas(Gtk.DrawingArea):
             return False  # cancelled while gathering — drop it
         self.delete_prep = None
         self.app.progress_finish("delete-prep")
-        roads, names = prep["roads"], prep["names"]
+        roads = prep["roads"]
         if bbox is None:
             self.app.hide_delete_bar()
             self.app.set_status(
@@ -4096,43 +4162,15 @@ class MapCanvas(Gtk.DrawingArea):
             # restores the view EXACTLY, rotation included.
             "prev_cam": (self.cam_x, self.cam_y, self.zoom,
                          self.rotation),
+            # 1.9.12: selection snapshot (see begin_delete_
+            # preview) — Cancel restores it exactly.
+            "prev_selection": prep.get("prev_selection",
+                                       list(self.selected_roads)),
         }
         self.frame_rect(min_x - pad, min_z - pad,
                         max_x + pad, max_z + pad,
                         top_inset=DELETE_BAR_H)
-        if prep.get("grp_object"):
-            bar_text = (
-                f"Delete '{names[0]}'?  All {len(roads)} runs of "
-                "this one object are lit up in pink below — "
-                "check them, then choose.")
-            status = (
-                f"Delete: '{names[0]}' is ONE object in "
-                f"{len(roads)} runs — every run is lit up in "
-                "pink. Delete it in the bar at the top, or "
-                "Cancel to go back.")
-        elif len(roads) == 1:
-            bar_text = (
-                f"Delete '{names[0]}'?  The whole road is lit up "
-                "in pink below — check it, then choose.")
-            status = (
-                f"Delete: '{names[0]}' is lit up in pink — the "
-                "whole road. Delete it in the bar at the top, or "
-                "Cancel to go back.")
-        else:
-            # Name the first two and count the rest — a lasso or
-            # chain selection can hold many records, and the bar
-            # must stay one readable line.
-            named = f"'{names[0]}', '{names[1]}'"
-            if len(roads) > 2:
-                named += f" and {len(roads) - 2} more"
-            bar_text = (
-                f"Delete {len(roads)} roads ({named})?  They "
-                "are lit up in pink below — check them, then "
-                "choose.")
-            status = (
-                f"Delete: {len(roads)} roads are lit up in pink. "
-                "Delete them in the bar at the top, or Cancel to "
-                "go back.")
+        bar_text, status = self.delete_picture_texts(roads)
         self.app.show_delete_bar(bar_text, ready=True)
         self.app.set_status(status)
         # Before/After caveat (1.9.8): the companion panes switch
@@ -4184,6 +4222,19 @@ class MapCanvas(Gtk.DrawingArea):
         cam_x, cam_y, zoom, rotation = pv["prev_cam"]
         self.cam_x, self.cam_y, self.zoom = cam_x, cam_y, zoom
         self.rotation = rotation
+        # 1.9.12: pieces added through the After picture joined
+        # the selection while the picture was up — Cancel puts
+        # the selection back to exactly what it was when the
+        # picture opened, so nothing half-changed leaks out of
+        # an abandoned decision. (The data was never touched.)
+        prev_sel = pv.get("prev_selection")
+        if prev_sel is not None \
+                and list(self.selected_roads) != list(prev_sel):
+            self.selected_roads = list(prev_sel)
+            try:
+                self.app.on_roads_selected()
+            except Exception:
+                pass
         # Comparison over (cancel): panes revert to synced views.
         try:
             self.app.on_delete_preview_end()
