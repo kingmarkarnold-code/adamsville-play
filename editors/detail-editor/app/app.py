@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Adamsville Detail Editor (Native) 1.0.0 — main window.
+Adamsville Detail Editor (Native) 1.1.0 — main window.
 
 Joshua's design (game-map/detail-editor/DESIGN.md, 2026-10-18): a
 STANDALONE suite app — not a mode inside the Map Editor — for the
@@ -19,6 +19,11 @@ THE FLOW
      add/delete points, add/delete segments, delete a whole
      section (the bulge case: bowed lines AND the face inside them
      go; the ends join straight). Elevation is never touched.
+     The piece's tab also carries a rename PENCIL (left of
+     the name; the close X stays on the right): it edits
+     this piece's street name inline, named or unnamed
+     alike (Joshua, 2026-10-24), and the new name rides
+     the same save.
   3. Save — the suite's round trip: local save -> push -> close ->
      fresh download -> the screen shows the downloaded copy.
 
@@ -261,6 +266,109 @@ class PiecePage:
             "Esc returns to Select. Saving pushes the whole zone "
             "file (this piece's edits baked in) and shows the "
             "downloaded copy.")
+
+    # -- the tab: pencil, name, close X --------------------------------
+
+    def build_tab(self):
+        """
+        This page's notebook tab: a rename PENCIL on the LEFT
+        (Joshua, 2026-10-24 — "on the left you'll have a pencil",
+        with the X on the right), the piece's name, and the close
+        button on the RIGHT (the closable-tabs ruling). The pencil
+        edits the street name inline, in the tab itself.
+        """
+        self.tab_box = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        self.rename_btn = Gtk.Button()
+        self.rename_btn.set_relief(Gtk.ReliefStyle.NONE)
+        self.rename_btn.set_image(Gtk.Image.new_from_icon_name(
+            "document-edit", Gtk.IconSize.MENU))
+        self.rename_btn.set_tooltip_text("Rename this street")
+        self.rename_btn.connect("clicked",
+                                lambda _b: self.start_rename())
+        self.tab_box.pack_start(self.rename_btn, False, False, 0)
+        self.tab_label = Gtk.Label(label=self.session.title())
+        self.tab_box.pack_start(self.tab_label, False, False, 0)
+        close_btn = Gtk.Button()
+        close_btn.set_relief(Gtk.ReliefStyle.NONE)
+        close_btn.set_image(Gtk.Image.new_from_icon_name(
+            "window-close", Gtk.IconSize.MENU))
+        close_btn.set_tooltip_text("Close this piece")
+        close_btn.connect(
+            "clicked", lambda _b: self.window._close_page(self))
+        self.tab_box.pack_start(close_btn, False, False, 0)
+        self.tab_box.show_all()
+        return self.tab_box
+
+    def refresh_tab_title(self):
+        """The tab's name label follows the session — after a
+        rename, and after a save rebinds the session to the
+        downloaded copy."""
+        if getattr(self, "tab_label", None) is not None:
+            self.tab_label.set_text(self.session.title())
+
+    def start_rename(self):
+        """
+        The pencil: swap the tab's name label for an inline text
+        field, right there in the tab. The field starts with the
+        record's real name — EXCEPT for an unnamed piece, where
+        it starts EMPTY with the placeholder showing: "Unnamed
+        St" is the game's placeholder text, not a name to make
+        him delete first. Enter or clicking away confirms; Esc
+        cancels, leaving the name untouched.
+        """
+        if getattr(self, "_rename_entry", None) is not None:
+            return  # a rename is already open in this tab
+        entry = Gtk.Entry()
+        current = self.session.template.get("name") or ""
+        if current == detaildata.UNNAMED_NAME:
+            entry.set_placeholder_text(detaildata.UNNAMED_NAME)
+        else:
+            entry.set_text(current)
+        entry.set_width_chars(max(12, min(36, len(current) + 4)))
+        entry.connect("activate",
+                      lambda _e: self._finish_rename(True))
+        entry.connect("focus-out-event", self._on_rename_focus_out)
+        entry.connect("key-press-event", self._on_rename_key)
+        self._rename_entry = entry
+        self.tab_box.remove(self.tab_label)
+        self.tab_box.pack_start(entry, False, False, 0)
+        self.tab_box.reorder_child(entry, 1)
+        entry.show()
+        entry.grab_focus()
+        entry.select_region(0, -1)
+
+    def _on_rename_key(self, _entry, event):
+        """Esc cancels the rename — the name stays untouched."""
+        if event.keyval == Gdk.KEY_Escape:
+            self._finish_rename(False)
+            return True
+        return False
+
+    def _on_rename_focus_out(self, _entry, _event):
+        """Clicking away confirms the rename (Enter does too)."""
+        self._finish_rename(True)
+        return False
+
+    def _finish_rename(self, commit):
+        """
+        End the inline rename: the name label goes back, and a
+        CONFIRMED text is handed to the window (which owns the
+        session bookkeeping). The entry reference clears FIRST —
+        removing the entry can fire focus-out, which would
+        otherwise re-enter here and try to confirm twice.
+        """
+        entry = getattr(self, "_rename_entry", None)
+        if entry is None:
+            return
+        self._rename_entry = None
+        raw = entry.get_text() if commit else None
+        self.tab_box.remove(entry)
+        self.tab_box.pack_start(self.tab_label, False, False, 0)
+        self.tab_box.reorder_child(self.tab_label, 1)
+        self.tab_label.show()
+        if commit:
+            self.window._on_page_renamed(self, raw)
 
 
 class DetailWindow(Gtk.Window):
@@ -589,7 +697,7 @@ class DetailWindow(Gtk.Window):
                 f"('{zone}') is not one of the game's zones — "
                 "nothing opened.")
             return
-        name = doc.get("name") or "Unnamed segment"
+        name = doc.get("name") or detaildata.UNNAMED_NAME
         self._set_status(f"Opening '{name}' from the Map Editor…")
 
         def work():
@@ -647,20 +755,9 @@ class DetailWindow(Gtk.Window):
         session = PieceSession(model, category, index, how)
         page = PiecePage(self, session)
         self.pages.append(page)
-        # The tab: name + a close button (closable tabs ruling).
-        tab_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
-                          spacing=4)
-        tab_box.pack_start(Gtk.Label(label=session.title()),
-                           False, False, 0)
-        close_btn = Gtk.Button()
-        close_btn.set_relief(Gtk.ReliefStyle.NONE)
-        close_btn.set_image(Gtk.Image.new_from_icon_name(
-            "window-close", Gtk.IconSize.MENU))
-        close_btn.set_tooltip_text("Close this piece")
-        close_btn.connect("clicked",
-                          lambda _b: self._close_page(page))
-        tab_box.pack_start(close_btn, False, False, 0)
-        tab_box.show_all()
+        # The tab — rename pencil (left), name, close button
+        # (right) — is built by the page, which owns the rename.
+        tab_box = page.build_tab()
         # The page content must be SHOWN before it joins the
         # notebook: the window's own show_all() ran at startup,
         # before this page existed, and a hidden notebook page
@@ -736,7 +833,7 @@ class DetailWindow(Gtk.Window):
             count = 0
             for cat, records in state["model"].roads.items():
                 for i, rec in enumerate(records):
-                    nm = rec.get("name") or "Unnamed segment"
+                    nm = rec.get("name") or detaildata.UNNAMED_NAME
                     if needle and needle not in nm.casefold():
                         continue
                     store.append([f"{nm}  ({len(rec.get('pts') or [])}"
@@ -898,6 +995,32 @@ class DetailWindow(Gtk.Window):
         page.overview.invalidate()
         self._refresh_save_state()
         self._refresh_undo_buttons()
+
+    def _on_page_renamed(self, page, raw):
+        """
+        A rename confirmed from the tab's pencil. The new name
+        is a changed variable like any geometry edit: it marks
+        the session dirty and rides the EXISTING save round trip
+        — the write-back takes every field from the session
+        template, the name included (after a split, the
+        resulting records share the new name, exactly as they
+        shared the old one). Only THIS piece's record changes;
+        other pieces that happen to share the old name keep it.
+        """
+        new = page.session.rename(raw)
+        if new is None:
+            page.refresh_tab_title()
+            self._set_status(
+                f"The name is unchanged ('{page.session.name}').")
+            return
+        page.session.mark_dirty()
+        page.refresh_tab_title()
+        page.refresh_info()
+        page.overview.invalidate()
+        self._refresh_save_state()
+        self._set_status(
+            f"Renamed to '{new}' — Save pushes the new name to "
+            "GitHub with the piece's other edits.")
 
     def _on_undo(self, _btn):
         page = self._current_page()
@@ -1075,6 +1198,7 @@ class DetailWindow(Gtk.Window):
                 for page in self.pages:
                     if page.session.model is model:
                         page.refresh_info()
+                        page.refresh_tab_title()
                         page.canvas.invalidate()
                         page.overview.invalidate()
                 self._refresh_save_state()
