@@ -332,7 +332,9 @@ function reportIssue(o){
   dlog('New '+kindLabel(kind)+' issue '+id+' reported'+(o.street?(' ('+o.street+')'):'')+' — dispatching crew.');
   /* v1.18 veteran field note — the reporting unit reads it with 30-year eyes. */
   try{ if(typeof VeteranCrew!=='undefined') dlog('Field note: "'+VeteranCrew.fieldNote(kind)+'"'); }catch(e){}
-  toast('🔧 Infra crew dispatched: '+kindLabel(kind)+' issue'+(o.street?(' @ '+o.street):''));
+  /* No viewport toast (Joshua 2026-10-24): the dispatch is in the
+     log above; crew reports are read in the Administrator menu,
+     not on the game view. */
   saveLS();
   try{ Report.setSys('infracrew', sysReport()); }catch(e){}
   return id;
@@ -561,7 +563,8 @@ function dispatchCrew(d){
     }
   }catch(e){}
   dlog('Infra crew on site at '+d.id+' ('+d.street+') — '+kindLabel(d.kind)+' repair underway.');
-  toast('🔧 Infra crew repairing '+kindLabel(d.kind)+(d.street?(' @ '+d.street):''));
+  /* No viewport toast (Joshua 2026-10-24): logged above; reports
+     are read in the Administrator menu, not on the game view. */
   saveLS();
   try{ Report.setSys('infracrew', sysReport()); }catch(e){}
 }
@@ -606,7 +609,8 @@ function finishJob(job){
   d.fixDurationMs=durMs;
   var durStr=durMs>0?(' (report→fix: '+Math.round(durMs/60000)+'m)'):'';
   dlog(d.id+' ('+d.street+') REPAIRED — '+kindLabel(d.kind)+' serviced per spec'+durStr+'. Crew clear.');
-  toast('✅ '+kindLabel(d.kind)+' repaired'+(d.street?(' @ '+d.street):''));
+  /* No viewport toast (Joshua 2026-10-24): logged above; reports
+     are read in the Administrator menu, not on the game view. */
   try{
     if (typeof StuckDiag!=='undefined' && typeof StuckDiag.markFixed==='function'){
       var rel=StuckDiag.markFixed(d.x, d.z, 'infra crew');
@@ -653,8 +657,13 @@ function updateJobs(dt){
       if (j.group.visible!==_wantVis) j.group.visible=_wantVis;
     }
     if (j.vet && typeof VeteranCrew!=='undefined'){
+      /* The veteran foreman's ctx.toast carried his filed reports
+         to the game view. Joshua 2026-10-24: reports are recorded,
+         not displayed — the ctx toast now writes into the dispatch
+         log instead (same treatment as roadcrew_system.js). The
+         reports are still generated and filed exactly as before. */
       var ph=VeteranCrew.updateJob(j, dt, {time:IC.time,
-        log:function(m){ dlog(m); }, toast:function(m){ toast(m); }});
+        log:function(m){ dlog(m); }, toast:function(m){ dlog(m); }});
       if (ph==='fixing') icFixTick(j,dt);
       else if (ph==='done'){ finishJob(j); IC.jobs.splice(i,1); }
       icWorkZoneNudge(j);
@@ -711,11 +720,10 @@ function buildUI(){
   try{
     var css=document.createElement('style');
     css.textContent=
-      /* v1.21: icon sits in the HUD icon row at top:96px, adjacent to the
-         backpack (#inv-btn at left:12px). Title corner is left clear. */
-      '#ic-btn{position:fixed;left:192px;top:96px;z-index:20;width:52px;height:52px;border-radius:12px;'+
-      'border:2px solid #a8d800;background:rgba(20,24,34,.88);color:#a8d800;font-size:24px;}'+
-      '@media (max-width:820px),(pointer:coarse){#ic-btn{left:128px!important;top:96px!important;bottom:auto!important;}}'+
+      /* Joshua 2026-10-24: the 🔧 button that used to sit on the
+         game view is GONE (crew reports do not occupy the viewport
+         anymore). The panel stays — opened from the Administrator
+         menu's "Crew Reports" view via INFRACREW.toggle. */
       '#ic-panel{position:fixed;inset:0;z-index:50;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.72);}'+
       '#ic-panel.show{display:flex;}'+
       '#ic-panel .card{background:#161b26;border-radius:14px;padding:20px 22px;max-width:470px;width:88%;max-height:74vh;display:flex;flex-direction:column;}'+
@@ -730,10 +738,6 @@ function buildUI(){
       '.ic-log .lt{color:#8a93a6;margin-right:8px;}'+
       '#ic-close{margin-top:12px;padding:10px 18px;font-size:15px;border-radius:10px;border:none;background:#a8d800;color:#111;font-weight:bold;width:100%;}';
     document.head.appendChild(css);
-    var btn=document.createElement('button');
-    btn.id='ic-btn'; btn.title='Infrastructure crew dispatch'; btn.innerHTML='🔧';
-    btn.addEventListener('click', function(){ togglePanel(); });
-    document.body.appendChild(btn);
     var panel=document.createElement('div');
     panel.id='ic-panel';
     panel.innerHTML='<div class="card"><h3>🔧 Infrastructure Crew</h3>'+
