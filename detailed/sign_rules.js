@@ -51,6 +51,22 @@ var SignRules=(function(){
   var DEFAULT_MARGIN=2.5;   // extra clearance past the road half-width
   var SHOULDER=3.0;         // final resting distance past half-width
 
+  /* ============ MASTER SWITCH: ROAD SIGNS ON/OFF (Joshua 2026-10-24) ====
+     Joshua's order (2026-10-24): road signs are REMOVED for now — NOT
+     deleted. Sign data, sign code, and the placement algorithm below all
+     stay exactly as they are; signs simply must not spawn/generate until
+     Joshua works out the proper placement-algorithm wording (some
+     placements were correct, e.g. median cases where the rule moved a
+     sign off to the side — the algorithm itself is not the problem).
+     Every road-sign spawner (street furniture stop/name signs in
+     index.html, highway exit signs in index.html, MARTA bus-stop sign
+     boards in marta_bus_system.js) checks this flag before building any
+     sign mesh or collider. Traffic lights are signals, not signs, and
+     are NOT gated by this flag — they keep spawning as before.
+     TO RESTORE ALL SIGNS: flip ENABLED back to true. No other change
+     is needed anywhere. */
+  var ENABLED=false;
+
   // nearestSeg(x,z) — nearest road segment to (x,z): {d (perp distance from
   // the point to the centerline, clamped to the segment), hw (half-width,
   // defaults 3.5u when the segment lacks one), name, side (+1/-1 relative
@@ -131,5 +147,5 @@ var SignRules=(function(){
     }
   }
 
-  return {place:place, report:report, nearestSeg:nearestSeg, publish:publish};
+  return {ENABLED:ENABLED, place:place, report:report, nearestSeg:nearestSeg, publish:publish};
 })();
