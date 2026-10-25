@@ -173,6 +173,57 @@ class BuildingsStore:
 
     # -- queries ----------------------------------------------------
 
+    def zone_buildings(self, zone_id):
+        """
+        One zone's building list IN FILE ORDER (1.9.13), or []
+        unless the zone is "ready". The order is the order of
+        detailed/zones/<zone>/buildings.json itself — and that
+        order is an identity: the Building Editor's zone list is
+        index-aligned with this file (record i describes box i),
+        so a building's position in this list IS the index the
+        Building Editor knows it by. The Map Editor's building
+        click hands that index over (see app.on_building_clicked).
+        """
+        with self._lock:
+            return list(self._zones.get(zone_id, ()))
+
+    def pick_building(self, zone_ids, wx, wz):
+        """
+        Hit-test one world point against building footprints
+        (1.9.13). Returns (zone_id, index, building) for the
+        building whose footprint contains the point, else None.
+
+        A footprint is the axis-aligned rectangle the area
+        viewpoints draw: centre (x, z), width w, depth d from the
+        compact tuple. Only "ready" zones can be hit. When
+        several footprints contain the point (buildings do
+        overlap in the data), the one whose centre is nearest —
+        measured relative to its own size, so a small building
+        under a big one's overhang still wins its own middle —
+        is the pick.
+        """
+        best = None  # (score, zone_id, index, building)
+        for zid in zone_ids:
+            buildings = self.zone_buildings(zid)
+            if not buildings:
+                continue
+            # query() is centre-bucketed with a generous pad, so a
+            # point-sized rect still returns every candidate whose
+            # bulk could reach the point.
+            for b in self.query([zid], wx, wz, wx, wz):
+                bx, bz, bw, bd, _bh, _bt = b
+                if abs(wx - bx) > bw / 2.0 or abs(wz - bz) > bd / 2.0:
+                    continue  # the point is outside this footprint
+                score = ((wx - bx) / max(bw, 1.0)) ** 2 \
+                    + ((wz - bz) / max(bd, 1.0)) ** 2
+                if best is None or score < best[0]:
+                    # The store's buckets hold the very tuples of
+                    # the zone list, so .index finds the identity.
+                    best = (score, zid, buildings.index(b), b)
+        if best is None:
+            return None
+        return best[1], best[2], best[3]
+
     def query(self, zone_ids, x0, z0, x1, z1):
         """
         Buildings of the given zones whose centre falls inside the
