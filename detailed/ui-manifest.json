@@ -117,16 +117,16 @@
   },
   {
    "name": "github-config.js",
-   "size": 6507,
-   "sha256": "874396328ca5915013e62605f641014ae56a5cb134f3f89ea281fb98e0ac09fd",
-   "hash": "874396328ca5915013e62605f641014ae56a5cb134f3f89ea281fb98e0ac09fd",
+   "size": 6603,
+   "sha256": "f750470fa087b89222a23fc6da5edfadc9abf106c132d0e95da0529db181939a",
+   "hash": "f750470fa087b89222a23fc6da5edfadc9abf106c132d0e95da0529db181939a",
    "md5": "d003265ada76b4056b2fa36a457b2c2f"
   },
   {
    "name": "github_reports.js",
-   "size": 30621,
-   "sha256": "e2c112b0a00dd3d91ffc56af0396a4991e4386aeebd016b3c9c891e4b573d69f",
-   "hash": "e2c112b0a00dd3d91ffc56af0396a4991e4386aeebd016b3c9c891e4b573d69f",
+   "size": 41395,
+   "sha256": "603503f1fa575d92a50f32a9adef706f93c0729fcd4918cd5c6a1b5197585fc8",
+   "hash": "603503f1fa575d92a50f32a9adef706f93c0729fcd4918cd5c6a1b5197585fc8",
    "md5": "03aeb1c6800997be8c363d0a600c8934"
   },
   {
@@ -173,9 +173,9 @@
   },
   {
    "name": "index.html",
-   "size": 1058795,
-   "sha256": "6e5bb59727f605026d7057ce6029065082a7c538c87de890eae8d0d71b2b1447",
-   "hash": "6e5bb59727f605026d7057ce6029065082a7c538c87de890eae8d0d71b2b1447"
+   "size": 1059361,
+   "sha256": "08e23088f09c804612cb1f7b0b7fb9b71af1e6f86a6467bf9d201ce8e0dfa0b7",
+   "hash": "08e23088f09c804612cb1f7b0b7fb9b71af1e6f86a6467bf9d201ce8e0dfa0b7"
   },
   {
    "name": "infracrew_system.js",
@@ -537,6 +537,6 @@
    "sha256": "74d2e3da9d5db086f3724cec9d5d42c2ba52e8561f2223fd467601d1ba8500b8"
   }
  ],
- "ui_version": "2026.10.25.3",
+ "ui_version": "2026.10.25.4",
  "version": "2026.10.17.9"
 }
