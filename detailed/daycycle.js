@@ -302,8 +302,20 @@ function updateDayCycle(){
   scene.background.copy(k.sky);
   if(scene.fog) scene.fog.color.copy(k.fog);
   sun.color.copy(k.sunC);
-  sun.intensity=k.sunI*(isDay?dim:1.0);
-  try{ hemi.intensity=k.hemiI*(DC.weather==='rainy'?0.8:1.0); }catch(e){}
+  /* Three.js migration (2026-10-25): the modern engine (r186 module)
+     uses physical light units — r155+ dropped the legacy renderer's
+     internal PI factor, so the same intensity numbers render ~3.14x
+     dimmer there. These two lines are the single choke point (daycycle
+     overwrites both intensities every frame), so the compensation lives
+     here: multiply by PI ONLY when the module bridge supplied the
+     engine (window.__threeModern). On the classic r128 fallback the
+     scale is 1 and the lighting is byte-for-byte the old behaviour.
+     (Measured in the upgrade spike: restores the r128 frame brightness
+     exactly; the creation-time values in index.html do not matter —
+     these lines overwrite them every frame.) */
+  var _lightScale = window.__threeModern ? Math.PI : 1;
+  sun.intensity=k.sunI*(isDay?dim:1.0)*_lightScale;
+  try{ hemi.intensity=k.hemiI*(DC.weather==='rainy'?0.8:1.0)*_lightScale; }catch(e){}
   // gray the sky a touch when overcast
   if(DC.weather!=='sunny' && isDay){
     _cA.setHex(WX_SKY[DC.weather]);

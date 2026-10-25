@@ -132,7 +132,7 @@ function makeShirtMats(baseColor, charName){
   var bc=(typeof baseColor==='string')?baseColor:'#'+new THREE.Color(baseColor).getHexString();
   drawShirt(cv, bc, cfg);
   var tex=new THREE.CanvasTexture(cv);
-  try{ if (THREE.sRGBEncoding!==undefined) tex.encoding=THREE.sRGBEncoding; }catch(e){}
+  try{ if (THREE.SRGBColorSpace!==undefined) tex.colorSpace=THREE.SRGBColorSpace; else if (THREE.sRGBEncoding!==undefined) tex.encoding=THREE.sRGBEncoding; }catch(e){} /* migration 2026-10-25: modern colourSpace first, classic encoding on the r128 fallback */
   tex.anisotropy=2;
   loadImage(cfg, cv, bc, tex);
   var front=(typeof toonMatMap==='function')?toonMatMap(tex):new THREE.MeshLambertMaterial({map:tex});

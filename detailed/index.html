@@ -68,6 +68,28 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Surviving Adamsville — Demo v0.8</title>
+<!-- ===== ENGINE (Three.js migration, 2026-10-25) =====
+     The game now prefers the MODERN Three.js engine (pinned r186,
+     three@0.186.1), which only exists as an ES module. three_bridge.js
+     loads it and publishes it as the classic global THREE every game
+     script already uses; the deferred loader's engine gate (at the
+     three_shim.js slot) waits for the promise set up below, so no game
+     script runs before the engine is ready. The importmap must precede
+     every module script: it maps the name "three" to ./three.module.js
+     and "three/addons/" to ./three-addons/ (GLTFLoader + SkeletonUtils
+     live there — the character-upgrade machinery).
+     FALLBACK: surfaces that cannot load ES modules (today's APK, whose
+     file:// page origin refuses module fetches — proven on-device) fall
+     back automatically to the classic three.min.js (r128) at the engine
+     gate, and the game runs exactly as before. __threeBridgeError and
+     the file: fuse below exist so that fallback is FAST there instead of
+     waiting out the gate's full timeout; the gate's own 20s cap covers
+     every other failure shape (missing files, hung fetch). -->
+<script data-engine="three-migration">window.__threeReady = new Promise(function(r){ window.__threeReadyResolve = r; });
+window.__threeBridgeError = function(){ if (window.__threeReadyResolve) window.__threeReadyResolve(false); };
+if (location.protocol === 'file:'){ setTimeout(function(){ if (!window.__threeModern && window.__threeReadyResolve) window.__threeReadyResolve(false); }, 2500); }</script>
+<script type="importmap">{"imports":{"three":"./three.module.js","three/addons/":"./three-addons/"}}</script>
+<script type="module" src="./three_bridge.js" onerror="window.__threeBridgeError&&window.__threeBridgeError()"></script>
 <!-- ===== MAIN CSS (every visual in the game chrome) =====
      Base layout: page reset, #game canvas mount, HUD title + version tags
      (#hud-title, #hud-sub, #ver-tag), settings gear button (#help-btn) and
@@ -2303,6 +2325,69 @@ function __loadDeferredQueueInner(){
         return;
       }
       try{ if (key) __loadStep(key, !ok); }catch(e){}
+      /* ENGINE GATE (Three.js migration, 2026-10-25): three_shim.js just
+         loaded — the real engine is an ES module (three_bridge.js, static
+         in the page head). Hold the queue until the bridge resolves
+         window.__threeReady, so no game script evaluates before the
+         global THREE exists (same fail-open gate shape as the map
+         delivery gate below). Runs once per page load.
+         FALLBACK (hard requirement): if the module engine cannot load on
+         this surface — the APK's file:// origin refuses ES-module
+         fetches (proven on-device), a file is missing, the WebView is
+         too old — the gate loads the classic three.min.js (r128) with
+         the same SRI + cache-bust treatment every deferred script gets,
+         and the game runs exactly as it did before the migration.
+         Taking the fallback sets window.__threeFallbackTaken FIRST, so a
+         module bridge that arrives late stands down instead of swapping
+         the engine mid-boot. Timeouts: the head kit resolves the promise
+         false quickly on file: pages and on bridge script errors; the
+         20s cap here covers every other failure shape. */
+      if (src.indexOf('three_shim.js') !== -1 && !window.__engineGateDone){
+        window.__engineGateDone = true;
+        if (window.__threeModern){ next(); return; }
+        var _egAdvanced = false;
+        var _egAdvance = function(){ if (!_egAdvanced){ _egAdvanced = true; next(); } };
+        var _egClassic = function(attempt){
+          if (window.__threeModern){ _egAdvance(); return; }
+          window.__threeFallbackTaken = true; /* the bridge must stand down from here on */
+          var cs = document.createElement('script');
+          var cdone = false;
+          var cfin = function(good){
+            if (cdone) return; cdone = true;
+            if (!good && attempt < 1){
+              try{ console.warn('[engine-gate] classic engine failed, retrying once'); }catch(e){}
+              setTimeout(function(){ _egClassic(attempt+1); }, 2000);
+              return;
+            }
+            if (!good){ try{ console.error('[engine-gate] classic three.min.js could not load — no engine available'); }catch(e){} }
+            _egAdvance(); /* fail-open, like every other loader gate */
+          };
+          cs.onload = function(){ cfin(true); };
+          cs.onerror = function(){ cfin(false); };
+          setTimeout(function(){ cfin(false); }, __loadCapMs(__uiFileSize('three.min.js')));
+          var _cv = window.__UIVER || '';
+          var _csrc = 'three.min.js' + (_cv ? '?v=' + encodeURIComponent(_cv) : '');
+          if (attempt === 0 && _cv){
+            try{
+              var _hx = (window.__UIHASH || {})['three.min.js'];
+              if (_hx){ var _b64 = __hexToBase64(_hx); if (_b64) cs.integrity = 'sha256-' + _b64; }
+            }catch(e){}
+          }
+          cs.src = attempt > 0 ? _csrc + (_csrc.indexOf('?')===-1?'?':'&') + 'retry=' + Date.now() : _csrc;
+          try{ console.warn('[engine-gate] module engine unavailable — falling back to classic three.min.js (r128)'); }catch(e){}
+          try{ document.head.appendChild(cs); }catch(e){ cfin(false); }
+        };
+        var _egTimer = setTimeout(function(){ _egClassic(0); }, 20000);
+        try{
+          if (window.__threeReady && typeof window.__threeReady.then === 'function'){
+            window.__threeReady.then(function(modern){
+              clearTimeout(_egTimer);
+              if (modern) _egAdvance(); else _egClassic(0);
+            });
+          } else { clearTimeout(_egTimer); _egClassic(0); }
+        }catch(e){ clearTimeout(_egTimer); _egClassic(0); }
+        return;
+      }
       /* MAP DELIVERY (Joshua 2026-10-16): mapdelivery.js just loaded — run
          the startup map check NOW, before zoneloader and the zone files
          load, so changed map files land in the local store first and
@@ -2655,7 +2740,7 @@ window.__applyCrewMaster = function(on){
      so it ALWAYS loads, right after the engine, before any builder. -->
 <script data-dsrc="toon_mats.js"></script>
 <script data-dsrc="rounded_box.js"></script>
-<script data-dsrc="three.min.js" data-dkey="engine"></script>
+<script data-dsrc="three_shim.js" data-dkey="engine"></script>
 <script data-dsrc="elev.js" data-dkey="elev"></script>
 <!-- v2.0 ZONE-SEPARATED MAPS (2026-10-10, Joshua's directive):
      Zone data files are now loaded per-zone from zones/<zone_id>/.
@@ -4300,7 +4385,12 @@ renderer.setPixelRatio(_pixelRatio);
    size when SAView is absent. */
 renderer.setSize((window.SAView && SAView.width()) || window.innerWidth,
                  (window.SAView && SAView.height()) || window.innerHeight);
-renderer.outputEncoding = THREE.sRGBEncoding;
+/* Three.js migration (2026-10-25): r152+ removed outputEncoding /
+   sRGBEncoding. The modern spelling is outputColorSpace = SRGBColorSpace
+   (which is also the modern default, so this changes nothing there);
+   the classic r128 fallback keeps the original line. Dual-path on
+   purpose: BOTH engines must run this page (see the engine gate). */
+if (THREE.SRGBColorSpace !== undefined) renderer.outputColorSpace = THREE.SRGBColorSpace; else renderer.outputEncoding = THREE.sRGBEncoding;
 container.appendChild(renderer.domElement);
 
 var scene = new THREE.Scene();
@@ -4646,7 +4736,7 @@ var SAtex=(function(){
     var key=ORDER[_qi++];
     new THREE.TextureLoader().load('textures/'+FILE[key], function(tex){
       tex.wrapS=tex.wrapT=THREE.RepeatWrapping;
-      tex.encoding=THREE.sRGBEncoding;
+      if (THREE.SRGBColorSpace!==undefined) tex.colorSpace=THREE.SRGBColorSpace; else tex.encoding=THREE.sRGBEncoding; /* merge 2026-10-25: SAtex post-dates the migration base snapshot; same dual-path colour port as the migration's sites */
       var mx=4;
       try{ if(typeof renderer!=='undefined' && renderer && renderer.capabilities)
         mx=renderer.capabilities.getMaxAnisotropy()||4; }catch(e){}
@@ -4870,7 +4960,7 @@ function makeLabel(text, worldW, color) {
   g.font='bold 44px Arial'; g.textAlign='center'; g.textBaseline='middle';
   g.lineWidth=8; g.strokeStyle='rgba(0,0,0,0.85)'; g.strokeText(text,256,64);
   g.fillStyle=color; g.fillText(text,256,64);
-  var tex = new THREE.CanvasTexture(c); tex.encoding = THREE.sRGBEncoding;
+  var tex = new THREE.CanvasTexture(c); if (THREE.SRGBColorSpace!==undefined) tex.colorSpace = THREE.SRGBColorSpace; else tex.encoding = THREE.sRGBEncoding; /* migration 2026-10-25: colourSpace is the r152+ spelling of encoding=sRGBEncoding; dual-path so the r128 fallback renders identically */
   var sp = new THREE.Sprite(new THREE.SpriteMaterial({ map:tex, transparent:true, depthWrite:false }));
   sp.scale.set(worldW, worldW*0.25, 1);
   return sp;
@@ -6285,7 +6375,7 @@ try{ __parseSet('Placing street furniture', '', 40); }catch(e){}
       var t=(s.text||'exit').toUpperCase();
       if(t.length>24) t=t.substring(0,24);
       g2.fillText(t, 256, 66);
-      var tex=new THREE.CanvasTexture(cv); tex.encoding=THREE.sRGBEncoding;
+      var tex=new THREE.CanvasTexture(cv); if (THREE.SRGBColorSpace!==undefined) tex.colorSpace=THREE.SRGBColorSpace; else tex.encoding=THREE.sRGBEncoding; /* migration 2026-10-25: dual-path colourSpace/encoding, as above */
       var sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex, transparent:true, depthWrite:false}));
       sp.scale.set(7.2, 1.8, 1);
       sp.position.set(s.x, gy+4.6, s.z);

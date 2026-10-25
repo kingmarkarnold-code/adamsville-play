@@ -330,7 +330,20 @@
   </div>
 </div>
 
-<script src="three.min.js"></script>
+<!-- ===== ENGINE (Three.js migration, 2026-10-25) =====
+     Same engine arrangement as the main page: three_bridge.js loads the
+     modern Three.js (pinned r186) as an ES module and publishes it as
+     the global THREE; the boot gate at the bottom of this page waits for
+     it before calling init(). If the module engine cannot load on this
+     surface (the APK's file:// origin refuses module fetches — proven
+     on-device), the gate loads the classic three.min.js (r128) instead
+     and the court runs exactly as before. The importmap must precede
+     every module script. -->
+<script data-engine="three-migration">window.__threeReady = new Promise(function(r){ window.__threeReadyResolve = r; });
+window.__threeBridgeError = function(){ if (window.__threeReadyResolve) window.__threeReadyResolve(false); };
+if (location.protocol === 'file:'){ setTimeout(function(){ if (!window.__threeModern && window.__threeReadyResolve) window.__threeReadyResolve(false); }, 2500); }</script>
+<script type="importmap">{"imports":{"three":"./three.module.js","three/addons/":"./three-addons/"}}</script>
+<script type="module" src="./three_bridge.js" onerror="window.__threeBridgeError&&window.__threeBridgeError()"></script>
 <script>
 /* ============================================================================
    BASKETBALL — 535 BACKYARD COURT, the player page's game (v2)
@@ -2635,7 +2648,7 @@ function closeToGame(){
 
 /* ============================== init ============================== */
 function init(){
-  if (typeof THREE === 'undefined') throw new Error('The 3D engine (three.min.js) did not load.');
+  if (typeof THREE === 'undefined') throw new Error('The 3D engine did not load (neither the modern module build nor the classic three.min.js).');
 
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x87b5d9);
@@ -2645,13 +2658,27 @@ function init(){
   camera.position.set(camPos.x, camPos.y, camPos.z);
   camera.lookAt(camLook.x, camLook.y, camLook.z);
 
-  var hemi = new THREE.HemisphereLight(0xffffff, 0x3a5f2a, 0.95);
+  /* Three.js migration (2026-10-25): the modern engine uses physical
+     light units (r155+ dropped the legacy PI factor), so fixed light
+     intensities are scaled by PI ONLY on the module engine — the same
+     compat tune daycycle.js applies per-frame in the main game. On the
+     classic r128 fallback the court's lighting is unchanged. */
+  var _lightScale = window.__threeModern ? Math.PI : 1;
+  var hemi = new THREE.HemisphereLight(0xffffff, 0x3a5f2a, 0.95 * _lightScale);
   scene.add(hemi);
-  var sun = new THREE.DirectionalLight(0xffffff, 0.55);
+  var sun = new THREE.DirectionalLight(0xffffff, 0.55 * _lightScale);
   sun.position.set(18, 30, 10);
   scene.add(sun);
 
   renderer = new THREE.WebGLRenderer({ antialias: true });
+  /* Three.js migration (2026-10-25): this page never set an output
+     encoding on r128, so the classic engine renders linear-out. The
+     modern engine defaults to sRGB-out, which lifted the court ~20%
+     brighter (measured). Pin the modern renderer to the linear working
+     colour space so the court matches the classic look exactly. The
+     main game does the opposite (it always asked for sRGB) — each page
+     keeps ITS OWN classic look. */
+  if (window.__threeModern && THREE.LinearSRGBColorSpace !== undefined) renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   el('court-wrap').appendChild(renderer.domElement);
 
@@ -2764,8 +2791,46 @@ function init(){
   animate();
 }
 
-try{ init(); }
-catch(e){ showError(e); }
+/* ENGINE GATE (Three.js migration, 2026-10-25): init() needs the global
+   THREE, which now arrives via the module bridge in the head — so boot
+   waits for the bridge's promise (20s cap, same fail-open shape as the
+   main page's loader gate). If the module engine cannot load here, the
+   gate loads the classic three.min.js and boots on r128 exactly as this
+   page always did; if even that fails, init() throws and the existing
+   error card shows, unchanged. __threeFallbackTaken is set before the
+   classic load so a late bridge stands down instead of swapping the
+   engine mid-boot. */
+(function(){
+  var booted = false;
+  function boot(){
+    if (booted) return; booted = true;
+    try{ init(); }
+    catch(e){ showError(e); }
+  }
+  function classic(){
+    if (window.__threeModern){ boot(); return; }
+    window.__threeFallbackTaken = true; /* the bridge must stand down from here on */
+    try{
+      var s = document.createElement('script');
+      s.onload = function(){ boot(); };
+      s.onerror = function(){ boot(); }; /* init() will throw the engine error -> error card, as before */
+      s.src = 'three.min.js';
+      document.head.appendChild(s);
+    }catch(e){ boot(); } /* no usable DOM to inject into — boot on whatever THREE exists */
+  }
+  if (window.__threeModern){ boot(); return; }
+  var timer = null;
+  try{ timer = setTimeout(classic, 20000); }catch(e){}
+  function disarm(){ if (timer !== null){ try{ clearTimeout(timer); }catch(e){} timer = null; } }
+  try{
+    if (window.__threeReady && typeof window.__threeReady.then === 'function'){
+      window.__threeReady.then(function(modern){
+        disarm();
+        if (modern) boot(); else classic();
+      });
+    } else { disarm(); classic(); }
+  }catch(e){ disarm(); classic(); }
+})();
 
 /* test/debug surface (also handy later): state snapshots + drivers */
 window.BBALL_PAGE = {

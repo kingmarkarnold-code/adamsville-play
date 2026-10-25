@@ -20,9 +20,9 @@
     },
     {
       "name": "basketball.html",
-      "size": 145389,
-      "sha256": "8b4896d4d3e3353faca1a1d166f21f41aa82c9608f3d18214b26393f7f17e71a",
-      "hash": "8b4896d4d3e3353faca1a1d166f21f41aa82c9608f3d18214b26393f7f17e71a"
+      "size": 149379,
+      "sha256": "6ddf0cc25c65ee50be43a1237f46d455d57212706c98d16e9d054d64653f9616",
+      "hash": "6ddf0cc25c65ee50be43a1237f46d455d57212706c98d16e9d054d64653f9616"
     },
     {
       "name": "basketball_court.js",
@@ -87,9 +87,9 @@
     },
     {
       "name": "daycycle.js",
-      "sha256": "bf0f0a71d0b92c9149b4adc5c26de2add6ce7b946d2c7b06e3863b67caaf84ad",
-      "size": 15901,
-      "hash": "bf0f0a71d0b92c9149b4adc5c26de2add6ce7b946d2c7b06e3863b67caaf84ad"
+      "sha256": "2a7406fba03133b50be7e1d89ea27698a15cffc96b9d2db4fa3531ae71d14bbf",
+      "size": 16733,
+      "hash": "2a7406fba03133b50be7e1d89ea27698a15cffc96b9d2db4fa3531ae71d14bbf"
     },
     {
       "name": "dialogue_director_npc.js",
@@ -173,9 +173,9 @@
     },
     {
       "name": "index.html",
-      "size": 1074531,
-      "sha256": "8a375e3cb2476c74238b2c0d7009a08247f0b61ba164f2eea941a29f77306507",
-      "hash": "8a375e3cb2476c74238b2c0d7009a08247f0b61ba164f2eea941a29f77306507"
+      "size": 1081046,
+      "sha256": "e803a14899f10b6bb2d6005c3c5d7417c59488cf548e52e01c5e5d40538ebc85",
+      "hash": "e803a14899f10b6bb2d6005c3c5d7417c59488cf548e52e01c5e5d40538ebc85"
     },
     {
       "name": "infracrew_system.js",
@@ -366,9 +366,9 @@
     },
     {
       "name": "shirt_designs.js",
-      "size": 7135,
-      "sha256": "7c86a440a981816d0ee567effa17fb53f946323b69c89353fa93da2fa587e4dd",
-      "hash": "7c86a440a981816d0ee567effa17fb53f946323b69c89353fa93da2fa587e4dd"
+      "size": 7307,
+      "sha256": "0c72a8a183d582e447671f15c4fcaeaac1e4560346f7d24ee147aaada6ed425b",
+      "hash": "0c72a8a183d582e447671f15c4fcaeaac1e4560346f7d24ee147aaada6ed425b"
     },
     {
       "name": "sign_rules.js",
@@ -661,8 +661,50 @@
       "size": 869023,
       "sha256": "015b50587c65e388c27a16807e6edf4d723c6d78676acb80868eba34154494c9",
       "hash": "015b50587c65e388c27a16807e6edf4d723c6d78676acb80868eba34154494c9"
+    },
+    {
+      "name": "three.module.js",
+      "size": 662772,
+      "sha256": "9052042d676cb0fdc1ddfefe193053f34b7ac0513a616fdac4535d49987812ea",
+      "hash": "9052042d676cb0fdc1ddfefe193053f34b7ac0513a616fdac4535d49987812ea"
+    },
+    {
+      "name": "three.core.js",
+      "size": 1458113,
+      "sha256": "9edde002b066a9a05676a6127f67735b62baf399bdea529f2f7e31657da769e6",
+      "hash": "9edde002b066a9a05676a6127f67735b62baf399bdea529f2f7e31657da769e6"
+    },
+    {
+      "name": "three_bridge.js",
+      "size": 3513,
+      "sha256": "d1c35ab4ecd68660fc748603d75c8bad47bb8aa5b403c793a52447b90422c2d8",
+      "hash": "d1c35ab4ecd68660fc748603d75c8bad47bb8aa5b403c793a52447b90422c2d8"
+    },
+    {
+      "name": "three_shim.js",
+      "size": 1045,
+      "sha256": "dfbb63bbbd1bee9bfbf600b005f725af16046b4665c59c5a0cb99c3b0c5f33be",
+      "hash": "dfbb63bbbd1bee9bfbf600b005f725af16046b4665c59c5a0cb99c3b0c5f33be"
+    },
+    {
+      "name": "three-addons/loaders/GLTFLoader.js",
+      "size": 117570,
+      "sha256": "131c0f78c01d19368ae495caa65b3adaa10487810a36a05bb5901b769a35ac16",
+      "hash": "131c0f78c01d19368ae495caa65b3adaa10487810a36a05bb5901b769a35ac16"
+    },
+    {
+      "name": "three-addons/utils/BufferGeometryUtils.js",
+      "size": 37712,
+      "sha256": "9fb63427ce6641fa14fd0baff9cc4d1b5f9c3d85fd084bf2e90e803c44ec1797",
+      "hash": "9fb63427ce6641fa14fd0baff9cc4d1b5f9c3d85fd084bf2e90e803c44ec1797"
+    },
+    {
+      "name": "three-addons/utils/SkeletonUtils.js",
+      "size": 11535,
+      "sha256": "b1632a703206c3d830de9fcbe515696770d04b71a15ee6b50afa6d2c3298c86f",
+      "hash": "b1632a703206c3d830de9fcbe515696770d04b71a15ee6b50afa6d2c3298c86f"
     }
   ],
-  "ui_version": "2026.10.25.6",
+  "ui_version": "2026.10.25.7",
   "version": "2026.10.17.9"
 }
