@@ -22,7 +22,13 @@ WHAT A SAVE WRITES (one round trip, dirty files only):
   * detailed/zones/<zone>/roads.json AND its regenerated roads.js twin
     for each zone whose roads actually changed;
   * detailed/overpasses.json if the overpasses changed;
-  * the two editors/map-editor/ overlay files if they changed.
+  * the two editors/map-editor/ overlay files if they changed;
+  * detailed/map-manifest.json, refreshed in the SAME round trip
+    whenever a zone data file above was pushed (1.9.13): the pushed
+    files' sha256 + size entries are recomputed from the exact bytes
+    being pushed and map_version is bumped — the game downloads map
+    files by the manifest, so a save that skipped it would strand
+    its own changes on GitHub, undownloaded (the 2026-10-25 joins).
 
 CONVERTED ROADS FORMAT (per zone):
   {"highway": [...], "major_artery": [...], "minor_artery": [...],
@@ -68,6 +74,11 @@ CATEGORY_ORDER_OUT = ("interstate", "highway", "major_artery",
 # Repo paths (single source for every read/write the editor makes).
 OVERPASSES_PATH = "detailed/overpasses.json"
 ELEV_PATH = "detailed/elev.json"
+# The published map manifest: the game downloads map files BY it
+# (each entry's sha256 + size is the game's freshness test), so a
+# save that changes a listed file must refresh it in the same
+# round trip — see refreshed_manifest_bytes / perform_round_trip.
+MANIFEST_PATH = "detailed/map-manifest.json"
 ZONE_EDITS_PATH = "editors/map-editor/zone_edits.json"
 CUSTOM_ZONES_PATH = "editors/map-editor/custom_zones.json"
 
@@ -520,6 +531,85 @@ class _DownloadFailed(Exception):
 
 
 # ---------------------------------------------------------------------------
+# The map manifest refresh (1.9.13 — the rider fix)
+# ---------------------------------------------------------------------------
+# On 2026-10-25 Joshua saved two road joins from 1.9.12. The data
+# pushed correctly — but detailed/map-manifest.json kept the OLD
+# sha256/size for the changed files and map_version stayed put, and
+# the game downloads map files by the manifest, so it would never
+# have fetched the joins. (Mollie repaired the manifest by hand.)
+# A save must never be able to strand its own changes like that
+# again: whenever a round trip pushes files the manifest lists, the
+# manifest is refreshed in the SAME round trip, from the exact
+# bytes being pushed.
+
+def bump_map_version(current, today=None):
+    """
+    The next map_version after `current` (format YYYY.MM.DD.N):
+    same day -> N+1; a new day -> that day at .1; an unreadable
+    current version -> today at .1 (a bump must never fail a save
+    over a format surprise). `today` is a datetime.date, defaulting
+    to the local date — injectable so the gates can pin the day.
+    """
+    import re
+    from datetime import date as _date
+    today = today or _date.today()
+    stamp = f"{today.year:04d}.{today.month:02d}.{today.day:02d}"
+    m = re.match(r"^(\d{4}\.\d{2}\.\d{2})\.(\d+)$",
+                 (current or "").strip())
+    if m and m.group(1) == stamp:
+        return f"{stamp}.{int(m.group(2)) + 1}"
+    return f"{stamp}.1"
+
+
+def refreshed_manifest_bytes(manifest_blob, updates, today=None):
+    """
+    The manifest bytes a save should push, given the files it is
+    about to push. Pure function (headless-gated).
+
+    manifest_blob: the manifest's current bytes (as downloaded).
+    updates: {repo_path: new_bytes} for the files being pushed;
+        only paths under detailed/ that the manifest LISTS get an
+        entry refresh (the manifest's "name" is the path relative
+        to detailed/); unlisted files are not the game's download
+        surface and gain no invented entry.
+    Returns (new_blob, changed): changed is False — and the
+    original blob comes back untouched — when no listed entry
+    actually differs, so a save whose zone files somehow match
+    the manifest never rewrites it or bumps the version on air.
+    The document is otherwise preserved wholesale (key order,
+    unlisted entries, the "url"s) and re-serialized in the file's
+    own style (indent=1, non-ASCII literal, no trailing newline —
+    byte-verified against the published manifest).
+    """
+    import hashlib
+    doc = json.loads(manifest_blob.decode("utf-8"))
+    entries = {}
+    for entry in doc.get("files") or []:
+        if isinstance(entry, dict) and entry.get("name"):
+            entries[entry["name"]] = entry
+    changed = False
+    for path, blob in (updates or {}).items():
+        if not path.startswith("detailed/"):
+            continue
+        entry = entries.get(path[len("detailed/"):])
+        if entry is None:
+            continue
+        digest = hashlib.sha256(blob).hexdigest()
+        if entry.get("sha256") != digest \
+                or entry.get("size") != len(blob):
+            entry["sha256"] = digest
+            entry["size"] = len(blob)
+            changed = True
+    if not changed:
+        return manifest_blob, False
+    doc["map_version"] = bump_map_version(doc.get("map_version"),
+                                          today=today)
+    return (json.dumps(doc, indent=1, ensure_ascii=False)
+            .encode("utf-8"), True)
+
+
+# ---------------------------------------------------------------------------
 # THE ROUND-TRIP SAVE (Joshua's standing rule for ALL editors)
 # ---------------------------------------------------------------------------
 # One save = local save -> PUSH on one connection -> CLOSE it -> fresh
@@ -560,10 +650,46 @@ def perform_round_trip(model, sync, save_local, token=None):
 
     targets = [(GAME_REPO, path, model.current_bytes(path),
                 f"Map editor: update {path}") for path in dirty]
+    # Files the proof leg must re-download: the dirty files, plus
+    # the manifest when this trip refreshes it (below).
+    proof_paths = list(dirty)
 
     # ---- Stage 2: PUSH LEG (one connection, then CLOSE it) ---------
     push_conn = sync.open_connection()
     try:
+        # 1.9.13 RIDER FIX: when this trip pushes files under
+        # detailed/ (zone roads + twins, overpasses), the map
+        # manifest is refreshed IN THE SAME PUSH — its listed
+        # entries recomputed from the exact bytes going up, and
+        # map_version bumped — so the game can download what was
+        # just saved. The manifest is read on the push connection
+        # BEFORE anything is pushed; if it cannot be read, the
+        # whole save stops here, because pushing the data without
+        # its manifest is exactly the 2026-10-25 stranding.
+        detailed_dirty = [p for p in dirty
+                          if p.startswith("detailed/")]
+        if detailed_dirty:
+            mblob, merr = sync.fetch_file(
+                GAME_REPO, MANIFEST_PATH, token=token,
+                conn=push_conn)
+            if mblob is None:
+                return False, (
+                    "Push to GitHub failed: the map manifest "
+                    f"({MANIFEST_PATH}) could not be read "
+                    f"({merr}) — nothing was pushed, so the "
+                    "manifest can never go stale against the "
+                    "data."), None
+            updates = {p: model.current_bytes(p)
+                       for p in detailed_dirty}
+            new_manifest, mchanged = refreshed_manifest_bytes(
+                mblob, updates)
+            if mchanged:
+                targets.append(
+                    (GAME_REPO, MANIFEST_PATH, new_manifest,
+                     "Map editor: refresh the map manifest "
+                     "(hashes, sizes, map_version) for the "
+                     "files in this save"))
+                proof_paths.append(MANIFEST_PATH)
         ok, msg = sync.push_targets(targets, token=token, conn=push_conn)
         if not ok:
             return False, f"Push to GitHub failed: {msg}", None
@@ -576,7 +702,7 @@ def perform_round_trip(model, sync, save_local, token=None):
     dl_conn = sync.open_connection()
     try:
         fresh = {}
-        for path in dirty:
+        for path in proof_paths:
             blob, ferr = sync.fetch_file(GAME_REPO, path,
                                          token=token, conn=dl_conn)
             if blob is None:
