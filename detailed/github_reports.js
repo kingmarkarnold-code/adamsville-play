@@ -1,80 +1,107 @@
 /* ============================================================
-   SURVIVING ADAMSVILLE — Report sender (relay edition)
+   SURVIVING ADAMSVILLE — Report sender (Google Form edition)
    FILE: github_reports.js
    ------------------------------------------------------------
    WHAT THIS DOES:
    Sends the game's diagnostic reports to Joshua (via Mollie)
    so inspector findings, stuck vehicles, errors, and
    performance warnings can be seen without needing the phone
-   the game ran on. Reports still land as files in the GitHub
-   repo's `reports/` folder — the relay puts them there.
+   the game ran on. Reports land as responses in Joshua's
+   Google Form, "Surviving Adamsville — Player Reports".
 
-   HOW IT WORKS (Joshua's ruling, 2026-10-24 — NO KEY IN GAME):
-   * Players must never need a GitHub key, so the game no
-     longer talks to GitHub directly. It POSTs each batch of
-     reports as plain JSON to ONE relay address
-     (GITHUB_CONFIG.REPORT_RELAY_URL in github-config.js).
-     The relay is a small Google Apps Script web app running
-     under Joshua's Google account; the GitHub key lives on
-     the relay's side only (its private Script Properties)
-     and is never sent to, or stored in, the game.
-   * The direct-to-GitHub token upload that used to live in
-     this file was REMOVED on 2026-10-24 (its token was dead,
-     and any working key shipped in a public game file can be
-     read by anyone who downloads the game). There is no token
-     code left here on purpose — do not re-add one.
+   HOW IT WORKS (Joshua's rulings — NO KEY IN GAME):
+   * 2026-10-24: players must never need a GitHub key, so the
+     game stopped talking to GitHub directly; the old
+     direct-upload token code was removed the same day (its
+     token was dead, and any working key shipped in a public
+     game file can be read by anyone who downloads the game).
+     There is no token code here on purpose — do not re-add one.
+   * 2026-10-25: the Apps Script RELAY that was going to sit
+     between the game and GitHub was retired before it ever
+     deployed, and replaced by a Google Form Joshua owns.
+     The game POSTs each report straight into the form
+     (GITHUB_CONFIG.REPORT_FORM_URL + REPORT_FORM_ENTRIES in
+     github-config.js) — no key, no sign-in, exactly like a
+     public survey accepting anonymous answers. Mollie reads
+     the responses through the Forms API. (The full build
+     record: game-map/report-relay/GOOGLE-FORM.md.)
+   * The relay path below is kept ONLY as an unused fallback:
+     it is used solely if the form address is ever emptied
+     AND a relay address filled in. Today neither is the case
+     (form set, relay "").
+
+   AUTO-FILL (Joshua's wiring principle, 2026-10-25):
+   * EVERYTHING THE GAME CAN KNOW IS FILLED IN BY THE CODE:
+     report type (mapped from the report's kind), game
+     version (app + UI + map, read live), where in the game
+     (zone + player position + street when the report knows
+     it), and device (label + platform the game detects).
+   * The player is left with ONLY the part that needs a
+     human — the feedback message itself. In the form's
+     "What happened?" answer, the report's own message rides
+     FIRST and stays the readable head; the folded diagnostics
+     (type, timestamp, session, full details JSON) follow it.
+   * Crash and other automatic reports are fully automatic:
+     no player input at all. There is deliberately NO
+     player-facing field anywhere for version, device or
+     location — those are never the player's job to type.
 
    QUEUEING (unchanged behaviour):
    * All existing Report.note() / Report.noteError() calls are
      wrapped automatically — every system that already logs to
-     the Report panel also queues a report here. No changes to
-     other files needed.
+     the Report panel also queues a report here. That includes
+     the Administrator crew reports (crewinspector findings):
+     they are automatic reports and ride this same flush.
+     No changes to other files needed.
    * Reports sit in a memory queue. Every flushIntervalMs
-     (default 5 minutes, see github-config.js) the whole queue
-     is sent in ONE bundle: one POST, and the relay writes one
-     file per bundle, e.g.
-       reports/2026-10-24-153012-a17-5g.json
+     (default 5 minutes, see github-config.js) the queue is
+     sent: on the form path, ONE form POST per queued report
+     (a Google Form takes one response per POST — it cannot
+     take the old single JSON bundle). An item leaves the
+     queue only when its own POST resolves; failures stay
+     queued and the next flush retries them.
    * A final flush runs when the page hides/closes
      (pagehide + visibilitychange) with fetch keepalive, so
      the send is attempted even as the page tears down.
-   * If the relay address is not set yet, or a send fails, the
-     reports STAY in the queue and the next flush retries —
-     and the manual/export behaviour (Report.shareJson etc.)
-     is untouched, so no report is lost because the relay is
-     absent. The only way a queued report is dropped is the
-     maxQueue cap (oldest first), exactly as before.
+   * If no destination is configured, or a send fails, the
+     reports STAY in the queue — and the manual/export
+     behaviour (Report.shareJson etc.) is untouched, so no
+     report is lost because a destination is absent. The only
+     way a queued report is dropped is the maxQueue cap
+     (oldest first), exactly as before.
 
    ONE HONEST LIMIT (browser security rules, not a bug):
-   * Apps Script web apps do not answer browser "CORS"
-     permission checks, so the game sends with
-     Content-Type text/plain and fetch mode "no-cors". That
-     means the browser delivers the bundle to the relay but
-     will not let the game READ the relay's reply. A resolved
-     send therefore means "Google accepted the delivery",
-     not "the relay confirmed the file landed". Failures we
-     CAN see (no network, relay address missing) keep the
-     queue intact. Mollie verifies real arrivals by watching
-     the repo's reports/ folder.
+   * Google Forms does not answer browser "CORS" permission
+     checks for cross-origin posts, so the game sends with
+     fetch mode "no-cors". The browser delivers the response
+     to Google but will not let the game READ Google's reply.
+     A resolved send therefore means "Google accepted the
+     delivery", not "the answer was confirmed recorded".
+     Failures we CAN see (no network, address missing) keep
+     the queue intact. Mollie verifies real arrivals by
+     reading the form's responses through the Forms API.
 
    SECURITY:
    * No key, token, or credential exists in this file or in
-     github-config.js. The only thing sent besides the reports
-     is a client tag (REPORT_CLIENT_TAG) which is NOT a secret
-     — the relay uses it only to ignore obvious junk posts.
+     github-config.js. The form address and field codes are
+     public (anyone may read them); the worst they allow is
+     posting a junk response into the form.
    * Every network call is wrapped in try/catch. Diagnostics
      must never break the game — Joshua's standing rule.
 
    API:
    * GitHubReports.queue(type, details) — queue one report now.
    * GitHubReports.flush() — send the queue immediately.
-     Returns a Promise for true (handed to the relay) / false
-     (not configured, empty queue, or send failed — queue kept).
-   * GitHubReports.status() — {enabled, configured, hasRelay,
-     hasToken, queued, lastFlush, lastError}. `hasToken` is a
-     LEGACY ALIAS kept only so older callers (the "Send
-     Reports to Mollie" button in index.html) keep working:
-     it now reports whether a sending path is configured
-     (the relay), NOT whether a token exists. No token exists.
+     Returns a Promise for true (every queued report handed
+     to the destination) / false (not configured, empty
+     queue, or some send failed — failures stay queued).
+   * GitHubReports.status() — {enabled, configured, hasForm,
+     hasRelay, hasToken, queued, lastFlush, lastError}.
+     `hasToken` is a LEGACY ALIAS kept only so older callers
+     (the "Send Reports to Mollie" button in index.html) keep
+     working: it reports whether a sending path is configured
+     (today: the form), NOT whether a token exists. No token
+     exists.
    ------------------------------------------------------------
    Documentation comments are required on all game code —
    Joshua's standing rule. This file follows it.
@@ -115,6 +142,46 @@ window.GitHubReports = (function(){
                  z: Math.round(window.player.z*10)/10 };
     }catch(e){}
     return null;
+  }
+
+  /* Current zone id, using the same guarded reads crashlog.js
+     established (__ZONE_META first, then the ?zone= parameter).
+     Snapshotted onto each report AT QUEUE TIME (see queueReport)
+     so the "Where in the game" answer names the zone the event
+     happened in — even if the player has crossed into another
+     zone by the time the queue flushes. Never throws. */
+  function zoneId(){
+    try{
+      if(typeof window!=='undefined'){
+        if(window.__ZONE_META && window.__ZONE_META.id)
+          return String(window.__ZONE_META.id);
+        var m = /[?&]zone=([a-z0-9_]+)/i.exec(
+          (window.location && window.location.search) || '');
+        if(m) return m[1];
+      }
+    }catch(e){}
+    return 'adamsville';
+  }
+
+  /* Live build versions, for the auto-filled "Game version"
+     form answer: the app version stamped in index.html plus
+     the UI and map versions the deferred loader stamps from
+     the manifests (__UIVER / __MAPVER — the same reads
+     input_diag.js makes). Read at FLUSH time so the answer
+     names the build that is sending. Falls back to the send
+     stamp when a build exposes none of them. Never throws. */
+  function gameVersionString(){
+    var parts = [];
+    try{
+      if(typeof window!=='undefined'){
+        if(window.APP_VERSION) parts.push('app '+String(window.APP_VERSION));
+        if(typeof window.__UIVER==='string' && window.__UIVER)
+          parts.push('ui '+window.__UIVER);
+        if(typeof window.__MAPVER==='string' && window.__MAPVER)
+          parts.push('map '+window.__MAPVER);
+      }
+    }catch(e){}
+    return parts.length ? parts.join(' · ') : ('build '+fileTs());
   }
 
   /* Short device label for the report filename, e.g. "a17-5g".
@@ -165,8 +232,11 @@ window.GitHubReports = (function(){
     try{ return cfg().enabled !== false; }catch(e){ return true; }
   }
 
-  /* The relay address, "" until Joshua's one-time setup is done
-     and Mollie pastes the deployed /exec URL into the config. */
+  /* The relay address (RETIRED path — the relay was never
+     deployed). "" today and expected to stay that way; read
+     only so the fallback bundle send below keeps working if
+     a relay address is ever filled in AND the form address
+     is emptied. */
   function relayUrl(){
     try{
       var u = cfg().REPORT_RELAY_URL;
@@ -174,6 +244,37 @@ window.GitHubReports = (function(){
         return u.trim();
     }catch(e){}
     return '';
+  }
+
+  /* The Google Form submission address — the game's live
+     destination since 2026-10-25. A public form address, not
+     a secret. "" only if the config is ever stripped. */
+  function formUrl(){
+    try{
+      var u = cfg().REPORT_FORM_URL;
+      if(typeof u==='string' && /^https:\/\//i.test(u.trim()))
+        return u.trim();
+    }catch(e){}
+    return '';
+  }
+
+  /* The form's field codes (which POST parameter answers
+     which question). Returns null when the config carries no
+     usable map — a form send without the codes would answer
+     nothing, so flush treats that as "not configured". */
+  function formEntries(){
+    try{
+      var e = cfg().REPORT_FORM_ENTRIES;
+      if(e && typeof e==='object' &&
+         typeof e.type==='string' && e.type &&
+         typeof e.message==='string' && e.message &&
+         typeof e.version==='string' && e.version &&
+         typeof e.where==='string' && e.where &&
+         typeof e.device==='string' && e.device &&
+         typeof e.name==='string' && e.name)
+        return e;
+    }catch(e){}
+    return null;
   }
 
   function clientTag(){
@@ -184,10 +285,12 @@ window.GitHubReports = (function(){
     return 'surviving-adamsville-game';
   }
 
-  /* A sending path exists only when sending is enabled AND the
-     relay address has been filled in. */
+  /* A sending path exists when sending is enabled AND a
+     destination is set: the Google Form (preferred), or the
+     retired relay as fallback if its address were ever
+     filled in while the form's is empty. */
   function isConfigured(){
-    return isEnabled() && !!relayUrl();
+    return isEnabled() && (!!formUrl() || !!relayUrl());
   }
 
   function flushMs(){
@@ -223,6 +326,10 @@ window.GitHubReports = (function(){
         ts: new Date().toISOString(),
         session: sessionId,
         player: playerPos(),
+        /* Zone snapshot at queue time (2026-10-25): the form's
+           "Where in the game" answer should name where the event
+           happened, not wherever the player stands at flush. */
+        zone: zoneId(),
         details: details==null ? null : details
       });
       var cap = maxQueue();
@@ -230,21 +337,235 @@ window.GitHubReports = (function(){
     }catch(e){ /* diagnostics never break the game */ }
   }
 
-  /* ---------- the relay send ---------- */
+  /* ---------- auto-fill: report -> form answers ---------- */
+
+  /* Map a queued report's kind (its slug) to the form's
+     "Report type" radio choice. The submitted value must match
+     one of Bug / Crash / Feedback / Other EXACTLY or Google
+     silently drops just that one answer. Mapping (GOOGLE-FORM.md):
+     crash/error kinds are crashes; player-initiated kinds are
+     feedback; the game's automatic diagnostic kinds (inspector
+     findings, stuck vehicles, perf, input diagnostics, explicit
+     bug reports) are bugs; anything else is Other. */
+  function formTypeFor(type){
+    var t = String(type==null?'':type).toLowerCase();
+    if(t.indexOf('crash')>=0 || t.indexOf('error')>=0) return 'Crash';
+    if(t.indexOf('feedback')>=0 || t.indexOf('manual')===0) return 'Feedback';
+    if(t==='bug' || t.indexOf('inspector')>=0 || t.indexOf('stuck')>=0 ||
+       t.indexOf('perf')>=0 || t.indexOf('diag')>=0) return 'Bug';
+    return 'Other';
+  }
+
+  /* The street a report happened on, when the report itself
+     carries one (some systems note the street in their details:
+     `street`, `roadName`, `road`, or crashlog-style `near`).
+     Returns '' when the report knows no street — the code never
+     invents one. */
+  function streetOf(details){
+    try{
+      if(details && typeof details==='object'){
+        var keys = ['street','roadName','road','near','streetName'];
+        for(var i=0;i<keys.length;i++){
+          var v = details[keys[i]];
+          if(typeof v==='string' && v.trim()) return v.trim();
+        }
+      }
+    }catch(e){}
+    return '';
+  }
+
+  /* The auto-filled "Where in the game" answer: the zone the
+     report was queued in (snapshot), the player's position at
+     queue time, and the street when the report carries one. */
+  function whereString(item){
+    var parts = [];
+    var zone = item.zone || zoneId();
+    if(zone) parts.push(zone.charAt(0).toUpperCase()+zone.slice(1));
+    if(item.player && typeof item.player.x==='number' &&
+       typeof item.player.z==='number')
+      parts.push('x '+item.player.x+', z '+item.player.z);
+    var street = streetOf(item.details);
+    if(street) parts.push('near '+street);
+    return parts.join(' · ');
+  }
+
+  /* The auto-filled "Device" answer: the label + platform the
+     game already detects (deviceInfo). The user agent is NOT
+     sent — label and platform identify the device class for
+     triage without shipping a long fingerprint string. */
+  function deviceString(info){
+    info = info || deviceInfo();
+    var parts = [];
+    if(info.label) parts.push(info.label);
+    if(info.platform) parts.push(info.platform);
+    return parts.join(' · ') || 'unknown device';
+  }
+
+  /* A player name, ONLY when a report's details explicitly
+     carry one (details.playerName). No in-game flow collects a
+     name today — automatic and crew reports never carry one —
+     so this is normally ''. NEVER derive a "name" from other
+     detail fields: a building's or road's name is not a person. */
+  function playerNameOf(item){
+    try{
+      var d = item.details;
+      if(d && typeof d==='object' &&
+         typeof d.playerName==='string' && d.playerName.trim())
+        return d.playerName.trim();
+    }catch(e){}
+    return '';
+  }
+
+  /* Cap for the "What happened?" answer. A manual export can
+     carry a very large details payload; the cap keeps one
+     oversized answer from jeopardising the whole response.
+     Truncation is marked in the text so a cut is never silent. */
+  var FORM_MESSAGE_CAP = 30000;
+
+  /* The "What happened?" answer. THE REPORT'S OWN MESSAGE
+     RIDES FIRST (Joshua's principle: the player's words stay
+     the readable head of the field); the folded diagnostics —
+     type, timestamp, session, then the full details JSON —
+     follow it, clearly after. Reports with no message of their
+     own (pure machine notes) start straight at the diagnostics.
+     Nothing the old bundle carried is lost: it all rides here. */
+  function formMessageFor(item){
+    var d = item.details;
+    var head = '';
+    try{
+      if(d && typeof d==='object' && typeof d.message==='string')
+        head = d.message;
+      else if(typeof d==='string')
+        head = d;
+    }catch(e){ head = ''; }
+    var lines = [];
+    if(head) lines.push(head);
+    lines.push('— — —');
+    lines.push('type: '+item.type+' · time: '+item.ts+
+               ' · session: '+item.session);
+    if(d!=null){
+      try{ lines.push(JSON.stringify(d)); }
+      catch(e){ lines.push(String(d)); }
+    }
+    var out = lines.join('\n');
+    if(out.length > FORM_MESSAGE_CAP)
+      out = out.substring(0, FORM_MESSAGE_CAP)+'\n[truncated by sender]';
+    return out;
+  }
+
+  /* Build the form body for ONE queued report: one entry per
+     question, every game-known value filled by the code
+     (type mapped, version live, where from the queue-time
+     snapshot, device detected). The name entry is included
+     only when a report actually carries a player name.
+     Returns a URLSearchParams (fetch encodes it as
+     application/x-www-form-urlencoded, what the form expects). */
+  function formBodyFor(item, entries, devInfo){
+    var params = new URLSearchParams();
+    params.set(entries.type, formTypeFor(item.type));
+    params.set(entries.message, formMessageFor(item));
+    params.set(entries.version, gameVersionString());
+    params.set(entries.where, whereString(item));
+    params.set(entries.device, deviceString(devInfo));
+    var nm = playerNameOf(item);
+    if(nm) params.set(entries.name, nm);
+    return params;
+  }
+
+  /* ---------- the form send (live path) ---------- */
+
+  /* POST the queue to the Google Form: ONE form response per
+     queued report. An item leaves the queue only when its own
+     POST resolves; failures go back to the front of the queue
+     and the next flush retries them (the bundle logic's
+     keep-everything promise, per report). Returns a Promise
+     for true only when EVERY queued report was handed to
+     Google. Never rejects — failures land in lastError.
+     keepalive: true for the page-hide send (with no-cors the
+     browser cannot show us Google's reply, so a resolved send
+     means Google accepted the delivery). */
+  function flushViaForm(keepalive){
+    var url = formUrl();
+    var entries = formEntries();
+    if(!url || !entries){
+      // Form destination unusable: stay silent, keep the queue.
+      lastError = 'form not configured';
+      return Promise.resolve(false);
+    }
+    flushing = true;
+    var items = queue.splice(0, queue.length);
+    var dev = deviceInfo();
+    var jobs = items.map(function(item){
+      var opts;
+      try{
+        opts = {
+          method: 'POST',
+          body: formBodyFor(item, entries, dev),
+          mode: 'no-cors'
+        };
+        if(keepalive){ try{ opts.keepalive = true; }catch(e){} }
+      }catch(e){
+        return Promise.resolve({ ok:false, item:item, err:e });
+      }
+      var p;
+      try{ p = fetch(url, opts); }
+      catch(e){ p = Promise.reject(e); }
+      return p.then(function(){ return { ok:true, item:item }; },
+                    function(err){ return { ok:false, item:item, err:err }; });
+    });
+    return Promise.all(jobs).then(function(results){
+      flushing = false;
+      var failed = [];
+      var firstErr = null;
+      for(var i=0;i<results.length;i++){
+        if(!results[i].ok){
+          failed.push(results[i].item);
+          if(!firstErr) firstErr = results[i].err;
+        }
+      }
+      if(failed.length){
+        // Put ONLY the failures back, at the FRONT; the cap
+        // still applies. Sent reports are gone for good.
+        try{
+          queue = failed.concat(queue);
+          var cap = maxQueue();
+          while(queue.length > cap) queue.shift();
+        }catch(e){}
+        lastError = String((firstErr&&firstErr.message)||firstErr||
+                           'form send failed');
+        try{
+          if(typeof Report!=='undefined' && Report.setSys)
+            Report.setSys('githubReports',
+              { lastFlush:lastFlush, queued:queue.length, ok:false,
+                error:lastError, via:'form' });
+        }catch(e2){}
+        return false;
+      }
+      lastFlush = new Date().toISOString();
+      lastError = null;
+      try{
+        if(typeof Report!=='undefined' && Report.setSys)
+          Report.setSys('githubReports',
+            { lastFlush:lastFlush, queued:queue.length, ok:true,
+              via:'form' });
+      }catch(e){}
+      return true;
+    });
+  }
+
+  /* ---------- the relay send (RETIRED fallback) ---------- */
 
   /* POST the whole queue to the relay as ONE JSON bundle.
-     Returns a Promise. Never rejects — failures are recorded in
-     lastError and the queue is kept whole for the next retry.
-     keepalive: true for the page-hide send (see header: with
-     no-cors the browser cannot show us the relay's reply, so a
-     resolved send means Google accepted the delivery). */
-  function flush(keepalive){
-    if(flushing) return Promise.resolve(false);
-    if(!isEnabled()) return Promise.resolve(false);
-    if(queue.length===0) return Promise.resolve(false);
+     Kept unchanged from the relay edition as an unused
+     fallback: flush() reaches this only when the form
+     address is empty AND a relay address is filled in.
+     Returns a Promise. Never rejects — failures are recorded
+     in lastError and the queue is kept whole for the next
+     retry. keepalive: true for the page-hide send. */
+  function flushViaRelay(keepalive){
     var url = relayUrl();
     if(!url){
-      // Relay not set up yet: stay silent, keep every report queued.
+      // Relay not set up: stay silent, keep every report queued.
       lastError = 'relay not configured';
       return Promise.resolve(false);
     }
@@ -318,6 +639,25 @@ window.GitHubReports = (function(){
       }catch(e3){}
       return false;
     });
+  }
+
+  /* ---------- flush: dispatch to the live destination ---------- */
+
+  /* Send the queue now. The Google Form is the destination
+     whenever its address is set (the normal, live case since
+     2026-10-25); the retired relay bundle send runs only when
+     the form address is empty AND a relay address exists.
+     With neither configured the queue simply waits — silent,
+     nothing lost. Guards (re-entrancy, enabled, empty queue)
+     live here so both paths share them. */
+  function flush(keepalive){
+    if(flushing) return Promise.resolve(false);
+    if(!isEnabled()) return Promise.resolve(false);
+    if(queue.length===0) return Promise.resolve(false);
+    if(formUrl()) return flushViaForm(keepalive);
+    if(relayUrl()) return flushViaRelay(keepalive);
+    lastError = 'reports not configured';
+    return Promise.resolve(false);
   }
 
   /* ---------- hook into the existing Report system ---------- */
@@ -406,7 +746,8 @@ window.GitHubReports = (function(){
     try{
       if(typeof Report!=='undefined' && Report.setSys)
         Report.setSys('githubReports',
-          { ok:null, queued:0, note:'report sender armed (relay)' });
+          { ok:null, queued:0,
+            note:'report sender armed ('+(formUrl() ? 'form' : 'relay')+')' });
     }catch(e){}
   }
 
@@ -428,12 +769,21 @@ window.GitHubReports = (function(){
       return {
         enabled: isEnabled(),
         configured: configured,
-        hasRelay: configured,
+        /* The live destination (2026-10-25): the Google Form. */
+        hasForm: !!formUrl(),
+        formUrl: formUrl(),
+        /* The retired relay fallback: configured only if its
+           address is filled in (it is "" today). Previously
+           this field reported `configured`; it now reports the
+           relay itself, accurately — nothing in the game reads
+           hasRelay to decide whether sending works (callers
+           use hasToken below), so the correction is safe. */
+        hasRelay: !!relayUrl(),
         relayUrl: relayUrl(),
         /* Legacy alias for older callers (index.html's "Send
            Reports to Mollie" button checks this before sending).
-           It now means "a sending path is configured" — the
-           relay. There is NO token in the game any more. */
+           It means "a sending path is configured" — today the
+           form. There is NO token in the game any more. */
         hasToken: configured,
         queued: queue.length,
         lastFlush: lastFlush,
