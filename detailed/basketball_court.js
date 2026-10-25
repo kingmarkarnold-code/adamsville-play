@@ -155,6 +155,14 @@ var dom = { prompt: null, overlay: null, frame: null };
    already paused when it opened (so closing restores exactly that)? */
 var gameOpen = false;
 var wasPausedBeforeGame = false;
+/* Close generation (2026-10-25, basketball v2.4.2 shipment): every
+   open and every close bumps it. A close defers the frame's disposal
+   by a beat (see closeGame); the deferred callback captures the
+   generation at schedule time and only unloads the frame if the
+   generation is unchanged and the game is still closed — a reopen
+   in the meantime makes the pending disposal void, so it can never
+   blank a freshly opened game. */
+var closeGen = 0;
 
 /* ============================== helpers ============================== */
 
@@ -488,6 +496,7 @@ function openGame(){
   ensureGameDom();
   if (gameOpen) return;
   gameOpen = true;
+  closeGen++;   // (2026-10-25) void any deferred frame disposal a previous close scheduled
   wasPausedBeforeGame = false;
   try{
     if (window.GamePause && typeof window.GamePause.isPaused === 'function')
@@ -504,15 +513,28 @@ function openGame(){
   note('open-ingame', { url: PLAYER_URL });
 }
 
-/* Close the mini-game and hand the world back: unload the frame (the
-   mini-game fully leaves memory — the suite's single-residency rule),
-   hide the layer, and resume the world unless it was already paused
-   before the game opened. Idempotent: a duplicate close request is
-   a no-op. */
+/* Close the mini-game and hand the world back. ORDER MATTERS
+   (2026-10-25, Joshua's hands-on): the layer hides and the world
+   resumes FIRST, and the frame's disposal is deferred by a beat.
+   The old order unloaded the frame first — tearing the mini-game's
+   page (and its WebGL context) down synchronously on the close
+   path, in the same breath as the click — and on the dev build
+   the return to the world took minutes while that teardown and
+   the handover stalled together. Now the click answers at once:
+   the overlay is gone and the world has its controls back in the
+   same frame, and the frame unloads a moment later, off the
+   critical path (the mini-game still fully leaves memory — the
+   suite's single-residency rule — just not ahead of the player).
+   The generation guard in the deferred callback makes a reopen
+   inside that beat safe: the disposal is void and the reopened
+   game keeps its frame. Idempotent: a duplicate close request is
+   a no-op. The world resumes unless it was already paused before
+   the game opened. */
 function closeGame(){
   if (!gameOpen) return;
   gameOpen = false;
-  try{ if (dom.frame) dom.frame.src = 'about:blank'; }catch(e){}
+  closeGen++;
+  var myGen = closeGen;
   if (dom.overlay) dom.overlay.classList.remove('show');
   clearGameKeys();
   try{
@@ -521,6 +543,10 @@ function closeGame(){
   }catch(e){ report('resumeWorld', e); }
   try{ window.focus(); }catch(e){}
   note('close-ingame', {});
+  setTimeout(function(){
+    if (gameOpen || myGen !== closeGen) return;   // reopened meanwhile: the frame belongs to the new game
+    try{ if (dom.frame) dom.frame.src = 'about:blank'; }catch(e){}
+  }, 350);
 }
 
 /* The mini-game asks to close (its leave flow / close control) with a
