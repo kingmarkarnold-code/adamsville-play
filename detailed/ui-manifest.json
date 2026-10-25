@@ -227,9 +227,9 @@
   },
   {
    "name": "marta_bus_system.js",
-   "size": 33142,
-   "sha256": "b3ce36c018717b83481bab585333f74f4b1fbf933f09d4edb61da8c7bfd2497a",
-   "hash": "b3ce36c018717b83481bab585333f74f4b1fbf933f09d4edb61da8c7bfd2497a"
+   "size": 34251,
+   "sha256": "c2d74e5369520114bdabab9ec0e2677efeea64988b72edea0990dea195818171",
+   "hash": "c2d74e5369520114bdabab9ec0e2677efeea64988b72edea0990dea195818171"
   },
   {
    "name": "marta_data.js",
@@ -444,10 +444,10 @@
   },
   {
    "name": "traffic_system.js",
-   "size": 77470,
-   "sha256": "6416cfb79b45a01badd944525429908e42c8b2c9be5ab8594d379ee94c3a6263",
-   "hash": "6416cfb79b45a01badd944525429908e42c8b2c9be5ab8594d379ee94c3a6263",
-   "md5": "9f1fb64d35236660da6edc3c8992a895"
+   "size": 84769,
+   "sha256": "b4f39dbbacb029acb53305aaaf7c0f34bebbd8f4b5eddd16b7e18c30df04f48c",
+   "hash": "b4f39dbbacb029acb53305aaaf7c0f34bebbd8f4b5eddd16b7e18c30df04f48c",
+   "md5": "02f71887c1fae49e0a56b689b5f27ebc"
   },
   {
    "name": "truck_restrictions.js",
@@ -537,6 +537,6 @@
    "sha256": "74d2e3da9d5db086f3724cec9d5d42c2ba52e8561f2223fd467601d1ba8500b8"
   }
  ],
- "ui_version": "2026.10.24.7",
+ "ui_version": "2026.10.25.1",
  "version": "2026.10.17.9"
 }
