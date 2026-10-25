@@ -46,6 +46,36 @@
      player-facing field anywhere for version, device or
      location — those are never the player's job to type.
 
+   EXIT / SESSION REPORTS (Joshua's directive, 2026-10-25):
+   * When a player EXITS the game, one automatic SESSION
+     report is queued and handed to the form as background
+     work before the game finishes closing — the player is
+     never asked anything and the close is never visibly
+     delayed. It maps to the form's "Session" report type.
+   * WHAT IT CARRIES — only facts the code actually knows:
+     how long the session lasted (the headline of the
+     "What happened?" answer), the distance travelled and
+     the zones visited (both measured by this sender from
+     the game's own player position / zone state — see
+     samplePlayer below), the performance level + fps at
+     exit when PerfBudget exposes them, and how many other
+     reports this session queued. Device, game version and
+     the exit position ride in their own auto-filled form
+     fields, exactly like every other report. NO player
+     name — automatic reports never carry one.
+   * TRIGGERS: the game's single exit funnel exitGame() in
+     index.html calls GitHubReports.sessionExit('exit-game')
+     first; on the WEB, a pagehide (tab close / navigation
+     away) queues it with reason 'page-close' if no exit
+     queued it yet. A plain tab-hide (visibilitychange) is
+     NOT an exit — it only flushes the queue, as before.
+   * DEDUPE: exactly ONE session report per play session,
+     however many exit paths fire (sessionReportQueued).
+   * DELIVERY THAT SURVIVES CLOSING: the exit flush prefers
+     navigator.sendBeacon (built for exactly this), falling
+     back to fetch with keepalive:true, and finally to the
+     normal queue semantics if neither exists.
+
    QUEUEING (unchanged behaviour):
    * All existing Report.note() / Report.noteError() calls are
      wrapped automatically — every system that already logs to
@@ -91,6 +121,9 @@
 
    API:
    * GitHubReports.queue(type, details) — queue one report now.
+   * GitHubReports.sessionExit(reason) — queue the session's
+     ONE exit/session report (deduped) and flush the queue on
+     the closing-safe path. Called by exitGame() and pagehide.
    * GitHubReports.flush() — send the queue immediately.
      Returns a Promise for true (every queued report handed
      to the destination) / false (not configured, empty
@@ -130,6 +163,64 @@ window.GitHubReports = (function(){
   /* Random session id so reports from one play session group together. */
   var sessionId = 's'+Date.now().toString(36)+
     Math.floor(Math.random()*0xffffff).toString(36);
+
+  /* ---------- session tracking (for the exit/session report) ----------
+     The sender's own session clock starts when this module loads
+     (it loads with the game's scripts, before play begins). The
+     facts below are MEASURED by this sender from game state that
+     already exists — the player position (playerPos) and the
+     current zone (zoneId) — sampled when a report is queued, on
+     the flush timer, and once more at exit. Nothing here is
+     estimated or invented. */
+  var sessionStartMs = Date.now();
+  var sessionReportQueued = false;  // dedupe: ONE session report per session
+  var reportsQueuedTotal = 0;       // every report queued this session
+  var zonesVisited = [];            // zone ids, first-visit order
+  var distanceTravelledM = 0;       // world units = game metres (1u = 1m)
+  var lastSamplePos = null;         // last sampled {x,z}
+
+  function noteZone(z){
+    try{
+      if(typeof z==='string' && z){
+        for(var i=0;i<zonesVisited.length;i++)
+          if(zonesVisited[i]===z) return;
+        zonesVisited.push(z);
+      }
+    }catch(e){}
+  }
+
+  /* Sample the player's position + zone once. Distance accrues
+     only from believable steps: a single sample-to-sample jump
+     over 500 units is a teleport / zone load / spawn, not
+     travel, and is not counted. */
+  function samplePlayer(){
+    try{
+      noteZone(zoneId());
+      var p = playerPos();
+      if(p){
+        if(lastSamplePos){
+          var dx = p.x-lastSamplePos.x, dz = p.z-lastSamplePos.z;
+          var d = Math.sqrt(dx*dx+dz*dz);
+          if(isFinite(d) && d <= 500) distanceTravelledM += d;
+        }
+        lastSamplePos = p;
+      }
+    }catch(e){}
+  }
+
+  function sessionSeconds(){
+    var s = Math.round((Date.now()-sessionStartMs)/1000);
+    return (isFinite(s) && s>0) ? s : 0;
+  }
+
+  /* "2h 3m 4s" / "3m 4s" / "4s" — plain, readable duration. */
+  function durationText(totalSec){
+    var s = Math.max(0, Math.floor(totalSec||0));
+    var h = Math.floor(s/3600), m = Math.floor((s%3600)/60), r = s%60;
+    if(h>0) return h+'h '+m+'m '+r+'s';
+    if(m>0) return m+'m '+r+'s';
+    return r+'s';
+  }
 
   /* Player position snapshot, if the game has one yet. Never throws. */
   function playerPos(){
@@ -320,6 +411,11 @@ window.GitHubReports = (function(){
      JSON-serializable (object preferred). */
   function queueReport(type, details){
     try{
+      /* Session tracking: count every queued report and take a
+         position/zone sample (queueing moments are natural,
+         already-paid-for sample points). */
+      reportsQueuedTotal++;
+      samplePlayer();
       var q = queue;
       q.push({
         type: slug(type),
@@ -349,6 +445,9 @@ window.GitHubReports = (function(){
      bug reports) are bugs; anything else is Other. */
   function formTypeFor(type){
     var t = String(type==null?'':type).toLowerCase();
+    /* The exit/session report (kind 'session') maps to the
+       form's "Session" choice (added to the form 2026-10-25). */
+    if(t==='session' || t.indexOf('session')>=0) return 'Session';
     if(t.indexOf('crash')>=0 || t.indexOf('error')>=0) return 'Crash';
     if(t.indexOf('feedback')>=0 || t.indexOf('manual')===0) return 'Feedback';
     if(t==='bug' || t.indexOf('inspector')>=0 || t.indexOf('stuck')>=0 ||
@@ -472,6 +571,92 @@ window.GitHubReports = (function(){
     return params;
   }
 
+  /* ---------- the exit/session report ---------- */
+
+  /* The session report's details. The composed `message` leads
+     with the DURATION (the headline fact), then the rest of the
+     session statistics — so in the form's "What happened?"
+     answer the stats are the readable head, ahead of the folded
+     diagnostics formMessageFor appends. Device, game version
+     and the exit position are NOT repeated here: they ride in
+     their own auto-filled form fields. Only facts the code
+     actually knows are included:
+       - duration, from this sender's session clock;
+       - distance travelled + zones visited, measured by
+         samplePlayer from the game's player position / zone;
+       - performance at exit (level label + fps) ONLY when
+         window.PerfBudget exposes them;
+       - how many OTHER reports this session queued (counted
+         before this report itself is queued).
+     No player name is ever attached: session reports are
+     automatic, like crash reports. */
+  function sessionReportDetails(reason){
+    samplePlayer();  // one final sample at exit
+    var secs = sessionSeconds();
+    var perfBits = [];
+    try{
+      if(typeof window!=='undefined' && window.PerfBudget){
+        var pb = window.PerfBudget;
+        if(typeof pb.getLevelLabel==='function'){
+          var lbl = pb.getLevelLabel();
+          if(typeof lbl==='string' && lbl) perfBits.push('level '+lbl);
+        }
+        if(typeof pb.getFps==='function'){
+          var f = pb.getFps();
+          if(typeof f==='number' && isFinite(f) && f>0)
+            perfBits.push('~'+Math.round(f)+' fps');
+        }
+      }
+    }catch(e){}
+    var lines = [];
+    lines.push('Played for '+durationText(secs)+' ('+secs+' seconds)');
+    lines.push('Distance travelled: '+Math.round(distanceTravelledM)+
+               ' m (game units)');
+    lines.push('Zones visited: '+
+      (zonesVisited.length ? zonesVisited.join(', ') : zoneId()));
+    if(perfBits.length)
+      lines.push('Performance at exit: '+perfBits.join(' · '));
+    lines.push('Other reports queued this session: '+reportsQueuedTotal);
+    lines.push('Exit path: '+String(reason||'exit'));
+    var details = {
+      message: lines.join('\n'),
+      sessionSeconds: secs,
+      duration: durationText(secs),
+      distanceTravelledM: Math.round(distanceTravelledM*10)/10,
+      zonesVisited: zonesVisited.slice(),
+      otherReportsQueuedThisSession: reportsQueuedTotal,
+      exitReason: String(reason||'exit')
+    };
+    if(perfBits.length) details.perfAtExit = perfBits.join(' · ');
+    return details;
+  }
+
+  /* Queue the ONE session report for this play session.
+     Returns true only when this call actually queued it —
+     every later call (second exit path, pagehide after an
+     explicit exit, …) is a no-op, so exactly one session
+     report ever leaves per session. */
+  function queueSessionReport(reason){
+    try{
+      if(sessionReportQueued) return false;
+      sessionReportQueued = true;
+      queueReport('session', sessionReportDetails(reason));
+      return true;
+    }catch(e){ return false; }
+  }
+
+  /* The exit entry point, called by the game's exit funnel
+     (exitGame() in index.html) and by the pagehide handler
+     below: queue the session report (deduped) and flush the
+     whole queue on the closing-safe path (sendBeacon first,
+     fetch keepalive second — see flushViaForm). Background
+     work only: it never blocks or visibly delays the close.
+     Returns the flush promise. */
+  function sessionExit(reason){
+    try{ queueSessionReport(reason||'exit'); }catch(e){}
+    return flush(true);
+  }
+
   /* ---------- the form send (live path) ---------- */
 
   /* POST the queue to the Google Form: ONE form response per
@@ -483,7 +668,11 @@ window.GitHubReports = (function(){
      Google. Never rejects — failures land in lastError.
      keepalive: true for the page-hide send (with no-cors the
      browser cannot show us Google's reply, so a resolved send
-     means Google accepted the delivery). */
+     means Google accepted the delivery). On the keepalive path
+     each report first tries navigator.sendBeacon — delivery
+     the browser guarantees across page teardown — and falls
+     back to the keepalive fetch when the beacon is missing or
+     refuses the body. */
   function flushViaForm(keepalive){
     var url = formUrl();
     var entries = formEntries();
@@ -496,11 +685,38 @@ window.GitHubReports = (function(){
     var items = queue.splice(0, queue.length);
     var dev = deviceInfo();
     var jobs = items.map(function(item){
+      var body;
+      try{
+        body = formBodyFor(item, entries, dev);
+      }catch(e){
+        return Promise.resolve({ ok:false, item:item, err:e });
+      }
+      /* Closing-safe delivery (exit flushes): navigator.sendBeacon
+         exists precisely for "send this while the page goes away" —
+         the browser queues it and delivers it even after teardown.
+         A URLSearchParams body is sent as
+         application/x-www-form-urlencoded, exactly what the form
+         expects. sendBeacon answers synchronously: true means the
+         browser took the report (handed off), false means it
+         refused (e.g. body too large) and we fall through to the
+         keepalive fetch below. Non-exit flushes never use the
+         beacon: there, a failed fetch must keep the report queued
+         for retry, and only fetch can tell us it failed. */
+      if(keepalive){
+        try{
+          if(typeof navigator!=='undefined' &&
+             typeof navigator.sendBeacon==='function'){
+            var handed = false;
+            try{ handed = navigator.sendBeacon(url, body); }catch(e){}
+            if(handed) return Promise.resolve({ ok:true, item:item });
+          }
+        }catch(e){}
+      }
       var opts;
       try{
         opts = {
           method: 'POST',
-          body: formBodyFor(item, entries, dev),
+          body: body,
           mode: 'no-cors'
         };
         if(keepalive){ try{ opts.keepalive = true; }catch(e){} }
@@ -728,7 +944,13 @@ window.GitHubReports = (function(){
       }, 500);
     }
     try{
-      timerId = setInterval(function(){ flush(false); }, flushMs());
+      timerId = setInterval(function(){
+        /* Sample the player's travel between flushes so the
+           exit report's distance/zones stay honest even in a
+           session where nothing else was ever queued. */
+        samplePlayer();
+        flush(false);
+      }, flushMs());
     }catch(e){}
     // Final flush when the page hides or closes. keepalive lets the
     // POST survive teardown in modern browsers.
@@ -740,7 +962,15 @@ window.GitHubReports = (function(){
         });
       }
       if(typeof window!=='undefined'){
-        window.addEventListener('pagehide', finalFlush);
+        /* pagehide = the page is going away (tab close, navigation
+           away, app teardown): the WEB exit path. Queue the ONE
+           session report first (reason 'page-close'; a no-op if an
+           explicit exit already queued it), then flush everything
+           on the closing-safe path. A plain tab-hide above does NOT
+           queue a session report — hiding is not exiting. */
+        window.addEventListener('pagehide', function(){
+          sessionExit('page-close');
+        });
       }
     }catch(e){}
     try{
@@ -764,6 +994,13 @@ window.GitHubReports = (function(){
   return {
     queue: queueReport,
     flush: function(){ return flush(false); },
+    /* Exit/session reporting (2026-10-25): sessionExit queues
+       the ONE session report (deduped) and flushes on the
+       closing-safe path — exitGame() in index.html calls it,
+       and the pagehide handler above calls it for web closes.
+       queueSessionReport is exposed for tests/diagnostics. */
+    sessionExit: sessionExit,
+    queueSessionReport: queueSessionReport,
     status: function(){
       var configured = isConfigured();
       return {
@@ -786,6 +1023,11 @@ window.GitHubReports = (function(){
            form. There is NO token in the game any more. */
         hasToken: configured,
         queued: queue.length,
+        /* Session-report state (2026-10-25): whether this
+           session's ONE exit report has been queued yet, and
+           how long the session has run so far. */
+        sessionReportQueued: sessionReportQueued,
+        sessionSeconds: sessionSeconds(),
         lastFlush: lastFlush,
         lastError: lastError
       };
