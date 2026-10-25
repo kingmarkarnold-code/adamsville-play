@@ -549,14 +549,37 @@ function updateRiding(dt){
    trimRouteToMap(pts) finds the longest contiguous run of points within the
    playable map bounds and returns the trimmed array. Buses then shuttle on
    the in-map portion only, reversing at the trimmed termini.
-   
-   Map bounds derived from road network extent: X [-200, 8200], Z [-200, 12200].
-   A point is "in-map" if within these bounds with a 50u margin.
+
+   2026-10-25 (Joshua's rule: zone borders apply to the PLAYER only —
+   nobody else is fenced by them): the old trim bounds below were the
+   PRE-CONVERSION core map (X [-200, 8200], Z [-200, 12200] + 50u margin).
+   In the converted world that rectangle slices through the middle of
+   real zones, so buses were reversing at a phantom line that is neither
+   a zone border nor the edge of the world. Buses now trim ONLY at the
+   true world edge: the stage rect (STAGE_X0..X1 / STAGE_Z0..Z1 from
+   index.html, read live so the two can never disagree), with the same
+   50u outward margin the old bounds used. A bus route now runs its
+   full length across every zone line exactly as it does inside one
+   zone; only the edge of the world itself turns it around.
    ============================================================================ */
-var BUS_MAP_X0=-250, BUS_MAP_X1=8250, BUS_MAP_Z0=-250, BUS_MAP_Z1=12250;
+function busMapBounds(){
+  // Stage rect from index.html's globals when they exist (single source
+  // of truth for the drawn world), else the converted stage rect itself.
+  var x0=-7481, x1=16315, z0=-4249, z1=30878;
+  try{
+    if (typeof window!=='undefined'){
+      if (isFinite(window.STAGE_X0)) x0=window.STAGE_X0;
+      if (isFinite(window.STAGE_X1)) x1=window.STAGE_X1;
+      if (isFinite(window.STAGE_Z0)) z0=window.STAGE_Z0;
+      if (isFinite(window.STAGE_Z1)) z1=window.STAGE_Z1;
+    }
+  }catch(e){}
+  return {x0:x0-50, x1:x1+50, z0:z0-50, z1:z1+50};
+}
 
 function busPtInMap(x, z){
-  return x>=BUS_MAP_X0 && x<=BUS_MAP_X1 && z>=BUS_MAP_Z0 && z<=BUS_MAP_Z1;
+  var b=busMapBounds();
+  return x>=b.x0 && x<=b.x1 && z>=b.z0 && z<=b.z1;
 }
 
 function trimRouteToMap(pts){
