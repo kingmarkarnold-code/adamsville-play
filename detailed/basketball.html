@@ -220,7 +220,7 @@
 
 <div id="topbar">
   <span class="title">🏀 Basketball — 535 Backyard Court</span>
-  <span class="vtag">v2.4.1</span>
+  <span class="vtag">v2.4.2</span>
   <span class="spacer"></span>
   <span id="score-readout">You: 0</span>
   <span id="baskets-readout">Baskets: 0</span>
@@ -522,6 +522,37 @@
      and picking an opponent starts a NEW game that replaces
      any in-progress save. The end popup's Play again is
      unchanged.
+
+   v2.4.2 (Joshua's hands-on, 2026-10-25) — BALL SPEED + THE
+   MADE-BALL WAIT:
+   - THE BALL FLEW SLOWER THAN THE MEN RUN (his report from the
+     dev build: "the ball itself was moving kind of slow, the
+     characters are moving faster"). The one arc for everyone
+     (launchBall) budgeted flight time as 0.8 s + 0.05 s per
+     metre: a 3 m shot crossed at ~3.2 m/s — slower than the
+     walk pace of the man who threw it (WALK_SPEED 3.4 m/s) —
+     and a shot from the top hung in the air ~1.5 s. The budget
+     is now 0.58 s + 0.040 s per metre: the same 3 m shot
+     crosses at ~4.3 m/s, a shot from the top crosses its
+     ~13.4 m in ~1.1 s, and the arc peaks at a real jumper's
+     height. Nothing about the SCORING moved: launchBall still
+     solves the arc through the aim point, so makes and misses
+     are decided by the same targets, the same POWER bands and
+     the same spread as v2.4.1 — only the flight's pace changed.
+   - AFTER A MAKE, THE RESTART WAITED FOR A DEAD BALL (his
+     report: "it took a while after I made the shot... it was
+     waiting on the ball to stop moving"). The score registers
+     the moment the ball crosses the rim plane, but the restart
+     at the top waited for the ball to settle — and a made ball
+     still had to fall from the rim and bounce out the old
+     chain (restitution 0.55 until a floor impact under
+     1.4 m/s): ~2.7 s of bouncing after a swish before play
+     restarted. Now a MADE ball settles at its FIRST floor
+     touch after the make, and a backstop cap (MADE_SETTLE_CAP,
+     1.1 s after the crossing) settles it even if it hangs up
+     somewhere strange. Misses are UNCHANGED: a missed ball
+     still bounces out naturally and only becomes fetchable
+     when it comes to rest, exactly as before.
    ============================================================================ */
 (function(){
 'use strict';
@@ -625,6 +656,13 @@ var START_SPOT = { x: 0, z: -2.0 };           // where you start each game
    the same defensive post a game is built with). */
 var TOP_SPOT = { x: 0, z: 6.0 };
 var GRAVITY = 9.8, BALL_R = 0.12;
+/* v2.4.2: a MADE ball never waits out the bounce chain — it settles
+   at its first floor touch after the make (see stepBall). This cap
+   is the backstop for a made ball that somehow never touches down
+   (clips a trunk, catches an edge): this many seconds after the
+   rim crossing it is settled wherever it is, and the restart at
+   the top proceeds. */
+var MADE_SETTLE_CAP = 1.1;
 var WALK_SPEED = 3.4;                          // your pace, main-game walking feel
 var FIG_R = 0.35;                              // a player's personal space (court margin)
 var JUMP_DIST = 6.0;                           // beyond this from the rim, Shoot is a jump shot
@@ -822,7 +860,8 @@ var player = {                // your body on the court
   speed: 0, stepPhase: 0, jumpY: 0, idleFor: 0
 };
 var ball = null, ballState = 'ready',   // 'ready' | 'held' | 'dribbling' | 'shooting' | 'flying' | 'dead' | 'ophold' | 'oppdribble'
-    ballVel = { x: 0, y: 0, z: 0 }, ballScored = false, flyT = 0;
+    ballVel = { x: 0, y: 0, z: 0 }, ballScored = false, flyT = 0,
+    scoredFlyT = -1;   // v2.4.2: flyT at the moment of a make (-1 = no make this flight)
 var possession = 'you';       // 'you' | 'opp' — whose turn it is with the ball
 var lastTouch = '';           // v2.2: '' | 'you' | 'opp' — who touched the ball last
                               // (v2.3: this decides EVERY ball-out — the other
@@ -1910,17 +1949,28 @@ function updateBallCarry(dt){
 
 /* ============================== shooting ============================== */
 /* One arc for everyone: from a release point to a target point near
-   the rim, with the flight time growing with distance. */
+   the rim, with the flight time growing with distance.
+   v2.4.2 FLIGHT PACE (Joshua's hands-on): the old budget
+   (0.8 s + 0.05 s/m) flew the ball SLOWER than the men move — a
+   3 m shot crossed at ~3.2 m/s against the 3.4 m/s walk pace,
+   and a shot from the top hung in the air ~1.5 s. The new budget
+   (0.58 s + 0.040 s/m) crosses 3 m at ~4.3 m/s and the top's
+   ~13.4 m in ~1.1 s, peaking at a real jumper's arc height. The
+   ballistic solve below is unchanged — the ball still passes
+   through the aim point at the rim plane at Tfly, so the scoring
+   (aim targets, POWER bands, spread) is exactly as it was;
+   only the pace of the flight changed. */
 function launchBall(p0, tx, tz){
   var dx = tx - p0.x, dz = tz - p0.z;
   var dist = Math.sqrt(dx * dx + dz * dz);
-  var Tfly = 0.8 + dist * 0.05;
+  var Tfly = 0.58 + dist * 0.040;
   ballVel.x = dx / Tfly;
   ballVel.z = dz / Tfly;
   ballVel.y = (RIM.y - p0.y) / Tfly + 0.5 * GRAVITY * Tfly;
   ball.position.set(p0.x, p0.y, p0.z);
   ballScored = false;
   flyT = 0;
+  scoredFlyT = -1;   // v2.4.2: no make yet on this flight
   ballState = 'flying';
 }
 
@@ -2063,6 +2113,7 @@ function stepBall(dt){
     var ddx = ball.position.x - RIM.x, ddz = ball.position.z - RIM.z;
     if (Math.sqrt(ddx * ddx + ddz * ddz) < 0.27){
       ballScored = true;
+      scoredFlyT = flyT;   // v2.4.2: the made-ball settle cap counts from this moment
       if (shotCtx) shotCtx.made = true;
       onBasket(shotCtx ? shotCtx.by : 'you');
     }
@@ -2078,13 +2129,35 @@ function stepBall(dt){
     if (!ballScored && !insideCourt(ball.position.x, ball.position.z, 0)){
       if (callOutOfBounds(lastTouch === 'opp' ? 'opp' : 'you')) return;
     }
-    if (ballVel.y < -1.4){
+    if (ballScored){
+      /* v2.4.2: a MADE ball settles at its FIRST touch of the
+         floor. The make was decided at the rim crossing above;
+         making the restart wait out the bounce chain below
+         (restitution 0.55 until a floor impact under 1.4 m/s)
+         held play up ~2.7 s after a swish while the ball bounced
+         itself out (Joshua's hands-on report). Now the ball
+         drops through, touches down once, and the restart at
+         the top proceeds. Misses never take this branch — their
+         ball still bounces out naturally, as before. */
+      ballVel.x = 0; ballVel.y = 0; ballVel.z = 0;
+      settleDeadBall();
+    } else if (ballVel.y < -1.4){
       ballVel.y = -ballVel.y * 0.55;
       ballVel.x *= 0.7; ballVel.z *= 0.7;
     } else {
       ballVel.x = 0; ballVel.y = 0; ballVel.z = 0;
       settleDeadBall();
     }
+  }
+  /* v2.4.2 MADE-BALL CAP: if a made ball somehow never touches
+     down (it clipped a trunk on the way through, or caught an
+     edge), settle it MADE_SETTLE_CAP seconds after the crossing
+     regardless of where it is — the settle's made branch restarts
+     at the top either way, so the ball's resting place does not
+     matter. The 6 s fallback below stays for every other ball. */
+  if (ballScored && scoredFlyT >= 0 && flyT - scoredFlyT > MADE_SETTLE_CAP && ballState === 'flying'){
+    ballVel.x = 0; ballVel.y = 0; ballVel.z = 0;
+    settleDeadBall();
   }
   if (flyT > 6 && ballState === 'flying'){
     ballVel.x = 0; ballVel.y = 0; ballVel.z = 0;
@@ -2696,7 +2769,7 @@ catch(e){ showError(e); }
 
 /* test/debug surface (also handy later): state snapshots + drivers */
 window.BBALL_PAGE = {
-  version: '2.4.1',
+  version: '2.4.2',
   started: function(){ return started; },
   embedded: function(){ return EMBEDDED; },
   mode: function(){ return mode; },
@@ -2770,7 +2843,7 @@ window.BBALL_PAGE = {
     launchBallAt: function(x, y, z, vx, vy, vz, touch){
       ball.position.set(x, y, z);
       ballVel.x = vx; ballVel.y = vy; ballVel.z = vz;
-      ballScored = false; flyT = 0; shotCtx = null;
+      ballScored = false; flyT = 0; scoredFlyT = -1; shotCtx = null;
       if (touch) lastTouch = touch;
       ballState = 'flying';
     },
