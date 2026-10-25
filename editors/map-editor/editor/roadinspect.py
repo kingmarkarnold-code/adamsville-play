@@ -2282,6 +2282,14 @@ class RoadInspectorPanel(Gtk.VBox):
         self.cp_viewer.invalidate_still()
         self.cp_viewer.queue_draw()
         self.elev_viewer.queue_draw()
+        # 1.9.13: the main canvas draws buildings too (and clicks
+        # them) — a zone landing must repaint it. While the map is
+        # the stilled pane this is a no-op picture-wise (its still
+        # re-renders when it next goes live), exactly like the
+        # panes' own stills.
+        canvas = getattr(self.app, "canvas", None)
+        if canvas is not None:
+            canvas.queue_draw()
 
     def request_area_data(self):
         """
@@ -2294,6 +2302,26 @@ class RoadInspectorPanel(Gtk.VBox):
         """
         if self._compare is not None or not self.cp_viewer.awake:
             return
+        self._ensure_buildings_for_view()
+
+    def ensure_buildings_for_main_view(self):
+        """
+        The MAIN map's own buildings fetch (1.9.13): since this
+        build the main canvas DRAWS buildings and a click on one
+        offers the jump to the Building Editor — so the zones on
+        screen need their buildings even while the 3D pane (whose
+        waking gates request_area_data) is asleep. Same compare
+        guard as request_area_data (a comparison's stills are
+        never disturbed), same store, same progress bar.
+        """
+        if self._compare is not None:
+            return
+        self._ensure_buildings_for_view()
+
+    def _ensure_buildings_for_view(self):
+        """Start background fetches for the zones the shared
+        camera currently shows (plus a margin), if not held.
+        Shared by request_area_data and the main view's fetch."""
         canvas = getattr(self.app, "canvas", None)
         if canvas is None:
             return
