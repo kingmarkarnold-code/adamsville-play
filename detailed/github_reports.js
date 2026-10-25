@@ -51,7 +51,9 @@
      report is queued and handed to the form as background
      work before the game finishes closing — the player is
      never asked anything and the close is never visibly
-     delayed. It maps to the form's "Session" report type.
+     delayed. It maps to the form's "Stats" report type
+     (added to the form 2026-10-25 as "Session", renamed
+     "Stats" the same day on Joshua's corrected word).
    * WHAT IT CARRIES — only facts the code actually knows:
      how long the session lasted (the headline of the
      "What happened?" answer), the distance travelled and
@@ -437,7 +439,8 @@ window.GitHubReports = (function(){
 
   /* Map a queued report's kind (its slug) to the form's
      "Report type" radio choice. The submitted value must match
-     one of Bug / Crash / Feedback / Other EXACTLY or Google
+     one of Bug / Crash / Feedback / Other / Stats EXACTLY
+     or Google
      silently drops just that one answer. Mapping (GOOGLE-FORM.md):
      crash/error kinds are crashes; player-initiated kinds are
      feedback; the game's automatic diagnostic kinds (inspector
@@ -446,8 +449,12 @@ window.GitHubReports = (function(){
   function formTypeFor(type){
     var t = String(type==null?'':type).toLowerCase();
     /* The exit/session report (kind 'session') maps to the
-       form's "Session" choice (added to the form 2026-10-25). */
-    if(t==='session' || t.indexOf('session')>=0) return 'Session';
+       form's "Stats" choice (added to the form 2026-10-25 as
+       "Session"; renamed "Stats" the same day on Joshua's
+       corrected word — his first tap, renaming "Other", was
+       a mis-tap he reversed; the "Other" fallback below is
+       unchanged). */
+    if(t==='session' || t.indexOf('session')>=0) return 'Stats';
     if(t.indexOf('crash')>=0 || t.indexOf('error')>=0) return 'Crash';
     if(t.indexOf('feedback')>=0 || t.indexOf('manual')===0) return 'Feedback';
     if(t==='bug' || t.indexOf('inspector')>=0 || t.indexOf('stuck')>=0 ||
