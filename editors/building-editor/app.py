@@ -89,7 +89,7 @@ from subdivisioncanvas import SubdivisionCanvas
 
 # App version shown in the Help -> About dialog (bump with each release).
 # Joshua 2026-10-11: version number must be prominent in About.
-APP_VERSION = "2.0.2"
+APP_VERSION = "2.0.4"
 
 # ---------------------------------------------------------------------------
 # THE EDITOR UI RULE (Joshua, 2026-10-16 — standing suite principle):
@@ -467,6 +467,13 @@ class AssetEditorWindow(Gtk.Window):
         # load later, one zone at a time, when Joshua selects a
         # building — never all seven zones up front.
         self._load_lists_on_open()
+        # Map Editor building jump (receiving half; companion to
+        # Map Editor 1.9.13): clicking a building in the Map
+        # Editor writes open-in-building-editor.json and launches
+        # this app. Consume it on an idle tick — the window and
+        # its tabs exist by then, and the notebook page switch
+        # needs the window shown to land.
+        GLib.idle_add(self._consume_building_handoff)
 
     # -- menus ----------------------------------------------------------
 
@@ -1109,6 +1116,76 @@ class AssetEditorWindow(Gtk.Window):
             GLib.idle_add(finish)
 
         threading.Thread(target=worker, daemon=True).start()
+
+    # -- Open in Building Editor (the Map Editor's building jump) ------
+    # Receiving half of the Map Editor 1.9.13 building click; the
+    # sending half is MapEditorApp.on_building_clicked there.
+
+    BUILDING_HANDOFF_NAME = "open-in-building-editor.json"
+
+    def _consume_building_handoff(self):
+        """
+        Consume a suite "open in Building Editor" handoff, once.
+
+        The Map Editor writes ~/.local/share/adamsville-suite/
+        open-in-building-editor.json — {target, zone, index, x,
+        z, w, d, h, type, writtenBy, timestamp} — and launches
+        this app when Joshua clicks a building there and answers
+        "Edit this location?". The semantics mirror this suite's
+        street-jump consumption in the Map Editor (1.7.2): a
+        FRESH file (< 48 hours old) is applied once — the Zone
+        Buildings tab comes forward and focuses the building —
+        then the file is DELETED so the jump happens once, not
+        on every launch; a file that does not parse is renamed
+        .bad so it cannot loop; a stale one is simply removed.
+
+        The building's identity is its INDEX in the zone's
+        buildings.json (this editor's zone list is index-aligned
+        with that file); the position rides along as the
+        fallback identity (see ZoneBuildingsTab.focus_building).
+        Returns False always: it is a GLib idle one-shot.
+        """
+        import json as _json
+        from datetime import datetime, timezone
+        path = github_sync.SHARED_DIR / self.BUILDING_HANDOFF_NAME
+        if not path.exists():
+            return False
+        try:
+            doc = _json.loads(path.read_text())
+            zone = str(doc["zone"])
+            index = doc.get("index")
+            index = int(index) if index is not None else None
+            at = None
+            if doc.get("x") is not None \
+                    and doc.get("z") is not None:
+                at = (float(doc["x"]), float(doc["z"]))
+            fresh = True
+            ts = doc.get("timestamp")
+            if ts:
+                when = datetime.fromisoformat(ts)
+                fresh = (datetime.now(timezone.utc)
+                         - when).total_seconds() < 48 * 3600
+        except Exception:
+            try:
+                path.rename(path.with_suffix(".json.bad"))
+            except Exception:
+                pass
+            return False
+        # Consumed (or stale): the file never applies twice.
+        try:
+            path.unlink()
+        except Exception:
+            pass
+        if not fresh:
+            return False
+        if not _ZONEDATA_AVAILABLE or self.zone_tab is None \
+                or zone not in zonedata.ZONES:
+            return False
+        page = self.notebook.page_num(self.zone_tab)
+        if page >= 0:
+            self.notebook.set_current_page(page)
+        self.zone_tab.focus_building(zone, index, at)
+        return False
 
     # -- Open in Map Editor (1.7.2, Joshua 2026-10-17) -------------------
 
@@ -3280,6 +3357,9 @@ class ZoneBuildingsTab(Gtk.Box):
         self.set_border_width(8)
         self.app_window = window
         self._zone = "adamsville"
+        self._row_window = 0           # first row of _rows the
+        # list materialises (normally 0; focus_building slides it
+        # so a handed-over building past ROW_CAP is reachable)
         self._filter_id = "all"        # the ONE filter state (below)
         self._sort_key = None          # None | "name" | "type" | "flag"
         self._sort_asc = True
@@ -3679,7 +3759,14 @@ class ZoneBuildingsTab(Gtk.Box):
                                     hb.get("address") or ""])
         self._rows, total, flagged_n = self._build_rows()
         self._total = total
-        for r in self._rows[:self.ROW_CAP]:
+        # The materialised window (normally the first ROW_CAP
+        # rows; focus_building may have slid it — see _row_window).
+        if self._row_window >= len(self._rows):
+            self._row_window = 0
+        window_rows = self._rows[
+            self._row_window:self._row_window + self.ROW_CAP]
+        self._shown = len(window_rows)
+        for r in window_rows:
             self.store.append([r["i"], r["name"],
                                zonedata.CODE_LABELS.get(r["code"], "?"),
                                "FLAGGED" if r["flagged"] else ""])
@@ -3688,11 +3775,14 @@ class ZoneBuildingsTab(Gtk.Box):
         self.info_label.set_tooltip_text(info)
         # Restore the selection the clear() dropped (see above).
         if keep_index is not None:
-            for pos, r in enumerate(self._rows[:self.ROW_CAP]):
-                if r["i"] == keep_index:
+            for pos, r in enumerate(self._rows):
+                if r["i"] == keep_index \
+                        and self._row_window <= pos \
+                        < self._row_window + self.ROW_CAP:
                     try:
                         self.tree.get_selection().select_path(
-                            Gtk.TreePath.new_from_string(str(pos)))
+                            Gtk.TreePath.new_from_string(
+                                str(pos - self._row_window)))
                     except Exception:
                         pass
                     break
@@ -3708,7 +3798,7 @@ class ZoneBuildingsTab(Gtk.Box):
                 f"buildings, {hero_count} hero, "
                 f"{store.flagged.count(self._zone) if store else 0} "
                 f"flagged in zone ({state}; showing "
-                f"{min(self.ROW_CAP, len(self._rows))} "
+                f"{getattr(self, '_shown', min(self.ROW_CAP, len(self._rows)))} "
                 f"of {len(self._rows)} rows)")
         if zd is not None and zd.dirty:
             info += " — UNSAVED CHANGES"
@@ -3776,6 +3866,7 @@ class ZoneBuildingsTab(Gtk.Box):
         active = combo.get_active()
         if 0 <= active < len(self._filter_values):
             self._filter_id = self._filter_values[active]
+        self._row_window = 0  # a fresh list starts at the top
         self.refresh()
 
     def _on_header_clicked(self, key):
@@ -3793,6 +3884,7 @@ class ZoneBuildingsTab(Gtk.Box):
                     col.set_sort_order(
                         Gtk.SortType.ASCENDING if self._sort_asc
                         else Gtk.SortType.DESCENDING)
+        self._row_window = 0  # a fresh list starts at the top
         self.refresh()
 
     # -- inspector show/hide ------------------------------------------------
@@ -3935,9 +4027,130 @@ class ZoneBuildingsTab(Gtk.Box):
         """Switch the working zone: its list comes from its light
         index (downloading the index first if needed)."""
         self._zone = combo.get_active_text() or self._zone
+        self._row_window = 0  # a fresh list starts at the top
         self.hide_inspector()
         self.app_window.ensure_zone_index(self._zone)
         self.refresh()
+
+    # -- the Map Editor building jump (receiving half) --------------
+
+    def focus_building(self, zone, index=None, at=None):
+        """
+        Bring this tab to one building and select it — the
+        receiving half of the Map Editor's building click
+        (Map Editor 1.9.13; the window's _consume_building_handoff
+        calls this).
+
+        Switches the zone, clears the category filter and any
+        column sort (rows then stand in INDEX order — the order
+        the handed-over index counts in), slides the list window
+        onto the building when it sits past the materialised
+        rows, and selects its row: the ordinary selection path
+        then fills the edit fields and opens the 3D inspector,
+        downloading the zone's records first if needed — exactly
+        as if the row had been clicked by hand. When the zone's
+        light index is still downloading, the selection lands
+        when it arrives (ensure_zone_index's done callback).
+
+        `index` is the building's position in the zone's
+        buildings.json — this list is index-aligned with that
+        file, so the index names the building here. `at` (x, z)
+        is the fallback identity: an index whose building no
+        longer stands near `at` is distrusted (the two apps may
+        hold different downloads of the zone) and the nearest
+        building to `at` takes its place. Returns True when the
+        focus was accepted; a building that resolves to nothing
+        reports itself in the status bar and selects nothing.
+        """
+        if not _ZONEDATA_AVAILABLE or zone not in zonedata.ZONES:
+            return False
+        # Neutral list state: all categories, index order.
+        self._filter_id = "all"
+        try:
+            self.filter_combo.set_active(0)
+        except Exception:
+            pass
+        self._sort_key = None
+        for col in self._columns.values():
+            if col is not None:
+                try:
+                    col.set_sort_indicator(False)
+                except Exception:
+                    pass
+        self._row_window = 0
+        # Switch zone through the combo's own handler (it loads
+        # the index and refreshes); if already there, just
+        # refresh under the neutral state.
+        zi = zonedata.ZONES.index(zone)
+        if self.zone_combo.get_active() != zi:
+            self.zone_combo.set_active(zi)
+        else:
+            self._zone = zone
+            self.refresh()
+
+        def land(ok):
+            if not ok:
+                self.app_window._set_status(
+                    "Building jump: the "
+                    f"{zone} building list could not be loaded.")
+                return False
+            if self._zone == zone:
+                self._focus_select(index, at)
+            return False
+
+        self.app_window.ensure_zone_index(zone, done=land)
+        return True
+
+    def _focus_select(self, index, at):
+        """Resolve the focused building (zone index in memory)
+        and select its row through the real selection path."""
+        store = self._store()
+        idx = store.indexes.get(self._zone) if store else None
+        if idx is None:
+            return
+        entries = idx.entries
+        target = index
+        # An index that disagrees with the handed-over position
+        # is not trusted (see focus_building's docstring).
+        if target is not None and at is not None \
+                and 0 <= target < len(entries):
+            e = entries[target]
+            if (e["x"] - at[0]) ** 2 + (e["z"] - at[1]) ** 2 \
+                    > 4.0:
+                target = None
+        if target is None and at is not None:
+            best, best_d = None, None
+            for i, e in enumerate(entries):
+                d = (e["x"] - at[0]) ** 2 + (e["z"] - at[1]) ** 2
+                if best_d is None or d < best_d:
+                    best, best_d = i, d
+            if best is not None and best_d <= 4.0:
+                target = best
+        if target is None or not (0 <= target < len(entries)):
+            self.app_window._set_status(
+                "Building jump: that building could not be "
+                f"found in the {self._zone} list.")
+            return
+        # The row's position in the (neutral) row set, then the
+        # window slide if it sits outside the materialised rows.
+        pos = None
+        for p, r in enumerate(self._rows):
+            if r["i"] == target:
+                pos = p
+                break
+        if pos is None:
+            return
+        if not (self._row_window <= pos
+                < self._row_window + self.ROW_CAP):
+            self._row_window = max(0, pos - self.ROW_CAP // 2)
+            self.refresh()
+        path = Gtk.TreePath.new_from_string(
+            str(pos - self._row_window))
+        self.tree.get_selection().select_path(path)
+        try:
+            self.tree.scroll_to_cell(path, None, True, 0.5, 0.0)
+        except Exception:
+            pass
 
     def _on_select(self, selection):
         """
