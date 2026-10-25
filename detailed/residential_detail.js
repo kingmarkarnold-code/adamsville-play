@@ -478,8 +478,37 @@ try{
     if (!list.length) return;
     var geo=new THREE.BoxGeometry(1,1,1);
     geo.translate(0,0.5,0);
-    var mesh=new THREE.InstancedMesh(geo,
-      new THREE.MeshLambertMaterial({color:0xffffff}), list.length);
+    /* TEXTURES (2026-10-25): the flat ground-detail lists wear real
+       surfaces — driveways / walks / porch slabs / stairs are concrete
+       paving, parking lots are asphalt. Tiling is PER-INSTANCE: an
+       aUVScale instanced attribute carries (sx/tile, sz/tile) for each
+       slab and a small onBeforeCompile patch multiplies vUv by it
+       (three r128 has no per-instance UV scaling of its own). Every
+       other list keeps the plain flat material, untouched. If the
+       patch ever failed, these lists would still render — textured at
+       unit scale or flat — never broken. */
+    var _texKey=(typeof SAtex!=='undefined')
+      ? ({driveways:'concpave',walks:'concpave',porchSlabs:'concpave',
+          stairs:'concpave',lots:'asphalt'})[spec[1]]||null : null;
+    var _mat;
+    if (_texKey){
+      var _tile=SAtex.TILE[_texKey];
+      var _uvSc=new Float32Array(list.length*2);
+      for (var _ui=0;_ui<list.length;_ui++){
+        _uvSc[_ui*2]=Math.max(0.05,list[_ui].sx/_tile);
+        _uvSc[_ui*2+1]=Math.max(0.05,list[_ui].sz/_tile);
+      }
+      geo.setAttribute('aUVScale', new THREE.InstancedBufferAttribute(_uvSc,2));
+      _mat=SAtex.mat(_texKey,{color:0xffffff});
+      _mat.onBeforeCompile=function(sh){
+        sh.vertexShader='attribute vec2 aUVScale;\n'+sh.vertexShader.replace(
+          '#include <uv_vertex>', '#include <uv_vertex>\n\tvUv *= aUVScale;');
+      };
+      _mat.customProgramCacheKey=function(){ return 'satex-instanced'; };
+    } else {
+      _mat=new THREE.MeshLambertMaterial({color:0xffffff});
+    }
+    var mesh=new THREE.InstancedMesh(geo, _mat, list.length);
     var m4=new THREE.Matrix4(), q=new THREE.Quaternion(),
         sv=new THREE.Vector3(), pv=new THREE.Vector3(), col=new THREE.Color();
     for (var i=0;i<list.length;i++){

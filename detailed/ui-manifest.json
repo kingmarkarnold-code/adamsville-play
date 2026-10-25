@@ -26,9 +26,9 @@
     },
     {
       "name": "basketball_court.js",
-      "size": 31161,
-      "sha256": "e41c0cc433dae0ba45094874eea809be7ddcb345287693cbfc200838407750ee",
-      "hash": "e41c0cc433dae0ba45094874eea809be7ddcb345287693cbfc200838407750ee"
+      "size": 31596,
+      "sha256": "623afea3ef299f2b5e053762008b4b9e9a1ac1e96795ca0898637210cfd9aeba",
+      "hash": "623afea3ef299f2b5e053762008b4b9e9a1ac1e96795ca0898637210cfd9aeba"
     },
     {
       "name": "bird_drones.js",
@@ -173,9 +173,9 @@
     },
     {
       "name": "index.html",
-      "size": 1059361,
-      "sha256": "08e23088f09c804612cb1f7b0b7fb9b71af1e6f86a6467bf9d201ce8e0dfa0b7",
-      "hash": "08e23088f09c804612cb1f7b0b7fb9b71af1e6f86a6467bf9d201ce8e0dfa0b7"
+      "size": 1074531,
+      "sha256": "8a375e3cb2476c74238b2c0d7009a08247f0b61ba164f2eea941a29f77306507",
+      "hash": "8a375e3cb2476c74238b2c0d7009a08247f0b61ba164f2eea941a29f77306507"
     },
     {
       "name": "infracrew_system.js",
@@ -311,9 +311,9 @@
     },
     {
       "name": "residential_detail.js",
-      "size": 26797,
-      "sha256": "90e4e9655d60e18496b8a4a4453ba63b376a64f238e3d58ff9d768f731ecf794",
-      "hash": "90e4e9655d60e18496b8a4a4453ba63b376a64f238e3d58ff9d768f731ecf794"
+      "size": 28312,
+      "sha256": "75478dde3607330be8f666d10b7a7199fd35e34dba69ba37ad41f2de8d1f9501",
+      "hash": "75478dde3607330be8f666d10b7a7199fd35e34dba69ba37ad41f2de8d1f9501"
     },
     {
       "name": "roadcrew_system.js",
@@ -342,9 +342,9 @@
     },
     {
       "name": "school_plaza.js",
-      "size": 22740,
-      "sha256": "e2890eec5848f74a2b22413b2d309b85d53ba4ea59b36eafb630b5abd266191c",
-      "hash": "e2890eec5848f74a2b22413b2d309b85d53ba4ea59b36eafb630b5abd266191c"
+      "size": 23995,
+      "sha256": "1681d1298b8f00cae16d006573de4e41a8f0423beb999321731bb4e766b09161",
+      "hash": "1681d1298b8f00cae16d006573de4e41a8f0423beb999321731bb4e766b09161"
     },
     {
       "name": "schoolbus_system.js",
@@ -535,8 +535,134 @@
       "name": "zoneunlockflow.js",
       "size": 31231,
       "sha256": "74d2e3da9d5db086f3724cec9d5d42c2ba52e8561f2223fd467601d1ba8500b8"
+    },
+    {
+      "name": "textures/asphalt.jpg",
+      "size": 739513,
+      "sha256": "99b6f6bdfbd09279f3f550ac9593336df541aa2319537566eeb3e737d8512010",
+      "hash": "99b6f6bdfbd09279f3f550ac9593336df541aa2319537566eeb3e737d8512010"
+    },
+    {
+      "name": "textures/brick.jpg",
+      "size": 766044,
+      "sha256": "6dea3a2b5a3185ff48d299d182c405a9f787129d79677792db6de4afd81c47f6",
+      "hash": "6dea3a2b5a3185ff48d299d182c405a9f787129d79677792db6de4afd81c47f6"
+    },
+    {
+      "name": "textures/carpet.jpg",
+      "size": 1501861,
+      "sha256": "603b24064bfbee2f8ac03903592be397f485a793ab6359630641ce9a446ac3dd",
+      "hash": "603b24064bfbee2f8ac03903592be397f485a793ab6359630641ce9a446ac3dd"
+    },
+    {
+      "name": "textures/concrete-paving.jpg",
+      "size": 926197,
+      "sha256": "70d3ff969a7421c7ae057b5d16386d11f5e59c6740db643352e1039413f419c4",
+      "hash": "70d3ff969a7421c7ae057b5d16386d11f5e59c6740db643352e1039413f419c4"
+    },
+    {
+      "name": "textures/concrete.jpg",
+      "size": 543902,
+      "sha256": "046c0e2aebe31e6043a6bc074e779f6a345f1d823d0ca1c69446c5cabadefa8a",
+      "hash": "046c0e2aebe31e6043a6bc074e779f6a345f1d823d0ca1c69446c5cabadefa8a"
+    },
+    {
+      "name": "textures/dirt.jpg",
+      "size": 730425,
+      "sha256": "6ce6ca7e28ed046f7f93fa60dcb29f8cf42cd5a539adc5676675acccfa34efd3",
+      "hash": "6ce6ca7e28ed046f7f93fa60dcb29f8cf42cd5a539adc5676675acccfa34efd3"
+    },
+    {
+      "name": "textures/fence-chainlink.jpg",
+      "size": 1159871,
+      "sha256": "15c0a68b7cd73b09c644118858f6834bf1c4f552edbd27ec4fc5aa1a4a4249d3",
+      "hash": "15c0a68b7cd73b09c644118858f6834bf1c4f552edbd27ec4fc5aa1a4a4249d3"
+    },
+    {
+      "name": "textures/fence-wood.jpg",
+      "size": 498698,
+      "sha256": "680a9959d3f805254e00b3ce9adaffb7b01dccbe84f3e89379bb5f91a116ada5",
+      "hash": "680a9959d3f805254e00b3ce9adaffb7b01dccbe84f3e89379bb5f91a116ada5"
+    },
+    {
+      "name": "textures/flat-roof.jpg",
+      "size": 855584,
+      "sha256": "d8301ee35f486ba073bdd5fda3ea9ed7e40f768aa1def75c420bcc5c055e3534",
+      "hash": "d8301ee35f486ba073bdd5fda3ea9ed7e40f768aa1def75c420bcc5c055e3534"
+    },
+    {
+      "name": "textures/floor-tile.jpg",
+      "size": 354550,
+      "sha256": "05988d474ecb1f9cd48e65d978db88212252ef8b5af8ed3833395c1f86b2b469",
+      "hash": "05988d474ecb1f9cd48e65d978db88212252ef8b5af8ed3833395c1f86b2b469"
+    },
+    {
+      "name": "textures/grass.jpg",
+      "size": 876584,
+      "sha256": "a79cc5ed65af0f80261b39a383b64a8c5272c5144d724deb43dbc29f0e4cd19b",
+      "hash": "a79cc5ed65af0f80261b39a383b64a8c5272c5144d724deb43dbc29f0e4cd19b"
+    },
+    {
+      "name": "textures/gravel.jpg",
+      "size": 925640,
+      "sha256": "9f668e7926d2e8347eddc9090360da26848b55a12ba306e332cd08ac98c534cf",
+      "hash": "9f668e7926d2e8347eddc9090360da26848b55a12ba306e332cd08ac98c534cf"
+    },
+    {
+      "name": "textures/hardwood.jpg",
+      "size": 734493,
+      "sha256": "2a1c07687b6dbb214c4b9213739c6d92d425f1f0fc8ab3ac157f105d78240789",
+      "hash": "2a1c07687b6dbb214c4b9213739c6d92d425f1f0fc8ab3ac157f105d78240789"
+    },
+    {
+      "name": "textures/laminate.jpg",
+      "size": 525944,
+      "sha256": "c3dcfb3ead57674031fbbe9a351fd9737d200afa72ab04047ed7658f0696ec29",
+      "hash": "c3dcfb3ead57674031fbbe9a351fd9737d200afa72ab04047ed7658f0696ec29"
+    },
+    {
+      "name": "textures/metal-roof.jpg",
+      "size": 346711,
+      "sha256": "c2c3643bb2e07554f805f56525ec2ffbc23117be95e324af46ac98f56fa7961f",
+      "hash": "c2c3643bb2e07554f805f56525ec2ffbc23117be95e324af46ac98f56fa7961f"
+    },
+    {
+      "name": "textures/planks.jpg",
+      "size": 609525,
+      "sha256": "3b0669f683e4bf10f5a55a381cfa9669a7b8dfd921901829daa3b35acc2bbdec",
+      "hash": "3b0669f683e4bf10f5a55a381cfa9669a7b8dfd921901829daa3b35acc2bbdec"
+    },
+    {
+      "name": "textures/shingle.jpg",
+      "size": 419760,
+      "sha256": "d988fc8e8dcf3d817d15d84e1cb1d9131095184c74c5f7b18b6491103489c2bd",
+      "hash": "d988fc8e8dcf3d817d15d84e1cb1d9131095184c74c5f7b18b6491103489c2bd"
+    },
+    {
+      "name": "textures/stucco.jpg",
+      "size": 557550,
+      "sha256": "5f2d11f5675ffe679155d8e38ed8eaa9b9972126675641e4977c8a4f905f276b",
+      "hash": "5f2d11f5675ffe679155d8e38ed8eaa9b9972126675641e4977c8a4f905f276b"
+    },
+    {
+      "name": "textures/thatch.jpg",
+      "size": 860319,
+      "sha256": "ad84b9bf0a826c6e573f4bac09a0b96f33aec673a7e31cdd360667dc355f3599",
+      "hash": "ad84b9bf0a826c6e573f4bac09a0b96f33aec673a7e31cdd360667dc355f3599"
+    },
+    {
+      "name": "textures/tile-roof.jpg",
+      "size": 878367,
+      "sha256": "aac0f4e742a2cce21afb5dfb523b47c720c6a8e2782a312b823608fe3f80eae6",
+      "hash": "aac0f4e742a2cce21afb5dfb523b47c720c6a8e2782a312b823608fe3f80eae6"
+    },
+    {
+      "name": "textures/wood-siding.jpg",
+      "size": 869023,
+      "sha256": "015b50587c65e388c27a16807e6edf4d723c6d78676acb80868eba34154494c9",
+      "hash": "015b50587c65e388c27a16807e6edf4d723c6d78676acb80868eba34154494c9"
     }
   ],
-  "ui_version": "2026.10.25.5",
+  "ui_version": "2026.10.25.6",
   "version": "2026.10.17.9"
 }

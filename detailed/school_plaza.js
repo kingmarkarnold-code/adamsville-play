@@ -108,8 +108,17 @@ function spWall(x1, z1, x2, z2, h, color, gy, gaps) {
     var ax = x1 + dx * s[0], az = z1 + dz * s[0];
     var bx = x1 + dx * s[1], bz = z1 + dz * s[1];
     var w = Math.abs(bx - ax) || 0.25, d = Math.abs(bz - az) || 0.25;
-    var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d),
-      new THREE.MeshLambertMaterial({ color: color }));
+    /* TEXTURES (2026-10-25): the schools pass their brick colours
+       (0x9d5f43 / 0x8a4f38) here — those walls get the brick texture,
+       tint riding over it. Any other colour (e.g. the MLK building's
+       tan) keeps its flat material, exactly as before. */
+    var _brickWall = (color === 0x9d5f43 || color === 0x8a4f38) &&
+      (typeof SAtex !== 'undefined');
+    var m = new THREE.Mesh(
+      _brickWall ? SAtex.scaleBoxUV(new THREE.BoxGeometry(w, h, d), w, h, d, SAtex.TILE.brick)
+                 : new THREE.BoxGeometry(w, h, d),
+      _brickWall ? SAtex.mat('brick', { color: color })
+                 : new THREE.MeshLambertMaterial({ color: color }));
     m.position.set((ax + bx) / 2, gy + h / 2, (az + bz) / 2);
     scene.add(m);
     addSegCollider(ax, az, bx, bz);
@@ -129,8 +138,15 @@ function spSlab(x, z, w, d, color, gy, yOff) {
 /* Roof slab (slight overhang) at gy+h+0.2. Returned so enterables can hide
    it while the player is inside. */
 function spRoof(x, z, w, d, color, gy, h) {
-  var m = new THREE.Mesh(new THREE.BoxGeometry(w + 1, 0.4, d + 1),
-    new THREE.MeshLambertMaterial({ color: color }));
+  /* TEXTURES (2026-10-25): this builder only ever makes roofs — the
+     slab wears shingles under the caller's tint. */
+  var m = new THREE.Mesh(
+    (typeof SAtex !== 'undefined')
+      ? SAtex.scaleBoxUV(new THREE.BoxGeometry(w + 1, 0.4, d + 1), w + 1, 0.4, d + 1, SAtex.TILE.shingle)
+      : new THREE.BoxGeometry(w + 1, 0.4, d + 1),
+    (typeof SAtex !== 'undefined')
+      ? SAtex.mat('shingle', { color: color })
+      : new THREE.MeshLambertMaterial({ color: color }));
   m.position.set(x, gy + h + 0.2, z);
   scene.add(m);
   return m;
@@ -157,7 +173,13 @@ function spSignBoard(text, x, y, z, w, bgColor, faceWest) {
 /* Asphalt lot slab with nRows of painted parking-space lines (~3.2u per
    space). Pure visual — no colliders on the lines. */
 function spParkingLot(cx, cz, w, d, gy, nRows) {
-  spSlab(cx, cz, w, d, 0x3a3a3e, gy, 0.1);
+  var _lot = spSlab(cx, cz, w, d, 0x3a3a3e, gy, 0.1);
+  /* TEXTURES (2026-10-25): a parking lot is asphalt — swap the slab's
+     flat material for the asphalt texture under the same dark tint. */
+  if (_lot && typeof SAtex !== 'undefined') {
+    SAtex.scaleBoxUV(_lot.geometry, w, 0.3, d, SAtex.TILE.asphalt);
+    _lot.material = SAtex.mat('asphalt', { color: 0x3a3a3e });
+  }
   var lineMat = new THREE.MeshBasicMaterial({ color: 0xcccccc });
   var spaces = Math.floor(w / 3.2);
   for (var r = 0; r < (nRows || 2); r++) {

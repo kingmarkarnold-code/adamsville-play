@@ -4530,6 +4530,140 @@ function resolveCollision(p, radius){
    world-units-per-cell used by terrainMeshY(). */
 var TERR_SEGX=600, TERR_SEGZ=800;
 var TERR_CX=WX/TERR_SEGX, TERR_CZ=WZ/TERR_SEGZ;
+/* ================= TEXTURES (Joshua 2026-10-25: "Wire the textures into
+   the game") =================
+   The CC0 stock textures downloaded Oct 19 (editors/stock/textures/) now
+   ship inside the game tree at detailed/textures/ and are registered in
+   ui-manifest.json, so web (Pages), dev and APK-download copies all
+   receive them through the normal UI delivery.
+   This module is the ONE place that knows label -> file and the
+   real-world tile size of each material. Surfaces create their materials
+   through SAtex.mat() and are registered; the images then load
+   PROGRESSIVELY in the background (never blocking launch — the
+   Progress Bar Law's spirit: heavy loads stay background) and attach
+   to their materials as each file lands. If a file fails to load, its
+   materials simply stay flat-coloured — the pre-texture look is the
+   built-in fallback, so a missing texture can never break the world.
+   TINTS: Lambert multiplies map x material colour (x vertex colours),
+   so every existing per-building / per-class colour keeps riding OVER
+   the texture, as Joshua specified. GAIN compensates for that double
+   multiply so textured surfaces land near their old brightness.
+   'Vinyl Siding' is deliberately ABSENT: no CC0 vinyl-siding texture
+   exists (see TEXTURE-DOWNLOAD-NOTES.md). Any surface labelled Vinyl
+   Siding keeps its flat colour — the named fallback. */
+var SAtex=(function(){
+  /* Real-world size (metres) covered by ONE tile of each texture.
+     Brick courses / siding laps / shingles read correctly only near
+     their true scale, so these are picked per material, not global. */
+  var TILE={ grass:24, dirt:6, gravel:5, asphalt:7, concpave:4,
+    brick:3, woodsiding:3, planks:3, concrete:4, stucco:5,
+    shingle:3, metalroof:3, tileroof:3, flatroof:6, thatch:3 };
+  var FILE={ grass:'grass.jpg', dirt:'dirt.jpg', gravel:'gravel.jpg',
+    asphalt:'asphalt.jpg', concpave:'concrete-paving.jpg',
+    brick:'brick.jpg', woodsiding:'wood-siding.jpg', planks:'planks.jpg',
+    concrete:'concrete.jpg', stucco:'stucco.jpg', shingle:'shingle.jpg',
+    metalroof:'metal-roof.jpg', tileroof:'tile-roof.jpg',
+    flatroof:'flat-roof.jpg', thatch:'thatch.jpg' };
+  var GAIN={ grass:2.1, dirt:1.5, gravel:1.4, asphalt:2.4, concpave:1.7,
+    brick:1.55, woodsiding:1.5, planks:1.5, concrete:1.6, stucco:1.35,
+    shingle:1.7, metalroof:1.5, tileroof:1.5, flatroof:1.8, thatch:1.4 };
+  var _tex={}, _mats={}, _failed={};
+  /* Create a Lambert material for texture key `key` and register it.
+     The caller's params are honoured verbatim except colour, which is
+     gain-scaled (values may exceed 1 — that is the compensation). */
+  function mat(key, params){
+    var p={}, k;
+    if(params) for(k in params) p[k]=params[k];
+    var g=GAIN[key]||1;
+    if(g!==1){
+      var base=(p.color!==undefined)?new THREE.Color(p.color):new THREE.Color(0xffffff);
+      base.r=Math.min(2.5,base.r*g); base.g=Math.min(2.5,base.g*g); base.b=Math.min(2.5,base.b*g);
+      p.color=base;
+    }
+    var m=new THREE.MeshLambertMaterial(p);
+    (_mats[key]||(_mats[key]=[])).push(m);
+    if(_tex[key]){ m.map=_tex[key]; }
+    else if(!_failed[key]){ m.map=_whiteTex(); }
+    return m;
+  }
+  /* 1x1 white placeholder map: a material compiled WITH a (white) map
+     keeps the same shader program when the real texture swaps in, so
+     textures pop in without a recompile hitch — and shader patches
+     that reference vUv (residential_detail's instanced UV scaling)
+     are valid from the very first frame. */
+  var _wt=null;
+  function _whiteTex(){
+    if(!_wt){
+      _wt=new THREE.DataTexture(new Uint8Array([255,255,255,255]),1,1);
+      _wt.needsUpdate=true;
+    }
+    return _wt;
+  }
+  function attach(key){
+    var list=_mats[key]||[];
+    /* No needsUpdate: every SAtex material already carries a map (the
+       white placeholder), so the program is unchanged — the renderer
+       picks up the swapped texture object on the next frame. */
+    for(var i=0;i<list.length;i++){ list[i].map=_tex[key]; }
+  }
+  /* Scale a BoxGeometry's per-face UVs so the texture tiles at real-world
+     size: each face's repeat = its size in metres / the tile size.
+     three r128 BoxGeometry face order: +x,-x (d,h) | +y,-y (w,d) |
+     +z,-z (w,h), four UV verts per face. */
+  function scaleBoxUV(geo,w,h,d,tile){
+    var uv=geo&&geo.attributes?geo.attributes.uv:null; if(!uv) return geo;
+    var reps=[[d,h],[d,h],[w,d],[w,d],[w,h],[w,h]];
+    for(var f=0;f<6;f++){
+      var ru=reps[f][0]/tile, rv=reps[f][1]/tile;
+      for(var i=f*4;i<f*4+4 && i<uv.count;i++){
+        uv.setXY(i, uv.getX(i)*ru, uv.getY(i)*rv);
+      }
+    }
+    uv.needsUpdate=true; return geo;
+  }
+  /* World-planar UVs from a geometry's positions (ground and ribbon
+     surfaces): u = x / tile, v = z / tile — seamless across meshes that
+     share the tile, because the mapping lives in world space. */
+  function worldUV(geo,key){
+    var pos=geo&&geo.attributes?geo.attributes.position:null; if(!pos) return geo;
+    var tile=TILE[key]||6, uvs=new Float32Array(pos.count*2);
+    for(var i=0;i<pos.count;i++){ uvs[i*2]=pos.getX(i)/tile; uvs[i*2+1]=pos.getZ(i)/tile; }
+    geo.setAttribute('uv', new THREE.BufferAttribute(uvs,2));
+    return geo;
+  }
+  /* Progressive loader: priority order (the surfaces a player sees
+     first), one file at a time with a short breather between, so the
+     15 images never stampede the boot. Shared texture OBJECT per key:
+     RepeatWrapping + mipmaps (three's defaults) + sRGB to match the
+     renderer's output encoding; anisotropy capped at 4 (modest
+     hardware: sharp at grazing angles without a memory blow-up). */
+  var ORDER=['grass','asphalt','brick','shingle','concpave','stucco',
+    'woodsiding','dirt','planks','concrete','flatroof','gravel',
+    'metalroof','tileroof','thatch'];
+  var _qi=0;
+  function loadNext(){
+    if(_qi>=ORDER.length) return;
+    var key=ORDER[_qi++];
+    new THREE.TextureLoader().load('textures/'+FILE[key], function(tex){
+      tex.wrapS=tex.wrapT=THREE.RepeatWrapping;
+      tex.encoding=THREE.sRGBEncoding;
+      var mx=4;
+      try{ if(typeof renderer!=='undefined' && renderer && renderer.capabilities)
+        mx=renderer.capabilities.getMaxAnisotropy()||4; }catch(e){}
+      tex.anisotropy=Math.min(4,mx);
+      _tex[key]=tex; attach(key);
+      setTimeout(loadNext,120);
+    }, undefined, function(){ _failed[key]=1; setTimeout(loadNext,120); });
+  }
+  setTimeout(loadNext, 800);
+  return { mat:mat, TILE:TILE, FILE:FILE, scaleBoxUV:scaleBoxUV,
+    worldUV:worldUV,
+    state:function(){ return { loaded:Object.keys(_tex),
+      failed:Object.keys(_failed),
+      materials:Object.keys(_mats).length }; } };
+})();
+try{ window.SAtex=SAtex; }catch(e){}
+
 // ---------- terrain ----------
 (function buildTerrain(){
   var SEGX=TERR_SEGX, SEGZ=TERR_SEGZ;
@@ -4557,7 +4691,11 @@ var TERR_CX=WX/TERR_SEGX, TERR_CZ=WZ/TERR_SEGZ;
   }
   geo.setAttribute('color', new THREE.Float32BufferAttribute(colors,3));
   geo.computeVertexNormals();
-  var terrMesh=new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors:true }));
+  /* TEXTURES (2026-10-25): world-planar grass UVs over the green vertex
+     tints — the tints keep their variation, the photo texture rides on
+     top of them. */
+  SAtex.worldUV(geo,'grass');
+  var terrMesh=new THREE.Mesh(geo, SAtex.mat('grass',{ vertexColors:true }));
   scene.add(terrMesh);
   // v0.6 TERRAIN TELEMETRY: min/max/mean of heightAt + mesh sanity, so the
   // report shows what the DEVICE computed (not the sim)
@@ -4624,7 +4762,8 @@ var TERR_CX=WX/TERR_SEGX, TERR_CZ=WZ/TERR_SEGZ;
       g2.setAttribute('color', new THREE.Float32BufferAttribute(cols,3));
       g2.setIndex(idx);
       g2.computeVertexNormals();
-      var m2=new THREE.Mesh(g2, new THREE.MeshLambertMaterial({ vertexColors:true }));
+      SAtex.worldUV(g2,'grass');   /* TEXTURES (2026-10-25): aprons are grass too */
+      var m2=new THREE.Mesh(g2, SAtex.mat('grass',{ vertexColors:true }));
       scene.add(m2);
       return m2;
     }
@@ -5663,12 +5802,25 @@ try{ Object.keys(ROAD_DATA||{}).forEach(function(c){ if(ROAD_DATA[c]) roadSegsTo
       centerDoubleYellow(dpts,dys); laneDashes(dpts,dys,34,5);
     });
   }catch(be){ try{Report.noteError('i20bridge','bridge failed',String(be));}catch(x){} }
-  function bake(store, color, po){
+  function bake(store, color, po, texKey){
     var geo=new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(store.pos,3));
     geo.setIndex(store.idx); geo.computeVertexNormals();
-    var mesh=new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color:color,
-      polygonOffset:true, polygonOffsetFactor:po, polygonOffsetUnits:po }));
+    /* TEXTURES (2026-10-25): textured road stores get world-planar UVs
+       and a SAtex material — the per-class colour passes through as the
+       tint OVER the texture, so the five road classes stay
+       distinguishable exactly as before, now with asphalt / grass /
+       concrete-paving grain. texKey omitted = flat, as today. */
+    var _mat;
+    if(texKey){
+      SAtex.worldUV(geo, texKey);
+      _mat=SAtex.mat(texKey, { color:color,
+        polygonOffset:true, polygonOffsetFactor:po, polygonOffsetUnits:po });
+    } else {
+      _mat=new THREE.MeshLambertMaterial({ color:color,
+        polygonOffset:true, polygonOffsetFactor:po, polygonOffsetUnits:po });
+    }
+    var mesh=new THREE.Mesh(geo, _mat);
     mesh.frustumCulled=false;  // v0.6: one giant baked mesh — never cull it
     scene.add(mesh); return mesh;
   }
@@ -5678,11 +5830,11 @@ try{ Object.keys(ROAD_DATA||{}).forEach(function(c){ if(ROAD_DATA[c]) roadSegsTo
     var aMeshes=[], aMesh=null;
     var catPO={interstate:-6, highway:-5, major_artery:-4, minor_artery:-3, local:-2};
     ROAD_CATS.forEach(function(c){
-      var _m=bake(asphaltByCat[c], ROAD_COLORS[c], catPO[c]);
+      var _m=bake(asphaltByCat[c], ROAD_COLORS[c], catPO[c], 'asphalt');
       if (_m){ aMeshes.push(_m); if(!aMesh) aMesh=_m; }
     });
-    var mMesh=bake(median, 0x3a7d2a, -7);     // v2.0 grass median (green, above asphalt)
-    var cMesh=bake(concrete, 0x9a9a98, -7);   // v2.1 concrete median (light gray, divided sections)
+    var mMesh=bake(median, 0x3a7d2a, -7, 'grass');     // v2.0 grass median (green, above asphalt)
+    var cMesh=bake(concrete, 0x9a9a98, -7, 'concpave');   // v2.1 concrete median (light gray, divided sections)
     var lMesh=bake(lines, 0xf2e9a4, -8);     // lane dashes (drawn over everything)
     roadMeshesBuilt=aMeshes.length+(lMesh?1:0)+(mMesh?1:0)+(cMesh?1:0);
     roadVerts=((lines.pos.length/3)|0)+((median.pos.length/3)|0)+((concrete.pos.length/3)|0);
@@ -6943,6 +7095,17 @@ function heroPorchY(x, z){
   /* box(): one Lambert-shaded box in the scene. The workhorse for the whole
      house — walls, slabs, doors, windows, stairs, furniture. */
   function box(w,h,d,color,x,y,z){
+    /* TEXTURES (2026-10-25): boxes painted the house's BRICK colour are
+       brick walls (the hero data labels this house Brick — the one
+       explicit material label in the game data) — they get the brick
+       texture at real-world tiling, brick tint riding over it. Every
+       other box (trim, glass, doors, furniture) keeps its flat colour. */
+    if(color===brick){
+      var bg=new THREE.BoxGeometry(w,h,d);
+      SAtex.scaleBoxUV(bg,w,h,d,SAtex.TILE.brick);
+      var bm=new THREE.Mesh(bg, SAtex.mat('brick',{ color:brick }));
+      bm.position.set(x,y,z); scene.add(bm); return bm;
+    }
     var m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d),
       new THREE.MeshLambertMaterial({ color: color }));
     m.position.set(x,y,z); scene.add(m); return m;
@@ -7130,9 +7293,19 @@ function heroPorchY(x, z){
   (function hipRoof(){
     var rise = P535.roofRise, ov = P535.overhang;
     heroHouse.roofParts = [];
-    var roof = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.01, 1, rise, 4, 1),
-      new THREE.MeshLambertMaterial({ color: roofC }));
+    /* TEXTURES (2026-10-25): the hero data calls this roof "charcoal
+       shingles" — it gets the shingle texture, charcoal tint over it.
+       UV repeats from the roof's real size: base perimeter around,
+       slant height up. */
+    var _rgeo=new THREE.CylinderGeometry(0.01, 1, rise, 4, 1);
+    (function(){
+      var a=W/2+ov, b=D/2+ov, tile=SAtex.TILE.shingle;
+      var uR=4*Math.sqrt(a*a+b*b)/tile;
+      var vR=Math.sqrt(rise*rise+((a+b)/2)*((a+b)/2))/tile;
+      var uv=_rgeo.attributes.uv;
+      for(var i=0;i<uv.count;i++) uv.setXY(i, uv.getX(i)*uR, uv.getY(i)*vR);
+    })();
+    var roof = new THREE.Mesh(_rgeo, SAtex.mat('shingle',{ color: roofC }));
     roof.scale.set(W/2+ov, 1, D/2+ov);
     roof.rotation.y = Math.PI/4;
     roof.position.set(hx, topY+rise/2, hz);
@@ -7293,7 +7466,8 @@ function heroPorchY(x, z){
   var dvYs=dvPts.map(function(p){ return heightAt(p[0],p[1])+0.32; });
   dvYs[dvYs.length-1]=bsmtY+0.32;   // meet the garage floor
   var dg2=ribbonGeomY(dvPts.map(function(p){return [p[0],p[1]];}), 4.5, dvYs);
-  scene.add(new THREE.Mesh(dg2, new THREE.MeshLambertMaterial({ color:0x9a9a9a })));
+  SAtex.worldUV(dg2,'concpave');   /* TEXTURES (2026-10-25): concrete driveway */
+  scene.add(new THREE.Mesh(dg2, SAtex.mat('concpave',{ color:0x9a9a9a })));
   // the van parks on the driveway in front of the garage
   // v1.65: rescaled (was 3124,3705 pre-rescale)
   // v1.66: drivewayPark now comes from hero_buildings.json data if available.
@@ -7302,7 +7476,8 @@ function heroPorchY(x, z){
   // walkway: driveway -> front porch stairs
   // v1.65: rescaled
   var ww=ribbonGeom([[1938.3,6814.5],[hx,hz+D/2+6.2]], 1.6, 0.32);
-  scene.add(new THREE.Mesh(ww, new THREE.MeshLambertMaterial({ color:0x9a9a9a })));
+  SAtex.worldUV(ww,'concpave');   /* TEXTURES (2026-10-25): concrete walkway */
+  scene.add(new THREE.Mesh(ww, SAtex.mat('concpave',{ color:0x9a9a9a })));
 
   /* ---- brick mailbox pillar at the street (by the driveway, per photo) ----
      v3.1 FIX (2026-10-09 inspection): was at (3134,3714) — 1.9u from the
@@ -8040,8 +8215,16 @@ function runOsmBuildings(){
             if(window.__bldgTierTimer){ clearInterval(window.__bldgTierTimer); window.__bldgTierTimer=null; }
             ['bodies','roofs'].forEach(function(_kind){
               var _mm=_om[_kind];
-              if(_mm && _mm.userData && _mm.userData.baked && _mm.geometry){
-                try{ _mm.geometry.dispose(); window.__bakeDisposed=(window.__bakeDisposed||0)+1; }catch(e2){}
+              if(_mm && _mm.userData && _mm.userData.baked){
+                if(_mm.geometry){
+                  try{ _mm.geometry.dispose(); window.__bakeDisposed=(window.__bakeDisposed||0)+1; }catch(e2){}
+                }
+                /* TEXTURES (2026-10-25): a baked chunk entry is now a
+                   Group of per-texture part meshes — dispose every
+                   child's geometry too, or a re-run leaks them. */
+                if(_mm.children) _mm.children.forEach(function(_ch){
+                  if(_ch.geometry){ try{ _ch.geometry.dispose(); window.__bakeDisposed=(window.__bakeDisposed||0)+1; }catch(e2){} }
+                });
               }
             });
           }catch(e){}
@@ -8109,12 +8292,26 @@ function runOsmBuildings(){
       m4.compose(pv,qt,sv);
       // type colors: 0 house, 1 commercial, 2 apartment/large, 3 other
       col.set(tp===1?0x9aa0a8:(tp===2?0x8a7f72:0xb5a88f));
-      ch.bodies.push({m:m4.clone(), col:col.getHex()});
+      /* TEXTURES (2026-10-25): the mass building data carries NO material
+         labels (bare [x,z,w,d,h,type]), so the wall texture is assigned
+         from the TYPE plus a stable position hash — the same building
+         gets the same material on every boot and every device. Type 1
+         (commercial) = concrete; type 2 (apartment) = brick or stucco;
+         houses (0/3) spread across brick / wood siding / stucco /
+         planks. The type colour above still rides over the texture as
+         its tint. Vinyl Siding has no texture file (named fallback) and
+         is deliberately never assigned. */
+      var _thash=Math.abs(Math.sin(k2[0]*12.9898+k2[1]*78.233)*43758.5453)%1;
+      var _wallTex=(tp===1)?'concrete':(tp===2)?(_thash<0.5?'brick':'stucco')
+        :(_thash<0.30?'brick':_thash<0.55?'woodsiding':_thash<0.80?'stucco':'planks');
+      ch.bodies.push({m:m4.clone(), col:col.getHex(), tex:_wallTex});
       var rh=Math.min(5,Math.max(1.2,bw*0.18));
       pv.set(k2[0],gy-0.6+bh,k2[1]); sv.set(bw*1.06,rh,bd*1.06);
       m4.compose(pv,qt,sv);
       col.set(tp===1?0x5a6068:0x6b4a3a);
-      ch.roofs.push({m:m4.clone(), col:col.getHex()});
+      /* TEXTURES (2026-10-25): commercial roofs are flat; every other
+         roof wears shingles, tinted by the roof colour above. */
+      ch.roofs.push({m:m4.clone(), col:col.getHex(), tex:(tp===1?'flatroof':'shingle')});
       bldgChunkIndex[placed]=[ck,li];
       /* v1.46: track this chunk's vertical/footprint extents so the bounding
          sphere provably contains every placed building (tall towers included). */
@@ -8236,8 +8433,10 @@ function runOsmBuildings(){
          instanced path instances, so the baked picture is identical. */
       var bakeBase={
         bodies:{ pos:bodyGeo.attributes.position.array, nor:bodyGeo.attributes.normal.array,
+                 uv:bodyGeo.attributes.uv.array,
                  idx:bodyGeo.index.array, vpc:bodyGeo.attributes.position.count },
         roofs:{ pos:roofGeo.attributes.position.array, nor:roofGeo.attributes.normal.array,
+                uv:roofGeo.attributes.uv.array,
                 idx:roofGeo.index.array, vpc:roofGeo.attributes.position.count }
       };
       var bakeChunks={};   // chunkKey -> {sphere,cx,cy,cz,r, bodies:{recs,mesh,geo}, roofs:{...}}
@@ -8266,37 +8465,91 @@ function runOsmBuildings(){
       function _bakeKind(_entry,_kind){
         var _slot=_entry[_kind], _recs=_slot.recs, _base=bakeBase[_kind], _n=_recs.length;
         var _vpc=_base.vpc, _ipc=_base.idx.length;
-        var _pos=new Float32Array(_n*_vpc*3), _nor=new Float32Array(_n*_vpc*3), _colA=new Float32Array(_n*_vpc*3);
-        var _idxA=(_n*_vpc>65535)?new Uint32Array(_n*_ipc):new Uint16Array(_n*_ipc);
-        var _v=new THREE.Vector3(), _nm=new THREE.Matrix3();
-        for(var _i=0;_i<_n;_i++){
-          var _m=_recs[_i].m; _nm.getNormalMatrix(_m);
-          for(var _j=0;_j<_vpc;_j++){
-            _v.fromArray(_base.pos,_j*3).applyMatrix4(_m);
-            _pos[(_i*_vpc+_j)*3]=_v.x; _pos[(_i*_vpc+_j)*3+1]=_v.y; _pos[(_i*_vpc+_j)*3+2]=_v.z;
-            _v.fromArray(_base.nor,_j*3).applyMatrix3(_nm);
-            _nor[(_i*_vpc+_j)*3]=_v.x; _nor[(_i*_vpc+_j)*3+1]=_v.y; _nor[(_i*_vpc+_j)*3+2]=_v.z;
-          }
-          _bakeCol.setHex(_recs[_i].col);
-          for(var _j2=0;_j2<_vpc;_j2++){
-            _colA[(_i*_vpc+_j2)*3]=_bakeCol.r; _colA[(_i*_vpc+_j2)*3+1]=_bakeCol.g; _colA[(_i*_vpc+_j2)*3+2]=_bakeCol.b;
-          }
-          for(var _j3=0;_j3<_ipc;_j3++) _idxA[_i*_ipc+_j3]=_base.idx[_j3]+_i*_vpc;
+        /* TEXTURES (2026-10-25): records merge GROUPED BY TEXTURE KEY —
+           one merged mesh per texture per chunk per kind, so the bake
+           stays merged exactly as Joshua's bake-at-launch design
+           requires (materials are keyed consistently by texture). The
+           chunk slot's mesh becomes a THREE.Group holding the parts;
+           distance tiers keep toggling the group's single .visible, and
+           partOf[li] remembers which part + vertex offset each record
+           landed in, for the baked facade and __bldgBake.locate.
+           Untextured records ('' key) merge on the shared flat
+           materials, byte-identical to the pre-texture bake. */
+        var _groups={}, _order=[];
+        for(var _gi=0;_gi<_n;_gi++){
+          var _tk=_recs[_gi].tex||'';
+          if(!_groups[_tk]){ _groups[_tk]=[]; _order.push(_tk); }
+          _groups[_tk].push(_gi);
         }
-        var _geo=new THREE.BufferGeometry();
-        _geo.setAttribute('position',new THREE.BufferAttribute(_pos,3));
-        _geo.setAttribute('normal',new THREE.BufferAttribute(_nor,3));
-        _geo.setAttribute('color',new THREE.BufferAttribute(_colA,3));
-        _geo.setIndex(new THREE.BufferAttribute(_idxA,1));
-        /* the sphere lives on the GEOMETRY — where r128's frustum test
-           actually looks — so culling this mesh is honest by construction. */
-        _geo.boundingSphere=_entry.sphere.clone();
-        var _mesh=new THREE.Mesh(_geo, _kind==='bodies'?bakeBodyMat:bakeRoofMat);
-        _mesh.frustumCulled=true;
-        _mesh.matrixAutoUpdate=false;
-        _mesh.userData.baked=true;
-        _slot.mesh=_mesh; _slot.geo=_geo;
-        scene.add(_mesh);
+        var _grp=new THREE.Group();
+        _grp.matrixAutoUpdate=false;
+        _grp.userData.baked=true;
+        _slot.parts=[]; _slot.partOf={};
+        var _v=new THREE.Vector3(), _nm=new THREE.Matrix3();
+        _order.forEach(function(_tk){
+          var _list=_groups[_tk], _pn=_list.length, _tile=SAtex.TILE[_tk]||3;
+          var _pos=new Float32Array(_pn*_vpc*3), _nor=new Float32Array(_pn*_vpc*3), _colA=new Float32Array(_pn*_vpc*3);
+          var _uvA=_tk?new Float32Array(_pn*_vpc*2):null;
+          var _idxA=(_pn*_vpc>65535)?new Uint32Array(_pn*_ipc):new Uint16Array(_pn*_ipc);
+          for(var _pi=0;_pi<_pn;_pi++){
+            var _li=_list[_pi], _m=_recs[_li].m; _nm.getNormalMatrix(_m);
+            for(var _j=0;_j<_vpc;_j++){
+              _v.fromArray(_base.pos,_j*3).applyMatrix4(_m);
+              _pos[(_pi*_vpc+_j)*3]=_v.x; _pos[(_pi*_vpc+_j)*3+1]=_v.y; _pos[(_pi*_vpc+_j)*3+2]=_v.z;
+              _v.fromArray(_base.nor,_j*3).applyMatrix3(_nm);
+              _nor[(_pi*_vpc+_j)*3]=_v.x; _nor[(_pi*_vpc+_j)*3+1]=_v.y; _nor[(_pi*_vpc+_j)*3+2]=_v.z;
+            }
+            _bakeCol.setHex(_recs[_li].col);
+            for(var _j2=0;_j2<_vpc;_j2++){
+              _colA[(_pi*_vpc+_j2)*3]=_bakeCol.r; _colA[(_pi*_vpc+_j2)*3+1]=_bakeCol.g; _colA[(_pi*_vpc+_j2)*3+2]=_bakeCol.b;
+            }
+            /* Real-world UV tiling, derived from THIS record's matrix
+               scale: box faces take (face size / tile size); the cone
+               roof wraps (circumference / tile) around and (slant
+               height / tile) up. */
+            if(_uvA){
+              var _te=_m.elements;
+              var _sx=Math.sqrt(_te[0]*_te[0]+_te[1]*_te[1]+_te[2]*_te[2]);
+              var _sy=Math.sqrt(_te[4]*_te[4]+_te[5]*_te[5]+_te[6]*_te[6]);
+              var _sz=Math.sqrt(_te[8]*_te[8]+_te[9]*_te[9]+_te[10]*_te[10]);
+              if(_kind==='bodies'){
+                var _fr=[[_sz,_sy],[_sz,_sy],[_sx,_sz],[_sx,_sz],[_sx,_sy],[_sx,_sy]];
+                for(var _j5=0;_j5<_vpc;_j5++){
+                  var _r=_fr[Math.min(5,(_j5/4)|0)];
+                  _uvA[(_pi*_vpc+_j5)*2]=_base.uv[_j5*2]*_r[0]/_tile;
+                  _uvA[(_pi*_vpc+_j5)*2+1]=_base.uv[_j5*2+1]*_r[1]/_tile;
+                }
+              } else {
+                var _rx=0.72*_sx, _rz=0.72*_sz;
+                var _uR=Math.PI*(_rx+_rz)/_tile;
+                var _vR=Math.sqrt(_sy*_sy+((_rx+_rz)/2)*((_rx+_rz)/2))/_tile;
+                for(var _j6=0;_j6<_vpc;_j6++){
+                  _uvA[(_pi*_vpc+_j6)*2]=_base.uv[_j6*2]*_uR;
+                  _uvA[(_pi*_vpc+_j6)*2+1]=_base.uv[_j6*2+1]*_vR;
+                }
+              }
+            }
+            for(var _j3=0;_j3<_ipc;_j3++) _idxA[_pi*_ipc+_j3]=_base.idx[_j3]+_pi*_vpc;
+            _slot.partOf[_li]={ vOff:_pi*_vpc, tex:_tk, part:_slot.parts.length };
+          }
+          var _geo=new THREE.BufferGeometry();
+          _geo.setAttribute('position',new THREE.BufferAttribute(_pos,3));
+          _geo.setAttribute('normal',new THREE.BufferAttribute(_nor,3));
+          _geo.setAttribute('color',new THREE.BufferAttribute(_colA,3));
+          if(_uvA) _geo.setAttribute('uv',new THREE.BufferAttribute(_uvA,2));
+          _geo.setIndex(new THREE.BufferAttribute(_idxA,1));
+          /* the sphere lives on the GEOMETRY — where r128's frustum test
+             actually looks — so culling this mesh is honest by construction. */
+          _geo.boundingSphere=_entry.sphere.clone();
+          var _mesh=new THREE.Mesh(_geo, _tk?SAtex.mat(_tk,{vertexColors:true}):(_kind==='bodies'?bakeBodyMat:bakeRoofMat));
+          _mesh.frustumCulled=true;
+          _mesh.matrixAutoUpdate=false;
+          _mesh.userData.baked=true;
+          _slot.parts.push({tex:_tk, mesh:_mesh, geo:_geo});
+          _grp.add(_mesh);
+        });
+        _slot.mesh=_grp; _slot.geo=null;
+        scene.add(_grp);
       }
       /* ---- distance tiers (Option B): nearest-point distance from the
          camera to the chunk's sphere, so a chunk is only tiered when
@@ -8357,7 +8610,12 @@ function runOsmBuildings(){
           var _r=bldgChunkIndex[gi]; if(!_r) return null;
           var _e=bakeChunks[_r[0]]; if(!_e) return null;
           var _b=bakeBase[kind]; if(!_b) return null;
-          return { key:_r[0], li:_r[1], vStart:_r[1]*_b.vpc, vCount:_b.vpc };
+          /* TEXTURES (2026-10-25): vStart is relative to the record's
+             texture-PART geometry (see _bakeKind partOf); tex/part name
+             which part geometry it indexes into. */
+          var _pf=_e[kind].partOf&&_e[kind].partOf[_r[1]];
+          return { key:_r[0], li:_r[1], vStart:_pf?_pf.vOff:_r[1]*_b.vpc, vCount:_b.vpc,
+                   tex:_pf?_pf.tex:'', part:_pf?_pf.part:-1 };
         } }; }catch(e){}
     }
     try{ window.__bldgChunkMeshes=bldgChunkMeshes; }catch(e){}
@@ -8416,15 +8674,21 @@ function runOsmBuildings(){
         setMatrixAt: function(gi,mat4){
           var _t=_slot(gi); if(!_t) return;
           _t.slot.recs[_t.li].m.copy(mat4);
-          var _geo=_t.slot.geo; if(!_geo) return;   // not baked yet — record carries it
+          /* TEXTURES (2026-10-25): the record's vertices live inside its
+             texture part's geometry at partOf[li].vOff. (UVs keep the
+             tiling baked for the original scale — facade moves are
+             translations, so the tiling stays true.) */
+          var _pf=_t.slot.partOf&&_t.slot.partOf[_t.li];
+          var _geo=(_pf&&_t.slot.parts&&_t.slot.parts[_pf.part])?_t.slot.parts[_pf.part].geo:null;
+          if(!_geo) return;   // not baked yet — record carries it
           var _base=bakeBase[kind], _vpc=_base.vpc;
           var _pos=_geo.attributes.position, _nor=_geo.attributes.normal;
           var _nm=new THREE.Matrix3().getNormalMatrix(mat4), _v=new THREE.Vector3();
           for(var _j=0;_j<_vpc;_j++){
             _v.fromArray(_base.pos,_j*3).applyMatrix4(mat4);
-            _pos.setXYZ(_t.li*_vpc+_j,_v.x,_v.y,_v.z);
+            _pos.setXYZ(_pf.vOff+_j,_v.x,_v.y,_v.z);
             _v.fromArray(_base.nor,_j*3).applyMatrix3(_nm);
-            _nor.setXYZ(_t.li*_vpc+_j,_v.x,_v.y,_v.z);
+            _nor.setXYZ(_pf.vOff+_j,_v.x,_v.y,_v.z);
           }
           _pos.needsUpdate=true; _nor.needsUpdate=true;
         },
@@ -8433,9 +8697,13 @@ function runOsmBuildings(){
           try{
             var _col=(c&&typeof c.getHex==='function')?c:new THREE.Color(c);
             _t.slot.recs[_t.li].col=_col.getHex();
-            var _geo=_t.slot.geo; if(!_geo) return;
+            /* TEXTURES (2026-10-25): part-relative, via partOf — see
+               setMatrixAt above. */
+            var _pf=_t.slot.partOf&&_t.slot.partOf[_t.li];
+            var _geo=(_pf&&_t.slot.parts&&_t.slot.parts[_pf.part])?_t.slot.parts[_pf.part].geo:null;
+            if(!_geo) return;
             var _vpc=bakeBase[kind].vpc, _colA=_geo.attributes.color;
-            for(var _j=0;_j<_vpc;_j++) _colA.setXYZ(_t.li*_vpc+_j,_col.r,_col.g,_col.b);
+            for(var _j=0;_j<_vpc;_j++) _colA.setXYZ(_pf.vOff+_j,_col.r,_col.g,_col.b);
             _colA.needsUpdate=true;
           }catch(e){}
         }
@@ -8633,14 +8901,20 @@ var PLACES_OF_INTEREST=[];
       var gy=0; try{ gy=(typeof snapToGround==='function'?snapToGround(x,z,14,22,0):heightAt(x,z)); }catch(e){}
       // white chapel with steeple
       var g=new THREE.Group();
-      var nave=new THREE.Mesh(new THREE.BoxGeometry(14,8,22),
-        new THREE.MeshLambertMaterial({color:0xf0ece0}));
+      /* TEXTURES (2026-10-25): the chapel's white walls are stucco; its
+         roof wears shingles under the same brown tint as before. */
+      var nave=new THREE.Mesh(SAtex.scaleBoxUV(new THREE.BoxGeometry(14,8,22),14,8,22,SAtex.TILE.stucco),
+        SAtex.mat('stucco',{color:0xf0ece0}));
       nave.position.y=4; g.add(nave);
-      var roof=new THREE.Mesh(new THREE.ConeGeometry(10,5,4),
-        new THREE.MeshLambertMaterial({color:0x6b4a3a}));
+      var _crGeo=new THREE.ConeGeometry(10,5,4);
+      (function(){ var uv=_crGeo.attributes.uv, tile=SAtex.TILE.shingle;
+        var uR=Math.PI*10*(1+1.57)/tile, vR=Math.sqrt(25+100)/tile;
+        for(var i=0;i<uv.count;i++) uv.setXY(i, uv.getX(i)*uR, uv.getY(i)*vR); })();
+      var roof=new THREE.Mesh(_crGeo,
+        SAtex.mat('shingle',{color:0x6b4a3a}));
       roof.rotation.y=Math.PI/4; roof.position.y=10.5; roof.scale.set(1,1,1.57); g.add(roof);
-      var steeple=new THREE.Mesh(new THREE.BoxGeometry(4,12,4),
-        new THREE.MeshLambertMaterial({color:0xf0ece0}));
+      var steeple=new THREE.Mesh(SAtex.scaleBoxUV(new THREE.BoxGeometry(4,12,4),4,12,4,SAtex.TILE.stucco),
+        SAtex.mat('stucco',{color:0xf0ece0}));
       steeple.position.set(0,10,-8); g.add(steeple);
       var spire=new THREE.Mesh(new THREE.ConeGeometry(3,6,4),
         new THREE.MeshLambertMaterial({color:0x8a8f96}));
@@ -8659,14 +8933,17 @@ var PLACES_OF_INTEREST=[];
       var gy=0; try{ gy=(typeof snapToGround==='function'?snapToGround(x,z,36,20,0):heightAt(x,z)); }catch(e){}
       // larger brick campus building
       var g=new THREE.Group();
-      var main=new THREE.Mesh(new THREE.BoxGeometry(36,10,20),
-        new THREE.MeshLambertMaterial({color:0x9a5a4a}));
+      /* TEXTURES (2026-10-25): brick campus — brick texture under the
+         two brick tints; the flat roof slab takes the flat-roof
+         texture under its gray tint. */
+      var main=new THREE.Mesh(SAtex.scaleBoxUV(new THREE.BoxGeometry(36,10,20),36,10,20,SAtex.TILE.brick),
+        SAtex.mat('brick',{color:0x9a5a4a}));
       main.position.y=5; g.add(main);
-      var wing=new THREE.Mesh(new THREE.BoxGeometry(20,8,16),
-        new THREE.MeshLambertMaterial({color:0x8a4a3a}));
+      var wing=new THREE.Mesh(SAtex.scaleBoxUV(new THREE.BoxGeometry(20,8,16),20,8,16,SAtex.TILE.brick),
+        SAtex.mat('brick',{color:0x8a4a3a}));
       wing.position.set(24,4,0); g.add(wing);
-      var roof=new THREE.Mesh(new THREE.BoxGeometry(37,1,21),
-        new THREE.MeshLambertMaterial({color:0x5a5a5a}));
+      var roof=new THREE.Mesh(SAtex.scaleBoxUV(new THREE.BoxGeometry(37,1,21),37,1,21,SAtex.TILE.flatroof),
+        SAtex.mat('flatroof',{color:0x5a5a5a}));
       roof.position.y=10.5; g.add(roof);
       g.position.set(x,gy-0.6,z);
       scene.add(g);

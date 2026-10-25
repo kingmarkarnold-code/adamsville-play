@@ -298,7 +298,17 @@ function dirtFan(cx, cz, rx, rz, lift, color){
   geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
   geo.setIndex(idx);
   geo.computeVertexNormals();
-  var mat = new THREE.MeshLambertMaterial({ color: color, side: THREE.DoubleSide });
+  /* TEXTURES (2026-10-25): the court patch is DIRT — its positions are
+     already world coordinates, so world-planar dirt UVs drop straight
+     in; the two dirt tones (full patch / worn middle) ride over the
+     texture as tints, keeping the worn-middle read. */
+  var mat;
+  if (typeof SAtex !== 'undefined') {
+    SAtex.worldUV(geo, 'dirt');
+    mat = SAtex.mat('dirt', { color: color, side: THREE.DoubleSide });
+  } else {
+    mat = new THREE.MeshLambertMaterial({ color: color, side: THREE.DoubleSide });
+  }
   mat.polygonOffset = true; mat.polygonOffsetFactor = -2; mat.polygonOffsetUnits = -2;
   var m = new THREE.Mesh(geo, mat);
   scene.add(m);
