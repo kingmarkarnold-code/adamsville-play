@@ -136,12 +136,16 @@ function tsLocal(){
 }
 
 /* ---------------- road index ----------------
-   Wraps the roadDrawData entries traffic may use (highway + arterial) with
-   arc-length tables so cars advance in world units along the path. */
-function buildRoadIndex(){
+   Wraps the road entries traffic may use (highway + arterial + local)
+   with arc-length tables so cars advance in world units along the path.
+   src defaults to the loaded zone's roadDrawData; the cross-zone
+   extension (below) passes neighbouring zones' flattened records
+   through the exact same filter so both sets obey identical rules. */
+function buildRoadIndex(src){
   var idx=[];
-  for (var i=0;i<roadDrawData.length;i++){
-    var r=roadDrawData[i];
+  var list=src||roadDrawData;
+  for (var i=0;i<list.length;i++){
+    var r=list[i];
     if (!r||!r.pts||r.pts.length<2||!r.ys||r.ys.length!==r.pts.length) continue;
     // v1.13: include local roads so residential areas have traffic
     /* v2.1: new category set — interstate/highway/major/minor/local all carry traffic */
@@ -1435,6 +1439,143 @@ function updateTraffic(dt,px,pz){
 window.updateTraffic=updateTraffic;
 
 /* ---------------- init + self-install ---------------- */
+/* ============================================================================
+   CROSS-ZONE TRAFFIC (2026-10-25 — Joshua's rule: "when it comes to anybody
+   but the player, the zone borders do not apply").
+   ----------------------------------------------------------------------------
+   Traffic's junction graph is built from the LOADED zone's roadDrawData
+   only, so a street that continues across a zone seam simply ended at the
+   border: cars hit a dead end and looped at an invisible fence, even
+   though the road carries on. The zone unlock wall never applied to them
+   (zoneunlock.js gates the player only) — the border they felt was the
+   missing data on the other side.
+
+   Fix, following the GPS system's proven pattern (gps_system.js v1.65):
+   a few seconds after boot, fetch each NEIGHBOURING zone's roads.json
+   (local map store first via MapDelivery, else a cache-busted fetch),
+   append its roads to TR.roads — APPEND-ONLY, so every existing road
+   keeps its index and every car's current road reference stays valid —
+   then rebuild the junction graph once over the combined set. The graph
+   builder's own endpoint/crossing rules stitch the two halves of a
+   seam-crossing street together, so cars now drive across zone borders
+   onto the continuing road and back, locked zone or not. Spawning is
+   unchanged (cars still spawn in the loaded zone only — that is
+   placement, not a border rule), and if a fetch fails (offline,
+   file://) the game keeps exactly the behaviour it had before.
+   ============================================================================ */
+var TR_ZONE_RECTS={
+  adamsville:{xMin:-832.1294014084006, xMax:8377.129401408598,  zMin:-4248.536971831284, zMax:8266.53697183079},
+  mableton:{xMin:-7480.585387323972,   xMax:-832.1294014084006, zMin:-4248.536971831284, zMax:8266.53697183079},
+  downtown:{xMin:8377.129401408598,    xMax:16314.485035211088, zMin:-4248.536971831284, zMax:2555.720070422735},
+  eastatlanta:{xMin:8377.129401408598, xMax:16314.485035211088, zMin:2555.720070422735,  zMax:8266.53697183079},
+  unioncity:{xMin:-7480.585387323972,  xMax:-832.1294014084006, zMin:8266.53697183079,   zMax:30877.519366197153},
+  southfulton:{xMin:-832.1294014084006,xMax:8377.129401408598,  zMin:8266.53697183079,   zMax:30877.519366197153},
+  riverdale:{xMin:8377.129401408598,   xMax:16314.485035211088, zMin:8266.53697183079,   zMax:30877.519366197153}
+};
+/* trafficNeighborZones(zid) — zones sharing a tile EDGE with zid (the
+   same edge-share test gps_system.js uses; corner touches don't count). */
+function trafficNeighborZones(zid){
+  var r=TR_ZONE_RECTS[zid]; if (!r) return [];
+  var out=[];
+  for (var k in TR_ZONE_RECTS){
+    if (k===zid) continue;
+    var o=TR_ZONE_RECTS[k];
+    var shareV=(Math.abs(o.xMax-r.xMin)<1 || Math.abs(o.xMin-r.xMax)<1) &&
+               Math.min(o.zMax, r.zMax)>Math.max(o.zMin, r.zMin);
+    var shareH=(Math.abs(o.zMax-r.zMin)<1 || Math.abs(o.zMin-r.zMax)<1) &&
+               Math.min(o.xMax, r.xMax)>Math.max(o.xMin, r.xMin);
+    if (shareV || shareH) out.push(k);
+  }
+  return out;
+}
+/* trafficFetchZoneRoads(zid) — the zone's roads.json as text: local map
+   store first (MapDelivery.serveText), else a cache-busted fetch.
+   Mirrors gps_system.js's fetchZoneRoadsText. */
+function trafficFetchZoneRoads(zid){
+  var path='zones/'+zid+'/roads.json';
+  function network(){
+    var v='';
+    try{ v=window.__MAPVER||''; }catch(e){}
+    var url=path+(v?('?v='+encodeURIComponent(v)):'');
+    return fetch(url, {cache:'no-store'}).then(function(r){
+      if (!r || !r.ok) throw new Error(path+' — HTTP '+(r&&r.status));
+      return r.text();
+    });
+  }
+  try{
+    if (typeof MapDelivery!=='undefined' && MapDelivery.serveText){
+      return MapDelivery.serveText(path).then(function(t){
+        return (t!==null && t!==undefined)? t : network();
+      }, function(){ return network(); });
+    }
+  }catch(e){}
+  return network();
+}
+/* trafficFlattenZoneRoads(data) — a zone roads.json ({class: [records]})
+   in the roadDrawData record shape buildRoadIndex consumes. Same
+   flattening gps_system.js uses, widths included. */
+function trafficFlattenZoneRoads(data){
+  var out=[];
+  var W={interstate:34, highway:22, major_artery:20, minor_artery:18.4, local:7.2};
+  try{ if (typeof ROAD_WIDTHS!=='undefined' && ROAD_WIDTHS) W=ROAD_WIDTHS; }catch(e){}
+  for (var k in data){
+    var arr=data[k]; if (!arr) continue;
+    for (var i=0;i<arr.length;i++){
+      var r=arr[i]; if (!r) continue;
+      out.push({pts:r.pts, ys:r.ys, name:r.name, cat:k, w:W[k]||10});
+    }
+  }
+  return out;
+}
+var _trafficXZoneStarted=false;
+function extendTrafficAcrossZones(){
+  if (_trafficXZoneStarted) return; _trafficXZoneStarted=true;
+  if (!TR || !TR.roads || !TR.jx) return;
+  var zid='adamsville';
+  try{ if (typeof ZONELOADER!=='undefined' && ZONELOADER.currentZone) zid=ZONELOADER.currentZone; }catch(e){}
+  var nbs=trafficNeighborZones(zid);
+  if (!nbs.length) return;
+  var added=0, doneZones=[];
+  // Fetch neighbours one at a time, then rebuild the graph ONCE.
+  var chain=Promise.resolve();
+  nbs.forEach(function(nz){
+    chain=chain.then(function(){
+      return trafficFetchZoneRoads(nz).then(function(text){
+        var data=null;
+        try{ data=JSON.parse(text); }catch(e){}
+        if (!data) return;
+        var entries=buildRoadIndex(trafficFlattenZoneRoads(data));
+        if (entries.length){
+          // APPEND-ONLY: existing indices (and every car's current
+          // road reference) stay exactly as they were.
+          TR.roads=TR.roads.concat(entries);
+          added+=entries.length; doneZones.push(nz);
+        }
+      }, function(){ /* this zone's fetch failed — traffic keeps
+                        today's behaviour on that border */ });
+    });
+  });
+  chain.then(function(){
+    if (!added) return;
+    try{
+      // One rebuild over the combined set: the builder's own endpoint
+      // and crossing rules stitch seam-crossing streets together.
+      TR.jx=buildJunctionGraph(TR.roads); TR.jxClock=0;
+      if (window.Report && Report.setSys){
+        var _jx={nodes:TR.jx.nodes.length, endJx:TR.jx.nEndJx,
+                 crossings:TR.jx.nCross, buildMs:TR.jx.buildMs};
+        Report.setSys('traffic',{status:'ok', version:'1.9',
+          cars:TR.cars.length, rendered:TR.rendered||0,
+          gasStations:TR.gas.length, stuckSpots:TR.stuckSpots,
+          roads:TR.roads.length, junctions:_jx,
+          note:'cross-zone graph live: +'+added+' roads from '+
+               doneZones.join(', ')+' — traffic crosses zone borders '+
+               'freely (player-only walls unchanged)'});
+      }
+    }catch(e){}
+  });
+}
+
 /* initTraffic() — builds the road index, junction graph, render pool, and
    spawns the car fleet: 44 highway cars (25-31 u/s ≈ 54-67 mph), 28 arterial
    (13-19 u/s ≈ 28-41 mph), 24 local (8-14 u/s ≈ 17-30 mph neighborhood
@@ -1511,6 +1652,12 @@ function initTraffic(){
       note:'highway+arterial traffic; junction protocol v1.47; stuck-spot road audit live'});
   }catch(e){}
   window.TRAFFIC=TR;   // expose only after a clean init
+  /* CROSS-ZONE TRAFFIC (2026-10-25): once boot settles, pull the
+     neighbouring zones' roads into the graph so traffic crosses zone
+     borders onto the continuing streets (see extendTrafficAcrossZones
+     above). Fully guarded — any failure leaves traffic exactly as it
+     was with the loaded zone alone. */
+  setTimeout(function(){ try{ extendTrafficAcrossZones(); }catch(e){} }, 3000);
 }
 
 /* Boot: wait until the main script has built the world (roadDrawData,
