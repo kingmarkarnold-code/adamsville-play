@@ -117,17 +117,17 @@
   },
   {
    "name": "github-config.js",
-   "size": 3909,
-   "sha256": "9653e0e9a9d317945023b4e59acdca433cf0165802ae295ddf926321ce2a1f50",
-   "hash": "9653e0e9a9d317945023b4e59acdca433cf0165802ae295ddf926321ce2a1f50",
-   "md5": "a94a694f2ddc1a5d09bd868ae1c8d9b8"
+   "size": 6507,
+   "sha256": "874396328ca5915013e62605f641014ae56a5cb134f3f89ea281fb98e0ac09fd",
+   "hash": "874396328ca5915013e62605f641014ae56a5cb134f3f89ea281fb98e0ac09fd",
+   "md5": "d003265ada76b4056b2fa36a457b2c2f"
   },
   {
    "name": "github_reports.js",
-   "size": 16127,
-   "sha256": "d88731eb5409d2d9daec2a51bbff518eb24ae3d257249490e529be7fbdb1b3f8",
-   "hash": "d88731eb5409d2d9daec2a51bbff518eb24ae3d257249490e529be7fbdb1b3f8",
-   "md5": "2c2b3a3eb8844da4922af709f35628e5"
+   "size": 30621,
+   "sha256": "e2c112b0a00dd3d91ffc56af0396a4991e4386aeebd016b3c9c891e4b573d69f",
+   "hash": "e2c112b0a00dd3d91ffc56af0396a4991e4386aeebd016b3c9c891e4b573d69f",
+   "md5": "03aeb1c6800997be8c363d0a600c8934"
   },
   {
    "name": "goto.js",
@@ -537,6 +537,6 @@
    "sha256": "74d2e3da9d5db086f3724cec9d5d42c2ba52e8561f2223fd467601d1ba8500b8"
   }
  ],
- "ui_version": "2026.10.25.2",
+ "ui_version": "2026.10.25.3",
  "version": "2026.10.17.9"
 }
