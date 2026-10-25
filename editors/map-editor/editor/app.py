@@ -52,7 +52,7 @@ import overpass as overpass_mod  # noqa: E402
 
 # App version shown in the Help -> About dialog (bump with each release).
 # Joshua 2026-10-11: version number must be prominent in About.
-APP_VERSION = "1.9.12"
+APP_VERSION = "1.9.13"
 # Display name and icon-theme name for the About dialog.
 APP_NAME = "Adamsville Map Editor"
 APP_ICON = "adamsville-map-editor-native"
@@ -2612,6 +2612,11 @@ class MapEditorApp:
         # New area on screen: make sure its buildings are coming
         # (the panel gates this on the pane being awake).
         insp.request_area_data()
+        # 1.9.13: the main map itself draws and clicks buildings,
+        # so its zones' buildings are fetched even while the area
+        # pane sleeps (the store dedupes against the pane's own
+        # fetches — one download per zone either way).
+        insp.ensure_buildings_for_main_view()
 
     def note_pane_touched(self, which):
         """
@@ -2924,6 +2929,132 @@ class MapEditorApp:
             self.set_status(
                 "Detail Edit: the Detail Editor could not be "
                 "launched.")
+
+    # -- Building jump (the door to the Building Editor) ---------
+
+    # The Building Editor's suite identity, by the same
+    # convention as every suite app (adamsville-<name>-native).
+    BUILDING_EDITOR_BIN = "adamsville-building-editor-native"
+    BUILDING_HANDOFF_NAME = "open-in-building-editor.json"
+
+    # Building type words for the confirm — the game's type
+    # codes in the Building Editor's own labels (its
+    # zonedata.CODE_LABELS), so both apps name a building the
+    # same way. The compact zone data carries no building NAMES,
+    # so type + zone + size is what the confirm can honestly say.
+    BUILDING_TYPE_WORDS = {
+        0: "Residential / generic",
+        1: "Commercial",
+        2: "Multi-unit / institutional",
+        3: "Other / special",
+    }
+
+    def on_building_clicked(self, zone_id, index, building):
+        """
+        A genuine click landed on a building (the canvas decided
+        — see MapCanvas._maybe_building_click): ask "Edit this
+        location?" and, on yes, hand the building to the Building
+        Editor (Joshua's order, 2026-10-25).
+
+        The handoff mirrors the Detail Edit / street-jump
+        pattern: a JSON file in ~/.local/share/adamsville-suite/
+        named for the TARGET app, carrying the building's
+        identity — its zone and its INDEX in that zone's
+        buildings.json (the Building Editor's zone list is
+        index-aligned with that file, so the index IS the
+        building's name there) — plus its position and size, so
+        the receiver can still find it by place if its list has
+        shifted. Cancelling changes nothing at all. When the
+        Building Editor is not installed, a dialog says so
+        plainly — the handoff is still written, and nothing
+        pretends to have opened.
+        """
+        bx, bz, bw, bd, bh, btype = building
+        type_word = self.BUILDING_TYPE_WORDS.get(
+            btype, "Other / special")
+        zone_word = zone_id
+        model = getattr(self, "game_model", None)
+        if model is not None:
+            meta = (model.zones.get(zone_id) or {}).get("meta") \
+                or {}
+            zone_word = meta.get("name") or zone_id
+        dialog = Gtk.MessageDialog(
+            transient_for=self.window,
+            flags=0,
+            message_type=Gtk.MessageType.QUESTION,
+            buttons=Gtk.ButtonsType.NONE,
+            text="Edit this location?")
+        dialog.format_secondary_text(
+            f"A {type_word} building in {zone_word} "
+            f"(about {bw:.0f} × {bd:.0f} m, {bh:.0f} m tall). "
+            "Open it in the Building Editor?")
+        dialog.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        dialog.add_button("Edit Building", Gtk.ResponseType.OK)
+        dialog.set_default_response(Gtk.ResponseType.CANCEL)
+        resp = dialog.run()
+        dialog.destroy()
+        if resp != Gtk.ResponseType.OK:
+            return  # his answer was no: nothing happens at all
+        import json as _json
+        import shutil
+        import subprocess
+        from datetime import datetime, timezone
+        from pathlib import Path as _Path
+        doc = {
+            "target": "building",
+            "zone": zone_id,
+            "index": index,
+            "x": bx,
+            "z": bz,
+            "w": bw,
+            "d": bd,
+            "h": bh,
+            "type": btype,
+            "writtenBy": f"Adamsville Map Editor {APP_VERSION}",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        handoff_dir = (_Path.home() / ".local" / "share"
+                       / "adamsville-suite")
+        try:
+            handoff_dir.mkdir(parents=True, exist_ok=True)
+            (handoff_dir / self.BUILDING_HANDOFF_NAME).write_text(
+                _json.dumps(doc))
+            handoff_ok = True
+        except Exception:
+            handoff_ok = False
+        exe = shutil.which(self.BUILDING_EDITOR_BIN)
+        if exe is None:
+            # Not installed: say so plainly, never fake an open.
+            dialog = Gtk.MessageDialog(
+                transient_for=self.window,
+                flags=0,
+                message_type=Gtk.MessageType.INFO,
+                buttons=Gtk.ButtonsType.OK,
+                text="Building Editor is not installed.")
+            dialog.format_secondary_text(
+                "The Building Editor is a separate suite app and "
+                "isn't on this machine yet. "
+                + ("The handoff for this building has been "
+                   "prepared — it will open there once the app "
+                   "is installed." if handoff_ok else
+                   "The handoff could not be written either."))
+            dialog.run()
+            dialog.destroy()
+            self.set_status(
+                "Building jump: the Building Editor app is not "
+                "installed.")
+            return
+        try:
+            subprocess.Popen([exe],
+                             stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+            self.set_status(
+                f"Building jump: opened the {type_word} building "
+                f"in {zone_word} in the Building Editor.")
+        except Exception:
+            self.set_status(
+                "Building jump: the Building Editor could not "
+                "be launched.")
 
     def begin_lasso_select(self, polygon):
         """
@@ -3930,6 +4061,14 @@ class MapEditorApp:
             # through here is a no-op while it is loading/ready).
             try:
                 self.inspector.request_resource_data()
+            except Exception:
+                pass
+            # 1.9.13: the main map draws buildings and clicks
+            # them — start the on-screen zones' building fetches
+            # now that data has loaded (on_view_changed keeps
+            # them coming as the view moves).
+            try:
+                self.inspector.ensure_buildings_for_main_view()
             except Exception:
                 pass
             # 1.9.5 (ready-in-source 2026-10-17): a suite handoff
