@@ -844,6 +844,12 @@ class MapCanvas(Gtk.DrawingArea):
         # Draw roads (only visible ones, via spatial index)
         self._draw_roads(cr, vx0, vz0, vx1, vz1)
 
+        # Draw buildings (1.9.13): footprint blocks in roof tones,
+        # the same picture the satellite pane draws — on the main
+        # map they are the visible targets of the building click
+        # (click one -> "Edit this location?" -> Building Editor).
+        self._draw_buildings(cr)
+
         # Draw street name labels on top of roads, filtered by zoom
         # level (Joshua 2026-10-12: Google Maps-style labels).
         self._draw_road_labels(cr, vx0, vz0, vx1, vz1)
@@ -873,6 +879,46 @@ class MapCanvas(Gtk.DrawingArea):
         self._draw_delete_preview(cr)
 
         return False
+
+    def _draw_buildings(self, cr):
+        """
+        Buildings on the main map (1.9.13): footprint rectangles
+        in the area viewpoints' roof tones, drawn through this
+        canvas's own camera by the shared helper. Only zones the
+        lazy BuildingsStore has already loaded contribute (never
+        a blocking fetch in a draw); the app keeps the on-screen
+        zones' buildings coming in the background. Under the road
+        labels, over the roads — a building's block is what the
+        building click hits (see _pick_building).
+        """
+        insp = getattr(self.app, "inspector", None)
+        store = getattr(insp, "buildings", None) if insp else None
+        if store is None:
+            return
+        from roadinspect import _draw_map_buildings, \
+            _zone_ids_for_rect
+        alloc = self.get_allocation()
+        w, h = max(2, alloc.width), max(2, alloc.height)
+        vp = self._camera.get_viewport(w, h)
+        _draw_map_buildings(cr, self.app, store, self._camera,
+                            w, h, _zone_ids_for_rect(vp))
+
+    def _pick_building(self, sx, sy):
+        """
+        The building under a screen point, as (zone_id, index,
+        building) — the identity app.on_building_clicked hands to
+        the Building Editor — or None. The hit-test itself lives
+        in the store (areadata.BuildingsStore.pick_building);
+        this only translates the point and the zones around it.
+        """
+        insp = getattr(self.app, "inspector", None)
+        store = getattr(insp, "buildings", None) if insp else None
+        if store is None:
+            return None
+        wx, wz = self.screen_to_world(sx, sy)
+        from roadinspect import _zone_ids_for_rect
+        zones = _zone_ids_for_rect((wx, wz, wx, wz))
+        return store.pick_building(zones, wx, wz)
 
     def _stroke_road_path(self, cr, pts):
         """Build a Cairo path from world point list (shared helper)."""
@@ -2052,6 +2098,16 @@ class MapCanvas(Gtk.DrawingArea):
 
     def on_button_release(self, widget, event):
         """End pan drag or pin drag."""
+        # 1.9.13: remember how this gesture began — the building
+        # click decided at the end of the release is only for a
+        # plain resting press (a pan drag that stayed a click);
+        # the gesture flags below are consumed as the release
+        # runs, so they are captured before anything else.
+        _had_ctrl = self.ctrl_drag is not None
+        _had_band = self.band_drag is not None
+        _had_draw = self.draw_drag is not None
+        _had_pin = self.drag_pin is not None
+        _was_dragging = self.dragging
         if event.button == 1:
             # Ctrl+click: the press started a possible rotation;
             # if the pointer never really travelled, it was a
@@ -2107,7 +2163,51 @@ class MapCanvas(Gtk.DrawingArea):
                 f"({n} pins, x {bx0:.0f}..{bx1:.0f}, z {bz0:.0f}..{bz1:.0f})")
             self.drag_pin = None
             self.queue_draw()
+        # The building click (1.9.13): only a plain resting
+        # press that stayed a click can offer the Building
+        # Editor jump — every other gesture keeps its meaning.
+        if event.button == 1 and _was_dragging and not _had_ctrl \
+                and not _had_band and not _had_draw and not _had_pin:
+            self._maybe_building_click(event)
         return True
+
+    def _maybe_building_click(self, event):
+        """
+        Offer the Building Editor jump for a genuine building
+        click (1.9.13, Joshua's order). Decided on RELEASE, when
+        a click can be told apart from a pan:
+
+        * at rest — no editing tool armed, no modal mode
+          (move-road, divide, overpass link) and no delete
+          preview up;
+        * the pointer barely travelled (< 6 px, the Ctrl+click
+          rule's own threshold) — a press that travelled was a
+          pan, and a pan NEVER prompts (his stated failure mode);
+        * no road under the point — a road click is a road
+          click, exactly as it has always been (the press
+          already selected it);
+        * a building under the point (the store's hit-test).
+
+        The press already did whatever a normal click does to
+        the road selection; this adds only the offer, and
+        cancelling the offer changes nothing more.
+        """
+        if self.active_tool is not None:
+            return
+        if self.move_road is not None \
+                or self.divide_pick is not None \
+                or self.link_overpass_mode:
+            return
+        if getattr(self, "delete_preview", None) is not None:
+            return  # the delete bar owns clicks while it is up
+        if math.hypot(event.x - self.drag_start[0],
+                      event.y - self.drag_start[1]) >= 6:
+            return  # it travelled: a pan, not a click
+        if self._pick_road_at(event.x, event.y) is not None:
+            return  # a road is under the point: the road wins
+        hit = self._pick_building(event.x, event.y)
+        if hit is not None:
+            self.app.on_building_clicked(*hit)
 
     def on_motion(self, widget, event):
         """Handle mouse move. Pan if dragging, or drag a zone pin."""
