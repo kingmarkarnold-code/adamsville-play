@@ -10900,6 +10900,16 @@ document.getElementById('se-continue').addEventListener('click', function(){
         Browsers block window.close() on normal tabs, so this is the common
         web path. */
 function exitGame(){
+  // 0. Session report (2026-10-25): queue the automatic exit/session
+  //    report and hand it to the Google Form in the background BEFORE
+  //    anything closes — duration, distance, zones, device, version.
+  //    It never delays the close (sendBeacon/keepalive send path) and
+  //    never asks the player anything. Deduped inside the sender, so
+  //    the later pagehide cannot send a second one.
+  try{
+    if(window.GitHubReports && typeof window.GitHubReports.sessionExit==='function')
+      window.GitHubReports.sessionExit('exit-game');
+  }catch(e){}
   // 1. APK native bridge, if the host app injected one.
   try{
     if(window.Android){
