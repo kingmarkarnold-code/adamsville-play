@@ -1,6 +1,6 @@
 {
-    "version": "1.9.12",
-    "changelog": "Four things. (1) SAVE FIX - the important one. A bug could make the editor load an old copy of the map stored on this computer instead of the newest map from GitHub, and the next save would then write that old map over the new one (this is what rewrote whole zones on Oct 24). The editor now records exactly which GitHub copy its saved work is based on. Work based on an older copy is never loaded over the newer map: it is set aside in a 'superseded' folder inside the editor's data folder, the fresh download is used, and you are told. Real unpublished edits made on the current copy are still kept, as before. A save now only ever changes the pieces you actually edited - every other record is written back exactly as it came. (2) Delete review: the After picture is now clickable. When deleting several pieces reveals pieces that were underneath them, click a revealed piece in the After picture to add it to the same deletion (if it is one run of a paired object, its partner is added too). The Before picture lights it, the After picture redraws without it, and you can keep clicking to add more. Cancel still restores everything, including your selection. (3) The Delete key on the keyboard now starts the same delete flow as the Delete button, including the 'Nothing is selected' popup. (4) The bottom pane is now the RESOURCE MAP: it shows the reference map the world was built from, at the same place and zoom as the top view, so you can compare where streets are with where they should be; it follows the road you select. Its labels now say so - 'Resource map - reference' - and the elevation line above it is labelled 'Road elevation'.",
+    "version": "1.9.13",
+    "changelog": "Two things. (1) NEW \u2014 the building jump. Buildings now show on the main map as roof-coloured blocks (the same picture as the satellite view), and clicking a building asks 'Edit this location?' \u2014 answer yes and the Building Editor opens on that building. A click that drags (panning) never asks; clicking a road still just selects the road; and cancelling the question changes nothing. If the Building Editor is not installed, the editor says so plainly. (The Building Editor learns to receive the jump in its own next update \u2014 its receiving half is built and tested, and until it ships the handoff is still prepared.) (2) SAVE FIX: when a save changes a zone's roads, the editor now also updates the map manifest (detailed/map-manifest.json) in the same save \u2014 the changed files' fingerprints and sizes are refreshed and the map version steps up \u2014 so the game actually downloads the roads you just saved. That missing step is why the joins saved on Oct 25 never reached the game until the manifest was repaired by hand.",
     "files": [
         {
             "path": "about.py",
@@ -10,7 +10,7 @@
         {
             "path": "app.py",
             "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/app.py",
-            "sha256": "73ea29614966b61d503d7232c66ba5d39b9f8057f8911c1f29de92d4481cec32"
+            "sha256": "68e8af1187deb76fd9dd044c66fae8ee86d49bc9ef4c16b67d4baa09f48c6659"
         },
         {
             "path": "data.py",
@@ -20,7 +20,7 @@
         {
             "path": "gamedata.py",
             "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/gamedata.py",
-            "sha256": "4cc3a7845cd973b326395f98b076b25d1d6bc83a0aa9e67f877a4163742f667a"
+            "sha256": "64d7b0c452ed5be68095f996e4253e13e431f50189d9bf77fa738b9027012927"
         },
         {
             "path": "github_sync.py",
@@ -35,7 +35,7 @@
         {
             "path": "mapcanvas.py",
             "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/mapcanvas.py",
-            "sha256": "09a917f530808fe96b77242f37d9c41e8ed2bdff704dd6475f836618be179f8c"
+            "sha256": "b479d4aba3f670f2b2acacbd5288cd232559a979eb1d092df400176a009274f4"
         },
         {
             "path": "overpass.py",
@@ -45,7 +45,7 @@
         {
             "path": "roadinspect.py",
             "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/roadinspect.py",
-            "sha256": "684f90a31dc55fbf0e443a69ae7bfd5de2d45e4ba7ea506961712462038af53f"
+            "sha256": "03659dd3429a7d4e0557c0b2e6f8e2805ff0cf8bdd3a27aeac6385357fc3dabe"
         },
         {
             "path": "shared_cache.py",
@@ -65,7 +65,7 @@
         {
             "path": "areadata.py",
             "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/areadata.py",
-            "sha256": "484435e0bb2a3e7f29120b4b24ec0d80b7df770e39c52a6d92964db96bf91f43"
+            "sha256": "3feea694150a46578cde1f6f311900f13cdc16b2f64d7a606e3e1b2189f92855"
         },
         {
             "path": "batchdelete.py",
