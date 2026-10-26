@@ -1,6 +1,6 @@
 {
-  "version": "1.9.0",
-  "changelog": "The Menus tab now matches the game you actually play. The game's menu list had fallen behind the game itself \u2014 the Pause menu, Go To, Move controls, Advanced Properties, Download newest UI and more were in the game but missing from the editor. The tab now checks the game's own files every time it opens and adds anything missing, marked with a \ud83c\udd95; rows the game no longer has are kept and marked \u26a0, never silently deleted. Pressing Save Menus publishes the brought-up-to-date list to GitHub, and the game now applies those menus too (including the launcher options, which it used to skip). The editor also joins the suite's shared download cache, so files another editor already downloaded are not downloaded again. This version replaces both 1.7.8 and 1.8.0 \u2014 if your About box reads 1.7.8, you missed the 1.8.0 update; installing this one brings you fully current.",
+  "version": "1.10.0",
+  "changelog": "Layouts are now per screen size, the way you designed it. The Layout tab has an Environment choice — Application (APK) or Web — and a Size list with a named layout for each of your screens: Galaxy A17 5G, TCL K33 5G and FOXXD A67L, portrait and landscape each, plus standard phone and tablet sizes, laptop 1366×768 and a desktop reference size. Every size keeps its own full set of controls: move something on the A17's layout and the TCL's layout does not change. The Face default entry still covers any screen without a named size, and screens the game doesn't recognise fall back the way they always did. The game side now picks the layout that matches the screen it is actually running on — exact size first, then the nearest size, then the face. One honest note: the named phone sizes start from each model's standard screen numbers, because the truly visible area was never measured on your own phones; your first per-size tweaks will make them exact.",
   "files": [
     {
       "path": "about.py",
@@ -10,12 +10,12 @@
     {
       "path": "app.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/ui-editor/app.py",
-      "sha256": "18285e80eb32b57f583aa9ca0f084f947aa1d8eca811a1fbe6e8cc5126a4d2a5"
+      "sha256": "3b0997be67dd9a409a4aa8a5944f5cf5d4f3b10bf2e9a153500eda3587a91345"
     },
     {
       "path": "data.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/ui-editor/data.py",
-      "sha256": "78b9bb4ad71b6c1028b83eaab651cbb704171cada771a5cd295a1ddb3b66c833"
+      "sha256": "73abe308cc9c88f53e85b31abe8c67121483849b2318bdc102049b200d142fd7"
     },
     {
       "path": "game_menus.py",
@@ -30,7 +30,7 @@
     {
       "path": "layout.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/ui-editor/layout.py",
-      "sha256": "e54623bdd01167dcbe24b2489a5a23536297d15da35c5b7e844e24f4d5fae89b"
+      "sha256": "34f87b5c45fed70d8bacfe71ad6b7aff915e8e84bf6a0375e76d917b732a4284"
     },
     {
       "path": "menus.py",
@@ -55,7 +55,7 @@
     {
       "path": "ui_layout_default.json",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/ui-editor/ui_layout_default.json",
-      "sha256": "e3835b82b6ce64cb6599c7b60f7e24658ea28290f3328106e5cea64667869583"
+      "sha256": "ff96fa1c1935bec4d67c6772f30712b1cca16fa422d48f91e176c8005b39b9e3"
     },
     {
       "path": "updater.py",
