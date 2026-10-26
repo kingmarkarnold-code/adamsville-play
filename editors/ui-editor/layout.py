@@ -17,10 +17,18 @@ UI element on a canvas per view mode, and lets Joshua:
     the GitHub copy and show that, so a successful save is visible
     proof the push landed.
 
-View modes: Application (mobile), Web desktop, Web mobile. The two mobile
-views share the Size presets (Phone portrait / Phone landscape / Tablet);
-the app view defaults to Phone landscape because the game plays in
-landscape (Joshua 2026-10-12).
+View modes: Application (mobile), Web desktop, Web mobile.
+
+v1.10.0 PER-SIZE LAYOUTS (Joshua's design, DECIDED 2026-10-25): the
+view bar leads with an explicit ENVIRONMENT choice (Application (APK)
+vs Web). Under each device face (Mobile / Desktop), the Size dropdown
+lists NAMED SCREEN SIZES — his Galaxy A17 5G, TCL K33 5G and FOXXD
+A67L, the standard phone/tablet sizes, the laptop class — and every
+size carries its OWN element list: editing one size never disturbs
+another. "Face default" edits the face itself, still the game's
+fallback for screens no size matches. A size's "Applies to" menu
+narrows it to one environment. The old Size presets (Phone portrait /
+Phone landscape / Tablet) are now real per-size layouts in the list.
 
 Coordinate model: each element stores (anchor, x, y, width, height).
 Anchors keep elements glued to screen corners across view sizes; the
@@ -39,11 +47,14 @@ from gi.repository import Gtk, Gdk
 from data import (
     anchor_to_left_top, left_top_to_xy, download_ui_layout, load_ui_layout,
     stage_content, staged_bytes, is_visual, load_manifest, LAYOUT_VIEWS,
-    WEB_MOBILE_PRESETS, ANCHORS, ANCHOR_LABELS, CANON_W, CANON_H,
+    ANCHORS, ANCHOR_LABELS, CANON_W, CANON_H,
     canon_scale, element_size_in_view,
     # v1.8.0 FACES: the layout has a Mobile face and a Desktop face;
     # these helpers keep both faces (and the top-level mirror) straight.
     LAYOUT_FACES, ensure_layout_faces, layout_face_elements,
+    # v1.10.0 PER-SIZE LAYOUTS: environments + the named-size registry.
+    LAYOUT_ENVIRONMENTS, ensure_layout_sizes, layout_size_entries,
+    layout_size_entry,
 )
 
 # Element type -> (fill RGB, border RGB) used by the canvas mockup.
@@ -338,56 +349,77 @@ class LayoutTab:
         # writes the whole document, both faces included.
         self.face = "mobile"
         self.view_key = "app"    # one of LAYOUT_VIEWS keys
-        # v1.7.5 ORIENTATION (2026-10-12): index into WEB_MOBILE_PRESETS.
-        # Defaults to 1 = "Phone landscape" because the game plays in
-        # landscape (Joshua). Both orientations stay selectable via the
-        # Size dropdown, which is now enabled for the app view too.
-        self.preset_idx = 1
+        # v1.10.0 PER-SIZE LAYOUTS: the explicit ENVIRONMENT choice
+        # ("app" = Application (APK), "web" = Web) and the named size
+        # being edited (a key into the document's "sizes" list).
+        # size_key None = editing the face itself ("Face default").
+        self.env = "app"
+        self.size_key = None
         self._dirty = False      # unsaved changes?
         # v1.8.0 FACES: which faces carry unsaved changes (set of face
         # keys). Switching faces never adds to this — only editing does.
         self._dirty_faces = set()
+        # v1.10.0: which named sizes carry unsaved changes (set of
+        # size keys). Same rule: switching sizes never adds to this.
+        self._dirty_sizes = set()
         self._custom_seq = 1     # counter for custom-N ids
         self._build_ui()
         self._load_initial()
 
     # -- view helpers ------------------------------------------------------
+    def _active_size_entry(self):
+        """The named-size entry being edited, or None (face default)."""
+        if self.doc is None or self.size_key is None:
+            return None
+        return layout_size_entry(self.doc, self.size_key)
+
+    def _active_elements(self):
+        """
+        The element list every edit in this tab lands on: the active
+        named size's own list when a size is selected, otherwise the
+        active face's list. (v1.10.0: this one accessor is what makes
+        per-size editing independent — a size's list is a distinct
+        object from the face's and from every other size's.)
+        """
+        entry = self._active_size_entry()
+        if entry is not None:
+            return entry["elements"]
+        return layout_face_elements(self.doc, self.face)
+
     def current_view_size(self):
-        """(width, height) in view pixels for the active view/preset."""
-        # v1.7.5 ORIENTATION: the "app" view and "web_mobile" both use
-        # the Size presets, so Joshua can pick Phone portrait or Phone
-        # landscape for the APK HUD. Defaults to landscape.
-        if self.view_key in ("app", "web_mobile"):
-            _label, w, h = WEB_MOBILE_PRESETS[self.preset_idx]
-            return w, h
-        for key, _label, w, h in LAYOUT_VIEWS:
-            if key == self.view_key:
-                return w, h
-        return 844, 390  # landscape fallback (v1.7.5)
+        """(width, height) in view pixels for the active view/size."""
+        # v1.10.0: a selected named size frames the canvas at that
+        # size — what Joshua sees is the screen he is laying out for.
+        entry = self._active_size_entry()
+        if entry is not None:
+            return entry["width"], entry["height"]
+        # Face default: the class's natural frame — landscape for the
+        # mobile face (the game plays landscape; the v1.7.5 default),
+        # the canonical frame for the desktop face / web desktop view.
+        if self.face == "desktop" or self.view_key == "web_desktop":
+            return 1280, 800
+        return 844, 390
 
     def current_view_label(self):
         """Human label for the active view."""
-        # v1.7.5 ORIENTATION: show the chosen preset for mobile views.
-        if self.view_key == "app":
-            return ("Application (mobile) — "
-                    + WEB_MOBILE_PRESETS[self.preset_idx][0])
-        if self.view_key == "web_mobile":
-            return "Web mobile — " + WEB_MOBILE_PRESETS[self.preset_idx][0]
-        for key, label, _w, _h in LAYOUT_VIEWS:
-            if key == self.view_key:
-                return label
-        return self.view_key
+        env_label = dict(LAYOUT_ENVIRONMENTS).get(self.env, self.env)
+        face_label = dict(LAYOUT_FACES).get(self.face, self.face)
+        entry = self._active_size_entry()
+        if entry is not None:
+            return f"{env_label} — {face_label} — {entry['name']}"
+        return f"{env_label} — {face_label} — Face default"
 
     def visible_elements(self):
         """
         Elements relevant to the current view. v1.8.0: the base list is
-        the ACTIVE FACE's elements (the Mobile or Desktop face being
-        edited). Mobile-only elements are additionally skipped on the
-        desktop view (mirrors the game's own behavior).
+        the ACTIVE FACE's elements. v1.10.0: when a named size is
+        selected, the base list is THAT SIZE's own elements instead.
+        Mobile-only elements are additionally skipped on the desktop
+        view (mirrors the game's own behavior).
         """
         if self.doc is None:
             return []
-        els = layout_face_elements(self.doc, self.face)
+        els = self._active_elements()
         if self.view_key == "web_desktop":
             els = [e for e in els if not e.get("mobile_only")]
         return els
@@ -395,13 +427,18 @@ class LayoutTab:
     def _mark_dirty(self):
         """
         v1.8.0: record an unsaved change against the ACTIVE face.
+        v1.10.0: when a named size is being edited, the change is
+        recorded against THAT SIZE (and only that size) instead.
         Every edit path in this tab goes through here (instead of
-        setting _dirty directly) so the editor knows WHICH face the
-        unsaved work belongs to. Merely switching faces never calls
-        this — switching is not an edit.
+        setting _dirty directly) so the editor knows WHERE the
+        unsaved work belongs. Merely switching faces/sizes never
+        calls this — switching is not an edit.
         """
         self._dirty = True
-        self._dirty_faces.add(self.face)
+        if self.size_key is not None:
+            self._dirty_sizes.add(self.size_key)
+        else:
+            self._dirty_faces.add(self.face)
 
     # -- UI construction ----------------------------------------------------
     def _build_ui(self):
@@ -430,9 +467,19 @@ class LayoutTab:
                 btn.set_sensitive(False)
         self.root.pack_start(toolbar, False, False, 0)
 
-        # View bar: view-mode dropdown + mobile size presets.
+        # View bar: ENVIRONMENT first (v1.10.0 — Joshua's decided
+        # design leads with it), then view mode, device face, and the
+        # named-size dropdown.
         viewbar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         viewbar.set_border_width(6)
+        viewbar.pack_start(Gtk.Label(label="Environment:"), False, False, 0)
+        self.env_combo = Gtk.ComboBoxText()
+        for key, label in LAYOUT_ENVIRONMENTS:
+            self.env_combo.append(key, label)
+        self.env_combo.set_active_id("app")
+        self.env_combo.connect("changed", self.on_env_changed)
+        viewbar.pack_start(self.env_combo, False, False, 0)
+
         viewbar.pack_start(Gtk.Label(label="View:"), False, False, 0)
         self.view_combo = Gtk.ComboBoxText()
         for key, label, _w, _h in LAYOUT_VIEWS:
@@ -452,16 +499,32 @@ class LayoutTab:
         self.face_combo.connect("changed", self.on_face_changed)
         viewbar.pack_start(self.face_combo, False, False, 0)
 
+        # v1.10.0 SIZES: the named screen sizes for the current
+        # environment + device class. First row (id "") is "Face
+        # default" — editing the face itself. The rows are (re)built
+        # by _refresh_size_combo() whenever the environment, the face
+        # or the document changes; the old preset rows (Phone
+        # portrait / landscape / Tablet) live here now as real sizes.
         viewbar.pack_start(Gtk.Label(label="Size:"), False, False, 0)
-        self.preset_combo = Gtk.ComboBoxText()
-        for i, (label, _w, _h) in enumerate(WEB_MOBILE_PRESETS):
-            self.preset_combo.append(str(i), label)
-        # v1.7.5 ORIENTATION: default to Phone landscape (index 1) —
-        # that's how the game plays. Both orientations stay selectable.
-        self.preset_combo.set_active(1)
-        self.preset_combo.connect("changed", self.on_preset_changed)
-        viewbar.pack_start(self.preset_combo, False, False, 0)
-        # v1.7.5: enabled for the app view too (was web_mobile only).
+        self.size_combo = Gtk.ComboBoxText()
+        self.size_combo.connect("changed", self.on_size_changed)
+        viewbar.pack_start(self.size_combo, False, False, 0)
+
+        # v1.10.0: which environments the selected size applies to.
+        # Disabled on "Face default" (a face serves both by design).
+        viewbar.pack_start(Gtk.Label(label="Applies to:"), False, False, 0)
+        self.size_env_combo = Gtk.ComboBoxText()
+        self.size_env_combo.append("both", "Application + Web")
+        self.size_env_combo.append("app", "Application only")
+        self.size_env_combo.append("web", "Web only")
+        self.size_env_combo.set_active_id("both")
+        self.size_env_combo.set_sensitive(False)
+        self.size_env_combo.connect("changed", self.on_size_env_changed)
+        viewbar.pack_start(self.size_env_combo, False, False, 0)
+        # Populate the Size dropdown now that every control it
+        # touches exists (no document yet — Face default only; the
+        # full list arrives with _load_initial).
+        self._refresh_size_combo()
 
         hint = Gtk.Label()
         hint.set_markup('<small><i>Drag elements to move · drag the yellow '
@@ -741,11 +804,20 @@ class LayoutTab:
         # face, the desktop face starts as a copy, and the top-level
         # "elements" mirror is re-pointed at the mobile face's list.
         ensure_layout_faces(self.doc)
+        # v1.10.0 SIZES: a pre-1.10.0 document (no "sizes" section)
+        # migrates in memory too — every named size is seeded from
+        # its class face, element-for-element, so nothing changes
+        # visually until Joshua edits a specific size.
+        ensure_layout_sizes(self.doc)
         # Advance the custom-id counter past any existing custom-N
-        # ids — in EITHER face (a desktop-only custom element must
-        # not have its id reused on the mobile face).
-        for face_key, _face_label in LAYOUT_FACES:
-            for el in layout_face_elements(self.doc, face_key):
+        # ids — in EITHER face and in EVERY size (a size-only custom
+        # element must not have its id reused anywhere).
+        id_lists = [layout_face_elements(self.doc, face_key)
+                    for face_key, _face_label in LAYOUT_FACES]
+        id_lists += [entry["elements"]
+                     for entry in layout_size_entries(self.doc)]
+        for els in id_lists:
+            for el in els:
                 eid = el.get("id", "")
                 if eid.startswith("custom-"):
                     try:
@@ -758,8 +830,14 @@ class LayoutTab:
         self._dirty = self._staged_pending
         # v1.8.0: a staged copy could have touched either face (we
         # cannot know which), so both faces count as dirty.
+        # v1.10.0: the same goes for the sizes — all count as dirty.
         self._dirty_faces = ({"mobile", "desktop"}
                              if self._staged_pending else set())
+        self._dirty_sizes = (
+            {entry["key"] for entry in layout_size_entries(self.doc)}
+            if self._staged_pending else set())
+        # v1.10.0: the document is loaded — list its named sizes.
+        self._refresh_size_combo()
         if self._staged_pending:
             self.app.set_status(
                 "Showing your unsaved local layout — Save layout "
@@ -783,12 +861,16 @@ class LayoutTab:
             return False
         # v1.8.0 FACES: a GitHub copy in the old format migrates in
         # memory exactly like a local load (see _load_initial).
+        # v1.10.0: the sizes section migrates the same way.
         ensure_layout_faces(doc)
+        ensure_layout_sizes(doc)
         self.doc = doc
         self._staged_pending = False
         self._dirty = False
         self._dirty_faces = set()
+        self._dirty_sizes = set()
         self.selected = None
+        self._refresh_size_combo()
         self.refresh_list()
         self.refresh_props()
         self.canvas.queue_draw()
@@ -834,13 +916,102 @@ class LayoutTab:
             " — save the layout to apply")
 
     # -- view controls ----------------------------------------------------------
+    def _refresh_size_combo(self):
+        """
+        v1.10.0: (re)build the Size dropdown for the current
+        environment + device class: "Face default" first, then every
+        named size whose class matches the face and whose "envs"
+        include the current environment. The current selection is
+        kept when it is still listed; otherwise the tab falls back to
+        Face default. Safe to call before any document is loaded
+        (Face default only).
+        """
+        current = self.size_key
+        self.size_combo.handler_block_by_func(self.on_size_changed)
+        try:
+            self.size_combo.remove_all()
+            self.size_combo.append("", "Face default (unmatched screens)")
+            listed = []
+            if self.doc is not None:
+                for entry in layout_size_entries(
+                        self.doc, env=self.env, cls=self.face):
+                    self.size_combo.append(
+                        entry["key"],
+                        f"{entry['name']} — "
+                        f"{entry['width']}×{entry['height']}")
+                    listed.append(entry["key"])
+            if current is not None and current in listed:
+                self.size_combo.set_active_id(current)
+            else:
+                self.size_key = None
+                self.size_combo.set_active_id("")
+        finally:
+            self.size_combo.handler_unblock_by_func(self.on_size_changed)
+        self._sync_size_env_combo()
+
+    def _sync_size_env_combo(self):
+        """Enable + set the "Applies to" menu for the active size."""
+        entry = self._active_size_entry()
+        self.size_env_combo.set_sensitive(entry is not None)
+        if entry is None:
+            return
+        envs = entry.get("envs", ["app", "web"])
+        mode = "both" if len(envs) > 1 else envs[0]
+        self.size_env_combo.handler_block_by_func(
+            self.on_size_env_changed)
+        try:
+            self.size_env_combo.set_active_id(mode)
+        finally:
+            self.size_env_combo.handler_unblock_by_func(
+                self.on_size_env_changed)
+
+    def on_env_changed(self, combo):
+        """
+        v1.10.0 ENVIRONMENTS: the explicit Environment dropdown —
+        Application (APK) or Web. Choosing one moves the preview to
+        that environment's view for the current device class and
+        re-lists the Size dropdown with the sizes that apply there.
+        Switching environments is NOT an edit.
+        """
+        env = combo.get_active_id() or "app"
+        if env not in dict(LAYOUT_ENVIRONMENTS):
+            env = "app"
+        self.env = env
+        # The environment's natural view for this device class.
+        if env == "app":
+            self.view_key = "app"
+        elif self.face == "desktop":
+            self.view_key = "web_desktop"
+        else:
+            self.view_key = "web_mobile"
+        self.view_combo.set_active_id(self.view_key)
+        self._refresh_size_combo()
+        self.select(None)
+        self.refresh_list()
+        self.refresh_props()
+        self.canvas.queue_draw()
+        label = dict(LAYOUT_ENVIRONMENTS)[env]
+        self.app.set_status(
+            f"Environment: {label} — the Size list shows the layouts "
+            "saved for it.")
+
     def on_view_changed(self, combo):
         """View-mode dropdown: switch canvas + element filtering."""
         self.view_key = combo.get_active_id() or "app"
-        # v1.7.5 ORIENTATION: the Size presets apply to both mobile
-        # views (app + web_mobile); web_desktop has a fixed size.
-        self.preset_combo.set_sensitive(
-            self.view_key in ("app", "web_mobile"))
+        # v1.10.0: flipping the view by hand keeps the Environment
+        # selector honest — the app view IS the Application
+        # environment; the web views ARE the Web environment.
+        env = "app" if self.view_key == "app" else "web"
+        if env != self.env:
+            self.env = env
+            self.env_combo.handler_block_by_func(self.on_env_changed)
+            try:
+                self.env_combo.set_active_id(env)
+            finally:
+                self.env_combo.handler_unblock_by_func(
+                    self.on_env_changed)
+            self._refresh_size_combo()
+            self.refresh_list()
         self.select(None)
         self.canvas.queue_draw()
 
@@ -853,19 +1024,22 @@ class LayoutTab:
         -> the app view, Desktop -> the web desktop view), the
         selection clears, and the list/props/canvas refresh to show
         the newly active face.
+        v1.10.0: sizes belong to a device class, so switching faces
+        also resets the Size selection to Face default and re-lists
+        the sizes for the new class.
         """
         face = combo.get_active_id() or "mobile"
         if face not in dict(LAYOUT_FACES):
             face = "mobile"
         self.face = face
         # The face's natural view, set the same way on_view_changed
-        # leaves things (view key + combo + preset sensitivity). In
-        # real GTK, set_active_id also fires on_view_changed, which
-        # agrees with the values set here.
+        # leaves things (view key + combo). In real GTK, set_active_id
+        # also fires on_view_changed, which agrees with the values
+        # set here.
         self.view_key = "app" if face == "mobile" else "web_desktop"
         self.view_combo.set_active_id(self.view_key)
-        self.preset_combo.set_sensitive(
-            self.view_key in ("app", "web_mobile"))
+        self.size_key = None
+        self._refresh_size_combo()
         # Clear the selection (this also refreshes props + canvas),
         # then refresh the element list for the new face.
         self.select(None)
@@ -878,16 +1052,55 @@ class LayoutTab:
             f"Editing the {label} layout — the {other} layout is "
             "untouched until you switch to it.")
 
-    def on_preset_changed(self, combo):
-        """Size preset changed (Phone portrait / Phone landscape / Tablet).
-
-        v1.7.5 ORIENTATION: this now drives the app view too, so picking
-        "Phone landscape" resizes the APK HUD canvas to 844x390.
+    def on_size_changed(self, combo):
         """
-        self.preset_idx = combo.get_active()
-        if self.preset_idx < 0 or self.preset_idx >= len(WEB_MOBILE_PRESETS):
-            self.preset_idx = 1  # landscape fallback
+        v1.10.0 SIZES: Size dropdown — pick the named screen size to
+        edit, or "Face default" to edit the face itself. Switching
+        sizes is NOT an edit: the dirty state is left exactly as it
+        was, and every size keeps its own element list.
+        """
+        key = combo.get_active_id()
+        self.size_key = key if key else None
+        self._sync_size_env_combo()
         self.select(None)
+        self.refresh_list()
+        self.refresh_props()
+        self.canvas.queue_draw()
+        entry = self._active_size_entry()
+        if entry is not None:
+            self.app.set_status(
+                f"Editing the {entry['name']} layout "
+                f"({entry['width']}×{entry['height']}) — every other "
+                "size is untouched until you switch to it.")
+        else:
+            face_label = dict(LAYOUT_FACES)[self.face]
+            self.app.set_status(
+                f"Editing the {face_label} face itself — the fallback "
+                "for screens no named size matches.")
+
+    def on_size_env_changed(self, combo):
+        """
+        v1.10.0: "Applies to" menu — narrow the active size to one
+        environment, or restore it to both. This IS an edit (the
+        saved data changes), recorded against the size. If the size
+        stops applying to the environment on screen, the dropdown
+        falls back to Face default.
+        """
+        entry = self._active_size_entry()
+        if entry is None:
+            return
+        mode = combo.get_active_id() or "both"
+        entry["envs"] = (["app", "web"] if mode == "both" else [mode])
+        self._mark_dirty()
+        self.app.set_status(
+            f"{entry['name']} now applies to "
+            f"{dict(LAYOUT_ENVIRONMENTS).get(mode, 'Application + Web')}"
+            " — save the layout to apply")
+        if self.env not in entry["envs"]:
+            self._refresh_size_combo()
+            self.select(None)
+            self.refresh_list()
+            self.refresh_props()
         self.canvas.queue_draw()
 
     # -- element changes ----------------------------------------------------------
@@ -992,7 +1205,9 @@ class LayoutTab:
                     "description": f"Custom element using the '{asset}' asset",
                 }
                 # v1.8.0 FACES: new elements join the ACTIVE face.
-                layout_face_elements(self.doc, self.face).append(new_el)
+                # v1.10.0: or the ACTIVE SIZE, when one is selected —
+                # _active_elements() is the one door for both.
+                self._active_elements().append(new_el)
                 self._mark_dirty()
         dialog.destroy()
         if new_el is not None:
@@ -1018,7 +1233,8 @@ class LayoutTab:
         if not ok:
             return
         # v1.8.0 FACES: removal leaves the ACTIVE face only.
-        layout_face_elements(self.doc, self.face).remove(el)
+        # v1.10.0: or the ACTIVE SIZE only — same one-door rule.
+        self._active_elements().remove(el)
         self.select(None)
         self._mark_dirty()
         self.refresh_list()
@@ -1040,7 +1256,10 @@ class LayoutTab:
         # cheap insurance that the saved file's top-level "elements"
         # IS the mobile face's list. The save still writes the WHOLE
         # document: both faces are always saved together.
+        # v1.10.0: the sizes section is re-asserted the same way —
+        # the whole document, sizes included, is what gets saved.
         ensure_layout_faces(self.doc)
+        ensure_layout_sizes(self.doc)
         try:
             payload = json.dumps(self.doc, indent=2)
         except Exception as e:
@@ -1063,10 +1282,11 @@ class LayoutTab:
             # Step 3 happened in the app; show the GitHub copy.
             if self.apply_github_layout(fresh["ui_layout.json"]):
                 # apply_github_layout already cleared the dirty state
-                # (both faces); restated here so the successful-save
-                # path visibly owns that clearing.
+                # (both faces + all sizes); restated here so the
+                # successful-save path visibly owns that clearing.
                 self._dirty = False
                 self._dirty_faces = set()
+                self._dirty_sizes = set()
                 # Refresh first: it sets its own status text, and
                 # the save confirmation must be what remains visible.
                 self.app.refresh_resources_list()
