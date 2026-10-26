@@ -89,7 +89,7 @@ from subdivisioncanvas import SubdivisionCanvas
 
 # App version shown in the Help -> About dialog (bump with each release).
 # Joshua 2026-10-11: version number must be prominent in About.
-APP_VERSION = "2.0.5"
+APP_VERSION = "2.0.6"
 
 # ---------------------------------------------------------------------------
 # THE EDITOR UI RULE (Joshua, 2026-10-16 — standing suite principle):
@@ -1327,6 +1327,117 @@ class AssetEditorWindow(Gtk.Window):
             f"update that reads it (1.9.5) is ready — once it's "
             f"installed, the Map Editor opens right there.")
 
+    # -- Detail Edit handoff (2.0.6) ---------------------------------
+
+    # The Detail Editor's suite identity, by the same convention
+    # as every suite app (adamsville-<name>-native) — the same
+    # pair of constants the Map Editor's Detail Edit uses.
+    DETAIL_EDITOR_BIN = "adamsville-detail-editor-native"
+    DETAIL_HANDOFF_NAME = "open-in-detail-editor.json"
+
+    def open_in_detail_editor(self, zone, index):
+        """
+        Hand one zone building to the Detail Editor (2.0.6,
+        Joshua's order: the building editing view gains the same
+        "Detail Edit" door the Map Editor gives roads).
+
+        Mirrors the Map Editor's Detail Edit exactly: a JSON
+        handoff in ~/.local/share/adamsville-suite/ named for
+        the TARGET app (open-in-detail-editor.json), carrying
+        the element's identity and geometry — here
+        target/element_type "building", the zone + index (the
+        identity both building halves of the suite already use)
+        and the building's x/z/w/d/h + type from its zone
+        record. The file is written FIRST; then the Detail
+        Editor launches when it is installed. When it is not
+        installed, a plain dialog says so — the handoff is still
+        written (it will be there when the app arrives), and
+        nothing pretends to have opened.
+
+        KNOWN LIMIT (stated in the 2.0.6 build notes): the
+        Detail Editor (1.1.0) accepts roads only — its building
+        receiver is a separate queued build. This button + the
+        handoff contract ship now so that build plugs straight
+        in; nothing on this side fakes the receiving.
+        """
+        import json as _json
+        from datetime import datetime, timezone
+        store = self.zone_store
+        zd = store.zones.get(zone) if store is not None else None
+        if zd is None or not (0 <= index < len(zd.boxes)):
+            self._set_status(
+                "Detail Edit: that building's records are not "
+                "loaded, so there is nothing to hand over yet.")
+            return
+        box = zd.boxes[index]
+        name = None
+        idx_obj = store.indexes.get(zone)
+        if idx_obj is not None and index < len(idx_obj.entries):
+            name = idx_obj.entries[index].get("n") or None
+        try:
+            code = int(box[5])
+        except Exception:
+            code = 0
+        doc = {
+            "target": "building",
+            "element_type": "building",
+            "zone": zone,
+            "index": index,
+            "name": name or "",
+            "x": box[0], "z": box[1],
+            "w": box[2], "d": box[3], "h": box[4],
+            "type": code,
+            "type_label": zonedata.CODE_LABELS.get(code, "")
+            if _ZONEDATA_AVAILABLE else "",
+            "writtenBy": f"building-editor-{APP_VERSION}",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        handoff_ok = False
+        try:
+            github_sync.SHARED_DIR.mkdir(parents=True, exist_ok=True)
+            (github_sync.SHARED_DIR / self.DETAIL_HANDOFF_NAME
+             ).write_text(_json.dumps(doc, indent=1))
+            handoff_ok = True
+        except Exception:
+            handoff_ok = False
+        exe = shutil.which(self.DETAIL_EDITOR_BIN)
+        if exe is None:
+            # Not installed: say so plainly, never fake an open
+            # (the Map Editor's wording, carried across).
+            dialog = Gtk.MessageDialog(
+                transient_for=self, flags=0,
+                message_type=Gtk.MessageType.INFO,
+                buttons=Gtk.ButtonsType.OK,
+                text="Detail Editor is not installed.")
+            dialog.format_secondary_text(
+                "The Detail Editor is a separate suite app and "
+                "isn't on this machine yet. "
+                + ("The handoff for this building has been "
+                   "prepared — it will open there once the app "
+                   "is installed." if handoff_ok else
+                   "The handoff could not be written either."))
+            dialog.run()
+            dialog.destroy()
+            self._set_status(
+                "Detail Edit: the Detail Editor app is not "
+                "installed.")
+            return
+        try:
+            subprocess.Popen([exe], stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+            if handoff_ok:
+                self._set_status(
+                    f"Detail Edit: handed building #{index} "
+                    f"({zone}) to the Detail Editor.")
+            else:
+                self._set_status(
+                    "Detail Edit: the Detail Editor is starting, "
+                    "but the handoff file could not be written.")
+        except Exception:
+            self._set_status(
+                "Detail Edit: the Detail Editor could not be "
+                "launched.")
+
     # -- THE SAVE: zone data + the design set --------------------------
 
     def _design_dirty(self):
@@ -2021,6 +2132,28 @@ class ZoneInspectorPanel(Gtk.Box):
     are unchanged: a plain press on the building still grabs it
     (roof moves, edges resize, front face heights), and a plain
     click (press + release, no drag) still picks a street.
+
+    2.0.6 (Joshua, 2026-10-25):
+      * PART SELECTION: a plain CLICK on the building selects the
+        part clicked — the ROOF, the FRONT FACE, or an EDGE —
+        names it in the readouts, and highlights the roof/front
+        in the picture. A click on empty ground clears it.
+      * ROOF MOVE with a threshold: a press-and-hold drag that
+        starts on the roof moves the building in the ground
+        plane, but only once the pointer has travelled past the
+        drag threshold — a press that stays put is the click
+        above and never nudges the building. X/Z only: the base
+        stays seated on the ground; height never changes.
+      * BUILDING ROTATION: Ctrl+press ON the selected building
+        (roof, wall or edge) and drag rotates THE BUILDING
+        around its own centre — horizontal drag turns it
+        (ROTATE_DEG_PER_PX per pixel), with a live degrees
+        readout overlaid on the view while turning. Ctrl+drag
+        starting anywhere else rotates the VIEW exactly as
+        2.0.2 — the press point decides which one turns. The
+        rotation applies through the owner's manip_rotate (tabs
+        that do not offer it — the gas station review — keep
+        view-rotate everywhere).
     """
 
     view_mode = "3d"
@@ -2038,6 +2171,12 @@ class ZoneInspectorPanel(Gtk.Box):
 
     FRONT_RGB = (1.0, 0.55, 0.15)        # the warm orange front wall
     STREET_HILITE_RGB = (0.05, 0.65, 0.85)
+
+    # 2.0.6: building rotation speed — degrees of building turn
+    # per horizontal pixel of a Ctrl+drag on the building. Half a
+    # degree per pixel turns a full half-circle (orientation is
+    # mod 180) in 360 px of drag: deliberate, not twitchy.
+    ROTATE_DEG_PER_PX = 0.5
 
     # The status label's words + colours (Joshua's exact spec).
     STATUS_STYLE = {
@@ -2095,6 +2234,12 @@ class ZoneInspectorPanel(Gtk.Box):
         self._drag = None
         self._cur_values = None     # {x, z, w, d, h} being viewed
         self.selected_street = None  # {"name", "x", "z", "zone"}
+        # 2.0.6: the part of the building a plain click selected —
+        # None | "roof" | "front" | ("edge", kind, side). Set on
+        # click, named by the readout line, roof/front highlighted
+        # in the picture; cleared by a click on empty ground or a
+        # new subject.
+        self.selected_part = None
         self.status_word = None
         self.status_color = None
         # 2.0.2 universal viewport controls: the view's zoom factor
@@ -2158,9 +2303,20 @@ class ZoneInspectorPanel(Gtk.Box):
         self.status_label.set_margin_bottom(6)
         self.status_label.set_no_show_all(True)
         self.status_label.hide()
+        # 2.0.6: the live rotation readout, overlaid top-left of
+        # the view and visible only while a Ctrl+drag is turning
+        # the building itself.
+        self.rotate_label = Gtk.Label()
+        self.rotate_label.set_halign(Gtk.Align.START)
+        self.rotate_label.set_valign(Gtk.Align.START)
+        self.rotate_label.set_margin_start(6)
+        self.rotate_label.set_margin_top(6)
+        self.rotate_label.set_no_show_all(True)
+        self.rotate_label.hide()
         overlay = Gtk.Overlay()
         overlay.add(self.drawing)
         overlay.add_overlay(self.status_label)
+        overlay.add_overlay(self.rotate_label)
         self.view_overlay = overlay
         self.pack_start(overlay, True, True, 0)
 
@@ -2170,7 +2326,8 @@ class ZoneInspectorPanel(Gtk.Box):
         hint = Gtk.Label(
             label="Drag to pan the view; Ctrl+drag rotates; wheel "
                   "or +/− zooms. Drag the roof to move, an edge to "
-                  "resize, the orange wall for height. Click a "
+                  "resize, the orange wall for height. Ctrl+drag ON "
+                  "the building rotates the building. Click a "
                   "street to select it.")
         hint.set_halign(Gtk.Align.START)
         hint.set_ellipsize(Pango.EllipsizeMode.END)
@@ -2180,7 +2337,10 @@ class ZoneInspectorPanel(Gtk.Box):
             "keys zoom. Drag the roof to move the building, a "
             "left/right edge for width, a front/back edge for "
             "depth, the orange front wall up or down for height. "
-            "Click a street to select it.")
+            "Ctrl+drag starting ON the building rotates the "
+            "building itself; starting anywhere else it rotates "
+            "the view. Click the roof, the front wall or an edge "
+            "to select that part; click a street to select it.")
         controls.pack_start(hint, True, True, 0)
         face_btn = Gtk.Button(label="Face front")
         face_btn.set_tooltip_text(
@@ -2211,10 +2371,14 @@ class ZoneInspectorPanel(Gtk.Box):
         self.type_label = Gtk.Label(label="")
         self.size_label = Gtk.Label(label="")
         self.pos_label = Gtk.Label(label="")
+        # 2.0.6: the part-selection line — names what a click
+        # selected (roof / front face / edge) and what drags do.
+        self.sel_label = Gtk.Label(label="")
         self.front_line = Gtk.Label(label="")
         self.flagged_line = Gtk.Label(label="")
         for lbl in (self.name_label, self.type_label, self.size_label,
-                    self.pos_label, self.front_line, self.flagged_line):
+                    self.pos_label, self.sel_label, self.front_line,
+                    self.flagged_line):
             lbl.set_halign(Gtk.Align.START)
             lbl.set_ellipsize(Pango.EllipsizeMode.END)
             lbl.set_line_wrap(True)
@@ -2256,6 +2420,53 @@ class ZoneInspectorPanel(Gtk.Box):
             f"<span font_weight=\"bold\" size=\"large\" "
             f"foreground=\"{color}\" background=\"#333333\">"
             f" {word} </span>")
+
+    # -- part selection + rotation readout (2.0.6) -------------------
+
+    def _set_selected_part(self, part):
+        """Record the part a plain click selected (roof / front
+        face / edge) and announce it in the readout line."""
+        self.selected_part = part
+        self._update_sel_label()
+        self.drawing.queue_draw()
+
+    def _update_sel_label(self):
+        part = self.selected_part
+        if self.mode != "building" or part is None:
+            self.sel_label.set_text("")
+            self.sel_label.set_tooltip_text("")
+            return
+        if part == "roof":
+            text = ("Selected: the ROOF — drag to move the "
+                    "building; Ctrl+drag on the building rotates "
+                    "it.")
+        elif part == "front":
+            text = ("Selected: the FRONT FACE — drag up/down "
+                    "for the height; Ctrl+drag on the building "
+                    "rotates it.")
+        else:  # ("edge", kind, side)
+            which = "width" if part[1] == "width" else "depth"
+            text = (f"Selected: an EDGE — drag to change the "
+                    f"{which}; Ctrl+drag on the building "
+                    f"rotates it.")
+        self.sel_label.set_text(text)
+        self.sel_label.set_tooltip_text(text)
+
+    def _show_rotate_readout(self, angle_deg):
+        """The live degrees readout overlaid on the view while a
+        Ctrl+drag is turning the building. Hidden on release —
+        the tab's Rotation field keeps the final angle."""
+        # Plain text first, markup second: real GTK shows the
+        # markup; the harness's stub label keeps the plain text.
+        self.rotate_label.set_text(f"Rotation: {angle_deg:.0f}°")
+        self.rotate_label.set_markup(
+            f"<span font_weight=\"bold\" size=\"large\" "
+            f"foreground=\"#ffffff\" background=\"#333333\">"
+            f" Rotation: {angle_deg:.0f}° </span>")
+        self.rotate_label.show()
+
+    def _hide_rotate_readout(self):
+        self.rotate_label.hide()
         self.status_label.show()
 
     def _game_status(self):
@@ -2312,6 +2523,8 @@ class ZoneInspectorPanel(Gtk.Box):
         self.station = None
         self.station_edit = None
         self.selected_street = None
+        self.selected_part = None
+        self._hide_rotate_readout()
         self.map_btn.hide()
         self.street_label.set_text("")
         # The front + backdrop: prepared on the worker thread by
@@ -2361,6 +2574,8 @@ class ZoneInspectorPanel(Gtk.Box):
         self.detail = None
         self.flagged_entry = None
         self.selected_street = None
+        self.selected_part = None
+        self._hide_rotate_readout()
         self.map_btn.hide()
         self.street_label.set_text("")
         self._station_geometry()
@@ -2550,6 +2765,7 @@ class ZoneInspectorPanel(Gtk.Box):
                 "station-edits file — the game itself does not "
                 "change until a game update reads them.")
         self._update_size_pos_labels()
+        self._update_sel_label()
 
     def _update_size_pos_labels(self):
         """Size/position lines only (cheap; used during drags)."""
@@ -2892,6 +3108,36 @@ class ZoneInspectorPanel(Gtk.Box):
             ctx.move_to(sx1, sy1)
             ctx.line_to(sx2, sy2)
             ctx.stroke()
+        # 2.0.6: the clicked part's highlight — the roof outline
+        # or the front face, stroked bright over the fill so the
+        # selection is visible at a glance.
+        part = self.selected_part
+        if part == "roof":
+            ctx.set_source_rgb(0.1, 0.9, 1.0)
+            ctx.set_line_width(3)
+            for i, p in enumerate(ring):
+                sx, sy = to_screen(p[0] - cx, p[1] - cz, hgt)
+                if i == 0:
+                    ctx.move_to(sx, sy)
+                else:
+                    ctx.line_to(sx, sy)
+            ctx.close_path()
+            ctx.stroke()
+        elif part == "front" and front_edge is not None:
+            a, b = fi["edges"][front_edge]
+            quad = [to_screen(a[0] - cx, a[1] - cz, 0),
+                    to_screen(b[0] - cx, b[1] - cz, 0),
+                    to_screen(b[0] - cx, b[1] - cz, hgt),
+                    to_screen(a[0] - cx, a[1] - cz, hgt)]
+            ctx.set_source_rgb(0.1, 0.9, 1.0)
+            ctx.set_line_width(3)
+            for j, (sx, sy) in enumerate(quad):
+                if j == 0:
+                    ctx.move_to(sx, sy)
+                else:
+                    ctx.line_to(sx, sy)
+            ctx.close_path()
+            ctx.stroke()
 
     _STATION_COLORS = {
         "pad": (0.45, 0.47, 0.49),
@@ -3177,10 +3423,13 @@ class ZoneInspectorPanel(Gtk.Box):
         except Exception:
             pass
         # 2.0.2 universal viewport controls: CONTROL held makes
-        # the drag a ROTATE, wherever it starts — the modifier is
-        # the mode switch, so a Ctrl+press never grabs the building
-        # and never pans. (getattr guards: harness-fabricated
-        # events may carry no modifier state at all.)
+        # the drag a ROTATE — and 2.0.6 (Joshua) splits it by
+        # WHERE the press lands: Ctrl+press ON the building
+        # rotates THE BUILDING (when the owning tab offers
+        # manip_rotate); Ctrl+press anywhere else rotates the
+        # VIEW exactly as 2.0.2. (getattr guards:
+        # harness-fabricated events may carry no modifier state
+        # at all.)
         state = getattr(event, "state", 0) or 0
         try:
             ctrl_mask = Gdk.ModifierType.CONTROL_MASK
@@ -3197,12 +3446,32 @@ class ZoneInspectorPanel(Gtk.Box):
                 values = None
         if values:
             self._cur_values = dict(values)
-        grab = None if rotate else self._classify_grab(
-            event.x, event.y)
+        # 2.0.6: classified even under Ctrl — the press point is
+        # what decides building-turn vs view-turn.
+        grab = self._classify_grab(event.x, event.y)
+        kind = grab[0] if grab else "pan"
+        angle0 = None
+        if rotate:
+            kind = "rotate"
+            if self.mode == "building" and grab is not None \
+                    and self.tab is not None \
+                    and callable(getattr(self.tab, "manip_rotate",
+                                         None)):
+                kind = "rotate_bldg"
+                try:
+                    angle0 = self.tab.manip_angle()
+                except Exception:
+                    angle0 = None
         self._drag = {
-            "kind": "rotate" if rotate
-            else (grab[0] if grab else "pan"),
+            "kind": kind,
             "side": grab[1] if grab else 0,
+            # 2.0.6: the press classification, kept for the
+            # click-selection decision at release time.
+            "grab": grab,
+            # 2.0.6 rotate_bldg bookkeeping: the orientation at
+            # press time and the accumulated drag turn.
+            "angle0": angle0,
+            "cum_delta": 0.0,
             "sx": event.x, "sy": event.y,
             "x": event.x, "y": event.y,
             "az0": self.azimuth, "el0": self.elevation,
@@ -3249,12 +3518,47 @@ class ZoneInspectorPanel(Gtk.Box):
                     d["el0"] + (d["sy"] - event.y) * 0.01))
             self.drawing.queue_draw()
             return True
+        if kind == "rotate_bldg":
+            # 2.0.6 (Joshua): the drag turns THE BUILDING.
+            # Horizontal movement only, ROTATE_DEG_PER_PX per
+            # pixel, applied incrementally through the tab (each
+            # step is small, so the mod-180 orientation never
+            # wraps mid-drag). The live preview is the model
+            # itself turning — the picture draws the footprint
+            # ring the tab just rotated.
+            step = (event.x - d["x"]) * self.ROTATE_DEG_PER_PX
+            d["x"], d["y"] = event.x, event.y
+            if step and self.tab is not None:
+                try:
+                    res = self.tab.manip_rotate(step)
+                except Exception:
+                    res = None
+                if res is None:
+                    # Refused (e.g. a flagged building): end the
+                    # drag; the tab has said why in the status bar.
+                    self._drag = None
+                    self._hide_rotate_readout()
+                    return True
+                d["cum_delta"] += step
+                self._cur_values = dict(res)
+                angle = ((d["angle0"] or 0.0) + d["cum_delta"]) \
+                    % 180.0
+                self._show_rotate_readout(angle)
+                self._update_size_pos_labels()
+                self.drawing.queue_draw()
+            return True
         if d["start"] is None or self.tab is None:
             return True
         start = d["start"]
         cand = dict(start)
         f, r = self._frame()
         if kind == "move":
+            # 2.0.6 (Joshua): the roof move engages only past the
+            # drag threshold — below it the press is still the
+            # click that selects the roof, and the building must
+            # not be nudged by a pixel of hand jitter.
+            if not d["moved"]:
+                return True
             # Ground-plane deltas are centre-independent (the
             # inverse mapping returns centre-relative offsets).
             g0 = self._screen_to_ground(d["sx"], d["sy"])
@@ -3306,11 +3610,39 @@ class ZoneInspectorPanel(Gtk.Box):
     def _on_drag_release(self, _widget, event):
         d = self._drag
         self._drag = None
-        if d is not None and d["kind"] == "pan" and not d["moved"]:
-            # A click, not a drag: it may be a street pick.
+        if d is None:
+            return True
+        if d["kind"] == "rotate_bldg":
+            # 2.0.6: the building-turn ends — readout away, the
+            # tab's Rotation field holds the final angle, and a
+            # real turn re-derives front + backdrop.
+            self._hide_rotate_readout()
+            if d["moved"]:
+                hook = getattr(self.tab, "on_manip_end", None)
+                if hook is not None:
+                    hook()
+            return True
+        if not d["moved"] and self.mode == "building" \
+                and d.get("grab") is not None:
+            # 2.0.6: a plain CLICK on the building selects the
+            # part clicked — roof, front face, or edge — instead
+            # of falling through to a street pick.
+            grab = d["grab"]
+            if grab[0] == "move":
+                part = "roof"
+            elif grab[0] == "height":
+                part = "front"
+            else:
+                part = ("edge", grab[0], grab[1])
+            self._set_selected_part(part)
+            return True
+        if d["kind"] == "pan" and not d["moved"]:
+            # A click, not a drag: any part selection clears, and
+            # the click may be a street pick.
+            if self.selected_part is not None:
+                self._set_selected_part(None)
             self.pick_street(event.x, event.y)
-        elif d is not None and d["kind"] in (
-                "move", "width", "depth", "height"):
+        elif d["kind"] in ("move", "width", "depth", "height"):
             # A manipulation drag ended: let the tab re-derive the
             # front + backdrop at the object's new spot.
             hook = getattr(self.tab, "on_manip_end", None)
@@ -3598,12 +3930,34 @@ class ZoneBuildingsTab(Gtk.Box):
             edit.pack_start(spin, False, False, 0)
             spin.connect("value-changed",
                          lambda s: self._on_spin_changed())
+        # Rotation (2.0.6, Joshua): the footprint's orientation in
+        # degrees, derived from its ring
+        # (zonedata.ring_orientation_deg) and filled by
+        # _sync_rot_field; typing a number turns the building to
+        # it at once, like every other field, through its own
+        # handler — rotation is not a move/resize value.
+        edit.pack_start(Gtk.Label(label="Rotation (°)"),
+                        False, False, 0)
+        self.mrot = Gtk.SpinButton.new_with_range(0, 180, 1)
+        self.mrot.set_digits(0)
+        self.mrot.connect("value-changed", self._on_rot_changed)
+        edit.pack_start(self.mrot, False, False, 0)
         move_btn = Gtk.Button(label="Move / Resize Selected")
         move_btn.connect("clicked", self._on_move_resize)
         edit.pack_start(move_btn, False, False, 4)
         del_btn = Gtk.Button(label="Delete Selected")
         del_btn.connect("clicked", self._on_delete)
         edit.pack_start(del_btn, False, False, 0)
+        # Detail Edit (2.0.6): the same door the building's own
+        # tab has — hand the selected building to the Detail
+        # Editor (the window writes the handoff).
+        detail_btn = Gtk.Button(label="Detail Edit")
+        detail_btn.set_tooltip_text(
+            "Hand the selected building to the Detail Editor "
+            "for fine detail work (moving points and segments)")
+        detail_btn.connect("clicked", self._on_detail_edit)
+        edit.pack_start(detail_btn, False, False, 0)
+        self.detail_btn = detail_btn
         # Horizontal scroller (the row is wide; at full width it
         # looks as before, narrowed it scrolls — 1.7.1 pattern).
         self.edit_scroll = Gtk.ScrolledWindow()
@@ -3729,6 +4083,63 @@ class ZoneBuildingsTab(Gtk.Box):
             self.mh.set_value(h)
         finally:
             self._spins_loading = False
+        # 2.0.6: the Rotation field follows every fill — it is
+        # derived from the building's ring, not a stored value.
+        self._sync_rot_field()
+
+    def _sync_rot_field(self):
+        """Show the current building's footprint orientation in
+        the Rotation field (2.0.6). A code fill, never a
+        live-apply: the loading guard is saved/restored around
+        the set so a fill inside another fill stays guarded."""
+        if not hasattr(self, "mrot"):
+            return
+        zd = self._zd()
+        idx = self.inspector.index \
+            if getattr(self, "inspector", None) is not None \
+            and self.inspector.get_visible() \
+            else self._selected_index()
+        if zd is None or idx is None or idx >= len(zd.boxes):
+            return
+        ring = zd.details[idx].get("ring") or []
+        if not ring:
+            return
+        prev = self._spins_loading
+        self._spins_loading = True
+        try:
+            self.mrot.set_value(zonedata.ring_orientation_deg(ring))
+        finally:
+            self._spins_loading = prev
+
+    def _on_rot_changed(self, _spin=None):
+        """Typing an angle turns the selected building to it at
+        once — the Rotation field's twin of _on_spin_changed."""
+        if self._spins_loading:
+            return
+        zd = self._zd()
+        store = self._store()
+        idx = self._selected_index()
+        if store is None or zd is None or idx is None \
+                or idx >= len(zd.boxes):
+            return
+        try:
+            turned = zd.rotate_to(idx, self.mrot.get_value(),
+                                  flagged=store.flagged)
+        except Exception as e:
+            self.app_window._set_status(str(e))
+            self._sync_rot_field()
+            return
+        if not turned:
+            return
+        self.app_window._mark_unpublished()
+        box = zd.boxes[idx]
+        self._set_spins(box[0], box[1], box[2], box[3], box[4])
+        self._update_row(idx)
+        if self.inspector.get_visible() \
+                and self.inspector.index == idx:
+            self.inspector.refresh_view()
+        self.app_window._set_status(
+            f"Building #{idx} rotated (unsaved until save).")
 
     # -- the list: rows from the index (or the loaded detail) -----------
 
@@ -4352,6 +4763,41 @@ class ZoneBuildingsTab(Gtk.Box):
         (flagged), so the panel ends the drag."""
         return self._apply_values(values, from_drag=True)
 
+    def manip_angle(self):
+        """The inspector building's current footprint orientation
+        in degrees (2.0.6) — the panel's rotate readout starts
+        from here."""
+        zd = self._zd()
+        idx = self.inspector.index
+        if zd is None or idx is None or idx >= len(zd.boxes):
+            return None
+        return zonedata.ring_orientation_deg(
+            zd.details[idx].get("ring") or [])
+
+    def manip_rotate(self, delta_deg):
+        """One step of the panel's Ctrl+drag building rotation
+        (2.0.6). Returns the building's new {x, z, w, d, h} for
+        the panel's own bookkeeping, or None when refused (the
+        panel then ends the drag)."""
+        zd = self._zd()
+        store = self._store()
+        idx = self.inspector.index \
+            if self.inspector.get_visible() else self._selected_index()
+        if store is None or zd is None or idx is None \
+                or idx >= len(zd.boxes):
+            return None
+        try:
+            zd.rotate(idx, delta_deg, flagged=store.flagged)
+        except Exception as e:
+            self.app_window._set_status(str(e))
+            return None
+        self.app_window._mark_unpublished()
+        box = zd.boxes[idx]
+        self._set_spins(box[0], box[1], box[2], box[3], box[4])
+        self._update_row(idx)
+        return {"x": box[0], "z": box[1], "w": box[2], "d": box[3],
+                "h": box[4]}
+
     def on_manip_end(self):
         """A drag finished: re-derive the inspector's front and
         backdrop at the building's new spot."""
@@ -4459,6 +4905,20 @@ class ZoneBuildingsTab(Gtk.Box):
         self.refresh()
         self.app_window._set_status(f"Building #{idx} deleted (unsaved).")
 
+    def _on_detail_edit(self, widget):
+        """Detail Edit (2.0.6): hand the selected building to
+        the Detail Editor — the window writes the handoff and
+        launches it (or says plainly that it isn't installed).
+        With only the light index loaded the window answers
+        that the records are not loaded yet; normally selecting
+        the building has already loaded its zone."""
+        idx = self._selected_index()
+        if idx is None:
+            self.app_window._set_status(
+                "Detail Edit: select a building first.")
+            return
+        self.app_window.open_in_detail_editor(self._zone, idx)
+
 
 # ---------------------------------------------------------------------------
 # One zone building in its own tab (2.0.5)
@@ -4493,6 +4953,28 @@ class ZoneBuildingTab(Gtk.Box):
     and sorts over there can never close it (the companion
     2.0.5 fix in ZoneBuildingsTab.refresh/_on_select covers
     the Zone tab's own inspector the same way).
+
+    2.0.6 (Joshua's hands-on verdict on 2.0.5, 2026-10-25
+    23:37): the tab above was a VIEWER — the 3D viewpoint and
+    nothing else. He could not change the width or the depth,
+    could not change the height, and there was no Detail
+    button: "it's not the proper tab for editing." He was
+    right — the manual editing path for a zone building (the
+    Zone Buildings tab's selection state) pairs the viewpoint
+    with the spelled-out number fields (X / Z / Width / Depth
+    / Height, typing applies at once), Move / Resize and
+    Delete, all through the one zonedata apply path. This tab
+    now carries THAT full control set under its viewpoint —
+    the same fields with the same labels and ranges, the same
+    apply path (this class's _apply_values already ran the
+    Zone tab's move/resize calls; the fields now sync through
+    it both ways, exactly as the manual path's do) — plus the
+    Detail Edit door (2.0.6). The BuildingTab class is NOT
+    the manual path for these buildings and is not used here:
+    it edits the design-stock dicts (windows, doors, fences —
+    a different data kind with a different save); a zone
+    record is a bare [x, z, w, d, h, type] box whose edits
+    belong to zonedata and the window's round trip.
     """
 
     def __init__(self, window, zone, index):
@@ -4523,6 +5005,79 @@ class ZoneBuildingTab(Gtk.Box):
         self.closed_box.pack_start(reopen_btn, False, False, 0)
         self.closed_box.hide()
         self.pack_start(self.closed_box, True, True, 0)
+
+        # --- the manual path's edit controls (2.0.6) ----------
+        # The Zone Buildings tab's "Edit selected building" row,
+        # carried into this tab unchanged in shape: the same
+        # spelled-out labels, the same ranges, typing a number
+        # applies it at once through the same apply path the
+        # drag handles use — plus Move / Resize, Delete, and
+        # (new in 2.0.6) Detail Edit. The fields stay disabled
+        # until the building's snapshot lands (there is nothing
+        # truthful to show before then); _apply_snapshot fills
+        # and enables them.
+        self._spins_loading = False    # programmatic-fill guard
+        edit_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
+                           spacing=2)
+        edit_lbl = Gtk.Label()
+        edit_lbl.set_markup(
+            "<b>Edit this building</b> "
+            "(typing a number applies it at once)")
+        edit_lbl.set_halign(Gtk.Align.START)
+        edit_box.pack_start(edit_lbl, False, False, 2)
+        edit = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
+                       spacing=4)
+        self.mx = Gtk.SpinButton.new_with_range(-30000, 30000, 1)
+        self.mz = Gtk.SpinButton.new_with_range(-30000, 30000, 1)
+        self.mw = Gtk.SpinButton.new_with_range(1, 1000, 1)
+        self.md = Gtk.SpinButton.new_with_range(1, 1000, 1)
+        self.mh = Gtk.SpinButton.new_with_range(1, 200, 1)
+        for label, spin in (
+                ("East–West position (X)", self.mx),
+                ("North–South position (Z)", self.mz),
+                ("Width (W)", self.mw),
+                ("Depth (D)", self.md),
+                ("Height (H)", self.mh)):
+            edit.pack_start(Gtk.Label(label=label), False, False, 0)
+            edit.pack_start(spin, False, False, 0)
+            spin.connect("value-changed",
+                         lambda s: self._on_spin_changed())
+        # Rotation (2.0.6, Joshua): the footprint's orientation,
+        # exactly as the Zone tab's field — filled from the ring
+        # by _sync_rot_field; typing turns the building to it.
+        edit.pack_start(Gtk.Label(label="Rotation (°)"),
+                        False, False, 0)
+        self.mrot = Gtk.SpinButton.new_with_range(0, 180, 1)
+        self.mrot.set_digits(0)
+        self.mrot.connect("value-changed", self._on_rot_changed)
+        edit.pack_start(self.mrot, False, False, 0)
+        move_btn = Gtk.Button(label="Move / Resize")
+        move_btn.connect("clicked", self._on_move_resize)
+        edit.pack_start(move_btn, False, False, 4)
+        del_btn = Gtk.Button(label="Delete")
+        del_btn.connect("clicked", self._on_delete)
+        edit.pack_start(del_btn, False, False, 0)
+        # The Detail Edit door (2.0.6): the same handoff the
+        # Map Editor writes for roads, written for THIS
+        # building by the window (open_in_detail_editor).
+        detail_btn = Gtk.Button(label="Detail Edit")
+        detail_btn.set_tooltip_text(
+            "Hand this building to the Detail Editor for fine "
+            "detail work (moving points and segments)")
+        detail_btn.connect("clicked", self._on_detail_edit)
+        edit.pack_start(detail_btn, False, False, 0)
+        self.detail_btn = detail_btn
+        # Horizontal scroller, the manual path's pattern: the
+        # row is wide; narrowed, it scrolls instead of clipping.
+        self.edit_scroll = Gtk.ScrolledWindow()
+        self.edit_scroll.set_policy(Gtk.PolicyType.AUTOMATIC,
+                                    Gtk.PolicyType.NEVER)
+        self.edit_scroll.set_shadow_type(Gtk.ShadowType.NONE)
+        self.edit_scroll.add(edit)
+        edit_box.pack_start(self.edit_scroll, False, False, 2)
+        edit_box.set_sensitive(False)
+        self.edit_box = edit_box
+        self.pack_start(edit_box, False, False, 0)
 
     # -- data ----------------------------------------------------
 
@@ -4610,6 +5165,11 @@ class ZoneBuildingTab(Gtk.Box):
             front_info=prep["front"],
             roads_near=prep["roads_near"])
         self.inspector.set_visible(True)
+        # 2.0.6: the edit fields come alive with the building —
+        # filled from its record, then live (see __init__).
+        box = prep["zd"].boxes[prep["index"]]
+        self._set_spins(box[0], box[1], box[2], box[3], box[4])
+        self.edit_box.set_sensitive(True)
         if prep.get("roads_error"):
             self.app_window._set_status(
                 f"Building #{prep['index']} is shown without its "
@@ -4646,15 +5206,128 @@ class ZoneBuildingTab(Gtk.Box):
         the drag."""
         return self._apply_values(values, from_drag=True)
 
+    def manip_angle(self):
+        """The viewed building's current footprint orientation
+        in degrees (2.0.6) — the panel's rotate readout starts
+        from here."""
+        zd = self._zd()
+        idx = self.inspector.index
+        if zd is None or idx is None or idx >= len(zd.boxes):
+            return None
+        return zonedata.ring_orientation_deg(
+            zd.details[idx].get("ring") or [])
+
+    def manip_rotate(self, delta_deg):
+        """One step of the panel's Ctrl+drag building rotation
+        (2.0.6) — the same discipline as _apply_values: the
+        shared model turns, both tabs' fields follow, the Zone
+        tab's row follows. Returns the new {x, z, w, d, h} or
+        None when refused."""
+        store = self._store()
+        zd = self._zd()
+        idx = self.inspector.index \
+            if self.inspector.get_visible() else self.index
+        if store is None or zd is None or idx is None \
+                or idx >= len(zd.boxes):
+            return None
+        try:
+            zd.rotate(idx, delta_deg, flagged=store.flagged)
+        except Exception as e:
+            self.app_window._set_status(str(e))
+            return None
+        self.app_window._mark_unpublished()
+        box = zd.boxes[idx]
+        self._set_spins(box[0], box[1], box[2], box[3], box[4])
+        zone_tab = self.app_window.zone_tab
+        if zone_tab is not None and zone_tab._zone == self.zone:
+            try:
+                zone_tab._update_row(idx)
+            except Exception:
+                pass
+        return {"x": box[0], "z": box[1], "w": box[2],
+                "d": box[3], "h": box[4]}
+
     def on_manip_end(self):
         """A drag finished: re-derive the view's front and
         backdrop at the building's new spot."""
         if self.inspector.get_visible():
             self.inspector.refresh_view()
 
+    def _set_spins(self, x, z, w, d, h):
+        """Fill the edit fields WITHOUT triggering live-apply
+        (the manual path's guard, carried across)."""
+        self._spins_loading = True
+        try:
+            self.mx.set_value(x); self.mz.set_value(z)
+            self.mw.set_value(w); self.md.set_value(d)
+            self.mh.set_value(h)
+        finally:
+            self._spins_loading = False
+        # 2.0.6: the Rotation field follows every fill.
+        self._sync_rot_field()
+
+    def _sync_rot_field(self):
+        """Show this building's footprint orientation in the
+        Rotation field (2.0.6) — a code fill under the same
+        guard discipline as the Zone tab's."""
+        if not hasattr(self, "mrot"):
+            return
+        zd = self._zd()
+        idx = self.inspector.index \
+            if getattr(self, "inspector", None) is not None \
+            and self.inspector.get_visible() else self.index
+        if zd is None or idx is None or idx >= len(zd.boxes):
+            return
+        ring = zd.details[idx].get("ring") or []
+        if not ring:
+            return
+        prev = self._spins_loading
+        self._spins_loading = True
+        try:
+            self.mrot.set_value(zonedata.ring_orientation_deg(ring))
+        finally:
+            self._spins_loading = prev
+
+    def _on_rot_changed(self, _spin=None):
+        """Typing an angle turns this building to it at once —
+        the Rotation field's twin of _on_spin_changed."""
+        if self._spins_loading:
+            return
+        store = self._store()
+        zd = self._zd()
+        if store is None or zd is None \
+                or self.index >= len(zd.boxes):
+            return
+        try:
+            turned = zd.rotate_to(self.index,
+                                  self.mrot.get_value(),
+                                  flagged=store.flagged)
+        except Exception as e:
+            self.app_window._set_status(str(e))
+            self._sync_rot_field()
+            return
+        if not turned:
+            return
+        self.app_window._mark_unpublished()
+        box = zd.boxes[self.index]
+        self._set_spins(box[0], box[1], box[2], box[3], box[4])
+        zone_tab = self.app_window.zone_tab
+        if zone_tab is not None and zone_tab._zone == self.zone:
+            try:
+                zone_tab._update_row(self.index)
+            except Exception:
+                pass
+        if self.inspector.get_visible() \
+                and self.inspector.index == self.index:
+            self.inspector.refresh_view()
+        self.app_window._set_status(
+            f"Building #{self.index} rotated "
+            f"(unsaved until save).")
+
     def _apply_values(self, values, from_drag=False):
-        """The Zone tab's apply path, minus its list fields:
-        the model changes in the shared ZoneData, the Zone
+        """The Zone tab's apply path: the model changes in the
+        shared ZoneData, this tab's number fields follow (2.0.6
+        — synced both ways, as the manual path's are), the Zone
         tab's row for this building follows, the view refreshes."""
         store = self._store()
         zd = self._zd()
@@ -4670,8 +5343,14 @@ class ZoneBuildingTab(Gtk.Box):
                       flagged=store.flagged)
         except Exception as e:
             self.app_window._set_status(str(e))
+            # Restore the fields to the real (unchanged) values,
+            # as the manual path does on a refused edit.
+            box = zd.boxes[idx]
+            self._set_spins(box[0], box[1], box[2], box[3], box[4])
             return False
         self.app_window._mark_unpublished()
+        self._set_spins(values["x"], values["z"], values["w"],
+                        values["d"], values["h"])
         zone_tab = self.app_window.zone_tab
         if zone_tab is not None and zone_tab._zone == self.zone:
             try:
@@ -4684,6 +5363,57 @@ class ZoneBuildingTab(Gtk.Box):
         self.app_window._set_status(
             f"Building #{idx} updated (unsaved until save).")
         return True
+
+    # -- the edit fields (2.0.6: the manual path's controls) -------
+
+    def _on_spin_changed(self):
+        """Typing a number applies it at once (the manual path's
+        rule) — unless the fields are being filled by code."""
+        if self._spins_loading:
+            return
+        zd = self._zd()
+        if zd is None or self.index >= len(zd.boxes):
+            return
+        self._apply_values({
+            "x": self.mx.get_value(), "z": self.mz.get_value(),
+            "w": self.mw.get_value(), "d": self.md.get_value(),
+            "h": self.mh.get_value()})
+
+    def _on_move_resize(self, widget):
+        """Move + resize this building from the fields (the same
+        apply path as typing and dragging)."""
+        self._on_spin_changed()
+
+    def _on_delete(self, widget):
+        """Delete this tab's building — the manual path's
+        Delete: the same zonedata call, the same flagged lock.
+        On success the tab closes (the building is gone) and
+        the Zone tab's list is rebuilt when it shows this zone,
+        so no view is left pointing at shifted indices."""
+        store = self._store()
+        zd = self._zd()
+        if store is None or zd is None:
+            return
+        idx = self.index
+        try:
+            zd.delete(idx, flagged=store.flagged)
+        except Exception as e:
+            self.app_window._set_status(str(e))
+            return
+        self.app_window._mark_unpublished()
+        zone_tab = self.app_window.zone_tab
+        if zone_tab is not None and zone_tab._zone == self.zone:
+            zone_tab.hide_inspector()
+            zone_tab.refresh()
+        self.app_window.close_tab(self)
+        self.app_window._set_status(
+            f"Building #{idx} deleted (unsaved).")
+
+    def _on_detail_edit(self, widget):
+        """Detail Edit (2.0.6): hand THIS building to the Detail
+        Editor — the window writes the handoff and launches it
+        (or says plainly that it isn't installed)."""
+        self.app_window.open_in_detail_editor(self.zone, self.index)
 
 
 # ---------------------------------------------------------------------------
