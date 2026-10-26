@@ -623,6 +623,30 @@ window.GitHubReports = (function(){
       (zonesVisited.length ? zonesVisited.join(', ') : zoneId()));
     if(perfBits.length)
       lines.push('Performance at exit: '+perfBits.join(' · '));
+    /* Screen size + the layout actually picked (2026-10-26):
+       ui_layout_apply.js publishes __SA_LAYOUT_PICK — the measured
+       visible size and which layout (per-size name / face / legacy)
+       this device got. The seeded layout sizes are manufacturer
+       numbers, not measurements; this line is how a real device's
+       Stats report replaces the guess. Absent when the layout
+       module never ran — the rest of the report is unchanged. */
+    var layoutPick = null;
+    try{
+      var pk = (typeof window!=='undefined') ? window.__SA_LAYOUT_PICK : null;
+      if(pk && pk.vw && pk.vh){
+        var scr = 'Screen: '+pk.vw+'x'+pk.vh+' visible';
+        if(pk.source==='size' && pk.key){
+          scr += ' · layout: size "'+pk.key+'" ('+pk.width+'x'+pk.height+
+                 (pk.exact ? ', exact match' : ', nearest') + ')';
+        } else if(pk.source){
+          scr += ' · layout: '+pk.source+(pk.key ? ' "'+pk.key+'"' : '');
+        }
+        lines.push(scr);
+        layoutPick = { source: pk.source||null, key: pk.key||null,
+          width: pk.width||null, height: pk.height||null,
+          exact: !!pk.exact, visibleW: pk.vw, visibleH: pk.vh };
+      }
+    }catch(e){}
     lines.push('Other reports queued this session: '+reportsQueuedTotal);
     lines.push('Exit path: '+String(reason||'exit'));
     var details = {
@@ -635,6 +659,7 @@ window.GitHubReports = (function(){
       exitReason: String(reason||'exit')
     };
     if(perfBits.length) details.perfAtExit = perfBits.join(' · ');
+    if(layoutPick) details.layoutPick = layoutPick;
     return details;
   }
 

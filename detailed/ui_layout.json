@@ -72,6 +72,20 @@
       "description": "Compass button that opens Go to - search the game's streets and places and jump straight there"
     },
     {
+      "anchor": "tr",
+      "asset": null,
+      "height": 44,
+      "id": "wh-btn",
+      "label": "\ud83c\udfe0",
+      "mobile_only": false,
+      "type": "button",
+      "visible": true,
+      "width": 44,
+      "x": 12,
+      "y": 80,
+      "description": "Worker housing button, added to the page by workerhousing.js - opens the worker housing panel. It sits in the top-right button column under the pause button."
+    },
+    {
       "anchor": "tl",
       "asset": null,
       "height": 44,
@@ -524,6 +538,20 @@
           "description": "Compass button that opens Go to - search the game's streets and places and jump straight there"
         },
         {
+          "anchor": "tr",
+          "asset": null,
+          "height": 44,
+          "id": "wh-btn",
+          "label": "\ud83c\udfe0",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 12,
+          "y": 80,
+          "description": "Worker housing button, added to the page by workerhousing.js - opens the worker housing panel. It sits in the top-right button column under the pause button."
+        },
+        {
           "anchor": "tl",
           "asset": null,
           "height": 44,
@@ -946,6 +974,20 @@
           "x": 136,
           "y": 180,
           "description": "Compass button that opens Go to - search the game's streets and places and jump straight there"
+        },
+        {
+          "anchor": "tr",
+          "asset": null,
+          "height": 44,
+          "id": "wh-btn",
+          "label": "\ud83c\udfe0",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 12,
+          "y": 80,
+          "description": "Worker housing button, added to the page by workerhousing.js - opens the worker housing panel. It sits in the top-right button column under the pause button."
         },
         {
           "anchor": "tl",
@@ -1383,6 +1425,20 @@
           "description": "Compass button that opens Go to - search the game's streets and places and jump straight there"
         },
         {
+          "anchor": "tr",
+          "asset": null,
+          "height": 44,
+          "id": "wh-btn",
+          "label": "\ud83c\udfe0",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 12,
+          "y": 80,
+          "description": "Worker housing button, added to the page by workerhousing.js - opens the worker housing panel. It sits in the top-right button column under the pause button."
+        },
+        {
           "anchor": "tl",
           "asset": null,
           "height": 44,
@@ -1574,8 +1630,8 @@
           "type": "panel",
           "visible": true,
           "width": 1256,
-          "x": 26,
-          "y": 2148,
+          "x": -12,
+          "y": 70,
           "description": "Speech bubble panel where NPC conversation text appears"
         },
         {
@@ -1588,8 +1644,8 @@
           "type": "label",
           "visible": true,
           "width": 467,
-          "x": -31,
-          "y": 665,
+          "x": 0,
+          "y": 64,
           "description": "Small popup messages at the bottom of the screen (e.g. 'Item picked up')"
         },
         {
@@ -1814,6 +1870,20 @@
           "x": 136,
           "y": 180,
           "description": "Compass button that opens Go to - search the game's streets and places and jump straight there"
+        },
+        {
+          "anchor": "tr",
+          "asset": null,
+          "height": 44,
+          "id": "wh-btn",
+          "label": "\ud83c\udfe0",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 12,
+          "y": 80,
+          "description": "Worker housing button, added to the page by workerhousing.js - opens the worker housing panel. It sits in the top-right button column under the pause button."
         },
         {
           "anchor": "tl",
@@ -2249,6 +2319,20 @@
           "description": "Compass button that opens Go to - search the game's streets and places and jump straight there"
         },
         {
+          "anchor": "tr",
+          "asset": null,
+          "height": 44,
+          "id": "wh-btn",
+          "label": "\ud83c\udfe0",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 12,
+          "y": 80,
+          "description": "Worker housing button, added to the page by workerhousing.js - opens the worker housing panel. It sits in the top-right button column under the pause button."
+        },
+        {
           "anchor": "tl",
           "asset": null,
           "height": 44,
@@ -2419,13 +2503,13 @@
         {
           "anchor": "tl",
           "asset": null,
-          "height": 366,
+          "height": 44,
           "id": "gps-nav-btn",
           "label": "\ud83e\udded",
           "mobile_only": false,
           "type": "button",
           "visible": true,
-          "width": 74,
+          "width": 44,
           "x": 61,
           "y": 94,
           "description": "Button that opens GPS navigation to a destination"
@@ -2440,8 +2524,8 @@
           "type": "panel",
           "visible": true,
           "width": 1256,
-          "x": 11,
-          "y": 2232,
+          "x": -12,
+          "y": 70,
           "description": "Speech bubble panel where NPC conversation text appears"
         },
         {
@@ -2454,8 +2538,8 @@
           "type": "label",
           "visible": true,
           "width": 467,
-          "x": -80,
-          "y": 701,
+          "x": 0,
+          "y": 64,
           "description": "Small popup messages at the bottom of the screen (e.g. 'Item picked up')"
         },
         {
@@ -2594,8 +2678,8 @@
           "type": "button",
           "visible": true,
           "width": 260,
-          "x": -583,
-          "y": -1192,
+          "x": 0,
+          "y": 0,
           "description": "Button that sends bug reports to Joshua Arnold (hidden by default)"
         }
       ]
@@ -2680,6 +2764,20 @@
           "x": 136,
           "y": 180,
           "description": "Compass button that opens Go to - search the game's streets and places and jump straight there"
+        },
+        {
+          "anchor": "tr",
+          "asset": null,
+          "height": 44,
+          "id": "wh-btn",
+          "label": "\ud83c\udfe0",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 12,
+          "y": 80,
+          "description": "Worker housing button, added to the page by workerhousing.js - opens the worker housing panel. It sits in the top-right button column under the pause button."
         },
         {
           "anchor": "tl",
@@ -3115,6 +3213,20 @@
           "description": "Compass button that opens Go to - search the game's streets and places and jump straight there"
         },
         {
+          "anchor": "tr",
+          "asset": null,
+          "height": 44,
+          "id": "wh-btn",
+          "label": "\ud83c\udfe0",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 12,
+          "y": 80,
+          "description": "Worker housing button, added to the page by workerhousing.js - opens the worker housing panel. It sits in the top-right button column under the pause button."
+        },
+        {
           "anchor": "tl",
           "asset": null,
           "height": 44,
@@ -3546,6 +3658,20 @@
           "x": 136,
           "y": 180,
           "description": "Compass button that opens Go to - search the game's streets and places and jump straight there"
+        },
+        {
+          "anchor": "tr",
+          "asset": null,
+          "height": 44,
+          "id": "wh-btn",
+          "label": "\ud83c\udfe0",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 12,
+          "y": 80,
+          "description": "Worker housing button, added to the page by workerhousing.js - opens the worker housing panel. It sits in the top-right button column under the pause button."
         },
         {
           "anchor": "tl",
@@ -3981,6 +4107,20 @@
           "description": "Compass button that opens Go to - search the game's streets and places and jump straight there"
         },
         {
+          "anchor": "tr",
+          "asset": null,
+          "height": 44,
+          "id": "wh-btn",
+          "label": "\ud83c\udfe0",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 12,
+          "y": 80,
+          "description": "Worker housing button, added to the page by workerhousing.js - opens the worker housing panel. It sits in the top-right button column under the pause button."
+        },
+        {
           "anchor": "tl",
           "asset": null,
           "height": 44,
@@ -4412,6 +4552,20 @@
           "x": 136,
           "y": 180,
           "description": "Compass button that opens Go to - search the game's streets and places and jump straight there"
+        },
+        {
+          "anchor": "tr",
+          "asset": null,
+          "height": 44,
+          "id": "wh-btn",
+          "label": "\ud83c\udfe0",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 12,
+          "y": 80,
+          "description": "Worker housing button, added to the page by workerhousing.js - opens the worker housing panel. It sits in the top-right button column under the pause button."
         },
         {
           "anchor": "tl",
@@ -4847,6 +5001,20 @@
           "description": "Compass button that opens Go to - search the game's streets and places and jump straight there"
         },
         {
+          "anchor": "tr",
+          "asset": null,
+          "height": 44,
+          "id": "wh-btn",
+          "label": "\ud83c\udfe0",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 12,
+          "y": 80,
+          "description": "Worker housing button, added to the page by workerhousing.js - opens the worker housing panel. It sits in the top-right button column under the pause button."
+        },
+        {
           "anchor": "tl",
           "asset": null,
           "height": 44,
@@ -5280,6 +5448,20 @@
           "description": "Compass button that opens Go to - search the game's streets and places and jump straight there"
         },
         {
+          "anchor": "tr",
+          "asset": null,
+          "height": 44,
+          "id": "wh-btn",
+          "label": "\ud83c\udfe0",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 12,
+          "y": 80,
+          "description": "Worker housing button, added to the page by workerhousing.js - opens the worker housing panel. It sits in the top-right button column under the pause button."
+        },
+        {
           "anchor": "tl",
           "asset": null,
           "height": 44,
@@ -5711,6 +5893,20 @@
           "x": 136,
           "y": 180,
           "description": "Compass button that opens Go to - search the game's streets and places and jump straight there"
+        },
+        {
+          "anchor": "tr",
+          "asset": null,
+          "height": 44,
+          "id": "wh-btn",
+          "label": "\ud83c\udfe0",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 12,
+          "y": 80,
+          "description": "Worker housing button, added to the page by workerhousing.js - opens the worker housing panel. It sits in the top-right button column under the pause button."
         },
         {
           "anchor": "tl",

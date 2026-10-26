@@ -14,9 +14,16 @@
    Each module still owns its button and panel — the dock only re-parents
    the button elements and overrides their position CSS. Click handlers,
    panels, and titles are untouched.
-   The dock sits below the backpack icon row, clear of the street-name HUD.
-   Mobile overrides keep it thumb-reachable without covering the road label.
    Single-instance guard + boot poll (same pattern as other modules).
+
+   2026-10-26 (Joshua): "the report icon is still on screen" — the dock
+   itself is now HIDDEN by default: no always-on-screen 📋 toggle at
+   all. The entry point is the Administrator menu's "📋 Agent Reports"
+   row (#adm-agentreports, beside Crew Reports), which reveals the
+   dock already expanded. Tapping the toggle to collapse hides the
+   dock again. The dock, the tray and the collected agent buttons are
+   unchanged — only the always-visible icon is gone. Automatic crash
+   and session reports never used this dock and are untouched.
    ============================================================================ */
 (function(){
 'use strict';
@@ -27,6 +34,7 @@ window.__agentdock = true;
 var AGENT_BTNS = ['sf-btn','ce-btn','heli-btn'];
 
 var dock=null, toggleBtn=null, tray=null, expanded=false;
+var revealed=false;  // 2026-10-26: dock hidden until the menu asks for it
 var collected=[];  // {el, origParent}
 
 function buildDock(){
@@ -68,12 +76,34 @@ function buildDock(){
     expanded=!expanded;
     dock.classList.toggle('open', expanded);
     toggleBtn.title=expanded?'Agent Reports — tap to collapse':'Agent Reports — tap to expand';
+    // Collapsing puts the icon away again (2026-10-26): the dock only
+    // exists on screen while the player is using it.
+    if (!expanded) hideDock();
   });
   tray=document.createElement('div');
   tray.id='agent-dock-tray';
   dock.appendChild(toggleBtn);
   dock.appendChild(tray);
+  // Hidden by default (2026-10-26) — revealed from the Administrator
+  // menu's Agent Reports row or via AGENTDOCK.expand().
+  dock.style.display='none';
   document.body.appendChild(dock);
+}
+
+/* Reveal the dock on screen (still collapsed until expanded). */
+function showDock(){
+  buildDock();
+  revealed=true;
+  dock.style.display='flex';
+}
+/* Take the dock off the screen entirely (and collapse it). */
+function hideDock(){
+  if (!dock) return;
+  revealed=false;
+  expanded=false;
+  dock.classList.remove('open');
+  dock.style.display='none';
+  if (toggleBtn) toggleBtn.title='Agent Reports — tap to expand';
 }
 
 /* Move an agent button into the tray, preserving its handlers. */
@@ -101,7 +131,7 @@ function poll(){
     try{
       if (typeof Report!=='undefined') Report.setSys('agentdock',{
         status:'ok', version:'1.1',
-        note:'docked '+collected.length+'/'+AGENT_BTNS.length+' agent buttons into collapsible group (road/infra crew buttons retired to the Administrator menu 2026-10-24)'
+        note:'docked '+collected.length+'/'+AGENT_BTNS.length+' agent buttons into collapsible group (road/infra crew buttons retired to the Administrator menu 2026-10-24); dock hidden by default since 2026-10-26, opened from Administrator > Agent Reports'
       });
     }catch(e){}
     return;  // done
@@ -110,10 +140,39 @@ function poll(){
 }
 setTimeout(poll, 1000);  // let agent modules boot first
 
-/* Public API (for admin panel / debugging). */
+/* Public API (for admin panel / debugging). Since 2026-10-26 the dock
+   starts hidden: expand() reveals AND opens it; collapse() closes
+   AND hides it. */
 window.AGENTDOCK={
-  expand:function(){ if(dock&&!expanded) toggleBtn.click(); },
-  collapse:function(){ if(dock&&expanded) toggleBtn.click(); },
+  expand:function(){ showDock(); if(dock&&!expanded) toggleBtn.click(); },
+  collapse:function(){ hideDock(); },
   get docked(){ return collected.map(function(c){ return c.el.id; }); }
 };
+
+/* Administrator menu entry (2026-10-26): the "📋 Agent Reports" row
+   (#adm-agentreports in index.html, beside Crew Reports) is how the
+   player reaches the agent buttons now that the always-on-screen
+   icon is gone. Same wiring pattern as crew_reports_view.js: find
+   the row (retrying while the page finishes booting), and on click
+   close the menus and reveal the dock already expanded. */
+(function wireAgentReportsRow(){
+  var tries=0;
+  function wire(){
+    var row=document.getElementById('adm-agentreports');
+    if (!row){
+      if (++tries<=40) setTimeout(wire, 500);
+      return;
+    }
+    if (row.__agentdockWired) return;
+    row.__agentdockWired=true;
+    row.addEventListener('click', function(){
+      try{
+        var am=document.getElementById('adminmenu'); if (am) am.classList.remove('show');
+        var st=document.getElementById('settings'); if (st) st.classList.remove('show');
+      }catch(e){}
+      window.AGENTDOCK.expand();
+    });
+  }
+  wire();
+})();
 })();
