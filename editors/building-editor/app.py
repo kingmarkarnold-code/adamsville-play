@@ -89,7 +89,7 @@ from subdivisioncanvas import SubdivisionCanvas
 
 # App version shown in the Help -> About dialog (bump with each release).
 # Joshua 2026-10-11: version number must be prominent in About.
-APP_VERSION = "2.0.6"
+APP_VERSION = "2.0.7"
 
 # ---------------------------------------------------------------------------
 # THE EDITOR UI RULE (Joshua, 2026-10-16 — standing suite principle):
@@ -2103,6 +2103,9 @@ class ZoneInspectorPanel(Gtk.Box):
         FRONT/BACK edge for DEPTH; the FRONT FACE (orange wall)
         dragged up/down for HEIGHT. Typing numbers and dragging
         are the same values, synced both ways through the tab.
+        (The gesture assignments in this bullet were replaced
+        by Joshua's manipulation model in 2.0.7 — see the 2.0.7
+        entry below.)
       * STATUS LABEL (amendment 2): bold coloured text at the
         BOTTOM LEFT of the 3D view — red "Flagged", yellow
         "Skipped", green "Placed" — describing how the GAME treats
@@ -2130,30 +2133,58 @@ class ZoneInspectorPanel(Gtk.Box):
     CONTROL+drag = ROTATE (the old orbit motion, now on the
     modifier). The manipulation grabs are NOT view controls and
     are unchanged: a plain press on the building still grabs it
-    (roof moves, edges resize, front face heights), and a plain
-    click (press + release, no drag) still picks a street.
+    (the current assignments are the 2.0.7 entry below), and a
+    plain click (press + release, no drag) still picks a street.
 
-    2.0.6 (Joshua, 2026-10-25):
-      * PART SELECTION: a plain CLICK on the building selects the
-        part clicked — the ROOF, the FRONT FACE, or an EDGE —
-        names it in the readouts, and highlights the roof/front
-        in the picture. A click on empty ground clears it.
-      * ROOF MOVE with a threshold: a press-and-hold drag that
-        starts on the roof moves the building in the ground
-        plane, but only once the pointer has travelled past the
-        drag threshold — a press that stays put is the click
-        above and never nudges the building. X/Z only: the base
-        stays seated on the ground; height never changes.
-      * BUILDING ROTATION: Ctrl+press ON the selected building
-        (roof, wall or edge) and drag rotates THE BUILDING
-        around its own centre — horizontal drag turns it
-        (ROTATE_DEG_PER_PX per pixel), with a live degrees
-        readout overlaid on the view while turning. Ctrl+drag
-        starting anywhere else rotates the VIEW exactly as
-        2.0.2 — the press point decides which one turns. The
-        rotation applies through the owner's manip_rotate (tabs
-        that do not offer it — the gas station review — keep
-        view-rotate everywhere).
+    2.0.6 (Joshua, 2026-10-25) introduced PART SELECTION (a
+    plain click selects the part clicked and names it in the
+    readouts), the click-vs-drag threshold (a press that stays
+    put never nudges the building), and BUILDING ROTATION with
+    its live degrees readout, the Rotation field, and the
+    baked footprint-ring storage. Its gesture assignments
+    (roof = move, Ctrl anywhere on the building = rotate) were
+    replaced the next day by the model below.
+
+    2.0.7 (Joshua, 2026-10-26) — THE MANIPULATION MODEL, in his
+    words: the editor exists because a building sits in the
+    WRONG LOCATION — blocking streets, sometimes not even
+    showing because streets are in the way — and you fix its
+    placement by hand, on the building itself:
+      * ROOF: drag up/down changes the HEIGHT. Nothing else
+        moves.
+      * FRONT FACE (the orange wall): drag changes the DEPTH —
+        the front wall moves, the back wall stays put.
+      * LEFT / RIGHT FACE: drag changes the WIDTH — that wall
+        moves, the opposite wall stays put.
+      * A CORNER (where two walls meet, low on the building):
+        press-and-hold and drag MOVES the building around the
+        ground plane. X/Z only — the base stays seated.
+      * The same CORNER with SHIFT held ("use shift for
+        control" — Joshua): drag ROTATES the building around
+        its own centre, following the mouse, with the live
+        degrees readout; the turn bakes into the footprint
+        ring exactly as 2.0.6 stored it (ZoneData.rotate +
+        bounding box, manifest-safe save).
+      * The same CORNER with CONTROL held: drag scales the
+        WHOLE building — footprint and height together by one
+        factor, anchored on the OPPOSITE corner, which does
+        not move (ZoneData.scale, its own isolated path; the
+        live readout shows the factor and the new W/D/H).
+      * A modifier drag starting anywhere else rotates the
+        VIEW (the universal controls), exactly as always.
+    Width is left-to-right across the front; depth is
+    front-to-back. Every drag engages only past the click
+    threshold, so a press that stays put is the click that
+    selects the part — ROOF, FRONT FACE, SIDE FACE or CORNER,
+    each named in the readout with what its drag does.
+
+    SHAPE-PRESERVATION LAW (2.0.7, Joshua, same day): a resize
+    never rebuilds the footprint as a rectangle — the 2.0.6
+    rebuild straightened the jutting walls of church/school
+    footprints, destroying them. Every size path (typed
+    fields, face drags, the whole-size scale) SCALES the
+    existing ring's points; the shape sequence survives,
+    proportionally scaled. See ZoneData.resize / .scale.
     """
 
     view_mode = "3d"
@@ -2172,11 +2203,25 @@ class ZoneInspectorPanel(Gtk.Box):
     FRONT_RGB = (1.0, 0.55, 0.15)        # the warm orange front wall
     STREET_HILITE_RGB = (0.05, 0.65, 0.85)
 
-    # 2.0.6: building rotation speed — degrees of building turn
-    # per horizontal pixel of a Ctrl+drag on the building. Half a
-    # degree per pixel turns a full half-circle (orientation is
-    # mod 180) in 360 px of drag: deliberate, not twitchy.
+    # Building rotation speed — degrees of building turn per
+    # horizontal pixel of a modifier drag on a corner (2.0.6;
+    # the corner grip is 2.0.7). Half a degree per pixel turns
+    # a full half-circle (orientation is mod 180) in 360 px of
+    # drag: deliberate, not twitchy.
     ROTATE_DEG_PER_PX = 0.5
+
+    # 2.0.7: how close (screen px) a press must land to a
+    # building corner to grab the CORNER — on the corner's
+    # ground point itself, or along the lower half of its
+    # vertical edge. Corners are the move/rotate handle, so
+    # the target is generous on purpose.
+    CORNER_GRAB_PX = 18
+    CORNER_EDGE_PX = 13
+
+    # The box's corners as (right sign, front sign), in the
+    # order _classify_grab numbers them: back-left, back-right,
+    # front-right, front-left.
+    _CORNERS = ((-1, -1), (1, -1), (1, 1), (-1, 1))
 
     # The status label's words + colours (Joshua's exact spec).
     STATUS_STYLE = {
@@ -2234,11 +2279,12 @@ class ZoneInspectorPanel(Gtk.Box):
         self._drag = None
         self._cur_values = None     # {x, z, w, d, h} being viewed
         self.selected_street = None  # {"name", "x", "z", "zone"}
-        # 2.0.6: the part of the building a plain click selected —
-        # None | "roof" | "front" | ("edge", kind, side). Set on
-        # click, named by the readout line, roof/front highlighted
-        # in the picture; cleared by a click on empty ground or a
-        # new subject.
+        # The part of the building a plain click selected —
+        # None | "roof" | "front" | ("side", side) |
+        # ("corner", index) (2.0.6; the part set is 2.0.7's).
+        # Set on click, named by the readout line, highlighted
+        # in the picture; cleared by a click on empty ground or
+        # a new subject.
         self.selected_part = None
         self.status_word = None
         self.status_color = None
@@ -2304,8 +2350,10 @@ class ZoneInspectorPanel(Gtk.Box):
         self.status_label.set_no_show_all(True)
         self.status_label.hide()
         # 2.0.6: the live rotation readout, overlaid top-left of
-        # the view and visible only while a Ctrl+drag is turning
-        # the building itself.
+        # the view and visible only while a corner modifier drag
+        # is turning the building itself. 2.0.7: the same overlay
+        # label carries the whole-size scale readout while a
+        # Ctrl+corner drag scales the building.
         self.rotate_label = Gtk.Label()
         self.rotate_label.set_halign(Gtk.Align.START)
         self.rotate_label.set_valign(Gtk.Align.START)
@@ -2324,23 +2372,32 @@ class ZoneInspectorPanel(Gtk.Box):
         controls = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
                            spacing=4)
         hint = Gtk.Label(
-            label="Drag to pan the view; Ctrl+drag rotates; wheel "
-                  "or +/− zooms. Drag the roof to move, an edge to "
-                  "resize, the orange wall for height. Ctrl+drag ON "
-                  "the building rotates the building. Click a "
-                  "street to select it.")
+            label="Drag to pan the view; Ctrl+drag rotates it; "
+                  "wheel or +/− zooms. On the building: drag the "
+                  "roof for height, the front wall for depth, a "
+                  "side wall for width, a corner to move it; "
+                  "Shift+corner turns it, Ctrl+corner scales it "
+                  "whole. Click a street to select it.")
         hint.set_halign(Gtk.Align.START)
         hint.set_ellipsize(Pango.EllipsizeMode.END)
         hint.set_tooltip_text(
             "Universal viewport controls: drag pans the view, "
-            "Ctrl+drag rotates it, the mouse wheel or the + and − "
-            "keys zoom. Drag the roof to move the building, a "
-            "left/right edge for width, a front/back edge for "
-            "depth, the orange front wall up or down for height. "
-            "Ctrl+drag starting ON the building rotates the "
-            "building itself; starting anywhere else it rotates "
-            "the view. Click the roof, the front wall or an edge "
-            "to select that part; click a street to select it.")
+            "Ctrl+drag or Shift+drag rotates it, the mouse wheel "
+            "or the + and − keys zoom. On the building itself "
+            "(Joshua's 2.0.7 model): drag the ROOF up or down "
+            "for HEIGHT; drag the FRONT WALL for DEPTH — the "
+            "front wall moves, the back wall stays; drag a LEFT "
+            "or RIGHT WALL for WIDTH — that wall moves, the "
+            "other stays; drag a CORNER to MOVE the building on "
+            "the ground; Shift+drag a corner to ROTATE the "
+            "building; Ctrl+drag a corner to scale the WHOLE "
+            "building (footprint and height together, anchored "
+            "on the opposite corner). Resizing scales the "
+            "footprint's own shape — jutting walls are never "
+            "straightened. A modifier drag starting OFF a "
+            "corner rotates the view. Click the roof, a wall or "
+            "a corner to select that part; click a street to "
+            "select it.")
         controls.pack_start(hint, True, True, 0)
         face_btn = Gtk.Button(label="Face front")
         face_btn.set_tooltip_text(
@@ -2425,7 +2482,8 @@ class ZoneInspectorPanel(Gtk.Box):
 
     def _set_selected_part(self, part):
         """Record the part a plain click selected (roof / front
-        face / edge) and announce it in the readout line."""
+        face / side face / corner) and announce it in the
+        readout line."""
         self.selected_part = part
         self._update_sel_label()
         self.drawing.queue_draw()
@@ -2437,25 +2495,30 @@ class ZoneInspectorPanel(Gtk.Box):
             self.sel_label.set_tooltip_text("")
             return
         if part == "roof":
-            text = ("Selected: the ROOF — drag to move the "
-                    "building; Ctrl+drag on the building rotates "
-                    "it.")
+            text = ("Selected: the ROOF — drag up/down to "
+                    "change the height.")
         elif part == "front":
-            text = ("Selected: the FRONT FACE — drag up/down "
-                    "for the height; Ctrl+drag on the building "
-                    "rotates it.")
-        else:  # ("edge", kind, side)
-            which = "width" if part[1] == "width" else "depth"
-            text = (f"Selected: an EDGE — drag to change the "
-                    f"{which}; Ctrl+drag on the building "
-                    f"rotates it.")
+            text = ("Selected: the FRONT FACE — drag to change "
+                    "the depth; this wall moves, the back wall "
+                    "stays put.")
+        elif part[0] == "side":
+            which = "RIGHT" if part[1] > 0 else "LEFT"
+            text = (f"Selected: the {which} FACE — drag to "
+                    f"change the width; this wall moves, the "
+                    f"other wall stays put.")
+        else:  # ("corner", index)
+            text = ("Selected: a CORNER — drag to move the "
+                    "building; Shift+drag on the corner to "
+                    "rotate it; Ctrl+drag on the corner to "
+                    "scale the whole building.")
         self.sel_label.set_text(text)
         self.sel_label.set_tooltip_text(text)
 
     def _show_rotate_readout(self, angle_deg):
         """The live degrees readout overlaid on the view while a
-        Ctrl+drag is turning the building. Hidden on release —
-        the tab's Rotation field keeps the final angle."""
+        corner modifier drag is turning the building. Hidden on
+        release — the tab's Rotation field keeps the final
+        angle."""
         # Plain text first, markup second: real GTK shows the
         # markup; the harness's stub label keeps the plain text.
         self.rotate_label.set_text(f"Rotation: {angle_deg:.0f}°")
@@ -2463,6 +2526,23 @@ class ZoneInspectorPanel(Gtk.Box):
             f"<span font_weight=\"bold\" size=\"large\" "
             f"foreground=\"#ffffff\" background=\"#333333\">"
             f" Rotation: {angle_deg:.0f}° </span>")
+        self.rotate_label.show()
+
+    def _show_scale_readout(self, factor, vals):
+        """The live whole-size readout overlaid on the view
+        while a Ctrl+corner drag scales the building (2.0.7):
+        the factor plus the resulting width/depth/height.
+        Same overlay label as the rotation readout; hidden on
+        release by _hide_rotate_readout — the tab's fields keep
+        the final size."""
+        text = (f"Whole size: ×{factor:.2f} — "
+                f"W {vals['w']:.1f} × D {vals['d']:.1f} — "
+                f"H {vals['h']:.1f}")
+        self.rotate_label.set_text(text)
+        self.rotate_label.set_markup(
+            f"<span font_weight=\"bold\" size=\"large\" "
+            f"foreground=\"#ffffff\" background=\"#333333\">"
+            f" {text} </span>")
         self.rotate_label.show()
 
     def _hide_rotate_readout(self):
@@ -3108,8 +3188,8 @@ class ZoneInspectorPanel(Gtk.Box):
             ctx.move_to(sx1, sy1)
             ctx.line_to(sx2, sy2)
             ctx.stroke()
-        # 2.0.6: the clicked part's highlight — the roof outline
-        # or the front face, stroked bright over the fill so the
+        # The clicked part's highlight (2.0.6; side + corner
+        # added 2.0.7) — stroked bright over the fill so the
         # selection is visible at a glance.
         part = self.selected_part
         if part == "roof":
@@ -3138,6 +3218,61 @@ class ZoneInspectorPanel(Gtk.Box):
                     ctx.line_to(sx, sy)
             ctx.close_path()
             ctx.stroke()
+        elif isinstance(part, tuple) and part[0] == "side" \
+                and front_edge is not None:
+            # 2.0.7: the side face — the footprint edge next to
+            # the front edge on the selected side (left/right by
+            # the frame's right vector), stroked as a quad.
+            f2, r2 = self._frame()
+            n2 = len(ring)
+            quad = None
+            for cand in ((front_edge - 1) % n2,
+                         (front_edge + 1) % n2):
+                a, b = fi["edges"][cand]
+                mx, mz = (a[0] + b[0]) / 2 - cx, \
+                    (a[1] + b[1]) / 2 - cz
+                if (mx * r2[0] + mz * r2[1] > 0) == (part[1] > 0):
+                    quad = [to_screen(a[0] - cx, a[1] - cz, 0),
+                            to_screen(b[0] - cx, b[1] - cz, 0),
+                            to_screen(b[0] - cx, b[1] - cz, hgt),
+                            to_screen(a[0] - cx, a[1] - cz, hgt)]
+                    break
+            if quad is not None:
+                ctx.set_source_rgb(0.1, 0.9, 1.0)
+                ctx.set_line_width(3)
+                for j, (sx, sy) in enumerate(quad):
+                    if j == 0:
+                        ctx.move_to(sx, sy)
+                    else:
+                        ctx.line_to(sx, sy)
+                ctx.close_path()
+                ctx.stroke()
+        elif isinstance(part, tuple) and part[0] == "corner":
+            # 2.0.7: the corner — the footprint vertex nearest
+            # the box corner the click classified, stroked as a
+            # bright vertical with a ring at its foot, so the
+            # move/rotate handle reads at a glance.
+            v2 = self._cur_values
+            if v2:
+                f2, r2 = self._frame()
+                sr = (-v2["w"] / 2, v2["w"] / 2, v2["w"] / 2,
+                      -v2["w"] / 2)[part[1]]
+                sf = (-v2["d"] / 2, -v2["d"] / 2, v2["d"] / 2,
+                      v2["d"] / 2)[part[1]]
+                wx = v2["x"] + r2[0] * sr + f2[0] * sf
+                wz = v2["z"] + r2[1] * sr + f2[1] * sf
+                near = min(ring, key=lambda p: (p[0] - wx) ** 2
+                           + (p[1] - wz) ** 2)
+                gx, gy = to_screen(near[0] - cx, near[1] - cz, 0)
+                tx, ty = to_screen(near[0] - cx, near[1] - cz,
+                                   hgt)
+                ctx.set_source_rgb(0.1, 0.9, 1.0)
+                ctx.set_line_width(3)
+                ctx.move_to(gx, gy)
+                ctx.line_to(tx, ty)
+                ctx.stroke()
+                ctx.arc(gx, gy, 6, 0, 2 * math.pi)
+                ctx.stroke()
 
     _STATION_COLORS = {
         "pad": (0.45, 0.47, 0.49),
@@ -3344,12 +3479,28 @@ class ZoneInspectorPanel(Gtk.Box):
 
     def _classify_grab(self, sx, sy):
         """
-        What a press at (sx, sy) grabs, by the manipulation rules:
-        ("width"|"depth", side) near a roof edge, "move" inside the
-        roof, "height" inside the front face, else None (a view
-        drag — pan, or rotate with Control held — or a click).
-        Uses the viewed object's BOX rectangle (the same rectangle
-        the number fields describe).
+        What a press at (sx, sy) grabs, by Joshua's manipulation
+        model (2.0.7):
+          ("corner", i) — near a bottom corner (i = 0..3 in
+              _CORNERS order): the drag MOVES the building; the
+              press handler turns the same grip into the
+              ROTATION grip when Shift is held, and into the
+              WHOLE-SIZE SCALE grip when Ctrl is held;
+          ("height", 0) — inside the ROOF: the drag changes the
+              height, nothing else;
+          ("depth", +1) — inside the FRONT face: the drag
+              changes the depth, the front wall moving and the
+              back wall staying put;
+          ("width", ±1) — inside a LEFT/RIGHT face: the drag
+              changes the width, that wall moving and the
+              opposite wall staying put;
+          None — off the building (a view drag — pan, or rotate
+              with a modifier held — or a click).
+        Uses the viewed object's BOX rectangle (the same
+        rectangle the number fields describe), projected with
+        the last draw's transform. When more than one face
+        contains the point (an oblique view), the face nearest
+        the viewer wins.
         """
         v = self._cur_values
         if not v or not self._view:
@@ -3357,37 +3508,62 @@ class ZoneInspectorPanel(Gtk.Box):
         f, r = self._frame()
         cx, cz = v["x"], v["z"]
         hw, hd = v["w"] / 2, v["d"] / 2
-
-        def corner(sr, sf, h):
-            return (cx + r[0] * sr + f[0] * sf,
-                    cz + r[1] * sr + f[1] * sf, h)
-
         ccx, ccz = self._centre()
-        # The roof rectangle's corners on screen (projected with
-        # the last draw's transform, at the building's height).
-        roof = []
-        for sr, sf in ((-hw, -hd), (hw, -hd), (hw, hd), (-hw, hd)):
-            wx, wz, hh = corner(sr, sf, v["h"])
-            roof.append(self._project_screen(wx - ccx, wz - ccz, hh))
-        # Edges: 0=back (sf=-hd), 1=right (sr=+hw), 2=front, 3=left.
-        edges = [(3, 0, "width", -1), (0, 1, "depth", -1),
-                 (1, 2, "width", +1), (2, 3, "depth", +1)]
-        for i0, i1, kind, side in edges:
-            d, _t = self._point_seg_dist(
-                sx, sy, roof[i0][0], roof[i0][1],
-                roof[i1][0], roof[i1][1])
-            if d <= 9:
-                return (kind, side)
+
+        def screen(sr, sf, h):
+            wx = cx + r[0] * sr + f[0] * sf
+            wz = cz + r[1] * sr + f[1] * sf
+            return self._project_screen(wx - ccx, wz - ccz, h)
+
+        roof = [screen(sr * hw, sf * hd, v["h"])
+                for sr, sf in self._CORNERS]
+        ground = [screen(sr * hw, sf * hd, 0)
+                  for sr, sf in self._CORNERS]
+        # 1. Corners first: the move/rotate handle gets a
+        # generous target — on the corner's ground point, or
+        # along the lower half of its vertical edge (where two
+        # walls meet, low on the building, as Joshua put it).
+        best = None
+        for i in range(4):
+            gx, gy = ground[i]
+            near = math.hypot(sx - gx, sy - gy)
+            if near > self.CORNER_GRAB_PX:
+                near = None
+            mx, my = (gx + roof[i][0]) / 2, (gy + roof[i][1]) / 2
+            along, _t = self._point_seg_dist(sx, sy, gx, gy,
+                                             mx, my)
+            if along > self.CORNER_EDGE_PX:
+                along = None
+            cand = [d for d in (near, along) if d is not None]
+            if cand and (best is None or min(cand) < best[0]):
+                best = (min(cand), i)
+        if best is not None:
+            return ("corner", best[1])
+        # 2. The roof: the drag changes the height.
         if self._point_in_poly(sx, sy, roof):
-            return ("move", 0)
-        # The front face: front roof edge down to the ground.
-        gx1, gz1, _gh = corner(hw, hd, 0)
-        gx0, gz0, _gh = corner(-hw, hd, 0)
-        fr0 = self._project_screen(gx1 - ccx, gz1 - ccz, 0)
-        fr1 = self._project_screen(gx0 - ccx, gz0 - ccz, 0)
-        face = [roof[2], roof[3], fr1, fr0]
-        if self._point_in_poly(sx, sy, face):
             return ("height", 0)
+        # 3. The faces, as quads in _CORNERS order: the front
+        # face is edge 2->3 (sf = +hd), the right face edge
+        # 1->2 (sr = +hw), the left face edge 3->0 (sr = -hw).
+        faces = []
+
+        def face(kind, side, i0, i1, off_r, off_f):
+            quad = [roof[i0], roof[i1], ground[i1], ground[i0]]
+            if self._point_in_poly(sx, sy, quad):
+                wx = cx + r[0] * off_r + f[0] * off_f
+                wz = cz + r[1] * off_r + f[1] * off_f
+                depth = self._project(
+                    wx - ccx, wz - ccz, v["h"] / 2,
+                    self._view["az"], self._view["el"])[2]
+                faces.append((depth, kind, side))
+
+        face("depth", 1, 2, 3, 0, hd)
+        face("width", 1, 1, 2, hw, 0)
+        face("width", -1, 3, 0, -hw, 0)
+        if faces:
+            # Largest depth = nearest the viewer (see _project).
+            faces.sort(key=lambda t: t[0], reverse=True)
+            return (faces[0][1], faces[0][2])
         return None
 
     def _project_screen(self, dx, dz, h):
@@ -3422,20 +3598,30 @@ class ZoneInspectorPanel(Gtk.Box):
             self.drawing.grab_focus()
         except Exception:
             pass
-        # 2.0.2 universal viewport controls: CONTROL held makes
-        # the drag a ROTATE — and 2.0.6 (Joshua) splits it by
-        # WHERE the press lands: Ctrl+press ON the building
-        # rotates THE BUILDING (when the owning tab offers
-        # manip_rotate); Ctrl+press anywhere else rotates the
-        # VIEW exactly as 2.0.2. (getattr guards:
-        # harness-fabricated events may carry no modifier state
-        # at all.)
+        # 2.0.2 universal viewport controls: a modifier held
+        # makes the drag a ROTATE — and 2.0.7 (Joshua's model)
+        # splits it by modifier AND by where the press lands:
+        #   corner + SHIFT  -> rotate THE BUILDING (his "use
+        #     shift for control"), when the tab offers
+        #     manip_rotate;
+        #   corner + CTRL   -> scale THE WHOLE BUILDING, when
+        #     the tab offers manip_scale (ZoneData.scale);
+        #   a modifier drag starting anywhere else rotates the
+        #     VIEW exactly as 2.0.2.
+        # Both modifiers together: Shift wins (rotate) — an
+        # undefined combination in Joshua's model, settled
+        # here. (getattr guards: harness-fabricated events may
+        # carry no modifier state at all.)
         state = getattr(event, "state", 0) or 0
         try:
             ctrl_mask = Gdk.ModifierType.CONTROL_MASK
+            shift_mask = Gdk.ModifierType.SHIFT_MASK
         except Exception:
-            ctrl_mask = 1 << 2  # GDK's CONTROL_MASK value
-        rotate = bool(state & ctrl_mask)
+            ctrl_mask = 1 << 2   # GDK's CONTROL_MASK value
+            shift_mask = 1 << 0  # GDK's SHIFT_MASK value
+        ctrl = bool(state & ctrl_mask)
+        shift = bool(state & shift_mask)
+        rotate = ctrl or shift
         # Fresh values first: the grab classification works on the
         # same numbers the tab's fields currently show.
         values = None
@@ -3446,15 +3632,22 @@ class ZoneInspectorPanel(Gtk.Box):
                 values = None
         if values:
             self._cur_values = dict(values)
-        # 2.0.6: classified even under Ctrl — the press point is
-        # what decides building-turn vs view-turn.
+        # Classified even under a modifier — the press point is
+        # what decides building-op vs view-op (2.0.6; the grip
+        # narrowed to the corner in 2.0.7). A corner grab with
+        # no modifier is the MOVE drag.
         grab = self._classify_grab(event.x, event.y)
         kind = grab[0] if grab else "pan"
+        if kind == "corner":
+            kind = "move"
         angle0 = None
+        scale = None
         if rotate:
             kind = "rotate"
-            if self.mode == "building" and grab is not None \
-                    and self.tab is not None \
+            on_corner = self.mode == "building" \
+                and grab is not None and grab[0] == "corner" \
+                and self.tab is not None
+            if on_corner and shift \
                     and callable(getattr(self.tab, "manip_rotate",
                                          None)):
                 kind = "rotate_bldg"
@@ -3462,6 +3655,31 @@ class ZoneInspectorPanel(Gtk.Box):
                     angle0 = self.tab.manip_angle()
                 except Exception:
                     angle0 = None
+            elif on_corner and ctrl and not shift \
+                    and self._cur_values \
+                    and callable(getattr(self.tab, "manip_scale",
+                                         None)):
+                # The scale setup: the anchor is the OPPOSITE
+                # corner's ground point (it must not move);
+                # the factor is the pointer's distance from the
+                # anchor over the grabbed corner's starting
+                # distance from it.
+                kind = "scale_bldg"
+                sr, sf = self._CORNERS[grab[1]]
+                v = self._cur_values
+                f, r = self._frame()
+                gx = v["x"] + r[0] * sr * v["w"] / 2.0 \
+                    + f[0] * sf * v["d"] / 2.0
+                gz = v["z"] + r[1] * sr * v["w"] / 2.0 \
+                    + f[1] * sf * v["d"] / 2.0
+                scale = {
+                    "anchor": (2.0 * v["x"] - gx,
+                               2.0 * v["z"] - gz),
+                    "dist0": math.hypot(gx - (2.0 * v["x"] - gx),
+                                        gz - (2.0 * v["z"] - gz)),
+                    "factor": 1.0,
+                    "applied": 1.0,
+                }
         self._drag = {
             "kind": kind,
             "side": grab[1] if grab else 0,
@@ -3472,6 +3690,8 @@ class ZoneInspectorPanel(Gtk.Box):
             # press time and the accumulated drag turn.
             "angle0": angle0,
             "cum_delta": 0.0,
+            # 2.0.7 scale_bldg bookkeeping (see above).
+            "scale": scale,
             "sx": event.x, "sy": event.y,
             "x": event.x, "y": event.y,
             "az0": self.azimuth, "el0": self.elevation,
@@ -3488,6 +3708,26 @@ class ZoneInspectorPanel(Gtk.Box):
             "centre": self._centre(),
             "moved": False,
         }
+        if kind in ("width", "depth") \
+                and self._drag["start"] is not None:
+            # 2.0.7: the face drags are measured from the
+            # POINTER's ground position at press time, not from
+            # the wall's own coordinate — a press lands on the
+            # face at height, and its ground projection sits
+            # offset from the wall by the view's parallax, so
+            # comparing the pointer against the wall's u made
+            # the wall jump on engagement and run off the hand.
+            # Press-relative, the wall follows the hand's
+            # ground travel exactly.
+            f, r = self._frame()
+            axis = r if kind == "width" else f
+            g0p = self._screen_to_ground(event.x, event.y)
+            if g0p:
+                st = self._drag["start"]
+                ccx, ccz = self._drag["centre"]
+                self._drag["u_press"] = (
+                    (ccx + g0p[0] - st["x"]) * axis[0]
+                    + (ccz + g0p[1] - st["z"]) * axis[1])
         return True
 
     def _on_drag_motion(self, _widget, event):
@@ -3508,9 +3748,11 @@ class ZoneInspectorPanel(Gtk.Box):
             self.drawing.queue_draw()
             return True
         if kind == "rotate":
-            # 2.0.2 universal controls: CONTROL+drag ROTATES (the
-            # pre-2.0.2 orbit motion, unchanged maths and clamps)
-            # — and the pan offset does not move.
+            # 2.0.2 universal controls: a modifier drag ROTATES
+            # THE VIEW (the pre-2.0.2 orbit motion, unchanged
+            # maths and clamps) — the branch a modifier press
+            # lands in when it did NOT start on a building
+            # corner (2.0.7) — and the pan offset does not move.
             self.azimuth = d["az0"] + (event.x - d["sx"]) * 0.01
             self.elevation = max(
                 self.MIN_ELEVATION,
@@ -3519,13 +3761,19 @@ class ZoneInspectorPanel(Gtk.Box):
             self.drawing.queue_draw()
             return True
         if kind == "rotate_bldg":
-            # 2.0.6 (Joshua): the drag turns THE BUILDING.
-            # Horizontal movement only, ROTATE_DEG_PER_PX per
-            # pixel, applied incrementally through the tab (each
-            # step is small, so the mod-180 orientation never
-            # wraps mid-drag). The live preview is the model
-            # itself turning — the picture draws the footprint
-            # ring the tab just rotated.
+            # 2.0.7 (Joshua): the corner modifier drag turns THE
+            # BUILDING. Horizontal movement only,
+            # ROTATE_DEG_PER_PX per pixel, applied incrementally
+            # through the tab (each step is small, so the
+            # mod-180 orientation never wraps mid-drag). The
+            # live preview is the model itself turning — the
+            # picture draws the footprint ring the tab just
+            # rotated. Like every manipulation it engages only
+            # past the click threshold; d["x"] is not advanced
+            # while under it, so no part of the turn is lost
+            # when the drag engages.
+            if not d["moved"]:
+                return True
             step = (event.x - d["x"]) * self.ROTATE_DEG_PER_PX
             d["x"], d["y"] = event.x, event.y
             if step and self.tab is not None:
@@ -3547,18 +3795,63 @@ class ZoneInspectorPanel(Gtk.Box):
                 self._update_size_pos_labels()
                 self.drawing.queue_draw()
             return True
+        if kind == "scale_bldg":
+            # 2.0.7 (Joshua): Ctrl+corner scales the WHOLE
+            # building — footprint and height by one factor,
+            # anchored on the opposite corner (see the press
+            # handler for the setup). The factor is the
+            # pointer's ground distance from the anchor over
+            # the grabbed corner's starting distance; steps go
+            # through the tab incrementally about the SAME
+            # anchor, so the anchor never drifts. Engages only
+            # past the click threshold, like every manipulation.
+            if not d["moved"]:
+                return True
+            scfg = d["scale"]
+            g = self._screen_to_ground(event.x, event.y)
+            if scfg and g:
+                ccx, ccz = d.get("centre") or self._centre()
+                px, pz = ccx + g[0], ccz + g[1]
+                ax, az = scfg["anchor"]
+                if scfg["dist0"] > 1e-9:
+                    total = math.hypot(px - ax, pz - az) \
+                        / scfg["dist0"]
+                    total = max(0.05, min(20.0, total))
+                    step = total / scfg["applied"]
+                    if step != 1.0 and self.tab is not None:
+                        try:
+                            res = self.tab.manip_scale(step, ax, az)
+                        except Exception:
+                            res = None
+                        if res is None:
+                            # Refused (flagged): end the drag;
+                            # the tab has said why.
+                            self._drag = None
+                            self._hide_rotate_readout()
+                            return True
+                        scfg["applied"] = total
+                        scfg["factor"] = total
+                        self._cur_values = dict(res)
+                        self._show_scale_readout(total, res)
+                        self._update_size_pos_labels()
+                        self.drawing.queue_draw()
+            return True
         if d["start"] is None or self.tab is None:
+            return True
+        # 2.0.7: EVERY manipulation engages only past the click
+        # threshold — a press that stays put is the click that
+        # selects the part, and must not move, resize or
+        # re-height the building by a pixel of hand jitter. The
+        # candidates below are computed from the press-time
+        # start values, so engaging late loses nothing.
+        if not d["moved"]:
             return True
         start = d["start"]
         cand = dict(start)
         f, r = self._frame()
         if kind == "move":
-            # 2.0.6 (Joshua): the roof move engages only past the
-            # drag threshold — below it the press is still the
-            # click that selects the roof, and the building must
-            # not be nudged by a pixel of hand jitter.
-            if not d["moved"]:
-                return True
+            # 2.0.7 (Joshua): the corner move — the building
+            # follows the pointer in the ground plane.
             # Ground-plane deltas are centre-independent (the
             # inverse mapping returns centre-relative offsets).
             g0 = self._screen_to_ground(d["sx"], d["sy"])
@@ -3577,8 +3870,14 @@ class ZoneInspectorPanel(Gtk.Box):
             axis = r if kind == "width" else f
             dim = "w" if kind == "width" else "d"
             u = (px - start["x"]) * axis[0] + (pz - start["z"]) * axis[1]
-            u0 = d["side"] * start[dim] / 2
-            delta = u - u0
+            if d.get("u_press") is not None:
+                # Press-relative (2.0.7, see _on_drag_press):
+                # the wall moves by the pointer's ground travel
+                # along the axis since the press.
+                delta = u - d["u_press"]
+            else:
+                u0 = d["side"] * start[dim] / 2
+                delta = u - u0
             cand[dim] = max(1.0, min(1000.0,
                                      start[dim] + d["side"] * delta))
             shift = delta / 2
@@ -3622,18 +3921,31 @@ class ZoneInspectorPanel(Gtk.Box):
                 if hook is not None:
                     hook()
             return True
+        if d["kind"] == "scale_bldg":
+            # 2.0.7: the whole-size scale ends — readout away,
+            # the tab's fields hold the final size, and a real
+            # scale re-derives front + backdrop.
+            self._hide_rotate_readout()
+            if d["moved"]:
+                hook = getattr(self.tab, "on_manip_end", None)
+                if hook is not None:
+                    hook()
+            return True
         if not d["moved"] and self.mode == "building" \
                 and d.get("grab") is not None:
-            # 2.0.6: a plain CLICK on the building selects the
-            # part clicked — roof, front face, or edge — instead
-            # of falling through to a street pick.
+            # A plain CLICK on the building selects the part
+            # clicked — roof, front face, side face or corner
+            # (2.0.6; the part set is 2.0.7's) — instead of
+            # falling through to a street pick.
             grab = d["grab"]
-            if grab[0] == "move":
+            if grab[0] == "height":
                 part = "roof"
-            elif grab[0] == "height":
+            elif grab[0] == "depth":
                 part = "front"
-            else:
-                part = ("edge", grab[0], grab[1])
+            elif grab[0] == "width":
+                part = ("side", grab[1])
+            else:  # "corner"
+                part = ("corner", grab[1])
             self._set_selected_part(part)
             return True
         if d["kind"] == "pan" and not d["moved"]:
@@ -4775,9 +5087,10 @@ class ZoneBuildingsTab(Gtk.Box):
             zd.details[idx].get("ring") or [])
 
     def manip_rotate(self, delta_deg):
-        """One step of the panel's Ctrl+drag building rotation
-        (2.0.6). Returns the building's new {x, z, w, d, h} for
-        the panel's own bookkeeping, or None when refused (the
+        """One step of the panel's Shift+corner building
+        rotation (2.0.6; the corner+Shift grip is 2.0.7's).
+        Returns the building's new {x, z, w, d, h} for the
+        panel's own bookkeeping, or None when refused (the
         panel then ends the drag)."""
         zd = self._zd()
         store = self._store()
@@ -4788,6 +5101,32 @@ class ZoneBuildingsTab(Gtk.Box):
             return None
         try:
             zd.rotate(idx, delta_deg, flagged=store.flagged)
+        except Exception as e:
+            self.app_window._set_status(str(e))
+            return None
+        self.app_window._mark_unpublished()
+        box = zd.boxes[idx]
+        self._set_spins(box[0], box[1], box[2], box[3], box[4])
+        self._update_row(idx)
+        return {"x": box[0], "z": box[1], "w": box[2], "d": box[3],
+                "h": box[4]}
+
+    def manip_scale(self, factor, anchor_x, anchor_z):
+        """One step of the panel's Ctrl+corner whole-size
+        scale (2.0.7) — ZoneData.scale about the fixed
+        opposite-corner anchor. Returns the building's new
+        {x, z, w, d, h}, or None when refused (the panel then
+        ends the drag)."""
+        zd = self._zd()
+        store = self._store()
+        idx = self.inspector.index \
+            if self.inspector.get_visible() else self._selected_index()
+        if store is None or zd is None or idx is None \
+                or idx >= len(zd.boxes):
+            return None
+        try:
+            zd.scale(idx, factor, anchor_x, anchor_z,
+                     flagged=store.flagged)
         except Exception as e:
             self.app_window._set_status(str(e))
             return None
@@ -4813,10 +5152,19 @@ class ZoneBuildingsTab(Gtk.Box):
                 or idx >= len(zd.boxes):
             return False
         try:
-            zd.move(idx, values["x"], values["z"],
-                    flagged=store.flagged)
+            # 2.0.7 ORDER MATTERS (shape-preservation law):
+            # resize FIRST (the ring scales about the standing
+            # centre), move SECOND (the ring translates
+            # rigidly). The composition is what anchors a
+            # one-sided drag: scale-about-centre then translate
+            # by the centre shift lands the un-dragged wall
+            # exactly where it stood, for a ring of ANY shape —
+            # and repeated drag steps telescope into the same
+            # single transform.
             zd.resize(idx, values["w"], values["d"], values["h"],
                       flagged=store.flagged)
+            zd.move(idx, values["x"], values["z"],
+                    flagged=store.flagged)
         except Exception as e:
             self.app_window._set_status(str(e))
             # Restore the fields to the real (unchanged) values.
@@ -4940,8 +5288,10 @@ class ZoneBuildingTab(Gtk.Box):
 
     The tab hosts its own ZoneInspectorPanel — the same 3D
     viewpoint the Zone tab shows, with the same manipulation
-    (drag the roof to move, an edge to resize, the orange
-    wall for height) applied to the same shared ZoneData, so
+    (2.0.7's model: roof = height, front face = depth, side
+    face = width, corner = move, corner+Shift = rotate,
+    corner+Ctrl = whole-size scale) applied to the same
+    shared ZoneData, so
     an edit made here is the zone's edit (the Zone tab's list
     row follows via _update_row). Loading mirrors the Zone
     tab's selection path: the zone spine first if needed,
@@ -5218,11 +5568,12 @@ class ZoneBuildingTab(Gtk.Box):
             zd.details[idx].get("ring") or [])
 
     def manip_rotate(self, delta_deg):
-        """One step of the panel's Ctrl+drag building rotation
-        (2.0.6) — the same discipline as _apply_values: the
-        shared model turns, both tabs' fields follow, the Zone
-        tab's row follows. Returns the new {x, z, w, d, h} or
-        None when refused."""
+        """One step of the panel's Shift+corner building
+        rotation (2.0.6; the corner+Shift grip is 2.0.7's) —
+        the same discipline as _apply_values: the shared model
+        turns, both tabs' fields follow, the Zone tab's row
+        follows. Returns the new {x, z, w, d, h} or None when
+        refused."""
         store = self._store()
         zd = self._zd()
         idx = self.inspector.index \
@@ -5232,6 +5583,38 @@ class ZoneBuildingTab(Gtk.Box):
             return None
         try:
             zd.rotate(idx, delta_deg, flagged=store.flagged)
+        except Exception as e:
+            self.app_window._set_status(str(e))
+            return None
+        self.app_window._mark_unpublished()
+        box = zd.boxes[idx]
+        self._set_spins(box[0], box[1], box[2], box[3], box[4])
+        zone_tab = self.app_window.zone_tab
+        if zone_tab is not None and zone_tab._zone == self.zone:
+            try:
+                zone_tab._update_row(idx)
+            except Exception:
+                pass
+        return {"x": box[0], "z": box[1], "w": box[2],
+                "d": box[3], "h": box[4]}
+
+    def manip_scale(self, factor, anchor_x, anchor_z):
+        """One step of the panel's Ctrl+corner whole-size
+        scale (2.0.7) — the same discipline as manip_rotate:
+        ZoneData.scale about the fixed opposite-corner
+        anchor, both tabs' fields follow, the Zone tab's row
+        follows. Returns the new {x, z, w, d, h} or None when
+        refused."""
+        store = self._store()
+        zd = self._zd()
+        idx = self.inspector.index \
+            if self.inspector.get_visible() else self.index
+        if store is None or zd is None or idx is None \
+                or idx >= len(zd.boxes):
+            return None
+        try:
+            zd.scale(idx, factor, anchor_x, anchor_z,
+                     flagged=store.flagged)
         except Exception as e:
             self.app_window._set_status(str(e))
             return None
@@ -5337,10 +5720,13 @@ class ZoneBuildingTab(Gtk.Box):
                 or idx >= len(zd.boxes):
             return False
         try:
-            zd.move(idx, values["x"], values["z"],
-                    flagged=store.flagged)
+            # 2.0.7: resize FIRST, move SECOND — the same
+            # shape-preserving composition as the Zone tab's
+            # _apply_values (see its note).
             zd.resize(idx, values["w"], values["d"], values["h"],
                       flagged=store.flagged)
+            zd.move(idx, values["x"], values["z"],
+                    flagged=store.flagged)
         except Exception as e:
             self.app_window._set_status(str(e))
             # Restore the fields to the real (unchanged) values,
