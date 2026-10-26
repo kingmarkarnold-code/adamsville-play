@@ -141,7 +141,7 @@ STATION_EDITS_REPO_PATH = "editors/building-editor/station-edits.json"
 
 # Stamps into the version string of any zone file this editor saves
 # ("<date>-building-editor-<ver>-<zone>").
-EDITOR_VERSION = "2.0.6"
+EDITOR_VERSION = "2.0.7"
 
 # -- detail chunks (2.0.0 snapshot model) ------------------------------
 # buildings_detail.json stays the game's canonical detail file; the
@@ -660,8 +660,8 @@ class BuildingIndex:
 FLAGGED_LOCK_MESSAGE = (
     "This building is FLAGGED: the conversion left it intersecting "
     "a road, and Joshua has flagged these buildings for his own "
-    "decision. Flagged buildings cannot be moved, resized, or "
-    "deleted in this version of the editor.")
+    "decision. Flagged buildings cannot be moved, resized, "
+    "rotated, scaled, or deleted in this version of the editor.")
 
 # How close a building's ring centroid must sit to a flagged entry's
 # centroid to count as the same building. 2.0.0: both sides are now
@@ -1466,20 +1466,78 @@ class ZoneData:
         self.dirty = True
 
     def resize(self, index, w, d, h, flagged=None):
-        """Resize a building: box dims + height_m + ring rebuilt from
-        the (unchanged) centre, so box and footprint stay consistent."""
+        """Resize a building: box dims + height_m, and the
+        footprint ring SCALED per-axis about the box centre.
+
+        2.0.7 SHAPE-PRESERVATION LAW (Joshua, hands-on bug): the
+        2.0.6 resize REBUILT the ring as the box's axis-aligned
+        rectangle — resizing an articulated footprint (a church
+        or school whose walls jut out and back) DELETED the
+        articulation and straightened the walls. That path is
+        gone. A size edit now scales the existing ring's points:
+        x by w_new/w_old, z by d_new/d_old, about the centre —
+        the point sequence and the in/out jut pattern are
+        preserved, only scaled. A height-only edit (w/d
+        unchanged) leaves the ring point-for-point identical.
+        One-sided anchoring is the caller's composition:
+        resize FIRST (this scale about the standing centre),
+        move SECOND (a rigid translation by the centre shift)
+        — the composition lands the un-dragged wall exactly
+        where it stood, for a ring of any shape."""
         self._refuse_if_flagged(index, flagged)
         self._materialize_or_refuse()
         box = self.boxes[index]
+        old_w, old_d = box[2], box[3]
         box[2], box[3], box[4] = w, d, h
         det = self.details[index]
         det["height_m"] = h
-        det["ring"] = rectangle_ring(box[0], box[1], w, d)
+        ring = det.get("ring") or []
+        if len(ring) >= 2 and old_w > 0 and old_d > 0:
+            sx, sz = w / old_w, d / old_d
+            if sx != 1.0 or sz != 1.0:
+                cx, cz = box[0], box[1]
+                det["ring"] = [
+                    [cx + (px - cx) * sx, cz + (pz - cz) * sz]
+                    for px, pz in ring]
+        self.dirty = True
+
+    def scale(self, index, factor, anchor_x, anchor_z, flagged=None):
+        """Scale a WHOLE building by `factor` about a fixed
+        ground anchor (2.0.7, Joshua: Ctrl+drag on a corner —
+        the grabbed corner follows the mouse, the OPPOSITE
+        corner is the anchor and does not move).
+
+        The footprint ring scales uniformly about the anchor
+        (shape preserved — points scale, never rebuilt), the
+        box centre moves along the anchor line by the same
+        factor, width/depth/height all scale by the factor,
+        and height_m follows. Isolated in this one method so
+        the gesture can be retired on Joshua's word without
+        touching move/resize/rotate."""
+        self._refuse_if_flagged(index, flagged)
+        self._materialize_or_refuse()
+        if factor <= 0:
+            raise ZoneDataError("A scale factor must be positive.")
+        box = self.boxes[index]
+        box[0] = anchor_x + (box[0] - anchor_x) * factor
+        box[1] = anchor_z + (box[1] - anchor_z) * factor
+        box[2] = box[2] * factor
+        box[3] = box[3] * factor
+        box[4] = box[4] * factor
+        det = self.details[index]
+        det["height_m"] = box[4]
+        ring = det.get("ring") or []
+        if len(ring) >= 2:
+            det["ring"] = [
+                [anchor_x + (px - anchor_x) * factor,
+                 anchor_z + (pz - anchor_z) * factor]
+                for px, pz in ring]
         self.dirty = True
 
     def rotate(self, index, delta_deg, flagged=None):
         """Rotate a building's footprint by `delta_deg` around
-        its own centre (2.0.6, Joshua: Ctrl+drag on the building).
+        its own centre (2.0.6; the gesture is Shift+drag on a
+        corner since 2.0.7, Joshua's model).
 
         HOW ROTATION IS STORED: a zone building's record pair
         has no angle field — the footprint IS the detail record's
