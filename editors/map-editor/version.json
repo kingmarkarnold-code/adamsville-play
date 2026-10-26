@@ -1,6 +1,6 @@
 {
-    "version": "1.9.13",
-    "changelog": "Two things. (1) NEW \u2014 the building jump. Buildings now show on the main map as roof-coloured blocks (the same picture as the satellite view), and clicking a building asks 'Edit this location?' \u2014 answer yes and the Building Editor opens on that building. A click that drags (panning) never asks; clicking a road still just selects the road; and cancelling the question changes nothing. If the Building Editor is not installed, the editor says so plainly. (The Building Editor learns to receive the jump in its own next update \u2014 its receiving half is built and tested, and until it ships the handoff is still prepared.) (2) SAVE FIX: when a save changes a zone's roads, the editor now also updates the map manifest (detailed/map-manifest.json) in the same save \u2014 the changed files' fingerprints and sizes are refreshed and the map version steps up \u2014 so the game actually downloads the roads you just saved. That missing step is why the joins saved on Oct 25 never reached the game until the manifest was repaired by hand.",
+    "version": "1.9.14",
+    "changelog": "Three things, all from Joshua's hands-on in 1.9.13. (1) COMPASS: the main view now carries a compass in its bottom-right corner, and it turns with the view \u2014 turn the map (Ctrl+drag, Q/E, or the heading buttons) and the needle follows, so north is always marked. (2) SCALE RULER + MEASURE: a scale bar sits in the bottom-left of the main view, drawn at true scale \u2014 miles at wide zoom, feet as you zoom in. Click the ruler to measure: an amber banner shows you are measuring, click two points on the map (or drag a section) and the ruler reports the section's length; click the ruler again or press Escape to stop. Measuring never disturbs the roads you had selected. (3) THE VIEW IS REMEMBERED: resize the window or drag the panes (inspector column, Pieces panel, the inspector's own split), and the editor now saves the layout as you leave it \u2014 on close and quietly as you resize \u2014 and opens next time at the size and shape you left, pulled back on-screen if the display changed. Everything else is 1.9.13 unchanged: the building jump and the manifest-carrying save.",
     "files": [
         {
             "path": "about.py",
@@ -10,12 +10,12 @@
         {
             "path": "app.py",
             "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/app.py",
-            "sha256": "68e8af1187deb76fd9dd044c66fae8ee86d49bc9ef4c16b67d4baa09f48c6659"
+            "sha256": "0781610f0514beb54c63137df255b4e88d77841bb322e28cd9c852ff4d894302"
         },
         {
             "path": "data.py",
             "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/data.py",
-            "sha256": "b5e25b2536dd8e47d6c7278e0400143c20dadef1afe50cfd208ee62d63b437ee"
+            "sha256": "8fca662d7725bf50a4b5fd1770850444062b188e3947f3d90544d3f4a437d7bb"
         },
         {
             "path": "gamedata.py",
@@ -35,7 +35,7 @@
         {
             "path": "mapcanvas.py",
             "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/mapcanvas.py",
-            "sha256": "b479d4aba3f670f2b2acacbd5288cd232559a979eb1d092df400176a009274f4"
+            "sha256": "18002b53d0a68f27c31055520596572dff59ceb313dec5f16cd1fd0e07955596"
         },
         {
             "path": "overpass.py",
@@ -45,7 +45,7 @@
         {
             "path": "roadinspect.py",
             "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/roadinspect.py",
-            "sha256": "03659dd3429a7d4e0557c0b2e6f8e2805ff0cf8bdd3a27aeac6385357fc3dabe"
+            "sha256": "fc0932eb35a4e0ce2706db57f47902bd2c5f912a44ff5f4ce9d1a57db7effd14"
         },
         {
             "path": "shared_cache.py",
