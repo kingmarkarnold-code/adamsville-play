@@ -1574,8 +1574,8 @@
           "type": "panel",
           "visible": true,
           "width": 1256,
-          "x": -12,
-          "y": 70,
+          "x": 26,
+          "y": 2148,
           "description": "Speech bubble panel where NPC conversation text appears"
         },
         {
@@ -1588,8 +1588,8 @@
           "type": "label",
           "visible": true,
           "width": 467,
-          "x": 0,
-          "y": 64,
+          "x": -31,
+          "y": 665,
           "description": "Small popup messages at the bottom of the screen (e.g. 'Item picked up')"
         },
         {
@@ -2419,13 +2419,13 @@
         {
           "anchor": "tl",
           "asset": null,
-          "height": 44,
+          "height": 366,
           "id": "gps-nav-btn",
           "label": "\ud83e\udded",
           "mobile_only": false,
           "type": "button",
           "visible": true,
-          "width": 44,
+          "width": 74,
           "x": 61,
           "y": 94,
           "description": "Button that opens GPS navigation to a destination"
@@ -2594,8 +2594,8 @@
           "type": "button",
           "visible": true,
           "width": 260,
-          "x": 0,
-          "y": 0,
+          "x": -583,
+          "y": -1192,
           "description": "Button that sends bug reports to Joshua Arnold (hidden by default)"
         }
       ]
