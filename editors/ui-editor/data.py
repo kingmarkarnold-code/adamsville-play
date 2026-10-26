@@ -404,6 +404,177 @@ def layout_face_elements(doc, face):
         face = "mobile"
     return doc["faces"][face]["elements"]
 
+# ---------------------------------------------------------------------------
+# Per-size layouts (v1.10.0) — Joshua's design, DECIDED 2026-10-25:
+# an explicit ENVIRONMENT choice (Application/APK vs Web); under each
+# device class, layouts are saved PER NAMED SCREEN SIZE and every
+# size's layout is tweaked independently (moving an icon in one size
+# never disturbs another). The game picks the layout matching the
+# screen it finds, falling back to the nearest size.
+# ---------------------------------------------------------------------------
+# The document grows a top-level "sizes" list. Each entry:
+#   {"key": str,            stable id used in code and the editor
+#    "name": str,           what Joshua sees in the Size dropdown
+#    "cls": "mobile"|"desktop",   device class (which face seeded it)
+#    "width": int, "height": int,  the screen size in CSS pixels —
+#                           the units the game measures (SAView /
+#                           visualViewport) and the editor previews
+#    "envs": ["app", "web"],       environments this size applies to
+#    "elements": [...]}            this size's own element list
+# The faces stay exactly as they were: they are the fallback for
+# screens no size matches well, and the top-level "elements" mirror
+# rule is unchanged. Old readers ignore "sizes" entirely.
+#
+# (key, label) pairs for the environments, in editor display order.
+LAYOUT_ENVIRONMENTS = [("app", "Application (APK)"), ("web", "Web")]
+
+# The seed sizes, in dropdown order. Every seed starts as a deep copy
+# of its class face, so nothing changes visually on any screen until
+# Joshua edits that specific size.
+#
+# WHERE THE NUMBERS COME FROM (stated plainly, 2026-10-25): no
+# on-device measurement of Joshua's phones was ever recorded, so the
+# three devices are seeded from their MANUFACTURER display
+# resolutions at each model's standard Android display density —
+# i.e. the CSS-pixel size the game will measure:
+#   Galaxy A17 5G   1080x2340 panel (Samsung)   -> 360x780 CSS
+#   TCL K33 5G      720x1600 panel (TCL)        -> 360x800 CSS
+#   FOXXD A67L      720x1600 panel (FOXXD)      -> 360x800 CSS
+# Each phone also gets a landscape entry (the game plays landscape).
+# TCL and FOXXD land on the same frame numbers; they stay separate
+# named layouts because independence is the point of the design.
+# The three "standard" sizes are the editor's old preview presets
+# (Phone portrait / Phone landscape / Tablet), now real layouts.
+# The desktop side carries Joshua's laptop class (1366x768) plus the
+# 1280x800 canonical reference frame the layouts are authored in.
+LAYOUT_SIZE_SEEDS = [
+    # key, name, cls, width, height
+    ("galaxy-a17-5g", "Galaxy A17 5G", "mobile", 360, 780),
+    ("galaxy-a17-5g-landscape", "Galaxy A17 5G — landscape",
+     "mobile", 780, 360),
+    ("tcl-k33-5g", "TCL K33 5G", "mobile", 360, 800),
+    ("tcl-k33-5g-landscape", "TCL K33 5G — landscape",
+     "mobile", 800, 360),
+    ("foxxd-a67l", "FOXXD A67L", "mobile", 360, 800),
+    ("foxxd-a67l-landscape", "FOXXD A67L — landscape",
+     "mobile", 800, 360),
+    ("phone-portrait", "Phone portrait (standard)", "mobile", 390, 844),
+    ("phone-landscape", "Phone landscape (standard)",
+     "mobile", 844, 390),
+    ("tablet", "Tablet (standard)", "mobile", 820, 1180),
+    ("laptop-1366x768", "Laptop 1366×768", "desktop", 1366, 768),
+    ("desktop-1280x800", "Desktop 1280×800 (reference)",
+     "desktop", 1280, 800),
+]
+
+
+def ensure_layout_sizes(doc):
+    """
+    Guarantee a layout document has a well-formed "sizes" section
+    (v1.10.0). Runs AFTER ensure_layout_faces (the seeds copy faces).
+
+    Rules:
+      * "sizes" absent or not a list -> SEED: one entry per
+        LAYOUT_SIZE_SEEDS row, each entry's elements a DEEP COPY of
+        its class face's elements. This is the migration: a document
+        in the pre-1.10.0 format gains per-size layouts that are
+        element-for-element identical to its faces, so no screen
+        changes visually until a specific size is edited.
+      * "sizes" present (even an empty list) -> RESPECT it: entries
+        are Joshua's data, never re-seeded (a size he removed stays
+        removed). Malformed entries are repaired in place where a
+        repair is unambiguous: a missing/invalid elements list is
+        refilled from the entry's class face, missing name/cls/envs/
+        width/height get sane defaults, a missing key gets a
+        generated one. Entries that are not dicts are dropped.
+    Returns the (possibly fixed) doc.
+    """
+    if not isinstance(doc, dict):
+        return doc
+    ensure_layout_faces(doc)
+    sizes = doc.get("sizes")
+    if not isinstance(sizes, list):
+        seeded = []
+        for key, name, cls, w, h in LAYOUT_SIZE_SEEDS:
+            seeded.append({
+                "key": key,
+                "name": name,
+                "cls": cls,
+                "width": w,
+                "height": h,
+                # Seeds apply to both environments; Joshua can
+                # narrow a size from the editor's "Applies to" menu.
+                "envs": ["app", "web"],
+                "elements": copy.deepcopy(
+                    doc["faces"][cls]["elements"]),
+            })
+        doc["sizes"] = seeded
+        return doc
+    repaired = []
+    for i, entry in enumerate(sizes):
+        if not isinstance(entry, dict):
+            continue  # unrepairable — dropped, never crashes the load
+        if not isinstance(entry.get("key"), str) or not entry["key"]:
+            entry["key"] = f"size-{i + 1}"
+        if entry.get("cls") not in ("mobile", "desktop"):
+            entry["cls"] = "mobile"
+        if not isinstance(entry.get("name"), str) or not entry["name"]:
+            entry["name"] = entry["key"]
+        for dim in ("width", "height"):
+            try:
+                entry[dim] = int(entry[dim])
+            except Exception:
+                entry[dim] = 390 if dim == "width" else 844
+        envs = entry.get("envs")
+        if not isinstance(envs, list) or not envs:
+            entry["envs"] = ["app", "web"]
+        else:
+            entry["envs"] = [e for e in envs if e in ("app", "web")] \
+                or ["app", "web"]
+        if not isinstance(entry.get("elements"), list):
+            entry["elements"] = copy.deepcopy(
+                doc["faces"][entry["cls"]]["elements"])
+        repaired.append(entry)
+    doc["sizes"] = repaired
+    return doc
+
+
+def layout_size_entries(doc, env=None, cls=None):
+    """
+    The document's size entries (the live dicts — editing them edits
+    the document), optionally filtered to one environment ("app" /
+    "web") and/or one device class ("mobile" / "desktop"). Order is
+    the document's order (the editor's dropdown order).
+    """
+    ensure_layout_sizes(doc)
+    out = []
+    for entry in doc["sizes"]:
+        if cls is not None and entry.get("cls") != cls:
+            continue
+        if env is not None and env not in entry.get("envs", []):
+            continue
+        out.append(entry)
+    return out
+
+
+def layout_size_entry(doc, key):
+    """One size entry by key, or None."""
+    ensure_layout_sizes(doc)
+    for entry in doc["sizes"]:
+        if entry.get("key") == key:
+            return entry
+    return None
+
+
+def layout_size_elements(doc, key):
+    """
+    The elements list of one size entry (the document's own list
+    object — editing it edits the document), or None for an
+    unknown key.
+    """
+    entry = layout_size_entry(doc, key)
+    return entry["elements"] if entry else None
+
 # View modes Joshua can preview: (key, label, width, height).
 # "web_mobile" expands into size presets in the UI.
 LAYOUT_VIEWS = [
