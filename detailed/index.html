@@ -1683,6 +1683,23 @@ function __pendingStepNames(){
   }catch(e){}
   return out;
 }
+/* LAPTOP-HANG FIX (2026-10-26): sub-stage stamps INSIDE the 'Game world'
+   step. Block 2's build sequence calls __wbStage('terrain') etc. as it
+   advances; each stamp refreshes the watchdog's progress clock AND
+   records the current sub-stage, so a stall report names WHERE inside
+   the world build things stopped — not just 'Game world'. A short ring
+   of recent sub-stages rides the report for context. */
+window.__wbSubStage = '';
+window.__wbStageLog = [];
+function __wbStage(name){
+  try{
+    window.__wbSubStage = name;
+    window.__wbProgressAt = Date.now();
+    var log = window.__wbStageLog || (window.__wbStageLog = []);
+    log.push({stage:name, t:Date.now()});
+    while (log.length > 16) log.shift();
+  }catch(e){}
+}
 function __recordBootStall(kind, idleSec){
   try{
     if (window.__stallReportsSent >= 3) return;   /* one per episode, capped */
@@ -1692,6 +1709,8 @@ function __recordBootStall(kind, idleSec){
     var msg = 'Boot stall ('+kind+'): the loader made no progress for '+
       Math.round(idleSec)+'s at stage "'+stage+'". Pending steps: '+
       (pending.slice(0,4).join(', ')||'none')+
+      (window.__wbSubStage ? '. Sub-stage inside the step: "'+window.__wbSubStage+'"' : '')+
+      (window.__inlineBlockError ? '. Inline block error: '+window.__inlineBlockError.name+': '+window.__inlineBlockError.message : '')+
       '. Document version '+(window.__DOC_UIVER||'?')+
       ', live version '+(window.__UIVER||'?')+'.';
     try{ if (typeof SA_CRASH==='function')
@@ -1699,6 +1718,10 @@ function __recordBootStall(kind, idleSec){
         where:'loader watchdog (block 1)'}); }catch(e){}
     var details = { message:msg, kind:'boot-stall', stallKind:kind,
       stage:stage, idleSeconds:Math.round(idleSec), pending:pending,
+      subStage:window.__wbSubStage||'',
+      stageLog:(window.__wbStageLog||[]).slice(-6),
+      inlineError:window.__inlineBlockError ?
+        (window.__inlineBlockError.name+': '+window.__inlineBlockError.message) : '',
       docVersion:window.__DOC_UIVER||'', liveVersion:window.__UIVER||'',
       ua:(navigator.userAgent||''), ts:new Date().toISOString() };
     var sent=false;
@@ -2004,7 +2027,15 @@ function __collectDeferredScripts(){
       }
       queue.push({type:'external', src:s.getAttribute('data-dsrc'), key:_key});
     } else {
-      queue.push({type:'inline', code:s.textContent});
+      /* LAPTOP-HANG FIX (2026-10-26): tag inline blocks so a throw inside
+         one can be attributed (see the eval seam in __loadDeferredQueueInner).
+         The CORE GAME block is the large one (~600KB of game logic ending
+         in the 'world'/'music' sign-offs); the only other inline block is
+         the small parse-phase snippet before it. Size is the honest
+         discriminator between them. */
+      var _code = s.textContent;
+      queue.push({type:'inline', code:_code, inlineIdx:queue.filter(function(q){return q.type==='inline';}).length,
+                  isCoreBlock:_code.length > 100000});
     }
   }
   return queue;
@@ -2403,7 +2434,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
    stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.10.26.1';
+window.__DOC_UIVER = '2026.10.26.2';
 function __checkDocVersionHeal(){
   var live = window.__UIVER || '';
   if (!live || live === window.__DOC_UIVER){
@@ -2476,6 +2507,34 @@ function __fetchLoadManifests(cb){
     }).catch(function(){ one(); });
   }catch(e){ one(); }
 }
+/* LAPTOP-HANG FIX (2026-10-26): the WebGL2 capability probe. The modern
+   engine (three r186) REQUIRES WebGL2, but its module can load perfectly
+   on a surface that cannot create a WebGL2 context (old Intel/Mesa
+   drivers, blocklisted GPUs, disabled GPU acceleration). The engine
+   gate used to ask only "did the module arrive?" — on such a surface
+   the boot proceeded, block 2's first WebGLRenderer creation threw,
+   the loader swallowed the throw, and the 'world'/'music' steps (signed
+   off only at block 2's tail) stayed pending forever: the laptop
+   lockout. This probe asks the only question that matters — can a
+   webgl2 context actually be created HERE? — once, caches the verdict,
+   and releases the probe context so it never eats one of the browser's
+   limited context slots. The engine gate takes the classic r128
+   fallback (WebGL1) whenever the answer is no. */
+window.__webgl2Verdict = null;
+window.__webgl2OK = function(){
+  if (window.__webgl2Verdict !== null) return window.__webgl2Verdict;
+  var ok = false;
+  try {
+    var c = document.createElement('canvas');
+    var gl = c.getContext('webgl2');
+    ok = !!gl;
+    if (gl){
+      try{ var lx = gl.getExtension('WEBGL_lose_context'); if (lx) lx.loseContext(); }catch(e){}
+    }
+  } catch(e){ ok = false; }
+  window.__webgl2Verdict = ok;
+  return ok;
+};
 function __loadDeferredQueue(){
   if (window.__deferredLoading || window.__deferredDone) return;
   window.__deferredLoading = true;
@@ -2513,7 +2572,51 @@ function __loadDeferredQueueInner(){
     }
     var item = queue[idx++];
     if (item.type === 'inline'){
-      try{ (0,eval)(item.code); }catch(e){ try{ console.error('[deferred] Inline block failed:', e); }catch(_){} }
+      try{ __wbStage('eval:inline-'+(item.inlineIdx!=null?item.inlineIdx:'?')); }catch(e){}
+      try{ (0,eval)(item.code); }catch(e){
+        try{ console.error('[deferred] Inline block failed:', e); }catch(_){}
+        /* LAPTOP-HANG FIX (2026-10-26): a throw inside an inline block
+           used to vanish into the console line above. The block's
+           remaining code — including any load-step sign-offs at its
+           tail — never runs, so the loader waited forever on steps that
+           could never complete (the 'Game world' lockout: block 2 died
+           at its renderer creation and 'world'/'music' pended forever).
+           Now the failure is recorded where reports live, and if the
+           CORE GAME block died, the steps it owns are honestly marked
+           FAILED so the existing critical-failure panel names the
+           problem and offers RETRY. This records a real failure — it
+           is NOT a force-complete: the start gate still refuses to run
+           a broken world without the player's explicit choice. */
+        try{
+          window.__inlineBlockError = { idx:item.inlineIdx,
+            name:String(e&&e.name||'Error'), message:String(e&&e.message||e),
+            stack:String(e&&e.stack||'').slice(0,600), ts:Date.now() };
+          if (typeof SA_CRASH==='function') SA_CRASH('critical',{code:'inline-block-failed',
+            errorName:window.__inlineBlockError.name, message:window.__inlineBlockError.message,
+            where:'deferred inline block #'+item.inlineIdx+' (index.html)'});
+          var _rep = { message:'Inline game block failed to evaluate: '+window.__inlineBlockError.message,
+            kind:'inline-block-failed', errorName:window.__inlineBlockError.name,
+            stack:window.__inlineBlockError.stack, subStage:window.__wbSubStage||'',
+            docVersion:window.__DOC_UIVER||'', ua:(navigator.userAgent||''),
+            ts:new Date().toISOString() };
+          var _sent = false;
+          try{ if (window.GitHubReports && typeof GitHubReports.queue==='function'){ GitHubReports.queue('crash', _rep); _sent = true; } }catch(_){}
+          if (!_sent){
+            try{
+              var _k='sa_pending_reports_v1', _arr=[];
+              try{ _arr=JSON.parse(localStorage.getItem(_k)||'[]'); if(!Array.isArray(_arr)) _arr=[]; }catch(_){ _arr=[]; }
+              _arr.push({type:'crash', details:_rep}); while(_arr.length>5) _arr.shift();
+              localStorage.setItem(_k, JSON.stringify(_arr));
+            }catch(_){}
+          }
+        }catch(_){}
+        try{ if (item.isCoreBlock){ __loadStep('world', true); __loadStep('music', true); } }catch(_){}
+        /* The watchdog never gets to show the critical-failure panel in
+           this case (marking the steps failed empties the pending list,
+           and the watchdog stands down when nothing is pending) — so
+           show it here, where the failure is known. */
+        try{ if (item.isCoreBlock && typeof __showCriticalWarning==='function' && (window.__criticalFailed||[]).length) __showCriticalWarning(); }catch(_){}
+      }
       next();
     } else if (window.__bldgGatePromise && !window.__bldgGateDone && item.src &&
                /(residential_detail|marriott|codeenforce_system|visual_inspect)\.js/.test(item.src)) {
@@ -2571,12 +2674,34 @@ function __loadDeferredQueueInner(){
          20s cap here covers every other failure shape. */
       if (src.indexOf('three_shim.js') !== -1 && !window.__engineGateDone){
         window.__engineGateDone = true;
-        if (window.__threeModern){ next(); return; }
+        if (window.__threeModern && window.__webgl2OK()){ next(); return; }
+        if (window.__threeModern && !window.__webgl2OK()){
+          /* LAPTOP-HANG FIX (2026-10-26): the module engine LOADED, but
+             this surface cannot create a WebGL2 context (r186 requires
+             one). Without this check the boot proceeded to block 2,
+             whose first WebGLRenderer creation threw "Error creating
+             WebGL context"; the loader swallowed the throw and the
+             'world'/'music' steps stayed pending forever — Joshua's
+             laptop locked out while the world audibly loaded around a
+             dead core block. Take the classic r128 engine instead: it
+             runs on WebGL1, which this surface does have (block 2's own
+             weak-hardware probe uses a webgl context). Fall through to
+             the classic-loading machinery below. */
+          try{ console.warn('[engine-gate] WebGL2 context unavailable on this surface — the module engine cannot render here; falling back to classic three.min.js (r128)'); }catch(e){}
+          try{ if (typeof SA_CRASH==='function') SA_CRASH('warning',{code:'webgl2-unavailable', message:'WebGL2 context could not be created; classic r128 fallback taken', where:'engine gate (index.html)'}); }catch(e){}
+        }
         var _egAdvanced = false;
         var _egAdvance = function(){ if (!_egAdvanced){ _egAdvanced = true; next(); } };
         var _egClassic = function(attempt){
-          if (window.__threeModern){ _egAdvance(); return; }
+          if (window.__threeModern && window.__webgl2OK()){ _egAdvance(); return; }
           window.__threeFallbackTaken = true; /* the bridge must stand down from here on */
+          /* LAPTOP-HANG FIX (2026-10-26): if the bridge already published
+             the r186 facade before this fallback was taken (the WebGL2
+             verdict arrives after the module loads), three.min.js below
+             overwrites window.THREE with r128 — and the modern flag must
+             tell the same truth, or consumers like daycycle.js would
+             apply modern-engine compensations to the classic engine. */
+          window.__threeModern = false;
           var cs = document.createElement('script');
           var cdone = false;
           var cfin = function(good){
@@ -2609,7 +2734,9 @@ function __loadDeferredQueueInner(){
           if (window.__threeReady && typeof window.__threeReady.then === 'function'){
             window.__threeReady.then(function(modern){
               clearTimeout(_egTimer);
-              if (modern) _egAdvance(); else _egClassic(0);
+              /* LAPTOP-HANG FIX (2026-10-26): "modern" must ALSO mean
+                 "can create a WebGL2 context here" (see the gate head). */
+              if (modern && window.__webgl2OK()) _egAdvance(); else _egClassic(0);
             });
           } else { clearTimeout(_egTimer); _egClassic(0); }
         }catch(e){ clearTimeout(_egTimer); _egClassic(0); }
@@ -4604,7 +4731,29 @@ if (window.__weakHardware) {
 window.addEventListener('keydown', function(e){
   try { window.__diagLastKey = e.key; } catch(x){}
 }, true);
-var renderer = new THREE.WebGLRenderer({ antialias: _useAA });
+/* LAPTOP-HANG FIX (2026-10-26): renderer creation is the first real GPU
+   call in this block, and the one environment-sensitive throw that can
+   kill the whole evaluation (proven 2026-10-26: WebGL2 unavailable ->
+   "Error creating WebGL context" -> this block died here, the loader
+   swallowed it, and 'Game world' pended forever). The engine gate now
+   probes WebGL2 before this block runs, so on the modern engine a
+   context is known to be creatable; this guard covers the remaining
+   transient failures (context-slot pressure): one retry with antialias
+   off, then a NAMED critical crash record before the throw propagates
+   to the loader's (now reporting) eval seam. */
+try{ __wbStage('renderer/scene'); }catch(e){}
+var renderer = null;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: _useAA });
+} catch(e1) {
+  try{ console.warn('[world] WebGLRenderer failed ('+(e1&&e1.message||e1)+') — retrying without antialias'); }catch(_){}
+  try {
+    renderer = new THREE.WebGLRenderer({ antialias: false });
+  } catch(e2) {
+    try{ if (typeof SA_CRASH==='function') SA_CRASH('critical',{code:'renderer-create-failed', errorName:(e2&&e2.name)||'Error', message:String(e2&&e2.message||e2), where:'block 2 renderer creation (index.html)'}); }catch(_){}
+    throw e2;
+  }
+}
 renderer.setPixelRatio(_pixelRatio);
 /* Canvas size = the MEASURED visible area (SAView, head script;
    Joshua 2026-10-24) so the 3D view never renders into the strip
@@ -4986,6 +5135,7 @@ var SAtex=(function(){
 try{ window.SAtex=SAtex; }catch(e){}
 
 // ---------- terrain ----------
+try{ __wbStage('terrain'); }catch(e){}
 (function buildTerrain(){
   var SEGX=TERR_SEGX, SEGZ=TERR_SEGZ;
   var geo = new THREE.PlaneGeometry(WX, WZ, SEGX, SEGZ);
@@ -5000,6 +5150,17 @@ try{ window.SAtex=SAtex; }catch(e){}
   /* v1.44 TERRAIN-PRECOMPUTE fast path: heights precomputed on the build VM
      (see TERR_PRE_URL). Falls back to synchronous heightAt() when missing. */
   var _pre=(window.__TERR_H_PRE && window.__TERR_H_PRE.length===pos.count)?window.__TERR_H_PRE:null;
+  /* LAPTOP-HANG FIX (2026-10-26): if the precompute did not land, the
+     loop below calls heightAt() 481,201 times synchronously — the
+     original ~30s phone freeze from the v1.44 notes, and minutes on a
+     Pentium-class laptop. That path used to engage silently; name it
+     in the sub-stage trail and the session report so a slow boot at
+     sub-stage 'terrain-sync-fallback' is self-explaining. */
+  if (!_pre){
+    try{ __wbStage('terrain-sync-fallback'); }catch(e){}
+    try{ if (typeof Report!=='undefined') Report.note('terrain',{precompute:'missing — synchronous heightAt fallback engaged'}); }catch(e){}
+    try{ console.warn('[terrain] precompute missing — synchronous fallback (slow on weak hardware)'); }catch(e){}
+  }
   for (var i=0;i<pos.count;i++){
     var x = pos.getX(i), z = pos.getZ(i);
     var h = _pre?_pre[i]:heightAt(x,z);
@@ -5619,6 +5780,7 @@ function clipToWorldY(pts, ys, margin){
 }
 /* v2.1: total across whatever category keys exist in the data. */
 try{ Object.keys(ROAD_DATA||{}).forEach(function(c){ if(ROAD_DATA[c]) roadSegsTotal+=ROAD_DATA[c].length; }); }catch(e){}
+try{ __wbStage('roads'); }catch(e){}
 (function buildRoads(){
   /* v1.17 ROADFIX BOOT PATCHES (Joshua 2026-10-09): construction-crew pin
      re-surveys recorded in localStorage ('sa_roadfixes_v1', patch
@@ -6314,6 +6476,7 @@ try{ Object.keys(ROAD_DATA||{}).forEach(function(c){ if(ROAD_DATA[c]) roadSegsTo
   }catch(e){}
 })();
 /* v1.16 GREEN PHASE: roads built (40%) — placing street furniture next. */
+try{ __wbStage('street-furniture'); }catch(e){}
 try{ __parseSet('Placing street furniture', '', 40); }catch(e){}
 /* ================= v1.5 STREET FURNITURE =================
    Street-name signs (1995 names), stop signs, and traffic lights at
@@ -7106,6 +7269,7 @@ function waterDisc(cx, cz, rx, rz, name, depthFt){
               depthFt:(typeof depthFt==='number'&&depthFt>0)?depthFt:12});
   if (name) labelAt(name, cx, cz, 14, 34, '#7fd4ff');
 }
+try{ __wbStage('water'); }catch(e){}
 (function buildWater(){
   /* v1.1 TATUM LAKE REPOSITIONED: the old center (33.74785,-84.52261) put the
      water disc ON TOP of Boulder Park Dr SW — the road ran up to 6.6u UNDER the
@@ -7355,6 +7519,7 @@ function heroPorchY(x, z){
   }
   return null;
 }
+try{ __wbStage('hero-house'); }catch(e){}
 (function buildHeroHouse(){
   /* v1.66 HERO DATA (2026-10-12 Joshua: "535 wasn't in the editor"):
      The 535 Dollar Mill spec now lives in zones/adamsville/hero_buildings.json
@@ -8364,6 +8529,7 @@ try{ window.BuildingEdits={ skipFor:buildingSkipFor, heroLotFor:buildingHeroLotF
    roadDrawData → buildings landed on them. Joshua's rule: automatic check,
    every load, no buildings on roads — never delete, nudge clear instead.) */
 function runOsmBuildings(){
+  try{ __wbStage('buildings-placement'); }catch(e){}
   try{
     if (typeof OSM_BUILDINGS==='undefined' || !OSM_BUILDINGS || !OSM_BUILDINGS.length){
       try{Report.setSys('osmBuildings',{status:'no-data'});}catch(e){}
@@ -9248,6 +9414,7 @@ window.INSPECTOR_BLDG=INSPECTOR_BLDG;
    + real locations) pending for a future version. Labels are generic
    until OSM provides real names. */
 var PLACES_OF_INTEREST=[];
+try{ __wbStage('churches-schools'); }catch(e){}
 (function buildChurchesSchools(){
   try{
     var rng=mulberry32(19959);
@@ -9656,6 +9823,7 @@ roadSurfGrid=null; roadSurfSegs=0;
    here used to surface as a vague broken world; now it is recorded with
    its error + location, and the tester gets the guided window. An empty
    grid under loaded road data is likewise a named critical failure. */
+try{ __wbStage('road-grids'); }catch(e){}
 try{ buildRoadGrids(); }catch(e){
   try{ SA_CRASH('critical',{code:'road-build-failed',
     errorName:(e&&e.name)||'Error', message:String(e&&e.message||e),
@@ -9715,6 +9883,7 @@ try{
    helpers) now live in vehicle_meshes.js — the shared canonical module
    (also loaded directly by the watcher). */
 
+try{ __wbStage('vehicles-player-menus'); }catch(e){}
 // ---------- vehicle type registry (NPC assignment reads this) ----------
 var VEHICLE_TYPES={
   safari:  {mesh:function(p,r){return safariMesh();}, eyeH:1.52, lookH:1.22, driverX:0.55, cockpitH:0.42, oldCockpit:true,  halfL:2.8, halfW:1.3, label:'GMC Safari van'},
@@ -9943,6 +10112,7 @@ var TREE_SPECIES=[
  {n:'southern red oak',kind:'decid', wt:0.07, h:1.05, sc:[1.15,1.00,1.15],
   spr:0x80be5c, sum:0x3a7530, fall:0x9a3a20}
 ];
+try{ __wbStage('trees'); }catch(e){}
 (function plantTrees(){
   var COUNT=2600;
   // species picker: cumulative weights, deterministic seed so the forest is
@@ -11110,6 +11280,7 @@ var XFADE_MS = 2500;   /* crossfade duration: 2.5 seconds */
   });
 })();
 /* EXPERT #39: Apply volume + preload to both crossfade elements. */
+try{ __wbStage('music-setup'); }catch(e){}
 musicAudioA.volume=MUSIC_VOL;
 musicAudioB.volume=0;  /* inactive starts silent */
 musicAudioA.preload='auto';
@@ -11897,6 +12068,7 @@ function escapeHtml(s){
 document.getElementById('zonepick-cancel').addEventListener('click', function(){
   document.getElementById('zonepick').classList.remove('show');
 });
+try{ __wbStage('minimap-fullmap'); }catch(e){}
 var mmCanvas=document.getElementById('minimap');
 var fmCanvas=document.getElementById('fullmap-canvas');  // before gesture handlers attach
 mmCanvas.addEventListener('click', function(){
@@ -14312,6 +14484,7 @@ window.addEventListener('keyup', function(e){
    These run the REAL device code path (real resolveCollision vs the real
    segColliders, real updateCar/updateCamera on a real car object) — not a
    separate node sim. Results land in "Surviving Adamsville Report.json". */
+try{ __wbStage('self-tests'); }catch(e){}
 (function wallSelfTest(){
   try{
     var hx=heroHouse.cx, hz=heroHouse.cz, W=12.2, D=7.6;
@@ -14415,6 +14588,7 @@ window.addEventListener('keyup', function(e){
   }catch(e){ try{Report.noteError('elevprobe','self-test threw',String(e&&e.stack||e));}catch(x){} }
 })();
 
+try{ __wbStage('world-tail'); }catch(e){}
 setDrivingUI(false);
 /* v1.16 GREEN PHASE COMPLETE: world built. Show honest 90%, record timing.
    Late scripts (npc, etc.) will bring it to 100%. */
