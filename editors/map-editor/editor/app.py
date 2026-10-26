@@ -52,7 +52,7 @@ import overpass as overpass_mod  # noqa: E402
 
 # App version shown in the Help -> About dialog (bump with each release).
 # Joshua 2026-10-11: version number must be prominent in About.
-APP_VERSION = "1.9.14"
+APP_VERSION = "1.9.15"
 # Display name and icon-theme name for the About dialog.
 APP_NAME = "Adamsville Map Editor"
 APP_ICON = "adamsville-map-editor-native"
@@ -211,6 +211,13 @@ class MapEditorApp:
         self.canvas_overlay.add(self.canvas)
         self._build_delete_bar()
         self.canvas_overlay.add_overlay(self.delete_bar)
+        # Reframe hook (1.9.15): the framing's top inset follows
+        # the bar's real height — when the bar grows (its label
+        # wrapped at a narrow width) or settles after being
+        # shown, an open delete picture refits beneath it.
+        self.delete_bar.connect(
+            "size-allocate",
+            lambda *_a: self.canvas._schedule_delete_reframe())
         # 1.9.10: the Pieces panel (selection contents list +
         # stacked-pieces finder) docks BELOW the map in the
         # canvas column, in a vertical paned whose sash Joshua
@@ -2945,6 +2952,26 @@ class MapEditorApp:
                 target_roads=targets)
         canvas.queue_draw()
 
+    def resync_delete_compare(self):
+        """
+        The delete picture was reframed for a new canvas size
+        (1.9.15): re-shoot the Before/After stills from the
+        reframed main camera — one render each, the standing
+        stills discipline — so the panes keep showing the same
+        photograph as the main view, and the After picture's
+        click-to-add keeps resolving through the live camera at
+        the pane's live size (its mapping stays true). Only the
+        delete comparison (the one carrying the After-picture
+        picker) is ever resynced; merge/join comparisons keep
+        their own pinned framing.
+        """
+        insp = getattr(self, "inspector", None)
+        if insp is None or not insp.compare_active() \
+                or not insp.compare_after_pickable():
+            return
+        insp.retarget_compare_camera(self._snapshot_camera())
+        insp.update_compare()
+
     def on_delete_preview_end(self):
         """Delete decided (either way): panes back to synced."""
         insp = getattr(self, "inspector", None)
@@ -3929,6 +3956,18 @@ class MapEditorApp:
         box.set_margin_bottom(6)
         self.delete_bar_label = Gtk.Label(label="")
         self.delete_bar_label.set_xalign(0.0)
+        # Reflow (1.9.15, Joshua's resize finding): the message
+        # WRAPS at whatever width the bar actually gets, so at a
+        # narrow window the words fold onto a second line and the
+        # Cancel / Delete buttons keep their place at the right
+        # end — instead of the unwrapped label eating the whole
+        # bar and pushing the buttons off the edge, unclickable.
+        # The bar grows taller when it wraps; the delete framing
+        # follows its real height (mapcanvas._delete_top_inset).
+        self.delete_bar_label.set_line_wrap(True)
+        from gi.repository import Pango as _Pango
+        self.delete_bar_label.set_line_wrap_mode(
+            _Pango.WrapMode.WORD_CHAR)
         self.delete_bar_label.override_color(
             Gtk.StateFlags.NORMAL, Gdk.RGBA(1.0, 1.0, 1.0, 1.0))
         box.pack_start(self.delete_bar_label, True, True, 0)
