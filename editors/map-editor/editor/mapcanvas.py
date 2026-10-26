@@ -389,11 +389,52 @@ def _direction_words(pts):
     return (words[abbr[0]], words[abbr[1]])
 
 
+# ---------------------------------------------------------------------------
+# View chrome measurements (1.9.14 — compass + scale ruler)
+# ---------------------------------------------------------------------------
+# World units are metres (the game's own unit: 1 unit = 1 m), and
+# the camera zoom IS the scale — screen pixels per metre — so the
+# ruler below is computed from the live camera, never hardcoded.
+
+FOOT_M = 0.3048          # one international foot, in metres
+MILE_M = 1609.344        # one international mile, in metres
+
+
+def format_distance(metres):
+    """
+    A distance in the game's own style (Joshua's GPS ruling):
+    feet while under a mile, miles to two decimals at or over it.
+    Used by the scale ruler's labels and by measure mode's report
+    of a measured section.
+    """
+    if metres < MILE_M:
+        return f"{metres / FOOT_M:.0f} ft"
+    return f"{metres / MILE_M:.2f} mi"
+
+
+# The ruler's candidate bar lengths, ascending: round feet first,
+# then round miles. The drawn bar is the LARGEST candidate whose
+# true pixel length fits the box (see MapCanvas.scale_bar).
+SCALE_LADDER = tuple(
+    [(ft * FOOT_M, f"{ft} ft")
+     for ft in (10, 20, 50, 100, 200, 500, 1000)]
+    + [(0.5 * MILE_M, "0.5 mi"), (1 * MILE_M, "1 mi"),
+       (2 * MILE_M, "2 mi"), (5 * MILE_M, "5 mi"),
+       (10 * MILE_M, "10 mi"), (20 * MILE_M, "20 mi")])
+
+
 class MapCanvas(Gtk.DrawingArea):
     """
     Native Cairo canvas for the map editor.
     All rendering is done with Cairo — no web technologies.
     """
+
+    # View chrome geometry (1.9.14), in screen pixels.
+    _CHROME_MARGIN = 10    # gap between the canvas edge and chrome
+    _CHROME_PAD = 8        # padding inside the ruler box
+    _RULER_H = 36          # scale ruler box height
+    _COMPASS_R = 30        # compass disc radius
+    _SCALE_MAX_PX = 150    # longest the ruler bar may grow
 
     def __init__(self, app):
         """Initialize canvas. app is the parent MapEditorApp for callbacks."""
@@ -574,6 +615,34 @@ class MapCanvas(Gtk.DrawingArea):
         # Joshua already backed out of.
         self.delete_prep = None
         self._delete_prep_token = 0
+
+        # View chrome (1.9.14, Joshua's rulings 2026-10-25): the
+        # COMPASS (bottom-right of the main view) and the SCALE
+        # RULER (bottom-left) are drawn on this canvas, over the
+        # map — see _draw_view_chrome. The compass turns with the
+        # shared camera heading; the ruler's bar is computed from
+        # the camera's true scale (zoom = screen px per metre).
+        # The window's progress bar lives in the status bar BELOW
+        # this canvas (packed at its right end), so the compass in
+        # the canvas corner and the progress bar in the strip under
+        # it form a stack that can never overlap.
+        #
+        # The ruler is also the MEASURE MODE switch (his ruling:
+        # click the ruler to measure). Measure state:
+        #   measure_mode   — True while measuring;
+        #   measure_points — the picked world points (0, 1 or 2);
+        #   measure_drag   — (press_x, press_y, was_second) while
+        #                    a measure press is down, else None;
+        #   measure_live   — the pointer's current world point
+        #                    during that press (the section being
+        #                    dragged out), else None.
+        # Measure mode NEVER touches the road selection: entering,
+        # measuring and leaving all leave selected_roads exactly
+        # as they were (proved in the 1.9.14 gate).
+        self.measure_mode = False
+        self.measure_points = []
+        self.measure_drag = None
+        self.measure_live = None
 
         # Enable mouse events
         self.set_events(
@@ -877,6 +946,12 @@ class MapCanvas(Gtk.DrawingArea):
         # while Joshua is deciding, the road he is about to delete
         # must be the most visible thing on the map (1.9.7).
         self._draw_delete_preview(cr)
+
+        # View chrome (1.9.14): the compass (bottom-right), the
+        # scale ruler (bottom-left) and any live measurement ride
+        # above the map picture itself — they are the map's own
+        # furniture, always visible, never part of the world.
+        self._draw_view_chrome(cr)
 
         return False
 
@@ -1956,6 +2031,58 @@ class MapCanvas(Gtk.DrawingArea):
             pass
         # His own press: the jump ghost has done its job.
         self.clear_jump_ghost()
+        # View chrome first (1.9.14): a left press on the SCALE
+        # RULER toggles measure mode — a furniture click, never a
+        # map gesture: no pan starts, nothing selects or
+        # deselects. While other machinery owns the pointer (a
+        # modal mode, the zone pin drag, the delete preview) or
+        # an editing tool is armed, the ruler stays inert and the
+        # click keeps its ordinary meaning.
+        if event.button == 1 and self._point_in_ruler(event.x,
+                                                      event.y):
+            busy = (self.move_road is not None
+                    or self.divide_pick is not None
+                    or self.link_overpass_mode
+                    or self.delete_preview is not None
+                    or self.drag_pin is not None)
+            if not busy and (self.active_tool is None
+                             or self.measure_mode):
+                if self.measure_mode:
+                    self.exit_measure_mode()
+                    try:
+                        self.app.set_status("Measure off.")
+                    except Exception:
+                        pass
+                else:
+                    self.enter_measure_mode()
+                return True
+        # Measure mode (1.9.14): map presses belong to measuring
+        # — they pick points; they never pan, never select, and
+        # never disturb a selection made before entering.
+        if self.measure_mode:
+            if self.delete_preview is not None:
+                # A delete decision outranks measuring: leave
+                # measure mode and let this press mean whatever
+                # it means with the preview up.
+                self.exit_measure_mode()
+            elif event.button == 1:
+                wx, wz = self.screen_to_world(event.x, event.y)
+                if len(self.measure_points) >= 2:
+                    # A press after a finished measurement starts
+                    # the next one.
+                    self.measure_points = [(wx, wz)]
+                    self.measure_drag = (event.x, event.y, False)
+                elif len(self.measure_points) == 1:
+                    self.measure_drag = (event.x, event.y, True)
+                else:
+                    self.measure_points = [(wx, wz)]
+                    self.measure_drag = (event.x, event.y, False)
+                self.measure_live = (wx, wz)
+                self.queue_draw()
+                return True
+            elif event.button == 3:
+                # Right-drag pan is suspended while measuring.
+                return True
         if event.button == 1:  # left click
             # Move-road mode is modal (Joshua 2026-10-12): a left click
             # drops the road at its current ghost position. Shift+click
@@ -2098,6 +2225,27 @@ class MapCanvas(Gtk.DrawingArea):
 
     def on_button_release(self, widget, event):
         """End pan drag or pin drag."""
+        # Measure press ending (1.9.14): the release fixes the
+        # section's far point. A first press that never travelled
+        # was a CLICK — it set the first point only, and the far
+        # point waits for the next click. A second press sets the
+        # far point wherever it lands, travelled or not; a press
+        # that DID travel (either time) was a drag, and the
+        # release point is the section's end. (No other gesture
+        # state can be live while a measure press is down —
+        # measure presses never set any.)
+        if event.button == 1 and self.measure_drag is not None:
+            px, py, was_second = self.measure_drag
+            self.measure_drag = None
+            wx, wz = self.screen_to_world(event.x, event.y)
+            travelled = math.hypot(event.x - px, event.y - py) >= 6
+            if (was_second or travelled) \
+                    and len(self.measure_points) == 1:
+                self.measure_points.append((wx, wz))
+                self._report_measurement()
+            self.measure_live = None
+            self.queue_draw()
+            return True
         # 1.9.13: remember how this gesture began — the building
         # click decided at the end of the release is only for a
         # plain resting press (a pan drag that stayed a click);
@@ -2213,6 +2361,14 @@ class MapCanvas(Gtk.DrawingArea):
         """Handle mouse move. Pan if dragging, or drag a zone pin."""
         self.mouse_pos = (event.x, event.y)
 
+        # Measure drag (1.9.14): the section's far end follows
+        # the pointer until the release fixes it.
+        if self.measure_drag is not None:
+            self.measure_live = self.screen_to_world(event.x,
+                                                     event.y)
+            self.queue_draw()
+            return True
+
         # Universal controls (1.9.9): a Control+drag in progress
         # rotates the shared view — horizontally, like the panes.
         if self.ctrl_drag is not None:
@@ -2317,6 +2473,375 @@ class MapCanvas(Gtk.DrawingArea):
                 factor = math.pow(1.0015, -dy)
                 self.zoom_at(event.x, event.y, factor)
         return True
+
+    # ------------------------------------------------------------------
+    # View chrome: compass, scale ruler, measure mode (1.9.14)
+    # ------------------------------------------------------------------
+    # Joshua's rulings (2026-10-25): the compass lives in the
+    # BOTTOM RIGHT of the main view; the scale ruler in the
+    # BOTTOM LEFT; clicking the ruler toggles measure mode. The
+    # bottom-left STATUS text (the future post-action readout)
+    # lives in the window's status bar below the canvas — the
+    # ruler rides on the canvas above it, so the two never cover
+    # each other. Likewise the corner progress bar rides the
+    # status bar's right end, directly under the compass: a
+    # stack in adjacent strips, never an overlap.
+
+    def _chrome_text_width(self, text, size, bold=True):
+        """Pixel width of `text` in the chrome font, measured on a
+        scratch Cairo context so the ruler box the pointer hits
+        is exactly the box that is drawn."""
+        import cairo as _cairo
+        ctx = getattr(self, "_chrome_text_ctx", None)
+        if ctx is None:
+            surf = _cairo.ImageSurface(_cairo.FORMAT_ARGB32, 1, 1)
+            ctx = _cairo.Context(surf)
+            self._chrome_text_ctx = ctx
+        ctx.select_font_face("Sans", 0, 1 if bold else 0)
+        ctx.set_font_size(size)
+        return ctx.text_extents(text)[2]
+
+    def scale_bar(self):
+        """
+        (metres, label, pixel_width) for the ruler right now: the
+        largest ladder candidate whose TRUE length at the current
+        camera scale (zoom = px per metre) fits the box. At wide
+        zooms that lands on round miles; zooming in walks down
+        through round feet — the switch is the ladder itself.
+        """
+        zoom = max(float(self.zoom), 1e-9)
+        best = None
+        for metres, label in SCALE_LADDER:
+            px = metres * zoom
+            if px <= self._SCALE_MAX_PX:
+                best = (metres, label, px)
+            else:
+                break  # ascending ladder: nothing later fits
+        if best is None:
+            metres, label = SCALE_LADDER[0]
+            best = (metres, label, metres * zoom)
+        return best
+
+    def compass_north_dir(self):
+        """
+        The screen-space unit vector pointing at world NORTH
+        (-z) under the current heading. The camera turns world
+        features clockwise as the heading grows (see
+        _LocalCamera2D), so north sits at (sin h, -cos h):
+        straight up at heading 0, at the right at heading 90.
+        """
+        rad = math.radians(self.rotation)
+        return (math.sin(rad), -math.cos(rad))
+
+    def _compass_centre(self):
+        """(cx, cy, r) of the compass disc, canvas coords."""
+        alloc = self.get_allocation()
+        r = self._COMPASS_R
+        return (alloc.width - self._CHROME_MARGIN - r,
+                alloc.height - self._CHROME_MARGIN - r, r)
+
+    def _ruler_label(self):
+        """The ruler box's text line for the current state: the
+        scale label at rest; in measure mode, the measurement
+        (or the prompt for the point still missing)."""
+        if not self.measure_mode:
+            return self.scale_bar()[1]
+        length = self.measure_length_m()
+        if length is not None:
+            return format_distance(length)
+        live = self._measure_live_length_m()
+        if live is not None:
+            return format_distance(live)
+        if len(self.measure_points) == 1:
+            return "pick the second point"
+        return "pick the first point"
+
+    def ruler_rect(self):
+        """The ruler box as (x, y, w, h) in canvas coords — the
+        drawn box AND the click target, from one computation.
+        None when the canvas is too small to carry furniture."""
+        alloc = self.get_allocation()
+        w, h = alloc.width, alloc.height
+        if w < 240 or h < 180:
+            return None
+        _m, _label, bar_px = self.scale_bar()
+        text_w = self._chrome_text_width(self._ruler_label(), 10.5)
+        box_w = max(bar_px, text_w, 74) + 2 * self._CHROME_PAD
+        return (self._CHROME_MARGIN,
+                h - self._CHROME_MARGIN - self._RULER_H,
+                box_w, self._RULER_H)
+
+    def _point_in_ruler(self, sx, sy):
+        """True if a canvas point lands on the scale ruler."""
+        rect = self.ruler_rect()
+        if rect is None:
+            return False
+        x, y, w, h = rect
+        return x <= sx <= x + w and y <= sy <= y + h
+
+    # -- measure mode ------------------------------------------------
+
+    def measure_length_m(self):
+        """The finished measurement in metres (world units), or
+        None while fewer than two points are picked."""
+        if len(self.measure_points) != 2:
+            return None
+        (ax, az), (bx, bz) = self.measure_points
+        return math.hypot(bx - ax, bz - az)
+
+    def _measure_live_length_m(self):
+        """The in-progress drag's length in metres, or None."""
+        if len(self.measure_points) == 1 \
+                and self.measure_live is not None:
+            ax, az = self.measure_points[0]
+            bx, bz = self.measure_live
+            return math.hypot(bx - ax, bz - az)
+        return None
+
+    def enter_measure_mode(self):
+        """Start measuring (the ruler was clicked at rest)."""
+        self.measure_mode = True
+        self.measure_points = []
+        self.measure_drag = None
+        self.measure_live = None
+        try:
+            self.app.set_status(
+                "Measure: click two points on the map — or drag "
+                "a section. Click the ruler again, or press "
+                "Escape, to stop.")
+        except Exception:
+            pass
+        self.queue_draw()
+
+    def exit_measure_mode(self):
+        """
+        Stop measuring and put the ordinary gestures back exactly
+        as they were. The road selection is NOT touched — it was
+        never measure mode's to touch.
+        """
+        self.measure_mode = False
+        self.measure_points = []
+        self.measure_drag = None
+        self.measure_live = None
+        self.queue_draw()
+
+    def _report_measurement(self):
+        """Announce a finished measurement in the status line
+        (the number itself also sits in the ruler box)."""
+        length = self.measure_length_m()
+        if length is None:
+            return
+        try:
+            self.app.set_status(
+                f"Measured: {format_distance(length)} — click "
+                "the map to measure again, or the ruler / Esc "
+                "to stop.")
+        except Exception:
+            pass
+
+    # -- chrome drawing ------------------------------------------------
+
+    def _rounded_rect_path(self, cr, x, y, w, h, r):
+        """A rounded-rectangle path (the chrome boxes' shape)."""
+        cr.new_path()
+        cr.arc(x + w - r, y + r, r, -math.pi / 2, 0)
+        cr.arc(x + w - r, y + h - r, r, 0, math.pi / 2)
+        cr.arc(x + r, y + h - r, r, math.pi / 2, math.pi)
+        cr.arc(x + r, y + r, r, math.pi, 3 * math.pi / 2)
+        cr.close_path()
+
+    def _draw_centred_text(self, cr, text, cx, cy, size,
+                           rgba, bold=True):
+        """Draw `text` centred on (cx, cy)."""
+        cr.select_font_face("Sans", 0, 1 if bold else 0)
+        cr.set_font_size(size)
+        ext = cr.text_extents(text)
+        cr.set_source_rgba(*rgba)
+        cr.move_to(cx - ext[2] / 2 - ext[0], cy - ext[3] / 2 - ext[1])
+        cr.show_text(text)
+
+    def _draw_view_chrome(self, cr):
+        """
+        The main view's furniture, drawn last over the map: the
+        measured section (when measuring), the scale ruler
+        (bottom-left), the compass (bottom-right) and — while
+        measuring — the unmistakable measure banner across the
+        top. Pure drawing: no state changes here.
+        """
+        alloc = self.get_allocation()
+        w, h = alloc.width, alloc.height
+        if w < 240 or h < 180:
+            return
+        self._draw_measure_overlay(cr)
+        self._draw_ruler(cr, w, h)
+        self._draw_compass(cr, w, h)
+        if self.measure_mode:
+            self._draw_measure_banner(cr, w)
+
+    def _draw_measure_overlay(self, cr):
+        """The measured section itself: a cased amber line with
+        end dots — the highlight the ruler's number belongs to."""
+        if not self.measure_points:
+            return
+        a = self.measure_points[0]
+        b = None
+        if len(self.measure_points) == 2:
+            b = self.measure_points[1]
+        elif self.measure_live is not None:
+            b = self.measure_live
+        ax, ay = self.world_to_screen(a[0], a[1])
+        if b is None:
+            # Only the first point so far: a ringed dot.
+            cr.set_source_rgba(1, 1, 1, 0.9)
+            cr.set_line_width(2)
+            cr.arc(ax, ay, 8, 0, 2 * math.pi)
+            cr.stroke()
+            cr.set_source_rgb(1.0, 0.72, 0.15)
+            cr.arc(ax, ay, 3.5, 0, 2 * math.pi)
+            cr.fill()
+            return
+        bx, by = self.world_to_screen(b[0], b[1])
+        # White casing first, amber core on top.
+        cr.set_source_rgba(1, 1, 1, 0.85)
+        cr.set_line_width(5)
+        cr.move_to(ax, ay)
+        cr.line_to(bx, by)
+        cr.stroke()
+        cr.set_source_rgb(1.0, 0.72, 0.15)
+        cr.set_line_width(3)
+        cr.move_to(ax, ay)
+        cr.line_to(bx, by)
+        cr.stroke()
+        for px, py in ((ax, ay), (bx, by)):
+            cr.set_source_rgb(1.0, 0.72, 0.15)
+            cr.arc(px, py, 4.5, 0, 2 * math.pi)
+            cr.fill()
+            cr.set_source_rgba(1, 1, 1, 0.9)
+            cr.set_line_width(1.5)
+            cr.arc(px, py, 4.5, 0, 2 * math.pi)
+            cr.stroke()
+
+    def _draw_measure_banner(self, cr, view_w):
+        """The measure-mode banner: a bright pill across the top
+        centre — the mode can never be mistaken for resting."""
+        if len(self.measure_points) == 1 \
+                and self.measure_length_m() is None:
+            text = "MEASURE — click the second point"
+        else:
+            text = ("MEASURE — click two points, or drag a "
+                    "section · Esc to exit")
+        size = 11.5
+        tw = self._chrome_text_width(text, size)
+        bw, bh = tw + 28, 25
+        x = (view_w - bw) / 2
+        y = 8
+        self._rounded_rect_path(cr, x, y, bw, bh, 12)
+        cr.set_source_rgba(0.98, 0.70, 0.12, 0.95)
+        cr.fill()
+        self._draw_centred_text(cr, text, x + bw / 2, y + bh / 2,
+                                size, (0.12, 0.09, 0.02, 1.0))
+
+    def _draw_ruler(self, cr, view_w, view_h):
+        """
+        The scale ruler (bottom-left): a dark occluding box whose
+        white bar spans a TRUE distance at the current zoom —
+        the label names it. In measure mode the box lights up
+        amber and its text line carries the measurement instead.
+        """
+        rect = self.ruler_rect()
+        if rect is None:
+            return
+        x, y, bw, bh = rect
+        _m, _label, bar_px = self.scale_bar()
+        self._rounded_rect_path(cr, x, y, bw, bh, 6)
+        cr.set_source_rgba(0.04, 0.05, 0.10, 0.80)
+        cr.fill()
+        if self.measure_mode:
+            cr.set_source_rgba(1.0, 0.72, 0.15, 1.0)
+            cr.set_line_width(2)
+        else:
+            cr.set_source_rgba(1, 1, 1, 0.35)
+            cr.set_line_width(1)
+        self._rounded_rect_path(cr, x, y, bw, bh, 6)
+        cr.stroke()
+        label_rgba = (1.0, 0.85, 0.40, 1.0) if self.measure_mode \
+            else (1, 1, 1, 0.95)
+        self._draw_centred_text(cr, self._ruler_label(),
+                                x + bw / 2, y + 12, 10.5, label_rgba)
+        # The bar itself, with end ticks and a mid tick.
+        bx0 = x + self._CHROME_PAD
+        bx1 = bx0 + bar_px
+        by = y + bh - 8
+        cr.set_source_rgba(1, 1, 1, 0.95)
+        cr.set_line_width(2.5)
+        cr.move_to(bx0, by)
+        cr.line_to(bx1, by)
+        cr.stroke()
+        cr.set_line_width(1.5)
+        for tx, th in ((bx0, 6), ((bx0 + bx1) / 2, 3.5), (bx1, 6)):
+            cr.move_to(tx, by - th)
+            cr.line_to(tx, by)
+            cr.stroke()
+
+    def _draw_compass(self, cr, view_w, view_h):
+        """
+        The compass (bottom-right): a dark disc whose needle and
+        cardinal letters turn WITH the shared view heading —
+        north on screen is compass_north_dir(), so at heading 90
+        the needle points at the screen's right edge, exactly
+        where north has gone in the map picture.
+        """
+        cx, cy, r = self._compass_centre()
+        # Disc + ring.
+        cr.set_source_rgba(0.04, 0.05, 0.10, 0.78)
+        cr.arc(cx, cy, r, 0, 2 * math.pi)
+        cr.fill()
+        cr.set_source_rgba(1, 1, 1, 0.45)
+        cr.set_line_width(1.5)
+        cr.arc(cx, cy, r - 0.75, 0, 2 * math.pi)
+        cr.stroke()
+        # The camera's rotation, recomputed from the public
+        # heading (the shared camera copy's private helpers are
+        # not part of its contract).
+        rad = math.radians(self.rotation)
+        c, s = math.cos(rad), math.sin(rad)
+        # Cardinal letters at their turned positions, upright so
+        # they stay readable at any heading.
+        for letter, dx, dz, is_north in (
+                ("N", 0, -1, True), ("E", 1, 0, False),
+                ("S", 0, 1, False), ("W", -1, 0, False)):
+            vx = dx * c - dz * s
+            vy = dx * s + dz * c
+            rgba = (1.0, 0.50, 0.38, 1.0) if is_north \
+                else (0.82, 0.85, 0.90, 0.9)
+            self._draw_centred_text(
+                cr, letter, cx + vx * (r - 8), cy + vy * (r - 8),
+                10 if is_north else 8.5, rgba)
+            # A short tick at the rim.
+            cr.set_source_rgba(1, 1, 1, 0.5)
+            cr.set_line_width(1.5)
+            cr.move_to(cx + vx * (r - 3.5), cy + vy * (r - 3.5))
+            cr.line_to(cx + vx * (r - 1), cy + vy * (r - 1))
+            cr.stroke()
+        # Needle: red half to north, pale half to south.
+        nx, ny = self.compass_north_dir()
+        px, py = -ny, nx  # screen perpendicular to the needle
+        tip = r - 13
+        cr.set_source_rgb(0.94, 0.26, 0.16)
+        cr.move_to(cx + nx * tip, cy + ny * tip)
+        cr.line_to(cx + px * 4.5, cy + py * 4.5)
+        cr.line_to(cx - px * 4.5, cy - py * 4.5)
+        cr.close_path()
+        cr.fill()
+        cr.set_source_rgb(0.80, 0.83, 0.88)
+        cr.move_to(cx - nx * tip, cy - ny * tip)
+        cr.line_to(cx + px * 4.5, cy + py * 4.5)
+        cr.line_to(cx - px * 4.5, cy - py * 4.5)
+        cr.close_path()
+        cr.fill()
+        cr.set_source_rgb(0.10, 0.11, 0.16)
+        cr.arc(cx, cy, 2.6, 0, 2 * math.pi)
+        cr.fill()
 
     # ------------------------------------------------------------------
     # Divide-section picking (Joshua 2026-10-11: segmentable medians)
@@ -2837,6 +3362,16 @@ class MapCanvas(Gtk.DrawingArea):
         # Draw (1.9.11): a tool switch or Escape abandons a
         # half-drawn line — nothing is added.
         self.draw_drag = None
+        # Measure mode (1.9.14): a tool switch abandons a
+        # measurement in progress, like the gestures above.
+        # (Escape while measuring never reaches here — app.py
+        # leaves measure mode first, precisely so this method's
+        # selection clear does not eat a selection measure mode
+        # promised to leave alone.)
+        self.measure_mode = False
+        self.measure_points = []
+        self.measure_drag = None
+        self.measure_live = None
         # A tool switch is his own move: the jump ghost clears.
         self.jump_ghost = None
         self.selected_roads = []
