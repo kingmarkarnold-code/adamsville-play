@@ -1,6 +1,6 @@
 {
-  "version": "2.0.2",
-  "changelog": "Three additions from Joshua's live use on 2026-10-18. (1) THE BUILDING NOW TRAVELS WITH THE STREET JUMP: in the 3D view, clicking a street and jumping to the Map Editor used to send only the street \u2014 Joshua landed in the Map Editor zoomed to the road with no idea where his building was supposed to go, because the building was never sent. Now, when a building is open in the 3D view, the handoff also carries the building: its name, its zone, its ground outline exactly as the editor holds it (drags included), and its centre point. The Map Editor (1.9.8 and later) draws it there and selects the street it fronts. A jump with no building open \u2014 and a jump from a gas station \u2014 writes exactly the same handoff as before. (2) THE CORNER PROGRESS BAR (the progress-bar law): like the Map Editor's, a small progress bar now sits in the bottom-right corner, at the end of the status bar, whenever the app is working in the background \u2014 downloading, fetching a building's details, opening a station, or saving to GitHub. It shows real progress when a total is known and keeps moving when it isn't, so a busy app never looks frozen; it clears when the work is done. The existing download readout in MB stays where it was. (3) UNIVERSAL VIEWPORT CONTROLS in the 3D view \u2014 the one scheme Joshua set for every viewport in the suite: click-and-hold drag pans the view, the mouse wheel zooms, the + and \u2212 keys zoom the same way, and Ctrl+drag rotates. Dragging the building itself (roof to move, an edge to resize, the orange front wall for height) and clicking a street to select it work exactly as before, and the Face front button resets the whole view \u2014 position, zoom and angle.",
+  "version": "2.0.6",
+  "changelog": "The Map Editor jump now lands in the REAL building editing view (Joshua's hands-on findings on 2.0.5, 2026-10-25). (1) THE LANDED TAB CAN EDIT: the building's own tab opened by the jump now carries the same edit controls as opening the building by hand \u2014 East-West / North-South position, Width, Depth and Height number fields (typing applies at once), Move / Resize and Delete \u2014 driving the same zonedata apply path and the same manifest-safe save. In 2.0.5 the tab was a viewer: no fields, nothing to grab hold of. (2) DETAIL EDIT button, on the landed tab and in the Zone tab's edit row: writes the suite handoff (open-in-detail-editor.json in the shared suite folder: target building, zone, index, geometry) and launches the Detail Editor when installed; when it is not installed a plain dialog says so and the handoff is still written. KNOWN LIMIT: Detail Editor 1.1.0 accepts roads only \u2014 its building receiver is a separate queued build; this ships the button and the handoff contract so that build plugs straight in. (3) PART SELECTION in the 3D view: a plain click on the building selects the part clicked \u2014 the roof, the front face, or an edge \u2014 names it in the readouts and highlights the roof/front in the picture; a click on empty ground clears it. (4) ROOF MOVE with a threshold: a press-and-hold drag starting on the roof moves the building in the ground plane (X/Z only, base stays seated), but only once the pointer has travelled past the drag threshold \u2014 a press that stays put is a click and never nudges the building. (5) ROTATE THE BUILDING WITH THE MOUSE: Ctrl+press ON the building and drag turns the building around its own centre, following the mouse (half a degree per horizontal pixel), with a live degrees readout over the view while turning; a Rotation field in both edit rows shows the final angle and accepts a typed angle. Ctrl+drag starting anywhere else still rotates the VIEW exactly as before. HOW ROTATION IS STORED: a zone building's record has no angle field \u2014 the footprint is the detail record's ring and the box is the summary. A rotation bakes like every editor transform: the ring turns rigidly about the building's centre and the box becomes the rotated footprint's bounding summary (centre unchanged, width and depth grown symmetrically), saved through the same manifest-safe path (buildings.json + buildings_detail.json + detail chunks + regenerated index). GAME LIMIT, stated plainly: the game places mass buildings from the box and derives each building's facing from the roads at runtime \u2014 it reads no per-building angle \u2014 so a rotation is exact in the editor's footprint record and views, and takes effect in the game through the new bounding box while the game keeps facing the building to its street.",
   "files": [
     {
       "path": "about.py",
@@ -10,7 +10,7 @@
     {
       "path": "app.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/app.py",
-      "sha256": "1e4aaa4a4cb4c2079deb8eefe0de347db7a1263324b47177a9b95c695d356cd1"
+      "sha256": "bb3a7dc17e08fcc0e4c2a377d88d4d27ee4a85dce31d6da59c2598a9043c5bbe"
     },
     {
       "path": "buildingcanvas.py",
@@ -25,7 +25,7 @@
     {
       "path": "github_sync.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/github_sync.py",
-      "sha256": "09abb8f7c6ad2fc004fb83a22b04f44346b99fbd52b9e28c929c93ba5bc1bcba"
+      "sha256": "db4a8a86ee00e32d5fe6e412285818e16228bac7304703e259b277835d637c05"
     },
     {
       "path": "mollie-icon.png",
@@ -60,7 +60,7 @@
     {
       "path": "zonedata.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/zonedata.py",
-      "sha256": "364d785249bd42eab010195d188974c3899b91e72293779bfd5c4b58a2185f5c"
+      "sha256": "49fde69f44f9bf1460113654ea5385cbe6127a2f735b6240160deaafb2c0e68d"
     }
   ]
 }
