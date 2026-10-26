@@ -2559,6 +2559,23 @@ class RoadInspectorPanel(Gtk.VBox):
         self.cp_viewer.queue_draw()
         self.elev_viewer.queue_draw()
 
+    def retarget_compare_camera(self, cam):
+        """
+        Point the comparison's framing camera at a new framing
+        (1.9.15): when the main view refits an open delete
+        picture for a new window size, the Before/After stills
+        are re-shot from the refit camera so all three pictures
+        stay the same photograph. The state is copied INTO the
+        existing camera object — anything already holding it
+        (the panes' draw, the After-picture pick) sees the new
+        framing through the same object. Does not render — the
+        caller follows with update_compare() so each still
+        renders exactly once.
+        """
+        if self._compare is not None:
+            self._compare["cam"].__dict__.update(
+                cam.__dict__)
+
     # -- After-picture picking (1.9.12) ---------------------------
 
     def compare_after_pickable(self):
