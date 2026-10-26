@@ -89,7 +89,7 @@ from subdivisioncanvas import SubdivisionCanvas
 
 # App version shown in the Help -> About dialog (bump with each release).
 # Joshua 2026-10-11: version number must be prominent in About.
-APP_VERSION = "2.0.4"
+APP_VERSION = "2.0.5"
 
 # ---------------------------------------------------------------------------
 # THE EDITOR UI RULE (Joshua, 2026-10-16 — standing suite principle):
@@ -1143,6 +1143,12 @@ class AssetEditorWindow(Gtk.Window):
         buildings.json (this editor's zone list is index-aligned
         with that file); the position rides along as the
         fallback identity (see ZoneBuildingsTab.focus_building).
+
+        2.0.5: when the focus lands, the building's OWN tab
+        opens in front (open_zone_building_tab) — in 2.0.4 the
+        jump stopped at the list selection, and Joshua's
+        hands-on verdict was that he was left "under the first
+        panel" instead of in the building.
         Returns False always: it is a GLib idle one-shot.
         """
         import json as _json
@@ -1184,8 +1190,80 @@ class AssetEditorWindow(Gtk.Window):
         page = self.notebook.page_num(self.zone_tab)
         if page >= 0:
             self.notebook.set_current_page(page)
-        self.zone_tab.focus_building(zone, index, at)
+
+        def _open_handed(resolved, _zone=zone):
+            # 2.0.5: the focus resolved the building (index, or
+            # the position fallback's) — open its own tab in
+            # front. A building that resolved to nothing opens
+            # nothing (focus_building already said so).
+            if resolved is not None:
+                self.open_zone_building_tab(_zone, resolved)
+
+        self.zone_tab.focus_building(zone, index, at,
+                                     done=_open_handed)
         return False
+
+    def open_zone_building_tab(self, zone, index):
+        """
+        Open one zone building in its OWN notebook tab and bring
+        it forward (2.0.5) — the landing the Map Editor building
+        jump always promised. If that building's tab is already
+        open, switch to it; never a duplicate.
+
+        The tab management mirrors open_building_tab exactly
+        (the design buildings' manual open): dedupe by scanning
+        open_tabs, a build failure surfaces in the status bar
+        instead of dying silently, and the order is append ->
+        show_all -> set_current_page so the tab actually comes
+        to the front on GTK 3.24.
+        """
+        for tab in self.open_tabs:
+            if isinstance(tab, ZoneBuildingTab) \
+                    and tab.zone == zone and tab.index == index:
+                self.notebook.set_current_page(
+                    self.notebook.page_num(tab))
+                return
+        try:
+            tab = ZoneBuildingTab(self, zone, index)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self._set_status(
+                f"Could not open building #{index}: {e}")
+            return
+        self.open_tabs.append(tab)
+
+        # Tab label with close button (same shape as the design
+        # tabs): the building's name from the zone's light index
+        # when it has one, else its number.
+        name = None
+        store = self.zone_store
+        if store is not None:
+            idx_obj = store.indexes.get(zone)
+            if idx_obj is not None \
+                    and 0 <= index < len(idx_obj.entries):
+                name = idx_obj.entries[index].get("n") or None
+        label_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
+                            spacing=4)
+        label = Gtk.Label(label=name or f"Building #{index}")
+        close_btn = Gtk.Button(label="×")
+        close_btn.set_relief(Gtk.ReliefStyle.NONE)
+        close_btn.set_focus_on_click(False)
+        close_btn.connect("clicked",
+                          lambda w, t=tab: self.close_tab(t))
+        label_box.pack_start(label, True, True, 0)
+        label_box.pack_start(close_btn, False, False, 0)
+        label_box.show_all()
+
+        page_num = self.notebook.append_page(tab, label_box)
+        self.notebook.show_all()
+        self.notebook.set_current_page(page_num)
+        # Load + show the building (async — the tab fills in when
+        # its snapshot lands; begin() keeps the panel hidden
+        # until then).
+        tab.begin()
+        self._set_status(
+            f"Opened building #{index} ({zone}) in its own tab.")
 
     # -- Open in Map Editor (1.7.2, Joshua 2026-10-17) -------------------
 
@@ -3363,6 +3441,11 @@ class ZoneBuildingsTab(Gtk.Box):
         self._filter_id = "all"        # the ONE filter state (below)
         self._sort_key = None          # None | "name" | "type" | "flag"
         self._sort_asc = True
+        # 2.0.5: True while refresh() is rebuilding the list.
+        # Clearing the store makes GTK fire a transient "no
+        # selection" change; _on_select must not read that as
+        # the user putting the building down (see refresh()).
+        self._rebuilding = False
         self._rows = []                # full filtered row dicts
         self._spins_loading = False    # guard: programmatic spin sets
         self._place_retry = False      # place-after-load retry flag
@@ -3710,6 +3793,31 @@ class ZoneBuildingsTab(Gtk.Box):
 
     def refresh(self):
         """
+        Repopulate hero + building lists (the body is
+        _refresh_body below).
+
+        2.0.5 (Joshua's standing defect, first reported on
+        2.0.2): a filter or sort change rebuilds the LIST ONLY —
+        it must never close the 3D viewpoint of the building he
+        is in. The rebuild clears the list store, and real GTK
+        answers that by dropping the tree's selection, which
+        used to read as "nothing selected" and hid the
+        inspector — viewpoint gone, even when the building was
+        still in the rows, and doubly so when the filter left
+        it out entirely. The _rebuilding flag covers the
+        rebuild: _on_select ignores the transient empty
+        selection while it is set, and the body's restore step
+        re-selects his building — or, when the new rows leave
+        it out, leaves the viewpoint standing on it, untouched.
+        """
+        self._rebuilding = True
+        try:
+            self._refresh_body()
+        finally:
+            self._rebuilding = False
+
+    def _refresh_body(self):
+        """
         Repopulate hero + building lists. The filter state is read
         ONLY from self._filter_id (set solely by the combo's own
         handler) — 1.7.2's fix for the stuck category filter: in
@@ -3763,6 +3871,19 @@ class ZoneBuildingsTab(Gtk.Box):
         # rows; focus_building may have slid it — see _row_window).
         if self._row_window >= len(self._rows):
             self._row_window = 0
+        # 2.0.5: when the selected building survived the rebuild
+        # but landed outside the materialised window (a sort
+        # moved it; a filter shrank the list around it), slide
+        # the window onto it — the restore below can only
+        # re-select a row that is actually in the store.
+        if keep_index is not None:
+            for pos, r in enumerate(self._rows):
+                if r["i"] == keep_index:
+                    if not (self._row_window <= pos
+                            < self._row_window + self.ROW_CAP):
+                        self._row_window = max(
+                            0, pos - self.ROW_CAP // 2)
+                    break
         window_rows = self._rows[
             self._row_window:self._row_window + self.ROW_CAP]
         self._shown = len(window_rows)
@@ -4034,12 +4155,17 @@ class ZoneBuildingsTab(Gtk.Box):
 
     # -- the Map Editor building jump (receiving half) --------------
 
-    def focus_building(self, zone, index=None, at=None):
+    def focus_building(self, zone, index=None, at=None,
+                       done=None):
         """
         Bring this tab to one building and select it — the
         receiving half of the Map Editor's building click
         (Map Editor 1.9.13; the window's _consume_building_handoff
         calls this).
+
+        2.0.5: `done(resolved_index_or_None)`, when given, runs
+        once the focus has landed (or failed) — the window uses
+        it to open the resolved building's own tab.
 
         Switches the zone, clears the category filter and any
         column sort (rows then stand in INDEX order — the order
@@ -4093,9 +4219,14 @@ class ZoneBuildingsTab(Gtk.Box):
                 self.app_window._set_status(
                     "Building jump: the "
                     f"{zone} building list could not be loaded.")
+                if done:
+                    done(None)
                 return False
+            resolved = None
             if self._zone == zone:
-                self._focus_select(index, at)
+                resolved = self._focus_select(index, at)
+            if done:
+                done(resolved)
             return False
 
         self.app_window.ensure_zone_index(zone, done=land)
@@ -4103,11 +4234,14 @@ class ZoneBuildingsTab(Gtk.Box):
 
     def _focus_select(self, index, at):
         """Resolve the focused building (zone index in memory)
-        and select its row through the real selection path."""
+        and select its row through the real selection path.
+        Returns the resolved index, or None when nothing was
+        selected (2.0.5 — the handoff's tab opening keys off
+        the RESOLVED building, position fallback included)."""
         store = self._store()
         idx = store.indexes.get(self._zone) if store else None
         if idx is None:
-            return
+            return None
         entries = idx.entries
         target = index
         # An index that disagrees with the handed-over position
@@ -4130,7 +4264,7 @@ class ZoneBuildingsTab(Gtk.Box):
             self.app_window._set_status(
                 "Building jump: that building could not be "
                 f"found in the {self._zone} list.")
-            return
+            return None
         # The row's position in the (neutral) row set, then the
         # window slide if it sits outside the materialised rows.
         pos = None
@@ -4139,7 +4273,7 @@ class ZoneBuildingsTab(Gtk.Box):
                 pos = p
                 break
         if pos is None:
-            return
+            return None
         if not (self._row_window <= pos
                 < self._row_window + self.ROW_CAP):
             self._row_window = max(0, pos - self.ROW_CAP // 2)
@@ -4151,6 +4285,7 @@ class ZoneBuildingsTab(Gtk.Box):
             self.tree.scroll_to_cell(path, None, True, 0.5, 0.0)
         except Exception:
             pass
+        return target
 
     def _on_select(self, selection):
         """
@@ -4162,6 +4297,15 @@ class ZoneBuildingsTab(Gtk.Box):
         """
         idx = self._selected_index()
         if idx is None:
+            # 2.0.5: an empty selection DURING a list rebuild is
+            # the rebuild's own bookkeeping (the store clear
+            # dropped the selection), not the user putting the
+            # building down — the viewpoint he is in survives
+            # filter and sort changes, including ones that
+            # filter his building out of the rows. A genuine
+            # deselection outside a rebuild still closes it.
+            if getattr(self, "_rebuilding", False):
+                return
             self.hide_inspector()
             return
         zd = self._zd()
@@ -4314,6 +4458,232 @@ class ZoneBuildingsTab(Gtk.Box):
         self.hide_inspector()
         self.refresh()
         self.app_window._set_status(f"Building #{idx} deleted (unsaved).")
+
+
+# ---------------------------------------------------------------------------
+# One zone building in its own tab (2.0.5)
+# ---------------------------------------------------------------------------
+
+class ZoneBuildingTab(Gtk.Box):
+    """
+    A single zone building in its own notebook tab (2.0.5).
+
+    Born from Joshua's hands-on proof of the Map Editor
+    building jump (2026-10-25): 2.0.4's receiver selected the
+    handed-over building in the Zone Buildings list and opened
+    its inspector there, but he was still "under the first
+    panel" — the jump must land him IN the building, in a tab
+    of its own, the way opening a design building from the
+    list lands in that building's tab. The window's
+    open_zone_building_tab manages these exactly like the
+    design tabs (dedupe, × close, append -> show -> front).
+
+    The tab hosts its own ZoneInspectorPanel — the same 3D
+    viewpoint the Zone tab shows, with the same manipulation
+    (drag the roof to move, an edge to resize, the orange
+    wall for height) applied to the same shared ZoneData, so
+    an edit made here is the zone's edit (the Zone tab's list
+    row follows via _update_row). Loading mirrors the Zone
+    tab's selection path: the zone spine first if needed,
+    then the building's snapshot prepared on a worker thread
+    and applied on the UI thread — never a UI-thread download.
+
+    The viewpoint in this tab is the tab's own state: it is
+    not driven by the Zone list's selection, so list filters
+    and sorts over there can never close it (the companion
+    2.0.5 fix in ZoneBuildingsTab.refresh/_on_select covers
+    the Zone tab's own inspector the same way).
+    """
+
+    def __init__(self, window, zone, index):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL,
+                         spacing=4)
+        self.set_border_width(6)
+        self.app_window = window
+        self.zone = zone
+        self.index = index
+        # Snapshot-load generation, same discipline as the Zone
+        # tab's: a superseded (or view-closed) load never lands.
+        self._sel_gen = 0
+        self.inspector = ZoneInspectorPanel(self)
+        self.inspector.set_visible(False)
+        self.pack_start(self.inspector, True, True, 0)
+        # Shown only when the panel's ✕ has closed the view:
+        # the tab stays, the view reopens from here.
+        self.closed_box = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self.closed_box.set_no_show_all(True)
+        closed_label = Gtk.Label(
+            label="The 3D view is closed for this building.")
+        closed_label.set_halign(Gtk.Align.START)
+        self.closed_box.pack_start(closed_label, False, False, 0)
+        reopen_btn = Gtk.Button(label="Reopen the 3D view")
+        reopen_btn.set_halign(Gtk.Align.START)
+        reopen_btn.connect("clicked", lambda w: self.show_building())
+        self.closed_box.pack_start(reopen_btn, False, False, 0)
+        self.closed_box.hide()
+        self.pack_start(self.closed_box, True, True, 0)
+
+    # -- data ----------------------------------------------------
+
+    def _store(self):
+        return self.app_window.zone_store
+
+    def _zd(self):
+        """This tab's zone FULL ZoneData, or None while only
+        its light index is loaded (mirrors ZoneBuildingsTab)."""
+        store = self._store()
+        return store.zones.get(self.zone) if store else None
+
+    # -- opening ---------------------------------------------------
+
+    def begin(self):
+        """Load what the view needs, then show the building:
+        the zone spine first when it is not in memory yet."""
+        if self._zd() is not None:
+            self.show_building()
+            return
+        self.app_window._set_status(
+            f"Loading building #{self.index} ({self.zone})…")
+
+        def done(ok):
+            if ok:
+                self.show_building()
+            else:
+                self.app_window._set_status(
+                    "Building tab: the "
+                    f"{self.zone} records could not be loaded.")
+            return False
+        self.app_window.ensure_zone_detail(self.zone, done=done)
+
+    def show_building(self):
+        """
+        (Re)open the 3D view on this tab's building — the same
+        async snapshot path the Zone tab's selection uses
+        (show_inspector there): a worker thread prepares the
+        snapshot through the store, the UI thread only applies
+        it. A load superseded by a newer one, or by the view
+        being closed, is dropped.
+        """
+        store = self._store()
+        zd = self._zd()
+        if store is None or zd is None \
+                or not (0 <= self.index < len(zd.boxes)):
+            return
+        self._sel_gen += 1
+        gen = self._sel_gen
+        zone, index = self.zone, self.index
+        # The detail fetch is background work — the corner bar
+        # runs under the same keyed job the Zone tab uses.
+        self.app_window.progress_start(
+            "selection", f"Loading building #{index}…")
+        import threading
+
+        def worker():
+            try:
+                prep = store.prepare_snapshot(zone, index)
+                err = None
+            except Exception as e:
+                prep, err = None, str(e)
+
+            def done():
+                if gen != self._sel_gen:
+                    return False  # superseded — drop the result
+                self.app_window._hide_progress()
+                self.app_window.progress_finish("selection")
+                if err is not None:
+                    self.app_window._set_status(err)
+                    return False
+                self._apply_snapshot(prep)
+                return False
+            GLib.idle_add(done)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _apply_snapshot(self, prep):
+        """GTK thread: show a prepared snapshot (see
+        show_building). Pure widget work."""
+        self.closed_box.hide()
+        self.inspector.show_building(
+            self, prep["zd"], prep["index"], prep["flagged"],
+            neighbours=prep["neighbours"],
+            front_info=prep["front"],
+            roads_near=prep["roads_near"])
+        self.inspector.set_visible(True)
+        if prep.get("roads_error"):
+            self.app_window._set_status(
+                f"Building #{prep['index']} is shown without its "
+                f"street front: the roads could not be loaded "
+                f"({prep['roads_error']}).")
+
+    def hide_inspector(self):
+        """Close this tab's 3D view (the panel's ✕). The tab
+        itself stays — its whole point is keeping the building
+        in front of Joshua; the reopen button takes the ✕'s
+        place until the view is wanted again."""
+        self._sel_gen += 1
+        self.app_window.progress_finish("selection")
+        if hasattr(self, "inspector"):
+            self.inspector.set_visible(False)
+        self.closed_box.show_all()
+
+    # -- manipulation (the inspector panel's owner interface) ------
+
+    def manip_values(self):
+        """The viewed building as {x, z, w, d, h} (the panel's
+        manipulation starting point)."""
+        zd = self._zd()
+        idx = self.inspector.index
+        if zd is None or idx is None or idx >= len(zd.boxes):
+            return None
+        box = zd.boxes[idx]
+        return {"x": box[0], "z": box[1], "w": box[2],
+                "d": box[3], "h": box[4]}
+
+    def manip_apply(self, values):
+        """Apply {x, z, w, d, h} from a 3D drag. Returns False
+        when the edit is refused (flagged), so the panel ends
+        the drag."""
+        return self._apply_values(values, from_drag=True)
+
+    def on_manip_end(self):
+        """A drag finished: re-derive the view's front and
+        backdrop at the building's new spot."""
+        if self.inspector.get_visible():
+            self.inspector.refresh_view()
+
+    def _apply_values(self, values, from_drag=False):
+        """The Zone tab's apply path, minus its list fields:
+        the model changes in the shared ZoneData, the Zone
+        tab's row for this building follows, the view refreshes."""
+        store = self._store()
+        zd = self._zd()
+        idx = self.inspector.index \
+            if self.inspector.get_visible() else self.index
+        if store is None or zd is None or idx is None \
+                or idx >= len(zd.boxes):
+            return False
+        try:
+            zd.move(idx, values["x"], values["z"],
+                    flagged=store.flagged)
+            zd.resize(idx, values["w"], values["d"], values["h"],
+                      flagged=store.flagged)
+        except Exception as e:
+            self.app_window._set_status(str(e))
+            return False
+        self.app_window._mark_unpublished()
+        zone_tab = self.app_window.zone_tab
+        if zone_tab is not None and zone_tab._zone == self.zone:
+            try:
+                zone_tab._update_row(idx)
+            except Exception:
+                pass
+        if not from_drag and self.inspector.get_visible() \
+                and self.inspector.index == idx:
+            self.inspector.refresh_view()
+        self.app_window._set_status(
+            f"Building #{idx} updated (unsaved until save).")
+        return True
 
 
 # ---------------------------------------------------------------------------
