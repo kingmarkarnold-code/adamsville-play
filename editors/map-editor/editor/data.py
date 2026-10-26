@@ -981,12 +981,24 @@ class SpatialIndex:
 # Window state persistence (unchanged from 1.8.x)
 # ---------------------------------------------------------------------------
 
-def save_window_state(x, y, width, height, maximized):
-    """Save window geometry for restore on next launch."""
+def save_window_state(x, y, width, height, maximized, panes=None):
+    """
+    Save window geometry for restore on next launch.
+
+    1.9.14: `panes` (an optional {name: divider position}) rides
+    in the SAME document — the adjustable panes' sizes are part
+    of the remembered layout, in the suite's window.json shape
+    (one JSON file in the app's data dir; the Detail Editor's
+    WindowState keeps the same kind of document). Older files
+    without "panes" still load exactly as before.
+    """
     ensure_data_dir()
+    doc = {"x": x, "y": y, "width": width,
+           "height": height, "maximized": maximized}
+    if panes:
+        doc["panes"] = {k: int(v) for k, v in panes.items()}
     with open(WINDOW_FILE, "w") as f:
-        json.dump({"x": x, "y": y, "width": width,
-                   "height": height, "maximized": maximized}, f)
+        json.dump(doc, f)
 
 
 def load_window_state():
