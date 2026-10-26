@@ -12,6 +12,7 @@ import copy
 import math
 import sys
 import threading
+import time
 from pathlib import Path
 import gi
 gi.require_version("Gtk", "3.0")
@@ -435,6 +436,14 @@ class MapCanvas(Gtk.DrawingArea):
     _RULER_H = 36          # scale ruler box height
     _COMPASS_R = 30        # compass disc radius
     _SCALE_MAX_PX = 150    # longest the ruler bar may grow
+    # Buildings toggle (1.9.15): a square button in the main
+    # view's TOP-RIGHT corner. Its top edge sits BELOW the
+    # delete-confirmation bar's strip (DELETE_BAR_H + the app's
+    # overlay margins): that bar is an overlay widget spanning
+    # the full top edge while a delete decision is up, and the
+    # toggle must never hide under it or fight it for clicks.
+    _BLDG_BTN_SIZE = 40    # buildings toggle box (square, px)
+    _BLDG_BTN_TOP = DELETE_BAR_H + 6
 
     def __init__(self, app):
         """Initialize canvas. app is the parent MapEditorApp for callbacks."""
@@ -644,6 +653,27 @@ class MapCanvas(Gtk.DrawingArea):
         self.measure_drag = None
         self.measure_live = None
 
+        # Buildings visibility (1.9.15, Joshua 2026-10-25): the
+        # building-shaped button at the main view's top right
+        # turns the zone buildings on and off. ON (the state
+        # every launch starts in — "starts enabled", his words):
+        # buildings draw and a click on one offers the Building
+        # Editor jump, exactly as before. OFF: buildings are not
+        # drawn AND not hit-tested at all, so a building sitting
+        # on top of a road can no longer hide the road or steal
+        # its clicks — "there's a section of road that is not
+        # able to be grabbed because there's a building sitting
+        # on top of it." Deliberately NOT remembered in the
+        # window/layout state: every launch starts enabled.
+        self.show_buildings = True
+
+        # Delete-review reframe (1.9.15): while a delete picture
+        # is up, a canvas resize schedules ONE coalesced refit of
+        # the framed roads (see _on_canvas_size_allocate and
+        # reframe_delete_preview). The id of the pending timeout,
+        # or None when no refit is scheduled.
+        self._delete_reframe_id = None
+
         # Enable mouse events
         self.set_events(
             Gdk.EventMask.BUTTON_PRESS_MASK |
@@ -658,6 +688,10 @@ class MapCanvas(Gtk.DrawingArea):
         self.connect("button-release-event", self.on_button_release)
         self.connect("motion-notify-event", self.on_motion)
         self.connect("scroll-event", self.on_scroll)
+        # Delete-review reframe (1.9.15): canvas resizes (window
+        # resize, pane drags) re-fit an open delete picture — see
+        # _on_canvas_size_allocate.
+        self.connect("size-allocate", self._on_canvas_size_allocate)
 
         # Dark background
         self.override_background_color(
@@ -965,7 +999,12 @@ class MapCanvas(Gtk.DrawingArea):
         zones' buildings coming in the background. Under the road
         labels, over the roads — a building's block is what the
         building click hits (see _pick_building).
+
+        1.9.15: the buildings toggle (top-right of the view) —
+        while it is OFF nothing is drawn here at all.
         """
+        if not self.show_buildings:
+            return
         insp = getattr(self.app, "inspector", None)
         store = getattr(insp, "buildings", None) if insp else None
         if store is None:
@@ -985,7 +1024,16 @@ class MapCanvas(Gtk.DrawingArea):
         the Building Editor — or None. The hit-test itself lives
         in the store (areadata.BuildingsStore.pick_building);
         this only translates the point and the zones around it.
+
+        1.9.15: while the buildings toggle is OFF this returns
+        None for every point — buildings are out of hit-testing
+        entirely, so a click where a building overlaps a road
+        reaches the road (and can never raise the building-jump
+        dialog). This is the toggle's only hit-test caller path:
+        _maybe_building_click is the sole consumer.
         """
+        if not self.show_buildings:
+            return None
         insp = getattr(self.app, "inspector", None)
         store = getattr(insp, "buildings", None) if insp else None
         if store is None:
@@ -2031,6 +2079,27 @@ class MapCanvas(Gtk.DrawingArea):
             pass
         # His own press: the jump ghost has done its job.
         self.clear_jump_ghost()
+        # View chrome first (1.9.15): a left press on the
+        # BUILDINGS TOGGLE (top right) flips building visibility
+        # — a furniture click with the same discipline as the
+        # ruler's below: no pan starts, nothing selects or
+        # deselects, the camera never moves. While other
+        # machinery owns the pointer (a modal mode, the zone pin
+        # drag, the delete preview) or an editing tool is armed,
+        # the button stays inert and the click keeps its ordinary
+        # meaning. (While measuring, the flip is allowed: hiding
+        # buildings can only help see the measured ground.)
+        if event.button == 1 and self._point_in_buildings_button(
+                event.x, event.y):
+            busy = (self.move_road is not None
+                    or self.divide_pick is not None
+                    or self.link_overpass_mode
+                    or self.delete_preview is not None
+                    or self.drag_pin is not None)
+            if not busy and (self.active_tool is None
+                             or self.measure_mode):
+                self.toggle_buildings()
+                return True
         # View chrome first (1.9.14): a left press on the SCALE
         # RULER toggles measure mode — a furniture click, never a
         # map gesture: no pan starts, nothing selects or
@@ -2579,6 +2648,55 @@ class MapCanvas(Gtk.DrawingArea):
         x, y, w, h = rect
         return x <= sx <= x + w and y <= sy <= y + h
 
+    # -- buildings toggle (1.9.15) -----------------------------------
+
+    def buildings_button_rect(self):
+        """The buildings toggle box as (x, y, w, h) in canvas
+        coords — the drawn button AND the click target, from one
+        computation (the ruler_rect pattern). Top-right corner,
+        its top edge below the delete bar's strip (see
+        _BLDG_BTN_TOP). None when the canvas is too small to
+        carry furniture — the same rule as the ruler/compass."""
+        alloc = self.get_allocation()
+        w, h = alloc.width, alloc.height
+        if w < 240 or h < 180:
+            return None
+        return (w - self._CHROME_MARGIN - self._BLDG_BTN_SIZE,
+                self._BLDG_BTN_TOP,
+                self._BLDG_BTN_SIZE, self._BLDG_BTN_SIZE)
+
+    def _point_in_buildings_button(self, sx, sy):
+        """True if a canvas point lands on the buildings toggle."""
+        rect = self.buildings_button_rect()
+        if rect is None:
+            return False
+        x, y, w, h = rect
+        return x <= sx <= x + w and y <= sy <= y + h
+
+    def toggle_buildings(self):
+        """
+        Flip the buildings toggle (the top-right button was
+        clicked at rest). Buildings off: they leave the picture
+        and the hit-testing together — the roads underneath are
+        fully clickable again. Buildings on: exactly the 1.9.14
+        behaviour. The flip never moves the camera or touches
+        the selection; it only repaints.
+        """
+        self.show_buildings = not self.show_buildings
+        try:
+            if self.show_buildings:
+                self.app.set_status(
+                    "Buildings shown — click a building to open "
+                    "it in the Building Editor.")
+            else:
+                self.app.set_status(
+                    "Buildings hidden — the roads under them "
+                    "can be picked now. Click the building "
+                    "button (top right) to bring buildings back.")
+        except Exception:
+            pass
+        self.queue_draw()
+
     # -- measure mode ------------------------------------------------
 
     def measure_length_m(self):
@@ -2675,8 +2793,80 @@ class MapCanvas(Gtk.DrawingArea):
         self._draw_measure_overlay(cr)
         self._draw_ruler(cr, w, h)
         self._draw_compass(cr, w, h)
+        self._draw_buildings_button(cr, w, h)
         if self.measure_mode:
             self._draw_measure_banner(cr, w)
+
+    def _draw_buildings_button(self, cr, view_w, view_h):
+        """
+        The buildings toggle (top-right, 1.9.15): a dark chrome
+        box in the ruler/compass family holding a building
+        glyph — a tall tower beside a shorter annex, with
+        window squares. The two states read at a glance:
+        buildings ON = the glyph lit pale with warm windows;
+        buildings OFF = the glyph dimmed grey with a red slash
+        across it. Drawn from buildings_button_rect(), the same
+        computation the click test uses.
+        """
+        rect = self.buildings_button_rect()
+        if rect is None:
+            return
+        import cairo
+        x, y, bw, bh = rect
+        on = self.show_buildings
+        # Box + ring (compass/ruler family).
+        self._rounded_rect_path(cr, x, y, bw, bh, 7)
+        cr.set_source_rgba(0.04, 0.05, 0.10, 0.82 if on else 0.72)
+        cr.fill()
+        self._rounded_rect_path(cr, x + 0.75, y + 0.75,
+                                bw - 1.5, bh - 1.5, 6)
+        cr.set_source_rgba(1, 1, 1, 0.45 if on else 0.28)
+        cr.set_line_width(1.5)
+        cr.stroke()
+        # The building glyph: tower + annex standing on a shared
+        # ground line, centred in the box.
+        base = y + bh - 9          # ground line
+        tower_x, tower_w = x + 9, 12
+        tower_top = y + 8
+        annex_x, annex_w = tower_x + tower_w, 9
+        annex_top = y + 17
+        if on:
+            cr.set_source_rgba(0.88, 0.90, 0.94, 0.98)
+        else:
+            cr.set_source_rgba(0.42, 0.44, 0.50, 0.85)
+        cr.rectangle(tower_x, tower_top, tower_w, base - tower_top)
+        cr.fill()
+        cr.rectangle(annex_x, annex_top, annex_w, base - annex_top)
+        cr.fill()
+        cr.rectangle(x + 7, base, bw - 14, 1.6)
+        cr.fill()
+        # Windows: little squares punched into the silhouette —
+        # warm lit panes while ON, dark holes while OFF.
+        if on:
+            cr.set_source_rgba(0.98, 0.75, 0.35, 0.95)
+        else:
+            cr.set_source_rgba(0.16, 0.17, 0.22, 0.9)
+        for wy in (tower_top + 4, tower_top + 9.5, tower_top + 15):
+            for wx in (tower_x + 2.5, tower_x + 7):
+                cr.rectangle(wx, wy, 2.6, 3.2)
+                cr.fill()
+        for wy in (annex_top + 4, annex_top + 9.5):
+            cr.rectangle(annex_x + 3, wy, 2.6, 3.2)
+            cr.fill()
+        if not on:
+            # The OFF slash: a red diagonal across the whole
+            # box, cased so it reads over the glyph.
+            cr.set_line_cap(cairo.LINE_CAP_ROUND)
+            cr.set_source_rgba(1, 1, 1, 0.55)
+            cr.set_line_width(4.6)
+            cr.move_to(x + 6, y + 6)
+            cr.line_to(x + bw - 6, y + bh - 6)
+            cr.stroke()
+            cr.set_source_rgb(0.94, 0.26, 0.16)
+            cr.set_line_width(3.0)
+            cr.move_to(x + 6, y + 6)
+            cr.line_to(x + bw - 6, y + bh - 6)
+            cr.stroke()
 
     def _draw_measure_overlay(self, cr):
         """The measured section itself: a cased amber line with
@@ -4801,10 +4991,30 @@ class MapCanvas(Gtk.DrawingArea):
             # preview) — Cancel restores it exactly.
             "prev_selection": prep.get("prev_selection",
                                        list(self.selected_roads)),
+            # 1.9.15: the padded rect this picture frames, and
+            # the camera the framing produced. A canvas resize
+            # re-fits THIS rect (reframe_delete_preview) — but
+            # only while the camera still equals framed_cam, so a
+            # view Joshua panned himself mid-decision is never
+            # yanked back.
+            "frame_rect": (min_x - pad, min_z - pad,
+                           max_x + pad, max_z + pad),
         }
+        inset = self._delete_top_inset()
         self.frame_rect(min_x - pad, min_z - pad,
                         max_x + pad, max_z + pad,
-                        top_inset=DELETE_BAR_H)
+                        top_inset=inset)
+        self.delete_preview["framed_cam"] = (
+            self.cam_x, self.cam_y, self.zoom, self.rotation)
+        # What the framing was fitted against (1.9.15): the
+        # passive refit compares against these, so a cosmetic
+        # wobble — the bar growing a few px because its text
+        # changed — never re-shoots the stills.
+        _alloc = self.get_allocation()
+        self.delete_preview["framed_size"] = (_alloc.width,
+                                              _alloc.height)
+        self.delete_preview["framed_inset"] = inset
+        self.delete_preview["framed_at"] = time.monotonic()
         bar_text, status = self.delete_picture_texts(roads)
         self.app.show_delete_bar(bar_text, ready=True)
         self.app.set_status(status)
@@ -4816,6 +5026,132 @@ class MapCanvas(Gtk.DrawingArea):
             pass
         self.queue_draw()
         return False
+
+    # -- delete picture: refit on resize (1.9.15) -------------------
+
+    def _delete_top_inset(self):
+        """
+        The top inset a delete framing must respect: the delete
+        bar's REAL height once it is on screen (its label wraps
+        at narrow widths since 1.9.15, so the bar can stand
+        taller than the classic strip), never less than the
+        standing DELETE_BAR_H allowance.
+        """
+        inset = DELETE_BAR_H
+        bar = getattr(self.app, "delete_bar", None)
+        if bar is not None and bar.get_visible():
+            inset = max(inset, bar.get_allocated_height())
+        return inset
+
+    def _on_canvas_size_allocate(self, _widget, _alloc):
+        """
+        The canvas changed size (window resized, a pane divider
+        dragged). While a delete picture is up, its framing was
+        fitted to the OLD size — schedule a refit so the whole
+        road stays in the photograph at the new size (Joshua
+        2026-10-25: the delete viewport "is not adjusting to
+        the viewport being resized" — at a smaller window the
+        framed road ran off the top and bottom edges).
+        """
+        if self.delete_preview is not None:
+            self._schedule_delete_reframe()
+
+    def _schedule_delete_reframe(self):
+        """
+        Coalesce refits the stills way: a resize drag fires a
+        stream of allocations; ONE refit lands shortly after
+        they settle (the app's layout saves debounce the same
+        way). Also called when the delete bar itself changes
+        height (its wrapped label), because the framing's top
+        inset follows the bar.
+        """
+        if getattr(self, "_delete_reframe_id", None):
+            return
+        self._delete_reframe_id = GLib.timeout_add(
+            180, self._run_delete_reframe)
+
+    def _run_delete_reframe(self):
+        self._delete_reframe_id = None
+        self.reframe_delete_preview()
+        return False
+
+    def _framed_camera_intact(self, pv):
+        """True while the camera still stands exactly where the
+        delete framing put it (Joshua has not panned/zoomed the
+        picture himself since)."""
+        fc = pv.get("framed_cam")
+        if fc is None:
+            return True
+        return (abs(self.cam_x - fc[0]) < 1e-9
+                and abs(self.cam_y - fc[1]) < 1e-9
+                and abs(self.zoom - fc[2]) < 1e-12
+                and abs(self.rotation - fc[3]) < 1e-9)
+
+    def reframe_delete_preview(self, force=False, sync_compare=True):
+        """
+        Re-fit the open delete picture to the canvas's CURRENT
+        size: the same padded rect, framed again below the
+        delete bar's current height, and the Before/After panes
+        re-shot from the reframed camera (one render each, via
+        the app) so all three pictures stay the same photograph
+        — and the After picture's click-to-add mapping, which
+        resolves through that same camera at the pane's live
+        size, stays true.
+
+        A passive refit (a resize) only happens while the
+        framing is untouched: if Joshua panned or zoomed the
+        picture himself mid-decision, his view is his — a
+        resize never yanks it back. (force=True overrides the
+        guard; nothing automatic uses it.)
+
+        Adding a piece through the After picture deliberately
+        does NOT refit (the 1.9.12 design, gate-proven): the
+        new piece lights up in the Before picture at the SAME
+        framing he clicked in — a partner record can sit
+        kilometres away, and refitting to include it would
+        destroy the picture he is studying.
+        prev_cam / prev_selection are never touched here —
+        Cancel still restores exactly what it restored before.
+        """
+        pv = self.delete_preview
+        if pv is None or "frame_rect" not in pv:
+            return False
+        if not force and not self._framed_camera_intact(pv):
+            return False
+        # Materiality (1.9.15): a passive refit needs a real
+        # change — the canvas SIZE changed (a window resize, a
+        # pane drag), or the bar's height moved by 8+ px (a
+        # wrapped second line) during the brief settle right
+        # after the picture opened, when the bar's final text
+        # is still finding its height. Bar growth LATER is the
+        # message changing because a piece was added — and an
+        # add must never move the picture (the 1.9.12 law the
+        # delete gates enforce: one still render per add, the
+        # framing untouched).
+        alloc = self.get_allocation()
+        size_now = (alloc.width, alloc.height)
+        inset_now = self._delete_top_inset()
+        size_changed = pv.get("framed_size") != size_now
+        inset_changed = abs(
+            inset_now - pv.get("framed_inset", inset_now)) >= 8
+        settling = (time.monotonic()
+                    - pv.get("framed_at", 0.0)) < 0.6
+        if not force and not (size_changed
+                              or (inset_changed and settling)):
+            return False
+        x0, z0, x1, z1 = pv["frame_rect"]
+        self.frame_rect(x0, z0, x1, z1, top_inset=inset_now)
+        pv["framed_cam"] = (self.cam_x, self.cam_y, self.zoom,
+                            self.rotation)
+        pv["framed_size"] = size_now
+        pv["framed_inset"] = inset_now
+        pv["framed_at"] = time.monotonic()
+        if sync_compare:
+            try:
+                self.app.resync_delete_compare()
+            except Exception:
+                pass
+        return True
 
     def cancel_delete_preview(self):
         """
