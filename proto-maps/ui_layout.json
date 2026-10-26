@@ -72,6 +72,20 @@
       "description": "Compass button that opens Go to - search the game's streets and places and jump straight there"
     },
     {
+      "anchor": "tr",
+      "asset": null,
+      "height": 44,
+      "id": "wh-btn",
+      "label": "\ud83c\udfe0",
+      "mobile_only": false,
+      "type": "button",
+      "visible": true,
+      "width": 44,
+      "x": 12,
+      "y": 80,
+      "description": "Worker housing button, added to the page by workerhousing.js - opens the worker housing panel. It sits in the top-right button column under the pause button."
+    },
+    {
       "anchor": "tl",
       "asset": null,
       "height": 44,
@@ -524,6 +538,20 @@
           "description": "Compass button that opens Go to - search the game's streets and places and jump straight there"
         },
         {
+          "anchor": "tr",
+          "asset": null,
+          "height": 44,
+          "id": "wh-btn",
+          "label": "\ud83c\udfe0",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 12,
+          "y": 80,
+          "description": "Worker housing button, added to the page by workerhousing.js - opens the worker housing panel. It sits in the top-right button column under the pause button."
+        },
+        {
           "anchor": "tl",
           "asset": null,
           "height": 44,
@@ -946,6 +974,20 @@
           "x": 136,
           "y": 180,
           "description": "Compass button that opens Go to - search the game's streets and places and jump straight there"
+        },
+        {
+          "anchor": "tr",
+          "asset": null,
+          "height": 44,
+          "id": "wh-btn",
+          "label": "\ud83c\udfe0",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 12,
+          "y": 80,
+          "description": "Worker housing button, added to the page by workerhousing.js - opens the worker housing panel. It sits in the top-right button column under the pause button."
         },
         {
           "anchor": "tl",
@@ -1383,6 +1425,20 @@
           "description": "Compass button that opens Go to - search the game's streets and places and jump straight there"
         },
         {
+          "anchor": "tr",
+          "asset": null,
+          "height": 44,
+          "id": "wh-btn",
+          "label": "\ud83c\udfe0",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 12,
+          "y": 80,
+          "description": "Worker housing button, added to the page by workerhousing.js - opens the worker housing panel. It sits in the top-right button column under the pause button."
+        },
+        {
           "anchor": "tl",
           "asset": null,
           "height": 44,
@@ -1814,6 +1870,20 @@
           "x": 136,
           "y": 180,
           "description": "Compass button that opens Go to - search the game's streets and places and jump straight there"
+        },
+        {
+          "anchor": "tr",
+          "asset": null,
+          "height": 44,
+          "id": "wh-btn",
+          "label": "\ud83c\udfe0",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 12,
+          "y": 80,
+          "description": "Worker housing button, added to the page by workerhousing.js - opens the worker housing panel. It sits in the top-right button column under the pause button."
         },
         {
           "anchor": "tl",
@@ -2249,6 +2319,20 @@
           "description": "Compass button that opens Go to - search the game's streets and places and jump straight there"
         },
         {
+          "anchor": "tr",
+          "asset": null,
+          "height": 44,
+          "id": "wh-btn",
+          "label": "\ud83c\udfe0",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 12,
+          "y": 80,
+          "description": "Worker housing button, added to the page by workerhousing.js - opens the worker housing panel. It sits in the top-right button column under the pause button."
+        },
+        {
           "anchor": "tl",
           "asset": null,
           "height": 44,
@@ -2680,6 +2764,20 @@
           "x": 136,
           "y": 180,
           "description": "Compass button that opens Go to - search the game's streets and places and jump straight there"
+        },
+        {
+          "anchor": "tr",
+          "asset": null,
+          "height": 44,
+          "id": "wh-btn",
+          "label": "\ud83c\udfe0",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 12,
+          "y": 80,
+          "description": "Worker housing button, added to the page by workerhousing.js - opens the worker housing panel. It sits in the top-right button column under the pause button."
         },
         {
           "anchor": "tl",
@@ -3115,6 +3213,20 @@
           "description": "Compass button that opens Go to - search the game's streets and places and jump straight there"
         },
         {
+          "anchor": "tr",
+          "asset": null,
+          "height": 44,
+          "id": "wh-btn",
+          "label": "\ud83c\udfe0",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 12,
+          "y": 80,
+          "description": "Worker housing button, added to the page by workerhousing.js - opens the worker housing panel. It sits in the top-right button column under the pause button."
+        },
+        {
           "anchor": "tl",
           "asset": null,
           "height": 44,
@@ -3546,6 +3658,20 @@
           "x": 136,
           "y": 180,
           "description": "Compass button that opens Go to - search the game's streets and places and jump straight there"
+        },
+        {
+          "anchor": "tr",
+          "asset": null,
+          "height": 44,
+          "id": "wh-btn",
+          "label": "\ud83c\udfe0",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 12,
+          "y": 80,
+          "description": "Worker housing button, added to the page by workerhousing.js - opens the worker housing panel. It sits in the top-right button column under the pause button."
         },
         {
           "anchor": "tl",
@@ -3981,6 +4107,20 @@
           "description": "Compass button that opens Go to - search the game's streets and places and jump straight there"
         },
         {
+          "anchor": "tr",
+          "asset": null,
+          "height": 44,
+          "id": "wh-btn",
+          "label": "\ud83c\udfe0",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 12,
+          "y": 80,
+          "description": "Worker housing button, added to the page by workerhousing.js - opens the worker housing panel. It sits in the top-right button column under the pause button."
+        },
+        {
           "anchor": "tl",
           "asset": null,
           "height": 44,
@@ -4412,6 +4552,20 @@
           "x": 136,
           "y": 180,
           "description": "Compass button that opens Go to - search the game's streets and places and jump straight there"
+        },
+        {
+          "anchor": "tr",
+          "asset": null,
+          "height": 44,
+          "id": "wh-btn",
+          "label": "\ud83c\udfe0",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 12,
+          "y": 80,
+          "description": "Worker housing button, added to the page by workerhousing.js - opens the worker housing panel. It sits in the top-right button column under the pause button."
         },
         {
           "anchor": "tl",
@@ -4847,6 +5001,20 @@
           "description": "Compass button that opens Go to - search the game's streets and places and jump straight there"
         },
         {
+          "anchor": "tr",
+          "asset": null,
+          "height": 44,
+          "id": "wh-btn",
+          "label": "\ud83c\udfe0",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 12,
+          "y": 80,
+          "description": "Worker housing button, added to the page by workerhousing.js - opens the worker housing panel. It sits in the top-right button column under the pause button."
+        },
+        {
           "anchor": "tl",
           "asset": null,
           "height": 44,
@@ -5280,6 +5448,20 @@
           "description": "Compass button that opens Go to - search the game's streets and places and jump straight there"
         },
         {
+          "anchor": "tr",
+          "asset": null,
+          "height": 44,
+          "id": "wh-btn",
+          "label": "\ud83c\udfe0",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 12,
+          "y": 80,
+          "description": "Worker housing button, added to the page by workerhousing.js - opens the worker housing panel. It sits in the top-right button column under the pause button."
+        },
+        {
           "anchor": "tl",
           "asset": null,
           "height": 44,
@@ -5711,6 +5893,20 @@
           "x": 136,
           "y": 180,
           "description": "Compass button that opens Go to - search the game's streets and places and jump straight there"
+        },
+        {
+          "anchor": "tr",
+          "asset": null,
+          "height": 44,
+          "id": "wh-btn",
+          "label": "\ud83c\udfe0",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 12,
+          "y": 80,
+          "description": "Worker housing button, added to the page by workerhousing.js - opens the worker housing panel. It sits in the top-right button column under the pause button."
         },
         {
           "anchor": "tl",

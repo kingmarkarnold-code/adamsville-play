@@ -1004,6 +1004,12 @@ function stats(){
 function addHudButton(){
   try {
     var btn = document.createElement('button');
+    // 2026-10-26: the button carries the id "wh-btn" and a matching
+    // entry in ui_layout.json, so the layout pass (ui_layout_apply.js)
+    // places and fits it with the rest of the top-right button column.
+    // Until this id existed it sat at this raw CSS spot — exactly in
+    // the fitted column's path — and overlapped its neighbours.
+    btn.id = 'wh-btn';
     btn.innerHTML = '🏠';
     btn.title = 'Worker Housing';
     btn.style.cssText =
@@ -1012,6 +1018,17 @@ function addHudButton(){
       'color:#fff;font-size:20px;z-index:9997;cursor:pointer;';
     btn.onclick = function(){ togglePanel(); };
     document.body.appendChild(btn);
+    /* Join the fitted layout: if the layout module is already up,
+       re-apply so this button is placed with the column instead of
+       sitting at its raw CSS spot. The layout may load after this
+       module, so retry briefly (guarded; giving up just leaves the
+       CSS position above, exactly the old behaviour). */
+    (function joinLayout(retries){
+      try {
+        if (window.UILayoutApply && UILayoutApply.apply) { UILayoutApply.apply(); return; }
+      } catch(e){}
+      if (retries > 0) setTimeout(function(){ joinLayout(retries - 1); }, 1000);
+    })(5);
     /* Refresh panel every 5s while visible. */
     setInterval(function(){ if (_panelVisible) refreshPanel(); }, 5000);
   } catch(e){}
