@@ -1,0 +1,1 @@
+{"_note":"Overpass data exported by the Adamsville Map Editor. Overpasses with clearance_ft below 16 get truck_restricted=true, which tells 18-wheelers to stop before them. The game loads this file at startup; an empty list means no restrictions.","overpasses":[]}

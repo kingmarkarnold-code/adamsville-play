@@ -1,0 +1,2932 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Basketball — 535 Backyard Court</title>
+<!-- ====================================================================
+     BASKETBALL — 535 BACKYARD COURT (the mini-game's web player)
+     Joshua's design, 2026-10-17: the basketball mini-game from
+     Surviving Adamsville starts here, in the web player. In the main
+     game, the dirt court, the goal tree, and the invitation live behind
+     the house at 535 Dollar Mill Road (detailed/basketball_court.js);
+     answering "Yes" there walks the player to this page. This page
+     also stands on its own from the hub.
+
+     Lightweight by law: this page builds its OWN small scene (one dirt
+     court, one goal tree, a ring of pines, the players for the chosen
+     mode) — it does not load the game world. The only shared file is
+     the game's three.min.js, next door.
+
+     Progress is shared with the game page (same origin): lifetime
+     baskets, sessions, the last mode, the last opponent, and any game
+     in progress live in localStorage under 'sa.basketball.v1', written
+     the moment they change.
+     ==================================================================== -->
+<style>
+  html, body { height: 100%; }
+  body {
+    margin: 0; padding: 0; overflow: hidden; background: #171310; color: #fff;
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    display: flex; flex-direction: column;
+    /* v2.3.1 (Joshua, 2026-10-24): the Pickup Ball button was NOT
+       VISIBLE on his phone. Root cause: this column was sized with
+       100vh, which counts the FULL screen including the strip that
+       sits under the phone browser's address bar / footer — so the
+       column stood taller than the area he can actually see, and
+       the bottom controls row (Pickup Ball, Defend, Steal) was
+       pushed below the visible area with no way to scroll to it
+       (overflow: hidden). 100dvh only helped where a browser both
+       supports it and keeps it current, and inside the game's
+       overlay frame it tracks the frame, not the visible screen.
+       The fix is his instruction: the page MEASURES the real
+       visible area in JavaScript (window.visualViewport, which
+       excludes the browser bars, falling back to innerHeight) and
+       lays out against that measurement — fitAppHeight() writes it
+       to --app-height and keeps it current as the bars show/hide.
+       The vh/dvh heights below are only the fallback for the first
+       paint, before the first measurement lands. */
+    height: 100vh; height: 100dvh; height: var(--app-height, 100dvh);
+    /* v2.4.1 (Joshua, 2026-10-24): HOLDING Shoot on his phone made
+       the browser SELECT TEXT on the page instead of charging the
+       shot. This is a game page — it never gives up text. No
+       selection and no long-press callout, anywhere on the page;
+       the buttons also refuse gesture reinterpretation (below),
+       and a contextmenu guard in the script stops the long-press
+       menu itself. */
+    -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none;
+  }
+  /* ---- top bar ---- */
+  #topbar {
+    flex: 0 0 auto; display: flex; align-items: center; gap: 10px;
+    background: rgba(22,17,12,.96); border-bottom: 2px solid #e8722a;
+    padding: 8px 12px; z-index: 5;
+  }
+  #topbar .title { font-size: 16px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #topbar .vtag { font-size: 11px; font-weight: 700; color: #ffb37a; border: 1px solid #e8722a; border-radius: 6px; padding: 1px 5px; }
+  #topbar .spacer { flex: 1 1 auto; }
+  #score-readout { font-size: 14px; font-weight: 700; color: #fff; white-space: nowrap; display: none; }
+  #baskets-readout { font-size: 15px; font-weight: 700; color: #ffb37a; white-space: nowrap; }
+  .barbtn {
+    background: #4a4a4a; color: #eee; border: 0; border-radius: 8px;
+    font-size: 13px; font-weight: 700; padding: 9px 12px; cursor: pointer; white-space: nowrap;
+    text-decoration: none; display: inline-block; line-height: 1;
+  }
+  .barbtn:active { background: #666; }
+  #back-link { background: #e8722a; color: #fff; }
+  /* ---- skill bar (your level, always at the top) ---- */
+  #skillbar {
+    flex: 0 0 auto; display: flex; align-items: center; gap: 8px;
+    background: rgba(22,17,12,.96); padding: 2px 12px 5px; z-index: 5;
+  }
+  #skill-label { font-size: 11px; font-weight: 700; color: #ffb37a; white-space: nowrap; }
+  #skilltrack { flex: 1 1 auto; height: 7px; background: #3a3a3a; border-radius: 4px; overflow: hidden; }
+  #skillfill { height: 100%; width: 0%; background: #e8722a; border-radius: 4px; }
+  /* ---- roster strip (who is on the court, during a game) ---- */
+  #rosterbar {
+    flex: 0 0 auto; display: none; background: rgba(22,17,12,.92); color: #ffd9ae;
+    font-size: 12px; font-weight: 600; padding: 3px 12px; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; z-index: 5;
+  }
+  /* ---- the court view ---- */
+  #court-wrap { flex: 1 1 auto; position: relative; min-height: 0; background: #87b5d9; touch-action: none; }
+  #court-wrap canvas { display: block; width: 100%; height: 100%; }
+  /* ---- walk joystick (bottom-left, over the court) ---- */
+  #joy {
+    position: absolute; left: 14px; bottom: 14px; width: 118px; height: 118px;
+    border-radius: 50%; background: rgba(20,16,12,.38); border: 2px solid rgba(255,255,255,.45);
+    display: none; z-index: 3; touch-action: none;
+  }
+  #joy.on { display: block; }
+  #joy-knob {
+    position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; border-radius: 50%;
+    background: rgba(232,114,42,.85); border: 2px solid rgba(255,255,255,.7);
+    transform: translate(-50%, -50%);
+  }
+  /* ---- full-court overlays: mode choice, opponent pick, leave, win ---- */
+  .sheet {
+    position: absolute; inset: 0; display: none; z-index: 4;
+    align-items: center; justify-content: center; background: rgba(10,8,6,.55);
+    padding: 12px; box-sizing: border-box;
+  }
+  .sheet.show { display: flex; }
+  .panel {
+    background: rgba(22,17,12,.96); border: 2px solid #e8722a; border-radius: 14px;
+    padding: 20px 22px; text-align: center; max-width: 92vw; max-height: 100%;
+    overflow-y: auto; box-sizing: border-box; box-shadow: 0 8px 30px rgba(0,0,0,.5);
+  }
+  .panel h1 { font-size: 24px; margin: 0 0 4px; }
+  .panel h2 { font-size: 21px; margin: 0 0 6px; }
+  .panel .where { font-size: 13px; opacity: .8; margin: 0 0 4px; }
+  .panel .how { font-size: 13px; opacity: .65; margin: 0 0 14px; }
+  .panel .pick { font-size: 15px; font-weight: 700; margin: 0 0 10px; }
+  .bigbtn {
+    display: block; width: 100%; box-sizing: border-box; margin: 8px 0;
+    background: #e8722a; color: #fff; border: 0; border-radius: 10px;
+    font-size: 20px; font-weight: 700; padding: 14px 10px; cursor: pointer; min-height: 52px;
+  }
+  .bigbtn .last { display: block; font-size: 12px; font-weight: 700; color: #ffe1c9; margin-top: 2px; }
+  .bigbtn .sub { display: block; font-size: 12px; font-weight: 600; color: #ffe1c9; margin-top: 2px; }
+  .bigbtn:active { background: #c95f1f; }
+  .bigbtn.grey { background: #4a4a4a; }
+  .bigbtn.grey:active { background: #666; }
+  #mode-baskets { font-size: 14px; font-weight: 700; color: #ffb37a; margin: 12px 0 0; }
+  /* ---- bottom play controls ---- */
+  #controls {
+    flex: 0 0 auto; background: rgba(22,17,12,.96); border-top: 2px solid #e8722a;
+    padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); text-align: center; z-index: 5;
+  }
+  #feedback { font-size: 15px; font-weight: 700; min-height: 20px; margin: 0 0 8px; color: #fff; }
+  #act-btn {
+    background: #e8722a; color: #fff; border: 0; border-radius: 12px;
+    font-size: 20px; font-weight: 700; padding: 14px 34px; cursor: pointer; min-height: 54px; min-width: 210px;
+  }
+  #act-btn:active { background: #c95f1f; }
+  #act-btn[disabled] { background: #555; color: #bbb; }
+  /* v2.4.1: every button is a tap-or-hold target, never a scroll,
+     pinch or select gesture — touch-action: none keeps the browser
+     from reinterpreting a hold (above all on Shoot, whose hold
+     charges the shot) and from cancelling it mid-charge. */
+  .barbtn, .bigbtn, #act-btn, .defbtn { touch-action: none; }
+  /* ---- hold-to-shoot power meter (v2.2): fills while Shoot is held ---- */
+  #power-wrap {
+    display: none; align-items: center; gap: 8px; max-width: 420px; margin: 0 auto 8px;
+  }
+  #power-wrap.show { display: flex; }
+  #power-wrap .plabel { font-size: 12px; font-weight: 700; color: #ffb37a; white-space: nowrap; }
+  #power-track { flex: 1 1 auto; height: 14px; background: #3a3a3a; border-radius: 7px; overflow: hidden; }
+  #power-fill { height: 100%; width: 0%; background: #e8722a; border-radius: 7px; }
+  #power-fill.perfect { background: #57d977; }
+  /* ---- defend / steal buttons (v2.2): live only while HE has the ball ---- */
+  #defsteal { display: flex; gap: 10px; justify-content: center; margin: 0 0 8px; }
+  .defbtn {
+    background: #2e4a8a; color: #fff; border: 0; border-radius: 12px;
+    font-size: 17px; font-weight: 700; padding: 12px 22px; cursor: pointer; min-height: 48px; min-width: 130px;
+  }
+  .defbtn.held { background: #57d977; color: #10240f; }
+  .defbtn[disabled] { background: #444; color: #999; }
+  /* ---- out-of-bounds call banner (v2.2): the call, plain and big ---- */
+  #call-banner {
+    position: absolute; left: 50%; top: 14px; transform: translateX(-50%);
+    background: rgba(22,17,12,.94); border: 2px solid #ffb37a; border-radius: 10px;
+    color: #fff; font-size: 17px; font-weight: 700; padding: 10px 16px;
+    display: none; z-index: 6; text-align: center; max-width: 92%;
+  }
+  #call-banner.show { display: block; }
+  /* ---- error state (never a silent black page) ---- */
+  #error-panel {
+    position: fixed; inset: 0; display: none; z-index: 50;
+    align-items: center; justify-content: center; background: #171310; padding: 16px; box-sizing: border-box;
+  }
+  #error-panel.show { display: flex; }
+  #error-card {
+    background: rgba(22,17,12,.98); border: 2px solid #e8722a; border-radius: 14px;
+    padding: 22px; text-align: center; max-width: 92vw;
+  }
+  #error-card h2 { margin: 0 0 8px; font-size: 20px; }
+  #error-card p { font-size: 14px; opacity: .85; }
+  #error-msg { font-size: 12px; opacity: .6; word-break: break-word; }
+  /* ---- v2.3.1: short screens squeeze the controls, never the
+     court alone — the court flexes (min-height: 0 above), and on a
+     short visible area the bars and buttons give up some height
+     too, so EVERY control stays on screen. These key off the
+     viewport height the browser reports; the layout itself is
+     pinned to the measured --app-height. ---- */
+  @media (max-height: 700px) {
+    #topbar { padding: 6px 10px; }
+    .barbtn { padding: 7px 10px; }
+    #skillbar { padding-bottom: 3px; }
+    #controls { padding-top: 6px; padding-bottom: calc(6px + env(safe-area-inset-bottom)); }
+    #feedback { font-size: 14px; min-height: 18px; margin-bottom: 6px; }
+    #defsteal { margin-bottom: 6px; }
+    .defbtn { min-height: 42px; padding: 9px 16px; font-size: 15px; }
+    #act-btn { min-height: 48px; padding: 10px 26px; font-size: 18px; }
+    #joy { width: 96px; height: 96px; bottom: 10px; left: 10px; }
+    #joy-knob { width: 44px; height: 44px; }
+  }
+  @media (max-height: 560px) {
+    #topbar .title { font-size: 14px; }
+    #feedback { min-height: 16px; margin-bottom: 4px; }
+    #defsteal { margin-bottom: 4px; }
+    .defbtn { min-height: 38px; padding: 7px 12px; font-size: 14px; min-width: 110px; }
+    #act-btn { min-height: 44px; padding: 8px 20px; font-size: 17px; min-width: 180px; }
+    #joy { width: 84px; height: 84px; }
+    #joy-knob { width: 38px; height: 38px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <span class="title">🏀 Basketball — 535 Backyard Court</span>
+  <span class="vtag">v2.4.2</span>
+  <span class="spacer"></span>
+  <span id="score-readout">You: 0</span>
+  <span id="baskets-readout">Baskets: 0</span>
+  <button class="barbtn" id="change-mode-btn" type="button">Change mode</button>
+  <a class="barbtn" id="back-link" href="./">← Surviving Adamsville</a>
+</div>
+<div id="skillbar"><span id="skill-label">Skill Lv 1</span><div id="skilltrack"><div id="skillfill"></div></div></div>
+<div id="rosterbar"></div>
+
+<div id="court-wrap">
+  <!-- walk joystick: shown while a game is on -->
+  <div id="joy"><div id="joy-knob"></div></div>
+  <!-- out-of-bounds call banner (v2.2): shows the call for a few seconds -->
+  <div id="call-banner"></div>
+
+  <!-- mode choice: shown on open, and again from "Change mode" -->
+  <div id="mode-screen" class="sheet">
+    <div id="mode-panel" class="panel">
+      <h1>🏀 Basketball</h1>
+      <p class="where">The backyard court at 535 Dollar Mill Road, from Surviving Adamsville.</p>
+      <p class="how">In the main game, walk in between the trees behind the house at 535 and the court will invite you to play.</p>
+      <p class="how">Controls — move with the joystick, the WASD / arrow keys, or a gamepad stick. Pick up the ball with the button below, Space, or gamepad A — and HOLD that same button to charge your shot: the longer you hold, the harder it goes, and letting go at the perfect moment is what makes it. Release too soon and it falls short; hold too long and it goes too hard. When HE has the ball, use the Defend and Steal buttons below (keys F and G, gamepad Y and X). Gamepad B asks to leave. A Bluetooth keyboard or controller works the same way.</p>
+      <p class="pick">How do you want to play?</p>
+      <button class="bigbtn" id="mode-1on1" type="button">1 on 1<span class="last" id="last-1on1" style="display:none">★ Last played</span></button>
+      <button class="bigbtn" id="mode-3on3" type="button">3 on 3<span class="sub">Still to come — picking it records your choice; the decision screens come first</span><span class="last" id="last-3on3" style="display:none">★ Last played</span></button>
+      <!-- v2.4.1: Quick Play — the shortcut door (see quickPlay).
+           Hidden until there is something to quick-play: a game in
+           progress (it continues that game) or a remembered setup. -->
+      <button class="bigbtn grey" id="quick-play" type="button" style="display:none">⚡ Quick Play<span class="sub" id="quick-sub"></span></button>
+      <p id="mode-baskets">Your baskets: 0</p>
+    </div>
+  </div>
+
+  <!-- make it, take it: decided after the mode, before the opponent (v2.4) -->
+  <div id="mitt-screen" class="sheet">
+    <div id="mitt-panel" class="panel">
+      <h2>Make it, Take it?</h2>
+      <p class="how">After a made basket, the ball restarts at the top — the far end of the court, opposite the goal. <b>Make it, Take it:</b> the man who just scored takes it from the top. <b>Standard:</b> the other man takes it from the top.</p>
+      <button class="bigbtn" id="mitt-yes" type="button">Make it, Take it<span class="sub">Whoever scores takes the ball from the top</span><span class="last" id="last-mitt-yes" style="display:none">★ Last played</span></button>
+      <button class="bigbtn" id="mitt-no" type="button">Standard<span class="sub">The other man takes the ball from the top</span><span class="last" id="last-mitt-no" style="display:none">★ Last played</span></button>
+    </div>
+  </div>
+
+  <!-- 3 on 3 chosen: recorded, and honestly still to come (v2.4 ruling) -->
+  <div id="coming-screen" class="sheet">
+    <div id="coming-panel" class="panel">
+      <h2>3 on 3 — still to come</h2>
+      <p class="how">Full 3-on-3 play isn't built yet, so there's no 3-on-3 match to start today — and this page won't quietly start a 1-on-1 game and call it 3 on 3. Your 3-on-3 pick is remembered for next time.</p>
+      <button class="bigbtn" id="coming-play1" type="button">Play 1 on 1 instead<span class="sub">Same court, your man, first to 10</span></button>
+      <button class="bigbtn grey" id="coming-back" type="button">← Back — choose again</button>
+    </div>
+  </div>
+
+  <!-- opponent choice: select your opponent from the cast -->
+  <div id="pick-screen" class="sheet">
+    <div id="pick-panel" class="panel">
+      <h2>Select your opponent</h2>
+      <p class="how">He guards you all game — and every man plays his own game: some block, some steal, some shoot.</p>
+      <button class="bigbtn" id="pick-opp-0" type="button">Big Joe<span class="last" id="pick-last-0" style="display:none">★ Your last opponent</span></button>
+      <button class="bigbtn" id="pick-opp-1" type="button">Terminator<span class="last" id="pick-last-1" style="display:none">★ Your last opponent</span></button>
+      <button class="bigbtn" id="pick-opp-2" type="button">Big John<span class="last" id="pick-last-2" style="display:none">★ Your last opponent</span></button>
+      <button class="bigbtn grey" id="pick-any" type="button">Surprise me</button>
+    </div>
+  </div>
+
+  <!-- leaving the court mid-game takes a yes -->
+  <div id="leave-screen" class="sheet">
+    <div id="leave-panel" class="panel">
+      <h2>Leave the court?</h2>
+      <p class="pick">You are in the middle of a game. Would you like to leave the court?</p>
+      <button class="bigbtn" id="leave-yes" type="button">Leave the court</button>
+      <button class="bigbtn grey" id="leave-no" type="button">Keep playing</button>
+    </div>
+  </div>
+
+  <!-- game over: the target was reached -->
+  <div id="win-screen" class="sheet">
+    <div id="win-panel" class="panel">
+      <h2 id="win-title">🏆 You win!</h2>
+      <p class="pick" id="win-text">You reached the target.</p>
+      <button class="bigbtn" id="win-again" type="button">Play again</button>
+      <button class="bigbtn" id="win-save-exit" type="button">Save and Exit<span class="sub">Saves your progress and the level you reached, and takes you back out of the court</span></button>
+      <button class="bigbtn grey" id="win-mode" type="button">Change mode</button>
+    </div>
+  </div>
+</div>
+
+<div id="controls">
+  <p id="feedback">Choose how you want to play.</p>
+  <!-- hold-to-shoot power meter (v2.2): visible only while a shot charges -->
+  <div id="power-wrap"><span class="plabel">Shot power</span><div id="power-track"><div id="power-fill"></div></div></div>
+  <!-- your two defensive controls (v2.2): Defend is held, Steal is one press -->
+  <div id="defsteal">
+    <button class="defbtn" id="defend-btn" type="button">🛡️ Defend</button>
+    <button class="defbtn" id="steal-btn" type="button">✋ Steal</button>
+  </div>
+  <button id="act-btn" type="button">Pick up the ball</button>
+</div>
+
+<!-- plain-language error state: shown if anything fails to start -->
+<div id="error-panel">
+  <div id="error-card">
+    <h2>The court could not open</h2>
+    <p>Something went wrong starting Basketball. Your saved baskets are safe.</p>
+    <p id="error-msg"></p>
+    <p><a class="barbtn" href="./" style="background:#e8722a;color:#fff;">← Back to Surviving Adamsville</a></p>
+  </div>
+</div>
+
+<!-- ===== ENGINE (Three.js migration, 2026-10-25) =====
+     Same engine arrangement as the main page: three_bridge.js loads the
+     modern Three.js (pinned r186) as an ES module and publishes it as
+     the global THREE; the boot gate at the bottom of this page waits for
+     it before calling init(). If the module engine cannot load on this
+     surface (the APK's file:// origin refuses module fetches — proven
+     on-device), the gate loads the classic three.min.js (r128) instead
+     and the court runs exactly as before. The importmap must precede
+     every module script. -->
+<script data-engine="three-migration">window.__threeReady = new Promise(function(r){ window.__threeReadyResolve = r; });
+window.__threeBridgeError = function(){ if (window.__threeReadyResolve) window.__threeReadyResolve(false); };
+if (location.protocol === 'file:'){ setTimeout(function(){ if (!window.__threeModern && window.__threeReadyResolve) window.__threeReadyResolve(false); }, 2500); }</script>
+<script type="importmap">{"imports":{"three":"./three.module.js","three/addons/":"./three-addons/"}}</script>
+<script type="module" src="./three_bridge.js" onerror="window.__threeBridgeError&&window.__threeBridgeError()"></script>
+<script>
+/* ============================================================================
+   BASKETBALL — 535 BACKYARD COURT, the player page's game (v2)
+   ----------------------------------------------------------------------------
+   Joshua's rounds: v1 brought the court, the goal tree, the mode choice
+   (1 on 1 / 3 on 3), the shooting play and saved progress. v2 is the
+   BEGINNING GAME LOGIC, in his words:
+   - You MOVE around the court the way you move in the main game, and
+     you can't walk off the dirt mid-game: trying brings up "You are in
+     the middle of a game. Would you like to leave the court?"
+   - Once you start walking with the ball, it DRIBBLES — and it keeps
+     bouncing even when you stop (settling it back into your hands
+     would be a double dribble). Only a shot ends the dribble; a new
+     possession starts in your hands again.
+   - From a considerable distance, Shoot is a JUMP shot: you leave the
+     ground and release at the top. Close up, you shoot from the floor.
+   - You SELECT YOUR OPPONENT from the cast — Big Joe, Terminator,
+     Big John — and every man plays by his own ATTRIBUTES (see the CAST
+     block): intelligence, defense, block, steal, shooting. Defense
+     makes his contest hurt more, block can swat your shot away, steal
+     can take the ball off your dribble, shooting lets HIM score when
+     the ball is his. Both sides can win now.
+   - Games are played to a target: 1 on 1 goes to 10, 3 on 3 to 21.
+     (Flagged assumption, his to correct: each made basket is 1 point.)
+   - The more YOU play, the better you get: a skill bar at the top
+     fills in small increments (see the SKILL block) and your shot
+     tightens a little as your level rises.
+   Every tuning number lives in the TUNING / SKILL blocks or in a man's
+   own attribute block — a later tuning pass changes numbers, not logic.
+
+   v2.1 (Joshua, 2026-10-18) — IN-GAME PLAY + CONTROLLERS:
+   - IN GAME: this same page now also plays INSIDE the main game. The
+     world-side court (basketball_court.js) hosts it in a full-screen
+     overlay when he answers Yes at the goal tree; the world pauses
+     behind it. When the page finds itself embedded (a parent window
+     exists), its "back to the game" links become a CLOSE control that
+     asks the parent to close the overlay, and answering "Leave the
+     court" in the leave prompt closes back to the world too. Opened
+     as its own tab (standalone), nothing about that changes.
+   - INPUT — ONE LAYER, THREE WAYS IN, all feeding the same actions
+     (see the INPUT section below): the touch joystick + on-screen
+     button; the keyboard (WASD / arrows move, Space / Enter is the
+     action button — pick up / shoot); and a standard Gamepad
+     (left stick or D-pad moves, A is the action button, B or Start
+     asks to leave — the leave prompt still gets the last word).
+     His Bluetooth setup — the old phone running a HID app — arrives
+     as keyboard + mouse, so it is covered by the keyboard layer and
+     ordinary clicks, with nothing extra to pair or configure here.
+
+   v2.2 (Joshua, 2026-10-24) — OUT OF BOUNDS, DEFENCE BUTTONS,
+   HOLD-TO-SHOOT, BASKETBALL MOVEMENT, SAVE AND EXIT:
+   - OUT OF BOUNDS / LAST TOUCH: the ball no longer just "comes back"
+     when it leaves the court. The game tracks who touched it last;
+     when the ball goes out — or the man WITH the ball steps off the
+     dirt — the call is "out on" that man and the OTHER side is given
+     the ball (an inbound), with the call announced on screen.
+   - THE LEAVE QUESTION MOVED OUT: stepping off the dirt is now just
+     out of bounds (or a loose-ball fetch) — it never asks to leave.
+     You may roam the grass between the dirt and the trees; the
+     "Would you like to leave the court?" prompt only fires at the
+     OUTSIDE OF THE TREE BORDER (the TREE_BORDER ellipse through the
+     pine ring, below), exactly where leaving the backyard begins.
+   - YOUR DEFENCE HAS TWO BUTTONS: DEFEND (hold it: guard him close
+     and his make chance drops) and STEAL (one press: a chance to
+     take the ball while he has it, on a cooldown so it can't be
+     spammed). Both grey out when they don't apply. Keys F / G and
+     gamepad Y / X feed the same two actions.
+   - HOLD-TO-SHOOT POWER: press and HOLD Shoot to charge; release to
+     shoot. The meter shows the charge; releasing at the perfect
+     hold time is the make (see the POWER block). Too short falls
+     short / off the front rim; too long goes over / off the back
+     rim. A plain tap is still a quick, weak shot. Far shots are
+     still JUMP shots — and the jump now reads higher, with both
+     arms up at the release.
+   - BASKETBALL MOVEMENT: the figures no longer just walk — a man
+     with the ball leans into a dribble posture with his dribble arm
+     pumping, running brings a real arm/leg swing and a forward
+     lean, and a man in a defensive stance (you holding Defend, or
+     your opponent guarding you) drops into a wide shuffle crouch.
+   - SAVE AND EXIT on the end-of-game popup: records your progress
+     and the skill LEVEL you reached into 'sa.basketball.v1'
+     (exitLevel / exitSummary), then leaves the mini-game the same
+     way "Leave the court" does (in the game's overlay that closes
+     back to the world; standalone it returns to the mode screen,
+     where your saved level is shown). Your level itself was always
+     restored from your saved XP — the exit record now names the
+     level you finished at, and that is the level you come back to.
+
+   v2.3 (Joshua, 2026-10-24) — OUT OF BOUNDS, LAST TOUCH + THE TOP:
+   - LAST TOUCH DECIDES every ball-out, loose balls included (the
+     v2.2 rule, now stated for all cases): the ball leaves the court
+     and it is the OTHER man's ball — his shot that flies out, a
+     ball that slips out of his hands, same call.
+   - THE RESTART IS AT THE TOP: in Joshua's terms the area around
+     the goal is the KEY and "the top" is the opposite end of the
+     court. The man receiving the ball restarts THERE — the far end
+     from the goal — with the ball in his possession (TOP_SPOT;
+     restarts used to leave men where they stood, and the old start
+     spot sits in the goal's half, so it is not the top).
+   - WHOSE FEET COUNT DEPENDS ON THE BALL: while a man HOLDS the
+     ball, his stepping out is out on him too (the ball in his
+     possession is out with him), and the held ball itself crossing
+     the line is out on him. While the ball is LOOSE, a man
+     stepping out — chasing it, fetching it — is never a call: only
+     the ball crossing makes it, decided by last touch. (The
+     tree-border leave question is untouched, as in v2.2.)
+
+   v2.3.1 (Joshua, 2026-10-24) — EVERY CONTROL FITS THE SCREEN:
+   - FOUND ON HIS PHONE: the Pickup Ball button was not visible.
+     The page column was sized 100vh, which counts screen hidden
+     under the phone browser's address bar / footer; the column
+     stood taller than the visible area and the whole bottom
+     controls row fell below it, unreachable (no scrolling).
+   - HIS FIX, AS INSTRUCTED: the page MEASURES the screen it
+     actually has — fitAppHeight() reads window.visualViewport
+     (the area left after the browser bars take theirs), falling
+     back to window.innerHeight, writes it to the --app-height
+     CSS variable the body height now uses, and re-measures on
+     every resize / orientation change / visualViewport resize
+     (the bars showing and hiding as he scrolls or rotates).
+     Short screens additionally squeeze the bars and buttons
+     (the max-height rules in the stylesheet) while the court
+     flexes — no control is ever pushed off or clipped.
+   - THE HOST AGREES: the game's overlay (basketball_court.js)
+     now measures its own visible area the same way and sizes
+     the frame to it, so inside the game the frame this page
+     measures IS the truly visible area. No game logic changed.
+
+   v2.4 (Joshua, 2026-10-24) — MAKE IT, TAKE IT (his decision flow):
+   - BEFORE PLAY, TWO DECISIONS, IN HIS ORDER: first 1 on 1 or
+     3 on 3 (the mode screen, as before), THEN "Make it, Take it"
+     or not (a new screen between the mode and the opponent pick).
+     Both are remembered on the device (lastMode /
+     lastMakeItTakeIt in 'sa.basketball.v1') and pre-selected —
+     starred "Last played" — next time, so a returning player can
+     start fast; the defaults are 1 on 1 and Make it Take it NO
+     (the standard).
+   - THE RULE: after a MADE basket the ball restarts AT THE TOP
+     (TOP_SPOT, the far end opposite the goal — the v2.3 restart)
+     either way. Make it Take it YES: the man who just scored
+     takes it from the top. NO: the other man takes it from the
+     top. It applies to your baskets and his alike, and the
+     feedback line announces it as it happens ("Make it, take it
+     — your ball from the top" / "His ball from the top"). A made
+     basket no longer leaves a dead ball to fetch. Blocked shots,
+     misses, steals and out-of-bounds calls are untouched.
+   - 3 ON 3: HIS RULING — "Decision screens first — 3-on-3 comes
+     later." Picking 3 on 3 RECORDS the pick (remembered and
+     starred like everything else), and then the page says to
+     his face that 3-on-3 play itself is still to come: no match
+     starts, and no 1-on-1 game is quietly dressed up under a
+     3-on-3 name. He can go back and choose again, or knowingly
+     play 1 on 1 instead — and if he does, his recorded 3-on-3
+     pick still stands (startGame is told to keep it). The court
+     code can already seat both teams; full team play is the
+     later build this decision screen is waiting for.
+
+   v2.4.1 (Joshua, 2026-10-24) — THE HOLD IS THE GAME'S:
+   - Hands-on defect: HOLDING the Shoot button on his phone made
+     the browser SELECT TEXT on the page instead of simply holding
+     (the hold charges the power meter). The page now refuses
+     selection outright — user-select: none and
+     -webkit-touch-callout: none on the body, which covers the
+     score banner, the announcements and every button — every
+     button carries touch-action: none so a press is never
+     reinterpreted as a scroll/select gesture and a hold is never
+     cancelled mid-charge, and a page-wide contextmenu guard
+     stops the long-press menu (Android Chrome). No game logic
+     changed: the press/release handlers and the power-meter
+     timing are exactly as they were in v2.4.
+   - ENTRY ALWAYS SHOWS THE DECISIONS (his ruling, same day):
+     entering the court used to resume a saved in-progress game
+     silently, straight into gameplay. Now entry ALWAYS lands on
+     the selection flow — mode first, then Make it, Take it —
+     even when a game is in progress and his choices are
+     remembered. The remembered choices stay pre-selected (the
+     ★ Last played stars); he confirms or changes them.
+   - QUICK PLAY (new): the mode screen carries a Quick Play
+     button — the one tap that skips the screens. With a game in
+     progress it resumes that game exactly as it was (the
+     continue door); with none, it starts a NEW game from his
+     last selections wholesale (mode + Make it, Take it +
+     opponent). It passes the same honesty gate as a manual
+     pick: a recorded 3-on-3 choice lands on the same "still to
+     come" notice — never a fake 3-on-3 start. On a first-ever
+     entry (nothing remembered, no game saved) the button is
+     hidden; there is nothing to quick-play yet. The manual
+     flow stays his "change it up" path: walking the screens
+     and picking an opponent starts a NEW game that replaces
+     any in-progress save. The end popup's Play again is
+     unchanged.
+
+   v2.4.2 (Joshua's hands-on, 2026-10-25) — BALL SPEED + THE
+   MADE-BALL WAIT:
+   - THE BALL FLEW SLOWER THAN THE MEN RUN (his report from the
+     dev build: "the ball itself was moving kind of slow, the
+     characters are moving faster"). The one arc for everyone
+     (launchBall) budgeted flight time as 0.8 s + 0.05 s per
+     metre: a 3 m shot crossed at ~3.2 m/s — slower than the
+     walk pace of the man who threw it (WALK_SPEED 3.4 m/s) —
+     and a shot from the top hung in the air ~1.5 s. The budget
+     is now 0.58 s + 0.040 s per metre: the same 3 m shot
+     crosses at ~4.3 m/s, a shot from the top crosses its
+     ~13.4 m in ~1.1 s, and the arc peaks at a real jumper's
+     height. Nothing about the SCORING moved: launchBall still
+     solves the arc through the aim point, so makes and misses
+     are decided by the same targets, the same POWER bands and
+     the same spread as v2.4.1 — only the flight's pace changed.
+   - AFTER A MAKE, THE RESTART WAITED FOR A DEAD BALL (his
+     report: "it took a while after I made the shot... it was
+     waiting on the ball to stop moving"). The score registers
+     the moment the ball crosses the rim plane, but the restart
+     at the top waited for the ball to settle — and a made ball
+     still had to fall from the rim and bounce out the old
+     chain (restitution 0.55 until a floor impact under
+     1.4 m/s): ~2.7 s of bouncing after a swish before play
+     restarted. Now a MADE ball settles at its FIRST floor
+     touch after the make, and a backstop cap (MADE_SETTLE_CAP,
+     1.1 s after the crossing) settles it even if it hangs up
+     somewhere strange. Misses are UNCHANGED: a missed ball
+     still bounces out naturally and only becomes fetchable
+     when it comes to rest, exactly as before.
+   ============================================================================ */
+(function(){
+'use strict';
+
+/* ============================== saved progress ============================== */
+/* Shared with the main game page (same origin): {v, baskets, sessions,
+   lastMode, lastOpponent, lastMakeItTakeIt, skillXp, game}. Written
+   the moment anything changes. 'game' is the game in progress {mode,
+   opp, score, oppScore, target, makeItTakeIt} or null — it is what
+   brings a half-finished game back after a reload, house rule and
+   all (v2.4). */
+var SAVE_KEY = 'sa.basketball.v1';
+var ERROR_KEY = 'sa.basketball.error';
+
+function loadProgress(){
+  var fresh = { v: 1, baskets: 0, sessions: 0, lastMode: '', lastOpponent: '', lastMakeItTakeIt: false,
+                skillXp: 0, game: null, exitLevel: 0, exitSummary: null };
+  try{
+    var raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return fresh;
+    var p = JSON.parse(raw);
+    if (!p || typeof p !== 'object') return fresh;
+    fresh.baskets  = Math.max(0, parseInt(p.baskets, 10) || 0);
+    fresh.sessions = Math.max(0, parseInt(p.sessions, 10) || 0);
+    fresh.skillXp  = Math.max(0, parseInt(p.skillXp, 10) || 0);
+    /* v2.2 SAVE AND EXIT record: the skill level he finished at when
+       he last chose Save and Exit, and that game's summary. Older
+       saves simply don't carry them (0 / null). */
+    fresh.exitLevel = Math.max(0, parseInt(p.exitLevel, 10) || 0);
+    if (p.exitSummary && typeof p.exitSummary === 'object')
+      fresh.exitSummary = p.exitSummary;
+    if (p.lastMode === '1on1' || p.lastMode === '3on3') fresh.lastMode = p.lastMode;
+    /* v2.4: his standing Make it, Take it choice (default: the
+       standard, NO) — pre-selected on the decision screen */
+    fresh.lastMakeItTakeIt = p.lastMakeItTakeIt === true;
+    if (typeof p.lastOpponent === 'string' && castByName(p.lastOpponent)) fresh.lastOpponent = p.lastOpponent;
+    if (p.game && typeof p.game === 'object' &&
+        (p.game.mode === '1on1' || p.game.mode === '3on3') && castByName(p.game.opp)){
+      var sc = Math.max(0, parseInt(p.game.score, 10) || 0);
+      var oc = Math.max(0, parseInt(p.game.oppScore, 10) || 0);
+      var tg = (p.game.mode === '1on1') ? 10 : 21;
+      if (sc < tg && oc < tg)
+        fresh.game = { mode: p.game.mode, opp: p.game.opp, score: sc, oppScore: oc, target: tg,
+                       makeItTakeIt: p.game.makeItTakeIt === true };
+    }
+    return fresh;
+  }catch(e){ return fresh; }
+}
+function saveProgress(){
+  try{ progress.v = 1; localStorage.setItem(SAVE_KEY, JSON.stringify(progress)); }catch(e){}
+}
+
+/* ============================== failure surfacing ============================== */
+/* Never a silent black page: any failure shows the plain-language error
+   panel, logs to the console, and leaves a note in local storage. */
+var errorShown = false;
+function showError(err){
+  var msg = (err && err.message) ? err.message : String(err || 'unknown error');
+  try{ console.error('[basketball] ' + msg); }catch(e){}
+  try{ localStorage.setItem(ERROR_KEY, JSON.stringify({ ts: Date.now(), message: msg })); }catch(e){}
+  if (errorShown) return;
+  errorShown = true;
+  try{
+    var panel = document.getElementById('error-panel');
+    var m = document.getElementById('error-msg');
+    if (m) m.textContent = msg;
+    if (panel) panel.classList.add('show');
+  }catch(e){}
+}
+window.addEventListener('error', function(ev){ showError(ev && ev.message ? ev.message : ev); });
+
+/* ============================== court + game constants ============================== */
+/* Metres, flat ground at y=0, the same arrangement as the court behind
+   535 in the main game: dirt ellipse, goal tree on the north arc, the
+   entrance trees to the south, pines around the edge. North is -z. */
+var COURT = { rx: 7, rz: 9 };
+/* THE TREE BORDER (v2.2, Joshua's rule: the leave question belongs
+   at "the outside of the tree borders", not at the dirt's edge).
+   The court's pine ring is the PINES list below (plus the goal tree
+   on the north arc): the outermost pine CENTRES sit at |x| = 8.8
+   (the side pines) and |z| = 10.5 (the entrance pair south, the far
+   arc north). The border is the ellipse through those centres —
+   rx 8.8, rz 10.5, centred on the court. Inside it is the backyard
+   (dirt + the grass margin around it, free to roam mid-game);
+   reaching its outside is leaving the yard, and only that asks the
+   leave question. These are the same pine positions the world-side
+   court (basketball_court.js, YARD_TREES around the dirt patch at
+   535) plants, restated in this page's court-centred metres. */
+var TREE_BORDER = { rx: 8.8, rz: 10.5 };
+var GOAL_TREE = { x: 0, z: -8.2 };
+var RIM = { x: 0, y: 3.05, z: -7.42 };        // rim centre (tree z + 0.78)
+var START_SPOT = { x: 0, z: -2.0 };           // where you start each game
+/* THE TOP (v2.3, Joshua's terminology): the area around the goal is
+   the KEY; "the top" is the OPPOSITE end of the court from the goal.
+   The rim sits at the north edge (z = -7.42, the key); the top is
+   the far south end — TOP_SPOT, well inside the dirt down there.
+   (START_SPOT above, z = -2.0, sits in the goal's half, so it is
+   NOT the top and no longer serves as the restart spot.) Every
+   restart puts the man with the ball HERE, in his hands, and his
+   opponent on the rim line 1.15 m in front of him (defenderAnchor —
+   the same defensive post a game is built with). */
+var TOP_SPOT = { x: 0, z: 6.0 };
+var GRAVITY = 9.8, BALL_R = 0.12;
+/* v2.4.2: a MADE ball never waits out the bounce chain — it settles
+   at its first floor touch after the make (see stepBall). This cap
+   is the backstop for a made ball that somehow never touches down
+   (clips a trunk, catches an edge): this many seconds after the
+   rim crossing it is settled wherever it is, and the restart at
+   the top proceeds. */
+var MADE_SETTLE_CAP = 1.1;
+var WALK_SPEED = 3.4;                          // your pace, main-game walking feel
+var FIG_R = 0.35;                              // a player's personal space (court margin)
+var JUMP_DIST = 6.0;                           // beyond this from the rim, Shoot is a jump shot
+var BASE_SPREAD = 0.22;                        // v1 shot spread (half-range, metres) before contest/skill
+var DRIBBLE_HZ = 2.3;                          // dribble bounces per second
+var HAND_Y = 0.98;                             // the dribble's top, at the hand
+var TARGETS = { '1on1': 10, '3on3': 21 };      // his ruling: 1 on 1 to 10, 3 on 3 to 21
+
+/* ============================== TUNING (game-feel numbers) ==============================
+   Every ability check below reads its numbers from here or from a
+   man's attributes — change the NUMBERS to tune the game; the logic
+   never needs hunting. */
+var TUNING = {
+  /* CONTEST (defense attribute): how much a close defender widens your
+     shot's spread. proximity 0..1 runs from CONTEST_RANGE down to 0. */
+  CONTEST_RANGE: 3.2,          // metres: beyond this he barely matters
+  CONTEST_BASE: 0.30,          // spread growth even a weak defender adds, point blank
+  CONTEST_PER_DEFENSE: 0.08,   // extra spread growth per defense point, point blank
+  /* BLOCK (block attribute): at your release, a defender inside
+     BLOCK_RANGE rolls to swat the shot away outright. */
+  BLOCK_RANGE: 1.7,            // metres from you at the release
+  BLOCK_BASE: 0.08,            // swat chance floor per point of closeness
+  BLOCK_PER_POINT: 0.030,      // extra swat chance per block point, point blank
+  /* STEAL (steal attribute): while you dribble, a defender inside
+     STEAL_RANGE builds steal pressure; at the (random) threshold he
+     takes the ball. Rate is per second. */
+  STEAL_RANGE: 1.35,           // metres from you while you dribble
+  STEAL_RATE: 0.16,            // pressure per second, per steal point, point blank
+  STEAL_NEED_MIN: 0.9,         // pressure needed, low end (randomised per possession)
+  STEAL_NEED_SPAN: 0.7,        // ... up to MIN + SPAN
+  /* OPPONENT OFFENCE (shooting + intelligence attributes): when the
+     ball is his, he dribbles to a spot and shoots. */
+  OPP_SPEED: 2.7,              // his dribble pace toward his spot
+  OPP_RECOVER_SPEED: 3.0,      // his pace fetching a loose ball
+  OPP_SPOT_BASE: 5.9,          // spot distance from the rim before intelligence
+  OPP_SPOT_PER_INT: 0.18,      // smarter men shoot from closer (better looks)
+  OPP_WAIT_BASE: 1.6,          // seconds he'll hold for an open look, before intelligence
+  OPP_WAIT_PER_INT: 0.25,      // ... smarter men wait longer
+  OPP_MAKE_BASE: 0.16,         // his make chance before his shooting attribute
+  OPP_MAKE_PER_SHOOTING: 0.052,// make chance per shooting point
+  OPP_MAKE_FAR: 0.8,           // make-chance multiplier from beyond OPP_FAR_DIST
+  OPP_FAR_DIST: 6.5,           // metres from the rim
+  OPP_CONTEST_CLOSE: 0.55,     // your contest on him, inside 1.2 m of him
+  OPP_CONTEST_MID: 0.82        // ... inside 2.2 m
+};
+
+/* ============================== POWER (hold-to-shoot, v2.2) ==============================
+   Joshua's rule: the longer you HOLD Shoot, the harder the shot.
+   The hold time (seconds) is read against a perfect hold time:
+   release inside the perfect window and the aim is dead-on (the
+   make, subject to the usual contest/block rolls); release early
+   and the shot is weak — it falls short or off the front rim;
+   release late and it is too hard — off the back rim, a bounce off,
+   or clean over. A tap (no real hold) is a quick weak shot. Tune
+   the game by changing these numbers, never the logic. */
+var POWER = {
+  MAX_CHARGE: 1.20,        // seconds of hold to reach full power (meter full)
+  PERFECT_AT: 0.75,        // the perfect hold time, seconds
+  PERFECT_WINDOW: 0.12,    // ± seconds around PERFECT_AT that still count as perfect
+  TAP_MAX: 0.05,           // a hold this short (or the plain tap) is a tap shot
+  SHORT_BAND: 0.35,        // release error (sec) inside this, short side = "short" (front rim);
+                           // beyond it = "weak" (falls short). Same span on the long side:
+                           // inside = "strong" (back rim); beyond = "over" (too far)
+  AIM_WEAK: -0.85,         // aim offset along the shot line, metres (negative = toward you)
+  AIM_SHORT: -0.42,        // front-rim hit / bounce off
+  AIM_STRONG: 0.42,        // back-rim hit / bounce off
+  AIM_OVER: 0.95           // clean over the goal
+};
+/* Outcome band for a hold time — pure, so the harness can read it
+   and the game and the tests never disagree. */
+function shotOutcomeForHold(holdSec){
+  var power = Math.max(0, Math.min(1, holdSec / POWER.MAX_CHARGE));
+  if (holdSec <= POWER.TAP_MAX) return { band: 'tap', power: power };
+  var err = holdSec - POWER.PERFECT_AT;
+  if (Math.abs(err) <= POWER.PERFECT_WINDOW) return { band: 'perfect', power: power };
+  if (err < 0) return { band: (-err <= POWER.SHORT_BAND) ? 'short' : 'weak', power: power };
+  return { band: (err <= POWER.SHORT_BAND) ? 'strong' : 'over', power: power };
+}
+
+/* ============================== PLAYER DEFENCE (your two buttons, v2.2) ==============================
+   DEFEND and STEAL, your side of the defence his men already had.
+   DEFEND is held: while it is held and you are inside DEFEND_RANGE
+   of the man with the ball, his make chance is multiplied down (on
+   top of the standing proximity contest in TUNING). STEAL is one
+   press: inside STEAL_RANGE it rolls a take-away chance built from
+   your closeness and the ball-handler's intelligence (smarter men
+   protect the ball), and EVERY attempt — made or missed — starts
+   the cooldown, so it can never be spammed. */
+var PLAYER_DEF = {
+  DEFEND_RANGE: 2.6,          // metres from him: your held Defend counts inside this
+  DEFEND_MAKE_MULT: 0.72,     // his make chance multiplier while you defend him in range
+  STEAL_RANGE: 1.6,           // metres from him: a Steal press can be tried inside this
+  STEAL_BASE: 0.30,           // take-away chance before closeness
+  STEAL_PER_CLOSE: 0.35,      // extra chance at point blank (closeness 0..1)
+  STEAL_PER_OPP_INT: 0.025,   // chance removed per point of his intelligence
+  STEAL_COOLDOWN: 1.4         // seconds between steal attempts, made or missed
+};
+
+/* ============================== SKILL (your progression) ==============================
+   The more you play, the better you get (his design). Play earns XP in
+   small increments; each SKILL_XP_PER_LEVEL of XP is a level, shown on
+   the bar at the top. Levels tighten your shot spread a little.
+   "We'll adjust it later" — these are the numbers to adjust. */
+var SKILL = {
+  GAIN_PER_SHOT: 1,            // XP for every shot you take
+  GAIN_PER_MAKE: 3,            // XP for every basket you make
+  GAIN_PER_GAME: 5,            // XP for finishing a game, win or lose
+  XP_PER_LEVEL: 40,            // XP per skill level
+  NARROW_PER_LEVEL: 0.02,      // shot-spread tightening per level (fraction)
+  NARROW_MAX: 0.30             // ... capped, so it never becomes laser-guided
+};
+function skillLevel(){ return Math.floor(progress.skillXp / SKILL.XP_PER_LEVEL) + 1; }
+function skillSpreadFactor(){
+  var cut = Math.min(SKILL.NARROW_MAX, (skillLevel() - 1) * SKILL.NARROW_PER_LEVEL);
+  return 1 - cut;
+}
+function addSkill(xp){
+  progress.skillXp += xp;
+  saveProgress();
+  updateSkillBar();
+}
+function updateSkillBar(){
+  var label = el('skill-label'), fill = el('skillfill');
+  var into = progress.skillXp % SKILL.XP_PER_LEVEL;
+  if (label) label.textContent = 'Skill Lv ' + skillLevel();
+  if (fill) fill.style.width = Math.round(into / SKILL.XP_PER_LEVEL * 100) + '%';
+}
+
+var COL_DIRT = 0x8a6a48, COL_DIRT_WORN = 0x96754f, COL_GRASS = 0x55803d,
+    COL_TRUNK = 0x5a4030, COL_CANOPY = 0x2d5a27, COL_BOARD = 0xf4f1ea,
+    COL_RIM = 0xe8722a, COL_BALL = 0xe8722a, COL_ARM = 0x333333,
+    COL_PANTS = 0x2e4a6b,
+    TEAM_HOME = 0xc23b2e,     // your team's shirts (the hero's red)
+    TEAM_HOME_2 = 0xb03427,   // a second home shade so teammates read apart
+    TEAM_AWAY = 0x2e4a8a,     // a regular opponent's blue
+    TEAM_AWAY_2 = 0x274a7d;
+var SKIN_TONES = [0x8a5a33, 0xa06a3f, 0x6e4525, 0xb57a4a, 0x7d4e2c, 0x96613a];
+
+/* ============================== THE CAST ==============================
+   Joshua's cast (2026-10-18): the men you play against — and in 3 on 3
+   the rest of them fill the court. Each man carries ATTRIBUTE
+   variables, all on a 1..10 scale, in his own block below:
+     intelligence — how smart he plays: reacts faster on defence,
+                    picks better spots and waits for better looks
+     defense      — how hard his contest hurts your shot's accuracy
+     block        — how likely he is to swat your shot away outright
+     steal        — how fast he takes the ball off your dribble
+     shooting     — how often HIS shots fall when the ball is his
+   STANDARD PLACEHOLDER VALUES for now, differentiated so who you pick
+   changes the game; per-person tuning later = edit these numbers.
+   scale/wide are his build ('Big' reads bigger), shirt his colours. */
+var CAST = [
+  { name: 'Big Joe',    scale: 1.13, wide: 1.30, shirt: 0x2f7a3d, skin: SKIN_TONES[2],
+    attrs: { intelligence: 4, defense: 8, block: 9, steal: 3, shooting: 5 } },
+  { name: 'Terminator', scale: 1.03, wide: 1.22, shirt: 0x26262b, skin: SKIN_TONES[4],
+    attrs: { intelligence: 9, defense: 8, block: 6, steal: 8, shooting: 7 } },
+  { name: 'Big John',   scale: 1.09, wide: 1.18, shirt: 0xc9a227, skin: SKIN_TONES[1],
+    attrs: { intelligence: 6, defense: 6, block: 7, steal: 5, shooting: 9 } }
+];
+var DEFAULT_ATTRS = { intelligence: 5, defense: 5, block: 5, steal: 5, shooting: 5 };
+function castByName(name){
+  for (var i = 0; i < CAST.length; i++) if (CAST[i].name === name) return CAST[i];
+  return null;
+}
+/* (declared here, after CAST exists: loadProgress validates saved
+   names against the cast) */
+var progress = loadProgress();
+/* The "surprise me" rotation: the next cast member in turn. */
+function rotateCast(){
+  return CAST[(progress.sessions + progress.baskets) % CAST.length];
+}
+
+/* Yard pines (goal tree handled separately): [x, z, scale] */
+var PINES = [
+  { x: -4.5, z: 10.5, s: 1.00 }, { x: 4.5, z: 10.5, s: 1.05 },   // entrance pair
+  { x: -8.3, z: -6.0, s: 1.05 }, { x: 8.3, z: -6.0, s: 1.00 },   // the arc
+  { x: -8.8, z: 2.0,  s: 0.95 }, { x: 8.8, z: 2.0,  s: 1.10 },
+  { x: -5.5, z: -10.5, s: 1.15 }, { x: 5.5, z: -10.5, s: 0.90 }
+];
+/* Where teammates hold their spots in 3 on 3 (their defenders key off them) */
+var TEAM_SPOTS = [ { x: -3.4, z: -3.2 }, { x: 3.3, z: -4.4 } ];
+
+/* ============================== state ============================== */
+var phase = 'mode';           // 'mode' | 'mitt' | 'coming' | 'pick' | 'game' | 'win'  (v2.4: 'mitt' is the Make it, Take it step; 'coming' is the 3-on-3 notice)
+var mode = '';                // the mode of the game on the court
+var pendingMode = '';         // mode chosen, opponent not yet picked
+var pendingMakeItTakeIt = false;  // v2.4: the Make it, Take it choice in flight (seeded from his last one)
+var keepModePick = false;         // v2.4: a knowingly-substituted game (1 on 1 for a 3-on-3 pick) must not overwrite the recorded pick
+var game = null;              // {mode, opp, score, oppScore, target} while a game is on
+var figures = [];             // the other figures on the court (not you)
+var primaryDef = null;        // the figure guarding you (your opponent)
+var you = null;               // your figure
+var player = {                // your body on the court
+  x: START_SPOT.x, z: START_SPOT.z, face: Math.PI,  // heading: 0 = +z (south); PI = -z (north, at the rim)
+  speed: 0, stepPhase: 0, jumpY: 0, idleFor: 0
+};
+var ball = null, ballState = 'ready',   // 'ready' | 'held' | 'dribbling' | 'shooting' | 'flying' | 'dead' | 'ophold' | 'oppdribble'
+    ballVel = { x: 0, y: 0, z: 0 }, ballScored = false, flyT = 0,
+    scoredFlyT = -1;   // v2.4.2: flyT at the moment of a make (-1 = no make this flight)
+var possession = 'you';       // 'you' | 'opp' — whose turn it is with the ball
+var lastTouch = '';           // v2.2: '' | 'you' | 'opp' — who touched the ball last
+                              // (v2.3: this decides EVERY ball-out — the other
+                              // man restarts at the top with the ball)
+var lastCall = null;          // v2.2: {off, to, text} — the most recent out-of-bounds call
+var callBannerUntil = 0;      // v2.2: page-clock time the call banner stays up
+var charging = null;          // v2.2: {startT} while Shoot is held and charging, else null
+var defendHeld = false;       // v2.2: your Defend button/key held right now
+var stealReadyAt = 0;         // v2.2: page-clock time your next Steal press may roll
+var winSummary = null;        // v2.2: {winner, mode, opp, score, oppScore, target} of the last finished game
+var shotCtx = null;           // {by:'you'|'opp', blocked:bool, made:bool} for the shot in the air
+var oppBrain = { state: 'none', t: 0, spot: null };  // 'none' | 'recover' | 'approach' | 'windup'
+var stealPressure = 0, stealNeed = 1.2;
+var dribblePhase = 0;                    // runs while a dribble is live (yours or his)
+var shotAnim = null;                     // {t, jump, released} during your shot
+var lastShot = null;                     // record of the last shot (also a test surface)
+var pendingWin = '';                     // '' | 'you' | 'opp'
+var leaveOpen = false, leaveArmed = true, leavePromptCount = 0;
+var keys = {};                           // keyboard state, by code
+var joyVec = { x: 0, z: 0 };             // joystick vector
+var padVec = { x: 0, z: 0 };             // gamepad vector (third input — see pollGamepad)
+var padPrev = {};                        // last frame's gamepad buttons, for press edges
+var padGuardUntil = 0;                   // leave-prompt guard time (page clock T): pad
+                                         // button edges are ignored until then, so the
+                                         // press that opened the prompt can't answer it
+var keyVec = { x: 0, z: 0 };             // keyboard vector (recomputed per frame)
+var camPos = { x: 3.4, y: 3.8, z: 5.6 }, camLook = { x: 0, y: 1.7, z: -3.2 };
+var T = 0;                               // the page's own clock (seconds)
+var scene, camera, renderer, clock, courtGroup, started = false;
+
+/* ============================== DOM helpers ============================== */
+function el(id){ return document.getElementById(id); }
+function setFeedback(t){ var f = el('feedback'); if (f) f.textContent = t; }
+function showSheet(id, on){
+  var s = el(id); if (!s) return;
+  if (on) s.classList.add('show'); else s.classList.remove('show');
+}
+function updateReadout(){
+  var b = el('baskets-readout'); if (b) b.textContent = 'Baskets: ' + progress.baskets;
+  var m = el('mode-baskets'); if (m) m.textContent = 'Your baskets: ' + progress.baskets +
+    (progress.exitLevel > 0 ? ' · Saved level: Lv ' + progress.exitLevel : '');
+  var s = el('score-readout');
+  if (s){
+    if (game){
+      s.style.display = '';
+      s.textContent = 'You: ' + game.score + ' · ' + game.opp + ': ' + game.oppScore + ' · first to ' + game.target;
+    } else { s.style.display = 'none'; }
+  }
+}
+function updateActionButton(){
+  var b = el('act-btn'); if (!b) return;
+  refreshDefenseButtons();   // v2.2: the defence buttons follow every state change
+  if (phase !== 'game' || leaveOpen){ b.textContent = 'Pick a mode first'; b.setAttribute('disabled', ''); return; }
+  if (possession === 'opp' || ballState === 'ophold' || ballState === 'oppdribble'){
+    /* v2.2: his ball means YOUR defence lives on the two buttons
+       above — this button simply has nothing to do right now */
+    b.textContent = 'His ball — defend!'; b.setAttribute('disabled', ''); return;
+  }
+  b.removeAttribute('disabled');
+  if (ballState === 'ready') b.textContent = 'Pick up the ball';
+  else if (ballState === 'held' || ballState === 'dribbling') b.textContent = 'Shoot';
+  else if (ballState === 'dead') b.textContent = 'Get the ball';
+  else { b.textContent = '…'; b.setAttribute('disabled', ''); }
+}
+
+/* ============================== scene builders ============================== */
+function lam(color){ return new THREE.MeshLambertMaterial({ color: color }); }
+
+function makePine(x, z, s){
+  var g = new THREE.Group();
+  var trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.45, 7, 6), lam(COL_TRUNK));
+  trunk.position.set(0, 3.5 * s, 0); trunk.scale.set(s, s, s);
+  g.add(trunk);
+  var can = new THREE.Mesh(new THREE.ConeGeometry(3.1, 13, 7), lam(COL_CANOPY));
+  can.position.set(0, 13.5 * s, 0); can.scale.set(s, s, s);
+  g.add(can);
+  g.position.set(x, 0, z);
+  return g;
+}
+
+/* The goal tree with its hoop: arm, backboard, rim, net — the same
+   build as the tree behind 535 in the main game. */
+function makeGoalTree(){
+  var g = makePine(GOAL_TREE.x, GOAL_TREE.z, 1.3);
+  var boardY = RIM.y + 0.45;
+  var arm = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, 0.6), lam(COL_ARM));
+  arm.position.set(0, boardY + 0.25, 0.33);
+  g.add(arm);
+  var board = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.05, 0.08), lam(COL_BOARD));
+  board.position.set(0, boardY, 0.69);
+  g.add(board);
+  var rim = new THREE.Mesh(new THREE.TorusGeometry(0.23, 0.022, 8, 20), lam(COL_RIM));
+  rim.rotation.x = Math.PI / 2;
+  rim.position.set(0, RIM.y, 0.78);
+  g.add(rim);
+  var net = new THREE.Mesh(new THREE.CylinderGeometry(0.23, 0.15, 0.4, 8, 3, true),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true }));
+  net.position.set(0, RIM.y - 0.2, 0.78);
+  g.add(net);
+  return g;
+}
+
+/* A player figure in the game's stylized look: shirt torso, head,
+   arms, legs — with the parts kept so the game can move them (walk
+   swing, a defender's hands going up, your jump). A cast member is
+   scaled and widened by his build. A soft team disc under the feet
+   says whose side he is on: red for yours, blue for theirs. */
+function makeFigure(shirt, skin, opts){
+  opts = opts || {};
+  var g = new THREE.Group();
+  var mShirt = lam(shirt), mSkin = lam(skin), mPants = lam(COL_PANTS);
+  var legL = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.78, 0.18), mPants);
+  legL.position.set(-0.11, 0.39, 0); g.add(legL);
+  var legR = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.78, 0.18), mPants);
+  legR.position.set(0.11, 0.39, 0); g.add(legR);
+  var torso = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.62, 0.26), mShirt);
+  torso.position.set(0, 1.09, 0); g.add(torso);
+  if (opts.wide && opts.wide !== 1) torso.scale.x = opts.wide;
+  var armL = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.58, 0.13), mShirt);
+  armL.position.set(-0.3, 1.08, 0); armL.rotation.z = 0.12; g.add(armL);
+  var armR = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.58, 0.13), mShirt);
+  armR.position.set(0.3, 1.08, 0); armR.rotation.z = -0.12; g.add(armR);
+  var head = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 10), mSkin);
+  head.position.set(0, 1.58, 0); g.add(head);
+  var disc = new THREE.Mesh(new THREE.CircleGeometry(0.46, 20),
+    new THREE.MeshBasicMaterial({ color: opts.away ? 0x2e4a8a : 0xc23b2e, transparent: true, opacity: 0.45 }));
+  disc.rotation.x = -Math.PI / 2; disc.position.y = 0.02;
+  g.add(disc);
+  if (opts.scale && opts.scale !== 1) g.scale.set(opts.scale, opts.scale, opts.scale);
+  g.userData.parts = { legL: legL, legR: legR, armL: armL, armR: armR, torso: torso };
+  return g;
+}
+
+function faceToward(fig, tx, tz){
+  fig.rotation.y = Math.atan2(tx - fig.position.x, tz - fig.position.z);
+}
+/* Heading convention, matching faceToward: a figure with
+   rotation.y = a faces (sin a, cos a) in (x, z). */
+function headingVec(a){ return { x: Math.sin(a), z: Math.cos(a) }; }
+
+/* Who is on the court, per mode and opponent — built from the cast.
+   1 on 1: your opponent, guarding you. 3 on 3: your opponent guards
+   you, a second cast member guards a teammate and a third plays on
+   YOUR side; the two remaining spots are regulars (with a three-man
+   cast and five other spots, two players are unnamed — for the record). */
+function courtPlan(m, oppName){
+  var opp = castByName(oppName) || CAST[0];
+  var rest = [];
+  for (var i = 0; i < CAST.length; i++) if (CAST[i].name !== opp.name) rest.push(CAST[i]);
+  var plan = { opp: opp, entries: [] };
+  /* entries: {team, cast, role, spot, mark} — mark is the HOME side
+     slot a defender guards (0 = you, 1.. = teammates in TEAM_SPOTS). */
+  plan.entries.push({ team: 'opp', cast: opp, role: 'primary', spot: null, mark: 0 });
+  if (m === '3on3'){
+    plan.entries.push({ team: 'home', cast: rest[1], role: 'mate', spot: TEAM_SPOTS[0], mark: -2 });
+    plan.entries.push({ team: 'home', cast: null,     role: 'mate', spot: TEAM_SPOTS[1], mark: -2 });
+    plan.entries.push({ team: 'opp',  cast: rest[0],  role: 'def',  spot: null, mark: 1 });
+    plan.entries.push({ team: 'opp',  cast: null,     role: 'def',  spot: null, mark: 2 });
+  }
+  return plan;
+}
+function rosterText(plan, m){
+  function nm(e){ return e.cast ? e.cast.name : 'a regular'; }
+  var mates = [], opps = [plan.opp.name];
+  for (var i = 0; i < plan.entries.length; i++){
+    var e = plan.entries[i];
+    if (e.role === 'primary') continue;
+    if (e.team === 'home') mates.push(nm(e)); else opps.push(nm(e));
+  }
+  if (m === '1on1') return 'You vs ' + plan.opp.name;
+  return 'You · ' + mates.join(' · ') + '  vs  ' + opps.join(' · ');
+}
+
+/* (Re)build the court for a game: ground, trees, you, the plan's
+   others, and the ball. plan === null builds the quiet court that
+   sits behind the opening screens. */
+function buildCourt(plan){
+  if (courtGroup){ scene.remove(courtGroup); }
+  courtGroup = new THREE.Group();
+  figures = [];
+  primaryDef = null;
+  you = null;
+
+  var grass = new THREE.Mesh(new THREE.CircleGeometry(60, 40), lam(COL_GRASS));
+  grass.rotation.x = -Math.PI / 2; grass.position.y = -0.02;
+  courtGroup.add(grass);
+  var dirt = new THREE.Mesh(new THREE.CircleGeometry(1, 48), lam(COL_DIRT));
+  dirt.rotation.x = -Math.PI / 2; dirt.scale.set(COURT.rx, COURT.rz, 1);
+  courtGroup.add(dirt);
+  var worn = new THREE.Mesh(new THREE.CircleGeometry(1, 48), lam(COL_DIRT_WORN));
+  worn.rotation.x = -Math.PI / 2; worn.scale.set(COURT.rx * 0.7, COURT.rz * 0.7, 1);
+  worn.position.y = 0.012;
+  courtGroup.add(worn);
+
+  for (var i = 0; i < PINES.length; i++) courtGroup.add(makePine(PINES[i].x, PINES[i].z, PINES[i].s));
+  courtGroup.add(makeGoalTree());
+
+  if (plan){
+    you = makeFigure(TEAM_HOME, SKIN_TONES[0], { away: false });
+    you.position.set(player.x, 0, player.z);
+    faceToward(you, RIM.x, RIM.z);
+    courtGroup.add(you);
+
+    var homeShade = 0;
+    var homeFigs = [null];   // slot 0 is you (position read live); mates follow
+    for (var j = 0; j < plan.entries.length; j++){
+      var e = plan.entries[j];
+      var shirt, skin, opts = { away: e.team === 'opp' };
+      if (e.cast){ shirt = e.cast.shirt; skin = e.cast.skin; opts.scale = e.cast.scale; opts.wide = e.cast.wide; }
+      else if (e.team === 'home'){ shirt = (homeShade++ % 2) ? TEAM_HOME_2 : TEAM_HOME; skin = SKIN_TONES[(j + 3) % SKIN_TONES.length]; }
+      else { shirt = (j % 2) ? TEAM_AWAY_2 : TEAM_AWAY; skin = SKIN_TONES[(j + 2) % SKIN_TONES.length]; }
+      var fig = makeFigure(shirt, skin, opts);
+      fig.userData.role = e.role;
+      fig.userData.team = e.team;
+      fig.userData.mark = e.mark;
+      fig.userData.name = e.cast ? e.cast.name : '';
+      fig.userData.attrs = e.cast ? e.cast.attrs : DEFAULT_ATTRS;
+      fig.userData.phase = j * 1.7 + 0.6;
+      fig.userData.vel = { x: 0, z: 0 };
+      fig.userData.contestT = -1;
+      if (e.role === 'mate'){
+        fig.position.set(e.spot.x, 0, e.spot.z);
+        faceToward(fig, player.x, player.z);
+        homeFigs.push(fig);
+      } else {
+        var mp = (e.mark === 0) ? { x: player.x, z: player.z }
+                               : { x: TEAM_SPOTS[e.mark - 1].x, z: TEAM_SPOTS[e.mark - 1].z };
+        var a = defenderAnchor(mp, e.role === 'primary' ? 1.15 : 1.25);
+        fig.position.set(a.x, 0, a.z);
+        faceToward(fig, mp.x, mp.z);
+        fig.userData.markPos = mp;
+      }
+      fig.userData.baseX = fig.position.x;
+      fig.userData.baseZ = fig.position.z;
+      courtGroup.add(fig);
+      figures.push(fig);
+      if (e.role === 'primary') primaryDef = fig;
+    }
+    for (var k = 0; k < figures.length; k++){
+      var f = figures[k];
+      if ((f.userData.role === 'def') && f.userData.mark >= 1)
+        f.userData.markFig = homeFigs[f.userData.mark] || null;
+    }
+  }
+
+  ball = new THREE.Mesh(new THREE.SphereGeometry(BALL_R, 14, 12), lam(COL_BALL));
+  ball.frustumCulled = false;
+  courtGroup.add(ball);
+  spotBallAtStart();
+
+  scene.add(courtGroup);
+}
+
+/* The ball's start-of-game spot: on the ground in front of your start. */
+function spotBallAtStart(){
+  if (!ball) return;
+  ball.position.set(START_SPOT.x, BALL_R, START_SPOT.z - 0.55);
+  ballVel.x = 0; ballVel.y = 0; ballVel.z = 0;
+  ballState = 'ready';
+  ballScored = false;
+  shotAnim = null;
+  shotCtx = null;
+  oppBrain.state = 'none';
+  possession = 'you';
+  /* v2.2: a fresh game resets the call book, any half-charged shot,
+     and your defensive stance */
+  lastTouch = '';
+  charging = null;
+  defendHeld = false;
+  updateActionButton();
+}
+
+/* ============================== court geometry helpers ============================== */
+/* The dirt is an ellipse; a point is "on the court" for a body of
+   radius margin when it fits inside the ellipse shrunk by that much. */
+function ellipseVal(x, z, margin){
+  var rx = COURT.rx - (margin || 0), rz = COURT.rz - (margin || 0);
+  return (x * x) / (rx * rx) + (z * z) / (rz * rz);
+}
+function insideCourt(x, z, margin){ return ellipseVal(x, z, margin) <= 1.0; }
+function clampInside(x, z, margin){
+  var e = ellipseVal(x, z, margin);
+  if (e <= 1.0) return { x: x, z: z };
+  var k = 1 / Math.sqrt(e);
+  return { x: x * k, z: z * k };
+}
+/* The same ellipse maths against the TREE BORDER (v2.2): the roaming
+   area inside the pine ring. insideArena / clampArena keep the
+   player in the backyard; crossing the court's own ellipse is only
+   ever an out-of-bounds question (handled by the call), never a
+   wall and never the leave question. */
+function arenaVal(x, z, margin){
+  var rx = TREE_BORDER.rx - (margin || 0), rz = TREE_BORDER.rz - (margin || 0);
+  return (x * x) / (rx * rx) + (z * z) / (rz * rz);
+}
+function insideArena(x, z, margin){ return arenaVal(x, z, margin) <= 1.0; }
+function clampArena(x, z, margin){
+  var e = arenaVal(x, z, margin);
+  if (e <= 1.0) return { x: x, z: z };
+  var k = 1 / Math.sqrt(e);
+  return { x: x * k, z: z * k };
+}
+/* Trees are solid: nobody walks through a trunk. */
+var TRUNKS = null;
+function trunkList(){
+  if (TRUNKS) return TRUNKS;
+  TRUNKS = [ { x: GOAL_TREE.x, z: GOAL_TREE.z, r: 0.62 } ];
+  for (var i = 0; i < PINES.length; i++) TRUNKS.push({ x: PINES[i].x, z: PINES[i].z, r: 0.45 * PINES[i].s });
+  return TRUNKS;
+}
+function pushOutOfTrunks(p, bodyR){
+  var list = trunkList();
+  for (var i = 0; i < list.length; i++){
+    var t = list[i], dx = p.x - t.x, dz = p.z - t.z;
+    var d = Math.sqrt(dx * dx + dz * dz), min = t.r + bodyR;
+    if (d < min && d > 0.0001){ p.x = t.x + dx / d * min; p.z = t.z + dz / d * min; }
+  }
+  return p;
+}
+/* A defender's post: on the line from his man to the rim, 'dist' from
+   the man, kept on the court. */
+function defenderAnchor(manPos, dist){
+  var dx = RIM.x - manPos.x, dz = RIM.z - manPos.z;
+  var d = Math.sqrt(dx * dx + dz * dz) || 1;
+  var p = { x: manPos.x + dx / d * dist, z: manPos.z + dz / d * dist };
+  p = clampInside(p.x, p.z, 0.55);
+  p = pushOutOfTrunks(p, 0.3);
+  return p;
+}
+function distToRim(x, z){
+  var dx = RIM.x - x, dz = RIM.z - z;
+  return Math.sqrt(dx * dx + dz * dz);
+}
+function dist2D(ax, az, bx, bz){
+  var dx = ax - bx, dz = az - bz;
+  return Math.sqrt(dx * dx + dz * dz);
+}
+
+/* ============================== input ============================== */
+/* ONE INPUT LAYER, THREE WAYS IN (v2.1) — every device feeds the same
+   two things: a movement vector (inputVector sums joystick + keyboard
+   + gamepad) and the single action entry point ballAction(). Nothing
+   downstream knows or cares which device spoke.
+   - TOUCH: the on-screen joystick (joyVec) + the action button.
+   - KEYBOARD: WASD / arrows (keys -> keyVec), Space / Enter = the
+     action button. This is also the layer a BLUETOOTH KEYBOARD — and
+     Joshua's old phone running its Bluetooth HID app, which presents
+     as keyboard + mouse — speaks, so that controller needs no
+     separate support anywhere: its keys land here, its mouse clicks
+     land on the ordinary buttons.
+   - GAMEPAD: the standard Gamepad API, polled every frame in
+     pollGamepad() below — stick/D-pad -> padVec, A -> ballAction(),
+     B / Start -> the leave question (never a silent quit). */
+function inputVector(){
+  var x = joyVec.x + keyVec.x + padVec.x, z = joyVec.z + keyVec.z + padVec.z;
+  var m = Math.sqrt(x * x + z * z);
+  if (m > 1){ x /= m; z /= m; }
+  return { x: x, z: z, mag: Math.min(1, m) };
+}
+function refreshKeyVec(){
+  keyVec.x = (keys['KeyD'] || keys['ArrowRight'] ? 1 : 0) - (keys['KeyA'] || keys['ArrowLeft'] ? 1 : 0);
+  keyVec.z = (keys['KeyS'] || keys['ArrowDown'] ? 1 : 0) - (keys['KeyW'] || keys['ArrowUp'] ? 1 : 0);
+  var m = Math.sqrt(keyVec.x * keyVec.x + keyVec.z * keyVec.z);
+  if (m > 1){ keyVec.x /= m; keyVec.z /= m; }
+}
+
+/* ============================== gamepad ============================== */
+/* Standard Gamepad API (v2.1), polled once per frame from animate().
+   Mapping (standard layout): left stick + D-pad move; A (button 0)
+   is the action button; B (1) / Start (9) ask to leave. Buttons act
+   on the PRESS EDGE only — holding one down never repeats it. */
+var PAD_DEADZONE = 0.22;   // stick travel below this reads as centred
+var PAD_A = 0, PAD_B = 1, PAD_START = 9;
+var PAD_X = 2, PAD_Y = 3;   // v2.2: X = Steal, Y = Defend (held)
+var PAD_UP = 12, PAD_DOWN = 13, PAD_LEFT = 14, PAD_RIGHT = 15;
+
+function padDown(gp, i){
+  var b = gp.buttons && gp.buttons[i];
+  return !!(b && (b.pressed || (typeof b.value === 'number' && b.value > 0.4)));
+}
+function padEdge(gp, i){
+  var d = padDown(gp, i);
+  var was = !!padPrev[i];
+  padPrev[i] = d;
+  return d && !was;
+}
+function pollGamepad(){
+  var gp = null;
+  try{
+    if (typeof navigator !== 'undefined' && navigator.getGamepads){
+      var pads = navigator.getGamepads();
+      for (var i = 0; i < pads.length; i++){ if (pads[i]){ gp = pads[i]; break; } }
+    }
+  }catch(e){ gp = null; }
+  if (!gp){ padVec.x = 0; padVec.z = 0; padPrev = {}; if (defSrc.pad){ defSrc.pad = false; syncDefend(); } return; }
+
+  /* movement: left stick, dead-zoned, with the D-pad folded in */
+  var ax = (gp.axes && typeof gp.axes[0] === 'number') ? gp.axes[0] : 0;
+  var az = (gp.axes && typeof gp.axes[1] === 'number') ? gp.axes[1] : 0;
+  if (Math.sqrt(ax * ax + az * az) < PAD_DEADZONE){ ax = 0; az = 0; }
+  if (padDown(gp, PAD_LEFT))  ax -= 1;
+  if (padDown(gp, PAD_RIGHT)) ax += 1;
+  if (padDown(gp, PAD_UP))    az -= 1;
+  if (padDown(gp, PAD_DOWN))  az += 1;
+  var m = Math.sqrt(ax * ax + az * az);
+  if (m > 1){ ax /= m; az /= m; }
+  padVec.x = ax; padVec.z = az;
+
+  /* buttons — edges computed for all of them even when unused, so a
+     button held across a state change never fires late. v2.2: A is
+     a press AND a release (hold-to-shoot charges between them). */
+  var aWas = !!padPrev[PAD_A];
+  var eA = padEdge(gp, PAD_A), eB = padEdge(gp, PAD_B), eS = padEdge(gp, PAD_START);
+  var eX = padEdge(gp, PAD_X);
+  var rA = aWas && !padDown(gp, PAD_A);        // A just came up
+  /* v2.2: Y held = your Defend stance (a source, like the button) */
+  defSrc.pad = padDown(gp, PAD_Y);
+  syncDefend();
+  if (leaveOpen){
+    /* The leave question is up: A = "Leave the court", B / Start =
+       "Keep playing" — but only after the guard blink (openLeavePrompt
+       stamps padGuardUntil), so the press that opened the question,
+       or a mashed shoot button, can never answer it by accident. */
+    if (T >= padGuardUntil){
+      if (eA) answerLeave(true);
+      else if (eB || eS) answerLeave(false);
+    }
+    if (rA) cancelCharge();   // v2.2: a release inside the prompt never shoots
+    return;
+  }
+  if (phase !== 'game') return;   // menus stay pointer/touch work
+  if (eA) actionPress();                   // v2.2: A down = pick up / start the charge
+  if (rA) actionRelease();                 // v2.2: A up = shoot with the held power
+  if (eX) playerSteal();                   // v2.2: X = Steal
+  else if (eB || eS) openLeavePrompt();    // B / Start = ask to leave (prompt rule)
+}
+
+/* ============================== your movement + the leave prompt ============================== */
+function updatePlayer(dt){
+  if (!you) return;
+  var iv = inputVector();
+  var moving = iv.mag > 0.12 && !leaveOpen && ballState !== 'shooting';
+  player.speed = moving ? WALK_SPEED * iv.mag : 0;
+  if (moving) player.idleFor = 0; else player.idleFor += dt;
+
+  if (moving){
+    var nx = player.x + iv.x * player.speed * dt, nz = player.z + iv.z * player.speed * dt;
+    /* v2.2 — the dirt's edge is NOT a wall and NOT the leave
+       question any more. You may roam the whole backyard inside the
+       TREE BORDER (the grass margin is where loose balls get
+       fetched). Only reaching the OUTSIDE of the tree border is an
+       exit attempt: clamp there and ask — once per attempt,
+       re-armed by stepping well back inside the ring. */
+    if (!insideArena(nx, nz, FIG_R)){
+      var clampedA = clampArena(nx, nz, FIG_R);
+      player.x = clampedA.x; player.z = clampedA.z;
+      if (game && leaveArmed && arenaVal(player.x, player.z, FIG_R) > 0.80){
+        leaveArmed = false;
+        leavePromptCount++;
+        openLeavePrompt();
+      }
+    } else { player.x = nx; player.z = nz; }
+    var pushed = pushOutOfTrunks({ x: player.x, z: player.z }, FIG_R * 0.8);
+    player.x = pushed.x; player.z = pushed.z;
+    player.face = Math.atan2(iv.x, iv.z);
+    /* a quicker, bouncier stride than the old walk (v2.2 movement) */
+    player.stepPhase += dt * 10.5 * iv.mag;
+    /* OUT OF BOUNDS, the HOLDER's feet (v2.2; v2.3 keeps it for the
+       held case only): while the ball is in your hands or on your
+       dribble, YOUR stepping off the dirt is out on you — he
+       restarts at the top with it. The moment the ball is loose
+       (not held / not dribbling), this check does not run at all:
+       chasing a loose ball off the dirt is never a call. */
+    if ((ballState === 'held' || ballState === 'dribbling') && !insideCourt(player.x, player.z, FIG_R)){
+      callOutOfBounds('you');
+    }
+  }
+  /* well back inside the tree ring, the next exit attempt may ask again */
+  if (arenaVal(player.x, player.z, FIG_R) < 0.72) leaveArmed = true;
+
+  you.position.x = player.x;
+  you.position.z = player.z;
+  you.position.y = (moving ? Math.abs(Math.sin(player.stepPhase)) * 0.07 : 0) + player.jumpY;
+  if (ballState === 'held' || ballState === 'dribbling' || ballState === 'shooting' ||
+      ballState === 'flying' || ballState === 'dead' || possession === 'opp')
+    faceToward(you, RIM.x, RIM.z);
+  else you.rotation.y = player.face;
+  if (moving) you.rotation.y = player.face;
+  animateLimbs(you, moving ? iv.mag : 0, player.stepPhase, ballState === 'held' || ballState === 'dribbling');
+
+  /* Walking over a LOOSE ball picks it up — a fresh possession — but
+     only when the ball is yours to take (not while he has it or is
+     fetching it for his turn). The opening ball waits for the button:
+     picking it up is the deliberate start of play. */
+  if (ball && possession === 'you' && ballState === 'dead'){
+    if (dist2D(ball.position.x, ball.position.z, player.x, player.z) < 0.9) pickUpBall();
+  }
+}
+/* The figures' body language (v2.2 — basketball movement, not stick
+   figures). Every frame starts from the plain stance, then ONE
+   posture wins, in this order: a contest (hands up), your jump-shot
+   release (both arms up), a DEFENSIVE STANCE (wide legs, low crouch,
+   arms out — you holding Defend, or a defender guarding a man with
+   the ball), a DRIBBLE posture (forward lean, the dribble arm
+   pumping with the ball's bounce), and otherwise a RUN: longer leg
+   swing, arms driving opposite, a forward lean that grows with
+   speed. Postures only ever set rotations/positions that this
+   function itself resets, so nothing drifts. */
+function animateLimbs(fig, moveAmt, phase, hasBall){
+  var p = fig.userData.parts; if (!p) return;
+  /* reset to the plain stance */
+  p.legL.position.x = -0.11; p.legR.position.x = 0.11;
+  p.legL.rotation.z = 0; p.legR.rotation.z = 0;
+  p.torso.rotation.x = 0;
+  var sw = Math.sin(phase) * (0.55 + 0.25 * moveAmt) * moveAmt;   // the run's longer swing
+  p.legL.rotation.x = sw; p.legR.rotation.x = -sw;
+  var isYou = (fig === you);
+  var stance = (isYou && defendHeld && possession === 'opp') || !!fig.userData.defStance;
+  var dribblingFig = hasBall ||
+    (fig === primaryDef && (ballState === 'ophold' || ballState === 'oppdribble'));
+  if (fig.userData.contestT !== undefined && fig.userData.contestT >= 0){
+    p.armL.rotation.z = 2.7; p.armR.rotation.z = -2.7;    // hands UP, contesting
+    p.armL.rotation.x = 0; p.armR.rotation.x = 0;
+  } else if (isYou && ballState === 'shooting'){
+    p.armL.rotation.z = 2.5; p.armR.rotation.z = -2.5;    // the jump shot: both arms up at the release
+    p.armL.rotation.x = -0.3; p.armR.rotation.x = -0.3;
+    p.torso.rotation.x = -0.06;                           // a slight stretch upward
+  } else if (stance){
+    /* defensive shuffle: feet wide and splayed, body low, arms out */
+    p.legL.position.x = -0.21; p.legR.position.x = 0.21;
+    p.legL.rotation.z = 0.22; p.legR.rotation.z = -0.22;
+    p.legL.rotation.x = sw * 0.35; p.legR.rotation.x = -sw * 0.35;   // short shuffle steps
+    p.torso.rotation.x = 0.30;                            // the crouch
+    p.armL.rotation.z = 1.95; p.armR.rotation.z = -1.95;  // arms wide
+    p.armL.rotation.x = 0.25; p.armR.rotation.x = 0.25;
+  } else if (dribblingFig){
+    /* dribble posture: lean in, off arm tucked, dribble arm pumping
+       in time with the ball (dribblePhase is the shared bounce) */
+    p.torso.rotation.x = 0.20 + 0.10 * moveAmt;
+    p.armL.rotation.z = 0.35; p.armL.rotation.x = -sw * 0.5;
+    p.armR.rotation.z = -0.55;
+    p.armR.rotation.x = -0.45 + Math.sin(dribblePhase * Math.PI * 2) * 0.5;
+  } else {
+    p.torso.rotation.x = 0.14 * moveAmt;                  // the run's forward lean
+    p.armL.rotation.z = 0.12; p.armR.rotation.z = -0.12;
+    p.armL.rotation.x = -sw * 0.85; p.armR.rotation.x = sw * 0.85;
+  }
+}
+
+function openLeavePrompt(){
+  cancelCharge();          // v2.2: the question interrupts any charged shot
+  defendStop();            // v2.2: and drops your defensive stance
+  leaveOpen = true;
+  padGuardUntil = T + 0.35;   // gamepad answers wait a blink (see pollGamepad)
+  showSheet('leave-screen', true);
+  updateActionButton();
+}
+function answerLeave(yesLeave){
+  showSheet('leave-screen', false);
+  leaveOpen = false;
+  if (yesLeave){
+    endGame();
+    showModeScreen();
+    setFeedback('You left the court. The game is over — pick a mode to play again.');
+    /* In the game's overlay, leaving the court leaves the mini-game
+       too — hand the world back. Standalone, stay on the mode
+       screen, exactly as before. */
+    if (EMBEDDED) closeToGame();
+  } else {
+    var k = 0.88;   // step back in: a nudge toward the middle
+    player.x *= k; player.z *= k;
+    setFeedback('Back on the court. Play on.');
+  }
+  updateActionButton();
+}
+
+/* ============================== out of bounds (v2.2, clarified in v2.3) ==============================
+   Joshua's rule, in his words: the ball is out on the LAST PERSON
+   THAT HAD IT — "if I had the ball and I shot it and the ball goes
+   out, the ball's out on me, so the other player automatically gets
+   it, and vice versa." v2.3 states it for EVERY ball-out, loose
+   balls included: a shot that flies out untouched, a ball that
+   slips out of a man's hands and rolls out — last touch decides,
+   and the other man restarts AT THE TOP (TOP_SPOT: the far end of
+   the court, opposite the goal — the area around the goal is the
+   KEY) with the ball in his possession, his opponent on the
+   defensive post in front of him. The triggers live where they
+   happen:
+   - the ball touching down outside the dirt (stepBall) and the
+     ball settling outside the dirt (settleDeadBall): loose outs,
+     decided by lastTouch;
+   - the HOLDER stepping off the dirt with the ball in his hands
+     (updatePlayer, you; his figure is clamped to the dirt) and the
+     HELD ball itself crossing the line (checkHeldBallOut, run
+     every frame after the ball is placed): a held ball is out on
+     its holder whichever of him or it crosses first.
+   While the ball is LOOSE, no man's feet can make a call — a
+   chaser stepping off the dirt to fetch it is play on. lastTouch
+   is kept at every touch (pickup, your release, his recovery, his
+   steal, his shot, a block swat — the swat is his touch). */
+/* Show the call: the big banner, the feedback line, and the book. */
+function announceCall(text){
+  var b = el('call-banner');
+  if (b){ b.textContent = text; b.classList.add('show'); }
+  callBannerUntil = T + 3.0;   // animate() takes it down again
+  setFeedback(text);
+}
+/* THE RESTART (v2.3): 'side' restarts at the top with the ball in
+   his possession; the other man goes to the standard defensive
+   post — defenderAnchor on the rim line, 1.15 m in front of the
+   man with the ball, the post buildCourt opens every game with. */
+function restartAtTop(side){
+  shotAnim = null;
+  player.jumpY = 0;
+  charging = null;
+  stealPressure = 0;
+  shotCtx = null;
+  possession = side;
+  if (side === 'you'){
+    player.x = TOP_SPOT.x; player.z = TOP_SPOT.z;
+    player.face = Math.PI;                       // facing the rim, as at a game's start
+    player.speed = 0;
+    if (primaryDef){
+      var a = defenderAnchor({ x: player.x, z: player.z }, 1.15);
+      primaryDef.position.set(a.x, 0, a.z);
+      primaryDef.userData.vel.x = 0; primaryDef.userData.vel.z = 0;
+      faceToward(primaryDef, player.x, player.z);
+    }
+    ballState = 'held';
+    lastTouch = 'you';
+    stealNeed = TUNING.STEAL_NEED_MIN + Math.random() * TUNING.STEAL_NEED_SPAN;
+    oppBrain.state = 'none';
+    /* the ball is in your hands NOW (updateBallCarry keeps it there) */
+    var hp = handPos();
+    if (ball) ball.position.set(hp.x, HAND_Y + 0.12, hp.z);
+  } else {
+    if (primaryDef){
+      primaryDef.position.set(TOP_SPOT.x, 0, TOP_SPOT.z);
+      primaryDef.userData.vel.x = 0; primaryDef.userData.vel.z = 0;
+      faceToward(primaryDef, RIM.x, RIM.z);
+    }
+    /* you take the defensive post in front of him */
+    var dp = defenderAnchor({ x: TOP_SPOT.x, z: TOP_SPOT.z }, 1.15);
+    player.x = dp.x; player.z = dp.z;
+    player.face = Math.atan2(TOP_SPOT.x - player.x, TOP_SPOT.z - player.z);
+    player.speed = 0;
+    ballState = 'ophold';
+    lastTouch = 'opp';
+    oppBrain.state = 'approach';
+    oppBrain.t = 0;
+    oppBrain.spot = primaryDef ? oppShotSpot() : null;
+    /* the ball is in his hands NOW (updateOppBall keeps it there) */
+    if (ball && primaryDef){
+      var hv = { x: Math.sin(primaryDef.rotation.y), z: Math.cos(primaryDef.rotation.y) };
+      ball.position.set(primaryDef.position.x + hv.x * 0.45, HAND_Y + 0.12,
+                        primaryDef.position.z + hv.z * 0.45);
+    }
+  }
+  updateActionButton();
+}
+/* THE CALL (v2.2 rule; v2.3: every ball-out lands here): out on
+   the man who touched it last — the other side restarts at the
+   top with the ball. */
+function callOutOfBounds(offWho){
+  if (!game || phase !== 'game' || pendingWin) return false;
+  var to = (offWho === 'you') ? 'opp' : 'you';
+  var text = (offWho === 'you')
+    ? "Out of bounds — off you. " + (game ? game.opp : 'Opponent') + "'s ball."
+    : "Out of bounds — off " + (game ? game.opp : 'him') + ". Your ball.";
+  lastCall = { off: offWho, to: to, text: text };
+  announceCall(text);
+  restartAtTop(to);
+  return true;
+}
+/* The HELD ball crossing the line (v2.3): while a man holds the
+   ball — in his hands or on his dribble — the ball itself leaving
+   the dirt is out on him, just as his own feet stepping out is
+   (updatePlayer). Run every frame after the ball is placed; loose
+   balls are not checked here (their outs are the touchdown and
+   settle triggers, on last touch), and nobody's FEET are ever
+   checked against a loose ball. */
+function checkHeldBallOut(){
+  if (!ball || !game || phase !== 'game' || pendingWin) return;
+  if (ballState === 'held' || ballState === 'dribbling'){
+    if (!insideCourt(ball.position.x, ball.position.z, 0)) callOutOfBounds('you');
+  } else if (ballState === 'ophold' || ballState === 'oppdribble'){
+    if (!insideCourt(ball.position.x, ball.position.z, 0)) callOutOfBounds('opp');
+  }
+}
+
+/* ============================== moving a figure toward a point ============================== */
+/* Shared legs for the other men: run at 'cap' speed toward (tx, tz)
+   with a reaction lag (tau — smarter men react faster), staying on
+   the court and out of the trunks. Returns his speed. */
+function moveFigureToward(f, tx, tz, cap, tau, dt){
+  var u = f.userData;
+  var dx = tx - f.position.x, dz = tz - f.position.z;
+  var d = Math.sqrt(dx * dx + dz * dz);
+  var desX = d > 0.02 ? dx / d * Math.min(cap, d * 3.2) : 0;
+  var desZ = d > 0.02 ? dz / d * Math.min(cap, d * 3.2) : 0;
+  var blend = 1 - Math.exp(-dt / tau);
+  u.vel.x += (desX - u.vel.x) * blend;
+  u.vel.z += (desZ - u.vel.z) * blend;
+  f.position.x += u.vel.x * dt;
+  f.position.z += u.vel.z * dt;
+  var cl = clampInside(f.position.x, f.position.z, 0.5);
+  var po = pushOutOfTrunks({ x: cl.x, z: cl.z }, 0.3);
+  f.position.x = po.x; f.position.z = po.z;
+  var spd = Math.sqrt(u.vel.x * u.vel.x + u.vel.z * u.vel.z);
+  u.phase += dt * (2 + spd * 2.2);
+  f.position.y = Math.abs(Math.sin(u.phase)) * (spd > 0.3 ? 0.045 : 0.02);
+  animateLimbs(f, Math.min(1, spd / 3), u.phase, false);
+  return spd;
+}
+
+/* ============================== the defenders (when the ball is yours) ============================== */
+/* A defender with intent, not a metronome: he holds the line between
+   his man and the goal, creeps in when his man idles with the ball,
+   gives a step when his man drives, and goes up to contest a shot.
+   His reaction lag reads his INTELLIGENCE. */
+function updateGuarding(dt){
+  for (var i = 0; i < figures.length; i++){
+    var f = figures[i], u = f.userData;
+    if (u.team !== 'opp') continue;
+    if (f === primaryDef && possession === 'opp') continue;   // he has the ball: the offence brain drives him
+    var man = (u.role === 'primary') ? { x: player.x, z: player.z }
+                                     : (u.markFig ? { x: u.markFig.position.x, z: u.markFig.position.z }
+                                                  : { x: u.markPos.x, z: u.markPos.z });
+    var guardDist = 1.25;
+    if (u.role === 'primary'){
+      var hasBall = (ballState === 'held' || ballState === 'dribbling' || ballState === 'shooting');
+      if (hasBall){
+        guardDist = 1.15;
+        var toRim = { x: RIM.x - player.x, z: RIM.z - player.z };
+        var tl = Math.sqrt(toRim.x * toRim.x + toRim.z * toRim.z) || 1;
+        var iv = inputVector();
+        var drive = (iv.x * toRim.x / tl + iv.z * toRim.z / tl) * player.speed;
+        if (player.idleFor > 1.2) guardDist = 0.85;
+        else if (drive > 1.6) guardDist = 1.45;
+      } else if (possession === 'opp'){
+        guardDist = 1.6;   // his team has it; he keeps a loose eye on you
+      } else guardDist = 1.7;
+    }
+    /* v2.2 movement: your man guarding YOU drops into the defensive
+       shuffle stance (the wide crouch in animateLimbs) while you
+       have the ball and he is close enough to matter */
+    u.defStance = (u.role === 'primary' &&
+                   (ballState === 'held' || ballState === 'dribbling') &&
+                   dist2D(f.position.x, f.position.z, player.x, player.z) < 2.4);
+    var anchor = defenderAnchor(man, guardDist);
+    var tau = 0.20 - 0.011 * (u.attrs ? u.attrs.intelligence : 5);
+    moveFigureToward(f, anchor.x, anchor.z, u.role === 'primary' ? 3.05 : 2.9, Math.max(0.08, tau), dt);
+    faceToward(f, man.x, man.z);
+    if (u.contestT >= 0){
+      u.contestT += dt;
+      var ct = u.contestT / 0.5;
+      if (ct >= 1) u.contestT = -1;
+      else f.position.y += Math.sin(ct * Math.PI) * 0.35;
+    }
+  }
+  /* teammates: hold their spots, drift a little, watch the ball */
+  for (var j = 0; j < figures.length; j++){
+    var m = figures[j];
+    if (m.userData.role !== 'mate') continue;
+    m.position.x = m.userData.baseX + Math.sin(T * 0.4 + m.userData.phase) * 0.35;
+    m.position.z = m.userData.baseZ + Math.cos(T * 0.31 + m.userData.phase) * 0.3;
+    m.position.y = Math.abs(Math.sin(T * 2.1 + m.userData.phase)) * 0.03;
+    faceToward(m, player.x, player.z);
+    animateLimbs(m, 0, m.userData.phase, false);
+  }
+}
+
+/* ============================== the steal ============================== */
+/* While you dribble, your defender builds STEAL PRESSURE from his
+   steal attribute and his closeness (TUNING). At the threshold he
+   takes it — the ball is his, and his offence begins. Standing still
+   dribbling in his face is how it happens; keep moving or shoot. */
+function updateSteal(dt){
+  if (ballState !== 'dribbling' || !primaryDef || possession !== 'you'){ stealPressure = 0; return; }
+  var d = dist2D(primaryDef.position.x, primaryDef.position.z, player.x, player.z);
+  if (d >= TUNING.STEAL_RANGE){ stealPressure = Math.max(0, stealPressure - dt * 0.5); return; }
+  var close = 1 - d / TUNING.STEAL_RANGE;
+  stealPressure += dt * TUNING.STEAL_RATE * primaryDef.userData.attrs.steal * close;
+  if (stealPressure >= stealNeed){
+    stealPressure = 0;
+    possession = 'opp';
+    ballState = 'ophold';
+    lastTouch = 'opp';          // v2.2: his steal is his touch
+    charging = null;            // v2.2: a steal kills any shot you were charging
+    oppBrain.state = 'approach';
+    oppBrain.t = 0;
+    oppBrain.spot = oppShotSpot();
+    setFeedback(game.opp + ' stole the ball! Get back on defence.');
+    updateActionButton();
+  }
+}
+
+/* ============================== YOUR defence (v2.2) ==============================
+   The two buttons the spec asked for. DEFEND is a held stance (see
+   PLAYER_DEF): it lives in defendHeld, set by the button, the F
+   key, or gamepad Y, and it bites in oppShoot(). STEAL is a single
+   press with a roll and a cooldown. The buttons refresh through
+   updateDefenseButtons(), which updateActionButton() calls, so
+   every state change anywhere repaints them the same way. */
+/* Defend can be held three ways at once (the button, the F key,
+   gamepad Y) — each source is tracked, and the stance is live
+   while ANY of them is held. */
+var defSrc = { btn: false, key: false, pad: false };
+function syncDefend(){
+  defendHeld = !!(defSrc.btn || defSrc.key || defSrc.pad);
+  refreshDefenseButtons();
+}
+function defendStart(src){ defSrc[src || 'btn'] = true; syncDefend(); }
+function defendStop(src){
+  if (src) defSrc[src] = false;
+  else { defSrc.btn = false; defSrc.key = false; defSrc.pad = false; }
+  syncDefend();
+}
+function defendActive(){
+  /* your stance only guards a man who HAS the ball, in range */
+  if (!defendHeld || possession !== 'opp' || !primaryDef) return false;
+  if (ballState !== 'ophold' && ballState !== 'oppdribble') return false;
+  return dist2D(player.x, player.z, primaryDef.position.x, primaryDef.position.z) <= PLAYER_DEF.DEFEND_RANGE;
+}
+function playerSteal(){
+  if (phase !== 'game' || leaveOpen || !primaryDef) return false;
+  if (possession !== 'opp' || (ballState !== 'ophold' && ballState !== 'oppdribble')) return false;
+  if (T < stealReadyAt) return false;                       // the cooldown: no spamming
+  var d = dist2D(player.x, player.z, primaryDef.position.x, primaryDef.position.z);
+  if (d > PLAYER_DEF.STEAL_RANGE) return false;
+  /* the press always costs the cooldown, made or missed */
+  stealReadyAt = T + PLAYER_DEF.STEAL_COOLDOWN;
+  var close = 1 - d / PLAYER_DEF.STEAL_RANGE;
+  var a = primaryDef.userData.attrs || DEFAULT_ATTRS;
+  var chance = PLAYER_DEF.STEAL_BASE + PLAYER_DEF.STEAL_PER_CLOSE * close
+             - PLAYER_DEF.STEAL_PER_OPP_INT * a.intelligence;
+  chance = Math.max(0.05, Math.min(0.85, chance));
+  if (Math.random() < chance){
+    possession = 'you';
+    ballState = 'held';
+    lastTouch = 'you';
+    oppBrain.state = 'none';
+    stealPressure = 0;
+    stealNeed = TUNING.STEAL_NEED_MIN + Math.random() * TUNING.STEAL_NEED_SPAN;
+    var hp = handPos();
+    if (ball) ball.position.set(hp.x, HAND_Y + 0.12, hp.z);
+    setFeedback('You stole the ball! Your turn — go score.');
+    updateActionButton();
+    return true;
+  }
+  setFeedback('You reached for the steal and missed — ' + game.opp + ' keeps it.');
+  refreshDefenseButtons();
+  return false;
+}
+/* Grey-state + labels for the two defence buttons. Called on every
+   state change (via updateActionButton) and on Defend press/release;
+   it only writes the DOM when something actually changed. */
+var defBtnCache = '';
+function refreshDefenseButtons(){
+  var db = el('defend-btn'), sb = el('steal-btn');
+  if (!db || !sb) return;
+  var his = (phase === 'game' && possession === 'opp' &&
+             (ballState === 'ophold' || ballState === 'oppdribble'));
+  var dNear = false, sNear = false, cd = 0;
+  if (his && primaryDef){
+    var d = dist2D(player.x, player.z, primaryDef.position.x, primaryDef.position.z);
+    dNear = d <= PLAYER_DEF.DEFEND_RANGE;
+    sNear = d <= PLAYER_DEF.STEAL_RANGE;
+    cd = Math.max(0, stealReadyAt - T);
+  }
+  var key = (his ? '1' : '0') + (dNear ? '1' : '0') + (sNear ? '1' : '0') +
+            (cd > 0 ? 'c' : '-') + (defendHeld && his ? 'h' : '-');
+  if (key === defBtnCache) return;
+  defBtnCache = key;
+  if (his && dNear) db.removeAttribute('disabled'); else db.setAttribute('disabled', '');
+  db.textContent = defendHeld && his ? '🛡️ Defending!' : '🛡️ Defend';
+  if (defendHeld && his) db.classList.add('held'); else db.classList.remove('held');
+  if (his && sNear && cd <= 0) sb.removeAttribute('disabled'); else sb.setAttribute('disabled', '');
+  sb.textContent = (his && cd > 0) ? '✋ Steal …' : '✋ Steal';
+}
+
+/* ============================== his offence ============================== */
+/* When the ball is his (your make, his steal, his block recovery),
+   your opponent runs a simple offence: fetch it if it's loose, dribble
+   to his spot (smarter men pick better spots — TUNING), wait for an
+   open look (smarter men wait longer), and shoot. His make chance
+   rides his SHOOTING attribute and how close you guard him. */
+function oppShotSpot(){
+  var a = primaryDef.userData.attrs;
+  var d = TUNING.OPP_SPOT_BASE - TUNING.OPP_SPOT_PER_INT * a.intelligence;
+  var dx = primaryDef.position.x - RIM.x, dz = primaryDef.position.z - RIM.z;
+  var len = Math.sqrt(dx * dx + dz * dz);
+  if (len < 0.5){ dx = 0; dz = 1; len = 1; }
+  var p = { x: RIM.x + dx / len * d, z: RIM.z + dz / len * d };
+  p = clampInside(p.x, p.z, 0.6);
+  return pushOutOfTrunks(p, 0.3);
+}
+function startOppRecovery(){
+  possession = 'opp';
+  oppBrain.state = 'recover';
+  oppBrain.t = 0;
+  updateActionButton();
+}
+function updateOpponent(dt){
+  if (!primaryDef || possession !== 'opp') return;
+  var f = primaryDef, u = f.userData;
+  if (oppBrain.state === 'recover'){
+    /* fetch the loose ball where it lies */
+    var spd = moveFigureToward(f, ball.position.x, ball.position.z, TUNING.OPP_RECOVER_SPEED, 0.14, dt);
+    faceToward(f, ball.position.x, ball.position.z);
+    if (dist2D(f.position.x, f.position.z, ball.position.x, ball.position.z) < 0.7){
+      ballState = 'ophold';
+      lastTouch = 'opp';        // v2.2: his recovery is his touch
+      oppBrain.state = 'approach';
+      oppBrain.t = 0;
+      oppBrain.spot = oppShotSpot();
+      setFeedback(game.opp + ' has the ball. Guard him — stay close when he shoots.');
+    }
+    return;
+  }
+  if (oppBrain.state === 'approach'){
+    if (!oppBrain.spot) oppBrain.spot = oppShotSpot();
+    var arrived = dist2D(f.position.x, f.position.z, oppBrain.spot.x, oppBrain.spot.z) < 0.35;
+    if (!arrived){
+      moveFigureToward(f, oppBrain.spot.x, oppBrain.spot.z, TUNING.OPP_SPEED, 0.14, dt);
+      faceToward(f, oppBrain.spot.x, oppBrain.spot.z);
+      if (ballState === 'ophold' && (u.vel.x * u.vel.x + u.vel.z * u.vel.z) > 0.09) ballState = 'oppdribble';
+    } else {
+      oppBrain.state = 'windup';
+      oppBrain.t = 0;
+    }
+    return;
+  }
+  if (oppBrain.state === 'windup'){
+    faceToward(f, RIM.x, RIM.z);
+    oppBrain.t += dt;
+    var yourDist = dist2D(player.x, player.z, f.position.x, f.position.z);
+    var maxWait = TUNING.OPP_WAIT_BASE + TUNING.OPP_WAIT_PER_INT * u.attrs.intelligence;
+    if (yourDist > 1.05 || oppBrain.t >= maxWait){
+      oppShoot();
+    }
+    return;
+  }
+}
+/* His ball handling: same dribble law as yours — once it starts it
+   keeps bouncing, stops and all, until the shot. */
+function updateOppBall(dt){
+  if (!ball || !primaryDef) return;
+  if (ballState !== 'ophold' && ballState !== 'oppdribble') return;
+  var f = primaryDef;
+  var hv = { x: Math.sin(f.rotation.y), z: Math.cos(f.rotation.y) };
+  var handX = f.position.x + hv.x * 0.45, handZ = f.position.z + hv.z * 0.45;
+  if (ballState === 'ophold'){
+    ball.position.set(handX, HAND_Y + 0.12, handZ);
+    return;
+  }
+  dribblePhase += dt * DRIBBLE_HZ;
+  var u = dribblePhase % 1;
+  var bx = f.position.x + hv.x * 0.52 - hv.z * 0.22;
+  var bz = f.position.z + hv.z * 0.52 + hv.x * 0.22;
+  var lift = Math.pow(Math.sin(u * Math.PI), 1.15);
+  ball.position.set(bx, BALL_R + (HAND_Y - BALL_R) * lift, bz);
+}
+function oppShoot(){
+  var f = primaryDef, a = f.userData.attrs;
+  var hv = { x: Math.sin(f.rotation.y), z: Math.cos(f.rotation.y) };
+  var p0 = { x: f.position.x + hv.x * 0.45, y: 1.35, z: f.position.z + hv.z * 0.45 };
+  /* his make chance: shooting attribute, distance, and YOUR contest */
+  var dShot = distToRim(f.position.x, f.position.z);
+  var pMake = TUNING.OPP_MAKE_BASE + TUNING.OPP_MAKE_PER_SHOOTING * a.shooting;
+  if (dShot > TUNING.OPP_FAR_DIST) pMake *= TUNING.OPP_MAKE_FAR;
+  var yourDist = dist2D(player.x, player.z, f.position.x, f.position.z);
+  if (yourDist <= 1.2) pMake *= TUNING.OPP_CONTEST_CLOSE;
+  else if (yourDist <= 2.2) pMake *= TUNING.OPP_CONTEST_MID;
+  /* v2.2: your held DEFEND stance, in range, rides on top of the
+     standing proximity contest and cuts his make chance further */
+  var youDefending = defendActive();
+  if (youDefending) pMake *= PLAYER_DEF.DEFEND_MAKE_MULT;
+  pMake = Math.max(0.05, Math.min(0.9, pMake));
+  var make = Math.random() < pMake;
+  var tx, tz;
+  if (make){ tx = RIM.x + (Math.random() * 0.08 - 0.04); tz = RIM.z + (Math.random() * 0.08 - 0.04); }
+  else {
+    var ang = Math.random() * Math.PI * 2, off = 0.38 + Math.random() * 0.25;
+    tx = RIM.x + Math.cos(ang) * off; tz = RIM.z + Math.sin(ang) * off;
+  }
+  launchBall(p0, tx, tz);
+  lastTouch = 'opp';            // v2.2: his shot is his touch
+  shotCtx = { by: 'opp', blocked: false, made: false };
+  lastShot = { jumped: false, contest: 1, defenderDist: yourDist, spread: 0, fromDist: dShot, by: 'opp', pMake: pMake, playerDefending: youDefending };
+  oppBrain.state = 'none';
+}
+
+/* ============================== the ball: your hands, your dribble ============================== */
+function handPos(){
+  var hv = headingVec(player.face);
+  return { x: player.x + hv.x * 0.45, z: player.z + hv.z * 0.45 };
+}
+function pickUpBall(){
+  if (ballState !== 'ready' && ballState !== 'dead') return;
+  ballState = 'held';           // a new possession starts in your hands
+  lastTouch = 'you';            // v2.2: your pickup is your touch
+  ballScored = false;
+  stealPressure = 0;
+  stealNeed = TUNING.STEAL_NEED_MIN + Math.random() * TUNING.STEAL_NEED_SPAN;
+  setFeedback('You have the ball. Walk to move — shoot when ready.');
+  updateActionButton();
+}
+/* The action button, v2.2: a PRESS and a RELEASE, because shooting
+   is now hold-to-charge. A press on a loose/opening ball picks it up
+   at once; a press with the ball in your hands starts the charge;
+   the release fires the shot with the held time (see POWER).
+   ballAction() remains the single-tap entry the tests and any plain
+   click use: press + instant release = a tap shot (weak, quick). */
+function actionPress(){
+  if (phase !== 'game' || leaveOpen || !ball) return;
+  if (possession !== 'you') return;
+  if (ballState === 'ready' || ballState === 'dead'){ pickUpBall(); updateActionButton(); return; }
+  if ((ballState === 'held' || ballState === 'dribbling') && !charging){
+    charging = { startT: T };
+    updateChargeMeter();
+  }
+}
+function actionRelease(){
+  if (!charging) return;
+  var hold = T - charging.startT;
+  charging = null;
+  updateChargeMeter();
+  if (phase !== 'game' || leaveOpen || possession !== 'you') return;
+  if (ballState === 'held' || ballState === 'dribbling') shoot(hold);
+  updateActionButton();
+}
+function cancelCharge(){
+  charging = null;
+  updateChargeMeter();
+}
+function ballAction(){
+  /* a tap: charge and release in the same instant (hold = 0) */
+  if (phase !== 'game' || leaveOpen || !ball) return;
+  if (possession !== 'you') return;
+  if (ballState === 'ready' || ballState === 'dead') pickUpBall();
+  else if (ballState === 'held' || ballState === 'dribbling') shoot(0);
+  updateActionButton();
+}
+/* The power meter while a shot charges: fill by hold time, green
+   inside the perfect window, honest red-orange past it. */
+function updateChargeMeter(){
+  var wrap = el('power-wrap'), fill = el('power-fill');
+  if (!wrap || !fill) return;
+  if (!charging){ wrap.classList.remove('show'); fill.style.width = '0%'; return; }
+  wrap.classList.add('show');
+  var hold = T - charging.startT;
+  var oc = shotOutcomeForHold(hold);
+  fill.style.width = Math.round(oc.power * 100) + '%';
+  if (oc.band === 'perfect') fill.classList.add('perfect'); else fill.classList.remove('perfect');
+  var b = el('act-btn');
+  if (b && (ballState === 'held' || ballState === 'dribbling')) b.textContent = 'Release to shoot!';
+}
+
+/* The dribble (his rule, 2026-10-18): once you start walking with the
+   ball, the dribble is LIVE — the ball keeps bouncing at the same
+   rhythm whether you are walking or standing still. It never settles
+   back into your hands mid-possession (that would be a double
+   dribble). Only the shot ends it. */
+function updateBallCarry(dt){
+  if (!ball) return;
+  if (ballState === 'held'){
+    if (player.speed > 0.25){ ballState = 'dribbling'; dribblePhase = 0.5; }
+    else {
+      var hp = handPos();
+      ball.position.set(hp.x, HAND_Y + 0.12, hp.z);
+      return;
+    }
+  }
+  if (ballState === 'dribbling'){
+    dribblePhase += dt * DRIBBLE_HZ;
+    var u = dribblePhase % 1;
+    var hv = headingVec(player.face);
+    var bx = player.x + hv.x * 0.52 - hv.z * 0.22;
+    var bz = player.z + hv.z * 0.52 + hv.x * 0.22;
+    var lift = Math.pow(Math.sin(u * Math.PI), 1.15);
+    ball.position.set(bx, BALL_R + (HAND_Y - BALL_R) * lift, bz);
+  }
+}
+
+/* ============================== shooting ============================== */
+/* One arc for everyone: from a release point to a target point near
+   the rim, with the flight time growing with distance.
+   v2.4.2 FLIGHT PACE (Joshua's hands-on): the old budget
+   (0.8 s + 0.05 s/m) flew the ball SLOWER than the men move — a
+   3 m shot crossed at ~3.2 m/s against the 3.4 m/s walk pace,
+   and a shot from the top hung in the air ~1.5 s. The new budget
+   (0.58 s + 0.040 s/m) crosses 3 m at ~4.3 m/s and the top's
+   ~13.4 m in ~1.1 s, peaking at a real jumper's arc height. The
+   ballistic solve below is unchanged — the ball still passes
+   through the aim point at the rim plane at Tfly, so the scoring
+   (aim targets, POWER bands, spread) is exactly as it was;
+   only the pace of the flight changed. */
+function launchBall(p0, tx, tz){
+  var dx = tx - p0.x, dz = tz - p0.z;
+  var dist = Math.sqrt(dx * dx + dz * dz);
+  var Tfly = 0.58 + dist * 0.040;
+  ballVel.x = dx / Tfly;
+  ballVel.z = dz / Tfly;
+  ballVel.y = (RIM.y - p0.y) / Tfly + 0.5 * GRAVITY * Tfly;
+  ball.position.set(p0.x, p0.y, p0.z);
+  ballScored = false;
+  flyT = 0;
+  scoredFlyT = -1;   // v2.4.2: no make yet on this flight
+  ballState = 'flying';
+}
+
+/* YOUR shot: close up, a set shot off the floor; from JUMP_DIST or
+   more, a jump shot — you leave the ground and release at the top.
+   At the release, his DEFENSE widens the spread (your SKILL tightens
+   it back a little), and his BLOCK gets its roll to swat it away.
+   v2.2: the shot carries its HOLD time (see POWER) — the release
+   reads the hold's outcome band and aims by it. */
+function shoot(holdSec){
+  var dRim = distToRim(player.x, player.z);
+  var jump = dRim >= JUMP_DIST;
+  shotAnim = { t: 0, jump: jump, released: false, dur: jump ? 0.70 : 0.30, releaseT: jump ? 0.34 : 0.12,
+               hold: (typeof holdSec === 'number') ? holdSec : 0 };
+  ballState = 'shooting';
+  lastTouch = 'you';            // v2.2: your shot is your touch
+  addSkill(SKILL.GAIN_PER_SHOT);
+  setFeedback('');
+  if (primaryDef){
+    var d = dist2D(primaryDef.position.x, primaryDef.position.z, player.x, player.z);
+    if (d < 2.4 && primaryDef.userData.contestT < 0) primaryDef.userData.contestT = 0;
+  }
+  updateActionButton();
+}
+function releaseShot(){
+  var hp = handPos();
+  var p0 = { x: hp.x, y: 1.35 + player.jumpY, z: hp.z };
+  var defDist = 99, attrs = DEFAULT_ATTRS;
+  if (primaryDef){
+    defDist = dist2D(primaryDef.position.x, primaryDef.position.z, player.x, player.z);
+    attrs = primaryDef.userData.attrs || DEFAULT_ATTRS;
+  }
+  /* BLOCK: a close defender rolls his block attribute to end the shot
+     before it starts — the ball is swatted down and away, no score,
+     and he recovers it for his turn. */
+  var prox = Math.max(0, Math.min(1, (TUNING.CONTEST_RANGE - defDist) / TUNING.CONTEST_RANGE));
+  if (defDist < TUNING.BLOCK_RANGE){
+    var blockClose = 1 - defDist / TUNING.BLOCK_RANGE;
+    var pBlock = blockClose * (TUNING.BLOCK_BASE + TUNING.BLOCK_PER_POINT * attrs.block);
+    if (Math.random() < pBlock){
+      shotCtx = { by: 'you', blocked: true, made: false };
+      ballVel.x = (player.x - (primaryDef ? primaryDef.position.x : player.x)) * 1.4 + 0.6;
+      ballVel.z = (player.z - (primaryDef ? primaryDef.position.z : player.z)) * 1.4 + 1.2;
+      ballVel.y = -1.6;
+      ball.position.set(p0.x, Math.max(p0.y - 0.3, 0.6), p0.z);
+      ballScored = false;
+      flyT = 0;
+      ballState = 'flying';
+      lastTouch = 'opp';        // v2.2: a block swat is HIS touch — if the
+                                // swatted ball then goes out, it is out on him
+      lastShot = { jumped: !!(shotAnim && shotAnim.jump), blocked: true, contest: 0, defenderDist: defDist, spread: 0, fromDist: distToRim(player.x, player.z),
+                   hold: shotAnim ? shotAnim.hold : 0, band: 'blocked' };
+      setFeedback('Blocked! ' + game.opp + ' swatted that away.');
+      return;
+    }
+  }
+  /* CONTEST: spread = v1 base, widened by his defense through
+     proximity, tightened back by your skill. */
+  var contest = 1 + prox * (TUNING.CONTEST_BASE + TUNING.CONTEST_PER_DEFENSE * attrs.defense);
+  var sp = BASE_SPREAD * contest * skillSpreadFactor();
+  /* v2.2 POWER: the hold decides the aim along the shot line. The
+     unit vector from you to the rim carries the band's offset
+     (short of the rim, dead on it, or past it); the contest spread
+     still scatters the aim sideways, scaled by how true the hold
+     was — a perfect hold is nearly true, a tap is all scatter. */
+  var hold = shotAnim ? shotAnim.hold : 0;
+  var oc = shotOutcomeForHold(hold);
+  var ux = RIM.x - player.x, uz = RIM.z - player.z;
+  var ul = Math.sqrt(ux * ux + uz * uz) || 1;
+  ux /= ul; uz /= ul;
+  var along = 0, sideScale = 1;
+  if (oc.band === 'perfect'){ along = 0; sideScale = 0.30; }
+  else if (oc.band === 'weak'){ along = POWER.AIM_WEAK; sideScale = 0.8; }
+  else if (oc.band === 'short'){ along = POWER.AIM_SHORT; sideScale = 0.5; }
+  else if (oc.band === 'strong'){ along = POWER.AIM_STRONG; sideScale = 0.5; }
+  else if (oc.band === 'over'){ along = POWER.AIM_OVER; sideScale = 0.8; }
+  /* 'tap': along 0, sideScale 1 — the old quick shot, scatter and all */
+  var side = (Math.random() * 2 - 1) * sp * sideScale;
+  var tx = RIM.x + ux * along - uz * side;
+  var tz = RIM.z + uz * along + ux * side;
+  launchBall(p0, tx, tz);
+  shotCtx = { by: 'you', blocked: false, made: false };
+  lastShot = { jumped: !!(shotAnim && shotAnim.jump), blocked: false, contest: contest, defenderDist: defDist, spread: sp, fromDist: distToRim(player.x, player.z),
+               hold: hold, power: oc.power, band: oc.band };
+  if (oc.band === 'weak') setFeedback('Too weak — that hold was too short.');
+  else if (oc.band === 'short') setFeedback('A little short on the hold.');
+  else if (oc.band === 'strong') setFeedback('A little too much on that hold.');
+  else if (oc.band === 'over') setFeedback('Too hard — held it way too long.');
+}
+function updateShotAnim(dt){
+  if (ballState !== 'shooting' || !shotAnim){ if (ballState !== 'shooting') player.jumpY = 0; return; }
+  shotAnim.t += dt;
+  if (shotAnim.jump){
+    /* v2.2: a higher, unmistakable jump — half a metre plus off the
+       ground at the top, where the release happens */
+    var u = Math.min(1, shotAnim.t / shotAnim.dur);
+    player.jumpY = 0.58 * Math.sin(u * Math.PI);
+  }
+  if (!shotAnim.released && shotAnim.t >= shotAnim.releaseT){
+    shotAnim.released = true;
+    releaseShot();   // may set ballState 'flying' (or register the block)
+  }
+  if (shotAnim.t >= shotAnim.dur || ballState !== 'shooting'){
+    shotAnim = null;
+    player.jumpY = 0;
+  }
+}
+
+/* Ball flight + the score. A basket is DETECTED — the ball crossing
+   the rim plane downward inside the ring — never granted, for his
+   shots and yours alike. */
+function stepBall(dt){
+  if (!ball) return;
+  if (ballState !== 'flying') return;
+  flyT += dt;
+  var prevY = ball.position.y;
+  ballVel.y -= GRAVITY * dt;
+  ball.position.x += ballVel.x * dt;
+  ball.position.y += ballVel.y * dt;
+  ball.position.z += ballVel.z * dt;
+
+  /* trees are solid for the ball too: a shot that reaches the goal
+     tree (or clips a pine) bounces off the trunk instead of dropping
+     behind it, where nobody could ever fetch it */
+  var tl2 = trunkList();
+  for (var ti = 0; ti < tl2.length; ti++){
+    var tt2 = tl2[ti];
+    var tdx = ball.position.x - tt2.x, tdz = ball.position.z - tt2.z;
+    var td = Math.sqrt(tdx * tdx + tdz * tdz);
+    if (ball.position.y < 6 && td < tt2.r && td > 0.0001){
+      var nx = tdx / td, nz = tdz / td;
+      ball.position.x = tt2.x + nx * tt2.r;
+      ball.position.z = tt2.z + nz * tt2.r;
+      var vr = ballVel.x * nx + ballVel.z * nz;
+      if (vr < 0){ ballVel.x -= 1.4 * vr * nx; ballVel.z -= 1.4 * vr * nz; ballVel.x *= 0.7; ballVel.z *= 0.7; }
+    }
+  }
+
+  if (!ballScored && ballVel.y < 0 && prevY > RIM.y && ball.position.y <= RIM.y){
+    var ddx = ball.position.x - RIM.x, ddz = ball.position.z - RIM.z;
+    if (Math.sqrt(ddx * ddx + ddz * ddz) < 0.27){
+      ballScored = true;
+      scoredFlyT = flyT;   // v2.4.2: the made-ball settle cap counts from this moment
+      if (shotCtx) shotCtx.made = true;
+      onBasket(shotCtx ? shotCtx.by : 'you');
+    }
+  }
+
+  if (ball.position.y <= BALL_R){
+    ball.position.y = BALL_R;
+    /* OUT OF BOUNDS at the touchdown: the ball touching down
+       OUTSIDE the dirt is out — off the last man who touched it —
+       the moment it lands, exactly as it would be whistled on a
+       real court (v2.2; v2.3: the other man restarts at the top).
+       A made basket is never out (the score stands). */
+    if (!ballScored && !insideCourt(ball.position.x, ball.position.z, 0)){
+      if (callOutOfBounds(lastTouch === 'opp' ? 'opp' : 'you')) return;
+    }
+    if (ballScored){
+      /* v2.4.2: a MADE ball settles at its FIRST touch of the
+         floor. The make was decided at the rim crossing above;
+         making the restart wait out the bounce chain below
+         (restitution 0.55 until a floor impact under 1.4 m/s)
+         held play up ~2.7 s after a swish while the ball bounced
+         itself out (Joshua's hands-on report). Now the ball
+         drops through, touches down once, and the restart at
+         the top proceeds. Misses never take this branch — their
+         ball still bounces out naturally, as before. */
+      ballVel.x = 0; ballVel.y = 0; ballVel.z = 0;
+      settleDeadBall();
+    } else if (ballVel.y < -1.4){
+      ballVel.y = -ballVel.y * 0.55;
+      ballVel.x *= 0.7; ballVel.z *= 0.7;
+    } else {
+      ballVel.x = 0; ballVel.y = 0; ballVel.z = 0;
+      settleDeadBall();
+    }
+  }
+  /* v2.4.2 MADE-BALL CAP: if a made ball somehow never touches
+     down (it clipped a trunk on the way through, or caught an
+     edge), settle it MADE_SETTLE_CAP seconds after the crossing
+     regardless of where it is — the settle's made branch restarts
+     at the top either way, so the ball's resting place does not
+     matter. The 6 s fallback below stays for every other ball. */
+  if (ballScored && scoredFlyT >= 0 && flyT - scoredFlyT > MADE_SETTLE_CAP && ballState === 'flying'){
+    ballVel.x = 0; ballVel.y = 0; ballVel.z = 0;
+    settleDeadBall();
+  }
+  if (flyT > 6 && ballState === 'flying'){
+    ballVel.x = 0; ballVel.y = 0; ballVel.z = 0;
+    settleDeadBall();
+  }
+}
+/* A made basket, whoever shot it: the score moves, savings happen the
+   moment it drops, and a reached target ends the game (on the settle). */
+function onBasket(by){
+  if (by === 'opp'){
+    if (game){
+      game.oppScore++;
+      if (game.oppScore >= game.target) pendingWin = 'opp';
+    }
+    saveGameState();   // v2.4: the one writer of the saved game (carries the house rule too)
+    updateReadout();
+    if (pendingWin) setFeedback(game.opp + ' scores — that reaches ' + game.target + '.');
+    else setFeedback(game.opp + ' scores. ' + game.opp + ': ' + game.oppScore + '.');
+    return;
+  }
+  progress.baskets++;
+  addSkill(SKILL.GAIN_PER_MAKE);
+  if (game){
+    game.score++;
+    if (game.score >= game.target) pendingWin = 'you';
+  }
+  saveGameState();
+  updateReadout();
+  if (pendingWin) setFeedback('Basket! That reaches ' + game.target + '! 🏆');
+  else if (game) setFeedback('Basket! 🏀  You: ' + game.score + ' · ' + game.opp + ': ' + game.oppScore + ' — first to ' + game.target + '.');
+  else setFeedback('Basket! 🏀');
+}
+/* The ball has come to rest: keep it on the dirt, then hand the turn
+   over. A MAKE restarts at the top under the game's Make it, Take
+   it rule (v2.4 — scorer takes it, or the other man does). A block
+   of your shot -> he fetches it and his offence begins. Anything
+   else -> it's loose, and yours to take. */
+function settleDeadBall(){
+  /* OUT OF BOUNDS at the settle: a ball that comes to rest
+     outside the dirt (it flew out high, or timed out in flight out
+     there) is out on the last touch — the other man restarts at
+     the top with it. Checked BEFORE the old clamp pulled it back
+     onto the dirt. */
+  if (!ballScored && game && phase === 'game' && !pendingWin &&
+      !insideCourt(ball.position.x, ball.position.z, 0)){
+    ballState = 'dead';
+    if (callOutOfBounds(lastTouch === 'opp' ? 'opp' : 'you')) return;
+  }
+  ballState = 'dead';
+  var c = clampInside(ball.position.x, ball.position.z, 0.3);
+  ball.position.x = c.x; ball.position.z = c.z;
+  /* a dead ball must rest somewhere REACHABLE: never tucked against a
+     trunk, where the man fetching it could never close the last gap.
+     Push it clear of the trunk — toward the middle if outward would
+     leave the dirt — then settle it inside the court. */
+  var list = trunkList();
+  for (var i = 0; i < list.length; i++){
+    var t = list[i], dx = ball.position.x - t.x, dz = ball.position.z - t.z;
+    var d = Math.sqrt(dx * dx + dz * dz), min = t.r + 0.35;
+    if (d < min){
+      if (d < 0.001){ dx = 0; dz = 1; d = 1; }
+      var px = t.x + dx / d * min, pz = t.z + dz / d * min;
+      if (!insideCourt(px, pz, 0.3)){
+        var cx = -dx / d, cz = -dz / d;
+        px = t.x + cx * min; pz = t.z + cz * min;
+      }
+      ball.position.x = px; ball.position.z = pz;
+    }
+  }
+  var c2 = clampInside(ball.position.x, ball.position.z, 0.3);
+  ball.position.x = c2.x; ball.position.z = c2.z;
+  if (pendingWin){ var w = pendingWin; pendingWin = ''; showWin(w); shotCtx = null; return; }
+  var ctx = shotCtx; shotCtx = null;
+  if (!ballScored && ctx && ctx.by === 'you' && !ctx.blocked)
+    setFeedback('Off the mark. Get the ball and go again.');
+  if (ctx && ctx.made && game){
+    /* v2.4 MAKE IT, TAKE IT (Joshua's decision, made before the
+       game): a made basket restarts AT THE TOP either way — rule
+       ON, the scorer takes it from the top; rule OFF (standard),
+       the other man does. Announced as it happens, in the same
+       words either direction. */
+    var scorer = ctx.by;
+    var taker = game.makeItTakeIt ? scorer : (scorer === 'you' ? 'opp' : 'you');
+    if (game.makeItTakeIt)
+      setFeedback(scorer === 'you' ? 'Make it, take it — your ball from the top.'
+                                   : 'Make it, take it — ' + game.opp + "'s ball from the top.");
+    else
+      setFeedback(taker === 'you' ? 'Your ball from the top.'
+                                  : game.opp + "'s ball from the top.");
+    restartAtTop(taker);
+  } else if (ctx && ctx.by === 'you' && ctx.blocked && game){
+    startOppRecovery();
+  } else {
+    possession = 'you';
+  }
+  updateActionButton();
+}
+
+/* ============================== game flow ============================== */
+function saveGameState(){
+  progress.game = game ? { mode: game.mode, opp: game.opp, score: game.score, oppScore: game.oppScore,
+                           target: game.target, makeItTakeIt: !!game.makeItTakeIt } : null;
+  saveProgress();
+}
+function startGame(m, oppName, opts){
+  opts = opts || {};
+  var plan = courtPlan(m, oppName);
+  mode = m;
+  pendingMode = '';
+  player.x = START_SPOT.x; player.z = START_SPOT.z;
+  player.face = Math.PI; player.speed = 0; player.idleFor = 0; player.jumpY = 0;
+  leaveArmed = true; leaveOpen = false; pendingWin = '';
+  stealPressure = 0;
+  /* v2.4: the game's house rule. An explicit choice wins; "Play
+     again" keeps the rule of the game just finished; anything else
+     falls back to his remembered choice (default NO, the standard). */
+  var mittRule = (typeof opts.makeItTakeIt === 'boolean') ? opts.makeItTakeIt
+               : (game && typeof game.makeItTakeIt === 'boolean') ? game.makeItTakeIt
+               : !!progress.lastMakeItTakeIt;
+  game = { mode: m, opp: plan.opp.name, score: opts.score || 0, oppScore: opts.oppScore || 0,
+           target: TARGETS[m], makeItTakeIt: mittRule };
+  /* v2.4: a game knowingly substituted for a recorded pick (1 on 1
+     played from the 3-on-3 notice) leaves the pick standing */
+  if (!opts.keepModePick) progress.lastMode = m;
+  progress.lastOpponent = plan.opp.name;
+  if (!opts.restored) progress.sessions++;
+  saveGameState();
+  buildCourt(plan);
+  phase = 'game';
+  showSheet('mode-screen', false); showSheet('mitt-screen', false); showSheet('coming-screen', false);
+  showSheet('pick-screen', false);
+  showSheet('leave-screen', false); showSheet('win-screen', false);
+  var rb = el('rosterbar');
+  if (rb){ rb.textContent = rosterText(plan, m); rb.style.display = 'block'; }
+  var joy = el('joy'); if (joy) joy.classList.add('on');
+  if (opts.restored)
+    setFeedback('Welcome back — your game against ' + game.opp + ' is still on. You: ' + game.score + ' · ' + game.opp + ': ' + game.oppScore + ', first to ' + game.target + '.');
+  else
+    setFeedback('First to ' + game.target + '. You are up against ' + game.opp + ' — the ball is at the spot.');
+  updateReadout();
+  updateActionButton();
+}
+function endGame(){
+  game = null;
+  cancelCharge();          // v2.2: no charged shot or stance survives the game
+  defendStop();
+  saveGameState();
+  var rb = el('rosterbar'); if (rb) rb.style.display = 'none';
+  var joy = el('joy'); if (joy) joy.classList.remove('on');
+  updateReadout();
+}
+/* Programmatic start (also the test surface): an omitted opponent
+   means the rotation picks — matching the "Surprise me" button. */
+function startMode(m, oppName){
+  startGame(m, oppName || rotateCast().name, {});
+}
+function chooseMode(m){
+  pendingMode = m;
+  progress.lastMode = m;
+  saveProgress();
+  /* v2.4: Joshua's order — the mode first, THEN Make it, Take it,
+     then the opponent. The rule step opens pre-set to his last
+     choice (default NO, the standard). */
+  pendingMakeItTakeIt = !!progress.lastMakeItTakeIt;
+  showSheet('mode-screen', false);
+  if (m === '3on3'){
+    /* v2.4, his ruling: "Decision screens first — 3-on-3 comes
+       later." The pick is recorded above (and remembered); the
+       mode itself is not playable yet, and the page says so
+       plainly instead of starting anything under its name. */
+    phase = 'coming';
+    showSheet('coming-screen', true);
+    setFeedback('3 on 3 is still to come — your pick is remembered.');
+  } else {
+    phase = 'mitt';
+    showMittScreen();
+  }
+  updateActionButton();
+}
+/* From the 3-on-3 notice: knowingly play 1 on 1 instead. The
+   recorded 3-on-3 pick stands — keepModePick tells startGame to
+   leave lastMode alone for the substituted game. */
+function playOneOnOneInstead(){
+  pendingMode = '1on1';
+  keepModePick = true;
+  phase = 'mitt';
+  showSheet('coming-screen', false);
+  showMittScreen();
+  updateActionButton();
+}
+/* From the 3-on-3 notice: back to the mode choice, nothing started. */
+function comingBack(){
+  showSheet('coming-screen', false);
+  showModeScreen();
+  updateActionButton();
+}
+/* The Make it, Take it step (v2.4): what the rule is, the two
+   choices, and a star on the one he played last. */
+function showMittScreen(){
+  showSheet('mitt-screen', true);
+  var y = el('last-mitt-yes'), n = el('last-mitt-no');
+  if (y) y.style.display = progress.lastMakeItTakeIt ? 'block' : 'none';
+  if (n) n.style.display = progress.lastMakeItTakeIt ? 'none' : 'block';
+  setFeedback((pendingMode === '3on3' ? '3 on 3' : '1 on 1') + ' — now decide: Make it, Take it?');
+}
+function chooseMitt(yes){
+  pendingMakeItTakeIt = !!yes;
+  progress.lastMakeItTakeIt = pendingMakeItTakeIt;
+  saveProgress();
+  phase = 'pick';
+  showSheet('mitt-screen', false);
+  showPickScreen();
+  updateActionButton();
+}
+function showPickScreen(){
+  showSheet('pick-screen', true);
+  for (var i = 0; i < CAST.length; i++){
+    var s = el('pick-last-' + i);
+    if (s) s.style.display = (progress.lastOpponent === CAST[i].name) ? 'block' : 'none';
+  }
+  setFeedback('Select your opponent.');
+}
+function pickOpponent(name){
+  progress.lastOpponent = name;
+  saveProgress();
+  var keep = keepModePick; keepModePick = false;   // the flag is spent by this start
+  startGame(pendingMode || progress.lastMode || '1on1', name, { makeItTakeIt: pendingMakeItTakeIt, keepModePick: keep });
+}
+function showWin(winner){
+  phase = 'win';
+  /* v2.2: remember the finished game BEFORE endGame() clears it —
+     Save and Exit records exactly this summary */
+  if (game) winSummary = { winner: winner, mode: game.mode, opp: game.opp,
+                           score: game.score, oppScore: game.oppScore, target: game.target };
+  addSkill(SKILL.GAIN_PER_GAME);
+  var title = el('win-title'), w = el('win-text');
+  if (game){
+    if (winner === 'you'){
+      if (title) title.textContent = '🏆 You win!';
+      if (w) w.textContent = 'You reached ' + game.target + ' against ' + game.opp + '. Final: You ' + game.score + ' · ' + game.opp + ' ' + game.oppScore + '.';
+      setFeedback('Game over — you win! 🏆');
+    } else {
+      if (title) title.textContent = game.opp + ' wins';
+      if (w) w.textContent = game.opp + ' reached ' + game.target + ' first. Final: You ' + game.score + ' · ' + game.opp + ' ' + game.oppScore + '.';
+      setFeedback('Game over — ' + game.opp + ' takes this one.');
+    }
+  }
+  endGame();
+  showSheet('win-screen', true);
+  updateActionButton();
+}
+/* SAVE AND EXIT (v2.2) — the end-of-game popup's third choice.
+   Records your progress and the LEVEL you reached into the shared
+   save (skill XP already lives there; exitLevel names the level
+   this game finished at, exitSummary the game itself), clears the
+   in-progress game, then leaves the mini-game by the SAME door
+   "Leave the court" uses: in the game's overlay, closeToGame()
+   hands the world back with you standing outside the mini-game at
+   the court; standalone, you land on the mode screen, whose line
+   below now shows the saved level you will come back to. Your skill
+   level on the next entry is restored from the saved XP as always
+   — so the level Save and Exit recorded IS the level restored. */
+function saveAndExit(){
+  progress.exitLevel = skillLevel();
+  progress.exitSummary = winSummary ? { winner: winSummary.winner, mode: winSummary.mode,
+    opp: winSummary.opp, score: winSummary.score, oppScore: winSummary.oppScore,
+    target: winSummary.target, level: skillLevel(), savedAt: Date.now() } : null;
+  progress.game = null;
+  if (game) endGame();
+  saveProgress();
+  showSheet('win-screen', false);
+  showModeScreen();
+  setFeedback('Saved — you left at Skill Lv ' + progress.exitLevel + '. It will be right here when you come back.');
+  if (EMBEDDED) closeToGame();
+  updateActionButton();
+}
+
+/* QUICK PLAY (v2.4.1, Joshua): the mode screen's shortcut door.
+   Entering the court always lands on the selection flow (see
+   init), so this is the one tap that skips the screens using what
+   he played last:
+   - a game in progress comes back exactly as it was — this is the
+     continue door;
+   - otherwise a NEW game starts from his remembered selections
+     wholesale: last mode, last Make it, Take it choice, last
+     opponent;
+   - the 3-on-3 honesty gate applies here too: a recorded 3-on-3
+     pick goes through chooseMode and lands on the same "still to
+     come" notice a manual pick gets — never a fake 3-on-3 start. */
+function quickPlay(){
+  if (progress.game){
+    var g = progress.game;
+    startGame(g.mode, g.opp, { restored: true, score: g.score, oppScore: g.oppScore, makeItTakeIt: g.makeItTakeIt === true });
+    return;
+  }
+  if (progress.lastMode === '3on3'){ chooseMode('3on3'); return; }
+  if (progress.lastMode){
+    startGame(progress.lastMode, progress.lastOpponent || rotateCast().name, { makeItTakeIt: !!progress.lastMakeItTakeIt });
+    return;
+  }
+  /* nothing remembered (first-ever entry): the button is hidden in
+     that state; if it is somehow reached, stay on the mode screen */
+  showModeScreen();
+}
+
+function showModeScreen(){
+  phase = 'mode';
+  keepModePick = false;
+  showSheet('mitt-screen', false); showSheet('coming-screen', false);
+  showSheet('pick-screen', false); showSheet('leave-screen', false); showSheet('win-screen', false);
+  showSheet('mode-screen', true);
+  var l1 = el('last-1on1'), l3 = el('last-3on3');
+  if (l1) l1.style.display = (progress.lastMode === '1on1') ? 'block' : 'none';
+  if (l3) l3.style.display = (progress.lastMode === '3on3') ? 'block' : 'none';
+  /* v2.4.1: Quick Play shows only when there is something to
+     quick-play, and its sub-line says exactly what it will do.
+     First-ever entry (nothing remembered, no game saved): hidden —
+     the two mode buttons above are the way in. */
+  var qp = el('quick-play'), qs = el('quick-sub');
+  if (qp){
+    if (progress.game){
+      qp.style.display = 'block';
+      if (qs) qs.textContent = 'Continue your game against ' + progress.game.opp +
+        ' — You ' + progress.game.score + ' · ' + progress.game.opp + ' ' + progress.game.oppScore;
+    } else if (progress.lastMode){
+      qp.style.display = 'block';
+      if (qs) qs.textContent = 'Your last setup — ' + (progress.lastMode === '3on3' ? '3 on 3' : '1 on 1') +
+        (progress.lastOpponent ? ' against ' + progress.lastOpponent : '') +
+        (progress.lastMakeItTakeIt ? ', Make it Take it' : ', Standard');
+    } else {
+      qp.style.display = 'none';
+    }
+  }
+  /* v2.2: if a Save and Exit is on record, say the level he comes
+     back to (his skill restores from the same save) */
+  if (progress.game)
+    setFeedback('Choose how you want to play. Your game against ' + progress.game.opp + ' is saved — Quick Play picks it back up.');
+  else if (progress.exitLevel > 0)
+    setFeedback('Choose how you want to play. You left your last game at Skill Lv ' + progress.exitLevel + ' — that level is yours when you step back in.');
+  else
+    setFeedback('Choose how you want to play.');
+  updateReadout();
+  updateActionButton();
+}
+
+/* ============================== main loop ============================== */
+function animate(){
+  requestAnimationFrame(animate);
+  var dt = Math.min(0.05, clock.getDelta());
+  T += dt;
+  pollGamepad();   // v2.1: the gamepad speaks every frame (it also answers the leave prompt)
+  if (phase === 'game' && !leaveOpen){
+    refreshKeyVec();
+    updatePlayer(dt);
+    updateGuarding(dt);
+    updateOpponent(dt);
+    updateSteal(dt);
+  }
+  updateShotAnim(dt);
+  updateBallCarry(dt);
+  updateOppBall(dt);
+  stepBall(dt);
+  checkHeldBallOut();   // v2.3: a HELD ball crossing the line is out on its holder
+  /* v2.2 housekeeping: the call banner lives for its few seconds,
+     the power meter tracks a charging hold, and the defence
+     buttons track range/cooldown as men move (cached DOM writes) */
+  if (callBannerUntil && T >= callBannerUntil){
+    callBannerUntil = 0;
+    var cb = el('call-banner');
+    if (cb) cb.classList.remove('show');
+  }
+  if (charging) updateChargeMeter();
+  if (phase === 'game') refreshDefenseButtons();
+  /* camera: behind and above you during a game, looking past you
+     toward the goal; the quiet establishing view otherwise. */
+  var wantPos, wantLook;
+  if (phase === 'game' || phase === 'win'){
+    wantPos = { x: player.x * 0.82, y: 5.1, z: player.z + 7.0 };
+    wantLook = { x: player.x * 0.9, y: 1.1, z: player.z - 2.4 };
+  } else {
+    wantPos = { x: 3.4, y: 3.8, z: 5.6 };
+    wantLook = { x: 0, y: 1.7, z: -3.2 };
+  }
+  var kp = 1 - Math.exp(-dt * 3.2), kl = 1 - Math.exp(-dt * 4.2);
+  camPos.x += (wantPos.x - camPos.x) * kp; camPos.y += (wantPos.y - camPos.y) * kp; camPos.z += (wantPos.z - camPos.z) * kp;
+  camLook.x += (wantLook.x - camLook.x) * kl; camLook.y += (wantLook.y - camLook.y) * kl; camLook.z += (wantLook.z - camLook.z) * kl;
+  camera.position.set(camPos.x, camPos.y, camPos.z);
+  camera.lookAt(camLook.x, camLook.y, camLook.z);
+  renderer.render(scene, camera);
+}
+
+/* v2.3.1: MEASURE THE SCREEN WE ACTUALLY HAVE (Joshua's
+   instruction). window.visualViewport reports the area left after
+   the browser's address bar and footer take their share; the old
+   100vh layout counted that hidden strip too and pushed the
+   bottom controls off screen. The measured height is written to
+   the --app-height CSS variable (the body's height uses it), then
+   the canvas is re-fitted. Re-runs whenever the bars show or hide
+   (visualViewport resize), on window resize, and on rotation. */
+var appHeightPx = 0;
+function fitAppHeight(){
+  try{
+    var vv = window.visualViewport;
+    var h = (vv && vv.height) ? vv.height : window.innerHeight;
+    var w = (vv && vv.width) ? vv.width : window.innerWidth;
+    if (h){
+      appHeightPx = Math.round(h);
+      var root = document.documentElement;
+      if (root && root.style && root.style.setProperty){
+        root.style.setProperty('--app-height', appHeightPx + 'px');
+        if (w) root.style.setProperty('--app-width', Math.round(w) + 'px');
+      }
+    }
+  }catch(e){}
+  onResize();
+}
+
+function onResize(){
+  try{
+    var wrap = el('court-wrap');
+    var w = wrap.clientWidth || window.innerWidth;
+    var h = wrap.clientHeight || window.innerHeight;
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w, h);
+  }catch(e){}
+}
+
+/* ============================== joystick ============================== */
+function wireJoystick(){
+  var joy = el('joy'), knob = el('joy-knob');
+  if (!joy || !knob) return;
+  var active = null;
+  function setKnob(dx, dy){ knob.style.transform = 'translate(calc(-50% + ' + dx + 'px), calc(-50% + ' + dy + 'px))'; }
+  function handle(ev){
+    var r = joy.getBoundingClientRect();
+    var cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    var dx = ev.clientX - cx, dy = ev.clientY - cy;
+    var m = Math.sqrt(dx * dx + dy * dy), max = 42;
+    if (m > max){ dx *= max / m; dy *= max / m; }
+    joyVec.x = dx / max; joyVec.z = dy / max;
+    setKnob(dx, dy);
+  }
+  joy.addEventListener('pointerdown', function(ev){ active = ev.pointerId; try{ joy.setPointerCapture(active); }catch(e){} handle(ev); ev.preventDefault(); });
+  joy.addEventListener('pointermove', function(ev){ if (ev.pointerId === active) handle(ev); });
+  function end(ev){ if (ev.pointerId === active){ active = null; joyVec.x = 0; joyVec.z = 0; setKnob(0, 0); } }
+  joy.addEventListener('pointerup', end);
+  joy.addEventListener('pointercancel', end);
+}
+
+/* ============================== in-game embedding ============================== */
+/* v2.1: this page has two homes — its own tab (standalone) and the
+   main game's full-screen overlay (basketball_court.js hosts it in an
+   iframe and pauses the world behind it). Embedded is detected
+   structurally: a parent window different from this one. Only two
+   behaviours change when embedded, both about LEAVING:
+   - the "← Surviving Adamsville" links become a close control that
+     asks the parent to close the overlay (navigating the frame to
+     the game's front page would bury the game inside itself);
+   - answering "Leave the court" also closes back to the world
+     (see answerLeave). The win screen and Change mode stay inside,
+     with the close control always in the top bar. */
+var EMBEDDED = false;
+try{ EMBEDDED = !!(window.parent && window.parent !== window); }catch(e){ EMBEDDED = true; }
+
+/* Ask the game to close the overlay and hand the world back. Two
+   routes, both guarded, either sufficient: a postMessage (the parent
+   validates it came from this frame), and — same-origin only — the
+   parent's own BBALL.closeGame() as a direct fallback. The parent's
+   close is idempotent, so both firing is harmless. */
+function closeToGame(){
+  try{ window.parent.postMessage({ type: 'bball-close' }, window.location.origin || '*'); }catch(e){}
+  try{ if (window.parent.BBALL && window.parent.BBALL.closeGame) window.parent.BBALL.closeGame(); }catch(e){}
+}
+
+/* ============================== init ============================== */
+function init(){
+  if (typeof THREE === 'undefined') throw new Error('The 3D engine did not load (neither the modern module build nor the classic three.min.js).');
+
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x87b5d9);
+  scene.fog = new THREE.Fog(0x87b5d9, 55, 140);
+
+  camera = new THREE.PerspectiveCamera(55, 1, 0.1, 300);
+  camera.position.set(camPos.x, camPos.y, camPos.z);
+  camera.lookAt(camLook.x, camLook.y, camLook.z);
+
+  /* Three.js migration (2026-10-25): the modern engine uses physical
+     light units (r155+ dropped the legacy PI factor), so fixed light
+     intensities are scaled by PI ONLY on the module engine — the same
+     compat tune daycycle.js applies per-frame in the main game. On the
+     classic r128 fallback the court's lighting is unchanged. */
+  var _lightScale = window.__threeModern ? Math.PI : 1;
+  var hemi = new THREE.HemisphereLight(0xffffff, 0x3a5f2a, 0.95 * _lightScale);
+  scene.add(hemi);
+  var sun = new THREE.DirectionalLight(0xffffff, 0.55 * _lightScale);
+  sun.position.set(18, 30, 10);
+  scene.add(sun);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  /* Three.js migration (2026-10-25): this page never set an output
+     encoding on r128, so the classic engine renders linear-out. The
+     modern engine defaults to sRGB-out, which lifted the court ~20%
+     brighter (measured). Pin the modern renderer to the linear working
+     colour space so the court matches the classic look exactly. The
+     main game does the opposite (it always asked for sRGB) — each page
+     keeps ITS OWN classic look. */
+  if (window.__threeModern && THREE.LinearSRGBColorSpace !== undefined) renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  el('court-wrap').appendChild(renderer.domElement);
+
+  clock = new THREE.Clock();
+
+  el('mode-1on1').addEventListener('click', function(){ chooseMode('1on1'); });
+  el('mode-3on3').addEventListener('click', function(){ chooseMode('3on3'); });
+  /* v2.4.1: Quick Play — skip the screens, play the last setup
+     (or pick the saved game back up) */
+  el('quick-play').addEventListener('click', function(){ quickPlay(); });
+  /* v2.4: the Make it, Take it step's two buttons */
+  el('mitt-yes').addEventListener('click', function(){ chooseMitt(true); });
+  el('mitt-no').addEventListener('click', function(){ chooseMitt(false); });
+  /* v2.4: the 3-on-3 notice's two ways onward */
+  el('coming-play1').addEventListener('click', function(){ playOneOnOneInstead(); });
+  el('coming-back').addEventListener('click', function(){ comingBack(); });
+  el('pick-opp-0').addEventListener('click', function(){ pickOpponent(CAST[0].name); });
+  el('pick-opp-1').addEventListener('click', function(){ pickOpponent(CAST[1].name); });
+  el('pick-opp-2').addEventListener('click', function(){ pickOpponent(CAST[2].name); });
+  el('pick-any').addEventListener('click', function(){ pickOpponent(rotateCast().name); });
+  el('leave-yes').addEventListener('click', function(){ answerLeave(true); });
+  el('leave-no').addEventListener('click', function(){ answerLeave(false); });
+  el('win-again').addEventListener('click', function(){
+    showSheet('win-screen', false);
+    startGame(mode || '1on1', progress.lastOpponent || rotateCast().name, {});
+  });
+  /* v2.2: Save and Exit on the end-of-game popup (see saveAndExit) */
+  el('win-save-exit').addEventListener('click', function(){ saveAndExit(); });
+  el('win-mode').addEventListener('click', function(){ showSheet('win-screen', false); showModeScreen(); });
+  el('change-mode-btn').addEventListener('click', function(){
+    if (game) endGame();
+    leaveOpen = false;
+    showModeScreen();
+  });
+  /* v2.2: the action button is press-and-hold now — pointer down
+     starts (pickup / charge), pointer up shoots. A plain click with
+     no hold between the two is the tap shot, exactly as before. */
+  var actBtn = el('act-btn');
+  actBtn.addEventListener('pointerdown', function(ev){ ev.preventDefault(); actionPress(); });
+  actBtn.addEventListener('pointerup', function(ev){ ev.preventDefault(); actionRelease(); });
+  actBtn.addEventListener('pointercancel', function(){ cancelCharge(); });
+  actBtn.addEventListener('pointerleave', function(){ /* sliding off mid-hold keeps the charge until release */ });
+  /* v2.4.1: a long press must never open the browser's context
+     menu / text callout (Android Chrome) — the hold belongs to the
+     game (it charges the shot). Text selection itself is off in
+     the CSS (body + buttons); this stops the menu. */
+  document.addEventListener('contextmenu', function(ev){ ev.preventDefault(); });
+  /* v2.2: your two defensive controls — Defend is held, Steal is one press */
+  var defBtn = el('defend-btn'), stlBtn = el('steal-btn');
+  defBtn.addEventListener('pointerdown', function(ev){ ev.preventDefault(); defendStart('btn'); });
+  defBtn.addEventListener('pointerup', function(){ defendStop('btn'); });
+  defBtn.addEventListener('pointercancel', function(){ defendStop('btn'); });
+  defBtn.addEventListener('pointerleave', function(){ defendStop('btn'); });
+  stlBtn.addEventListener('click', function(){ playerSteal(); });
+  document.addEventListener('keydown', function(ev){
+    keys[ev.code] = true;
+    if ((ev.code === 'Space' || ev.code === 'Enter') && phase === 'game' && !leaveOpen && !ev.repeat){
+      ev.preventDefault(); actionPress();       // v2.2: down starts the charge
+    }
+    /* v2.2 defence keys: F holds Defend, G presses Steal */
+    if (ev.code === 'KeyF' && phase === 'game' && !leaveOpen && !ev.repeat) defendStart('key');
+    if (ev.code === 'KeyG' && phase === 'game' && !leaveOpen && !ev.repeat) playerSteal();
+    if (ev.code.indexOf('Arrow') === 0) ev.preventDefault();
+  });
+  document.addEventListener('keyup', function(ev){
+    keys[ev.code] = false;
+    if ((ev.code === 'Space' || ev.code === 'Enter') && phase === 'game' && !leaveOpen){
+      actionRelease();                          // v2.2: up shoots with the held power
+    }
+    if (ev.code === 'KeyF') defendStop('key');
+  });
+  /* v2.3.1: the layout follows the MEASURED visible area, so a
+     resize re-measures first, then re-fits the canvas. The
+     visualViewport listener is what catches the phone browser's
+     bars showing and hiding mid-session. */
+  window.addEventListener('resize', fitAppHeight);
+  window.addEventListener('orientationchange', fitAppHeight);
+  if (window.visualViewport && window.visualViewport.addEventListener)
+    window.visualViewport.addEventListener('resize', fitAppHeight);
+  wireJoystick();
+
+  /* v2.1, embedded only: the "back to the game" links (top bar +
+     error card) close the overlay instead of navigating this frame
+     to the game's front page — see the embedding section above. */
+  if (EMBEDDED){
+    var backLinks = document.querySelectorAll('a[href="./"]');
+    for (var bi = 0; bi < backLinks.length; bi++){
+      (function(a){
+        if (a.id === 'back-link') a.textContent = '✕ Close — back to the game';
+        a.setAttribute('href', '#');
+        a.addEventListener('click', function(ev){ ev.preventDefault(); closeToGame(); });
+      })(backLinks[bi]);
+    }
+  }
+
+  updateSkillBar();
+  /* v2.4.1 (Joshua): entering the court ALWAYS lands on the
+     selection flow — pick 1 on 1 / 3 on 3, then Make it, Take it —
+     every time, even with a game in progress and every choice
+     remembered. Nothing resumes silently. The remembered choices
+     stay pre-selected (the ★ Last played stars), and the mode
+     screen's Quick Play button is the door that picks the saved
+     game back up, or starts his last setup in one tap. The quiet
+     court waits underneath, as it did for a fresh entry. */
+  buildCourt(null);
+  showModeScreen();
+  updateActionButton();
+  fitAppHeight();
+  started = true;
+  animate();
+}
+
+/* ENGINE GATE (Three.js migration, 2026-10-25): init() needs the global
+   THREE, which now arrives via the module bridge in the head — so boot
+   waits for the bridge's promise (20s cap, same fail-open shape as the
+   main page's loader gate). If the module engine cannot load here, the
+   gate loads the classic three.min.js and boots on r128 exactly as this
+   page always did; if even that fails, init() throws and the existing
+   error card shows, unchanged. __threeFallbackTaken is set before the
+   classic load so a late bridge stands down instead of swapping the
+   engine mid-boot. */
+(function(){
+  var booted = false;
+  function boot(){
+    if (booted) return; booted = true;
+    try{ init(); }
+    catch(e){ showError(e); }
+  }
+  function classic(){
+    if (window.__threeModern){ boot(); return; }
+    window.__threeFallbackTaken = true; /* the bridge must stand down from here on */
+    try{
+      var s = document.createElement('script');
+      s.onload = function(){ boot(); };
+      s.onerror = function(){ boot(); }; /* init() will throw the engine error -> error card, as before */
+      s.src = 'three.min.js';
+      document.head.appendChild(s);
+    }catch(e){ boot(); } /* no usable DOM to inject into — boot on whatever THREE exists */
+  }
+  if (window.__threeModern){ boot(); return; }
+  var timer = null;
+  try{ timer = setTimeout(classic, 20000); }catch(e){}
+  function disarm(){ if (timer !== null){ try{ clearTimeout(timer); }catch(e){} timer = null; } }
+  try{
+    if (window.__threeReady && typeof window.__threeReady.then === 'function'){
+      window.__threeReady.then(function(modern){
+        disarm();
+        if (modern) boot(); else classic();
+      });
+    } else { disarm(); classic(); }
+  }catch(e){ disarm(); classic(); }
+})();
+
+/* test/debug surface (also handy later): state snapshots + drivers */
+window.BBALL_PAGE = {
+  version: '2.4.2',
+  started: function(){ return started; },
+  embedded: function(){ return EMBEDDED; },
+  mode: function(){ return mode; },
+  phase: function(){ return phase; },
+  baskets: function(){ return progress.baskets; },
+  sessions: function(){ return progress.sessions; },
+  skill: function(){ return { xp: progress.skillXp, level: skillLevel() }; },
+  lastMode: function(){ return progress.lastMode; },
+  lastOpponent: function(){ return progress.lastOpponent; },
+  opponent: function(){ return game ? game.opp : ''; },
+  figures: function(){ return figures.length + (you ? 1 : 0); },
+  ballState: function(){ return ballState; },
+  possession: function(){ return possession; },
+  game: function(){ return game ? { mode: game.mode, opp: game.opp, score: game.score, oppScore: game.oppScore, target: game.target, makeItTakeIt: !!game.makeItTakeIt } : null; },
+  startMode: startMode,
+  chooseMode: chooseMode,
+  /* v2.4 surface: the Make it, Take it step + his remembered choice */
+  chooseMitt: chooseMitt,
+  lastMakeItTakeIt: function(){ return !!progress.lastMakeItTakeIt; },
+  /* v2.4.1 surface: Quick Play — the mode screen's shortcut door */
+  quickPlay: quickPlay,
+  /* v2.4 surface: the 3-on-3 notice — proceed knowingly, or go back */
+  playOneOnOneInstead: playOneOnOneInstead,
+  comingBack: comingBack,
+  pickOpponent: pickOpponent,
+  action: ballAction,
+  /* v2.2 surface: hold-to-shoot, your defence, out of bounds, save & exit */
+  actionPress: actionPress,
+  actionRelease: actionRelease,
+  defendStart: defendStart,
+  defendStop: defendStop,
+  defendActive: defendActive,
+  steal: playerSteal,
+  lastTouch: function(){ return lastTouch; },
+  lastCall: function(){ return lastCall; },
+  exitInfo: function(){ return { exitLevel: progress.exitLevel, exitSummary: progress.exitSummary }; },
+  saveAndExit: saveAndExit,
+  showModeScreen: showModeScreen,
+  debug: {
+    setMove: function(x, z){ joyVec.x = x; joyVec.z = z; },
+    setKeys: function(map){ keys = {}; for (var k in map) keys[k] = map[k]; },
+    setPlayerPos: function(x, z){ player.x = x; player.z = z; },
+    playerPos: function(){ return { x: player.x, z: player.z }; },
+    defenderPos: function(){ return primaryDef ? { x: primaryDef.position.x, z: primaryDef.position.z } : null; },
+    setDefenderPos: function(x, z){ if (primaryDef){ primaryDef.position.x = x; primaryDef.position.z = z; } },
+    ballPos: function(){ return ball ? { x: ball.position.x, y: ball.position.y, z: ball.position.z } : null; },
+    padVec: function(){ return { x: padVec.x, z: padVec.z }; },
+    dribble: function(){ return ballState === 'dribbling'; },
+    lastShot: function(){ return lastShot; },
+    leaveShown: function(){ return leaveOpen; },
+    leaveCount: function(){ return leavePromptCount; },
+    answerLeave: answerLeave,
+    oppState: function(){ return oppBrain.state; },
+    /* v2.2 debug drivers/readers */
+    arena: function(){ return { court: { rx: COURT.rx, rz: COURT.rz }, treeBorder: { rx: TREE_BORDER.rx, rz: TREE_BORDER.rz } }; },
+    topSpot: function(){ return { x: TOP_SPOT.x, z: TOP_SPOT.z }; },   // v2.3: the restart spot (the top, far end from the goal)
+    appHeight: function(){ return appHeightPx; },   // v2.3.1: the measured visible height the layout is built on (px, 0 = not measured yet)
+    powerOutcome: function(holdSec){ return shotOutcomeForHold(holdSec); },
+    charge: function(){
+      if (!charging) return { active: false, hold: 0, power: 0, band: '' };
+      var h = T - charging.startT, oc = shotOutcomeForHold(h);
+      return { active: true, hold: h, power: oc.power, band: oc.band };
+    },
+    stealCooldown: function(){ return Math.max(0, stealReadyAt - T); },
+    giveToOpp: function(){
+      possession = 'opp'; ballState = 'ophold'; lastTouch = 'opp';
+      oppBrain.state = 'approach'; oppBrain.t = 0; oppBrain.spot = oppShotSpot();
+      updateActionButton();
+    },
+    oppShootNow: function(){ if (primaryDef && possession === 'opp') oppShoot(); },
+    launchBallAt: function(x, y, z, vx, vy, vz, touch){
+      ball.position.set(x, y, z);
+      ballVel.x = vx; ballVel.y = vy; ballVel.z = vz;
+      ballScored = false; flyT = 0; scoredFlyT = -1; shotCtx = null;
+      if (touch) lastTouch = touch;
+      ballState = 'flying';
+    },
+    setScore: function(s, o){
+      if (!game) return;
+      game.score = s; game.oppScore = o; saveGameState(); updateReadout();
+    },
+    showWin: showWin,
+    figuresDetail: function(){
+      return figures.map(function(f){
+        return { role: f.userData.role, team: f.userData.team, name: f.userData.name,
+                 attrs: f.userData.attrs, x: f.position.x, z: f.position.z,
+                 scale: f.scale ? f.scale.x : 1 };
+      });
+    }
+  }
+};
+})();
+</script>
+</body>
+</html>

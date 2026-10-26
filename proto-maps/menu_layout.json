@@ -1,0 +1,755 @@
+{
+ "menus": {
+  "settings": {
+   "title": "Settings",
+   "description": "The main settings panel, opened by the gear icon. Contains game options and the Administrator section.",
+   "groups": [
+    {
+     "name": "General",
+     "items": [
+      {
+       "id": "set-help",
+       "label": "How to play",
+       "description": "Opens the How to Play help panel with controls and instructions.",
+       "action": "open_help",
+       "visible": true
+      },
+      {
+       "id": "set-music",
+       "label": "Music: ON",
+       "description": "Toggles the background music on or off.",
+       "action": "toggle_music",
+       "visible": true
+      },
+      {
+       "id": "set-engine",
+       "label": "Engine sounds: ON",
+       "description": "Toggles vehicle engine sounds on or off.",
+       "action": "toggle_engine",
+       "visible": true
+      },
+      {
+       "id": "set-uisounds",
+       "label": "UI sounds: ON",
+       "description": "Toggles the user interface click and notification sounds on or off.",
+       "action": "toggle_uisounds",
+       "visible": true
+      },
+      {
+       "id": "set-record",
+       "label": "Record: OFF",
+       "description": "Starts or stops the in-game screen recorder (saves video to the device).",
+       "action": "toggle_record",
+       "visible": true
+      },
+      {
+       "id": "set-gameplay",
+       "label": "Gameplay",
+       "description": "Opens the Gameplay submenu (New game, Restart level, Save game, Load game).",
+       "action": "open_gameplay",
+       "visible": true
+      },
+      {
+       "id": "set-advprops",
+       "label": "Advanced Properties ▶",
+       "description": "Opens Advanced Properties — zone unlocking by password.",
+       "action": "",
+       "visible": true
+      },
+      {
+       "id": "set-movecontrols",
+       "label": "Move controls ✎",
+       "description": "Opens Move controls: drag the on-screen controls to where you want them on this screen.",
+       "action": "",
+       "visible": true
+      },
+      {
+       "id": "set-goto",
+       "label": "Go to 🧭",
+       "description": "Opens Go To: search a street or place by name and travel straight there.",
+       "action": "",
+       "visible": true
+      }
+     ]
+    },
+    {
+     "name": "Administrator",
+     "items": [
+      {
+       "id": "adm-map",
+       "label": "Re-download Map",
+       "description": "Re-downloads the latest map data (roads, zones) from GitHub.",
+       "action": "redownload_map",
+       "visible": true
+      },
+      {
+       "id": "adm-ui",
+       "label": "Re-download UI",
+       "description": "Re-downloads the latest user interface files from GitHub.",
+       "action": "redownload_ui",
+       "visible": true
+      },
+      {
+       "id": "adm-vehicles",
+       "label": "Re-download Vehicles",
+       "description": "Re-downloads the latest vehicle models and data from GitHub.",
+       "action": "redownload_vehicles",
+       "visible": true
+      },
+      {
+       "id": "adm-music",
+       "label": "Re-download Music",
+       "description": "Re-downloads the latest music files from GitHub.",
+       "action": "redownload_music",
+       "visible": true
+      },
+      {
+       "id": "adm-hrauto",
+       "label": "Live UI updates: ON",
+       "description": "When on, the game checks for UI updates automatically in the background.",
+       "action": "toggle_hrauto",
+       "visible": true
+      },
+      {
+       "id": "adm-hrcheck",
+       "label": "Check for updates now",
+       "description": "Immediately checks GitHub for new UI, map, vehicle, or music updates.",
+       "action": "check_updates",
+       "visible": true
+      },
+      {
+       "id": "adm-stayawake",
+       "label": "Stay Awake: OFF",
+       "description": "Keeps the phone screen from sleeping while the game is running.",
+       "action": "toggle_stayawake",
+       "visible": true
+      },
+      {
+       "id": "adm-hrapply",
+       "label": "Apply UI update — keep my spot",
+       "description": "Applies a downloaded UI update right away and puts you back where you were playing.",
+       "action": "",
+       "visible": true
+      },
+      {
+       "id": "adm-uiflow",
+       "label": "Download newest UI",
+       "description": "Downloads the newest UI files from GitHub (only the changed ones, verified), then reloads the game into them where you left off.",
+       "action": "",
+       "visible": true
+      },
+      {
+       "id": "adm-dispatch",
+       "label": "Road Dispatch Log",
+       "description": "Opens the road dispatch log showing road crew activity and reports.",
+       "action": "open_dispatch",
+       "visible": true
+      },
+      {
+       "id": "adm-testconn",
+       "label": "Test Connection",
+       "description": "Tests the connection to GitHub to verify downloads will work.",
+       "action": "test_connection",
+       "visible": true
+      },
+      {
+       "id": "adm-sendreports",
+       "label": "Send Reports to Joshua Arnold",
+       "description": "Uploads collected bug reports and diagnostics to GitHub for the developer to review.",
+       "action": "send_reports",
+       "visible": true
+      }
+     ]
+    }
+   ],
+   "ungrouped": [
+    {
+     "id": "set-close",
+     "label": "Close",
+     "description": "Closes the Settings panel and returns to the game.",
+     "action": "close",
+     "visible": true
+    }
+   ]
+  },
+  "gameplay": {
+   "title": "Gameplay",
+   "description": "The gameplay submenu: start new games, restart, save, and load.",
+   "groups": [],
+   "ungrouped": [
+    {
+     "id": "gp-newgame",
+     "label": "New game",
+     "description": "Start a new game from the beginning. Applies any staged map or UI updates first.",
+     "action": "new_game",
+     "visible": true
+    },
+    {
+     "id": "gp-restart",
+     "label": "Restart level",
+     "description": "Restart the current game session from the last checkpoint.",
+     "action": "restart_level",
+     "visible": true
+    },
+    {
+     "id": "gp-save",
+     "label": "Save game",
+     "description": "Save the current game progress to a slot.",
+     "action": "save_game",
+     "visible": true
+    },
+    {
+     "id": "gp-load",
+     "label": "Load game",
+     "description": "Load a previously saved game from a slot.",
+     "action": "load_game",
+     "visible": true
+    },
+    {
+     "id": "gp-back",
+     "label": "Back",
+     "description": "Go back to the Settings panel.",
+     "action": "back",
+     "visible": true
+    },
+    {
+     "id": "gp-exit",
+     "label": "Exit",
+     "description": "Exit the game. Asks whether to save first: Save, Continue, or Save and Exit.",
+     "action": "exit_game",
+     "visible": true
+    }
+   ]
+  },
+  "pause": {
+   "title": "Paused",
+   "description": "The pause menu: shown when the game is paused (Escape or the pause button). Resume, or open Move controls to rearrange the on-screen controls.",
+   "groups": [],
+   "ungrouped": [
+    {
+     "id": "pause-resume",
+     "label": "▶ Resume",
+     "description": "Closes the pause menu and resumes play.",
+     "action": "",
+     "visible": true
+    },
+    {
+     "id": "pause-move",
+     "label": "✎ Move controls",
+     "description": "Opens Move controls from the pause menu: rearrange the on-screen controls.",
+     "action": "",
+     "visible": true
+    }
+   ]
+  },
+  "advprops": {
+   "title": "Advanced Properties",
+   "description": "Advanced Properties: zone unlocking by password. One row per zone (built by the game), Unlock All Zones, and Back to Settings.",
+   "groups": [],
+   "ungrouped": [
+    {
+     "id": "adv-zone-list",
+     "label": "(Zone list)",
+     "description": "The zone rows the game builds here: one per zone, showing locked/unlocked; tapping a locked zone asks for its password.",
+     "action": "",
+     "visible": true
+    },
+    {
+     "id": "adv-unlock-all",
+     "label": "🔓 Unlock All Zones",
+     "description": "Asks for the Unlock All password and unlocks every zone at once.",
+     "action": "",
+     "visible": true
+    },
+    {
+     "id": "adv-back",
+     "label": "Back",
+     "description": "Returns to Settings.",
+     "action": "",
+     "visible": true
+    }
+   ]
+  },
+  "advpass": {
+   "title": "Zone Password",
+   "description": "The zone password dialog: type the zone's password to unlock it (or the Unlock All password).",
+   "groups": [],
+   "ungrouped": [
+    {
+     "id": "advpass-ok",
+     "label": "Unlock",
+     "description": "Tries the typed password: unlocks the zone (or all zones) if it matches.",
+     "action": "",
+     "visible": true
+    },
+    {
+     "id": "advpass-cancel",
+     "label": "Cancel",
+     "description": "Closes the password dialog without unlocking anything.",
+     "action": "",
+     "visible": true
+    }
+   ]
+  },
+  "zonepick": {
+   "title": "What zone?",
+   "description": "Zone picker shown on New Game (after the first game): pick which zone to start in.",
+   "groups": [],
+   "ungrouped": [
+    {
+     "id": "zonepick-list",
+     "label": "(Zone list)",
+     "description": "Scrollable list of available zones. Generated from the game's zone data.",
+     "action": "pick_zone",
+     "visible": true
+    },
+    {
+     "id": "zonepick-cancel",
+     "label": "Cancel",
+     "description": "Cancel zone selection and go back.",
+     "action": "cancel",
+     "visible": true
+    }
+   ]
+  },
+  "saveexit": {
+   "title": "Save game?",
+   "description": "Save prompt when exiting: Save, Continue, or Save and Exit.",
+   "groups": [],
+   "ungrouped": [
+    {
+     "id": "se-save",
+     "label": "Save",
+     "description": "Save the game to a slot and keep playing.",
+     "action": "save_only",
+     "visible": true
+    },
+    {
+     "id": "se-continue",
+     "label": "Continue",
+     "description": "Return to the game without saving.",
+     "action": "continue",
+     "visible": true
+    },
+    {
+     "id": "se-saveexit",
+     "label": "Save and Exit",
+     "description": "Save the game to a slot, then exit the game entirely.",
+     "action": "save_and_exit",
+     "visible": true
+    }
+   ]
+  },
+  "slotpick": {
+   "title": "Choose a save slot",
+   "description": "Save-slot picker: shown after Save / Save and Exit — pick one of the save slots.",
+   "groups": [],
+   "ungrouped": [
+    {
+     "id": "slotpick-list",
+     "label": "(Save slot list)",
+     "description": "The save slots the game lists here: pick one to save into (an occupied slot asks before overwriting).",
+     "action": "",
+     "visible": true
+    },
+    {
+     "id": "slotpick-cancel",
+     "label": "Cancel",
+     "description": "Closes the slot picker without saving.",
+     "action": "",
+     "visible": true
+    }
+   ]
+  },
+  "admconfirm": {
+   "title": "Confirm Re-download",
+   "description": "Confirmation asked before a manual re-download: names the asset and its current version; Yes wipes the old files and downloads fresh, No cancels.",
+   "groups": [],
+   "ungrouped": [
+    {
+     "id": "adm-confirm-yes",
+     "label": "Yes",
+     "description": "Confirms the re-download: old files of that type are wiped and downloaded fresh.",
+     "action": "",
+     "visible": true
+    },
+    {
+     "id": "adm-confirm-no",
+     "label": "No",
+     "description": "Cancels the re-download — nothing is changed.",
+     "action": "",
+     "visible": true
+    }
+   ]
+  },
+  "zoneload": {
+   "title": "Unlocking Zone",
+   "description": "The zone-unlock download screen: progress bar while the unlocked zone's data downloads; Retry, Cancel, or Continue when it lands.",
+   "groups": [],
+   "ungrouped": [
+    {
+     "id": "zone-load-retry",
+     "label": "↻ Retry download",
+     "description": "Retries the zone download after a failure.",
+     "action": "",
+     "visible": true
+    },
+    {
+     "id": "zone-load-cancel",
+     "label": "Cancel",
+     "description": "Cancels the unlock — the zone stays locked.",
+     "action": "",
+     "visible": true
+    },
+    {
+     "id": "zone-load-continue",
+     "label": "▶ Continue",
+     "description": "Continues into the unlocked zone once its data has downloaded.",
+     "action": "",
+     "visible": true
+    }
+   ]
+  },
+  "inventory": {
+   "title": "Inventory",
+   "description": "The backpack inventory panel: what the player is carrying, with a Close button. Items are listed by the game.",
+   "groups": [],
+   "ungrouped": [
+    {
+     "id": "inv-list",
+     "label": "(Item list)",
+     "description": "The items the player is carrying, listed by the game; tapping an item can drop it.",
+     "action": "",
+     "visible": true
+    },
+    {
+     "id": "inv-close",
+     "label": "Close",
+     "description": "Closes the inventory panel.",
+     "action": "",
+     "visible": true
+    }
+   ]
+  },
+  "npcdialog": {
+   "title": "Conversation",
+   "description": "The conversation box shown when talking to a person in the game: their name, what they say, and the Bye button.",
+   "groups": [],
+   "ungrouped": [
+    {
+     "id": "npc-dialog-bye",
+     "label": "BYE",
+     "description": "Ends the conversation.",
+     "action": "",
+     "visible": true
+    }
+   ]
+  },
+  "fullmap": {
+   "title": "Full Map",
+   "description": "The full map overlay: the whole map, a legend, and buttons for Satellite View, GPS Navigate, and clearing the GPS route.",
+   "groups": [],
+   "ungrouped": [
+    {
+     "id": "fullmap-close",
+     "label": "×",
+     "description": "Closes the full map and returns to the game.",
+     "action": "",
+     "visible": true
+    },
+    {
+     "id": "satview-btn",
+     "label": "🛰️ Satellite View",
+     "description": "Opens Satellite View from the full map.",
+     "action": "",
+     "visible": true
+    },
+    {
+     "id": "gps-nav-btn",
+     "label": "📍 Navigate",
+     "description": "Starts GPS navigation to the tapped point on the map.",
+     "action": "",
+     "visible": true
+    },
+    {
+     "id": "gps-clear-btn",
+     "label": "✖ Clear GPS",
+     "description": "Clears the current GPS route.",
+     "action": "",
+     "visible": true
+    }
+   ]
+  },
+  "satview": {
+   "title": "Satellite View",
+   "description": "Satellite view controls: switch 2D/3D, zoom in and out, re-center on the player, and close.",
+   "groups": [],
+   "ungrouped": [
+    {
+     "id": "satview-mode",
+     "label": "3D",
+     "description": "Switches Satellite View between 2D and 3D.",
+     "action": "",
+     "visible": true
+    },
+    {
+     "id": "satview-zin",
+     "label": "Zoom in",
+     "description": "Zooms Satellite View in.",
+     "action": "",
+     "visible": true
+    },
+    {
+     "id": "satview-zout",
+     "label": "Zoom out",
+     "description": "Zooms Satellite View out.",
+     "action": "",
+     "visible": true
+    },
+    {
+     "id": "satview-recenter",
+     "label": "Center on player",
+     "description": "Centers Satellite View back on the player.",
+     "action": "",
+     "visible": true
+    },
+    {
+     "id": "satview-close",
+     "label": "Close Satellite View",
+     "description": "Closes Satellite View.",
+     "action": "",
+     "visible": true
+    }
+   ]
+  },
+  "hudmove": {
+   "title": "Move Controls",
+   "description": "The Move controls bar: shown while arranging the on-screen controls — drag controls to their spots; Select control lists them, Reset restores the screen's designed layout, Done finishes.",
+   "groups": [],
+   "ungrouped": [
+    {
+     "id": "hud-move-reset",
+     "label": "Reset this screen",
+     "description": "Restores this screen's designed control layout (undoes your dragging).",
+     "action": "",
+     "visible": true
+    },
+    {
+     "id": "hud-move-done",
+     "label": "✓ Done",
+     "description": "Finishes arranging and returns to the game.",
+     "action": "",
+     "visible": true
+    },
+    {
+     "id": "hud-move-select",
+     "label": "Select control ▾",
+     "description": "Lists every movable control by name — pick one to select it (off-screen controls can be brought back to the center).",
+     "action": "",
+     "visible": true
+    },
+    {
+     "id": "hud-move-hide",
+     "label": "Hide ▾",
+     "description": "Collapses the Move controls bar to its slim tab so the screen is clear for dragging.",
+     "action": "",
+     "visible": true
+    },
+    {
+     "id": "hud-move-tab",
+     "label": "✎ Move controls ▴",
+     "description": "The collapsed Move controls tab: tap to bring the bar back.",
+     "action": "",
+     "visible": true
+    }
+   ]
+  },
+  "goto": {
+   "title": "Go To",
+   "description": "The Go To panel: search the game's streets and places by name and travel straight there. Opened by the compass button or from Settings.",
+   "groups": [],
+   "ungrouped": [
+    {
+     "id": "goto-close",
+     "label": "Close Go to",
+     "description": "Closes the Go To panel.",
+     "action": "",
+     "visible": true
+    }
+   ]
+  },
+  "launcher": {
+   "title": "Launch Options",
+   "description": "Pre-game options screen: pick which systems run and graphics quality before starting.",
+   "groups": [
+    {
+     "name": "PERFORMANCE",
+     "items": [
+      {
+       "id": "opt-npcs",
+       "label": "NPCs (1,000 citizens)",
+       "description": "Enable the 1,000 NPC citizens walking around the city. Heavy on performance.",
+       "action": "toggle_opt",
+       "visible": true
+      },
+      {
+       "id": "opt-crews",
+       "label": "Work crews (all)",
+       "description": "Enable all work crews (road, survey, infrastructure, HQ staff).",
+       "action": "toggle_opt",
+       "visible": true
+      },
+      {
+       "id": "opt-roadCrew",
+       "label": "Road crew",
+       "description": "Enable the road maintenance crew.",
+       "action": "toggle_opt",
+       "visible": true
+      },
+      {
+       "id": "opt-surveyFleet",
+       "label": "Survey fleet",
+       "description": "Enable the survey vehicles driving around.",
+       "action": "toggle_opt",
+       "visible": true
+      },
+      {
+       "id": "opt-infraCrew",
+       "label": "Infra crew",
+       "description": "Enable the infrastructure crew.",
+       "action": "toggle_opt",
+       "visible": true
+      },
+      {
+       "id": "opt-hqStaff",
+       "label": "HQ staff",
+       "description": "Enable the headquarters staff NPCs.",
+       "action": "toggle_opt",
+       "visible": true
+      },
+      {
+       "id": "opt-martaBuses",
+       "label": "MARTA buses",
+       "description": "Enable MARTA buses driving their routes.",
+       "action": "toggle_opt",
+       "visible": true
+      },
+      {
+       "id": "opt-martaTrains",
+       "label": "MARTA trains",
+       "description": "Enable MARTA trains on the rail lines.",
+       "action": "toggle_opt",
+       "visible": true
+      },
+      {
+       "id": "opt-drones",
+       "label": "Airplane drones (50)",
+       "description": "Enable 50 airplane drones flying overhead.",
+       "action": "toggle_opt",
+       "visible": true
+      },
+      {
+       "id": "opt-traffic",
+       "label": "Ambient traffic",
+       "description": "Enable background traffic vehicles on the roads.",
+       "action": "toggle_opt",
+       "visible": true
+      }
+     ]
+    },
+    {
+     "name": "GRAPHICS",
+     "items": [
+      {
+       "id": "opt-shadows",
+       "label": "Shadows",
+       "description": "Enable real-time shadows. Light on performance.",
+       "action": "toggle_opt",
+       "visible": true
+      },
+      {
+       "id": "opt-antialias",
+       "label": "Antialiasing",
+       "description": "Smooth jagged edges. Heavy on performance.",
+       "action": "toggle_opt",
+       "visible": true
+      },
+      {
+       "id": "opt-hiDetail",
+       "label": "High-detail buildings",
+       "description": "Use high-detail building models. Medium performance impact.",
+       "action": "toggle_opt",
+       "visible": true
+      },
+      {
+       "id": "launch-drawdist",
+       "label": "Draw distance",
+       "description": "How far the game draws the world: Short (fastest), Medium, or Long.",
+       "action": "",
+       "visible": true
+      },
+      {
+       "id": "launch-quality",
+       "label": "Quality",
+       "description": "Graphics quality: Auto lets the game step quality up and down to hold its frame rate; or lock Full / High / Medium / Low.",
+       "action": "",
+       "visible": true
+      }
+     ]
+    }
+   ],
+   "ungrouped": [
+    {
+     "id": "launch-all",
+     "label": "SELECT ALL",
+     "description": "Turn on all launch options.",
+     "action": "select_all",
+     "visible": true
+    },
+    {
+     "id": "launch-none",
+     "label": "SELECT NONE",
+     "description": "Turn off all launch options.",
+     "action": "select_none",
+     "visible": true
+    },
+    {
+     "id": "launch-weak",
+     "label": "WEAK HARDWARE",
+     "description": "Preset for weak devices: turns off heavy options.",
+     "action": "preset_weak",
+     "visible": true
+    },
+    {
+     "id": "launch-start",
+     "label": "START GAME",
+     "description": "Start the game with the selected options.",
+     "action": "start_game",
+     "visible": true
+    },
+    {
+     "id": "launch-anyway",
+     "label": "Start Anyway",
+     "description": "Start the game anyway, ignoring performance warnings.",
+     "action": "start_anyway",
+     "visible": true
+    }
+   ]
+  },
+  "help": {
+   "title": "How to play",
+   "description": "The help panel with game instructions. Informational — not interactive items.",
+   "groups": [],
+   "ungrouped": [
+    {
+     "id": "help-close",
+     "label": "Got it",
+     "description": "Close the help panel and return to the game.",
+     "action": "close",
+     "visible": true
+    }
+   ]
+  }
+ },
+ "version": 1
+}
