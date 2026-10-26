@@ -141,7 +141,7 @@ STATION_EDITS_REPO_PATH = "editors/building-editor/station-edits.json"
 
 # Stamps into the version string of any zone file this editor saves
 # ("<date>-building-editor-<ver>-<zone>").
-EDITOR_VERSION = "2.0.5"
+EDITOR_VERSION = "2.0.6"
 
 # -- detail chunks (2.0.0 snapshot model) ------------------------------
 # buildings_detail.json stays the game's canonical detail file; the
@@ -266,6 +266,33 @@ def rectangle_ring(x, z, w, d):
     hw, hd = w / 2.0, d / 2.0
     return [[x - hw, z - hd], [x + hw, z - hd],
             [x + hw, z + hd], [x - hw, z + hd]]
+
+
+def ring_orientation_deg(ring):
+    """A footprint ring's orientation in degrees, in [0, 180):
+    the direction of the ring's longest edge, measured in the
+    x/z plane (atan2 of the edge's dz over dx, folded mod 180).
+
+    2.0.6 (Joshua): this is the number the editor's Rotation
+    field shows and the rotate drag turns. For a rectangular
+    footprint it is the direction of its long sides; an
+    axis-aligned rectangle_ring reads 0. A rectangle has no
+    head/tail, so orientation is naturally mod 180."""
+    best = None
+    n = len(ring or [])
+    for i in range(n):
+        a = ring[i]
+        b = ring[(i + 1) % n]
+        dx, dz = b[0] - a[0], b[1] - a[1]
+        length2 = dx * dx + dz * dz
+        if length2 <= 0:
+            continue
+        if best is None or length2 > best[0]:
+            best = (length2, dx, dz)
+    if best is None:
+        return 0.0
+    ang = math.degrees(math.atan2(best[2], best[1])) % 180.0
+    return ang
 
 
 def ring_centroid(ring):
@@ -1449,6 +1476,69 @@ class ZoneData:
         det["height_m"] = h
         det["ring"] = rectangle_ring(box[0], box[1], w, d)
         self.dirty = True
+
+    def rotate(self, index, delta_deg, flagged=None):
+        """Rotate a building's footprint by `delta_deg` around
+        its own centre (2.0.6, Joshua: Ctrl+drag on the building).
+
+        HOW ROTATION IS STORED: a zone building's record pair
+        has no angle field — the footprint IS the detail record's
+        ring, and the box is the summary the game consumes. So a
+        rotation BAKES, like every editor transform: the ring
+        turns rigidly about the box centre, and the box becomes
+        the rotated footprint's bounding summary — centre
+        unchanged (rotation never translates a building), width
+        and depth grown symmetrically so the box still contains
+        the whole footprint; height and type untouched. The pair
+        saves through the same manifest-safe path as move/resize
+        (buildings.json + buildings_detail.json + the detail
+        chunks + the regenerated light index).
+
+        GAME LIMIT (stated plainly): the game places mass
+        buildings from the box and derives each building's facing
+        yaw from the roads at runtime — it reads no per-building
+        angle from the zone data. A rotation is therefore exact
+        in the editor's footprint record and views, while in the
+        game it takes effect through the new bounding box; the
+        game keeps facing the building to its street."""
+        self._refuse_if_flagged(index, flagged)
+        self._materialize_or_refuse()
+        box = self.boxes[index]
+        det = self.details[index]
+        ring = det.get("ring") or []
+        if len(ring) < 2:
+            raise ZoneDataError(
+                "This building has no footprint to rotate.")
+        cx, cz = box[0], box[1]
+        th = math.radians(delta_deg)
+        ca, sa = math.cos(th), math.sin(th)
+        new_ring = []
+        max_dx = 0.0
+        max_dz = 0.0
+        for px, pz in ring:
+            dx, dz = px - cx, pz - cz
+            rx, rz = cx + dx * ca - dz * sa, cz + dx * sa + dz * ca
+            new_ring.append([rx, rz])
+            max_dx = max(max_dx, abs(rx - cx))
+            max_dz = max(max_dz, abs(rz - cz))
+        det["ring"] = new_ring
+        box[2] = 2.0 * max_dx
+        box[3] = 2.0 * max_dz
+        self.dirty = True
+
+    def rotate_to(self, index, angle_deg, flagged=None):
+        """Rotate a building so its footprint orientation reads
+        `angle_deg` (see ring_orientation_deg): turns it by the
+        shortest arc from where it sits now. Returns True when
+        the building actually turned."""
+        if index < 0 or index >= len(self.details):
+            raise ZoneDataError("No such building.")
+        cur = ring_orientation_deg(self.details[index].get("ring"))
+        delta = (angle_deg - cur + 90.0) % 180.0 - 90.0
+        if abs(delta) < 1e-9:
+            return False
+        self.rotate(index, delta, flagged=flagged)
+        return True
 
     def delete(self, index, flagged=None):
         """Delete a building: BOTH the box and its detail entry go.
