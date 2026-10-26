@@ -52,7 +52,7 @@ import overpass as overpass_mod  # noqa: E402
 
 # App version shown in the Help -> About dialog (bump with each release).
 # Joshua 2026-10-11: version number must be prominent in About.
-APP_VERSION = "1.9.13"
+APP_VERSION = "1.9.14"
 # Display name and icon-theme name for the About dialog.
 APP_NAME = "Adamsville Map Editor"
 APP_ICON = "adamsville-map-editor-native"
@@ -263,6 +263,10 @@ class MapEditorApp:
         # background, so a busy app never reads as frozen.
         self._build_progress_bar()
         self._build_heading_box()
+        # Layout persistence (1.9.14): from here on, window and
+        # pane movements are remembered (debounced) as they
+        # happen — see _track_layout.
+        self._track_layout()
         self.set_status(
             "Click a road to select it — then Merge, Join, or "
             "Delete. Drag the map to pan.")
@@ -277,14 +281,128 @@ class MapEditorApp:
     # ------------------------------------------------------------------
 
     def _restore_window(self):
-        """Restore saved window position/size from previous session."""
+        """
+        Restore saved window position/size from previous session.
+
+        1.9.14 (Joshua's finding: "resize the windows, restart —
+        it is not saving the view"): the saved layout now also
+        carries the PANE sizes, kept here and applied in
+        _initial_setup once the panes have real sizes; and the
+        window geometry is CLAMPED to the current display's work
+        area — a layout remembered on a bigger screen must never
+        restore off-screen. A missing or corrupt file is a first
+        run: the built-in defaults stand, quietly.
+        """
+        self._saved_panes = {}
         state = load_window_state()
         if state:
-            self.window.move(state.get("x", 100), state.get("y", 100))
-            self.window.set_default_size(
-                state.get("width", 1280), state.get("height", 800))
+            try:
+                x = int(state.get("x", 100))
+                y = int(state.get("y", 100))
+                w = int(state.get("width", 1280))
+                h = int(state.get("height", 800))
+            except Exception:
+                return  # corrupt values: defaults, no fuss
+            x, y, w, h = self._clamp_to_work_area(x, y, w, h)
+            panes = state.get("panes")
+            if isinstance(panes, dict):
+                self._saved_panes = panes
+            self.window.move(x, y)
+            self.window.set_default_size(w, h)
             if state.get("maximized"):
                 self.window.maximize()
+
+    def _clamp_to_work_area(self, x, y, w, h):
+        """
+        Pull a remembered window rect inside the current
+        display's work area (1.9.14): the size never exceeds the
+        work area, the top edge (the title bar) stays inside it,
+        and at least 160 px of the window stays reachable
+        horizontally. Fail-open: any trouble returns the rect
+        unchanged.
+        """
+        try:
+            display = Gdk.Display.get_default()
+            monitor = display.get_primary_monitor() \
+                or display.get_monitor(0)
+            wa = monitor.get_workarea()
+            w = max(320, min(w, wa.width))
+            h = max(240, min(h, wa.height))
+            x = min(max(x, wa.x - w + 160), wa.x + wa.width - 160)
+            y = min(max(y, wa.y), wa.y + wa.height - 120)
+            return x, y, w, h
+        except Exception:
+            return x, y, w, h
+
+    # -- layout persistence (1.9.14) ------------------------------
+    # The window layout — size, position, and the adjustable
+    # panes' sizes — is remembered across restarts, the suite's
+    # window.json convention (the Detail Editor's WindowState
+    # shape: one JSON document in the app's data dir, reads
+    # fail-open). It is saved on close AND live, debounced, as
+    # the window and panes move — so the layout on disk is never
+    # stale, even if the app dies mid-session.
+
+    def _layout_paneds(self):
+        """The adjustable panes whose sizes are remembered:
+        {name: paned} — the inspector column (resource pane
+        width), the Pieces panel height, and the inspector's own
+        area/resource split."""
+        out = {}
+        for name, paned in (("main_paned", self.main_paned),
+                            ("canvas_paned", self.canvas_paned)):
+            if paned is not None:
+                out[name] = paned
+        split = getattr(getattr(self, "inspector", None),
+                        "split_paned", None)
+        if split is not None:
+            out["inspector_split"] = split
+        return out
+
+    def _track_layout(self):
+        """Watch the window and panes for layout changes."""
+        self._layout_save_id = None
+        self.window.connect("configure-event",
+                            self._on_window_configure)
+        for paned in self._layout_paneds().values():
+            paned.connect("notify::position",
+                          lambda *_a: self._schedule_layout_save())
+
+    def _on_window_configure(self, widget, event):
+        """Window moved/resized: remember it (debounced)."""
+        self._schedule_layout_save()
+        return False
+
+    def _schedule_layout_save(self):
+        """Debounce layout writes: one write once things settle
+        (400 ms), however many events the drag produced."""
+        if getattr(self, "_layout_save_id", None):
+            GLib.source_remove(self._layout_save_id)
+        self._layout_save_id = GLib.timeout_add(
+            400, self._save_layout_now)
+
+    def _save_layout_now(self):
+        """Write the current window + pane layout to window.json
+        (fail-open; the close path and the debounce both land
+        here)."""
+        if getattr(self, "_layout_save_id", None):
+            GLib.source_remove(self._layout_save_id)
+            self._layout_save_id = None
+        try:
+            x, y = self.window.get_position()
+            w, h = self.window.get_size()
+            panes = {}
+            for name, paned in self._layout_paneds().items():
+                try:
+                    panes[name] = paned.get_position()
+                except Exception:
+                    pass
+            save_window_state(x, y, w, h,
+                              self.window.is_maximized(),
+                              panes=panes)
+        except Exception:
+            pass
+        return False
 
     def on_window_close(self, widget, event):
         """
@@ -302,10 +420,10 @@ class MapEditorApp:
             if choice == "push":
                 # Push via API if token is set, else open manual dialog.
                 self.on_push_clicked(None)
-        x, y = self.window.get_position()
-        w, h = self.window.get_size()
-        maximized = self.window.is_maximized()
-        save_window_state(x, y, w, h, maximized)
+        # 1.9.14: the closing save carries the whole layout —
+        # window geometry AND pane sizes (the live debounced
+        # saves mean it is almost always already current).
+        self._save_layout_now()
         Gtk.main_quit()
         return False
 
@@ -329,6 +447,16 @@ class MapEditorApp:
             if event.keyval == Gdk.KEY_Escape:
                 self.canvas.cancel_move_road()
                 return True
+        # Measure mode (1.9.14): Escape leaves MEASURE MODE —
+        # and only that. The generic Escape below clears the
+        # selection, and measure mode promised to leave the
+        # selection exactly as it found it, so an Esc that stops
+        # measuring must never fall through to it.
+        if event.keyval == Gdk.KEY_Escape and \
+                getattr(self.canvas, "measure_mode", False):
+            self.canvas.exit_measure_mode()
+            self.set_status("Measure off.")
+            return True
         if event.keyval == Gdk.KEY_Escape:
             self.canvas.clear_tool_state()
             self.set_status("Selection cleared.")
@@ -3867,10 +3995,25 @@ class MapEditorApp:
         # 1.9.10: give the Pieces panel its starting share of
         # the canvas column (~200 px at the bottom) now that the
         # paned has a real height; the sash stays draggable.
+        # 1.9.14: a REMEMBERED layout outranks the starting
+        # shares — every pane comes back the size Joshua left
+        # it (the values _restore_window kept from window.json).
         try:
+            saved = getattr(self, "_saved_panes", None) or {}
             alloc = self.canvas_paned.get_allocation()
             if alloc.height > 300:
-                self.canvas_paned.set_position(alloc.height - 205)
+                if saved.get("canvas_paned"):
+                    self.canvas_paned.set_position(
+                        int(saved["canvas_paned"]))
+                else:
+                    self.canvas_paned.set_position(
+                        alloc.height - 205)
+            if saved.get("main_paned"):
+                self.main_paned.set_position(
+                    int(saved["main_paned"]))
+            split = getattr(self.inspector, "split_paned", None)
+            if split is not None and saved.get("inspector_split"):
+                split.set_position(int(saved["inspector_split"]))
         except Exception:
             pass
         self.canvas.fit_view()
