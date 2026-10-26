@@ -2133,6 +2133,10 @@ class RoadInspectorPanel(Gtk.VBox):
         self.pack_start(header, False, False, 2)
 
         vpaned = Gtk.VPaned()
+        # 1.9.14: a handle the app can reach — this split's size
+        # is part of the remembered window layout (app.py's
+        # layout persistence reads and restores it).
+        self.split_paned = vpaned
         self.cp_viewer = ControlPointViewer(self)
 
         # The area pane sits in an overlay so its Still/Live state
