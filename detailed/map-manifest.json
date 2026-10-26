@@ -1,6 +1,6 @@
 {
  "version": "2.0.0",
- "map_version": "2026.10.26.1",
+ "map_version": "2026.10.26.2",
  "files": [
   {
    "name": "elev.js",
@@ -46,8 +46,8 @@
   },
   {
    "name": "zones/adamsville/roads.js",
-   "sha256": "3443390f75614867a301b7b3034ed7e3be3c553bcf3b385083a1eb2687961740",
-   "size": 3254899,
+   "sha256": "8cfc4dc102bedffb4e822f28ba3a810e4641443fc36f50d18ca0f19731f10cf2",
+   "size": 3251575,
    "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/adamsville/roads.js"
   },
   {
@@ -227,8 +227,8 @@
   },
   {
    "name": "zones/adamsville/roads.json",
-   "sha256": "a9bcd60b0610f4650d8626a37a2d2900cf7eec9d7a021e411d6ef619927beee3",
-   "size": 3254713,
+   "sha256": "82084ff3470c96288cfda2986601efbab196083d2e83fe9fd1c8c78516926831",
+   "size": 3251389,
    "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/zones/adamsville/roads.json"
   },
   {
