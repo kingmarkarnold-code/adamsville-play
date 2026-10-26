@@ -124,9 +124,9 @@
     },
     {
       "name": "github_reports.js",
-      "size": 41715,
-      "sha256": "64574465465072cdf79454947ab8d9fba08bb08398a4169597778fba8cea5c9a",
-      "hash": "64574465465072cdf79454947ab8d9fba08bb08398a4169597778fba8cea5c9a",
+      "size": 43380,
+      "sha256": "92982a018406e7849d8b20f92465a0965cf90f283b0fdcab51f7dd40a11f4b42",
+      "hash": "92982a018406e7849d8b20f92465a0965cf90f283b0fdcab51f7dd40a11f4b42",
       "md5": "03aeb1c6800997be8c363d0a600c8934"
     },
     {
@@ -173,9 +173,9 @@
     },
     {
       "name": "index.html",
-      "size": 1081046,
-      "sha256": "e803a14899f10b6bb2d6005c3c5d7417c59488cf548e52e01c5e5d40538ebc85",
-      "hash": "e803a14899f10b6bb2d6005c3c5d7417c59488cf548e52e01c5e5d40538ebc85"
+      "size": 1091403,
+      "sha256": "6dbd1c4d48044c0151c3798d601eec74b29623e3d4b116cfa4c2c83402e4c16f",
+      "hash": "6dbd1c4d48044c0151c3798d601eec74b29623e3d4b116cfa4c2c83402e4c16f"
     },
     {
       "name": "infracrew_system.js",
@@ -457,15 +457,15 @@
     },
     {
       "name": "ui_layout.json",
-      "size": 34829,
-      "sha256": "0a5eb2eed20f148eeb26eb021d57af9c590e5e9e1cd8650deb1c2c9b272d0348",
-      "hash": "0a5eb2eed20f148eeb26eb021d57af9c590e5e9e1cd8650deb1c2c9b272d0348"
+      "size": 165772,
+      "sha256": "ff96fa1c1935bec4d67c6772f30712b1cca16fa422d48f91e176c8005b39b9e3",
+      "hash": "ff96fa1c1935bec4d67c6772f30712b1cca16fa422d48f91e176c8005b39b9e3"
     },
     {
       "name": "ui_layout_apply.js",
-      "size": 16685,
-      "sha256": "11a0b443f1d0a8c05d1699ae60309c0afe724adfd8cc14f0769a4933260f79a2",
-      "hash": "11a0b443f1d0a8c05d1699ae60309c0afe724adfd8cc14f0769a4933260f79a2"
+      "size": 20033,
+      "sha256": "93418087125a20eeec40366ad7bd80f452b4e8ff0ccc20b148d128caec720485",
+      "hash": "93418087125a20eeec40366ad7bd80f452b4e8ff0ccc20b148d128caec720485"
     },
     {
       "name": "ui_sounds.js",
@@ -705,6 +705,6 @@
       "hash": "b1632a703206c3d830de9fcbe515696770d04b71a15ee6b50afa6d2c3298c86f"
     }
   ],
-  "ui_version": "2026.10.25.7",
+  "ui_version": "2026.10.26.1",
   "version": "2026.10.17.9"
 }

@@ -1429,6 +1429,9 @@ function __setLoadPhase(phase){
 /* Set parse-phase progress: label + detail + percentage (0-100, green phase).
    Dots are pure CSS so they animate even when JS is blocked. */
 function __parseSet(label, detail, pct){
+  /* LAPTOP-HANG FIX (2026-10-25): every visible progress update also
+     stamps the watchdog's progress clock (see the block-1 failsafe). */
+  try{ window.__wbProgressAt=Date.now(); }catch(e){}
   __setLoadPhase('parse');
   var st=document.getElementById('load-status');
   if(st){ st.innerHTML=label+'<span class="load-dots"><span>.</span><span>.</span><span>.</span></span>'; st.style.opacity='1'; }
@@ -1442,6 +1445,7 @@ function __parseSet(label, detail, pct){
 function __loadStep(key,failed){
   if(window.__loadDone[key]) return;
   window.__loadDone[key]=failed?'warn':'ok';
+  try{ window.__wbProgressAt=Date.now(); }catch(e){}
   /* v1.52 #28: remember failed CRITICAL steps so __tryStartGame can block
      with a clear error instead of silently starting an empty city. */
   try{
@@ -1513,6 +1517,27 @@ function __criticalConsequence(fails){
     return 'the city empty';
   }catch(e){ return 'the game in a broken state'; }
 }
+/* LAPTOP-HANG FIX (2026-10-25): __forceCompletePendingSteps lives HERE, in
+   block 1 — it used to be defined in block 2, next to the watchdog that
+   called it, which meant neither existed until block 2's long synchronous
+   evaluation finished. Same semantics as always (v1.53 #34): OPTIONAL
+   steps only; critical steps are never force-completed. */
+window.__forceCompletePendingSteps=function(){
+  var forced=0;
+  try{
+    for(var i=0;i<window.__loadOrder.length;i++){
+      var k=window.__loadOrder[i];
+      if(!window.__loadDone[k] && !(window.__criticalLoadKeys||{})[k]){
+        window.__loadDone[k]='warn';
+        try{ console.warn('[loader] Failsafe force-completed OPTIONAL step: '+k); }catch(e){}
+        forced++;
+      }
+    }
+    try{ __paintProgress(); }catch(e){}
+    return forced;
+  }catch(e){ return 0; }
+};
+
 /* v1.53 #34 __criticalBlockedList(): every critical load key that is still
    pending (never reported) or reported failure. The failsafes and the start
    gate use this so a broken world can never start silently. */
@@ -1622,6 +1647,164 @@ function __zoneFileProgress(key, received, total){
   if(st&&window.__loadOrder.length) st.textContent='Loading '+window.__loadNames[window.__loadOrder[0]].toLowerCase()+'...';
   __paintProgress();
 })();
+/* =====================================================================
+   LAPTOP-HANG FIX (2026-10-25) — THE FAILSAFES, ARMED FROM BLOCK 1.
+   The Oct-11 protections (45s stuck watchdog + SKIP AND START, 3-minute
+   absolute failsafe) used to be armed by setTimeout calls at the END of
+   block 2. A setTimeout can only fire BETWEEN tasks, and it is only
+   ARMED once the code that creates it has run — so when the stall sat
+   inside block 2's own synchronous evaluation (the 23,384-building
+   placement pass) or the microtask chain right behind it, neither
+   protection existed during the very window it was needed, and the
+   loader sat dead. These versions are armed here, in block 1, before
+   any game script loads, and they are PROGRESS-BASED rather than
+   elapsed-based: __parseSet and __loadStep stamp window.__wbProgressAt
+   on every visible advance, and the chunked placement pass stamps it
+   per slice. A slow-but-moving boot (a weak laptop legitimately needs
+   minutes) never trips them; a boot that has made NO progress for 45s
+   gets the SKIP escape, and one with no progress for 180s gets the
+   absolute failsafe. The clock starts when deferred loading begins
+   (__loadBeganAt), never while the launcher is merely sitting open.
+   A stall also REPORTS ITSELF (see __recordBootStall): the report rides
+   the existing GitHubReports queue, or — when that module has not even
+   loaded yet — a localStorage holding queue that github_reports.js
+   drains on the next boot, so a hang leaves evidence even if the tab
+   is closed before gameplay. */
+window.__wbProgressAt = 0;
+window.__stallTier = 0;
+window.__stallReportsSent = 0;
+function __pendingStepNames(){
+  var out=[];
+  try{
+    for(var i=0;i<window.__loadOrder.length;i++){
+      var k=window.__loadOrder[i];
+      if(!window.__loadDone[k]) out.push(window.__loadNames[k]||k);
+    }
+  }catch(e){}
+  return out;
+}
+function __recordBootStall(kind, idleSec){
+  try{
+    if (window.__stallReportsSent >= 3) return;   /* one per episode, capped */
+    window.__stallReportsSent++;
+    var pending = __pendingStepNames();
+    var stage = pending.length ? pending[0] : 'game world';
+    var msg = 'Boot stall ('+kind+'): the loader made no progress for '+
+      Math.round(idleSec)+'s at stage "'+stage+'". Pending steps: '+
+      (pending.slice(0,4).join(', ')||'none')+
+      '. Document version '+(window.__DOC_UIVER||'?')+
+      ', live version '+(window.__UIVER||'?')+'.';
+    try{ if (typeof SA_CRASH==='function')
+      SA_CRASH('critical',{code:'boot-stall', message:msg,
+        where:'loader watchdog (block 1)'}); }catch(e){}
+    var details = { message:msg, kind:'boot-stall', stallKind:kind,
+      stage:stage, idleSeconds:Math.round(idleSec), pending:pending,
+      docVersion:window.__DOC_UIVER||'', liveVersion:window.__UIVER||'',
+      ua:(navigator.userAgent||''), ts:new Date().toISOString() };
+    var sent=false;
+    try{
+      if (window.GitHubReports && typeof GitHubReports.queue==='function'){
+        GitHubReports.queue('crash', details); sent=true;
+      }
+    }catch(e){}
+    if (!sent){
+      try{
+        var key='sa_pending_reports_v1';
+        var arr=[];
+        try{ arr=JSON.parse(localStorage.getItem(key)||'[]');
+             if(!Array.isArray(arr)) arr=[]; }catch(e){ arr=[]; }
+        arr.push({type:'crash', details:details});
+        while(arr.length>5) arr.shift();
+        localStorage.setItem(key, JSON.stringify(arr));
+      }catch(e){}
+    }
+  }catch(e){}
+}
+function __loaderEscapeAbsolute(){
+  /* The absolute failsafe body (shared by the watchdog's 180s tier):
+     force-complete OPTIONAL steps; if critical steps are blocked, the
+     loud critical-failure panel owns the screen; otherwise offer the
+     deliberate start tap (Launch Flow Rule preserved). */
+  try{ console.warn('[loader] ABSOLUTE FAILSAFE: no progress for 180s, force-completing OPTIONAL pending steps'); }catch(e){}
+  window.__forceCompletePendingSteps();
+  var blocked=__criticalBlockedList();
+  var st=document.getElementById('load-status');
+  var sb=document.getElementById('load-start');
+  if(blocked.length){
+    for(var bi=0;bi<blocked.length;bi++){
+      if(window.__criticalFailed.indexOf(blocked[bi])===-1) window.__criticalFailed.push(blocked[bi]);
+    }
+    if(typeof __showCriticalWarning==='function') __showCriticalWarning();
+    if(st){ st.textContent='\u26A0 Critical systems missing \u2014 see warning above'; st.style.opacity='1'; }
+    if(sb){ sb.style.display='none'; }
+  }else{
+    if(st){ st.textContent='\u26A0 Some optional assets timed out \u2014 starting with what loaded'; st.style.opacity='1'; }
+    if(sb){ sb.style.display='block'; sb.textContent='TAP TO START'; sb.onclick=null; }
+  }
+}
+setInterval(function(){
+  try{
+    if (window.__gameStarted) return;
+    if (!window.__loadBeganAt) return;      /* launcher up; loading hasn't begun */
+    var l=document.getElementById('loader');
+    if (!l || l.style.display==='none') return;
+    var last = Math.max(window.__wbProgressAt||0, window.__loadBeganAt);
+    var idle = (Date.now()-last)/1000;
+    if (idle < 45){ window.__stallTier = 0; return; }
+    var pending = __pendingStepNames();
+    /* Loading COMPLETE is not a stall: when every step is done and the
+       buildings gate has resolved, the loader is simply waiting for the
+       player's deliberate tap (Launch Flow Rule) — stand down, and never
+       record a stall for a finished load. */
+    if (!pending.length && (!window.__bldgGatePromise || window.__bldgGateDone)) return;
+    if (window.__stallTier === 0){
+      window.__stallTier = 1;
+      try{ console.warn('[loader] STUCK WATCHDOG: no progress for '+Math.round(idle)+'s'); }catch(e){}
+      __recordBootStall('watchdog-45s', idle);
+      var st=document.getElementById('load-status');
+      if(st){
+        if(pending.length){
+          st.textContent='\u26A0 Stuck waiting for: '+pending.slice(0,3).join(', ')+(pending.length>3?'\u2026':'');
+        }else{
+          st.textContent='\u26A0 Ready but not starting \u2014 tap anywhere';
+        }
+        st.style.opacity='1';
+      }
+      var sb=document.getElementById('load-start');
+      if(sb){
+        sb.style.display='block';
+        if(pending.length){
+          /* Same escape semantics as the Oct-11 design: skip stuck
+             OPTIONAL steps; critical steps go to the loud panel. */
+          sb.textContent='SKIP AND START';
+          sb.onclick=function(){
+            try{
+              window.__forceCompletePendingSteps();
+              var blocked=__criticalBlockedList();
+              if(blocked.length){
+                for(var bi=0;bi<blocked.length;bi++){
+                  if(window.__criticalFailed.indexOf(blocked[bi])===-1) window.__criticalFailed.push(blocked[bi]);
+                }
+                if(typeof __showCriticalWarning==='function') __showCriticalWarning();
+                var st0=document.getElementById('load-status');
+                if(st0){ st0.textContent='\u26A0 Critical systems still missing \u2014 see warning above'; st0.style.opacity='1'; }
+              }
+              else if(typeof __tryStartGame==='function') __tryStartGame();
+            }catch(e){}
+          };
+        }else{
+          sb.textContent='TAP TO START';
+        }
+      }
+    }
+    if (idle >= 180 && window.__stallTier === 1){
+      window.__stallTier = 2;
+      __recordBootStall('failsafe-180s', idle);
+      __loaderEscapeAbsolute();
+    }
+  }catch(e){}
+}, 10000);
+
 /* v1.15: NO fake-complete watchdog. The old 20s timer marked unreported steps
    as done even when their bytes never arrived — that is exactly the "fake"
    behavior Joshua flagged. If a step genuinely fails, its onerror fires
@@ -2210,6 +2393,34 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
     });
   });
 }
+/* LAPTOP-HANG FIX (2026-10-25) — MIXED-VERSION SELF-HEAL.
+   This literal is the version of THIS document. tools/release.py rewrites
+   it on every ui bump, in step with ui-manifest.json. At boot, block 1
+   fetches the LIVE manifest (cache:'no-store') before any game script
+   loads; if the live version differs from this document's, the browser
+   is holding a stale/mixed set of files (e.g. a previous release's page
+   with this release's scripts), so the boot forces ONE clean reload
+   toward the live version. A sessionStorage guard keyed to the target
+   version makes a loop impossible: if the reload lands on the same
+   stale document (CDN still catching up), the boot proceeds as-is. */
+window.__DOC_UIVER = '2026.10.26.1';
+function __checkDocVersionHeal(){
+  var live = window.__UIVER || '';
+  if (!live || live === window.__DOC_UIVER){
+    try{ sessionStorage.removeItem('sa_uiver_heal'); }catch(e){}
+    return;
+  }
+  var guard = '';
+  try{ guard = sessionStorage.getItem('sa_uiver_heal') || ''; }catch(e){}
+  if (guard === live) return;   /* already healed once toward this version */
+  try{ sessionStorage.setItem('sa_uiver_heal', live); }catch(e){}
+  try{ console.warn('[loader] Document version '+window.__DOC_UIVER+' != live '+live+' - one clean reload to self-heal a mixed file set'); }catch(e){}
+  try{
+    var u = new URL(location.href);
+    u.searchParams.set('uiv', live);
+    location.replace(u.toString());
+  }catch(e){ try{ location.reload(); }catch(_){} }
+}
 function __fetchLoadManifests(cb){
   /* Fetch both manifests in parallel with cache:'no-store'. Always calls cb
      (even on failure — missing versions just mean no cache-buster/integrity,
@@ -2224,6 +2435,7 @@ function __fetchLoadManifests(cb){
       try{
         if (m){
           window.__UIVER = m.ui_version || m.version || '';
+          try{ __checkDocVersionHeal(); }catch(e){}
           window.__UIHASH = {};
           window.__UISIZE = {};
           var files = m.files || [];
@@ -2267,6 +2479,9 @@ function __fetchLoadManifests(cb){
 function __loadDeferredQueue(){
   if (window.__deferredLoading || window.__deferredDone) return;
   window.__deferredLoading = true;
+  /* LAPTOP-HANG FIX (2026-10-25): the failsafe clock starts when loading
+     actually begins (not at page open — the launcher may sit open). */
+  if(!window.__loadBeganAt) window.__loadBeganAt=Date.now();
   /* v1.35 #35: prefetch manifests (versions + SRI hashes) before any game
      script downloads, then run the queue. */
   __fetchLoadManifests(function(){ __loadDeferredQueueInner(); });
@@ -2300,6 +2515,18 @@ function __loadDeferredQueueInner(){
     if (item.type === 'inline'){
       try{ (0,eval)(item.code); }catch(e){ try{ console.error('[deferred] Inline block failed:', e); }catch(_){} }
       next();
+    } else if (window.__bldgGatePromise && !window.__bldgGateDone && item.src &&
+               /(residential_detail|marriott|codeenforce_system|visual_inspect)\.js/.test(item.src)) {
+      /* LAPTOP-HANG FIX (2026-10-25): building-consumer scripts must not
+         run before sliced placement has published its results — they
+         read window.__bldgMeshes.kept and would otherwise silently
+         re-derive placements (wrong yaws/base heights) or find no data.
+         Wait for the gate; a 10-minute safety net injects anyway rather
+         than ever trapping the queue. */
+      var __went = false;
+      var __go = function(){ if (__went) return; __went = true; loadDeferredScript(item, 0); };
+      window.__bldgGatePromise.then(__go);
+      setTimeout(function(){ if (!window.__bldgGateDone){ window.__bldgGateDone = true; __go(); } }, 600000);
     } else {
       /* v1.53 #34: external scripts get one automatic retry on transient
          failure (same pattern as zone files, v1.38) — a single network
@@ -4734,7 +4961,11 @@ var SAtex=(function(){
   function loadNext(){
     if(_qi>=ORDER.length) return;
     var key=ORDER[_qi++];
-    new THREE.TextureLoader().load('textures/'+FILE[key], function(tex){
+    /* LAPTOP-HANG FIX (2026-10-25): the texture URL is pinned to the live
+       UI version like every other game file — textures were the one asset
+       class loaded with no version at all, so a mixed file set could keep
+       serving a previous release's textures indefinitely. */
+    new THREE.TextureLoader().load('textures/'+FILE[key]+(window.__UIVER?('?v='+encodeURIComponent(window.__UIVER)):''), function(tex){
       tex.wrapS=tex.wrapT=THREE.RepeatWrapping;
       if (THREE.SRGBColorSpace!==undefined) tex.colorSpace=THREE.SRGBColorSpace; else tex.encoding=THREE.sRGBEncoding; /* merge 2026-10-25: SAtex post-dates the migration base snapshot; same dual-path colour port as the migration's sites */
       var mx=4;
@@ -8142,6 +8373,7 @@ function runOsmBuildings(){
       try{ SA_CRASH('critical',{code:'buildings-no-data',
         message:'building spawn ran with no building data (OSM_BUILDINGS missing/empty)',
         where:'runOsmBuildings() (index.html)'}); }catch(e){}
+      try{ if (window.__bldgGateResolve) window.__bldgGateResolve(); }catch(e){}
       return;
     }
     /* v2.0: the road grid MUST be FINAL before the placement check runs.
@@ -8173,7 +8405,21 @@ function runOsmBuildings(){
       }
     }catch(e){ savedFixes=null; }
     var kept=[], skippedRoad=0, nudgedBldg=0, skippedEditor=0, skippedHero=0, heroSkips=[];
-    for (var i=0;i<OSM_BUILDINGS.length;i++){
+    /* LAPTOP-HANG FIX (2026-10-25): placement runs in time-boxed slices
+       (~30ms of work, then a setTimeout(0) yield) with a live counter on
+       the loader, instead of one synchronous pass over all 23,384
+       buildings. On a weak machine the single pass could hold the main
+       thread for minutes: no loader repaint, no watchdog tick, no
+       escape. Order, checks and results are identical to the old loop;
+       when the last slice finishes, __finishBuildings() below runs the
+       rest of this function exactly as before and resolves the loader's
+       buildings gate (window.__bldgGateResolve). */
+    var __pi=0;
+    function __placeSlice(){
+      var __tEnd=Date.now()+30;
+      try{
+      for (var i=__pi;i<OSM_BUILDINGS.length;i++){
+        __pi=i+1;
       var b=OSM_BUILDINGS[i];  // [x, z, w, d, h, type]
       if (!b || b.length<6) continue;
       /* Hero-lot exclusion (2026-10-18, Joshua: "Fix 535"): a generic
@@ -8224,7 +8470,26 @@ function runOsmBuildings(){
       } else {
         skippedRoad++;
       }
+        if ((i&63)===63 && Date.now()>__tEnd) break;
+      }
+      }catch(e){
+        try{ Report.noteError('osmBuildings','placement failed',String(e&&e.stack||e)); }catch(x){}
+        try{ SA_CRASH('critical',{code:'buildings-spawn-crashed',
+          message:'building placement threw mid-pass: '+String(e&&e.message||e),
+          where:'runOsmBuildings() placement slice'}); }catch(x){}
+        try{ if (window.__bldgGateResolve) window.__bldgGateResolve(); }catch(x){}
+        return;
+      }
+      if (__pi<OSM_BUILDINGS.length){
+        try{ __parseSet('Placing buildings', __pi.toLocaleString()+' of '+OSM_BUILDINGS.length.toLocaleString(), 55+Math.round(14*__pi/OSM_BUILDINGS.length)); }catch(e){}
+        try{ window.__wbProgressAt=Date.now(); }catch(e){}
+        setTimeout(__placeSlice,0);
+        return;
+      }
+      __finishBuildings();
     }
+    function __finishBuildings(){
+      try{
     /* v1.19: Flush all saved fixes to localStorage now that the build pass
        is complete. Single write — not per-building. */
     try{ bldgFixFlush(); }catch(e){}
@@ -8255,6 +8520,7 @@ function runOsmBuildings(){
       try{ SA_CRASH('critical',{code:'buildings-all-skipped',
         message:'placement skipped all '+OSM_BUILDINGS.length+' buildings (none kept)',
         where:'runOsmBuildings() (index.html)'}); }catch(e){}
+      try{ if (window.__bldgGateResolve) window.__bldgGateResolve(); }catch(e){}
       return;
     }
     // v1.6: publish placed house (type 0) positions for driveway parking
@@ -8846,7 +9112,12 @@ function runOsmBuildings(){
         });
       }
     }catch(e){}
-  }catch(e){ try{Report.noteError('osmBuildings','build failed',String(e&&e.stack||e));}catch(x){} }
+      }catch(e){ try{Report.noteError('osmBuildings','build failed',String(e&&e.stack||e));}catch(x){} }
+      try{ if (window.__bldgGateResolve) window.__bldgGateResolve(); }catch(e){}
+    }
+    __placeSlice();
+  }catch(e){ try{Report.noteError('osmBuildings','build failed',String(e&&e.stack||e));}catch(x){}
+    try{ if (window.__bldgGateResolve) window.__bldgGateResolve(); }catch(x){} }
 }
 /* NOTE: invoked as runOsmBuildings() after the final road-grid rebuild —
    NOT here. See call site below. */
@@ -9410,8 +9681,22 @@ try{
    uses. The promise ALWAYS resolves (fetch failure = no dispositions,
    logged), so buildings can never be blocked by it; in the normal
    case the tiny file has long settled and this runs immediately. */
+/* LAPTOP-HANG FIX (2026-10-25): the buildings gate. Placement is sliced
+   (see runOsmBuildings), so its completion is now a promise the deferred
+   loader waits on before injecting the scripts that consume the placed
+   buildings (residential_detail.js, marriott.js, codeenforce_system.js,
+   visual_inspect.js), and that __tryStartGame waits on before starting.
+   The promise ALWAYS resolves — placement resolves it on every exit
+   path, the deferred call's catch resolves it here, and the loader adds
+   a long safety timeout — so the gate can never trap the boot. */
+window.__bldgGatePromise = new Promise(function(res){ window.__bldgGateResolve = res; });
+window.__bldgGatePromise.then(function(){
+  window.__bldgGateDone = true;
+  try{ if (window.__launcherConfirmed && typeof __tryStartGame==='function') __tryStartGame(); }catch(e){}
+});
 buildingEditsReady.then(function(){
-  try{ runOsmBuildings(); }catch(e){ try{Report.noteError('runOsmBuildings','deferred call failed',String(e&&e.stack||e));}catch(x){}
+  try{ runOsmBuildings(); }catch(e){ try{ if (window.__bldgGateResolve) window.__bldgGateResolve(); }catch(x){}
+    try{Report.noteError('runOsmBuildings','deferred call failed',String(e&&e.stack||e));}catch(x){}
     /* v1.63 CRASH LOG: a throw out of building spawn is a critical too. */
     try{ SA_CRASH('critical',{code:'buildings-spawn-crashed',
       errorName:(e&&e.name)||'Error', message:String(e&&e.message||e),
@@ -14195,6 +14480,16 @@ function __tryStartGame(){
       try{ if(typeof __showCriticalWarning==='function') __showCriticalWarning(); }catch(e){}
       return false;
     }
+    /* LAPTOP-HANG FIX (2026-10-25): building placement is sliced on slow
+       machines and may still be running when every load step completes.
+       The game must not start over a not-yet-placed city: say so and
+       wait — the gate's resolution retries the start (and the player's
+       own tap retries it too). */
+    if (window.__bldgGatePromise && !window.__bldgGateDone){
+      var _bgSt=document.getElementById('load-status');
+      if(_bgSt){ _bgSt.textContent='Placing buildings \u2014 almost there'; _bgSt.style.opacity='1'; }
+      return false;
+    }
     /* LAUNCH FLOW RULE — RESUME START GATE (Joshua 2026-10-18): on a
        resume boot (UI update / map update / zone jump — the boot carried
        a fresh resume stash, so the options screen was skipped and the
@@ -14271,116 +14566,14 @@ function __tryStartGame(){
     return false;
   }
 }
-/* v1.15: STUCK-LOADER WATCHDOG — if the loader is still visible 45s after
-   block 2 parsed and the game never started, surface a diagnostic instead of
-   a dead "click to continue". This catches the exact symptom Joshua reported. */
-/* v1.38 HARD FAILSAFE (Joshua 2026-10-11: laptop stuck at 18% with "HQ staff
-   failed"): the 45s watchdog only SHOWED a message — it never unblocked the
-   loader. Now it also reveals a SKIP AND START button that force-marks all
-   pending steps done so the player is never trapped. A 3-minute ABSOLUTE
-   failsafe force-completes everything automatically as a last resort.
-   v1.53 #34 (Jennifer Wu, QA): CRITICAL steps are NEVER force-completed.
-   Starting without the 3D engine / zone loader / map data / world init would
-   hand the player a silently broken game — exactly the bug being fixed.
-   This now completes OPTIONAL steps only and returns the count of critical
-   steps still blocked, so callers can show the loud failure panel instead
-   of starting a broken world. */
-window.__forceCompletePendingSteps=function(){
-  /* Mark every pending OPTIONAL __loadOrder step as warned-done so
-     __tryStartGame stops waiting on systems the game can live without.
-     Critical steps stay pending/failed — the start gate and the critical
-     warning panel handle those loudly. */
-  var forced=0;
-  try{
-    for(var i=0;i<window.__loadOrder.length;i++){
-      var k=window.__loadOrder[i];
-      if(!window.__loadDone[k] && !(window.__criticalLoadKeys||{})[k]){
-        window.__loadDone[k]='warn';
-        try{ console.warn('[loader] Failsafe force-completed OPTIONAL step: '+k); }catch(e){}
-        forced++;
-      }
-    }
-    try{ __paintProgress(); }catch(e){}
-    return forced;
-  }catch(e){ return 0; }
-};
-setTimeout(function(){
-  try{
-    var l=document.getElementById('loader');
-    if(l && l.style.display!=='none' && !window.__gameStarted){
-      var pending=[];
-      for(var i=0;i<window.__loadOrder.length;i++){
-        if(!window.__loadDone[window.__loadOrder[i]]) pending.push(window.__loadNames[window.__loadOrder[i]]);
-      }
-      var st=document.getElementById('load-status');
-      if(st){
-        if(pending.length){
-          st.textContent='⚠ Stuck waiting for: '+pending.slice(0,3).join(', ')+(pending.length>3?'…':'');
-        }else{
-          st.textContent='⚠ Ready but not starting — tap anywhere';
-        }
-        st.style.opacity='1';
-      }
-      var s=document.getElementById('load-start');
-      if(s){
-        s.style.display='block';
-        if(pending.length){
-          /* Offer an escape hatch: skip the stuck OPTIONAL steps and start anyway.
-             v1.53 #34: critical steps are never skipped — if any are still
-             blocked, show the loud critical-failure panel (RETRY / CONTINUE
-             ANYWAY) instead of silently starting a broken world. */
-          s.textContent='SKIP AND START';
-          s.onclick=function(){
-            try{
-              window.__forceCompletePendingSteps();
-              var blocked=__criticalBlockedList();
-              if(blocked.length){
-                for(var bi=0;bi<blocked.length;bi++){
-                  if(window.__criticalFailed.indexOf(blocked[bi])===-1) window.__criticalFailed.push(blocked[bi]);
-                }
-                if(typeof __showCriticalWarning==='function') __showCriticalWarning();
-                var st0=document.getElementById('load-status');
-                if(st0){ st0.textContent='⚠ Critical systems still missing — see warning above'; st0.style.opacity='1'; }
-              }
-              else if(typeof __tryStartGame==='function') __tryStartGame();
-            }catch(e){}
-          };
-        }else{
-          s.textContent='TAP TO START';
-        }
-      }
-    }
-  }catch(e){}
-},45000);
-/* v1.38 ABSOLUTE FAILSAFE: 3 minutes after page load, if the game still has
-   not started and the loader is still visible, force-complete pending
-   OPTIONAL steps automatically. The player should NEVER be stuck forever.
-   v1.53 #34: critical systems are NEVER force-completed. If any are still
-   blocked, the loud critical-failure panel shows instead of silently
-   starting a broken world. */
-setTimeout(function(){
-  try{
-    var l=document.getElementById('loader');
-    if(l && l.style.display!=='none' && !window.__gameStarted){
-      try{ console.warn('[loader] ABSOLUTE FAILSAFE: 3min elapsed, force-completing OPTIONAL pending steps'); }catch(e){}
-      window.__forceCompletePendingSteps();
-      var blocked=__criticalBlockedList();
-      var st=document.getElementById('load-status');
-      var s=document.getElementById('load-start');
-      if(blocked.length){
-        for(var bi=0;bi<blocked.length;bi++){
-          if(window.__criticalFailed.indexOf(blocked[bi])===-1) window.__criticalFailed.push(blocked[bi]);
-        }
-        if(typeof __showCriticalWarning==='function') __showCriticalWarning();
-        if(st){ st.textContent='⚠ Critical systems missing — see warning above'; st.style.opacity='1'; }
-        if(s){ s.style.display='none'; }
-      }else{
-        if(st){ st.textContent='⚠ Some optional assets timed out — starting with what loaded'; st.style.opacity='1'; }
-        if(s){ s.style.display='block'; s.textContent='TAP TO START'; }
-      }
-    }
-  }catch(e){}
-},180000);
+/* LAPTOP-HANG FIX (2026-10-25): the stuck-loader watchdog, the SKIP AND
+   START escape, the absolute failsafe and __forceCompletePendingSteps
+   MOVED to block 1 (search 'FAILSAFES, ARMED FROM BLOCK 1'). The copies
+   that used to live here were armed by setTimeout calls at the end of
+   this block — so during a stall inside this block's own synchronous
+   evaluation they did not exist yet, and no timer could interrupt the
+   running task anyway. The block-1 versions are progress-based and are
+   verified by triggering them, not just by reading them. */
 /* v1.33 REMOVED (Joshua 2026-10-11): the 30s auto-confirm fallback is gone.
    The launcher now waits for an explicit choice — START GAME or the new
    "Start Anyway" button. No timers, no auto-proceed. (__autoStart below only

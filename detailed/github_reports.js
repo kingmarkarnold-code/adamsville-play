@@ -874,6 +874,11 @@ window.GitHubReports = (function(){
      nothing lost. Guards (re-entrancy, enabled, empty queue)
      live here so both paths share them. */
   function flush(keepalive){
+    /* Boot-stall holding queue (2026-10-25): drain on EVERY flush, not
+       only in start() — start() is bound to the window load event, whose
+       timing against this module's deferred injection is not guaranteed,
+       and a parked stall record must never wait on that luck. */
+    try{ drainPendingBootReports(); }catch(e){}
     if(flushing) return Promise.resolve(false);
     if(!isEnabled()) return Promise.resolve(false);
     if(queue.length===0) return Promise.resolve(false);
@@ -940,7 +945,29 @@ window.GitHubReports = (function(){
 
   var timerId = null;
 
+  /* Boot-stall holding queue (2026-10-25): index.html's loader watchdog
+     is armed from the first second of boot — long before this module is
+     loaded — so when it fires it records the stall into a localStorage
+     holding queue ('sa_pending_reports_v1'). Drain those records into
+     the real queue here; they then ride the ordinary flush to the form,
+     so a hang reports itself even when the tab died before gameplay. */
+  function drainPendingBootReports(){
+    try{
+      if(typeof localStorage==='undefined') return;
+      var raw = localStorage.getItem('sa_pending_reports_v1');
+      if(!raw) return;
+      localStorage.removeItem('sa_pending_reports_v1');
+      var arr = JSON.parse(raw);
+      if(!arr || !arr.length) return;
+      for(var i=0;i<arr.length;i++){
+        var rec = arr[i];
+        if(rec && rec.details) queueReport(rec.type || 'crash', rec.details);
+      }
+    }catch(e){}
+  }
+
   function start(){
+    drainPendingBootReports();
     hookReport();
     // If Report isn't defined yet (script order), retry shortly.
     if(!hookReport.done){
@@ -991,8 +1018,16 @@ window.GitHubReports = (function(){
   /* Run after the current script turn so window.Report (defined in an
      earlier inline block of index.html) is guaranteed present. */
   try{
-    if(typeof window!=='undefined' && window.addEventListener)
-      window.addEventListener('load', start);
+    if(typeof window!=='undefined' && window.addEventListener){
+      /* If load already fired (deferred injection can land after it),
+         start immediately — a listener for a past event never runs,
+         which would silently disarm the flush timer, the pagehide exit
+         flush AND the boot-stall drain above. */
+      if(typeof document!=='undefined' && document.readyState==='complete')
+        start();
+      else
+        window.addEventListener('load', start);
+    }
     else
       start();
   }catch(e){ try{ start(); }catch(e2){} }

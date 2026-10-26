@@ -19,6 +19,16 @@
  *     top-level "elements" list (the legacy mirror of the mobile
  *     face) as a final fallback. Older files with no "faces" at all
  *     apply their top-level "elements" exactly as before.
+ *   - Per-size layouts (2026-10-25, Joshua's UI Editor design): the
+ *     file may also carry a "sizes" list — named screen sizes (his
+ *     Galaxy A17 5G, TCL K33 5G, FOXXD A67L, standard phone/tablet
+ *     sizes, the laptop class), each with its own full element list,
+ *     authored per size in the UI Editor. When sizes exist, the one
+ *     matching this screen's MEASURED visible size (SAView) is
+ *     applied: an exact width/height match first, otherwise the
+ *     NEAREST size. Only when no usable size exists do the faces
+ *     (then the legacy list) apply — so a file without "sizes"
+ *     behaves exactly as it did before this change.
  *
  * Coordinate model (matches the UI editor):
  *   Each element stores (anchor, x, y, width, height) in canonical
@@ -249,7 +259,52 @@
   }
 
   /**
-   * Pick the element list for this viewport from a layout document.
+   * Per-size layouts (2026-10-25): pick the named size for this
+   * screen from doc.sizes. An entry is usable when it carries an
+   * elements array and positive width/height. An EXACT match on the
+   * measured visible size wins immediately. Otherwise the NEAREST
+   * entry wins: smallest total |Δwidth| + |Δheight|; ties go to the
+   * smallest worst-axis difference, then to the earliest entry in
+   * the list (the UI Editor's order — deterministic). Two entries
+   * with identical dimensions (e.g. two 720x1600 phones at the same
+   * density) therefore resolve to the first one listed.
+   * Returns {elements, key, exact} or null when no size is usable.
+   */
+  function pickSizeElements(doc, vw, vh) {
+    if (!doc || !Array.isArray(doc.sizes)) return null;
+    var best = null;
+    var bestScore = Infinity;
+    var bestMax = Infinity;
+    for (var i = 0; i < doc.sizes.length; i++) {
+      var s = doc.sizes[i];
+      if (!s || !Array.isArray(s.elements)) continue;
+      var w = +s.width;
+      var h = +s.height;
+      if (!(w > 0) || !(h > 0)) continue;
+      if (w === vw && h === vh) {
+        return { elements: s.elements, key: s.key || null, exact: true };
+      }
+      var dw = Math.abs(w - vw);
+      var dh = Math.abs(h - vh);
+      var score = dw + dh;
+      var mx = Math.max(dw, dh);
+      if (score < bestScore || (score === bestScore && mx < bestMax)) {
+        best = s;
+        bestScore = score;
+        bestMax = mx;
+      }
+    }
+    if (!best) return null;
+    return { elements: best.elements, key: best.key || null, exact: false };
+  }
+
+  /**
+   * Pick the layout for this viewport from a layout document.
+   * Order (2026-10-25): a per-size pick (exact, then nearest) when
+   * the document carries usable sizes; then the faces; then the
+   * legacy top-level list. Returns {list, source, key} where source
+   * is "size" | "face" | "legacy", or null when nothing is usable
+   * so the caller can no-op defensively exactly as before.
    *
    * Faces (2026-10-17): when doc.faces is an object, return the
    * matching face's element list ("mobile" on a mobile viewport,
@@ -257,26 +312,40 @@
    * matching face is missing, fall back to the other face's list.
    * When neither face is usable — or the file is an older one with
    * no faces at all — fall back to the top-level element list.
-   * Returns null when no usable list exists, so the caller can
-   * no-op defensively exactly as it did before faces existed.
    */
-  function pickLayoutElements(doc, mobile) {
+  function pickLayout(doc, mobile, vw, vh) {
     if (!doc || typeof doc !== "object") return null;
+    // Per-size layouts first (exact match, then nearest size).
+    var sized = pickSizeElements(doc, vw, vh);
+    if (sized) {
+      return { list: sized.elements, source: "size", key: sized.key };
+    }
     if (doc.faces && typeof doc.faces === "object") {
       // The face that matches this screen comes first.
       var wanted = mobile ? doc.faces.mobile : doc.faces.desktop;
       if (wanted && Array.isArray(wanted.elements)) {
-        return wanted.elements;
+        return { list: wanted.elements, source: "face", key: null };
       }
       // Matching face missing — use the other face rather than nothing.
       var other = mobile ? doc.faces.desktop : doc.faces.mobile;
       if (other && Array.isArray(other.elements)) {
-        return other.elements;
+        return { list: other.elements, source: "face", key: null };
       }
     }
     // Final fallback: the legacy top-level list (mirror of mobile).
-    if (Array.isArray(doc.elements)) return doc.elements;
+    if (Array.isArray(doc.elements)) {
+      return { list: doc.elements, source: "legacy", key: null };
+    }
     return null;
+  }
+
+  /**
+   * The element list only — the shape this module has always used
+   * internally. Kept as a thin wrapper over pickLayout().
+   */
+  function pickLayoutElements(doc, mobile, vw, vh) {
+    var picked = pickLayout(doc, mobile, vw, vh);
+    return picked ? picked.list : null;
   }
 
   /**
@@ -313,9 +382,11 @@
         return resp.json();
       })
       .then(function (doc) {
-        // Pick the face for this screen (with fallbacks); a null
-        // list means a missing/corrupt layout — no-op as before.
-        var list = pickLayoutElements(doc, mobile);
+        // Pick the layout for this screen — per-size pick first
+        // (exact/nearest against the measured visible size), then
+        // the faces, then the legacy list; a null list means a
+        // missing/corrupt layout — no-op as before.
+        var list = pickLayoutElements(doc, mobile, vw, vh);
         if (!list) return;
         var placedButtons = [];
         var presentIds = [];
@@ -373,6 +444,8 @@
     _rt = setTimeout(applyUILayout, 250);
   });
 
-  // Expose for debugging / re-apply after hot-reload.
-  window.UILayoutApply = { apply: applyUILayout };
+  // Expose for debugging / re-apply after hot-reload. pickLayout is
+  // exposed so the selection logic itself is testable headlessly
+  // (which list WOULD this screen get?) without a DOM.
+  window.UILayoutApply = { apply: applyUILayout, pickLayout: pickLayout };
 })();
