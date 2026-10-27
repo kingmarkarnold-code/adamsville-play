@@ -55,11 +55,17 @@ THE SCENE (mirrors the v0.4 sample assembly)
                  clamp(3.0 * ringRadius + 1.4 * h + 55, 80, 300).
 
 GESTURE MEANINGS (declared BY THE QUEUE, the v0.5 mechanism)
-  Identical to the built-in sample queue's map: every gesture is
-  unassigned (decisions record by gesture name), with ONE exception —
-  hold -> send-to-editor (Building Editor), the v0.6 action mapping.
-  Results carry it via the deck's normal export/send, exactly as the
-  sample queue's do.
+  A DRAFT map proposed by Mollie on 2026-10-26 — NOT yet ruled by
+  Joshua, and he can change any of it. All nine gestures are
+  assigned: tap -> inspect (look closer; no decision recorded),
+  left -> keep, right -> flag (something is wrong; the building
+  STAYS in the game and goes on the work list as flagged —
+  buildings are never deleted from this deck), double-tap -> later,
+  hold -> send-to-editor (Building Editor, edit right away),
+  up -> pass-to-editor (Building Editor pickup list),
+  down -> set-aside, two-up -> send-results (push decisions to
+  GitHub), two-down -> undo (take back the last decision).
+  Results carry the meanings via the deck's normal export/send.
 
 WHAT IT NEVER DOES
   It never edits building or road data, and never touches the
@@ -320,12 +326,60 @@ def build_item(zone, idx, entry):
 
 
 GESTURE_MAP = {
+    'tap': {
+        'action': 'inspect',
+        'label': 'INSPECT — look closer',
+        'detail': 'stops the snapshot rotating so he can zoom, rotate '
+                  'and pan it himself; NO decision is recorded',
+    },
+    'left': {
+        'action': 'keep',
+        'label': 'KEEP — this building is fine',
+        'detail': 'the building is fine as it stands; it stays, '
+                  'untouched',
+    },
+    'right': {
+        'action': 'flag',
+        'label': 'FLAG — something is wrong',
+        'detail': 'something is wrong with this building; it STAYS in '
+                  'the game and goes on the work list as flagged',
+    },
+    'double-tap': {
+        'action': 'later',
+        'label': 'LATER — I\'ll get to it later',
+        'detail': 'no decision now; the card returns in a later pass',
+    },
     'hold': {
         'action': 'send-to-editor',
         'target': 'building-editor',
-        'label': 'Send to Building Editor',
-        'detail': 'hands this building to the Building Editor; carried '
-                  'out with the deck\'s results',
+        'label': 'EDIT NOW — send to Building Editor',
+        'detail': 'hands this building to the Building Editor to edit '
+                  'right away; carried out with the deck\'s results',
+    },
+    'up': {
+        'action': 'pass-to-editor',
+        'target': 'building-editor',
+        'label': 'PASS TO AN EDITOR — Building Editor pickup list',
+        'detail': 'hands the building to the Building Editor\'s pickup '
+                  'list to be worked later; the deck session continues',
+    },
+    'down': {
+        'action': 'set-aside',
+        'label': 'SET ASIDE — done with this one for now',
+        'detail': 'done looking at this one this round; it does not '
+                  'return this session',
+    },
+    'two-up': {
+        'action': 'send-results',
+        'label': 'SEND RESULTS — push decisions to GitHub',
+        'detail': 'an instruction to push the decisions made so far to '
+                  'GitHub (the deck\'s Send, in the Results panel)',
+    },
+    'two-down': {
+        'action': 'undo',
+        'label': 'UNDO — take back the last decision',
+        'detail': 'takes back the last decision and brings that card '
+                  'back (the deck\'s Undo)',
     },
 }
 
@@ -376,13 +430,25 @@ def main():
         'note': ('Every card is one building the conversion left '
                  'intersecting a road — shown as a rotating 3D '
                  'snapshot of the building in its place, its front '
-                 'face in orange. Gesture meanings are unassigned '
-                 'for this queue, with one exception: press & hold '
-                 'a card to send that building to the Building '
-                 'Editor. Decisions are RECORDED ONLY — nothing in '
-                 'the game changes because of this queue; anything '
-                 'decided here is applied later, as a separate step, '
-                 'only on Joshua\'s word.'),
+                 'face in orange. The gesture meanings in this queue '
+                 'are a DRAFT proposed by Mollie on 2026-10-26 — '
+                 'Joshua has not ruled on them yet and can change '
+                 'any of them: tap = INSPECT (look closer, no '
+                 'decision recorded), left = KEEP (this building is '
+                 'fine), right = FLAG (something is wrong; the '
+                 'building stays in the game and goes on the work '
+                 'list as flagged), double-tap = LATER (I\'ll get to '
+                 'it later), press & hold = EDIT NOW (send to '
+                 'Building Editor to edit right away), up = PASS TO '
+                 'AN EDITOR (Building Editor pickup list), down = '
+                 'SET ASIDE (done with this one for now), two-finger '
+                 'up = SEND RESULTS (push decisions to GitHub), '
+                 'two-finger down = UNDO (take back the last '
+                 'decision). See the Gestures legend for the full '
+                 'wording of each. Decisions are RECORDED ONLY — '
+                 'nothing in the game changes because of this queue; '
+                 'anything decided here is applied later, as a '
+                 'separate step, only on Joshua\'s word.'),
         'gestures': GESTURE_MAP,
         'source': {
             'flaggedFile': 'editors/building-editor/flagged_buildings.json',
