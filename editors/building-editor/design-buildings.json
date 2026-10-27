@@ -2,7 +2,7 @@
   {
     "name": "Suburban House",
     "type": "House",
-    "wall_material": "Vinyl Siding",
+    "wall_material": "Wood Siding",
     "wall_color": "#9141ac",
     "roof_color": "#5a3a2a",
     "roof_texture": "Shingle",
