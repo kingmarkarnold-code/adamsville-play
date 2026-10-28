@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Adamsville Detail Editor (Native) 1.3.0 — main window.
+Adamsville Detail Editor (Native) 1.4.0 — main window.
 
 Joshua's design (game-map/detail-editor/DESIGN.md, 2026-10-18): a
 STANDALONE suite app — not a mode inside the Map Editor — for the
@@ -37,9 +37,11 @@ THE FLOW
      to it), its points selected together for a one-step group
      Delete, and the right-click menu offers RESEGMENT (fine
      handles in that portion) and Coarsen. A clean click on
-     ANOTHER road switches pieces: this piece's edits save
-     first (the round trip), then the clicked road opens as
-     the working piece (click-switch, Joshua 2026-10-25).
+     ANOTHER road switches pieces at once. When this piece
+     carries UNAPPLIED edits, the switch asks first — Apply,
+     Discard or Stay (the cache + Apply workflow, 1.4.0):
+     nothing is ever saved silently on a switch, and nothing
+     is lost silently either.
      A compass sits bottom-right of the canvas and a dynamic
      scale bar bottom-left; clicking the scale bar measures.
      A BUILDING page runs the same verbs on the ring: drag a
@@ -48,11 +50,23 @@ THE FLOW
      points there (a building's edges start bare), corners
      can't be deleted, and the ring-surgery tools (Add/Delete
      Segment, Delete Section) are disabled — a closed ring has
-     no segments to spare. Its save writes only its own record
+     no segments to spare. Its Apply writes only its own record
      in the zone's buildings file, after re-verifying the
      record still matches the building that was sent.
-  3. Save — the suite's round trip: local save -> push -> close ->
-     fresh download -> the screen shows the downloaded copy.
+  3. Apply — Joshua's suite-wide workflow (2026-10-28): opening
+     a piece loads it and its surrounding area ONCE into a
+     local working cache; every adjustment mutates only the
+     cache, with live preview — nothing is sent back per
+     change. The APPLY button commits the current page's edits
+     in ONE verified save round trip (the suite's round trip:
+     local save -> push -> close -> fresh download -> the
+     screen shows the downloaded copy). A page with unapplied
+     edits wears a bullet on its tab and says so in its info
+     pane; the window title says so while any page is dirty.
+     Closing a dirty page, switching away from one, opening a
+     handed piece over one, or quitting with any dirty page
+     asks Apply / Discard / Stay — never a silent loss, never
+     a silent save.
 
 STANDING LAW APPLIED HERE: data from GitHub only (shared suite
 cache), lightweight (one zone at a time, no whole-world load), the
@@ -341,7 +355,7 @@ class PiecePage:
         added = el.resegment_edges(edges)
         self._after_density_change(
             f"Added {added} edge point(s) — drag one to move its "
-            "whole edge. Edge points fold away when you save; "
+            "whole edge. Edge points fold away when you apply; "
             "the rectangle is what is kept.")
 
     def _building_coarsen(self):
@@ -496,7 +510,9 @@ class PiecePage:
             length += math.hypot(el.points[a][0] - el.points[b][0],
                                  el.points[a][1] - el.points[b][1])
         chains = len(el.chains())
-        state = "Unsaved changes" if s.dirty else "Saved"
+        state = ("Unapplied changes — still only in this "
+                 "editor" if s.dirty else
+                 "No unapplied changes")
         selected = len(self.canvas.selected_points)
         sel_line = ""
         if selected:
@@ -518,9 +534,10 @@ class PiecePage:
             f"State: {state}{sel_line}\n\n"
             "Drag a point to move it. Shift+drag lassos a "
             "portion; right-click offers Resegment. Tools are "
-            "on the toolbar; Esc returns to Select. Saving "
-            "pushes the whole zone file (this piece's edits "
-            "baked in) and shows the downloaded copy.")
+            "on the toolbar; Esc returns to Select. Nothing is "
+            "sent while you work — Apply sends the zone file "
+            "(this piece's edits baked in) and the screen then "
+            "shows the downloaded copy.")
 
     def _refresh_info_building(self):
         """The info pane for a building page (1.3.0): what the
@@ -534,7 +551,9 @@ class PiecePage:
         wdt, dep = x1 - x0, z1 - z0
         height = s.origin_row[4]
         type_line = s.type_label or f"type {s.building_type}"
-        state = "Unsaved changes" if s.dirty else "Saved"
+        state = ("Unapplied changes — still only in this "
+                 "editor" if s.dirty else
+                 "No unapplied changes")
         selected = len(self.canvas.selected_points)
         sel_line = ""
         if selected:
@@ -560,9 +579,10 @@ class PiecePage:
             "Shift+drag lassos a stretch of the outline; "
             "Resegment adds edge points along it. Corners "
             "can't be deleted here — removing a building is "
-            "the Building Editor's job. Saving pushes the "
-            "zone's buildings file (only this record changes) "
-            "and shows the downloaded copy.")
+            "the Building Editor's job. Nothing is sent while "
+            "you work — Apply sends the zone's buildings file "
+            "(only this record changes) and the screen then "
+            "shows the downloaded copy.")
 
     # -- the tab: pencil, name, close X --------------------------------
 
@@ -605,10 +625,16 @@ class PiecePage:
 
     def refresh_tab_title(self):
         """The tab's name label follows the session — after a
-        rename, and after a save rebinds the session to the
-        downloaded copy."""
+        rename, and after an Apply rebinds the session to the
+        downloaded copy. A page carrying unapplied edits wears
+        a bullet after its name (1.4.0): the dirty state is
+        visible from the tab strip itself, without opening the
+        page."""
         if getattr(self, "tab_label", None) is not None:
-            self.tab_label.set_text(self.session.title())
+            title = self.session.title()
+            if self.session.dirty:
+                title += " •"
+            self.tab_label.set_text(title)
 
     def start_rename(self):
         """
@@ -712,6 +738,17 @@ class DetailWindow(Gtk.Window):
         # (success OR failure): from then on, focus-in re-checks
         # the handoff (see _on_focus_in).
         self._handoff_armed = False
+        # A handoff whose opening was deferred by an Apply /
+        # Discard / Stay answer of "Stay" (1.4.0): the payload
+        # was consumed at read time, so the parsed document is
+        # held here — never dropped — and opens as soon as the
+        # current page no longer carries unapplied edits (see
+        # _maybe_open_pending_handoff).
+        self._pending_handoff = None
+        # Quit was answered with Apply (1.4.0): the delete-event
+        # was vetoed while the round trips run; when they land
+        # successfully the window destroys itself.
+        self._quit_pending = False
 
         self._build_ui()
         self.show_all()
@@ -830,7 +867,7 @@ class DetailWindow(Gtk.Window):
         root.pack_start(self.statusbar, False, False, 0)
 
     def _build_menubar(self):
-        """File (open piece, save, token settings, quit) + Help
+        """File (open piece, apply, token settings, quit) + Help
         (updates, About). Menus yield after selection (GTK closes
         them itself)."""
         bar = Gtk.MenuBar()
@@ -840,10 +877,10 @@ class DetailWindow(Gtk.Window):
         open_item = Gtk.MenuItem(label="Open Piece…")
         open_item.connect("activate", self._on_open_piece)
         file_menu.append(open_item)
-        self.save_item = Gtk.MenuItem(label="Save")
-        self.save_item.connect("activate", self._on_save)
-        self.save_item.set_sensitive(False)
-        file_menu.append(self.save_item)
+        self.apply_item = Gtk.MenuItem(label="Apply")
+        self.apply_item.connect("activate", self._on_apply)
+        self.apply_item.set_sensitive(False)
+        file_menu.append(self.apply_item)
         file_menu.append(Gtk.SeparatorMenuItem())
         settings_item = Gtk.MenuItem(label="Settings…")
         settings_item.connect(
@@ -872,7 +909,7 @@ class DetailWindow(Gtk.Window):
     def _build_toolbar(self):
         """The tool row: the six tools as toggles (Select is the
         base state), Undo/Redo, ORBIT (the touch face of rotate),
-        Fit, and Save — in a sideways scroller so a narrow window
+        Fit, and Apply — in a sideways scroller so a narrow window
         scrolls the row instead of clipping it."""
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
                       spacing=4)
@@ -937,10 +974,14 @@ class DetailWindow(Gtk.Window):
         row.pack_start(fit_button, False, False, 0)
         row.pack_start(Gtk.Separator(
             orientation=Gtk.Orientation.VERTICAL), False, False, 2)
-        self.save_button = Gtk.Button(label="Save")
-        self.save_button.connect("clicked", self._on_save)
-        self.save_button.set_sensitive(False)
-        row.pack_start(self.save_button, False, False, 0)
+        self.apply_button = Gtk.Button(label="Apply")
+        self.apply_button.set_tooltip_text(
+            "Send this piece's finished edits to GitHub in one "
+            "verified round trip. Nothing is sent while you "
+            "work — only when you press Apply.")
+        self.apply_button.connect("clicked", self._on_apply)
+        self.apply_button.set_sensitive(False)
+        row.pack_start(self.apply_button, False, False, 0)
         row.pack_start(self.tool_hint, False, False, 8)
         return layout_mod.hscroll_row(row)
 
@@ -1092,13 +1133,81 @@ class DetailWindow(Gtk.Window):
         left behind. A handoff this app cannot open must never
         vanish in silence (the 1.2.2 rule) — the notice names
         what it was, and the payload itself is preserved aside,
-        not deleted (detaildata.read_handoff)."""
+        not deleted (detaildata.read_handoff).
+
+        Under cache + Apply (1.4.0) a SUPPORTED handoff whose
+        opening would switch away from a page carrying unapplied
+        edits asks Apply / Discard / Stay first — the same
+        question a click-switch asks. "Stay" (or a failed Apply)
+        parks the parsed document in self._pending_handoff: the
+        payload was consumed at read time, so the document is
+        held, spoken, and opened later by
+        _maybe_open_pending_handoff — preserved, never dropped.
+        """
         doc = detaildata.read_handoff()
         notice = detaildata.pop_handoff_notice()
         if notice:
             self._set_status(notice)
         if doc is not None:
-            self._open_handoff(doc)
+            self._offer_handoff(doc)
+
+    def _handoff_label(self, doc):
+        """A short plain name for a handoff document, for status
+        lines and the prompt: the piece's or building's name."""
+        name = str(doc.get("name") or "").strip()
+        if doc.get("element_type") == "building":
+            return f"the building '{name}'" if name \
+                else "a building"
+        return f"'{name}'" if name else "a road piece"
+
+    def _offer_handoff(self, doc):
+        """Open a handed piece/building — or, when the current
+        page carries unapplied edits, ask what to do with those
+        first (opening switches away from it)."""
+        page = self._current_page()
+        if page is not None and page.session.dirty:
+            label = self._handoff_label(doc)
+            choice = self._ask_apply_discard_stay(
+                f"'{page.session.name}' has unapplied changes",
+                f"The Detail Editor was sent {label} from "
+                f"another editor, but '{page.session.name}' "
+                "still has edits that haven't been applied. "
+                "Apply them to GitHub, discard them, or stay "
+                f"here and let {label} wait?")
+            if choice == "apply":
+                self._pending_handoff = doc
+                self._apply_sessions(
+                    [page.session],
+                    after=lambda ok: ok and
+                    self._maybe_open_pending_handoff())
+                return
+            if choice == "discard":
+                self._discard_page_edits(page)
+                self._open_handoff(doc)
+                return
+            # Stay: park the handoff, spoken, and stay put.
+            self._pending_handoff = doc
+            self._set_status(
+                f"{label.capitalize()} is waiting — it opens "
+                "when this page's edits are applied or "
+                "discarded.")
+            return
+        self._open_handoff(doc)
+
+    def _maybe_open_pending_handoff(self):
+        """Open a parked handoff once nothing stands in its way
+        (the current page carries no unapplied edits). Called
+        when the window gains focus and after an Apply lands.
+        Returns True when a parked handoff was opened."""
+        doc = self._pending_handoff
+        if doc is None:
+            return False
+        page = self._current_page()
+        if page is not None and page.session.dirty:
+            return False
+        self._pending_handoff = None
+        self._open_handoff(doc)
+        return True
 
     def _on_focus_in(self, _window, _event):
         """The window gained focus: recheck for a handoff. Before
@@ -1107,10 +1216,13 @@ class DetailWindow(Gtk.Window):
         open simply never appeared, and no amount of waiting
         helped. The startup read is guarded off here: until the
         manifest flow has had its turn, it owns the first
-        consumption."""
+        consumption. A handoff parked by a "Stay" answer (1.4.0)
+        is re-offered here too — but only once the current page
+        is clean, so focus changes never nag."""
         if not self._handoff_armed:
             return False
-        self._consume_handoff()
+        if not self._maybe_open_pending_handoff():
+            self._consume_handoff()
         return False
 
     def _open_handoff(self, doc):
@@ -1429,8 +1541,8 @@ class DetailWindow(Gtk.Window):
 
     def _on_switch_page(self, _nb, _page, _num):
         """A tab switch re-arms the toolbar to the page's canvas
-        state and refreshes the Save buttons (via idle, so the new
-        page is current when we read it)."""
+        state and refreshes the Apply button (via idle, so the
+        new page is current when we read it)."""
         GLib.idle_add(self._sync_toolbar_to_page)
         return False
 
@@ -1460,6 +1572,10 @@ class DetailWindow(Gtk.Window):
         self._refresh_save_state()
         self._refresh_undo_buttons()
         self._refresh_delete_button()
+        # A tab switch can un-block a parked handoff (1.4.0):
+        # if the page just landed on carries no unapplied
+        # edits, the handed piece that was told to wait opens.
+        self._maybe_open_pending_handoff()
         return False
 
     def _on_tool_toggled(self, btn, name):
@@ -1615,15 +1731,18 @@ class DetailWindow(Gtk.Window):
     def _switch_to_piece(self, page, category, index, pts):
         """
         CLICK-SWITCH (Joshua's rule, 2026-10-25): a clean click
-        on another road makes it the working piece — and the
-        current piece's edit progress SAVES FIRST when it has
-        any. Clean piece: the clicked road opens at once. Dirty:
-        the zone's round trip runs; only on success does the
-        clicked road open (a failed save keeps the user where
-        they are, looking at the piece that still needs saving).
-        The clicked record is re-found by its POINTS after any
-        save — indices can shift when a split added records;
-        geometry does not lie.
+        on another road makes it the working piece. A CLEAN
+        piece switches at once. A piece carrying UNAPPLIED
+        edits asks first (the cache + Apply workflow, 1.4.0 —
+        before 1.4.0 the edits saved automatically here; that
+        silent save is gone): Apply sends this piece's edits in
+        the one verified round trip, and only on success does
+        the clicked road open (a failed Apply keeps the user
+        where they are, looking at the piece that still needs
+        applying); Discard drops the edits and switches; Stay
+        cancels the switch. The clicked record is re-found by
+        its POINTS after any Apply — indices can shift when a
+        split added records; geometry does not lie.
         """
         model = page.session.model
         target_pts = [list(p) for p in pts]
@@ -1649,10 +1768,22 @@ class DetailWindow(Gtk.Window):
                 f"highlighted as the working piece.")
 
         if page.session.dirty:
-            self._set_status(
-                "Saving this piece's edits before switching…")
-            self._save_zone(
-                model, after=lambda ok: ok and open_target())
+            choice = self._ask_apply_discard_stay(
+                f"'{page.session.name}' has unapplied changes",
+                "You clicked another road. Apply this piece's "
+                "edits to GitHub first, discard them, or stay "
+                "with this piece?")
+            if choice == "apply":
+                self._apply_sessions(
+                    [page.session],
+                    after=lambda ok: ok and open_target())
+            elif choice == "discard":
+                self._discard_page_edits(page)
+                open_target()
+            else:
+                self._set_status(
+                    f"Still editing '{page.session.name}' — "
+                    "the switch is waiting on your call.")
         else:
             open_target()
 
@@ -1660,12 +1791,13 @@ class DetailWindow(Gtk.Window):
         """
         A rename confirmed from the tab's pencil. The new name
         is a changed variable like any geometry edit: it marks
-        the session dirty and rides the EXISTING save round trip
-        — the write-back takes every field from the session
-        template, the name included (after a split, the
-        resulting records share the new name, exactly as they
-        shared the old one). Only THIS piece's record changes;
-        other pieces that happen to share the old name keep it.
+        the session dirty (unapplied, like every edit — 1.4.0)
+        and rides the Apply round trip — the write-back takes
+        every field from the session template, the name
+        included (after a split, the resulting records share
+        the new name, exactly as they shared the old one). Only
+        THIS piece's record changes; other pieces that happen
+        to share the old name keep it.
         """
         new = page.session.rename(raw)
         if new is None:
@@ -1679,8 +1811,8 @@ class DetailWindow(Gtk.Window):
         page.overview.invalidate()
         self._refresh_save_state()
         self._set_status(
-            f"Renamed to '{new}' — Save pushes the new name to "
-            "GitHub with the piece's other edits.")
+            f"Renamed to '{new}' — the new name rides along "
+            "when you Apply this piece's edits.")
 
     def _on_undo(self, _btn):
         page = self._current_page()
@@ -1719,7 +1851,7 @@ class DetailWindow(Gtk.Window):
         """A lasso group deletion asks first, in the section
         deletion's own pattern (it is the same class of act:
         many points and the face between them, gone at once).
-        Undo can still bring them back until a save."""
+        Undo can still bring them back until you apply."""
         dialog = Gtk.MessageDialog(
             transient_for=self, flags=0,
             message_type=Gtk.MessageType.QUESTION,
@@ -1730,7 +1862,7 @@ class DetailWindow(Gtk.Window):
             "with every segment touching them — a middle run "
             "leaves the piece in two parts; an end run shortens "
             "it. It is ONE operation: one Undo brings them all "
-            "back, until you save.")
+            "back, until you apply.")
         resp = dialog.run()
         dialog.destroy()
         return resp == Gtk.ResponseType.OK
@@ -1739,7 +1871,7 @@ class DetailWindow(Gtk.Window):
         """Section deletion is the one destructive click that asks
         first (Joshua's care with deletion): it names what goes —
         the lines AND the face inside them — before anything is
-        removed. Undo can still bring it back until a save."""
+        removed. Undo can still bring it back until you apply."""
         dialog = Gtk.MessageDialog(
             transient_for=self, flags=0,
             message_type=Gtk.MessageType.QUESTION,
@@ -1749,7 +1881,7 @@ class DetailWindow(Gtk.Window):
             f"{n_segments} segment(s) and the {max(n_points, 0)} "
             "point(s) inside them will be deleted, with the street "
             "face inside them — the two ends join straight. "
-            "Undo can bring it back until you save.")
+            "Undo can bring it back until you apply.")
         resp = dialog.run()
         dialog.destroy()
         return resp == Gtk.ResponseType.OK
@@ -1758,30 +1890,73 @@ class DetailWindow(Gtk.Window):
     # Closing pages + the window
     # ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # The Apply / Discard / Stay question (cache + Apply, 1.4.0)
+    # ------------------------------------------------------------------
+    # One question, asked everywhere unapplied work stands in
+    # the way of leaving it: closing a page, switching pieces,
+    # opening a handed piece, quitting. Apply commits through
+    # the one verified round trip; Discard drops the working
+    # copy's edits; Stay goes nowhere. Never a silent loss,
+    # never a silent save.
+
+    def _ask_apply_discard_stay(self, title, body):
+        """Ask the question; returns "apply", "discard" or
+        "stay". Closing the dialog itself counts as Stay — the
+        safe answer is always the one that changes nothing."""
+        dialog = Gtk.MessageDialog(
+            transient_for=self, flags=0,
+            message_type=Gtk.MessageType.WARNING,
+            buttons=Gtk.ButtonsType.NONE,
+            text=title)
+        dialog.format_secondary_text(body)
+        dialog.add_button("Stay", Gtk.ResponseType.CANCEL)
+        dialog.add_button("Discard edits", Gtk.ResponseType.REJECT)
+        dialog.add_button("Apply", Gtk.ResponseType.APPLY)
+        resp = dialog.run()
+        dialog.destroy()
+        if resp == Gtk.ResponseType.APPLY:
+            return "apply"
+        if resp == Gtk.ResponseType.REJECT:
+            return "discard"
+        return "stay"
+
+    def _discard_page_edits(self, page):
+        """Drop a page's unapplied edits: the session's working
+        copy reverts to the record as opened (or as last
+        applied), and everything derived from the edits — the
+        undo history, the selection, the density layer — resets
+        with it. Nothing was ever sent, so nothing needs
+        unsending."""
+        page.session.discard_edits()
+        page.undo_stack.clear()
+        page.redo_stack.clear()
+        page.canvas.clear_selection()
+        page.canvas.reset_segmentation()
+        page.canvas.invalidate()
+        page.overview.invalidate()
+        page.refresh_info()
+        page.refresh_tab_title()
+        self._refresh_save_state()
+        self._refresh_undo_buttons()
+
     def _close_page(self, page):
-        """Close one tab. A dirty page asks: save its zone first,
-        discard the edits, or keep the tab."""
+        """Close one tab. A page carrying unapplied edits asks
+        Apply / Discard / Stay (1.4.0) — Apply runs the round
+        trip for THIS page's edits and the tab closes only when
+        it lands."""
         if page.session.dirty:
-            dialog = Gtk.MessageDialog(
-                transient_for=self, flags=0,
-                message_type=Gtk.MessageType.WARNING,
-                buttons=Gtk.ButtonsType.NONE,
-                text=f"'{page.session.name}' has unsaved changes")
-            dialog.format_secondary_text(
-                "Save the zone's changes to GitHub, discard this "
-                "piece's unsaved edits, or keep the tab open?")
-            dialog.add_button("Keep open", Gtk.ResponseType.CANCEL)
-            dialog.add_button("Discard edits",
-                              Gtk.ResponseType.REJECT)
-            dialog.add_button("Save", Gtk.ResponseType.APPLY)
-            resp = dialog.run()
-            dialog.destroy()
-            if resp == Gtk.ResponseType.CANCEL:
+            choice = self._ask_apply_discard_stay(
+                f"'{page.session.name}' has unapplied changes",
+                "Apply this piece's edits to GitHub, discard "
+                "them, or stay with the tab open?")
+            if choice == "stay":
                 return
-            if resp == Gtk.ResponseType.APPLY:
-                self._save_zone(page.session.model,
-                                after=lambda ok: ok and
-                                self._finish_close_page(page))
+            if choice == "apply":
+                self._apply_sessions(
+                    [page.session],
+                    after=lambda ok: ok and
+                    self._finish_close_page(page))
                 return
             # Discard: fall through and close.
         self._finish_close_page(page)
@@ -1800,83 +1975,140 @@ class DetailWindow(Gtk.Window):
     # Saving (the round trip)
     # ------------------------------------------------------------------
 
-    def _refresh_save_state(self):
-        """Save is live when any open zone holds unsaved splices —
-        i.e. any session is dirty, or a session's zone serialises
-        differently from its download (post-splice)."""
-        dirty = any(p.session.dirty for p in self.pages)
-        self.save_button.set_sensitive(dirty)
-        self.save_item.set_sensitive(dirty)
+    # ------------------------------------------------------------------
+    # Applying (the one verified round trip — cache + Apply, 1.4.0)
+    # ------------------------------------------------------------------
+    # The ONLY door data ever leaves through. Editing mutates
+    # session working copies; Apply splices the chosen sessions
+    # into their zone documents and runs each zone's round trip
+    # (local save -> push -> close -> fresh download -> adopt
+    # the downloaded copy). A session NOT in the Apply set keeps
+    # its edits in its own working copy, untouched — even a
+    # same-zone neighbour's: the pushed file carries its record
+    # exactly as downloaded.
 
-    def _on_save(self, _widget=None):
-        """Save the CURRENT page's zone: every dirty session of
-        that zone is spliced in, then the round trip runs."""
+    def _refresh_save_state(self):
+        """Apply is live when the CURRENT page carries unapplied
+        edits (Apply commits that page's piece — per page, by
+        design). The window-level dirty indication lives in the
+        title: while ANY page is dirty it says so, and every
+        dirty page wears its tab bullet (refreshed here, the
+        one place every mutation path funnels through)."""
+        page = self._current_page()
+        self.apply_button.set_sensitive(
+            bool(page and page.session.dirty))
+        self.apply_item.set_sensitive(
+            bool(page and page.session.dirty))
+        any_dirty = any(p.session.dirty for p in self.pages)
+        self.set_title(
+            f"{APP_NAME} {APP_VERSION}"
+            + (" — unapplied changes" if any_dirty else ""))
+        for p in self.pages:
+            p.refresh_tab_title()
+
+    def _on_apply(self, _widget=None):
+        """Apply the CURRENT page's edits: a plain-language
+        review first (what file changes, what rides in it),
+        then the round trip for this page's session only."""
         page = self._current_page()
         if page is None:
-            self._set_status("Nothing is open to save.")
+            self._set_status("Nothing is open to apply.")
             return
-        model = page.session.model
-        dirty_sessions = [p.session for p in self.pages
-                          if p.session.model is model
-                          and p.session.dirty]
-        if not dirty_sessions:
-            self._set_status("No unsaved changes in this zone.")
+        session = page.session
+        if not session.dirty:
+            others = [p.session.name for p in self.pages
+                      if p is not page and p.session.dirty]
+            if others:
+                names = ", ".join(f"'{n}'" for n in others)
+                self._set_status(
+                    f"'{session.name}' has no unapplied changes "
+                    f"— {names} still does. Switch to that tab "
+                    "to apply it.")
+            else:
+                self._set_status("No unapplied changes.")
             return
-        # A plain-language review before anything is pushed.
-        names = ", ".join(f"'{s.name}'" for s in dirty_sessions)
-        kinds = {getattr(s, "kind", "road") for s in dirty_sessions}
-        if kinds == {"building"}:
+        model = session.model
+        if getattr(session, "kind", "road") == "building":
             files_line = ("The zone's buildings file (with its "
                           ".js twin) is saved locally, pushed to "
                           "GitHub, then downloaded again")
-            changed_line = f"Buildings changed: {names}."
-        elif kinds == {"road", "building"}:
-            files_line = ("The zone's roads and buildings files "
-                          "(each with its .js twin) are saved "
-                          "locally, pushed to GitHub, then "
-                          "downloaded again")
-            changed_line = f"Pieces changed: {names}."
+            changed_line = f"Building changed: '{session.name}'."
         else:
             files_line = ("The zone's roads file (with its .js "
                           "twin) is saved locally, pushed to "
                           "GitHub, then downloaded again")
-            changed_line = f"Pieces changed: {names}."
+            changed_line = f"Piece changed: '{session.name}'."
         dialog = Gtk.MessageDialog(
             transient_for=self, flags=0,
             message_type=Gtk.MessageType.QUESTION,
             buttons=Gtk.ButtonsType.OK_CANCEL,
-            text=f"Save {model.name} to GitHub?")
+            text=f"Apply {model.name} changes to GitHub?")
         dialog.format_secondary_text(
             f"{changed_line}\n\n{files_line} — the copy you end "
             "up looking at is the downloaded one, verified "
-            "against what was pushed. No other zone is touched, "
-            "and no elevation data is written.")
+            "against what was pushed. No other piece and no "
+            "other zone is touched, and no elevation data is "
+            "written.")
         resp = dialog.run()
         dialog.destroy()
         if resp != Gtk.ResponseType.OK:
             return
-        self._save_zone(model)
+        self._apply_sessions([session])
 
-    def _save_zone(self, model, after=None):
+    def _apply_sessions(self, sessions, after=None):
+        """Apply the given sessions: group them by zone (one
+        round trip per zone — in practice one piece, one zone),
+        chain the trips, and report ONE combined outcome to
+        after(ok). The splice for each zone happens inside
+        _save_zone, for exactly these sessions."""
+        by_model = {}
+        for session in sessions:
+            by_model.setdefault(session.model, []).append(session)
+        models = list(by_model.items())
+        if not models:
+            if after is not None:
+                after(True)
+            return
+
+        def step(i, ok_so_far):
+            if i >= len(models):
+                if after is not None:
+                    after(ok_so_far)
+                return
+            model, group = models[i]
+            self._save_zone(
+                model, sessions=group,
+                after=lambda ok: step(i + 1, ok_so_far and ok))
+
+        step(0, True)
+
+    def _save_zone(self, model, sessions=None, after=None):
         """
-        Splice every dirty session of the zone into its document,
-        then run the round trip in the background under the
-        progress bar. On success the sessions rebind to the
-        downloaded copy. `after(ok)` runs on the UI thread.
+        Splice the given dirty sessions of the zone into its
+        document (sessions=None keeps the pre-1.4.0 meaning:
+        EVERY dirty session of the zone — the quit-Apply path
+        uses it via _apply_sessions' grouping), then run the
+        round trip in the background under the progress bar. On
+        success the sessions rebind to the downloaded copy.
+        `after(ok)` runs on the UI thread.
         """
-        sessions = [p.session for p in self.pages
-                    if p.session.model is model and p.session.dirty]
+        if sessions is None:
+            sessions = [p.session for p in self.pages
+                        if p.session.model is model
+                        and p.session.dirty]
+        else:
+            sessions = [s for s in sessions if s.dirty]
         try:
             for session in sessions:
                 session.apply_to_doc()
         except DetailDataError as e:
-            self._set_status(f"Save stopped: {e}")
+            self._set_status(f"Apply stopped: {e}")
             if after is not None:
                 after(False)
             return
 
         def work():
-            self.progress_start("save", f"Saving {model.name}…")
+            self.progress_start("save", f"Applying {model.name}…")
             try:
                 return self.data.save_zone(model, LOCAL_SAVE_DIR,
                                            github_sync)
@@ -1885,12 +2117,12 @@ class DetailWindow(Gtk.Window):
 
         def done(result, err):
             if err is not None:
-                self._set_status(f"Save failed: {err}")
+                self._set_status(f"Apply failed: {err}")
                 if after is not None:
                     after(False)
                 return False
             ok, message = result
-            self._set_status(message if ok else f"Save: {message}")
+            self._set_status(message if ok else f"Apply: {message}")
             if ok:
                 for session in sessions:
                     session.rebind_after_save()
@@ -1906,6 +2138,9 @@ class DetailWindow(Gtk.Window):
                         page.canvas.invalidate()
                         page.overview.invalidate()
                 self._refresh_save_state()
+                # An Apply landing can un-block a handoff that a
+                # "Stay" answer parked (1.4.0).
+                GLib.idle_add(self._maybe_open_pending_handoff)
             if after is not None:
                 after(ok)
             return False
@@ -1998,8 +2233,12 @@ class DetailWindow(Gtk.Window):
             pass
 
     def _on_delete(self, _window, _event):
-        """Remember the window geometry; unsaved edits get one
-        plain question before the window goes."""
+        """Remember the window geometry; pages carrying
+        unapplied edits get the Apply / Discard / Stay question
+        before the window goes (1.4.0 — before, quitting could
+        only lose them or stay; now Apply runs the same verified
+        round trips first, and the window closes itself when
+        they land)."""
         size = self.get_size()
         self._state.remember_size("main", (size.width, size.height))
         for page in self.pages:
@@ -2009,23 +2248,40 @@ class DetailWindow(Gtk.Window):
                 "page-vsplit", page.right_pane.get_position())
             break
         self._state.save()
+        if getattr(self, "_quit_pending", False):
+            # A quit-Apply is already running: keep vetoing
+            # until it lands (its completion destroys the
+            # window itself; it never re-enters through here).
+            return True
         dirty = [p for p in self.pages if p.session.dirty]
         if not dirty:
             return False
         names = ", ".join(f"'{p.session.name}'" for p in dirty)
-        dialog = Gtk.MessageDialog(
-            transient_for=self, flags=0,
-            message_type=Gtk.MessageType.WARNING,
-            buttons=Gtk.ButtonsType.NONE,
-            text="Unsaved changes")
-        dialog.format_secondary_text(
-            f"{names} changed but not saved. Close anyway and "
-            "lose those edits?")
-        dialog.add_button("Keep editing", Gtk.ResponseType.CANCEL)
-        dialog.add_button("Close", Gtk.ResponseType.OK)
-        resp = dialog.run()
-        dialog.destroy()
-        return resp != Gtk.ResponseType.OK
+        choice = self._ask_apply_discard_stay(
+            "Unapplied changes",
+            f"{names} changed but not applied. Apply those "
+            "edits to GitHub, discard them, or stay and keep "
+            "editing?")
+        if choice == "stay":
+            return True
+        if choice == "discard":
+            return False
+        # Apply: veto this close, run every dirty session's
+        # round trip, and destroy the window when they land
+        # (a failed Apply leaves the window open, edits intact).
+        self._quit_pending = True
+
+        def after_quit_apply(ok):
+            if ok:
+                self.destroy()
+            else:
+                self._quit_pending = False
+                self._set_status(
+                    "Apply didn't finish — nothing was closed. "
+                    "Your edits are still here.")
+        self._apply_sessions(
+            [p.session for p in dirty], after=after_quit_apply)
+        return True
 
 
 def main():

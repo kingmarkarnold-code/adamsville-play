@@ -1,16 +1,16 @@
 {
-  "version": "1.3.0",
-  "changelog": "Building support: the Building Editor's Detail Edit handoffs now open the building itself \u2014 its footprint as a ring under the rectangle law (drag a corner to resize, edge points move whole edges, Shift+drag lasso and Resegment along the outline, corners protected). Saves write only that building's record in the zone's buildings.json (+ buildings.js twin), after re-verifying the record still matches the building that was sent. Carries 1.2.2's handoff honesty: unknown payloads are preserved aside and spoken, never silently discarded.",
+  "version": "1.4.0",
+  "changelog": "The cache + Apply workflow: opening a piece loads it once into a working copy, and nothing is sent back while you work \u2014 drags, point edits and renames all stay in the editor until you press Apply, which sends that piece's edits to GitHub in one verified round trip. Switching pieces, closing a tab, opening a piece another editor sent, or quitting with unapplied edits now asks Apply / Discard / Stay \u2014 nothing is saved silently (switching used to save on its own) and nothing is lost silently. A page with unapplied edits wears a bullet on its tab, and the window title says so. Buildings work exactly the same way.",
   "files": [
     {
       "path": "VERSION",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/VERSION",
-      "sha256": "64d23f858ef51b0f996e4966d4e27c0371b437e2d2787890b1f7ad22d4ec5663"
+      "sha256": "78b591400c56b7b67b8cb3b2b8a8e65e9093897f02ce0878e6b5405c68620fa7"
     },
     {
       "path": "app.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/app.py",
-      "sha256": "01a794cbcb0c890de3e9a1d15a745af2da559cfb22244e0eedf54090e2244a93"
+      "sha256": "e1f001e51a5d8dc97bbed13585dbfa07e34725fc324cb106ff057ea44b0de4b7"
     },
     {
       "path": "detailcanvas.py",
@@ -20,7 +20,7 @@
     {
       "path": "detaildata.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/detaildata.py",
-      "sha256": "39d43db572e79edae28075d35acad2d89b220d4b45ad82197623a22dbc2212f3"
+      "sha256": "9cad67801362258b8bf42a38e81f4e7f2963e4e9d0bee374f4e494e66d5031e0"
     },
     {
       "path": "element.py",
@@ -70,15 +70,15 @@
   ],
   "selfupdate": {
     "payload_root": "editors/detail-editor/app",
-    "payload_sha256": "ea2cd965b5c9cca2c5680fc466c5106071ab28205a962ea3e7079c629f218919",
+    "payload_sha256": "8f99b5c1c28897b5e34c0f8554ae47e1da127b4d8deaeba598c2f2dc3bb62a34",
     "files": [
       {
         "path": "VERSION",
-        "sha256": "64d23f858ef51b0f996e4966d4e27c0371b437e2d2787890b1f7ad22d4ec5663"
+        "sha256": "78b591400c56b7b67b8cb3b2b8a8e65e9093897f02ce0878e6b5405c68620fa7"
       },
       {
         "path": "app.py",
-        "sha256": "01a794cbcb0c890de3e9a1d15a745af2da559cfb22244e0eedf54090e2244a93"
+        "sha256": "e1f001e51a5d8dc97bbed13585dbfa07e34725fc324cb106ff057ea44b0de4b7"
       },
       {
         "path": "detailcanvas.py",
@@ -86,7 +86,7 @@
       },
       {
         "path": "detaildata.py",
-        "sha256": "39d43db572e79edae28075d35acad2d89b220d4b45ad82197623a22dbc2212f3"
+        "sha256": "9cad67801362258b8bf42a38e81f4e7f2963e4e9d0bee374f4e494e66d5031e0"
       },
       {
         "path": "element.py",

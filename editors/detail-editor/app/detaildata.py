@@ -95,7 +95,7 @@ from pathlib import Path
 from element import Element
 
 # This editor's version (About dialog, the roads.js twin header).
-EDITOR_VERSION = "1.3.0"
+EDITOR_VERSION = "1.4.0"
 
 # The game's own name for a road with no name: the converted data
 # carries this literal, so a rename to "no name" writes exactly it.
@@ -889,6 +889,10 @@ class PieceSession:
         self.how = how                          # match strength
         record = model.roads[category][index]
         self.template = dict(record)
+        # The name as opened (1.4.0): rename() edits the template,
+        # so the pristine name lives here — a Discard restores it,
+        # and a save rebind advances it with the template.
+        self.origin_name = record.get("name")
         self.origin_pts = [list(p) for p in record.get("pts") or []]
         self.element = element_from_record(record)
         self.dirty = False
@@ -908,8 +912,10 @@ class PieceSession:
         return self.name
 
     def mark_dirty(self):
-        """Note an edit (the app saves per zone; a session is dirty
-        until its zone's save lands and rebinds it)."""
+        """Note an edit. Under the cache + Apply workflow (1.4.0)
+        the edit lives only in this working copy until the user
+        presses Apply — the session is dirty until its Apply
+        round trip lands and rebinds it."""
         self.dirty = True
 
     def rename(self, raw):
@@ -977,9 +983,23 @@ class PieceSession:
             if first_pts and _pts_match(rec.get("pts") or [], first_pts):
                 self.index = i
                 self.template = dict(rec)
+                self.origin_name = rec.get("name")
                 self.origin_pts = [list(p)
                                    for p in rec.get("pts") or []]
                 break
+        self.dirty = False
+
+    def discard_edits(self):
+        """
+        Drop every unapplied edit (the cache + Apply workflow's
+        Discard, 1.4.0): the working Element is rebuilt from the
+        record as opened (or as last applied — the template and
+        origin name advance with every save rebind), and the
+        dirty flag clears. The zone document is never touched —
+        an unapplied edit never reached it.
+        """
+        self.template["name"] = self.origin_name
+        self.element = element_from_record(self.template)
         self.dirty = False
 
 
@@ -1483,7 +1503,9 @@ class BuildingSession:
         return self.name
 
     def mark_dirty(self):
-        """Note an edit (saved with its zone, like a piece)."""
+        """Note an edit. Under the cache + Apply workflow (1.4.0)
+        the edit lives only in this working copy until the user
+        presses Apply."""
         self.dirty = True
 
     def apply_to_doc(self):
@@ -1534,6 +1556,20 @@ class BuildingSession:
             else None
         if rows and 0 <= self.index < len(rows):
             self.origin_row = list(rows[self.index])
+        self.element = BuildingElement(self.origin_row)
+        self.origin_pts = [list(p)
+                           for p in self.element.points[:4]]
+        self.dirty = False
+
+    def discard_edits(self):
+        """
+        Drop every unapplied edit (the cache + Apply workflow's
+        Discard, 1.4.0): the working ring is rebuilt from the
+        origin row (the record as handed over, or as last
+        applied — the origin advances with every save rebind),
+        and the dirty flag clears. The zone document is never
+        touched — an unapplied edit never reached it.
+        """
         self.element = BuildingElement(self.origin_row)
         self.origin_pts = [list(p)
                            for p in self.element.points[:4]]
