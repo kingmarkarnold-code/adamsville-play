@@ -24,6 +24,7 @@ the app icon alone.
 Joshua's rule: all code commented.
 """
 
+import os
 from pathlib import Path
 
 import gi
@@ -39,11 +40,22 @@ def _find_mollie_icon(package_name):
     """
     Locate the Mollie icon PNG.
 
-    Checks the installed location first (/usr/share/<package>/...),
-    then falls back to a copy next to this module (dev runs).
+    The app's PAYLOAD ROOT wins (1.2.0, the bootstrap-shim
+    contract): when the launcher staged an update it sets
+    ADAMSVILLE_APP_ROOT to the payload the app is running from,
+    and the icon is that payload's own. Next, the payload root
+    relative to this module (this file lives in <root>/
+    suite_core/, the icon at <root>/mollie-icon.png — the dev-
+    run and staged-payload case). The installed /usr/share
+    location and a copy next to this module remain as fallbacks.
     Returns the path string, or None if not found.
     """
-    candidates = [
+    candidates = []
+    env_root = os.environ.get("ADAMSVILLE_APP_ROOT")
+    if env_root:
+        candidates.append(Path(env_root) / "mollie-icon.png")
+    candidates += [
+        Path(__file__).resolve().parent.parent / "mollie-icon.png",
         Path(f"/usr/share/{package_name}/mollie-icon.png"),
         Path(__file__).parent / "mollie-icon.png",
     ]
