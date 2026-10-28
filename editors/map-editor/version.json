@@ -1,91 +1,174 @@
 {
-    "version": "1.9.16",
-    "changelog": "Four things, all Joshua's. (1) THE REFERENCE MAP NOW LINES UP: the bottom pane was drawing the reference roads raw, in the wrong frame \u2014 shifted and shrunk, thousands of metres off \u2014 so it could never match the map above it, and comparing against reality (the pane's whole job) was impossible. The reference now goes through the proper conversion into the game's own frame before it is drawn: on Dollar Mill Road Southwest the converted reference lands within a metre of the game's own records, and the same check passes in every zone. (2) THE PANEL IS JUST 'RESOURCE AND REFERENCE' NOW: the Snap row, the elevation readout and the Selected readout are gone. In their place are a coordinates readout \u2014 the shared view's centre, or the selected point while you hold one \u2014 and layer buttons in the Google Maps style: Roads (on), Water, Places, Buildings. Every button draws a real reference file, fetched once in the background, with the corner progress bar, the first time you switch it on. (3) THE ARROWS ZOOM: the up/down arrows in the panel now zoom the shared view in quarter steps around the pane's centre \u2014 exactly what the pane's wheel does \u2014 so the reference stays locked to the main view, same place, same zoom. (4) A REMEMBERED LAYOUT CAN NO LONGER HIDE THE PANEL: window layouts saved by earlier versions are clamped to the real window size when restored, so the resource pane cannot come back squeezed to zero height after a restart. Everything else is 1.9.15 unchanged.",
+  "version": "1.9.16",
+  "changelog": "Four things, all Joshua's. (1) THE REFERENCE MAP NOW LINES UP: the bottom pane was drawing the reference roads raw, in the wrong frame \u2014 shifted and shrunk, thousands of metres off \u2014 so it could never match the map above it, and comparing against reality (the pane's whole job) was impossible. The reference now goes through the proper conversion into the game's own frame before it is drawn: on Dollar Mill Road Southwest the converted reference lands within a metre of the game's own records, and the same check passes in every zone. (2) THE PANEL IS JUST 'RESOURCE AND REFERENCE' NOW: the Snap row, the elevation readout and the Selected readout are gone. In their place are a coordinates readout \u2014 the shared view's centre, or the selected point while you hold one \u2014 and layer buttons in the Google Maps style: Roads (on), Water, Places, Buildings. Every button draws a real reference file, fetched once in the background, with the corner progress bar, the first time you switch it on. (3) THE ARROWS ZOOM: the up/down arrows in the panel now zoom the shared view in quarter steps around the pane's centre \u2014 exactly what the pane's wheel does \u2014 so the reference stays locked to the main view, same place, same zoom. (4) A REMEMBERED LAYOUT CAN NO LONGER HIDE THE PANEL: window layouts saved by earlier versions are clamped to the real window size when restored, so the resource pane cannot come back squeezed to zero height after a restart. Everything else is 1.9.15 unchanged.",
+  "files": [
+    {
+      "path": "about.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/about.py",
+      "sha256": "0b172aa3a3e94c80136473f95f42cef62f26927cfb9a8644f9aa14a4b3463140"
+    },
+    {
+      "path": "app.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/app.py",
+      "sha256": "73719a5dee0a47dec013adf8d4a38e5844a6ce71af018ed6f3557aa681cccebc"
+    },
+    {
+      "path": "data.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/data.py",
+      "sha256": "8fca662d7725bf50a4b5fd1770850444062b188e3947f3d90544d3f4a437d7bb"
+    },
+    {
+      "path": "gamedata.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/gamedata.py",
+      "sha256": "64d7b0c452ed5be68095f996e4253e13e431f50189d9bf77fa738b9027012927"
+    },
+    {
+      "path": "github_sync.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/github_sync.py",
+      "sha256": "00727441d1d9d66d0fd17d774aae47a6b94063e67f2e379f668a313cc333cc9e"
+    },
+    {
+      "path": "ground.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/ground.py",
+      "sha256": "e9bd4994bf20bf339a0f4ff307f40b4d8b10dafe0fff4ddb548538f6dde3083a"
+    },
+    {
+      "path": "mapcanvas.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/mapcanvas.py",
+      "sha256": "7614b044bc79d8703af3f8036e8743140f043fe3fac17fd05632fbd00b11f253"
+    },
+    {
+      "path": "overpass.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/overpass.py",
+      "sha256": "9cdd2766f6d4da08ec6730f0a72eeac52e81befc415e46bcaf73ee4ec2b633cf"
+    },
+    {
+      "path": "roadinspect.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/roadinspect.py",
+      "sha256": "acd148a38fac8fe94713fd448a04d75963b0d696bb23c7a7db461e8b585d0dec"
+    },
+    {
+      "path": "shared_cache.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/shared_cache.py",
+      "sha256": "86e16770fdea09e684c882870f730a794e2d64a807c3f06195dcd3254dedbde5"
+    },
+    {
+      "path": "undo.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/undo.py",
+      "sha256": "fd81519489702ebc71fb8b13b927dea408054a483d68ba6d6b0b3fbe7123706b"
+    },
+    {
+      "path": "updater.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/updater.py",
+      "sha256": "0c36b000830e5661165ac9f636466cd6d8402bab410bcab7da10b3e1e13e3a92"
+    },
+    {
+      "path": "areadata.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/areadata.py",
+      "sha256": "3feea694150a46578cde1f6f311900f13cdc16b2f64d7a606e3e1b2189f92855"
+    },
+    {
+      "path": "batchdelete.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/batchdelete.py",
+      "sha256": "e9aedc54df78a2a1e6e89c5165151f6116ad0f768dc3596f51f9ab48917e5c7a"
+    },
+    {
+      "path": "mergejoin.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/mergejoin.py",
+      "sha256": "02b7fb6cc1a9c211bfca8fcd8f45a6ed86b6053b4410cbf161ab2eb5671e47ec"
+    },
+    {
+      "path": "piecespanel.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/piecespanel.py",
+      "sha256": "d1dca3754d6b1ff8f9754c578e1265ddf8de727bb3bf9473222a96014fd8c665"
+    },
+    {
+      "path": "stacked.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/stacked.py",
+      "sha256": "3cca8cdf9f4cd278cfad4cafba2416b73b7f4bd378d0a94907db8edbf0488a2d"
+    },
+    {
+      "path": "mollie-icon.png",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/mollie-icon.png",
+      "sha256": "28990027fd79e03e2ef8416e8c1d3410ee284ec86383280968b245f08576e768"
+    }
+  ],
+  "selfupdate": {
+    "payload_root": "editors/map-editor/editor",
+    "payload_sha256": "507bda460bea2cddf78e5537bd541d21b5a9f1793d6d10dfcf331d34a3eae886",
     "files": [
-        {
-            "path": "about.py",
-            "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/about.py",
-            "sha256": "0b172aa3a3e94c80136473f95f42cef62f26927cfb9a8644f9aa14a4b3463140"
-        },
-        {
-            "path": "app.py",
-            "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/app.py",
-            "sha256": "73719a5dee0a47dec013adf8d4a38e5844a6ce71af018ed6f3557aa681cccebc"
-        },
-        {
-            "path": "data.py",
-            "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/data.py",
-            "sha256": "8fca662d7725bf50a4b5fd1770850444062b188e3947f3d90544d3f4a437d7bb"
-        },
-        {
-            "path": "gamedata.py",
-            "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/gamedata.py",
-            "sha256": "64d7b0c452ed5be68095f996e4253e13e431f50189d9bf77fa738b9027012927"
-        },
-        {
-            "path": "github_sync.py",
-            "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/github_sync.py",
-            "sha256": "00727441d1d9d66d0fd17d774aae47a6b94063e67f2e379f668a313cc333cc9e"
-        },
-        {
-            "path": "ground.py",
-            "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/ground.py",
-            "sha256": "e9bd4994bf20bf339a0f4ff307f40b4d8b10dafe0fff4ddb548538f6dde3083a"
-        },
-        {
-            "path": "mapcanvas.py",
-            "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/mapcanvas.py",
-            "sha256": "7614b044bc79d8703af3f8036e8743140f043fe3fac17fd05632fbd00b11f253"
-        },
-        {
-            "path": "overpass.py",
-            "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/overpass.py",
-            "sha256": "9cdd2766f6d4da08ec6730f0a72eeac52e81befc415e46bcaf73ee4ec2b633cf"
-        },
-        {
-            "path": "roadinspect.py",
-            "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/roadinspect.py",
-            "sha256": "acd148a38fac8fe94713fd448a04d75963b0d696bb23c7a7db461e8b585d0dec"
-        },
-        {
-            "path": "shared_cache.py",
-            "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/shared_cache.py",
-            "sha256": "86e16770fdea09e684c882870f730a794e2d64a807c3f06195dcd3254dedbde5"
-        },
-        {
-            "path": "undo.py",
-            "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/undo.py",
-            "sha256": "fd81519489702ebc71fb8b13b927dea408054a483d68ba6d6b0b3fbe7123706b"
-        },
-        {
-            "path": "updater.py",
-            "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/updater.py",
-            "sha256": "0c36b000830e5661165ac9f636466cd6d8402bab410bcab7da10b3e1e13e3a92"
-        },
-        {
-            "path": "areadata.py",
-            "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/areadata.py",
-            "sha256": "3feea694150a46578cde1f6f311900f13cdc16b2f64d7a606e3e1b2189f92855"
-        },
-        {
-            "path": "batchdelete.py",
-            "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/batchdelete.py",
-            "sha256": "e9aedc54df78a2a1e6e89c5165151f6116ad0f768dc3596f51f9ab48917e5c7a"
-        },
-        {
-            "path": "mergejoin.py",
-            "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/mergejoin.py",
-            "sha256": "02b7fb6cc1a9c211bfca8fcd8f45a6ed86b6053b4410cbf161ab2eb5671e47ec"
-        },
-        {
-            "path": "piecespanel.py",
-            "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/piecespanel.py",
-            "sha256": "d1dca3754d6b1ff8f9754c578e1265ddf8de727bb3bf9473222a96014fd8c665"
-        },
-        {
-            "path": "stacked.py",
-            "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/stacked.py",
-            "sha256": "3cca8cdf9f4cd278cfad4cafba2416b73b7f4bd378d0a94907db8edbf0488a2d"
-        }
+      {
+        "path": "about.py",
+        "sha256": "0b172aa3a3e94c80136473f95f42cef62f26927cfb9a8644f9aa14a4b3463140"
+      },
+      {
+        "path": "app.py",
+        "sha256": "73719a5dee0a47dec013adf8d4a38e5844a6ce71af018ed6f3557aa681cccebc"
+      },
+      {
+        "path": "areadata.py",
+        "sha256": "3feea694150a46578cde1f6f311900f13cdc16b2f64d7a606e3e1b2189f92855"
+      },
+      {
+        "path": "batchdelete.py",
+        "sha256": "e9aedc54df78a2a1e6e89c5165151f6116ad0f768dc3596f51f9ab48917e5c7a"
+      },
+      {
+        "path": "data.py",
+        "sha256": "8fca662d7725bf50a4b5fd1770850444062b188e3947f3d90544d3f4a437d7bb"
+      },
+      {
+        "path": "gamedata.py",
+        "sha256": "64d7b0c452ed5be68095f996e4253e13e431f50189d9bf77fa738b9027012927"
+      },
+      {
+        "path": "github_sync.py",
+        "sha256": "00727441d1d9d66d0fd17d774aae47a6b94063e67f2e379f668a313cc333cc9e"
+      },
+      {
+        "path": "ground.py",
+        "sha256": "e9bd4994bf20bf339a0f4ff307f40b4d8b10dafe0fff4ddb548538f6dde3083a"
+      },
+      {
+        "path": "mapcanvas.py",
+        "sha256": "7614b044bc79d8703af3f8036e8743140f043fe3fac17fd05632fbd00b11f253"
+      },
+      {
+        "path": "mergejoin.py",
+        "sha256": "02b7fb6cc1a9c211bfca8fcd8f45a6ed86b6053b4410cbf161ab2eb5671e47ec"
+      },
+      {
+        "path": "mollie-icon.png",
+        "sha256": "28990027fd79e03e2ef8416e8c1d3410ee284ec86383280968b245f08576e768"
+      },
+      {
+        "path": "overpass.py",
+        "sha256": "9cdd2766f6d4da08ec6730f0a72eeac52e81befc415e46bcaf73ee4ec2b633cf"
+      },
+      {
+        "path": "piecespanel.py",
+        "sha256": "d1dca3754d6b1ff8f9754c578e1265ddf8de727bb3bf9473222a96014fd8c665"
+      },
+      {
+        "path": "roadinspect.py",
+        "sha256": "acd148a38fac8fe94713fd448a04d75963b0d696bb23c7a7db461e8b585d0dec"
+      },
+      {
+        "path": "shared_cache.py",
+        "sha256": "86e16770fdea09e684c882870f730a794e2d64a807c3f06195dcd3254dedbde5"
+      },
+      {
+        "path": "stacked.py",
+        "sha256": "3cca8cdf9f4cd278cfad4cafba2416b73b7f4bd378d0a94907db8edbf0488a2d"
+      },
+      {
+        "path": "undo.py",
+        "sha256": "fd81519489702ebc71fb8b13b927dea408054a483d68ba6d6b0b3fbe7123706b"
+      },
+      {
+        "path": "updater.py",
+        "sha256": "0c36b000830e5661165ac9f636466cd6d8402bab410bcab7da10b3e1e13e3a92"
+      }
     ]
+  }
 }
