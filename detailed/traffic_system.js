@@ -104,6 +104,33 @@ var ACCEL_US = 8, BRAKE_US = 22;   // u/s^2 — gentle 90s-sedan feel
 // 90s paint palette (fictitious world — colors only, no branding)
 var PAINTS=[0x7a1f1f,0x1f3a5f,0x5a5a5a,0x2e5a2e,0x8a7a3a,0x4a2e5a,
             0x2e5a5a,0xb8b8b8,0x141414,0xd8cfc0];
+/* v2.0 BAKED BODY TYPES (Joshua's vehicle-bake ruling, 2026-10-28):
+   every traffic car is dealt a body type at spawn from a per-road-
+   class pool (cumulative weights), and its paint from that type's
+   palette — the PAINTS pattern extended per class: taxis are yellow,
+   box trucks wear work whites/pastels, sports cars wear the loud
+   colours. Types are labels until the baked library renders them
+   (vehicle_library.js); the legacy box pool simply ignores them. */
+var TRAFFIC_TYPE_POOLS={
+  hw:[['boxtruck',0.16],['van',0.30],['pickup',0.48],['suv',0.70],['sedan',1.0]],
+  ar:[['sedan',0.34],['hatchback',0.52],['suv',0.70],['pickup',0.82],['taxi',0.88],['van',0.95],['boxtruck',1.0]],
+  lo:[['sedan',0.36],['hatchback',0.58],['suv',0.74],['pickup',0.86],['sports',0.92],['taxi',1.0]]
+};
+var TRAFFIC_TYPE_PAINTS={
+  taxi:[0xf2b21b,0xe8a812],
+  boxtruck:[0xd9dde0,0xb9c2c9,0x8fa3b8,0xc7b299],
+  van:[0xd9dde0,0x9fb4c8,0x5a6e82,0x7a1f1f,0x2e5a2e],
+  sports:[0xc23b2e,0xe8b923,0x2e5fa3,0x141414,0xe8e8e8]
+};
+function pickTrafficType(cls){
+  var pool=TRAFFIC_TYPE_POOLS[cls]||TRAFFIC_TYPE_POOLS.lo, r=TR.rng();
+  for (var i=0;i<pool.length;i++) if (r<=pool[i][1]) return pool[i][0];
+  return 'sedan';
+}
+function pickTrafficPaint(type){
+  var p=TRAFFIC_TYPE_PAINTS[type]||PAINTS;
+  return p[(TR.rng()*p.length)|0];
+}
 // FICTITIOUS fuel brands — never real trademarks. (The existing business
 // namer already owns ZoomFuel/QuickFuel/etc.; this pool is deliberately
 // disjoint so names never collide with it.)
@@ -118,14 +145,16 @@ var WO=[[0.95,1.5],[-0.95,1.5],[0.95,-1.5],[-0.95,-1.5]];
 var TR=null;   // set at init; window.TRAFFIC points at it
 
 /* Hot-loop temps — allocated ONCE, reused every frame (no per-frame allocs). */
-var _v=null,_q=null,_e=null,_m=null,_c=null,_ONE=null,_ZERO_M=null;
+var _v=null,_q=null,_e=null,_m=null,_c=null,_ONE=null,_ZERO_M=null,_sv=null;
 function makeTemps(){
   _v=new THREE.Vector3(); _q=new THREE.Quaternion();
   _e=new THREE.Euler();   _m=new THREE.Matrix4();
   _c=new THREE.Color();   _ONE=new THREE.Vector3(1,1,1);
+  _sv=new THREE.Vector3();   // v2.0: per-type wheel scale scratch
   _ZERO_M=new THREE.Matrix4().makeScale(0,0,0);
 }
 function zeroSlot(s){  // hide one render slot (body+glass+4 wheels)
+  if (TR.typed) return;  // v2.0: typed pool hides slots via IM counts
   TR.bodyIM.setMatrixAt(s,_ZERO_M); TR.glassIM.setMatrixAt(s,_ZERO_M);
   for (var k=0;k<4;k++) TR.wheelIM.setMatrixAt(s*4+k,_ZERO_M);
 }
@@ -523,7 +552,7 @@ function newLane(c,R){
    Each car starts at 60% of its target speed (avoids a spawn burst), picks
    a random travel direction, and retries up to 8 times to find a spawn
    position at least 22u from another same-road/same-direction car. */
-function spawnOn(list,n,v0,v1){
+function spawnOn(list,n,v0,v1,cls){
   var tot=0,i;
   for (i=0;i<list.length;i++) tot+=list[i].len;
   if (tot<=0) return;
@@ -540,6 +569,7 @@ function spawnOn(list,n,v0,v1){
     }
     if (!ok) continue;
     var ts=v0+TR.rng()*(v1-v0);
+    var _tt=pickTrafficType(cls); var _tc=pickTrafficPaint(_tt);  // v2.0: baked body type + per-type paint
     var c={id:TR.cars.length, x:0,z:0,y:0,heading:0, speed:ts*0.6,
       desired:ts, targetSpeed:ts, road:gi, segT:segT, dir:dir,
       lane:0, off:0, laneOffBase:0, laneTarget:0, shoulderOff:0,
@@ -547,7 +577,7 @@ function spawnOn(list,n,v0,v1){
       pullT:20+TR.rng()*50, parkT:0, stuckT:0,
       fuel:65+TR.rng()*35, gasSt:null, gasSpot:null, gasLeave:null, refuelT:0,  // v1.12 fuel
       blockedByPlayer:false, blockedByBus:false, wheelA:TR.rng()*6.28, slot:-1,
-      color:PAINTS[(TR.rng()*PAINTS.length)|0]};
+      type:_tt, color:_tc};
     newLane(c,R); c.off=c.laneOffBase;
     TR.cars.push(c);
     roadPose(c);
@@ -954,13 +984,69 @@ function stepCar(c,dt,px,pz){
 }
 
 /* ---------------- streaming renderer ----------------
-   3 draw calls for ALL traffic: bodies + glasshouses + wheels as
-   InstancedMesh. Slots are reassigned every 0.3s under Joshua's half-mile
+   LEGACY: 3 draw calls for ALL traffic: bodies + glasshouses + wheels
+   as InstancedMesh. v2.0 (2026-10-28): when the baked body library is
+   live, the same slot assignment renders through buildTypedPool() —
+   one paint + one trim InstancedMesh per body type + one shared
+   wheel InstancedMesh (~15 draw calls, types with no cars hidden).
+   Slots are reassigned every 0.3s under Joshua's half-mile
    full-draw rule (see assignSlots): every car within 800u is rendered,
    cars stream in by 1000u, distant cars are pure data (positions only).
    Wheel spin is faked from distance driven
    (wheelA += speed*dt / wheelRadius). */
+/* buildTypedPool() — v2.0: swap the single box body for the baked
+   body library (vehicle_library.js): one paint + one trim
+   InstancedMesh per body type (paint tinted per car via setColorAt —
+   the PAINTS pattern generalized), one shared low-poly wheel
+   InstancedMesh. The logical slot system (assignSlots: half-mile
+   full-draw guarantee, stickiness, budget) is UNCHANGED — typed
+   rendering is a pure partition of the slot assignment by type each
+   frame. Returns false (legacy pool stays) when the library lacks
+   the sedan fallback type. */
+function buildTypedPool(){
+  var VL=window.VehicleLibrary;
+  if (!VL || !VL.ready || TR.typed) return false;
+  var typeIM={}, types=Object.keys(VL.types), i, t;
+  for (i=0;i<types.length;i++){
+    t=types[i];
+    var geos=VL.trafficGeos(t);
+    if (!geos) continue;
+    var paint=new THREE.InstancedMesh(geos.paint,
+      new THREE.MeshLambertMaterial({color:0xffffff}), MAX_RENDERED);
+    var trim=new THREE.InstancedMesh(geos.trim,
+      new THREE.MeshLambertMaterial({vertexColors:true}), MAX_RENDERED);
+    typeIM[t]={paint:paint, trim:trim};
+  }
+  if (!typeIM.sedan){
+    for (t in typeIM){ try{ typeIM[t].paint.dispose(); typeIM[t].trim.dispose(); }catch(e){} }
+    return false;
+  }
+  var wheelIM=new THREE.InstancedMesh(VL.wheelLowGeo,
+    new THREE.MeshLambertMaterial({vertexColors:true}), MAX_RENDERED*4);
+  /* success — retire the legacy pool (if it was built first) */
+  [TR.bodyIM, TR.glassIM, TR.wheelIM].forEach(function(im){
+    if (im){ try{ scene.remove(im); im.dispose(); }catch(e){} }
+  });
+  TR.typeIM=typeIM; TR.wheelIM=wheelIM; TR.bodyIM=null; TR.glassIM=null;
+  [wheelIM].concat(Object.keys(typeIM).map(function(k){return typeIM[k].paint;}),
+                   Object.keys(typeIM).map(function(k){return typeIM[k].trim;}))
+    .forEach(function(im){
+      im.frustumCulled=false;
+      im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      im.count=0; scene.add(im);
+    });
+  TR.typed=true;
+  if (!TR.slots || !TR.slots.length){
+    TR.slots=[]; for (var s=0;s<MAX_RENDERED;s++) TR.slots.push(-1);
+  }
+  for (i=0;i<TR.cars.length;i++) TR.cars[i].slot=-1;  // stale slot claims lapse
+  try{ console.log('[traffic] baked body pool live: '+Object.keys(typeIM).join(',')); }catch(e){}
+  return true;
+}
 function buildRenderPool(){
+  /* v2.0: baked types when the library is already up; legacy box pool
+     otherwise, swapped the moment the library lands. */
+  if (window.VehicleLibrary && VehicleLibrary.ready && buildTypedPool()) return;
   var bodyG=new THREE.BoxGeometry(2.0,0.62,4.6); bodyG.translate(0,0.55,0);
   var glassG=new THREE.BoxGeometry(1.75,0.5,2.4); glassG.translate(0,1.12,-0.2);
   var wheelG=new THREE.CylinderGeometry(0.34,0.34,0.3,10); wheelG.rotateZ(Math.PI/2);
@@ -979,6 +1065,8 @@ function buildRenderPool(){
   TR.bodyIM.instanceMatrix.needsUpdate=true;
   TR.glassIM.instanceMatrix.needsUpdate=true;
   TR.wheelIM.instanceMatrix.needsUpdate=true;
+  /* v2.0: if the baked library lands after the legacy pool, swap up. */
+  if (window.VehicleLibrary) VehicleLibrary.onReady(function(){ buildTypedPool(); });
 }
 /* assignSlots(px,pz) — rebinds the instanced slots every 0.3s under
    Joshua's HALF-MILE FULL-DRAW RULE (2026-10-17):
@@ -1023,17 +1111,61 @@ function assignSlots(px,pz){
     if (prev>=0&&TR.cars[prev]) TR.cars[prev].slot=-1;
     var ci=s<n?picked[s]:-1;
     TR.slots[s]=ci;
-    if (ci>=0){ TR.cars[ci].slot=s; TR.bodyIM.setColorAt(s,_c.setHex(TR.cars[ci].color)); }
+    if (ci>=0){ TR.cars[ci].slot=s; if (TR.bodyIM) TR.bodyIM.setColorAt(s,_c.setHex(TR.cars[ci].color)); }
     else zeroSlot(s);
   }
-  if (TR.bodyIM.instanceColor) TR.bodyIM.instanceColor.needsUpdate=true;
+  if (TR.bodyIM && TR.bodyIM.instanceColor) TR.bodyIM.instanceColor.needsUpdate=true;
   TR.rendered=n;
 }
 /* renderSlots(dt) — writes body/glass/wheel matrices for every assigned slot.
    Wheels are rotated by wheelA (distance-driven spin) on a 'YXZ' euler so
    spin and steering yaw compose correctly; offsets are rotated into heading
    space so wheels track the body. */
+/* renderSlotsTyped(dt) — v2.0: partition the (unchanged) logical slot
+   assignment by body type. Per frame: reset per-type counts, walk the
+   slots once, write each car's matrix into its type's paint+trim
+   InstancedMeshes (paint colour per car), and its four wheels into
+   the shared wheel InstancedMesh at the type's baked offsets/radius.
+   Per-frame cost is the same order as the legacy writer (one pass,
+   no allocations). */
+function renderSlotsTyped(dt){
+  var counts={}, t;
+  for (t in TR.typeIM) counts[t]=0;
+  var wCount=0;
+  for (var s=0;s<MAX_RENDERED;s++){
+    var ci=TR.slots[s]; if (ci<0) continue;
+    var c=TR.cars[ci];
+    var type=TR.typeIM[c.type]?c.type:'sedan';
+    var P=TR.typeIM[type], idx=counts[type]++;
+    _e.set(0,c.heading,0); _q.setFromEuler(_e);
+    _v.set(c.x,c.y,c.z); _m.compose(_v,_q,_ONE);
+    P.paint.setMatrixAt(idx,_m); P.trim.setMatrixAt(idx,_m);
+    P.paint.setColorAt(idx,_c.setHex(c.color));
+    var T=VehicleLibrary.types[type];
+    c.wheelA=(c.wheelA+c.speed*dt/Math.max(0.2,T.wheelR))%(Math.PI*2);
+    var ch=Math.cos(c.heading), sh=Math.sin(c.heading);
+    _sv.setScalar(T.wheelR/0.3);
+    for (var k=0;k<4;k++){
+      var wp=T.wheels[k], ox=wp[0], oz=wp[2];
+      _v.set(c.x+ox*ch+oz*sh, c.y+wp[1], c.z-ox*sh+oz*ch);
+      _e.set(c.wheelA,c.heading,0,'YXZ'); _q.setFromEuler(_e);
+      _m.compose(_v,_q,_sv);
+      TR.wheelIM.setMatrixAt(wCount++,_m);
+    }
+  }
+  for (t in TR.typeIM){
+    var P2=TR.typeIM[t];
+    P2.paint.count=counts[t]; P2.trim.count=counts[t];
+    P2.paint.visible=P2.trim.visible=counts[t]>0;
+    P2.paint.instanceMatrix.needsUpdate=true;
+    P2.trim.instanceMatrix.needsUpdate=true;
+    if (P2.paint.instanceColor) P2.paint.instanceColor.needsUpdate=true;
+  }
+  TR.wheelIM.count=wCount; TR.wheelIM.visible=wCount>0;
+  TR.wheelIM.instanceMatrix.needsUpdate=true;
+}
 function renderSlots(dt){
+  if (TR.typed){ renderSlotsTyped(dt); return; }
   for (var s=0;s<MAX_RENDERED;s++){
     var ci=TR.slots[s]; if (ci<0) continue;
     var c=TR.cars[ci];
@@ -1602,9 +1734,9 @@ function initTraffic(){
   var ar=TR.roads.filter(function(R){return R.cat==='minor_artery'||R.cat==='major_artery'||R.cat==='arterial';});  /* v2.1 */
   var lo=TR.roads.filter(function(R){return R.cat==='local';});
   // highway pace: 25-31 u/s ≈ 54-67 mph (MPH_PER_US = 65/30)
-  spawnOn(hw,N_HW_CARS,25,31);
+  spawnOn(hw,N_HW_CARS,25,31,'hw');
   // arterial pace: 13-19 u/s ≈ 28-41 mph
-  spawnOn(ar,N_ART_CARS,13,19);
+  spawnOn(ar,N_ART_CARS,13,19,'ar');
   // v1.13: local-road traffic so residential areas aren't empty.
   // Local pace: 8-14 u/s ≈ 17-30 mph (neighborhood speeds).
   // Split: some spread map-wide, plus a guaranteed cluster near player start
@@ -1618,9 +1750,9 @@ function initTraffic(){
     var d2=(mid[0]-spx)*(mid[0]-spx)+(mid[1]-spz)*(mid[1]-spz);
     if (d2<LOCAL_NEAR_RADIUS*LOCAL_NEAR_RADIUS) loNear.push(R2); else loFar.push(R2);
   }
-  if (loNear.length) spawnOn(loNear, Math.min(N_LOCAL_NEAR, loNear.length*2), 8, 14);
-  if (loFar.length) spawnOn(loFar, N_LOCAL_CARS, 8, 14);
-  else if (lo.length && !loNear.length) spawnOn(lo, N_LOCAL_CARS, 8, 14);
+  if (loNear.length) spawnOn(loNear, Math.min(N_LOCAL_NEAR, loNear.length*2), 8, 14,'lo');
+  if (loFar.length) spawnOn(loFar, N_LOCAL_CARS, 8, 14,'lo');
+  else if (lo.length && !loNear.length) spawnOn(lo, N_LOCAL_CARS, 8, 14,'lo');
   placeGasStations();
   // hook the frame loop — the inner requestAnimationFrame(animate) re-reads
   // the global binding every frame, so wrapping it here takes effect.

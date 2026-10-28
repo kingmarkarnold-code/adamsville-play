@@ -173,9 +173,9 @@
     },
     {
       "name": "index.html",
-      "size": 1107041,
-      "sha256": "0333d497853e2ec2675c1f9e121c7759c704449f1df0f1fd569af57b8fb309c9",
-      "hash": "0333d497853e2ec2675c1f9e121c7759c704449f1df0f1fd569af57b8fb309c9"
+      "size": 1107103,
+      "sha256": "1b34012c0331237641cb70c949178818af70b03d6fcb49a46a59865d13fb9613",
+      "hash": "1b34012c0331237641cb70c949178818af70b03d6fcb49a46a59865d13fb9613"
     },
     {
       "name": "infracrew_system.js",
@@ -444,9 +444,9 @@
     },
     {
       "name": "traffic_system.js",
-      "size": 84769,
-      "sha256": "b4f39dbbacb029acb53305aaaf7c0f34bebbd8f4b5eddd16b7e18c30df04f48c",
-      "hash": "b4f39dbbacb029acb53305aaaf7c0f34bebbd8f4b5eddd16b7e18c30df04f48c",
+      "size": 91205,
+      "sha256": "0b67b6472bee657493eae2efa203db3fc502476238e3218df84fea0c19f334dc",
+      "hash": "0b67b6472bee657493eae2efa203db3fc502476238e3218df84fea0c19f334dc",
       "md5": "02f71887c1fae49e0a56b689b5f27ebc"
     },
     {
@@ -717,6 +717,6 @@
       "hash": "99e3a8f264f836ba86b79c497fa2be946b3b469eafa442d0f70eabab239abeec"
     }
   ],
-  "ui_version": "2026.10.28.3",
+  "ui_version": "2026.10.28.4",
   "version": "2026.10.17.9"
 }

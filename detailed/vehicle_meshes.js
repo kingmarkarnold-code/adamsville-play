@@ -267,7 +267,27 @@ function _vbatch(){
 // sedanMesh(color) — TRUE SCALE (~1.42m roofline: below the 1.85m character's
 // eyeline). Body + glasshouse + hood + 4 wheels; exposes userData.body/cab/hood
 // for the damage system. The game's stylized sedan archetype.
+/* v2.0 BAKED BODIES (Joshua 2026-10-28): the generic builders first
+   ask the baked vehicle library (vehicle_library.js — Kenney CC0
+   bodies, baked once) for a shaped body in the requested paint. When
+   the library is unavailable (classic engine / load failure), the
+   original procedural builder — renamed *Legacy below — builds the
+   car exactly as before. Same names, same signatures, same callers.
+   The signature vehicles keep their handcrafted builders outright:
+   safariMesh (Joshua's two-tone van, engineered driver sightlines)
+   and the donk Chevys (boxChevyMesh/bubbleChevyMesh). */
+function _bakedBody(type, hex){
+  try{
+    if (window.VehicleLibrary && VehicleLibrary.ready)
+      return VehicleLibrary.makeBody(type, hex);
+  }catch(e){}
+  return null;
+}
 function sedanMesh(color){
+  var b=_bakedBody('sedan', color); if (b) return b;
+  return sedanMeshLegacy(color);
+}
+function sedanMeshLegacy(color){
   // TRUE SCALE: overall height ~1.42m (roofline below the 1.85m character's eyeline)
   // v1.49: static body merged per material (3 meshes -> 2 merged); wheels stay
   // separate (spin via rotation.x).
@@ -727,6 +747,10 @@ function bubbleChevyMesh(paint, rimStyle){
 // with walls + tailgate, grille with square headlights, interior + doors,
 // donk wheels (R=0.40).
 function pickupMesh(paint, rimStyle){
+  var b=_bakedBody('pickup', paint && paint.body); if (b) return b;
+  return pickupMeshLegacy(paint, rimStyle);
+}
+function pickupMeshLegacy(paint, rimStyle){
   // v1.49: static exterior + bed + interior merged per material. Doors
   // hinge, wheels spin — stay separate.
   var g=new THREE.Group();
@@ -780,6 +804,10 @@ function pickupMesh(paint, rimStyle){
 // suvMesh(paint, rimStyle) — stylized family SUV: tall wagon body, roof
 // rails, interior + doors, donk wheels (R=0.42).
 function suvMesh(paint, rimStyle){
+  var b=_bakedBody('suv', paint && paint.body); if (b) return b;
+  return suvMeshLegacy(paint, rimStyle);
+}
+function suvMeshLegacy(paint, rimStyle){
   // v1.49: static exterior + interior merged per material. Doors hinge,
   // wheels spin — stay separate.
   var g=new THREE.Group();
