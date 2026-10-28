@@ -52,7 +52,7 @@ import overpass as overpass_mod  # noqa: E402
 
 # App version shown in the Help -> About dialog (bump with each release).
 # Joshua 2026-10-11: version number must be prominent in About.
-APP_VERSION = "1.9.15"
+APP_VERSION = "1.9.16"
 # Display name and icon-theme name for the About dialog.
 APP_NAME = "Adamsville Map Editor"
 APP_ICON = "adamsville-map-editor-native"
@@ -340,6 +340,35 @@ class MapEditorApp:
             return x, y, w, h
         except Exception:
             return x, y, w, h
+
+    def _clamp_pane_position(self, paned, value, min_first,
+                             min_second):
+        """
+        Clamp a REMEMBERED pane position to the pane's real
+        size (1.9.16 — Joshua's Oct 27 finding: 1.9.14 restored
+        saved pane positions raw, so a split remembered at or
+        beyond the pane's end came back with the far pane at
+        zero size — the resource map invisible, its sash
+        nowhere to grab). Each side keeps at least its minimum
+        share; a pane too small for both minimums splits
+        evenly. Fail-open: no real allocation yet (or any
+        trouble) returns the value unchanged.
+        """
+        try:
+            alloc = paned.get_allocation()
+            if paned.get_orientation() == \
+                    Gtk.Orientation.HORIZONTAL:
+                total = alloc.width
+            else:
+                total = alloc.height
+            value = int(value)
+        except Exception:
+            return value
+        if total <= 1:
+            return value
+        if total <= min_first + min_second:
+            return max(1, total // 2)
+        return max(min_first, min(total - min_second, value))
 
     # -- layout persistence (1.9.14) ------------------------------
     # The window layout — size, position, and the adjustable
@@ -2735,6 +2764,12 @@ class MapEditorApp:
             self.heading_label.set_text(f"Heading {deg:03d}°")
         if insp is None:
             return
+        # 1.9.16: the inspector's coordinates readout follows
+        # the same shared truth (a cheap text set, at the
+        # heading readout's pace; it also runs while a
+        # comparison pins the camera — the readout then names
+        # the pinned centre, the point under decision).
+        insp.update_coords_readout()
         if insp.compare_active():
             return  # static rule: the stills hold, nothing follows
         if self.live_pane == "3d":
@@ -4037,22 +4072,33 @@ class MapEditorApp:
         # 1.9.14: a REMEMBERED layout outranks the starting
         # shares — every pane comes back the size Joshua left
         # it (the values _restore_window kept from window.json).
+        # 1.9.16: remembered positions are CLAMPED to the real
+        # pane sizes as they are applied (see
+        # _clamp_pane_position) — a split remembered at the
+        # pane's end no longer restores a pane at zero size.
         try:
             saved = getattr(self, "_saved_panes", None) or {}
             alloc = self.canvas_paned.get_allocation()
             if alloc.height > 300:
                 if saved.get("canvas_paned"):
                     self.canvas_paned.set_position(
-                        int(saved["canvas_paned"]))
+                        self._clamp_pane_position(
+                            self.canvas_paned,
+                            int(saved["canvas_paned"]), 240, 80))
                 else:
                     self.canvas_paned.set_position(
                         alloc.height - 205)
             if saved.get("main_paned"):
                 self.main_paned.set_position(
-                    int(saved["main_paned"]))
+                    self._clamp_pane_position(
+                        self.main_paned,
+                        int(saved["main_paned"]), 320, 248))
             split = getattr(self.inspector, "split_paned", None)
             if split is not None and saved.get("inspector_split"):
-                split.set_position(int(saved["inspector_split"]))
+                split.set_position(
+                    self._clamp_pane_position(
+                        split, int(saved["inspector_split"]),
+                        120, 208))
         except Exception:
             pass
         self.canvas.fit_view()

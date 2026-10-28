@@ -21,23 +21,35 @@ camera of its own.
   3D world (materials, blocks, roads as the game draws them — NOT
   real satellite photography; Joshua's definition). The selected
   road keeps its 2026-10-11 treatment in 3D: clickable endpoints
-  and snap-to-road (double-click or the Snap button).
-- ResourceMapViewer (bottom, in the "Resource map" frame;
-  1.9.12 — Joshua's design clarification): the RESOURCE MAP —
-  the reference map data the world was built FROM (the repo's
-  map-data/game-map/roads.json, already in world coordinates) —
-  shown at the SAME location and zoom as the top viewer, so he
-  can compare where streets currently are in our world against
-  where the reference says they should be. It is reference
-  material only: the pane never edits it (map-data/ is
-  read-only by standing rule), and it draws NO game data. The
-  views stay linked both ways: the pane follows the shared
+  and snap-to-road (double-click in the pane; the panel's old
+  Snap button went away in the 1.9.16 panel rework — the
+  double-click in the pane is the snap gesture now).
+- ResourceMapViewer (bottom, in the "Resource and Reference"
+  frame; 1.9.12 — Joshua's design clarification): the RESOURCE
+  MAP — the reference map data the world was built FROM (the
+  repo's map-data/game-map/ files) — shown at the SAME location
+  and zoom as the top viewer, so he can compare where streets
+  currently are in our world against where the reference says
+  they should be. It is reference material only: the pane never
+  edits it (map-data/ is read-only by standing rule), and it
+  draws NO game data. The reference files are in REBUILD METRES
+  (origin 535 Dollar Mill Rd); 1.9.16 converts every point into
+  the game's frame at ingest (see rebuild_to_zone below) — in
+  1.9.12–1.9.15 the points were drawn verbatim, in the wrong
+  frame, so the pane could never line up with the main view.
+  The views stay linked both ways: the pane follows the shared
   camera (and the top pane's selection framing — a click that
   selects a road frames the same clicked point here), and
   dragging in the pane pans the shared camera like everywhere
-  else. The readout line above the pane still carries the
-  selected road's elevation offset with its ▲ / ▼ steppers
-  (that is what the readout is FOR — it is not the pane).
+  else. Above the pane (1.9.16 panel rework, Joshua 2026-10-26):
+  a coordinates readout (the view centre, or the selected
+  point, in game coordinates), the ▲ / ▼ arrows — now zoom
+  buttons for the resource map — and Google-Maps-style layer
+  buttons (Roads / Water / Places / Buildings) choosing which
+  reference layers draw. The 1.9.12–1.9.15 elevation readout +
+  steppers and the Snap row are gone (the elevation offsets
+  themselves still live in RoadElevStore and still shape the
+  3D pane's drawing; only their panel row went away).
 
 Gestures are the same in every pane (the sync law): drag pans the
 shared camera, Ctrl+drag rotates it, the wheel zooms it. Panes
@@ -500,16 +512,79 @@ def _draw_north_arrow(cr, cam, w, h):
 
 
 # ---------------------------------------------------------------------------
-# The resource map (reference) — 1.9.12
+# The resource map (reference) — 1.9.12; frame conversion 1.9.16
 # ---------------------------------------------------------------------------
-# The repo's map-data/game-map/roads.json: the reference roads the
-# game world was built from, ALREADY in world coordinates (its
-# header names the origin and "1 unit = 1 meter"), as records
-# [name, highway_class, width, [[x, z], ...], [ys...]]. It is
-# REFERENCE material — the bottom pane only ever reads it
-# (map-data/ is never edited, by standing rule).
+# The repo's map-data/game-map/ files: the reference the game
+# world was built from — roads.json ([name, highway_class,
+# width, [[x, z], ...], [ys...]]), water.json ([name, kind,
+# [[x, z], ...]]), places.json ([name, category, [x, z]]) and
+# buildings.json.gz ([name, type, height_m, [[x, z], ...]]).
+# It is REFERENCE material — the bottom pane only ever reads
+# it (map-data/ is never edited, by standing rule).
+#
+# FRAME (1.9.16 — the pane's founding defect, found by Joshua
+# 2026-10-26/27): these files are NOT in world coordinates,
+# whatever the 1.9.12 comment below claimed. Their points are
+# REBUILD METRES: metres east/north of 535 Dollar Mill Rd
+# (33.74110, -84.52645), the header's origin. The game's frame
+# is those metres pushed through the rebuild conversion
+# (CONVERSION-DESIGN §1.2/§1.4, pilot-build/convert.js): to
+# lat/lon, into the game's original frame (the game's own
+# xz()), then the zone rescale s = 1609/568 about the centre
+# (3772.5, 2009). 1.9.12–1.9.15 drew the raw metres verbatim
+# through the game camera, so the reference sat in the wrong
+# place at the wrong scale and could NEVER line up with the
+# main view — the comparison the pane exists for was broken.
+# 1.9.16 converts every reference point through
+# rebuild_to_zone() at ingest, so the store holds game-frame
+# points and the pane lines up at true game scale. Verified
+# against the files themselves (2026-10-27 measurement,
+# DATA-COMPARISON.md): rebuild (0, 0) lands on the game's HOME
+# (1938.004, 6791.345), and the reference Dollar Mill Road
+# Southwest overlays the game's records with max deviation
+# 0.7 m; the same chain overlays named roads in every zone
+# (the rescale is one world frame, not per-zone).
 
 RESOURCE_ROADS_PATH = "map-data/game-map/roads.json"
+RESOURCE_WATER_PATH = "map-data/game-map/water.json"
+RESOURCE_PLACES_PATH = "map-data/game-map/places.json"
+RESOURCE_BUILDINGS_PATH = "map-data/game-map/buildings.json.gz"
+
+# The layer files behind the panel's layer buttons (1.9.16).
+RESOURCE_LAYER_PATHS = {
+    "water": RESOURCE_WATER_PATH,
+    "places": RESOURCE_PLACES_PATH,
+    "buildings": RESOURCE_BUILDINGS_PATH,
+}
+
+# -- rebuild metres -> game frame (convert.js, verbatim math) --
+_REBUILD_LAT0 = 33.74110
+_REBUILD_LON0 = -84.52645
+_D2R = math.pi / 180.0
+_MPDLAT = 111132.92 - 559.82 * math.cos(2 * _REBUILD_LAT0 * _D2R) \
+    + 1.175 * math.cos(4 * _REBUILD_LAT0 * _D2R)
+_MPDLON = 111412.84 * math.cos(_REBUILD_LAT0 * _D2R) \
+    - 93.5 * math.cos(3 * _REBUILD_LAT0 * _D2R)
+_ZONE_S = 1609.0 / 568.0          # the zone rescale (§1.4)
+_ZONE_CX = 3772.5                 # rescale centre, x
+_ZONE_CZ = 2009.0                 # rescale centre, z
+
+
+def rebuild_to_zone(xm, zm):
+    """
+    One reference point, rebuild metres -> game frame.
+    The exact convert.js chain (design §1.2 + §1.4):
+    metres -> lat/lon about the 535 Dollar Mill origin ->
+    the game's original frame (xz()) -> the zone rescale
+    about (3772.5, 2009). Anchor: (0, 0) -> (1938.004,
+    6791.345), the game's own HOME constant.
+    """
+    lat = _REBUILD_LAT0 - zm / _MPDLAT
+    lon = _REBUILD_LON0 + xm / _MPDLON
+    xo = (lon + 84.6209) / 0.2418 * 8000
+    zo = (33.8392 - lat) / 0.3184 * 12000
+    return (_ZONE_CX + (xo - _ZONE_CX) * _ZONE_S,
+            _ZONE_CZ + (zo - _ZONE_CZ) * _ZONE_S)
 
 # Resource highway class -> the editor's road category, so the
 # reference draws in the same colours/widths as the game map.
@@ -539,6 +614,12 @@ class ResourceRoadsStore:
     bytes | None, so the app wires its own GitHub read and the
     harness can drive the store with fixture bytes through the
     same door (ingest()).
+
+    1.9.16: ingest() CONVERTS every point from rebuild metres
+    into the game frame (rebuild_to_zone) before indexing —
+    the store only ever holds game-frame points, so query()
+    rects and the pane's camera stay in the one frame the rest
+    of the editor uses.
     """
 
     CELL = 512.0
@@ -570,13 +651,19 @@ class ResourceRoadsStore:
         for rec in (doc or {}).get("roads") or []:
             try:
                 name = rec[0] or ""
-                pts = rec[3] or []
+                raw_pts = rec[3] or []
             except Exception:
                 continue
-            if len(pts) < 2:
+            if len(raw_pts) < 2:
                 continue
             cat = resource_category(rec[1] if len(rec) > 1
                                     else "")
+            # 1.9.16: the file's points are rebuild metres —
+            # convert into the game frame at the door (see the
+            # frame note at RESOURCE_ROADS_PATH). Everything
+            # downstream (grid, query, the pane's camera) works
+            # in game coordinates only.
+            pts = [rebuild_to_zone(p[0], p[1]) for p in raw_pts]
             xs = [p[0] for p in pts]
             zs = [p[1] for p in pts]
             ri = len(records)
@@ -653,6 +740,198 @@ class ResourceRoadsStore:
                         continue
                     out.append((cat, name, pts))
         return out
+
+
+class ResourceLayerStore:
+    """
+    The resource map's OTHER reference layers (1.9.16) — the
+    files behind the panel's layer buttons: water (water.json:
+    [name, kind, pts]; kind "body" is a closed water polygon,
+    "stream" an open line), places (places.json: [name,
+    category, [x, z]]) and buildings (buildings.json.gz:
+    [name, type, height_m, ring]). Same pattern as
+    ResourceRoadsStore — per-layer state machine, one background
+    fetch per layer, uniform-grid index — and the same 1.9.16
+    rule: every point is converted from rebuild metres into
+    the game frame at ingest, so queries take game-frame rects.
+
+    Record shapes per layer (what query_* returns):
+      water     -> (kind, name, pts)
+      places    -> (category, name, (x, z))
+      buildings -> (name, ring)
+    """
+
+    CELL = 512.0
+    LAYERS = ("water", "places", "buildings")
+
+    def __init__(self):
+        self._records = {name: [] for name in self.LAYERS}
+        self._grid = {name: {} for name in self.LAYERS}
+        self._states = {name: "absent" for name in self.LAYERS}
+        self._lock = threading.Lock()
+
+    def state(self, layer):
+        with self._lock:
+            return self._states[layer]
+
+    def count(self, layer):
+        with self._lock:
+            return len(self._records[layer])
+
+    # -- ingest: one door per layer, conversion at the door ----
+
+    def ingest(self, layer, blob):
+        """
+        Parse the fetched BYTES for `layer` and install the
+        records. Called by the fetch worker on completion, and
+        directly by tests seeding known data — one door, same
+        result. Raises on a parse failure (the worker turns
+        that into the layer's "failed" state).
+        """
+        if layer == "buildings":
+            import gzip
+            doc = json.loads(
+                gzip.decompress(blob).decode("utf-8"))
+            parsed = []
+            for rec in doc.get("buildings") or []:
+                try:
+                    name = rec[0] or ""
+                    ring = rec[3] or []
+                except Exception:
+                    continue
+                if len(ring) < 3:
+                    continue
+                parsed.append(
+                    (name, [rebuild_to_zone(p[0], p[1])
+                            for p in ring]))
+            self._install(layer, parsed,
+                          lambda rec: rec[1])
+        elif layer == "water":
+            doc = json.loads(blob.decode("utf-8"))
+            parsed = []
+            for rec in doc.get("water") or []:
+                try:
+                    name = rec[0] or ""
+                    kind = rec[1] or ""
+                    pts = rec[2] or []
+                except Exception:
+                    continue
+                if len(pts) < 2:
+                    continue
+                parsed.append(
+                    (kind, name,
+                     [rebuild_to_zone(p[0], p[1]) for p in pts]))
+            self._install(layer, parsed,
+                          lambda rec: rec[2])
+        elif layer == "places":
+            doc = json.loads(blob.decode("utf-8"))
+            parsed = []
+            for rec in doc.get("places") or []:
+                try:
+                    name = rec[0] or ""
+                    cat = rec[1] or ""
+                    pt = rec[2]
+                except Exception:
+                    continue
+                parsed.append(
+                    (cat, name, rebuild_to_zone(pt[0], pt[1])))
+            self._install(layer, parsed,
+                          lambda rec: [rec[2]])
+        else:
+            raise ValueError(f"unknown resource layer {layer!r}")
+
+    def _install(self, layer, records, pts_of):
+        """Index `records` for `layer` behind the uniform grid
+        (pts_of(record) -> the points its bbox is computed
+        from) and mark the layer ready."""
+        grid = {}
+        for ri, rec in enumerate(records):
+            pts = pts_of(rec)
+            xs = [p[0] for p in pts]
+            zs = [p[1] for p in pts]
+            gx0 = int(math.floor(min(xs) / self.CELL))
+            gx1 = int(math.floor(max(xs) / self.CELL))
+            gz0 = int(math.floor(min(zs) / self.CELL))
+            gz1 = int(math.floor(max(zs) / self.CELL))
+            for gx in range(gx0, gx1 + 1):
+                for gz in range(gz0, gz1 + 1):
+                    grid.setdefault((gx, gz), []).append(ri)
+        with self._lock:
+            self._records[layer] = records
+            self._grid[layer] = grid
+            self._states[layer] = "ready"
+
+    def ensure(self, layer, path, fetch_bytes, on_ready):
+        """
+        Start the layer's one background fetch if it isn't
+        running/done. fetch_bytes(path) runs on the worker;
+        on_ready(layer, ok) is posted back through
+        GLib.idle_add. Returns True when a fetch was started.
+        """
+        with self._lock:
+            if self._states[layer] in ("loading", "ready"):
+                return False
+            self._states[layer] = "loading"
+
+        def _work():
+            ok = False
+            try:
+                blob = fetch_bytes(path)
+                if blob:
+                    self.ingest(layer, blob)
+                    ok = True
+            except Exception:
+                ok = False
+            if not ok:
+                with self._lock:
+                    if self._states[layer] == "loading":
+                        self._states[layer] = "failed"
+            GLib.idle_add(on_ready, layer, ok)
+
+        threading.Thread(target=_work, daemon=True,
+                         name=f"resource-{layer}").start()
+        return True
+
+    def _query(self, layer, x0, z0, x1, z1, pts_of):
+        """Records of `layer` whose bbox meets the rect."""
+        with self._lock:
+            if self._states[layer] != "ready":
+                return []
+            records = self._records[layer]
+            grid = self._grid[layer]
+        out = []
+        seen = set()
+        gx0 = int(math.floor(x0 / self.CELL))
+        gx1 = int(math.floor(x1 / self.CELL))
+        gz0 = int(math.floor(z0 / self.CELL))
+        gz1 = int(math.floor(z1 / self.CELL))
+        for gx in range(gx0, gx1 + 1):
+            for gz in range(gz0, gz1 + 1):
+                for ri in grid.get((gx, gz), ()):
+                    if ri in seen:
+                        continue
+                    seen.add(ri)
+                    rec = records[ri]
+                    pts = pts_of(rec)
+                    xs = [p[0] for p in pts]
+                    zs = [p[1] for p in pts]
+                    if max(xs) < x0 or min(xs) > x1 \
+                            or max(zs) < z0 or min(zs) > z1:
+                        continue
+                    out.append(rec)
+        return out
+
+    def query_water(self, x0, z0, x1, z1):
+        return self._query("water", x0, z0, x1, z1,
+                           lambda rec: rec[2])
+
+    def query_places(self, x0, z0, x1, z1):
+        return self._query("places", x0, z0, x1, z1,
+                           lambda rec: [rec[2]])
+
+    def query_buildings(self, x0, z0, x1, z1):
+        return self._query("buildings", x0, z0, x1, z1,
+                           lambda rec: rec[1])
 
 
 class ControlPointViewer(Gtk.DrawingArea):
@@ -1760,13 +2039,13 @@ class ControlPointViewer(Gtk.DrawingArea):
                         <= ENDPOINT_PICK_PX:
                     self.sel_endpoint = (rk, ei)
                     self._update_snap_candidate()
-                    self.panel.update_snap_ui()
+                    # 1.9.16: no panel snap row to refresh any
+                    # more — the candidate draws in this pane.
                     self.queue_draw()
                     return True
             if self.sel_endpoint is not None:
                 self.sel_endpoint = None
                 self.snap_candidate = None
-                self.panel.update_snap_ui()
                 self.queue_draw()
         # Universal controls (1.9.9, Joshua's ruling): plain
         # drag PANS, Control+drag ROTATES, the wheel zooms —
@@ -1865,10 +2144,14 @@ class ResourceMapViewer(Gtk.DrawingArea):
     are against where the reference says they should be. It
     draws no game data at all. (1.9.8–1.9.11 this pane drew the
     rebuilt game map; Joshua's clarification supersedes that.)
-    The elevation readout line above the pane — the selected
-    road's ground range + its elevation offset, with steppers —
-    is unchanged; it was never the pane itself (see
-    RoadInspectorPanel.update_elev_readout).
+    1.9.16: the reference points are CONVERTED into the game
+    frame at ingest (rebuild_to_zone), so the picture finally
+    lines up with the main view at true game scale; and the
+    pane draws the panel's chosen reference LAYERS — roads,
+    plus water / places / buildings when their layer buttons
+    are on (see RoadInspectorPanel.layer_enabled). The header
+    row above the pane is the coordinates readout with the
+    zoom arrows (1.9.16) — the old elevation readout is gone.
 
     Gestures mirror the main view: drag pans the shared camera,
     Ctrl+drag rotates it, the wheel zooms it around the pointer
@@ -1935,14 +2218,19 @@ class ResourceMapViewer(Gtk.DrawingArea):
         cr.set_source_rgb(0.09, 0.10, 0.12)
         cr.paint()
         # 1.9.12: the picture is the RESOURCE MAP (reference) —
-        # the reference roads the world was built from, through
-        # the pane's locked camera (same place + zoom as the top
-        # viewer). NO game roads or buildings are drawn here any
-        # more: comparing our world against the reference is the
-        # pane's whole job, and mixing the two would hide exactly
-        # the differences Joshua is looking for.
+        # the reference the world was built from, through the
+        # pane's locked camera (same place + zoom as the top
+        # viewer). NO game roads or buildings are drawn here:
+        # comparing our world against the reference is the
+        # pane's whole job, and mixing the two would hide
+        # exactly the differences Joshua is looking for.
+        # 1.9.16: the store's points are game-frame (converted
+        # at ingest), and the panel's layer buttons choose which
+        # reference layers draw — water and reference buildings
+        # under the roads, places on top.
         store = panel.resources
-        if store.state() != "ready":
+        roads_on = panel.layer_enabled("roads")
+        if roads_on and store.state() != "ready":
             # The reference is still downloading (or failed):
             # say so plainly in the pane rather than showing a
             # misleadingly empty map.
@@ -1964,29 +2252,89 @@ class ResourceMapViewer(Gtk.DrawingArea):
             return False
         from data import ROAD_STYLE
         vp = cam.get_viewport(w, h)
+        layers = panel.resource_layers
         cr.set_line_cap(cairo.LINE_CAP_ROUND)
         cr.set_line_join(cairo.LINE_JOIN_ROUND)
-        for cat, _name, pts in store.query(*vp):
-            style = ROAD_STYLE.get(cat, ROAD_STYLE["local"])
-            cr.set_source_rgb(*style["color"])
-            cr.set_line_width(max(0.8, style["width"] * cam.zoom))
-            for j, (wx, wz) in enumerate(pts):
-                sx, sy = cam.world_to_screen(wx, wz, w, h)
-                cr.line_to(sx, sy) if j else cr.move_to(sx, sy)
-            cr.stroke()
+        # Reference water (1.9.16 layer): bodies filled, streams
+        # stroked — under everything else, like real water sits
+        # under the roads drawn over it.
+        if panel.layer_enabled("water") \
+                and layers.state("water") == "ready":
+            for kind, _name, pts in layers.query_water(*vp):
+                for j, (wx, wz) in enumerate(pts):
+                    sx, sy = cam.world_to_screen(wx, wz, w, h)
+                    cr.line_to(sx, sy) if j else cr.move_to(sx, sy)
+                if kind == "body":
+                    cr.close_path()
+                    cr.set_source_rgba(0.30, 0.52, 0.75, 0.50)
+                    cr.fill_preserve()
+                    cr.set_source_rgba(0.45, 0.65, 0.90, 0.90)
+                    cr.set_line_width(1.2)
+                    cr.stroke()
+                else:
+                    cr.set_source_rgba(0.45, 0.65, 0.90, 0.75)
+                    cr.set_line_width(max(1.0, 3.0 * cam.zoom))
+                    cr.stroke()
+        # Reference building outlines (1.9.16 layer): the
+        # footprints the world was built from, stroked only —
+        # a fill would bury the roads at town zooms.
+        if panel.layer_enabled("buildings") \
+                and layers.state("buildings") == "ready":
+            cr.set_source_rgba(0.88, 0.84, 0.76, 0.80)
+            cr.set_line_width(1.0)
+            for _name, ring in layers.query_buildings(*vp):
+                for j, (wx, wz) in enumerate(ring):
+                    sx, sy = cam.world_to_screen(wx, wz, w, h)
+                    cr.line_to(sx, sy) if j else cr.move_to(sx, sy)
+                cr.close_path()
+                cr.stroke()
+        # Reference roads — the pane's original layer.
+        if roads_on:
+            for cat, _name, pts in store.query(*vp):
+                style = ROAD_STYLE.get(cat, ROAD_STYLE["local"])
+                cr.set_source_rgb(*style["color"])
+                cr.set_line_width(max(0.8, style["width"] * cam.zoom))
+                for j, (wx, wz) in enumerate(pts):
+                    sx, sy = cam.world_to_screen(wx, wz, w, h)
+                    cr.line_to(sx, sy) if j else cr.move_to(sx, sy)
+                cr.stroke()
+        # Reference places (1.9.16 layer): a dot per place,
+        # named once the zoom is street-level enough to read.
+        if panel.layer_enabled("places") \
+                and layers.state("places") == "ready":
+            show_names = cam.zoom >= 0.9
+            if show_names:
+                cr.select_font_face(
+                    "Sans", cairo.FONT_SLANT_NORMAL,
+                    cairo.FONT_WEIGHT_NORMAL)
+                cr.set_font_size(10)
+            for _cat, name, pt in layers.query_places(*vp):
+                sx, sy = cam.world_to_screen(pt[0], pt[1], w, h)
+                cr.set_source_rgb(1.0, 0.75, 0.35)
+                cr.arc(sx, sy, 3.0, 0, 2 * math.pi)
+                cr.fill()
+                if show_names and name:
+                    cr.set_source_rgb(0.10, 0.10, 0.10)
+                    cr.move_to(sx + 5.6, sy + 3.6)
+                    cr.show_text(name)
+                    cr.set_source_rgb(0.92, 0.94, 0.97)
+                    cr.move_to(sx + 5.0, sy + 3.0)
+                    cr.show_text(name)
         _draw_north_arrow(cr, cam, w, h)
         # Caption chip, top-left: this picture is the REFERENCE,
         # never our world — labelled on the picture itself so a
         # screenshot can never confuse the two.
-        cr.set_source_rgba(0, 0, 0, 0.55)
-        cr.rectangle(6, 6, 178, 20)
-        cr.fill()
-        cr.set_source_rgb(0.92, 0.94, 0.97)
         cr.select_font_face("Sans", cairo.FONT_SLANT_NORMAL,
                             cairo.FONT_WEIGHT_BOLD)
         cr.set_font_size(11)
+        chip_text = "Resource and Reference"
+        ext = cr.text_extents(chip_text)
+        cr.set_source_rgba(0, 0, 0, 0.55)
+        cr.rectangle(6, 6, ext.width + 14, 20)
+        cr.fill()
+        cr.set_source_rgb(0.92, 0.94, 0.97)
         cr.move_to(12, 20)
-        cr.show_text("Resource map (reference)")
+        cr.show_text(chip_text)
         return False
 
     def _on_press(self, _w, event):
@@ -2075,12 +2423,19 @@ class RoadInspectorPanel(Gtk.VBox):
     """
     The right-hand dock: header (title + 3D/Satellite toggle +
     the viewport's Still/Live state button), the area viewpoint
-    (ControlPointViewer), and the Resource map frame — the
-    reference map (ResourceMapViewer, 1.9.12) under the selected
-    road's elevation readout line with offset steppers. The
-    readout is about the SELECTED ROAD's elevation; the pane
-    under it is the resource/reference map — the labels say
-    exactly that, separately, so the two are never confused.
+    (ControlPointViewer), and the Resource and Reference frame
+    — the reference map (ResourceMapViewer, 1.9.12) under its
+    own header rows. 1.9.16 (Joshua's panel rework, 2026-10-26):
+    the frame's header is a COORDINATES readout (the shared
+    view's centre, or the selected point, in game coordinates)
+    with the ▲ / ▼ arrows — zoom buttons for the resource map
+    now — and a row of Google-Maps-style LAYER buttons (Roads /
+    Water / Places / Buildings) choosing which reference layers
+    draw. The 1.9.12–1.9.15 elevation readout + steppers and
+    the Snap row below the split are gone: the panel is just
+    Resource and Reference. (The elevation offsets the steppers
+    used to change still live in RoadElevStore and still shape
+    the 3D pane; only their editor row went away.)
 
     The panel also owns DELETE/JOIN/MERGE COMPARE MODE: while a
     confirmation is up, the two companion panes stop following
@@ -2108,6 +2463,15 @@ class RoadInspectorPanel(Gtk.VBox):
         # pane — one whole-world reference file, fetched once
         # in the background (1.9.12).
         self.resources = ResourceRoadsStore()
+        # The resource map's other reference layers (1.9.16):
+        # water / places / buildings, fetched lazily the first
+        # time their layer button is switched on.
+        self.resource_layers = ResourceLayerStore()
+        # Which reference layers the bottom pane draws (1.9.16
+        # layer buttons). Roads is the pane's original picture
+        # and starts on; the rest start off — one click each.
+        self._layers = {"roads": True, "water": False,
+                        "places": False, "buildings": False}
         # Compare mode state (see the class docstring).
         self._compare = None
         self._stills = {"before": None, "after": None}
@@ -2159,33 +2523,61 @@ class RoadInspectorPanel(Gtk.VBox):
         frame.add(overlay)
         vpaned.pack1(frame, resize=True, shrink=True)
 
-        # --- Resource map frame: the selected road's elevation
-        # readout + steppers over the RESOURCE (reference) map.
-        # The readout line is labelled "Road elevation" because
-        # that is what IT is; the frame — the pane — is labelled
-        # for the resource map it shows (1.9.12 label audit:
-        # nothing around this pane calls the PANE "elevation"
-        # any more).
-        elev_box = Gtk.VBox(spacing=2)
-        readout_row = Gtk.HBox(spacing=4)
-        self._elev_label = Gtk.Label(
-            label="Road elevation — select a road")
-        self._elev_label.set_xalign(0)
-        self._elev_label.set_ellipsize(Pango.EllipsizeMode.END)
-        readout_row.pack_start(self._elev_label, True, True, 2)
-        self._btn_elev_down = Gtk.Button(label="▼")
-        self._btn_elev_down.set_tooltip_text(
-            "Lower the selected road's elevation offset by 0.5")
-        self._btn_elev_up = Gtk.Button(label="▲")
-        self._btn_elev_up.set_tooltip_text(
-            "Raise the selected road's elevation offset by 0.5")
-        self._btn_elev_down.connect("clicked",
-                                    lambda _b: self._nudge_elev(-0.5))
-        self._btn_elev_up.connect("clicked",
-                                  lambda _b: self._nudge_elev(0.5))
-        readout_row.pack_start(self._btn_elev_down, False, False, 0)
-        readout_row.pack_start(self._btn_elev_up, False, False, 0)
-        elev_box.pack_start(readout_row, False, False, 0)
+        # --- Resource and Reference frame (1.9.16 rework):
+        # the coordinates readout + zoom arrows and the layer
+        # buttons over the RESOURCE (reference) map. The frame
+        # is labelled for the package Joshua named — nothing
+        # around this pane calls it "elevation" any more (the
+        # 1.9.12 label audit, carried forward).
+        res_box = Gtk.VBox(spacing=2)
+        # Coordinates row: where the shared view is centred (or
+        # the selected point), in game coordinates — the line
+        # that replaces both removed readouts. The ▲ / ▼ arrows
+        # keep their seats but change jobs: they are the
+        # resource map's zoom buttons now.
+        coord_row = Gtk.HBox(spacing=4)
+        self._coords_label = Gtk.Label(label="Centre —")
+        self._coords_label.set_xalign(0)
+        self._coords_label.set_ellipsize(Pango.EllipsizeMode.END)
+        coord_row.pack_start(self._coords_label, True, True, 2)
+        self._btn_res_down = Gtk.Button(label="▼")
+        self._btn_res_down.set_tooltip_text(
+            "Zoom the resource map out")
+        self._btn_res_up = Gtk.Button(label="▲")
+        self._btn_res_up.set_tooltip_text(
+            "Zoom the resource map in")
+        self._btn_res_down.connect(
+            "clicked", lambda _b: self._on_resource_zoom(-1))
+        self._btn_res_up.connect(
+            "clicked", lambda _b: self._on_resource_zoom(+1))
+        coord_row.pack_start(self._btn_res_down, False, False, 0)
+        coord_row.pack_start(self._btn_res_up, False, False, 0)
+        res_box.pack_start(coord_row, False, False, 0)
+        # Layer buttons (Google-Maps-style, 1.9.16): one toggle
+        # per reference layer that actually exists in
+        # map-data/game-map/ — roads, water, places, buildings.
+        layer_row = Gtk.HBox(spacing=4)
+        layer_tips = {
+            "roads": "Reference roads (map-data roads.json)",
+            "water": "Reference lakes, ponds and streams "
+                     "(map-data water.json)",
+            "places": "Reference places (map-data places.json)",
+            "buildings": "Reference building footprints "
+                         "(map-data buildings.json.gz)",
+        }
+        self._layer_buttons = {}
+        for lname, llabel in (("roads", "Roads"),
+                              ("water", "Water"),
+                              ("places", "Places"),
+                              ("buildings", "Buildings")):
+            lbtn = Gtk.ToggleButton(label=llabel)
+            lbtn.set_active(self._layers[lname])
+            lbtn.set_tooltip_text(layer_tips[lname])
+            lbtn.connect("toggled", self._on_layer_toggled,
+                         lname)
+            layer_row.pack_start(lbtn, False, False, 0)
+            self._layer_buttons[lname] = lbtn
+        res_box.pack_start(layer_row, False, False, 0)
         # The attribute name stays `elev_viewer`: refresh() and
         # anything outside this module that redraws the pane
         # keeps working across the 1.9.8 change — and across
@@ -2193,27 +2585,15 @@ class RoadInspectorPanel(Gtk.VBox):
         # ResourceMapViewer (the pane's job changed; the
         # attribute is plumbing, not a label).
         self.elev_viewer = ResourceMapViewer(self)
-        elev_box.pack_start(self.elev_viewer, True, True, 0)
-        eframe = Gtk.Frame(label="Resource map — reference")
+        res_box.pack_start(self.elev_viewer, True, True, 0)
+        eframe = Gtk.Frame(label="Resource and Reference")
         # Kept as an attribute so the gates can read the pane's
         # title back and prove the label audit (1.9.12).
         self._resource_frame = eframe
-        eframe.add(elev_box)
+        eframe.add(res_box)
         vpaned.pack2(eframe, resize=True, shrink=True)
         vpaned.set_position(300)
         self.pack_start(vpaned, True, True, 0)
-
-        # Snap row (the merge candidate), as before.
-        snap_row = Gtk.HBox(spacing=4)
-        self.snap_label = Gtk.Label(label="Snap: no candidate")
-        self.snap_label.set_xalign(0)
-        self.snap_label.set_ellipsize(Pango.EllipsizeMode.END)
-        self.snap_btn = Gtk.Button(label="Snap")
-        self.snap_btn.set_sensitive(False)
-        self.snap_btn.connect("clicked", self._on_snap_clicked)
-        snap_row.pack_start(self.snap_label, True, True, 2)
-        snap_row.pack_start(self.snap_btn, False, False, 0)
-        self.pack_start(snap_row, False, False, 0)
         self.show_all()
 
     # -- mode + still/live state -----------------------------------
@@ -2392,6 +2772,60 @@ class RoadInspectorPanel(Gtk.VBox):
             except Exception:
                 pass
 
+    # -- resource layers (1.9.16): water / places / buildings ---
+
+    def layer_enabled(self, name):
+        """True while the layer button for `name` is on — the
+        viewer's draw list reads this."""
+        return bool(self._layers.get(name))
+
+    def _on_layer_toggled(self, btn, name):
+        """A layer button flipped: remember the choice, start
+        the layer's one background fetch the first time it is
+        switched on, and redraw the pane."""
+        self._layers[name] = btn.get_active()
+        if btn.get_active():
+            if name == "roads":
+                self.request_resource_data()
+            else:
+                self.request_layer_data(name)
+        self.elev_viewer.queue_draw()
+
+    def request_layer_data(self, layer):
+        """
+        Make sure one of the other reference layers (water /
+        places / buildings) is on its way — background download
+        + corner progress bar, the roads pattern. Called the
+        first time a layer button switches on; the store
+        fetches once per run.
+        """
+        started = self.resource_layers.ensure(
+            layer, RESOURCE_LAYER_PATHS[layer],
+            self._fetch_resource_bytes, self._on_layer_ready)
+        if started:
+            try:
+                self.app.progress_start(
+                    f"resource-{layer}",
+                    f"Downloading the resource {layer}…")
+            except Exception:
+                pass
+
+    def _on_layer_ready(self, layer, ok):
+        try:
+            self.app.progress_finish(f"resource-{layer}")
+        except Exception:
+            pass
+        if not ok:
+            try:
+                self.app.set_status(
+                    f"Resource {layer} could not be downloaded "
+                    "— the layer stays empty until a retry "
+                    "(switch it off and on).")
+            except Exception:
+                pass
+        # The layer's picture swaps in with one redraw.
+        self.elev_viewer.queue_draw()
+
     def resource_camera(self, w, h):
         """
         The camera the bottom (resource map) pane draws through:
@@ -2429,63 +2863,69 @@ class RoadInspectorPanel(Gtk.VBox):
             self.cp_viewer.invalidate_still()
             self.cp_viewer.queue_draw()
 
-    # -- elevation readout + steppers -------------------------------
+    # -- coordinates readout + resource zoom (1.9.16) ------------
 
-    def _first_selected_road(self):
-        """(category, road) of the first selected piece, or None."""
+    def update_coords_readout(self):
+        """
+        The resource frame's readout line (1.9.16 — it replaces
+        the removed elevation and selected-road readouts):
+        where the shared view is, in GAME coordinates. While
+        the top pane holds a selection still, its point is the
+        more useful truth and is named as the selected point;
+        otherwise the shared camera's centre. Called from
+        refresh() (selection changed) and the app's
+        on_camera_changed (the camera moved) — a text set, as
+        cheap as the heading readout that keeps the same pace.
+        """
+        label = getattr(self, "_coords_label", None)
+        if label is None:
+            return
+        focus = self.cp_viewer._eye_focus
+        if focus is not None:
+            label.set_text(
+                f"Point x {focus[0]:.1f} · z {focus[1]:.1f}"
+                " — selected")
+            return
+        canvas = getattr(self.app, "canvas", None)
+        cam = getattr(canvas, "_camera", None) \
+            if canvas is not None else None
+        if cam is None:
+            label.set_text("Centre —")
+            return
+        label.set_text(
+            f"Centre x {cam.cam_x:.1f} · z {cam.cam_y:.1f}")
+
+    def _on_resource_zoom(self, step):
+        """
+        The resource frame's ▲ / ▼ arrows (1.9.16): zoom
+        buttons for the resource map. The pane keeps no private
+        camera — the views are linked (Joshua's law) — so a
+        press does exactly what the pane's own wheel already
+        does: it takes hold of the pane (dropping the top
+        pane's selection eye-focus, like a grab does) and zooms
+        the SHARED camera around the pane's centre, so the
+        reference stays locked to the main view at the same
+        place and zoom.
+        """
         canvas = getattr(self.app, "canvas", None)
         if canvas is None:
-            return None
-        sel = getattr(canvas, "selected_roads", []) or []
-        if not sel:
-            return None
-        cat, idx = sel[0]
-        road = canvas._get_road_dict(cat, idx)
-        return (cat, road) if road is not None else None
-
-    def update_elev_readout(self):
-        """
-        The elevation READOUT's information (the line above the
-        resource map pane), kept from the old profile pane in
-        words: which road, its ground height range (from its
-        converter-draped ys) and its elevation offset (the value
-        the steppers change).
-        """
-        got = self._first_selected_road()
-        if got is None:
-            self._elev_label.set_text(
-                "Road elevation — select a road")
-            self._btn_elev_down.set_sensitive(False)
-            self._btn_elev_up.set_sensitive(False)
             return
-        cat, road = got
-        name = road.get("name") or "Unnamed road"
-        off = self.elev.get(RoadElevStore.key_for(cat, road.get("name")))
-        ys = road.get("ys") or []
-        if ys:
-            ground = f"ground {min(ys) - 0.01:.1f}–{max(ys) - 0.01:.1f} u"
-        else:
-            ground = "ground —"
-        self._elev_label.set_text(
-            f"Road elevation — {name}: offset {off:+.1f} u · "
-            f"{ground}")
-        self._btn_elev_down.set_sensitive(True)
-        self._btn_elev_up.set_sensitive(True)
-
-    def _nudge_elev(self, delta):
-        got = self._first_selected_road()
-        if got is None:
-            return
-        cat, road = got
-        key = RoadElevStore.key_for(cat, road.get("name"))
-        self.elev.set(key, self.elev.get(key) + delta)
         try:
-            self.app._mark_unpublished()
+            self.clear_eye_focus()
         except Exception:
             pass
-        self.update_elev_readout()
-        self.cp_viewer.invalidate_still()
-        self.cp_viewer.queue_draw()
+        try:
+            self.app.note_pane_touched("map")
+        except Exception:
+            pass
+        alloc = self.elev_viewer.get_allocation()
+        w, h = max(2, alloc.width), max(2, alloc.height)
+        factor = 1.25 if step > 0 else 1 / 1.25
+        canvas._camera.zoom_at(w / 2, h / 2, factor, w, h)
+        canvas.queue_draw()
+        canvas._notify_camera_changed()
+        self.elev_viewer.queue_draw()
+        self.update_coords_readout()
 
     # -- compare mode (Before / After stills) ------------------------
 
@@ -2793,10 +3233,13 @@ class RoadInspectorPanel(Gtk.VBox):
 
     def refresh(self):
         """
-        Selection changed: drop a stale endpoint selection, update
-        the snap UI + the elevation readout, redraw both viewers
+        Selection changed: drop a stale endpoint selection,
+        update the coordinates readout, redraw both viewers
         (the area pane's still simply goes stale — one coalesced
-        re-render, per the stills rule).
+        re-render, per the stills rule). (1.9.16: the snap UI
+        and elevation readout this method used to update are
+        gone with their rows; the viewer's endpoint state above
+        is the pane's own and stays.)
         """
         canvas = getattr(self.app, "canvas", None)
         valid_keys = set()
@@ -2807,29 +3250,7 @@ class RoadInspectorPanel(Gtk.VBox):
                 v.sel_endpoint[0] not in valid_keys:
             v.sel_endpoint = None
             v.snap_candidate = None
-        self.update_snap_ui()
-        self.update_elev_readout()
+        self.update_coords_readout()
         v.invalidate_still()
         v.queue_draw()
         self.elev_viewer.queue_draw()
-
-    def update_snap_ui(self):
-        """Snap button + label from the viewer's endpoint state."""
-        v = self.cp_viewer
-        if v.snap_candidate is not None:
-            _wx, _wz, tname = v.snap_candidate
-            self.snap_label.set_text(
-                "Near '%s' — snap available" % tname)
-            self.snap_btn.set_sensitive(True)
-        elif v.sel_endpoint is not None:
-            self.snap_label.set_text(
-                "Endpoint selected — no nearby road (visual only)")
-            self.snap_btn.set_sensitive(False)
-        else:
-            self.snap_label.set_text("No endpoint selected")
-            self.snap_btn.set_sensitive(False)
-
-    def _on_snap_clicked(self, _btn):
-        """Snap button: commit the candidate (the pane's original
-        behaviour — the endpoint moves onto the other road)."""
-        self.cp_viewer.do_snap()

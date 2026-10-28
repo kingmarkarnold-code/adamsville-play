@@ -1,6 +1,6 @@
 {
-    "version": "1.9.15",
-    "changelog": "Two things, both from Joshua's hands-on. (1) BUILDINGS ON/OFF: a button shaped like a building now sits at the top right of the main view. It starts lit \u2014 buildings shown, and clicking one still offers the jump into the Building Editor, exactly as before. Click the button and the buildings vanish AND stop answering clicks, so where a building sits on top of a road you can finally grab the road underneath; click it again and the buildings are back. The button is not remembered between launches \u2014 every start has buildings shown. (2) THE DELETE PICTURE FOLLOWS THE WINDOW: open the delete review and then resize the window or drag the panes, and the framed road refits the new size instead of running off the edges; the message in the bar at the top wraps onto a second line when the window is narrow instead of pushing the Cancel and Delete buttons out of reach; and the Before/After pictures are re-shot to match, so clicking a revealed piece in the After picture still adds the piece under your cursor at the new size. If you pan the delete picture yourself, a resize leaves your view where you put it. Everything else is 1.9.14 unchanged.",
+    "version": "1.9.16",
+    "changelog": "Four things, all Joshua's. (1) THE REFERENCE MAP NOW LINES UP: the bottom pane was drawing the reference roads raw, in the wrong frame \u2014 shifted and shrunk, thousands of metres off \u2014 so it could never match the map above it, and comparing against reality (the pane's whole job) was impossible. The reference now goes through the proper conversion into the game's own frame before it is drawn: on Dollar Mill Road Southwest the converted reference lands within a metre of the game's own records, and the same check passes in every zone. (2) THE PANEL IS JUST 'RESOURCE AND REFERENCE' NOW: the Snap row, the elevation readout and the Selected readout are gone. In their place are a coordinates readout \u2014 the shared view's centre, or the selected point while you hold one \u2014 and layer buttons in the Google Maps style: Roads (on), Water, Places, Buildings. Every button draws a real reference file, fetched once in the background, with the corner progress bar, the first time you switch it on. (3) THE ARROWS ZOOM: the up/down arrows in the panel now zoom the shared view in quarter steps around the pane's centre \u2014 exactly what the pane's wheel does \u2014 so the reference stays locked to the main view, same place, same zoom. (4) A REMEMBERED LAYOUT CAN NO LONGER HIDE THE PANEL: window layouts saved by earlier versions are clamped to the real window size when restored, so the resource pane cannot come back squeezed to zero height after a restart. Everything else is 1.9.15 unchanged.",
     "files": [
         {
             "path": "about.py",
@@ -10,7 +10,7 @@
         {
             "path": "app.py",
             "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/app.py",
-            "sha256": "2e25c004a301ff26d3c95d90df7d0f3c7ec27e116ddc379e6287e254913132d3"
+            "sha256": "73719a5dee0a47dec013adf8d4a38e5844a6ce71af018ed6f3557aa681cccebc"
         },
         {
             "path": "data.py",
@@ -45,7 +45,7 @@
         {
             "path": "roadinspect.py",
             "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/roadinspect.py",
-            "sha256": "3c0458cb6b3ead491e1c30683d782260b65e58e8a76c31dbeca70bde582f13d8"
+            "sha256": "acd148a38fac8fe94713fd448a04d75963b0d696bb23c7a7db461e8b585d0dec"
         },
         {
             "path": "shared_cache.py",
