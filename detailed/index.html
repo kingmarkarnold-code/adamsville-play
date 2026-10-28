@@ -1975,7 +1975,12 @@ window.__startGameAfterLoad = false;
    done immediately so __tryStartGame never waits on a script that will never
    arrive. 'inspector' is special: crew inspectors only make sense when at
    least one crew runs, so they skip only if BOTH roadCrew and infraCrew are
-   off. */
+   off. '$anyCrew' (2026-10-28) is the wider gate for the two crew systems
+   that serve ALL crews — the municipal workforce (cityworkforce.js) and
+   the veteran-crew brain (veteran_crew.js): they run when ANY of the four
+   crew sub-options is on and skip only when ALL four are off. Both loaded
+   with data-dkey="" (never skipped) until Joshua's 2026-10-28 hands-on:
+   he deselected the work crews and the workforce still ran. */
 var __scriptOptSkip={
   bus:'martaBuses', busdata:'martaBuses',
   marta:'martaTrains', martadata:'martaTrains',
@@ -1983,7 +1988,8 @@ var __scriptOptSkip={
   traffic:'traffic', trafficassist:'traffic',
   drones:'drones',
   roadcrew:'roadCrew', survey:'surveyFleet', infra:'infraCrew', hq:'hqStaff',
-  inspector:'$crews'
+  inspector:'$crews',
+  workforce:'$anyCrew', veteran:'$anyCrew'
 };
 function __scriptSkippedByOption(key){
   var opt=__scriptOptSkip[key];
@@ -1991,6 +1997,8 @@ function __scriptSkippedByOption(key){
   try{
     var o=window.__launchOpts||{};
     if(opt==='$crews') return o.roadCrew===false && o.infraCrew===false;
+    if(opt==='$anyCrew') return o.roadCrew===false && o.surveyFleet===false &&
+                               o.infraCrew===false && o.hqStaff===false;
     return o[opt]===false;
   }catch(e){ return false; }
 }
@@ -3607,15 +3615,36 @@ var ASSETVER=(function(){
       active[t]=v||'unknown';
       if (v) lsSet(lsKey(t),v);
     }
-    // Web fallback: read each manifest once at boot.
-    // v1.28: no downloads before the player confirms launch options.
+    // Web fallback: the booted page IS the active version. The page is
+    // served from the same directory as its manifests, so each type's
+    // manifest read RELATIVE to the page (cache:'no-store', after
+    // launcher confirmation — v1.28) names the version actually
+    // running, and detectActive records it as active + in localStorage.
+    // FIX 2026-10-28 (Joshua's hands-on): this used to run ONLY when
+    // the recorded version was 'unknown', so a stale localStorage
+    // record (e.g. last week's vehicles version) was trusted forever.
+    // checkPending() compared the LIVE manifest against that stale
+    // record, so the gear badge and the "update available" tags never
+    // cleared — even though the page that booted was already the new
+    // version (its scripts load with ?v=<live ui_version>). Now the
+    // fallback ALWAYS re-reads, and a pending flag that names the
+    // version just confirmed as booted is cleared on the spot, so the
+    // badge means exactly one thing again: a NEWER version than the
+    // booted one appeared mid-session. (The APK path above is
+    // untouched: the native bridge stays the source of truth there.)
     if (!b){
       for (var j=0;j<TYPES.length;j++)(function(t){
-        if (active[t] && active[t]!=='unknown') return;
         try{
           window.__whenConfirmed(function(){
-            fetch(manifestUrl(t),{cache:'no-store'}).then(function(r){ return r.ok?r.json():null; })
-            .then(function(m){ if(m){ var v=m[verField(t)]||m.version||'unknown'; active[t]=v; lsSet(lsKey(t),v); } })
+            fetch(t+'-manifest.json',{cache:'no-store'}).then(function(r){ return r.ok?r.json():null; })
+            .then(function(m){
+              if(m){
+                var v=m[verField(t)]||m.version||'unknown';
+                active[t]=v; lsSet(lsKey(t),v);
+                if (pending[t] && pending[t]===v) pending[t]=null;
+                updateGearBadge(); refreshAdmTags();
+              }
+            })
             .catch(function(){});
           });
         }catch(e){}
@@ -14952,7 +14981,7 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <script data-dsrc="poi_map.js" data-dkey=""></script>
 <script data-dsrc="stuck.js" data-dkey=""></script>
 <script data-dsrc="stuck_diag.js" data-dkey=""></script>
-<script data-dsrc="veteran_crew.js" data-dkey=""></script>
+<script data-dsrc="veteran_crew.js" data-dkey="veteran"></script>
 <script data-dsrc="codeenforce_system.js" data-dkey=""></script>
 <script data-dsrc="roadcrew_system.js" data-dkey="roadcrew"></script>
 <script data-dsrc="roadfix.js" data-dkey=""></script>
@@ -14966,7 +14995,7 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <script data-dsrc="schoolbus_system.js" data-dkey=""></script>
 <script data-dsrc="infracrew_system.js" data-dkey="infra"></script>
 <script data-dsrc="surveyfleet_system.js" data-dkey="survey"></script>
-<script data-dsrc="cityworkforce.js" data-dkey=""></script>
+<script data-dsrc="cityworkforce.js" data-dkey="workforce"></script>
 <script data-dsrc="inspector_crew.js" data-dkey="inspector"></script>
 <!-- CREW REPORTS VIEW (Joshua 2026-10-24): the Administrator menu's
      "Crew Reports" view — the construction crews' reports live

@@ -47,7 +47,10 @@
    (the file:// APK today) there is no GLTFLoader, and if the GLB
    ever fails to load, `ready` stays false and every consumer keeps
    the procedural builders / legacy traffic pool. The game never
-   loses its cars.
+   loses its cars. Every failure is REPORTED through the game's
+   report channel (libFail below) — silently keeping the legacy
+   bodies is what let a broken library pass unnoticed in Joshua's
+   2026-10-28 hands-on, when traffic stayed boxy and nobody knew.
    ============================================================================ */
 (function vehicleLibrary(){
 'use strict';
@@ -168,6 +171,36 @@ function mergeGeos(list){
   return g;
 }
 
+/* libFail(reason) — F2 REPORTING (2026-10-28, Joshua's hands-on).
+   Every library failure path funnels here: mark failed (once), keep
+   the console warning, and file a game report NAMING THE REASON via
+   Report.note — which github_reports.js forwards to the session
+   reports, the same channel every other system uses. This module can
+   run before Report exists (it sits early in the deferred script
+   queue), so filing retries briefly until the report system is up;
+   GitHubReports.queue is the fallback if it is the one available.
+   Fail-open is UNCHANGED and deliberate: legacy bodies stay, the
+   game never loses its cars — it just no longer fails in silence. */
+function libFail(reason){
+  if (LIB.failed) return;   // one report per failure, not per caller
+  LIB.failed = true;
+  try{ console.warn('[vehicle-library] ' + reason + ' — legacy bodies stay'); }catch(e){}
+  var tries = 0;
+  (function fileReport(){
+    try{
+      if (typeof Report !== 'undefined' && Report.note){
+        Report.note('vehicle-library', { event: 'load-failed', reason: reason });
+        return;
+      }
+      if (typeof GitHubReports !== 'undefined' && GitHubReports.queue){
+        GitHubReports.queue('vehicle-library', { event: 'load-failed', reason: reason });
+        return;
+      }
+    }catch(e){}
+    if (++tries <= 20) setTimeout(fileReport, 1500);
+  })();
+}
+
 /* ---------------- load ---------------- */
 function install(gltf){
   var root = gltf.scene;
@@ -196,8 +229,7 @@ function install(gltf){
     if (!(T.paint && T.glass && T.trim && T.wheels.length === 4)) delete LIB.types[t];
   });
   if (!Object.keys(LIB.types).length || !LIB.wheelGeo || !LIB.wheelLowGeo){
-    LIB.failed = true;
-    try{ console.warn('[vehicle-library] GLB parsed but incomplete — legacy bodies stay'); }catch(e){}
+    libFail('vehicle_library.glb parsed but incomplete — no complete body types or wheels in the file');
     return;
   }
   LIB.ready = true;
@@ -215,11 +247,17 @@ if (typeof THREE !== 'undefined' && THREE.GLTFLoader){
     var url = 'vehicle_library.glb';
     try { if (window.__UIVER) url += '?v=' + encodeURIComponent(window.__UIVER); } catch(e){}
     new THREE.GLTFLoader().load(url, install, undefined, function(err){
-      LIB.failed = true;
-      try{ console.warn('[vehicle-library] load failed — legacy bodies stay', err); }catch(e){}
+      libFail('vehicle_library.glb failed to load: ' +
+        (err && err.message ? err.message : 'network or parse error'));
     });
-  } catch(e){ LIB.failed = true; }
+  } catch(e){
+    libFail('GLTFLoader threw before the load could start: ' +
+      (e && e.message ? e.message : String(e)));
+  }
 } else {
-  LIB.failed = true;   // classic engine: no GLTFLoader (see header)
+  // classic engine: no GLTFLoader (see header) — reported like any
+  // other failure, so the APK's known limitation is on the record
+  // once per session instead of invisible.
+  libFail('THREE.GLTFLoader is unavailable on this engine — baked vehicle bodies cannot load');
 }
 })();

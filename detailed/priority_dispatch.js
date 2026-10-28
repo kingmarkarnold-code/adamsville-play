@@ -282,17 +282,43 @@ function redirectBirds(){
 /* ---------------- boot ---------------- */
 function init(){
   loadLS();
-  // Joshua's standing order: active on load unless explicitly recalled.
-  // If no saved state, activate now.
+  /* CREW-TOGGLE STAND-DOWN (2026-10-28, Joshua's hands-on): a persisted
+     ACTIVE dispatch used to re-assert "crews holding Adamsville focus"
+     at every boot even when Joshua had deselected every work crew in
+     the launcher — the persisted order outlived the session it was
+     given in and contradicted his current word. The launcher toggles
+     are his word for THIS session, so they win: when ALL four crew
+     sub-options (roadCrew / surveyFleet / infraCrew / hqStaff) are off
+     in window.__launchOpts, stand the dispatch DOWN — clear the
+     persisted active state (dlog saves it back inactive, so it stays
+     down and stays silent on later boots) and note it in the
+     log/report exactly once — instead of re-asserting. With at least
+     one crew on, the standing behaviour below is unchanged. */
+  var crewsOff=false;
   try{
-    var raw=window.localStorage.getItem(LS_KEY);
-    if(!raw){
-      activate();
-    } else if(PD.active){
-      dlog('Priority dispatch still ACTIVE from previous session — crews holding Adamsville focus.');
+    var o=window.__launchOpts||{};
+    crewsOff=(o.roadCrew===false && o.surveyFleet===false &&
+              o.infraCrew===false && o.hqStaff===false);
+  }catch(e){}
+  if (crewsOff){
+    if (PD.active){
+      PD.active=false;
+      PD.activatedAt=null;
+      dlog('Priority dispatch stood down at boot — all crew launch options are off; the ACTIVE dispatch (persisted or default) was cleared rather than re-asserted.');
     }
-  }catch(e){
-    if(!PD.activatedAt) activate();
+  } else {
+    // Joshua's standing order: active on load unless explicitly recalled.
+    // If no saved state, activate now.
+    try{
+      var raw=window.localStorage.getItem(LS_KEY);
+      if(!raw){
+        activate();
+      } else if(PD.active){
+        dlog('Priority dispatch still ACTIVE from previous session — crews holding Adamsville focus.');
+      }
+    }catch(e){
+      if(!PD.activatedAt) activate();
+    }
   }
   try{
     if(typeof Report!=='undefined') Report.setSys('prioritydispatch',
