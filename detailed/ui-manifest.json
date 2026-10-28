@@ -68,10 +68,10 @@
     },
     {
       "name": "collision_material.js",
-      "sha256": "aae32ef1b3bce026c7ca08b237228f177351897a099cf38e158e22948c829ae9",
-      "size": 32679,
+      "sha256": "5b2345042a516edcb5a91c1f2fca860f90508ed7bb2b57223687468b9e3ed12f",
+      "size": 36075,
       "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/collision_material.js",
-      "hash": "aae32ef1b3bce026c7ca08b237228f177351897a099cf38e158e22948c829ae9"
+      "hash": "5b2345042a516edcb5a91c1f2fca860f90508ed7bb2b57223687468b9e3ed12f"
     },
     {
       "name": "crashlog.js",
@@ -173,9 +173,9 @@
     },
     {
       "name": "index.html",
-      "size": 1106509,
-      "sha256": "6a55cee1a00e2e009adf6a1e7cff975a3327dee2333482bf542bca86d3a6fc62",
-      "hash": "6a55cee1a00e2e009adf6a1e7cff975a3327dee2333482bf542bca86d3a6fc62"
+      "size": 1107041,
+      "sha256": "0333d497853e2ec2675c1f9e121c7759c704449f1df0f1fd569af57b8fb309c9",
+      "hash": "0333d497853e2ec2675c1f9e121c7759c704449f1df0f1fd569af57b8fb309c9"
     },
     {
       "name": "infracrew_system.js",
@@ -709,8 +709,14 @@
       "size": 417592,
       "sha256": "f691c0e5ce69b56360dd2c58e903ddb98f79cf4aa0d8f8f7506aa981d1832bb5",
       "hash": "f691c0e5ce69b56360dd2c58e903ddb98f79cf4aa0d8f8f7506aa981d1832bb5"
+    },
+    {
+      "name": "dress535.js",
+      "size": 39130,
+      "sha256": "99e3a8f264f836ba86b79c497fa2be946b3b469eafa442d0f70eabab239abeec",
+      "hash": "99e3a8f264f836ba86b79c497fa2be946b3b469eafa442d0f70eabab239abeec"
     }
   ],
-  "ui_version": "2026.10.28.1",
+  "ui_version": "2026.10.28.2",
   "version": "2026.10.17.9"
 }

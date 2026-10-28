@@ -10567,6 +10567,13 @@ function animateHeroGLB(dt){
    is applied to the hips group only. */
 var heroT=0;
 function animateHero(dt){
+  /* Person-blocker registration (Joshua's amendment, 2026-10-28):
+     while on foot, the hero IS a dynamic PERSON material in
+     collision_material.js — vehicle movers must stop for him. Runs
+     before the rig dispatch so it holds on the GLB and fallback
+     paths alike, and lapses by itself when he drives (animateHero
+     is only called on foot). */
+  try{ if (typeof setPersonBlocker==='function') setPersonBlocker('player', player.x, player.z, 0.9); }catch(e){}
   var R=player.rig; if(!R) return;
   if (R.kind==='glb'){ heroT+=dt; animateHeroGLB(dt); return; }  /* v2.0: GLB path — the math below drives the primitive fallback rig */
   heroT+=dt;
@@ -14918,6 +14925,7 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <script data-dsrc="hud_move.js" data-dkey=""></script> <!-- MENU LAYOUT (Joshua 2026-10-11) — applies menu_layout.json (menus edited visually in the UI Menu Editor). Defensive: no-op if the file is missing. --> <script data-dsrc="menu_layout_apply.js" data-dkey=""></script> <script data-dsrc="water_render.js" data-dkey=""></script>
 <script data-dsrc="traffic_assist.js" data-dkey="trafficassist"></script>
 <script data-dsrc="residential_detail.js" data-dkey=""></script>
+<script data-dsrc="dress535.js" data-dkey=""></script>
 <!-- RETIRED 2026-10-16 (Joshua): building_spawner.js + road_sync.js no longer
      load. They fetched the RETIRED adamsville-map-editor repo's data
      (old-frame hand-placed buildings, the old "Subdivision 1" house fill,

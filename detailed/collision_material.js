@@ -28,7 +28,10 @@ var COLLISION_MATERIALS = {
   ROAD:  2,  // Road surface — sits ON grass (see VERTICAL LAYERING below)
   WATER: 3,  // Water — blocks all ground movement
   DOOR:  4,  // Door — solid when closed, passable when open
-  SOLID: 1   // Walls, buildings, trees, fences — cannot pass through
+  SOLID: 1,  // Walls, buildings, trees, fences — cannot pass through
+  PERSON: 6  // A living person (hero / civilian NPC), registered
+             // dynamically below — blocks VEHICLE movers only; people
+             // never block each other. (2026-10-28 amendment.)
 };
 /* Note: SOLID=1 is intentionally lower than ROAD/WATER/DOOR so that
    specific materials (road, water, door) take priority in the lookup.
@@ -85,9 +88,18 @@ function getMaterialAt(x, z, skipCache){
   var mat = COLLISION_MATERIALS.GRASS;
 
   try {
+    /* --- PERSON: highest priority — a person standing on a road (or
+       wading) must read PERSON, not ROAD/WATER, or the vehicle gate
+       would never see them. People systems re-register every frame;
+       entries expire in 600ms (see the registry below). The movement
+       gate always calls with skipCache=true, so a moving person is
+       never smeared by the 20u cell cache. --- */
+    if (_personAt(x, z)){
+      mat = COLLISION_MATERIALS.PERSON;
+    }
     /* --- WATER: highest priority after DOOR --- */
     /* inWater() is defined in index.html; scans the small WATER array. */
-    if (typeof inWater === 'function' && inWater(x, z)){
+    else if (typeof inWater === 'function' && inWater(x, z)){
       mat = COLLISION_MATERIALS.WATER;
     }
     /* --- ROAD: grid-based, single lookup --- */
@@ -306,6 +318,58 @@ function registerDoor(x, z, radius){
   return door;
 }
 
+/* ---------------------------------------------------------------------------
+   DYNAMIC PEOPLE — person-blockers (Joshua's amendment, 2026-10-28).
+
+   The hero and the civilian NPCs register their live position here.
+   The material at a registered person's position reads PERSON, and
+   canMoveTo() blocks VEHICLE movers from entering it — a person is a
+   dynamic material, exactly Joshua's doctrine (material meeting
+   material; no separate collider registry for people).
+
+   Registrations carry a timestamp and expire after 600 ms, so people
+   systems simply re-register every frame while active. When the hero
+   gets into a car (animateHero stops being called) or an NPC is
+   culled by zoneunlock, the blocker lapses on its own — no stale
+   ghosts standing in the road.
+
+   SCOPE NOTE: this is the REGISTRATION half of the traffic-through-
+   people fix. The other half — routing every mover, traffic included,
+   through this one gate — is the map programme's Phase C unification;
+   traffic_system.js does not call canMoveTo() yet.
+   --------------------------------------------------------------------------- */
+var _peoplePositions = [];  // {id, x, z, r, t} — registered by people systems
+function setPersonBlocker(id, x, z, radius){
+  var now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+  for (var i = 0; i < _peoplePositions.length; i++){
+    if (_peoplePositions[i].id === id){
+      var p = _peoplePositions[i];
+      p.x = x; p.z = z; p.r = radius || 0.9; p.t = now;
+      return p;
+    }
+  }
+  var np = { id: id, x: x, z: z, r: radius || 0.9, t: now };
+  _peoplePositions.push(np);
+  return np;
+}
+function clearPersonBlocker(id){
+  for (var i = _peoplePositions.length - 1; i >= 0; i--){
+    if (_peoplePositions[i].id === id) _peoplePositions.splice(i, 1);
+  }
+}
+/* _personAt(x, z) — true if a live (non-expired) registered person
+   stands at this position. Expired entries are swept as we scan. */
+function _personAt(x, z){
+  var now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+  for (var i = _peoplePositions.length - 1; i >= 0; i--){
+    var p = _peoplePositions[i];
+    if (now - p.t > 600){ _peoplePositions.splice(i, 1); continue; }
+    var dx = x - p.x, dz = z - p.z, rr = p.r + 0.4;
+    if (dx*dx + dz*dz < rr*rr) return true;
+  }
+  return false;
+}
+
 /* _isSolidAt(x, z) — true if a solid object (prop, tree, building wall,
    fence, interior furniture) is at this position. Uses the game's
    existing spatial structures — no new per-frame scanning. */
@@ -424,6 +488,13 @@ function canMoveTo(fromX, fromZ, toX, toZ, moverType, opts){
   /* --- Universal blocks --- */
   if (targetMat === COLLISION_MATERIALS.SOLID) return false;
   if (targetMat === COLLISION_MATERIALS.DOOR) return false;  // closed door
+  if (targetMat === COLLISION_MATERIALS.PERSON){
+    /* PEOPLE (Joshua 2026-10-28): a person is a dynamic material.
+       Vehicles stop for people. People never block each other — and
+       never block themselves: the gate checks the step AHEAD, and a
+       person is allowed to be where a person already is. */
+    return moverType !== MOVER_VEHICLE;
+  }
   if (targetMat === COLLISION_MATERIALS.WATER){
     /* WATER (Joshua 2026-10-11): "it should be a matter of depth."
        - SHALLOW (at/below SINK_DEPTH, ~3 ft): FORDABLE — vehicles drive
