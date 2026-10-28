@@ -1,61 +1,111 @@
 {
- "version": "1.1.0",
- "changelog": "New in 1.1.0 \u2014 rename a street from its tab (Joshua, 2026-10-24). Every open piece's tab now carries a pencil on the LEFT of the name; the close X stays on the right. Clicking the pencil turns the tab's name into a text field, right there in the tab: type the new name and press Enter (or click away) to confirm it; Esc cancels and leaves the name untouched. It works on any street, named or unnamed alike \u2014 for an unnamed piece (whose stored name is the game's placeholder 'Unnamed St') the field starts EMPTY with that placeholder showing, and confirming the field empty keeps the piece unnamed. Only the open piece's own record is renamed: other pieces that happen to share the old name keep it. The new name is a changed variable like any other edit \u2014 it marks the piece unsaved and rides the same save round trip (local save, push, fresh download, the verified copy on screen), and after a middle-segment split the resulting records share the new name, exactly as they shared the old one.",
- "files": [
-  {
-   "path": "app.py",
-   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/app.py",
-   "sha256": "478d5bf8c254b69840ffc5662d072e0f6ece9cf7479669feb94977a5e7a1e537"
-  },
-  {
-   "path": "detaildata.py",
-   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/detaildata.py",
-   "sha256": "9cdc5b85ce436488a82e652db1816f44757f773a7e773d5468f522fb49e79936"
-  },
-  {
-   "path": "detailcanvas.py",
-   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/detailcanvas.py",
-   "sha256": "dad08e47ee0c3daa7a66618c672d74d204cf8558c6ed70ee2aee44f5a1752cb3"
-  },
-  {
-   "path": "element.py",
-   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/element.py",
-   "sha256": "89451e3165bc24c17ddd26f7a0dbe48e4dea51872bb3ddfc77ffd8f738903add"
-  },
-  {
-   "path": "mollie-icon.png",
-   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/mollie-icon.png",
-   "sha256": "28990027fd79e03e2ef8416e8c1d3410ee284ec86383280968b245f08576e768"
-  },
-  {
-   "path": "suite_core/__init__.py",
-   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/suite_core/__init__.py",
-   "sha256": "2e6de5b3806e823ce6602a8975ae59d2b960e1ba9ed93a0e316950d2f78de155"
-  },
-  {
-   "path": "suite_core/about.py",
-   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/suite_core/about.py",
-   "sha256": "7d3d6ceb37bb4c83c5be662f5e32e2cdf3fa4415891445e4154202a6bc9c8fd5"
-  },
-  {
-   "path": "suite_core/github_sync.py",
-   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/suite_core/github_sync.py",
-   "sha256": "30da62de6b36da189acbcbe004ac3208d2ca3206f1a9551acd2a650785eac861"
-  },
-  {
-   "path": "suite_core/layout.py",
-   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/suite_core/layout.py",
-   "sha256": "359760a31f94575de55c03772fe2fe7f9d96805fa6b1d210bad5ef7f916a4c0b"
-  },
-  {
-   "path": "suite_core/shared_cache.py",
-   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/suite_core/shared_cache.py",
-   "sha256": "ce91dd4e9950db9ccc299d2104d96455a8bc1fe237bd0bbc205eaedfd8e7f454"
-  },
-  {
-   "path": "suite_core/updater.py",
-   "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/suite_core/updater.py",
-   "sha256": "bd36c9f98f4a5dd74ea652df4057b10c195fbddaaaf023f21de3e32443263110"
+  "version": "1.1.0",
+  "changelog": "New in 1.1.0 \u2014 rename a street from its tab (Joshua, 2026-10-24). Every open piece's tab now carries a pencil on the LEFT of the name; the close X stays on the right. Clicking the pencil turns the tab's name into a text field, right there in the tab: type the new name and press Enter (or click away) to confirm it; Esc cancels and leaves the name untouched. It works on any street, named or unnamed alike \u2014 for an unnamed piece (whose stored name is the game's placeholder 'Unnamed St') the field starts EMPTY with that placeholder showing, and confirming the field empty keeps the piece unnamed. Only the open piece's own record is renamed: other pieces that happen to share the old name keep it. The new name is a changed variable like any other edit \u2014 it marks the piece unsaved and rides the same save round trip (local save, push, fresh download, the verified copy on screen), and after a middle-segment split the resulting records share the new name, exactly as they shared the old one.",
+  "files": [
+    {
+      "path": "app.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/app.py",
+      "sha256": "478d5bf8c254b69840ffc5662d072e0f6ece9cf7479669feb94977a5e7a1e537"
+    },
+    {
+      "path": "detaildata.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/detaildata.py",
+      "sha256": "9cdc5b85ce436488a82e652db1816f44757f773a7e773d5468f522fb49e79936"
+    },
+    {
+      "path": "detailcanvas.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/detailcanvas.py",
+      "sha256": "dad08e47ee0c3daa7a66618c672d74d204cf8558c6ed70ee2aee44f5a1752cb3"
+    },
+    {
+      "path": "element.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/element.py",
+      "sha256": "89451e3165bc24c17ddd26f7a0dbe48e4dea51872bb3ddfc77ffd8f738903add"
+    },
+    {
+      "path": "mollie-icon.png",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/mollie-icon.png",
+      "sha256": "28990027fd79e03e2ef8416e8c1d3410ee284ec86383280968b245f08576e768"
+    },
+    {
+      "path": "suite_core/__init__.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/suite_core/__init__.py",
+      "sha256": "2e6de5b3806e823ce6602a8975ae59d2b960e1ba9ed93a0e316950d2f78de155"
+    },
+    {
+      "path": "suite_core/about.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/suite_core/about.py",
+      "sha256": "7d3d6ceb37bb4c83c5be662f5e32e2cdf3fa4415891445e4154202a6bc9c8fd5"
+    },
+    {
+      "path": "suite_core/github_sync.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/suite_core/github_sync.py",
+      "sha256": "30da62de6b36da189acbcbe004ac3208d2ca3206f1a9551acd2a650785eac861"
+    },
+    {
+      "path": "suite_core/layout.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/suite_core/layout.py",
+      "sha256": "359760a31f94575de55c03772fe2fe7f9d96805fa6b1d210bad5ef7f916a4c0b"
+    },
+    {
+      "path": "suite_core/shared_cache.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/suite_core/shared_cache.py",
+      "sha256": "ce91dd4e9950db9ccc299d2104d96455a8bc1fe237bd0bbc205eaedfd8e7f454"
+    },
+    {
+      "path": "suite_core/updater.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/suite_core/updater.py",
+      "sha256": "bd36c9f98f4a5dd74ea652df4057b10c195fbddaaaf023f21de3e32443263110"
+    }
+  ],
+  "selfupdate": {
+    "payload_root": "editors/detail-editor/app",
+    "payload_sha256": "b43e6b6e56bcce215277a5ce112d461818097c372019cb1e052c125789bc4f41",
+    "files": [
+      {
+        "path": "app.py",
+        "sha256": "478d5bf8c254b69840ffc5662d072e0f6ece9cf7479669feb94977a5e7a1e537"
+      },
+      {
+        "path": "detailcanvas.py",
+        "sha256": "dad08e47ee0c3daa7a66618c672d74d204cf8558c6ed70ee2aee44f5a1752cb3"
+      },
+      {
+        "path": "detaildata.py",
+        "sha256": "9cdc5b85ce436488a82e652db1816f44757f773a7e773d5468f522fb49e79936"
+      },
+      {
+        "path": "element.py",
+        "sha256": "89451e3165bc24c17ddd26f7a0dbe48e4dea51872bb3ddfc77ffd8f738903add"
+      },
+      {
+        "path": "mollie-icon.png",
+        "sha256": "28990027fd79e03e2ef8416e8c1d3410ee284ec86383280968b245f08576e768"
+      },
+      {
+        "path": "suite_core/__init__.py",
+        "sha256": "2e6de5b3806e823ce6602a8975ae59d2b960e1ba9ed93a0e316950d2f78de155"
+      },
+      {
+        "path": "suite_core/about.py",
+        "sha256": "7d3d6ceb37bb4c83c5be662f5e32e2cdf3fa4415891445e4154202a6bc9c8fd5"
+      },
+      {
+        "path": "suite_core/github_sync.py",
+        "sha256": "30da62de6b36da189acbcbe004ac3208d2ca3206f1a9551acd2a650785eac861"
+      },
+      {
+        "path": "suite_core/layout.py",
+        "sha256": "359760a31f94575de55c03772fe2fe7f9d96805fa6b1d210bad5ef7f916a4c0b"
+      },
+      {
+        "path": "suite_core/shared_cache.py",
+        "sha256": "ce91dd4e9950db9ccc299d2104d96455a8bc1fe237bd0bbc205eaedfd8e7f454"
+      },
+      {
+        "path": "suite_core/updater.py",
+        "sha256": "bd36c9f98f4a5dd74ea652df4057b10c195fbddaaaf023f21de3e32443263110"
+      }
+    ]
   }
- ]
 }
