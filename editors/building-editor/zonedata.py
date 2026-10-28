@@ -116,6 +116,7 @@
 #   * A roads failure is reported by name (prepare_snapshot's
 #     roads_error) instead of silently degrading the view.
 
+import copy
 import json
 import math
 import threading
@@ -141,7 +142,7 @@ STATION_EDITS_REPO_PATH = "editors/building-editor/station-edits.json"
 
 # Stamps into the version string of any zone file this editor saves
 # ("<date>-building-editor-<ver>-<zone>").
-EDITOR_VERSION = "2.0.8"
+EDITOR_VERSION = "2.0.9"
 
 # -- detail chunks (2.0.0 snapshot model) ------------------------------
 # buildings_detail.json stays the game's canonical detail file; the
@@ -1633,6 +1634,54 @@ class ZoneData:
             return False
         self.rotate(index, delta, flagged=flagged)
         return True
+
+    # -- the working copy (2.0.9, Joshua's cache + Apply model) --
+
+    def working_copy(self, index):
+        """A detached ONE-RECORD ZoneData holding deep copies of
+        building `index`'s box + detail — the working copy the
+        2.0.9 cache + Apply model edits against (Joshua, Oct 28:
+        opening a building puts it and its surrounding area in a
+        local cache; every adjustment mutates the cache only,
+        with live preview; an explicit Apply sends the finished
+        copy back in one save round trip).
+
+        The copy is a real ZoneData, so every edit verb (move /
+        resize / scale / rotate / rotate_to) runs on it at index
+        0 with its math — shape preservation, rotation baking,
+        the flagged lock (the caller passes the store's flagged
+        index; the match is by ring, so it bites identically) —
+        exactly as it would on the zone, while the zone's own
+        records stay untouched until absorb_record. Its details
+        are a plain list, so materialise is already satisfied
+        and no store/fetch is ever needed to edit it."""
+        if not (0 <= index < len(self.boxes)):
+            raise ZoneDataError("No such building.")
+        det = self.details[index]
+        if not isinstance(det, dict):
+            raise ZoneDataError(
+                "This building's detail record could not be "
+                "read — it cannot be edited.")
+        work = ZoneData(self.zone)
+        work.boxes = [list(self.boxes[index])]
+        work.details = [copy.deepcopy(det)]
+        return work
+
+    def absorb_record(self, index, box, detail):
+        """Commit a working copy back into this zone (2.0.9):
+        the record pair is replaced with the working copy's
+        finished box + detail and the zone is marked dirty —
+        the caller's save round trip then sends it back and
+        proves it, the standing suite way. Materialises the
+        zone's details first (the save path diffs against the
+        pristine copies materialisation takes), exactly as
+        every other edit does."""
+        self._materialize_or_refuse()
+        if not (0 <= index < len(self.boxes)):
+            raise ZoneDataError("No such building.")
+        self.boxes[index] = list(box)
+        self.details[index] = copy.deepcopy(detail)
+        self.dirty = True
 
     def delete(self, index, flagged=None):
         """Delete a building: BOTH the box and its detail entry go.

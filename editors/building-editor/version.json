@@ -1,6 +1,6 @@
 {
-  "version": "2.0.8",
-  "changelog": "Speed pass on the 3D view (profiled first): the first-edit freeze is gone (edit data warms up in the background when a building lands), drags and steppers now update the picture lightly and settle after; picking rebuilt on the drawn footprint - every wall (front, back, sides) and every corner is grabbable; while a part is selected for sizing, pan and rotate pause and every drag sizes, with a banner showing the state; Edit this building is now a collapsible side panel and everything under the viewport scrolls; axis gizmo (X east-west, Z north-south, Y up) in the viewport's top-right; the view shows the surrounding streets, grass and neighbouring buildings in the game's colours; rotation and all numeric steppers turn the building live as you step - no Move / Resize needed; Detail Edit now says plainly that the Detail Editor works on roads and buildings are not supported there yet (nothing is sent); self-update and silent reporting built in.",
+  "version": "2.0.9",
+  "changelog": "Cache + Apply working model (Joshua's redesign): opening a building loads it and its surrounding area ONCE into a working copy; every adjustment \u2014 drags, wall/corner sizing, all steppers including Rotation, typed numbers \u2014 changes only the working copy and the preview follows at once, so editing is fluid and nothing is sent back per change. A prominent Apply button commits the finished building in ONE verified save round trip; until Apply, nothing has left the machine. Unapplied changes are shown in the tab (dot + label, Apply lights up), and closing the tab or view, switching buildings, or quitting with unapplied changes asks Apply / Discard / Stay \u2014 work is never silently lost. Flagged buildings still refuse all edits. Everything from 2.0.8 rides along: the speed pass, ring-true picking with the sizing lock, collapsible Edit side panel, axis gizmo, game-colour surroundings, and the plain-spoken Detail Edit answer.",
   "files": [
     {
       "path": "about.py",
@@ -10,7 +10,7 @@
     {
       "path": "app.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/app.py",
-      "sha256": "95fbcfba74bb13c34df84d2a669e753c17f0b255f717c488e5df52ce42180f53"
+      "sha256": "397e958bc192ccdf0d7221e78da0b1d387fbea49993cf197856a9526da8c82a2"
     },
     {
       "path": "buildingcanvas.py",
@@ -65,12 +65,12 @@
     {
       "path": "zonedata.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/zonedata.py",
-      "sha256": "e6ebfedc67afec675809e05331e4e7453933c3bed68702e12b14fe1588a9eda7"
+      "sha256": "45914b2b9b7fcd1970edcf5f690eac28227f47d57ae9ea3cbf9a29f61b08339b"
     }
   ],
   "selfupdate": {
     "payload_root": "editors/building-editor",
-    "payload_sha256": "2cf728e0f824ab705927d3e005116e9e691db0993da559a8451d486e54339ee9",
+    "payload_sha256": "fdee06206778d3f44f299d2394125d237a9f9f7d9062435e320f504c22c90fa7",
     "files": [
       {
         "path": "about.py",
@@ -78,7 +78,7 @@
       },
       {
         "path": "app.py",
-        "sha256": "95fbcfba74bb13c34df84d2a669e753c17f0b255f717c488e5df52ce42180f53"
+        "sha256": "397e958bc192ccdf0d7221e78da0b1d387fbea49993cf197856a9526da8c82a2"
       },
       {
         "path": "buildingcanvas.py",
@@ -122,7 +122,7 @@
       },
       {
         "path": "zonedata.py",
-        "sha256": "e6ebfedc67afec675809e05331e4e7453933c3bed68702e12b14fe1588a9eda7"
+        "sha256": "45914b2b9b7fcd1970edcf5f690eac28227f47d57ae9ea3cbf9a29f61b08339b"
       }
     ]
   }

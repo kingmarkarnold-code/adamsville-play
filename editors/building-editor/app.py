@@ -17,6 +17,7 @@ Tab system: Gtk.Notebook, Firefox-style. Each tab is one open building.
 Joshua's rule: all code commented.
 """
 
+import copy
 import json
 import math
 import shutil
@@ -109,7 +110,7 @@ from subdivisioncanvas import SubdivisionCanvas
 
 # App version shown in the Help -> About dialog (bump with each release).
 # Joshua 2026-10-11: version number must be prominent in About.
-APP_VERSION = "2.0.8"
+APP_VERSION = "2.0.9"
 
 # ---------------------------------------------------------------------------
 # THE EDITOR UI RULE (Joshua, 2026-10-16 — standing suite principle):
@@ -558,49 +559,17 @@ class AssetEditorWindow(Gtk.Window):
             f"Update downloaded: Building Editor {version} will "
             f"run next time you start the app.")
 
-    def _prewarm_materialize(self, zone):
-        """Warm a zone's edit session in the background (2.0.8,
-        the speed pass's headline fix).
-
-        The profile's finding: the FIRST edit of a zone —
-        Joshua's first drag, or his first stepper step — paid
-        ZoneData.materialize_details() synchronously, ~1.3 s on
-        a fast machine and several seconds on his laptop,
-        inside the gesture itself: the drag appeared dead, then
-        jumped. The materialisation is the same work whenever
-        it runs, so 2.0.8 runs it when a building OPENS (an
-        edit session in waiting), on a worker, under the
-        corner progress bar — it overlaps his looking and
-        reading instead of ambushing his first drag. The edit
-        path itself is untouched: if he beats the warm-up, his
-        edit materialises exactly as 2.0.7 did, and a warm-up
-        failure is silent here (the edit path will surface the
-        same error properly when he actually edits)."""
-        if getattr(self, "_prewarm_zones", None) is None:
-            self._prewarm_zones = set()
-        store = self.zone_store
-        zd = store.zones.get(zone) if store is not None else None
-        if zd is None or zd.materialized \
-                or zone in self._prewarm_zones:
-            return
-        self._prewarm_zones.add(zone)
-        self.progress_start(
-            "prepare-edit", f"Preparing {zone} for editing…")
-        import threading
-
-        def worker():
-            try:
-                zd.materialize_details()
-            except Exception:
-                pass
-
-            def done():
-                self._prewarm_zones.discard(zone)
-                self.progress_finish("prepare-edit")
-                return False
-            GLib.idle_add(done)
-
-        threading.Thread(target=worker, daemon=True).start()
+    # (The 2.0.8 _prewarm_materialize helper is GONE in 2.0.9:
+    # it materialised a zone's FULL detail list in the
+    # background the moment a building opened, so the first
+    # edit would not pay for it. Under the cache + Apply
+    # model edits run on the one-record working copy and
+    # never materialise the zone at all — the only remaining
+    # payer is Apply itself (absorb_record), a deliberate
+    # commit click where the wait belongs. Keeping the
+    # warm-up would also have kept the whole zone's details
+    # resident behind every open building, against the
+    # working-set doctrine Joshua restated the same evening.)
 
     # -- menus ----------------------------------------------------------
 
@@ -1836,7 +1805,13 @@ class AssetEditorWindow(Gtk.Window):
         self._set_status(f"Opened '{building.get('name')}'.")
 
     def close_tab(self, tab):
-        """Close one tab and drop it from the open list."""
+        """Close one tab and drop it from the open list.
+        2.0.9: a tab holding a building's working copy with
+        unapplied changes asks first (Apply / Discard / Stay)
+        — Stay keeps the tab open."""
+        resolver = getattr(tab, "resolve_work_dirty", None)
+        if resolver is not None and not resolver():
+            return
         page = self.notebook.page_num(tab)
         if page >= 0:
             self.notebook.remove_page(page)
@@ -2033,6 +2008,22 @@ class AssetEditorWindow(Gtk.Window):
         If there are unpublished changes, ask Joshua what to do
         (Joshua 2026-10-11).
         """
+        # 2.0.9: unapplied working-copy changes resolve FIRST
+        # (Apply / Discard / Stay per building) — a Stay keeps
+        # the app open, and an Apply lands in the zone data in
+        # time for the unpublished-changes round trip below to
+        # carry it. The Zone tab's inspector and every open
+        # building tab are asked in turn.
+        work_tabs = []
+        if self.zone_tab is not None:
+            work_tabs.append(self.zone_tab)
+        work_tabs.extend(
+            t for t in self.open_tabs
+            if isinstance(t, ZoneBuildingTab))
+        for tab in work_tabs:
+            resolver = getattr(tab, "resolve_work_dirty", None)
+            if resolver is not None and not resolver():
+                return True  # Stay — don't close
         # 2.0.8: close the reporting session (editors-reporting
         # rule). First, so the session summary goes out even
         # when the unpublished-changes dialog follows; the
@@ -2357,6 +2348,17 @@ class ZoneInspectorPanel(Gtk.Box):
         self.index = None           # building index (building mode)
         self.box = None
         self.detail = None
+        # 2.0.9 (Joshua's cache + Apply model): the WORKING
+        # COPY — a detached one-record ZoneData the panel's
+        # subject lives in while it is open. box/detail point
+        # at the working records, so the picture, the picking
+        # and every readout follow the copy; the zone's own
+        # records are untouched until the tab's Apply absorbs
+        # the copy back. _work_base holds the as-opened (or
+        # last-applied) record pair the dirty check compares
+        # against.
+        self.work = None
+        self._work_base = None
         self.flagged_entry = None
         self.front_info = None
         self.front_azimuth = self.DEFAULT_AZIMUTH
@@ -2811,8 +2813,26 @@ class ZoneInspectorPanel(Gtk.Box):
         self.zd = zd
         self.zone = zd.zone if zd else None
         self.index = index
-        self.box = zd.boxes[index]
-        self.detail = zd.details[index]
+        # 2.0.9: the subject is copied into the WORKING COPY
+        # and the panel lives on the copy from here — box and
+        # detail are the working records, so the picture, the
+        # picking and the readouts all follow the copy while
+        # the zone's own records stay exactly as loaded until
+        # Apply. A copy that cannot be made (unreadable detail
+        # record) leaves work None: the building still shows
+        # (from the live records, read-only in effect — every
+        # edit funnel checks for the copy and refuses).
+        try:
+            self.work = zd.working_copy(index)
+            self._work_base = (list(self.work.boxes[0]),
+                               copy.deepcopy(self.work.details[0]))
+            self.box = self.work.boxes[0]
+            self.detail = self.work.details[0]
+        except Exception:
+            self.work = None
+            self._work_base = None
+            self.box = zd.boxes[index]
+            self.detail = zd.details[index]
         self.neighbours = neighbours or []
         self.flagged_entry = flagged_entry
         self.station = None
@@ -2852,6 +2872,69 @@ class ZoneInspectorPanel(Gtk.Box):
         self._update_readouts()
         self.drawing.queue_draw()
 
+    # -- the working copy (2.0.9, Joshua's cache + Apply) ----
+
+    def work_is_dirty(self):
+        """True when the working copy differs from the record
+        pair it was opened (or last applied) with — compared
+        exactly, so an edit that lands back where it started
+        is no longer dirty."""
+        if self.work is None or self._work_base is None:
+            return False
+        return (self.work.boxes[0] != self._work_base[0]
+                or self.work.details[0] != self._work_base[1])
+
+    def note_work_edit(self):
+        """An edit funnel landed a change on the working copy:
+        the hosting tab refreshes its Apply affordances."""
+        tab = self.tab
+        if tab is not None and hasattr(tab, "_refresh_apply_ui"):
+            tab._refresh_apply_ui()
+
+    def absorb_work(self):
+        """Commit the working copy into the zone's records —
+        the tab then runs the save round trip that sends it
+        back and proves it. The base moves to the absorbed
+        state: the copy is clean from here; the ZONE is dirty
+        until the save lands."""
+        if self.work is None or self.zd is None \
+                or self.index is None:
+            raise zonedata.ZoneDataError(
+                "There is no working copy to apply.")
+        self.zd.absorb_record(self.index, self.work.boxes[0],
+                              self.work.details[0])
+        self._work_base = (list(self.work.boxes[0]),
+                           copy.deepcopy(self.work.details[0]))
+
+    def discard_work(self):
+        """Throw the working copy away and re-copy the zone's
+        records as they stand — the building is shown exactly
+        as saved, and the fields follow (the tab refills them).
+        Returns False when there is nothing to discard into."""
+        if self.zd is None or self.index is None \
+                or self.index >= len(self.zd.boxes):
+            return False
+        try:
+            self.work = self.zd.working_copy(self.index)
+        except Exception:
+            return False
+        self._work_base = (list(self.work.boxes[0]),
+                           copy.deepcopy(self.work.details[0]))
+        self.box = self.work.boxes[0]
+        self.detail = self.work.details[0]
+        self.selected_part = None
+        self._sel_edge = None
+        self._update_sizing_banner()
+        self.refresh_view()
+        return True
+
+    def clear_work(self):
+        """Drop the working copy without a word (the building
+        it belonged to is gone — a delete already resolved
+        any unapplied changes with Joshua first)."""
+        self.work = None
+        self._work_base = None
+
     # -- showing a station (amendment 1) ---------------------------------
 
     def show_station(self, tab, station, edit, zd):
@@ -2870,6 +2953,8 @@ class ZoneInspectorPanel(Gtk.Box):
         self.index = None
         self.box = None
         self.detail = None
+        self.work = None
+        self._work_base = None
         self.flagged_entry = None
         self.selected_street = None
         self.selected_part = None
@@ -3089,8 +3174,18 @@ class ZoneInspectorPanel(Gtk.Box):
         if self.mode == "building" and self.zd is not None \
                 and self.index is not None \
                 and self.index < len(self.zd.boxes):
-            self.box = self.zd.boxes[self.index]
-            self.detail = self.zd.details[self.index]
+            # 2.0.9: the picture follows the WORKING COPY —
+            # box/detail are its records, and the front is
+            # derived from its ring (building_front reads only
+            # the subject's own record pair, so the copy stands
+            # in for the zone at index 0). The neighbours stay
+            # the zone's context around the building.
+            if self.work is not None:
+                self.box = self.work.boxes[0]
+                self.detail = self.work.details[0]
+            else:
+                self.box = self.zd.boxes[self.index]
+                self.detail = self.zd.details[self.index]
             # 2.0.0: the snapshot's context follows the edit too.
             try:
                 self.neighbours = self.zd.neighbours_within(
@@ -3101,8 +3196,11 @@ class ZoneInspectorPanel(Gtk.Box):
             # building was opened) — a drag-end refresh never
             # re-parses the zone's roads on the UI thread.
             roads, seg_index = self.zd.roads_view()
+            front_zd = self.work if self.work is not None \
+                else self.zd
+            front_idx = 0 if self.work is not None else self.index
             self.front_info = zonedata.building_front(
-                self.zd, self.index, self.flagged_entry,
+                front_zd, front_idx, self.flagged_entry,
                 roads=roads or {}, seg_index=seg_index)
             ring = (self.front_info or {}).get("ring") \
                 or self.detail.get("ring") or []
@@ -3133,8 +3231,14 @@ class ZoneInspectorPanel(Gtk.Box):
         if self.mode == "building" and self.zd is not None \
                 and self.index is not None \
                 and self.index < len(self.zd.boxes):
-            self.box = self.zd.boxes[self.index]
-            self.detail = self.zd.details[self.index]
+            # 2.0.9: values + picture from the WORKING COPY's
+            # records (see refresh_view).
+            if self.work is not None:
+                self.box = self.work.boxes[0]
+                self.detail = self.work.details[0]
+            else:
+                self.box = self.zd.boxes[self.index]
+                self.detail = self.zd.details[self.index]
             self._cur_values = {
                 "x": self.box[0], "z": self.box[1], "w": self.box[2],
                 "d": self.box[3], "h": self.box[4]}
@@ -4903,7 +5007,8 @@ class ZoneBuildingsTab(Gtk.Box):
                             spacing=2)
         edit_lbl = Gtk.Label()
         edit_lbl.set_markup("<b>Edit selected building</b> "
-                            "(typing a number applies it at once)")
+                            "(typing applies at once to the "
+                            "preview — Apply sends it back)")
         edit_lbl.set_halign(Gtk.Align.START)
         edit_lbl.set_ellipsize(Pango.EllipsizeMode.END)
         lower_box.pack_start(edit_lbl, False, False, 2)
@@ -4954,6 +5059,21 @@ class ZoneBuildingsTab(Gtk.Box):
         detail_btn.connect("clicked", self._on_detail_edit)
         edit.pack_start(detail_btn, False, False, 0)
         self.detail_btn = detail_btn
+        # APPLY (2.0.9, Joshua's cache + Apply model): edits
+        # live on the building's working copy until this button
+        # sends the finished copy back in one save round trip.
+        # The label beside it is the dirty state, spelled out.
+        self.apply_btn = Gtk.Button(label="Apply")
+        self.apply_btn.get_style_context().add_class(
+            "suggested-action")
+        self.apply_btn.set_tooltip_text(
+            "Send the finished changes back in one save")
+        self.apply_btn.connect("clicked", self._on_apply)
+        self.apply_btn.set_sensitive(False)
+        edit.pack_start(self.apply_btn, False, False, 4)
+        self.work_label = Gtk.Label(label="")
+        self.work_label.set_halign(Gtk.Align.START)
+        edit.pack_start(self.work_label, False, False, 0)
         # Horizontal scroller (the row is wide; at full width it
         # looks as before, narrowed it scrolls — 1.7.1 pattern).
         self.edit_scroll = Gtk.ScrolledWindow()
@@ -5097,7 +5217,12 @@ class ZoneBuildingsTab(Gtk.Box):
             else self._selected_index()
         if zd is None or idx is None or idx >= len(zd.boxes):
             return
-        ring = zd.details[idx].get("ring") or []
+        # 2.0.9: while the building is open, the field shows
+        # the WORKING COPY's orientation (its saved orientation
+        # only when no copy is open on it).
+        work = self._work_for(idx)
+        ring = (work.details[0].get("ring") if work is not None
+                else zd.details[idx].get("ring")) or []
         if not ring:
             return
         prev = self._spins_loading
@@ -5109,7 +5234,8 @@ class ZoneBuildingsTab(Gtk.Box):
 
     def _on_rot_changed(self, _spin=None):
         """Typing an angle turns the selected building to it at
-        once — the Rotation field's twin of _on_spin_changed."""
+        once — the Rotation field's twin of _on_spin_changed.
+        2.0.9: it turns the WORKING COPY; Apply sends it back."""
         if self._spins_loading:
             return
         zd = self._zd()
@@ -5118,19 +5244,22 @@ class ZoneBuildingsTab(Gtk.Box):
         if store is None or zd is None or idx is None \
                 or idx >= len(zd.boxes):
             return
+        work = self._work_for(idx)
+        if work is None:
+            self._sync_rot_field()
+            return
         try:
-            turned = zd.rotate_to(idx, self.mrot.get_value(),
-                                  flagged=store.flagged)
+            turned = work.rotate_to(0, self.mrot.get_value(),
+                                    flagged=store.flagged)
         except Exception as e:
             self.app_window._set_status(str(e))
             self._sync_rot_field()
             return
         if not turned:
             return
-        self.app_window._mark_unpublished()
-        box = zd.boxes[idx]
+        self.inspector.note_work_edit()
+        box = work.boxes[0]
         self._set_spins(box[0], box[1], box[2], box[3], box[4])
-        self._update_row(idx)
         if self.inspector.get_visible() \
                 and self.inspector.index == idx:
             # 2.0.8: the rotation step turns the building in
@@ -5140,7 +5269,8 @@ class ZoneBuildingsTab(Gtk.Box):
             self.inspector.refresh_view_light()
             self._schedule_view_refresh()
         self.app_window._set_status(
-            f"Building #{idx} rotated (unsaved until save).")
+            f"Building #{idx} rotated in the preview — "
+            f"unapplied (Apply sends it back).")
 
     # -- the list: rows from the index (or the loaded detail) -----------
 
@@ -5520,10 +5650,6 @@ class ZoneBuildingsTab(Gtk.Box):
         self.inspector.set_visible(True)
         self._position_inspector()
         GLib.idle_add(self._position_inspector_idle)
-        # 2.0.8: a building is open for editing — warm the
-        # zone's edit session up in the background (see the
-        # window's _prewarm_materialize).
-        self.app_window._prewarm_materialize(self._zone)
         if prep.get("roads_error"):
             # The building is shown; the missing front/backdrop
             # is named, not silently absent.
@@ -5570,7 +5696,26 @@ class ZoneBuildingsTab(Gtk.Box):
     def _on_zone_changed(self, combo):
         """Switch the working zone: its list comes from its light
         index (downloading the index first if needed)."""
-        self._zone = combo.get_active_text() or self._zone
+        if getattr(self, "_zone_reverting", False):
+            return
+        new_zone = combo.get_active_text() or self._zone
+        # 2.0.9: switching zones closes the open building's
+        # view — unapplied changes there ask first.
+        if new_zone != self._zone \
+                and getattr(self, "inspector", None) is not None \
+                and self.inspector.get_visible() \
+                and self.inspector.work_is_dirty():
+            if not self.resolve_work_dirty():
+                self._zone_reverting = True
+                try:
+                    combo.set_active(
+                        zonedata.ZONES.index(self._zone))
+                except Exception:
+                    pass
+                finally:
+                    self._zone_reverting = False
+                return
+        self._zone = new_zone
         self._row_window = 0  # a fresh list starts at the top
         self.hide_inspector()
         self.app_window.ensure_zone_index(self._zone)
@@ -5719,6 +5864,23 @@ class ZoneBuildingsTab(Gtk.Box):
         lands, if the selection is still this building.
         """
         idx = self._selected_index()
+        # 2.0.9: leaving a building whose working copy holds
+        # unapplied changes — by selecting another, or by
+        # putting it down entirely — asks first (Apply /
+        # Discard / Stay). Stay puts the selection back on the
+        # building still being edited. (Not during rebuilds:
+        # those selection swings are the list's own
+        # bookkeeping, and the 2.0.5 rule below keeps the view
+        # alive through them.)
+        if not getattr(self, "_rebuilding", False) \
+                and not getattr(self, "_sel_reverting", False) \
+                and getattr(self, "inspector", None) is not None \
+                and self.inspector.get_visible() \
+                and self.inspector.work_is_dirty() \
+                and idx != self.inspector.index:
+            if not self.resolve_work_dirty():
+                self._revert_selection()
+                return
         if idx is None:
             # 2.0.5: an empty selection DURING a list rebuild is
             # the rebuild's own bookkeeping (the store clear
@@ -5755,16 +5917,147 @@ class ZoneBuildingsTab(Gtk.Box):
                     self.show_inspector(_idx)
         self.app_window.ensure_zone_detail(zone, done=done)
 
+    # -- the working copy (2.0.9, Joshua's cache + Apply) ----
+
+    def _work_for(self, idx):
+        """The working copy for building `idx` when the
+        inspector is open on it — the ONLY thing edits run
+        against in 2.0.9 — else None."""
+        panel = self.inspector
+        if panel is not None and panel.mode == "building" \
+                and panel.index == idx and panel.work is not None:
+            return panel.work
+        return None
+
+    def _refresh_apply_ui(self):
+        """The Apply button + dirty label follow the working
+        copy's state (the panel calls this after every edit
+        funnel lands, and the tab after Apply / Discard)."""
+        dirty = False
+        try:
+            dirty = self.inspector.work_is_dirty()
+        except Exception:
+            dirty = False
+        if hasattr(self, "apply_btn"):
+            self.apply_btn.set_sensitive(dirty)
+        if hasattr(self, "work_label"):
+            self.work_label.set_text(
+                "● Unapplied changes" if dirty else "")
+
+    def _on_apply(self, _widget=None):
+        """APPLY: commit the working copy into the zone and
+        send it back in ONE save round trip (the standing
+        verified save — push, close, re-download, show the
+        proof). Until this is pressed, no edit has left the
+        working copy."""
+        panel = self.inspector
+        idx = panel.index if panel is not None else None
+        if panel is None or panel.work is None or idx is None:
+            return
+        if not panel.work_is_dirty():
+            self.app_window._set_status(
+                f"Building #{idx}: nothing to apply — it is "
+                f"already as saved.")
+            return
+        try:
+            if reporting is not None:
+                with reporting.operation(
+                        "apply", zone=self._zone, index=idx):
+                    panel.absorb_work()
+            else:
+                panel.absorb_work()
+        except Exception as e:
+            self.app_window._set_status(str(e))
+            return
+        self.app_window._mark_unpublished()
+        self._update_row(idx)
+        self._refresh_apply_ui()
+        self.app_window._set_status(
+            f"Building #{idx} applied — sending it back…")
+        self.app_window.round_trip_save()
+
+    def discard_work(self):
+        """Discard this tab's unapplied changes: the building
+        is shown exactly as saved and the fields follow."""
+        panel = self.inspector
+        idx = panel.index if panel is not None else None
+        if panel is None or not panel.discard_work():
+            return False
+        box = panel.work.boxes[0]
+        self._set_spins(box[0], box[1], box[2], box[3], box[4])
+        self._refresh_apply_ui()
+        self.app_window._set_status(
+            f"Building #{idx}: unapplied changes discarded — "
+            f"it is shown as saved.")
+        return True
+
+    def resolve_work_dirty(self):
+        """Ask what to do with this tab's unapplied changes —
+        Apply / Discard / Stay (2.0.9). Returns True when the
+        caller may proceed (applied, discarded, or nothing
+        was dirty), False when Joshua chose Stay."""
+        panel = self.inspector
+        if panel is None or not panel.work_is_dirty():
+            return True
+        choice = self._run_work_dialog(panel.index)
+        if choice == "apply":
+            self._on_apply()
+            return not panel.work_is_dirty()
+        if choice == "discard":
+            return self.discard_work()
+        return False
+
+    def _run_work_dialog(self, idx):
+        """The Apply / Discard / Stay dialog itself (suite
+        style: plain words, the consequence named)."""
+        dialog = Gtk.MessageDialog(
+            transient_for=self.app_window, flags=0,
+            message_type=Gtk.MessageType.WARNING,
+            buttons=Gtk.ButtonsType.NONE,
+            text=f"Unapplied changes — Building #{idx}")
+        dialog.format_secondary_text(
+            "You changed this building, but the changes have "
+            "not been sent back yet. Apply them now, discard "
+            "them, or stay and keep editing.")
+        dialog.add_button("Stay", Gtk.ResponseType.CANCEL)
+        dialog.add_button("Discard changes", Gtk.ResponseType.NO)
+        dialog.add_button("Apply", Gtk.ResponseType.YES)
+        dialog.set_default_response(Gtk.ResponseType.YES)
+        resp = dialog.run()
+        dialog.destroy()
+        if resp == Gtk.ResponseType.YES:
+            return "apply"
+        if resp == Gtk.ResponseType.NO:
+            return "discard"
+        return "stay"
+
+    def _revert_selection(self):
+        """Put the list selection back on the building whose
+        working copy is still open (a Stay answer)."""
+        idx = self.inspector.index
+        if idx is None:
+            return
+        self._sel_reverting = True
+        try:
+            row = next(i for i, r in enumerate(self.store)
+                       if r[0] == idx)
+            self.tree.get_selection().select_path(str(row))
+        except Exception:
+            pass
+        finally:
+            self._sel_reverting = False
+
     # -- applying edits (numbers <-> drags, one path) ------------------------
 
     def manip_values(self):
         """The inspector's current building as {x, z, w, d, h}
-        (the panel's manipulation starting point)."""
-        zd = self._zd()
+        (the panel's manipulation starting point) — read from
+        the WORKING COPY (2.0.9), never the saved records."""
         idx = self.inspector.index
-        if zd is None or idx is None or idx >= len(zd.boxes):
+        work = self._work_for(idx) if idx is not None else None
+        if work is None:
             return None
-        box = zd.boxes[idx]
+        box = work.boxes[0]
         return {"x": box[0], "z": box[1], "w": box[2], "d": box[3],
                 "h": box[4]}
 
@@ -5778,36 +6071,36 @@ class ZoneBuildingsTab(Gtk.Box):
     def manip_angle(self):
         """The inspector building's current footprint orientation
         in degrees (2.0.6) — the panel's rotate readout starts
-        from here."""
-        zd = self._zd()
+        from here. 2.0.9: read from the WORKING COPY's ring."""
         idx = self.inspector.index
-        if zd is None or idx is None or idx >= len(zd.boxes):
+        work = self._work_for(idx) if idx is not None else None
+        if work is None:
             return None
         return zonedata.ring_orientation_deg(
-            zd.details[idx].get("ring") or [])
+            work.details[0].get("ring") or [])
 
     def manip_rotate(self, delta_deg):
         """One step of the panel's Shift+corner building
         rotation (2.0.6; the corner+Shift grip is 2.0.7's).
         Returns the building's new {x, z, w, d, h} for the
         panel's own bookkeeping, or None when refused (the
-        panel then ends the drag)."""
-        zd = self._zd()
+        panel then ends the drag). 2.0.9: turns the WORKING
+        COPY; nothing is sent back until Apply."""
         store = self._store()
         idx = self.inspector.index \
             if self.inspector.get_visible() else self._selected_index()
-        if store is None or zd is None or idx is None \
-                or idx >= len(zd.boxes):
+        work = self._work_for(idx) if idx is not None else None
+        if store is None or work is None:
             return None
         try:
-            zd.rotate(idx, delta_deg, flagged=store.flagged)
+            work.rotate(0, delta_deg, flagged=store.flagged)
         except Exception as e:
             self.app_window._set_status(str(e))
             return None
-        self.app_window._mark_unpublished()
-        box = zd.boxes[idx]
+        self.inspector.note_work_edit()
+        box = work.boxes[0]
         self._set_spins(box[0], box[1], box[2], box[3], box[4])
-        # 2.0.8 batching: the list row follows at drag END
+        # 2.0.8 batching: the status follows at drag END
         # (on_manip_end), not per motion event.
         self._drag_followup_idx = idx
         return {"x": box[0], "z": box[1], "w": box[2], "d": box[3],
@@ -5815,27 +6108,27 @@ class ZoneBuildingsTab(Gtk.Box):
 
     def manip_scale(self, factor, anchor_x, anchor_z):
         """One step of the panel's Ctrl+corner whole-size
-        scale (2.0.7) — ZoneData.scale about the fixed
-        opposite-corner anchor. Returns the building's new
-        {x, z, w, d, h}, or None when refused (the panel then
-        ends the drag)."""
-        zd = self._zd()
+        scale (2.0.7) — the working copy's scale about the
+        fixed opposite-corner anchor (ZoneData.scale's math,
+        on the copy). Returns the building's new {x, z, w, d,
+        h}, or None when refused (the panel then ends the
+        drag)."""
         store = self._store()
         idx = self.inspector.index \
             if self.inspector.get_visible() else self._selected_index()
-        if store is None or zd is None or idx is None \
-                or idx >= len(zd.boxes):
+        work = self._work_for(idx) if idx is not None else None
+        if store is None or work is None:
             return None
         try:
-            zd.scale(idx, factor, anchor_x, anchor_z,
-                     flagged=store.flagged)
+            work.scale(0, factor, anchor_x, anchor_z,
+                       flagged=store.flagged)
         except Exception as e:
             self.app_window._set_status(str(e))
             return None
-        self.app_window._mark_unpublished()
-        box = zd.boxes[idx]
+        self.inspector.note_work_edit()
+        box = work.boxes[0]
         self._set_spins(box[0], box[1], box[2], box[3], box[4])
-        # 2.0.8 batching: row follows at drag end, as above.
+        # 2.0.8 batching: status at drag end, as above.
         self._drag_followup_idx = idx
         return {"x": box[0], "z": box[1], "w": box[2], "d": box[3],
                 "h": box[4]}
@@ -5843,17 +6136,18 @@ class ZoneBuildingsTab(Gtk.Box):
     def on_manip_end(self):
         """A drag finished: re-derive the inspector's front and
         backdrop at the building's new spot, and land the
-        follow-ups the drag batched (2.0.8): the list row and
-        the status line update ONCE here instead of on every
-        motion event."""
+        follow-up the drag batched (2.0.8): the status line
+        updates ONCE here instead of on every motion event.
+        2.0.9: the list row no longer follows the drag — the
+        list shows what is SAVED; the row updates at Apply."""
         if self.inspector.get_visible():
             self.inspector.refresh_view()
         idx = self._drag_followup_idx
         self._drag_followup_idx = None
         if idx is not None:
-            self._update_row(idx)
             self.app_window._set_status(
-                f"Building #{idx} updated (unsaved until save).")
+                f"Building #{idx} — unapplied changes "
+                f"(Apply sends them back).")
 
     # -- the debounced full refresh (2.0.8) ----------------------
 
@@ -5887,6 +6181,17 @@ class ZoneBuildingsTab(Gtk.Box):
         if store is None or zd is None or idx is None \
                 or idx >= len(zd.boxes):
             return False
+        # 2.0.9: the edit lands on the WORKING COPY only. No
+        # working copy (the building's 3D view is not open on
+        # it) means no edit — the fields are a view of the
+        # copy, and there is nothing truthful to edit without
+        # one.
+        work = self._work_for(idx)
+        if work is None:
+            self.app_window._set_status(
+                f"Building #{idx}: open its 3D view to edit it "
+                f"— edits happen on its working copy.")
+            return False
         try:
             # 2.0.7 ORDER MATTERS (shape-preservation law):
             # resize FIRST (the ring scales about the standing
@@ -5896,29 +6201,34 @@ class ZoneBuildingsTab(Gtk.Box):
             # by the centre shift lands the un-dragged wall
             # exactly where it stood, for a ring of ANY shape —
             # and repeated drag steps telescope into the same
-            # single transform.
-            zd.resize(idx, values["w"], values["d"], values["h"],
+            # single transform. (Unchanged in 2.0.9 — the verbs
+            # run on the working copy at index 0, with the
+            # store's flagged index, so the flagged lock bites
+            # exactly as before.)
+            work.resize(0, values["w"], values["d"], values["h"],
+                        flagged=store.flagged)
+            work.move(0, values["x"], values["z"],
                       flagged=store.flagged)
-            zd.move(idx, values["x"], values["z"],
-                    flagged=store.flagged)
         except Exception as e:
             self.app_window._set_status(str(e))
-            # Restore the fields to the real (unchanged) values.
-            box = zd.boxes[idx]
+            # Restore the fields to the copy's (unchanged)
+            # values.
+            box = work.boxes[0]
             self._set_spins(box[0], box[1], box[2], box[3], box[4])
             return False
-        self.app_window._mark_unpublished()
+        self.inspector.note_work_edit()
         self._set_spins(values["x"], values["z"], values["w"],
                         values["d"], values["h"])
         # 2.0.8 batching (the speed pass; ZoneBuildingTab's
         # _apply_values carries the full note): drags defer the
-        # row + status to on_manip_end; the stepper path takes
-        # the light refresh + debounce; a full apply refreshes
-        # everything at once, as before.
+        # status to on_manip_end; the stepper path takes the
+        # light refresh + debounce; a full apply refreshes
+        # everything at once, as before. 2.0.9: the list row
+        # follows at APPLY, not here — the list shows what is
+        # saved, and nothing is saved yet.
         if from_drag:
             self._drag_followup_idx = idx
             return True
-        self._update_row(idx)
         if self.inspector.get_visible() \
                 and self.inspector.index == idx:
             if light:
@@ -5928,7 +6238,8 @@ class ZoneBuildingsTab(Gtk.Box):
                 self._cancel_view_refresh()
                 self.inspector.refresh_view()
         self.app_window._set_status(
-            f"Building #{idx} updated (unsaved until save).")
+            f"Building #{idx} — unapplied changes "
+            f"(Apply sends them back).")
         return True
 
     def _field_values(self):
@@ -6009,6 +6320,18 @@ class ZoneBuildingsTab(Gtk.Box):
         idx = self._selected_index()
         if store is None or zd is None or idx is None:
             return
+        # 2.0.9: deleting the very building whose working copy
+        # holds unapplied changes asks about them first —
+        # they are never silently dropped with it.
+        if getattr(self, "inspector", None) is not None \
+                and self.inspector.get_visible() \
+                and self.inspector.index == idx \
+                and self.inspector.work_is_dirty():
+            if not self.resolve_work_dirty():
+                return
+            # Applied (then deleted below) or discarded: the
+            # copy's story is settled either way.
+            self.inspector.clear_work()
         try:
             zd.delete(idx, flagged=store.flagged)
         except Exception as e:
@@ -6151,7 +6474,8 @@ class ZoneBuildingTab(Gtk.Box):
         edit_lbl = Gtk.Label()
         edit_lbl.set_markup(
             "<b>Edit this building</b>\n"
-            "(typing a number applies it at once)")
+            "(typing applies at once to the preview —\n"
+            "Apply sends it back)")
         edit_lbl.set_halign(Gtk.Align.START)
         edit_box.pack_start(edit_lbl, False, False, 2)
         self.mx = Gtk.SpinButton.new_with_range(-30000, 30000, 1)
@@ -6190,6 +6514,22 @@ class ZoneBuildingTab(Gtk.Box):
         move_btn = Gtk.Button(label="Move / Resize")
         move_btn.connect("clicked", self._on_move_resize)
         edit_box.pack_start(move_btn, False, False, 2)
+        # APPLY (2.0.9, Joshua's cache + Apply model): edits
+        # live on this building's working copy until this
+        # button sends the finished copy back in one save
+        # round trip. The label under it is the dirty state,
+        # spelled out.
+        self.apply_btn = Gtk.Button(label="Apply")
+        self.apply_btn.get_style_context().add_class(
+            "suggested-action")
+        self.apply_btn.set_tooltip_text(
+            "Send the finished changes back in one save")
+        self.apply_btn.connect("clicked", self._on_apply)
+        self.apply_btn.set_sensitive(False)
+        edit_box.pack_start(self.apply_btn, False, False, 2)
+        self.work_label = Gtk.Label(label="")
+        self.work_label.set_halign(Gtk.Align.START)
+        edit_box.pack_start(self.work_label, False, False, 0)
         del_btn = Gtk.Button(label="Delete")
         del_btn.connect("clicked", self._on_delete)
         edit_box.pack_start(del_btn, False, False, 0)
@@ -6356,9 +6696,6 @@ class ZoneBuildingTab(Gtk.Box):
         box = prep["zd"].boxes[prep["index"]]
         self._set_spins(box[0], box[1], box[2], box[3], box[4])
         self.edit_box.set_sensitive(True)
-        # 2.0.8: warm the zone's edit session in the background
-        # (see the window's _prewarm_materialize).
-        self.app_window._prewarm_materialize(self.zone)
         if prep.get("roads_error"):
             self.app_window._set_status(
                 f"Building #{prep['index']} is shown without its "
@@ -6378,14 +6715,124 @@ class ZoneBuildingTab(Gtk.Box):
 
     # -- manipulation (the inspector panel's owner interface) ------
 
+    # -- the working copy (2.0.9, Joshua's cache + Apply) ----
+
+    def _work_for(self, idx):
+        """The working copy for this tab's building when the
+        inspector is open on it — the ONLY thing edits run
+        against in 2.0.9 — else None."""
+        panel = self.inspector
+        if panel is not None and panel.mode == "building" \
+                and panel.index == idx and panel.work is not None:
+            return panel.work
+        return None
+
+    def _refresh_apply_ui(self):
+        """The Apply button + dirty label follow the working
+        copy's state."""
+        dirty = False
+        try:
+            dirty = self.inspector.work_is_dirty()
+        except Exception:
+            dirty = False
+        if hasattr(self, "apply_btn"):
+            self.apply_btn.set_sensitive(dirty)
+        if hasattr(self, "work_label"):
+            self.work_label.set_text(
+                "● Unapplied changes" if dirty else "")
+
+    def _on_apply(self, _widget=None):
+        """APPLY: commit the working copy into the zone and
+        send it back in ONE save round trip (the standing
+        verified save). Until this is pressed, no edit has
+        left the working copy."""
+        panel = self.inspector
+        idx = self.index
+        if panel is None or panel.work is None:
+            return
+        if not panel.work_is_dirty():
+            self.app_window._set_status(
+                f"Building #{idx}: nothing to apply — it is "
+                f"already as saved.")
+            return
+        try:
+            if reporting is not None:
+                with reporting.operation(
+                        "apply", zone=self.zone, index=idx):
+                    panel.absorb_work()
+            else:
+                panel.absorb_work()
+        except Exception as e:
+            self.app_window._set_status(str(e))
+            return
+        self.app_window._mark_unpublished()
+        self._update_zone_row(idx)
+        self._refresh_apply_ui()
+        self.app_window._set_status(
+            f"Building #{idx} applied — sending it back…")
+        self.app_window.round_trip_save()
+
+    def discard_work(self):
+        """Discard this tab's unapplied changes: the building
+        is shown exactly as saved and the fields follow."""
+        panel = self.inspector
+        if panel is None or not panel.discard_work():
+            return False
+        box = panel.work.boxes[0]
+        self._set_spins(box[0], box[1], box[2], box[3], box[4])
+        self._refresh_apply_ui()
+        self.app_window._set_status(
+            f"Building #{self.index}: unapplied changes "
+            f"discarded — it is shown as saved.")
+        return True
+
+    def resolve_work_dirty(self):
+        """Ask what to do with this tab's unapplied changes —
+        Apply / Discard / Stay (2.0.9). Returns True when the
+        caller may proceed, False when Joshua chose Stay."""
+        panel = self.inspector
+        if panel is None or not panel.work_is_dirty():
+            return True
+        choice = self._run_work_dialog(panel.index)
+        if choice == "apply":
+            self._on_apply()
+            return not panel.work_is_dirty()
+        if choice == "discard":
+            return self.discard_work()
+        return False
+
+    def _run_work_dialog(self, idx):
+        """The Apply / Discard / Stay dialog itself."""
+        dialog = Gtk.MessageDialog(
+            transient_for=self.app_window, flags=0,
+            message_type=Gtk.MessageType.WARNING,
+            buttons=Gtk.ButtonsType.NONE,
+            text=f"Unapplied changes — Building #{idx}")
+        dialog.format_secondary_text(
+            "You changed this building, but the changes have "
+            "not been sent back yet. Apply them now, discard "
+            "them, or stay and keep editing.")
+        dialog.add_button("Stay", Gtk.ResponseType.CANCEL)
+        dialog.add_button("Discard changes", Gtk.ResponseType.NO)
+        dialog.add_button("Apply", Gtk.ResponseType.YES)
+        dialog.set_default_response(Gtk.ResponseType.YES)
+        resp = dialog.run()
+        dialog.destroy()
+        if resp == Gtk.ResponseType.YES:
+            return "apply"
+        if resp == Gtk.ResponseType.NO:
+            return "discard"
+        return "stay"
+
     def manip_values(self):
         """The viewed building as {x, z, w, d, h} (the panel's
-        manipulation starting point)."""
-        zd = self._zd()
+        manipulation starting point) — read from the WORKING
+        COPY (2.0.9), never the saved records."""
         idx = self.inspector.index
-        if zd is None or idx is None or idx >= len(zd.boxes):
+        work = self._work_for(idx) if idx is not None else None
+        if work is None:
             return None
-        box = zd.boxes[idx]
+        box = work.boxes[0]
         return {"x": box[0], "z": box[1], "w": box[2],
                 "d": box[3], "h": box[4]}
 
@@ -6398,38 +6845,37 @@ class ZoneBuildingTab(Gtk.Box):
     def manip_angle(self):
         """The viewed building's current footprint orientation
         in degrees (2.0.6) — the panel's rotate readout starts
-        from here."""
-        zd = self._zd()
+        from here. 2.0.9: read from the WORKING COPY's ring."""
         idx = self.inspector.index
-        if zd is None or idx is None or idx >= len(zd.boxes):
+        work = self._work_for(idx) if idx is not None else None
+        if work is None:
             return None
         return zonedata.ring_orientation_deg(
-            zd.details[idx].get("ring") or [])
+            work.details[0].get("ring") or [])
 
     def manip_rotate(self, delta_deg):
         """One step of the panel's Shift+corner building
         rotation (2.0.6; the corner+Shift grip is 2.0.7's) —
-        the same discipline as _apply_values: the shared model
-        turns, both tabs' fields follow, the Zone tab's row
-        follows. Returns the new {x, z, w, d, h} or None when
-        refused."""
+        the same discipline as _apply_values. 2.0.9: turns the
+        WORKING COPY; this tab's fields follow at once, the
+        Zone tab's row follows at Apply. Returns the new
+        {x, z, w, d, h} or None when refused."""
         store = self._store()
-        zd = self._zd()
         idx = self.inspector.index \
             if self.inspector.get_visible() else self.index
-        if store is None or zd is None or idx is None \
-                or idx >= len(zd.boxes):
+        work = self._work_for(idx) if idx is not None else None
+        if store is None or work is None:
             return None
         try:
-            zd.rotate(idx, delta_deg, flagged=store.flagged)
+            work.rotate(0, delta_deg, flagged=store.flagged)
         except Exception as e:
             self.app_window._set_status(str(e))
             return None
-        self.app_window._mark_unpublished()
-        box = zd.boxes[idx]
+        self.inspector.note_work_edit()
+        box = work.boxes[0]
         self._set_spins(box[0], box[1], box[2], box[3], box[4])
-        # 2.0.8 batching: the Zone tab's row follows at drag
-        # END (on_manip_end), not per motion event.
+        # 2.0.8 batching: the status follows at drag END
+        # (on_manip_end), not per motion event.
         self._drag_followup_idx = idx
         return {"x": box[0], "z": box[1], "w": box[2],
                 "d": box[3], "h": box[4]}
@@ -6437,27 +6883,25 @@ class ZoneBuildingTab(Gtk.Box):
     def manip_scale(self, factor, anchor_x, anchor_z):
         """One step of the panel's Ctrl+corner whole-size
         scale (2.0.7) — the same discipline as manip_rotate:
-        ZoneData.scale about the fixed opposite-corner
-        anchor, both tabs' fields follow, the Zone tab's row
-        follows. Returns the new {x, z, w, d, h} or None when
-        refused."""
+        the working copy scales about the fixed
+        opposite-corner anchor. Returns the new {x, z, w, d,
+        h} or None when refused."""
         store = self._store()
-        zd = self._zd()
         idx = self.inspector.index \
             if self.inspector.get_visible() else self.index
-        if store is None or zd is None or idx is None \
-                or idx >= len(zd.boxes):
+        work = self._work_for(idx) if idx is not None else None
+        if store is None or work is None:
             return None
         try:
-            zd.scale(idx, factor, anchor_x, anchor_z,
-                     flagged=store.flagged)
+            work.scale(0, factor, anchor_x, anchor_z,
+                       flagged=store.flagged)
         except Exception as e:
             self.app_window._set_status(str(e))
             return None
-        self.app_window._mark_unpublished()
-        box = zd.boxes[idx]
+        self.inspector.note_work_edit()
+        box = work.boxes[0]
         self._set_spins(box[0], box[1], box[2], box[3], box[4])
-        # 2.0.8 batching: row follows at drag end, as above.
+        # 2.0.8 batching: status at drag end, as above.
         self._drag_followup_idx = idx
         return {"x": box[0], "z": box[1], "w": box[2],
                 "d": box[3], "h": box[4]}
@@ -6475,17 +6919,18 @@ class ZoneBuildingTab(Gtk.Box):
     def on_manip_end(self):
         """A drag finished: re-derive the view's front and
         backdrop at the building's new spot, and land the
-        follow-ups the drag batched (2.0.8): the Zone tab's
-        row and the status line update ONCE here instead of
-        on every motion event."""
+        follow-up the drag batched (2.0.8): the status line
+        updates ONCE here instead of on every motion event.
+        2.0.9: the Zone tab's row follows at APPLY — the list
+        shows what is saved."""
         if self.inspector.get_visible():
             self.inspector.refresh_view()
         idx = self._drag_followup_idx
         self._drag_followup_idx = None
         if idx is not None:
-            self._update_zone_row(idx)
             self.app_window._set_status(
-                f"Building #{idx} updated (unsaved until save).")
+                f"Building #{idx} — unapplied changes "
+                f"(Apply sends them back).")
 
     # -- the debounced full refresh (2.0.8) ----------------------
 
@@ -6536,7 +6981,11 @@ class ZoneBuildingTab(Gtk.Box):
             and self.inspector.get_visible() else self.index
         if zd is None or idx is None or idx >= len(zd.boxes):
             return
-        ring = zd.details[idx].get("ring") or []
+        # 2.0.9: while the building is open, the field shows
+        # the WORKING COPY's orientation.
+        work = self._work_for(idx)
+        ring = (work.details[0].get("ring") if work is not None
+                else zd.details[idx].get("ring")) or []
         if not ring:
             return
         prev = self._spins_loading
@@ -6548,7 +6997,8 @@ class ZoneBuildingTab(Gtk.Box):
 
     def _on_rot_changed(self, _spin=None):
         """Typing an angle turns this building to it at once —
-        the Rotation field's twin of _on_spin_changed."""
+        the Rotation field's twin of _on_spin_changed.
+        2.0.9: it turns the WORKING COPY; Apply sends it back."""
         if self._spins_loading:
             return
         store = self._store()
@@ -6556,25 +7006,23 @@ class ZoneBuildingTab(Gtk.Box):
         if store is None or zd is None \
                 or self.index >= len(zd.boxes):
             return
+        work = self._work_for(self.index)
+        if work is None:
+            self._sync_rot_field()
+            return
         try:
-            turned = zd.rotate_to(self.index,
-                                  self.mrot.get_value(),
-                                  flagged=store.flagged)
+            turned = work.rotate_to(0,
+                                    self.mrot.get_value(),
+                                    flagged=store.flagged)
         except Exception as e:
             self.app_window._set_status(str(e))
             self._sync_rot_field()
             return
         if not turned:
             return
-        self.app_window._mark_unpublished()
-        box = zd.boxes[self.index]
+        self.inspector.note_work_edit()
+        box = work.boxes[0]
         self._set_spins(box[0], box[1], box[2], box[3], box[4])
-        zone_tab = self.app_window.zone_tab
-        if zone_tab is not None and zone_tab._zone == self.zone:
-            try:
-                zone_tab._update_row(self.index)
-            except Exception:
-                pass
         if self.inspector.get_visible() \
                 and self.inspector.index == self.index:
             # 2.0.8 (Joshua, Oct 28, live report): a rotation
@@ -6590,8 +7038,8 @@ class ZoneBuildingTab(Gtk.Box):
             self.inspector.refresh_view_light()
             self._schedule_view_refresh()
         self.app_window._set_status(
-            f"Building #{self.index} rotated "
-            f"(unsaved until save).")
+            f"Building #{self.index} rotated in the preview "
+            f"— unapplied (Apply sends it back).")
 
     def _apply_values(self, values, from_drag=False, light=False):
         """The Zone tab's apply path: the model changes in the
@@ -6615,28 +7063,35 @@ class ZoneBuildingTab(Gtk.Box):
         if store is None or zd is None or idx is None \
                 or idx >= len(zd.boxes):
             return False
+        # 2.0.9: the edit lands on the WORKING COPY only (see
+        # the Zone tab's _apply_values for the full note).
+        work = self._work_for(idx)
+        if work is None:
+            self.app_window._set_status(
+                f"Building #{idx}: open its 3D view to edit it "
+                f"— edits happen on its working copy.")
+            return False
         try:
             # 2.0.7: resize FIRST, move SECOND — the same
             # shape-preserving composition as the Zone tab's
             # _apply_values (see its note).
-            zd.resize(idx, values["w"], values["d"], values["h"],
+            work.resize(0, values["w"], values["d"], values["h"],
+                        flagged=store.flagged)
+            work.move(0, values["x"], values["z"],
                       flagged=store.flagged)
-            zd.move(idx, values["x"], values["z"],
-                    flagged=store.flagged)
         except Exception as e:
             self.app_window._set_status(str(e))
-            # Restore the fields to the real (unchanged) values,
-            # as the manual path does on a refused edit.
-            box = zd.boxes[idx]
+            # Restore the fields to the copy's (unchanged)
+            # values, as the manual path does on a refused edit.
+            box = work.boxes[0]
             self._set_spins(box[0], box[1], box[2], box[3], box[4])
             return False
-        self.app_window._mark_unpublished()
+        self.inspector.note_work_edit()
         self._set_spins(values["x"], values["z"], values["w"],
                         values["d"], values["h"])
         if from_drag:
             self._drag_followup_idx = idx
             return True
-        self._update_zone_row(idx)
         if self.inspector.get_visible() \
                 and self.inspector.index == idx:
             if light:
@@ -6646,7 +7101,8 @@ class ZoneBuildingTab(Gtk.Box):
                 self._cancel_view_refresh()
                 self.inspector.refresh_view()
         self.app_window._set_status(
-            f"Building #{idx} updated (unsaved until save).")
+            f"Building #{idx} — unapplied changes "
+            f"(Apply sends them back).")
         return True
 
     # -- the edit fields (2.0.6: the manual path's controls) -------
@@ -6698,6 +7154,12 @@ class ZoneBuildingTab(Gtk.Box):
         if store is None or zd is None:
             return
         idx = self.index
+        # 2.0.9: unapplied changes on this very building ask
+        # first — they are never silently dropped with it.
+        if self.inspector.work_is_dirty():
+            if not self.resolve_work_dirty():
+                return
+            self.inspector.clear_work()
         try:
             zd.delete(idx, flagged=store.flagged)
         except Exception as e:
