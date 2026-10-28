@@ -62,5 +62,59 @@
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/zonedata.py",
       "sha256": "c38dda579f8a389e0b13e08419bc4155247826edb9aee11bf71101e90979fcba"
     }
-  ]
+  ],
+  "selfupdate": {
+    "payload_root": "editors/building-editor",
+    "payload_sha256": "787ce93e73d1e632e29d8bd36d3387c03498c9048b61cc9aa91e762fd0291c0c",
+    "files": [
+      {
+        "path": "about.py",
+        "sha256": "0b172aa3a3e94c80136473f95f42cef62f26927cfb9a8644f9aa14a4b3463140"
+      },
+      {
+        "path": "app.py",
+        "sha256": "682136c47afbc5ad490fd1b0960e9fdd334ecbf64d40a7594b2041d03adcfdda"
+      },
+      {
+        "path": "buildingcanvas.py",
+        "sha256": "63ff24720818a7ff990651d539641cb893a132775af56ac6fcfacf666d0a4add"
+      },
+      {
+        "path": "data.py",
+        "sha256": "308da8deeca061fd7318c6d1d1ed3938f12a951cbbfffd3d6714ab61c03704f4"
+      },
+      {
+        "path": "github_sync.py",
+        "sha256": "db4a8a86ee00e32d5fe6e412285818e16228bac7304703e259b277835d637c05"
+      },
+      {
+        "path": "mollie-icon.png",
+        "sha256": "28990027fd79e03e2ef8416e8c1d3410ee284ec86383280968b245f08576e768"
+      },
+      {
+        "path": "shared_cache.py",
+        "sha256": "86e16770fdea09e684c882870f730a794e2d64a807c3f06195dcd3254dedbde5"
+      },
+      {
+        "path": "subdivisioncanvas.py",
+        "sha256": "d76123adcee302159e2316fdeedadb3b3dfee5c0ea6482a0000b4067017a5340"
+      },
+      {
+        "path": "suite_draw.py",
+        "sha256": "6d30a910c07092af7ab76667694aff453263f13ec0d873cf6c681b6445f15a5f"
+      },
+      {
+        "path": "updater.py",
+        "sha256": "0c36b000830e5661165ac9f636466cd6d8402bab410bcab7da10b3e1e13e3a92"
+      },
+      {
+        "path": "vocab.py",
+        "sha256": "1f44614c8b5d93db102c60032754c42559bd064b0677cc8e71d30e49349c2c05"
+      },
+      {
+        "path": "zonedata.py",
+        "sha256": "c38dda579f8a389e0b13e08419bc4155247826edb9aee11bf71101e90979fcba"
+      }
+    ]
+  }
 }
