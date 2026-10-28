@@ -19,11 +19,63 @@ var POI_STYLE = {
   waffle: { color: '#ffd75e', label: 'Waffle Spot'  },
   school: { color: '#4ecb71', label: 'School'       },
   hotel:  { color: '#4ea8ff', label: 'Hotel'        },
-  club:   { color: '#ff4e8a', label: 'Club'         }
+  club:   { color: '#ff4e8a', label: 'Club'         },
+  place:  { color: '#dfe6ee', label: 'Place'        }
 };
+
+function poiFinishCollect(){
+  // Prune LANDMARKS of entries now rendered by the POI layer (avoid double markers).
+  // Match by coordinates — robust against name differences.
+  try {
+    LANDMARKS = LANDMARKS.filter(function(L){
+      for (var j = 0; j < POIS.length; j++) {
+        var P = POIS[j];
+        if (Math.abs(P.x - L.x) < 2 && Math.abs(P.z - L.z) < 2) return false;
+      }
+      return true;
+    });
+  } catch (e) {}
+  try {
+    var counts = {};
+    POIS.forEach(function(P){ counts[P.type] = (counts[P.type] || 0) + 1; });
+    if (typeof Report !== 'undefined') Report.note('poi', { total: POIS.length, byType: counts });
+  } catch (e) {}
+}
 
 function collectPOIs(){
   POIS = [];
+  /* PACKAGE MODE (Joshua 2026-10-28): when a map package is live,
+     the map's markers are the PACKAGE's places and nothing else —
+     the legacy sources below (the traffic system's whole-world
+     station list, the clubs/waffle placements, the hardcoded
+     schools, the Marriott) describe the old map and would light up
+     ground the new map doesn't have. Kinds map onto the existing
+     styles (gas_station -> gas; school / school_campus -> school);
+     every other surveyed place draws as a generic place marker,
+     named on the expanded map. Ring-only records resolve to their
+     ring centroid (the goto.js packagePlacesFor precedent). */
+  try {
+    if (typeof window !== 'undefined' && window.__PKG_WORLD &&
+        window.__PKG_PREBUILT && Array.isArray(window.__PKG_PREBUILT.places)){
+      window.__PKG_PREBUILT.places.forEach(function(p){
+        if (!p) return;
+        var x, z;
+        if (p.at && isFinite(p.at[0]) && isFinite(p.at[1])){
+          x = p.at[0]; z = p.at[1];
+        } else if (p.ring && p.ring.length){
+          var cx = 0, cz = 0;
+          for (var j = 0; j < p.ring.length; j++){ cx += p.ring[j][0]; cz += p.ring[j][1]; }
+          x = cx / p.ring.length; z = cz / p.ring.length;
+        } else return;
+        var t = (p.kind === 'gas_station') ? 'gas'
+              : (p.kind === 'school' || p.kind === 'school_campus') ? 'school'
+              : 'place';
+        POIS.push({ type: t, name: p.name || 'Place', x: x, z: z });
+      });
+      poiFinishCollect();
+      return;
+    }
+  } catch (e) {}
   // 1. gas stations (TR.gas: {x, z, name:brand, type:'gas'})
   try {
     if (typeof TR !== 'undefined' && TR.gas) {
@@ -54,22 +106,7 @@ function collectPOIs(){
       POIS.push({ type: 'hotel', name: 'Marriott Marquis', x: MQ.cx, z: MQ.cz });
   } catch (e) {}
 
-  // Prune LANDMARKS of entries now rendered by the POI layer (avoid double markers).
-  // Match by coordinates — robust against name differences.
-  try {
-    LANDMARKS = LANDMARKS.filter(function(L){
-      for (var j = 0; j < POIS.length; j++) {
-        var P = POIS[j];
-        if (Math.abs(P.x - L.x) < 2 && Math.abs(P.z - L.z) < 2) return false;
-      }
-      return true;
-    });
-  } catch (e) {}
-  try {
-    var counts = {};
-    POIS.forEach(function(P){ counts[P.type] = (counts[P.type] || 0) + 1; });
-    if (typeof Report !== 'undefined') Report.note('poi', { total: POIS.length, byType: counts });
-  } catch (e) {}
+  poiFinishCollect();
 }
 
 /* ---------- marker shapes (canvas) ---------- */
@@ -102,6 +139,8 @@ function drawPOIMarker(g, x, y, type, sz){
     g.beginPath(); g.arc(x, y, sz, 0, Math.PI * 2); g.fill(); g.stroke();
   } else if (type === 'club') {               // pink star
     poiStar(g, x, y, sz);
+  } else {                                    // generic place: pale dot
+    g.beginPath(); g.arc(x, y, sz * 0.8, 0, Math.PI * 2); g.fill(); g.stroke();
   }
 }
 
@@ -197,6 +236,13 @@ function drawMinimapCompass(){
     var n = 0;
     try { n += (typeof TR !== 'undefined' && TR.gas) ? TR.gas.length : 0; } catch (e) {}
     try { n += (typeof CD_LOG !== 'undefined') ? CD_LOG.length : 0; } catch (e) {}
+    /* PACKAGE MODE: the package lands AFTER this script loads, so
+       its arrival must itself count as a source change — otherwise
+       the load-time collection (legacy sources) would stick. */
+    try {
+      if (typeof window !== 'undefined' && window.__PKG_WORLD && window.__PKG_PREBUILT)
+        n += 100000 + (window.__PKG_PREBUILT.places ? window.__PKG_PREBUILT.places.length : 0);
+    } catch (e) {}
     return n;
   }
   function refreshIfStale(){

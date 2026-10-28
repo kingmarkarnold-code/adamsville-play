@@ -1139,6 +1139,7 @@ window.SAView = (function(){
     <div class="fm-leg-row"><span class="fm-leg-ic fm-leg-tri" style="background:#4ecb71"></span>School</div>
     <div class="fm-leg-row"><span class="fm-leg-ic fm-leg-circle" style="background:#4ea8ff"></span>Hotel</div>
     <div class="fm-leg-row"><span class="fm-leg-ic" style="color:#ff4e8a;font-size:16px;line-height:13px">&#9733;</span>Club</div>
+    <div class="fm-leg-row" id="fm-leg-place" style="display:none"><span class="fm-leg-ic fm-leg-circle" style="background:#dfe6ee"></span>Place</div>
   </div>
 </div>
 <!-- v1.16 SATELLITE VIEW overlay (Joshua 2026-10-10): transparent overlay for
@@ -2492,7 +2493,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
    stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.10.26.3';
+window.__DOC_UIVER = '2026.10.28.12';
 function __checkDocVersionHeal(){
   var live = window.__UIVER || '';
   if (!live || live === window.__DOC_UIVER){
@@ -10790,6 +10791,112 @@ function animateHeroGLB(dt){
   R.inner.rotation.x += (pitchT - R.inner.rotation.x) * Math.min(1, 6 * dt);
   R.mixer.update(dt);
 }
+/* ---- HERO LOAD DIAGNOSTICS (2026-10-28, ui .12) ----
+   WHY: ui .11 gave the classic engine a vendored GLTFLoader so the
+   GLB hero replaces the primitive figure on WebGL2-less surfaces
+   (the Dev app on Joshua's laptop). Harness-proven on this VM, but
+   in Joshua's hands — twice, on a copy reporting ui .11 — the
+   player is STILL the primitive figure. His laptop's WebKitGTK is
+   older than this VM's 2.52.6 and guessing has run out: the game
+   now reports the MEASURED facts of the hero load, once per
+   session, filed when the rig RESOLVES (success or fallback —
+   not at exit, which may never come cleanly) through the ordinary
+   report pipeline as kind 'hero-diagnostics'. Facts only; the
+   hero path's behaviour is unchanged by this instrumentation.
+   DELIVERY follows this file's own crash-path pattern:
+   GitHubReports.queue() when the sender module is present (the
+   Report.note hook is installed from that module's start(), whose
+   timing against the world build is not guaranteed — queue() is
+   the same pipeline without the race), else the localStorage
+   holding queue ('sa_pending_reports_v1') that github_reports.js
+   drains on every flush. Exactly one route fires, so exactly one
+   report lands. Fail-open throughout, like all reporting. */
+var __heroDiag = { fired:false, t0:0, url:'', reason:'',
+  branch:'', webgl2:null, fallbackTaken:false, revision:'',
+  gltfType:'undefined', loaderScriptTag:0, ua:'', protocol:'',
+  uiVer:'', fetchOutcome:'', loadMs:null, watchdogFired:false,
+  loadError:'', lateSuccessDiscarded:false, rigKind:'' };
+window.__heroDiag = __heroDiag;
+function __heroDiagNow(){
+  try { return (window.performance && performance.now) ? performance.now() : Date.now(); }
+  catch(e){ return Date.now(); }
+}
+function __heroDiagSnapshot(){
+  /* Attempt-time facts: which engine branch is running, how the
+     gate's WebGL2 probe voted, whether the classic fallback was
+     taken, and — the discriminator — whether THREE.GLTFLoader
+     actually exists HERE, plus whether the gate even appended the
+     vendored loader's <script> tag (tag present + loader undefined
+     = the script never executed: SRI refusal, network failure, or
+     the gate's fail-open timeout releasing the queue first). */
+  try{ __heroDiag.branch = window.__threeModern ? 'modern' : 'classic'; }catch(e){}
+  try{ __heroDiag.webgl2 = (typeof window.__webgl2OK === 'function') ? !!window.__webgl2OK() : null; }catch(e){ __heroDiag.webgl2 = null; }
+  try{ __heroDiag.fallbackTaken = !!window.__threeFallbackTaken; }catch(e){}
+  try{ __heroDiag.revision = (typeof THREE !== 'undefined' && THREE.REVISION) ? String(THREE.REVISION) : ''; }catch(e){}
+  try{ __heroDiag.gltfType = (typeof THREE !== 'undefined') ? typeof THREE.GLTFLoader : 'no-three'; }catch(e){}
+  try{ __heroDiag.ua = String(navigator.userAgent || '').slice(0, 400); }catch(e){}
+  try{ __heroDiag.protocol = String(location.protocol || ''); }catch(e){}
+  try{ __heroDiag.uiVer = String(window.__UIVER || ''); }catch(e){}
+  try{
+    var ss = document.getElementsByTagName('script'), n = 0;
+    for (var i = 0; i < ss.length; i++){
+      var ssrc = ss[i].src || '';
+      if (ssrc.indexOf('GLTFLoader.r128') !== -1) n++;
+    }
+    __heroDiag.loaderScriptTag = n;
+  }catch(e){}
+}
+function __heroDiagFire(){
+  if (__heroDiag.fired) return; __heroDiag.fired = true;
+  try{ __heroDiag.rigKind = (typeof player !== 'undefined' && player.rig && player.rig.kind) ? String(player.rig.kind) : 'primitive'; }catch(e){ __heroDiag.rigKind = ''; }
+  var facts = {
+    message: 'hero load: ' + (__heroDiag.rigKind || '?') +
+      ' via ' + (__heroDiag.reason || '?') + ' on ' + (__heroDiag.branch || '?') +
+      ' (rev ' + (__heroDiag.revision || '?') + ', GLTFLoader ' + __heroDiag.gltfType + ')',
+    branch: __heroDiag.branch, webgl2: __heroDiag.webgl2,
+    fallbackTaken: __heroDiag.fallbackTaken,
+    revision: __heroDiag.revision, gltfType: __heroDiag.gltfType,
+    loaderScriptTag: __heroDiag.loaderScriptTag,
+    ua: __heroDiag.ua, protocol: __heroDiag.protocol, uiVer: __heroDiag.uiVer,
+    url: __heroDiag.url, fetchOutcome: __heroDiag.fetchOutcome,
+    loadMs: __heroDiag.loadMs, watchdogFired: __heroDiag.watchdogFired,
+    loadError: __heroDiag.loadError,
+    lateSuccessDiscarded: __heroDiag.lateSuccessDiscarded,
+    rigKind: __heroDiag.rigKind, reason: __heroDiag.reason };
+  try{ if (typeof Report !== 'undefined' && Report.setSys) Report.setSys('heroDiag', facts); }catch(e){}
+  var sent = false;
+  try{ if (window.GitHubReports && typeof GitHubReports.queue === 'function'){ GitHubReports.queue('hero-diagnostics', facts); sent = true; } }catch(e){}
+  if (!sent){
+    try{
+      var _k = 'sa_pending_reports_v1', _arr = [];
+      try{ _arr = JSON.parse(localStorage.getItem(_k) || '[]'); if (!Array.isArray(_arr)) _arr = []; }catch(e){ _arr = []; }
+      _arr.push({ type:'hero-diagnostics', details: facts });
+      while (_arr.length > 5) _arr.shift();
+      localStorage.setItem(_k, JSON.stringify(_arr));
+    }catch(e){}
+  }
+}
+function __heroDiagProbe(done){
+  /* Post-mortem fetch of the very URL the loader used, to learn
+     the HTTP status the loader never surfaces. Diagnostic traffic
+     only — runs solely on the error / watchdog / no-loader paths,
+     after the fallback has already engaged, and never delays the
+     player. The report fires when the probe settles or after a
+     5s cap, whichever comes first. */
+  var finished = false;
+  var finish = function(outcome){
+    if (finished) return; finished = true;
+    __heroDiag.fetchOutcome = outcome; done();
+  };
+  try{
+    if (typeof fetch !== 'function'){ finish('probe-unavailable'); return; }
+    setTimeout(function(){ finish('probe-timeout'); }, 5000);
+    fetch(__heroDiag.url).then(function(r){
+      try{ if (r && r.body && typeof r.body.cancel === 'function') r.body.cancel(); }catch(e){}
+      finish('http-' + (r && r.status));
+    }).catch(function(e){ finish('network-error: ' + String(e && e.message || e).slice(0, 200)); });
+  }catch(e){ finish('probe-threw'); }
+}
 (function buildHero(){
   /* The shell exists from this parse point on — every caller that
      touches player.mesh (spawn, camera, clothing poll, swim block)
@@ -10798,31 +10905,67 @@ function animateHeroGLB(dt){
   player.mesh.frustumCulled = false; // never let culling hide the hero
   scene.add(player.mesh);
   var started = false;
+  __heroDiag.t0 = __heroDiagNow();
+  __heroDiagSnapshot();
   function startFallback(){
     if (started) return; started = true;
     buildPrimitiveHeroFallback();
+  }
+  /* Fallback engagement + the once-per-session diagnostic. The
+     fallback itself engages immediately (unchanged); only the
+     REPORT waits for the probe on the failure paths. */
+  function resolveFallback(reason){
+    var was = started;
+    startFallback();
+    if (was || __heroDiag.fired) return;
+    if (__heroDiag.loadMs === null) __heroDiag.loadMs = Math.round(__heroDiagNow() - __heroDiag.t0);
+    __heroDiag.reason = reason;
+    __heroDiagProbe(function(){ __heroDiagFire(); });
   }
   if (typeof THREE !== 'undefined' && THREE.GLTFLoader){
     try {
       var url = 'hero.glb';
       try { if (window.__UIVER) url += '?v=' + encodeURIComponent(window.__UIVER); } catch(e){}
+      __heroDiag.url = url;
       new THREE.GLTFLoader().load(url,
-        function(gltf){ if (started) return; started = true; installGLBHERO(gltf); },
+        function(gltf){
+          if (started){
+            /* A GLB that arrives after the watchdog (or an error)
+               already engaged the fallback is DISCARDED by design
+               today — record that it happened; the .12 report for
+               the watchdog path is probe-delayed precisely so this
+               fact can ride in it when the window is short. */
+            __heroDiag.lateSuccessDiscarded = true;
+            try{ if (typeof Report !== 'undefined' && Report.setSys) Report.setSys('heroDiagLate', { lateSuccessDiscarded:true, afterMs: Math.round(__heroDiagNow() - __heroDiag.t0) }); }catch(e){}
+            return;
+          }
+          started = true; installGLBHERO(gltf);
+          __heroDiag.loadMs = Math.round(__heroDiagNow() - __heroDiag.t0);
+          __heroDiag.reason = 'glb'; __heroDiag.fetchOutcome = 'ok';
+          __heroDiagFire();
+        },
         undefined,
         function(err){
           try { console.warn('[hero] hero.glb failed to load — primitive fallback', err); } catch(e){}
-          startFallback();
+          try { __heroDiag.loadError = String(err && err.message || err).slice(0, 300); } catch(e){}
+          resolveFallback('load-error');
         });
       /* a hung request must never leave Joshua bodiless */
       setTimeout(function(){
         if (!started){
+          __heroDiag.watchdogFired = true;
           try { console.warn('[hero] hero.glb load timed out — primitive fallback'); } catch(e){}
-          startFallback();
+          resolveFallback('watchdog-timeout');
         }
       }, 12000);
-    } catch(e){ startFallback(); }
+    } catch(e){
+      try { __heroDiag.loadError = String(e && e.message || e).slice(0, 300); } catch(_){}
+      resolveFallback('exception');
+    }
   } else {
-    startFallback();   // no GLTFLoader on this surface (see header) — primitive rig insurance
+    __heroDiag.url = 'hero.glb';
+    try { if (window.__UIVER) __heroDiag.url += '?v=' + encodeURIComponent(window.__UIVER); } catch(e){}
+    resolveFallback('no-gltfloader');   // no GLTFLoader on this surface (see header) — primitive rig insurance
   }
 })();
 /* v1.7 procedural walk/idle/swim for the 3D rig. Phase-driven cycle: legs
@@ -12695,7 +12838,34 @@ var fullMapOpen=false;
    (bigger screen shows more detail than the minimap); pinch-to-zoom,
    drag-to-pan, tap or X to close. Player arrow stays visible (edge-clamped). */
 var fmView={cx:4000,cz:6000,sc:0.05,scFit:0.05,rot:0};  // v0.6: rot = two-finger map rotation (radians)
+/* PACKAGE SCOPE (Joshua 2026-10-28): with a map package live, the
+   full map belongs to THAT map — its zoom-out floor fits the
+   package's extent, and its centre cannot be panned out into the
+   old world's empty space. The extent is computed once by
+   map_loader (pkg.boundsRuntime, through the one frame
+   conversion). Legacy mode: fmActiveExtent() is null and every
+   behaviour below is exactly what it was. */
+function fmActiveExtent(){
+  try{
+    if (window.__PKG_WORLD && window.__PKG_PREBUILT &&
+        window.__PKG_PREBUILT.boundsRuntime)
+      return window.__PKG_PREBUILT.boundsRuntime;
+  }catch(e){}
+  return null;
+}
+function fmClampView(){
+  var ext=fmActiveExtent(); if (!ext) return;
+  if (fmView.cx<ext.x0) fmView.cx=ext.x0;
+  if (fmView.cx>ext.x1) fmView.cx=ext.x1;
+  if (fmView.cz<ext.z0) fmView.cz=ext.z0;
+  if (fmView.cz>ext.z1) fmView.cz=ext.z1;
+}
 function fmFitScale(W,H){
+  var ext=fmActiveExtent();
+  if (ext){
+    var px0=ext.x0-150, px1=ext.x1+150, pz0=ext.z0-150, pz1=ext.z1+150;
+    return Math.min(W/(px1-px0), H/(pz1-pz0))*0.94;
+  }
   // STEP2 stretch (Joshua 2026-10-16): fit the STAGE rect, not the old
   // BORDER polygon, so the full map can zoom out over all seven zones.
   // BORDER itself is unchanged — only this fit span moved.
@@ -12714,6 +12884,10 @@ function openFullMap(){
   fmView.sc=Math.min(W,H)/1500;              // local area first (~1500u across)
   if (fmView.sc<fmView.scFit) fmView.sc=fmView.scFit;
   fmView.cx=p.x; fmView.cz=p.z; fmView.rot=0;  // v0.6: north-up on open
+  /* PACKAGE SCOPE: the "Place" legend row belongs to package maps
+     (their surveyed places draw as generic place markers). */
+  try{ var _lp=document.getElementById('fm-leg-place');
+    if (_lp) _lp.style.display = fmActiveExtent() ? '' : 'none'; }catch(e){}
   drawFullMap();
 }
 function closeFullMap(){ fullMapOpen=false; document.getElementById('fullmap').classList.remove('show');
@@ -12885,6 +13059,7 @@ function drawMinimap(dt){
 }
 function drawFullMap(){
   fmCanvas.width=window.innerWidth; fmCanvas.height=window.innerHeight;
+  fmClampView();  // package mode: the centre stays on the active map (every pan/zoom path ends here)
   var g=fmCanvas.getContext('2d');
   var W=fmCanvas.width, H=fmCanvas.height;
   g.fillStyle='#0a0f16'; g.fillRect(0,0,W,H);
@@ -12971,8 +13146,13 @@ function drawFullMap(){
   try{ if(window.GPS) window.GPS.drawFullMapRoute(g, M); }catch(e){}
   /* GPS REWORK v1.64 (Joshua 2026-10-18): GAS STATION markers — the full
      map marks the stations actually standing in the world (the traffic
-     system's placed list) as orange pump badges with their names. */
-  try{ if(window.GPS) window.GPS.drawFullMapGasStations(g, M); }catch(e){}
+     system's placed list) as orange pump badges with their names.
+     PACKAGE MODE (2026-10-28): that placed list is the legacy
+     whole-world station set; the package's own gas stations are
+     package places and reach the map through the POI layer
+     (poi_map.js) instead — legacy badges stay off a package map.
+     Legacy mode unchanged. */
+  try{ if(window.GPS && !fmActiveExtent()) window.GPS.drawFullMapGasStations(g, M); }catch(e){}
   // v0.6 COMPASS: needle always points to TRUE north, counter-rotating as the map turns
   (function(){
     var _n=Mdir(0,-1), nx=_n[0], ny=_n[1];   // true-north dir in screen space

@@ -270,6 +270,34 @@ function buildPackage(raw){
   pkg.pins = raw.pins.records.map(convPointRec);
   pkg.signs = raw.signs.records.map(convPointRec);
 
+  /* --- runtime-frame extent of the package. The minimap / full map
+     scope themselves to this in package mode (Joshua 2026-10-28:
+     the map must not zoom out past the active map or pan into the
+     old world's empty space). bounds_m corners through THE
+     conversion — the frame map is affine, so the corner bbox is
+     exact. Fallback: the roads' own bbox, if a package ever ships
+     without bounds_m. --- */
+  pkg.boundsRuntime = (function(){
+    var pts = [];
+    var bm = raw.zone && raw.zone.bounds_m;
+    if (bm && isFinite(bm.xMin) && isFinite(bm.xMax) &&
+        isFinite(bm.zMin) && isFinite(bm.zMax)){
+      pts = [F.pkgToRuntime(bm.xMin, bm.zMin), F.pkgToRuntime(bm.xMin, bm.zMax),
+             F.pkgToRuntime(bm.xMax, bm.zMin), F.pkgToRuntime(bm.xMax, bm.zMax)];
+    } else {
+      pkg.roads.forEach(function(r){ pts = pts.concat(r.pts); });
+    }
+    if (!pts.length) return null;
+    var x0 = 1e18, x1 = -1e18, z0 = 1e18, z1 = -1e18;
+    pts.forEach(function(p){
+      var px = (p.x !== undefined) ? p.x : p[0];
+      var pz = (p.z !== undefined) ? p.z : p[1];
+      if (px < x0) x0 = px; if (px > x1) x1 = px;
+      if (pz < z0) z0 = pz; if (pz > z1) z1 = pz;
+    });
+    return { x0: x0, x1: x1, z0: z0, z1: z1 };
+  })();
+
   /* --- terrain (sampler built at the top of this function) --- */
   pkg.terrain = terrainSampler;
 
