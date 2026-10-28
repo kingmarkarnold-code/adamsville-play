@@ -1,20 +1,26 @@
 #!/usr/bin/env python3
 """
-Adamsville Detail Editor (Native) 1.2.1 — main window.
+Adamsville Detail Editor (Native) 1.3.0 — main window.
 
 Joshua's design (game-map/detail-editor/DESIGN.md, 2026-10-18): a
 STANDALONE suite app — not a mode inside the Map Editor — for the
 fine work the Map Editor cannot do: moving a road piece's points.
 It is ELEMENT-AGNOSTIC: one manipulation core (element.py) works
-on whatever element is handed to it; roads are the first (and in
-this build only) element type wired in. The Map Editor's Detail
-Edit button is the handoff door: it writes
-~/.local/share/adamsville-suite/open-in-detail-editor.json and
-launches this app, which opens on exactly that piece.
+on whatever element is handed to it; roads were the first element
+type wired in, and BUILDINGS joined in 1.3.0 (Joshua's decision,
+2026-10-28: "Build building support into the Detail Editor") —
+a building opens as its footprint ring under the rectangle law
+in detaildata.py (its record holds only an axis-aligned box, so
+every reachable state stays saveable). Two senders write the
+handoff door (~/.local/share/adamsville-suite/
+open-in-detail-editor.json): the Map Editor (road pieces) and
+the Building Editor (buildings, identity = zone + record index,
+verified against the downloaded zone data before it opens).
 
 THE FLOW
-  1. Open — via the handoff (a piece arrives) or File -> Open
-     Piece (pick a zone, then a piece; only that zone downloads).
+  1. Open — via the handoff (a piece or a building arrives) or
+     File -> Open Piece (pick a zone, then a piece; only that
+     zone downloads).
   2. Edit — the whole piece, framed, IN COLOUR (the game's own
      material colours; Joshua's findings, 2026-10-25): drag
      points to move them, add/delete points, add/delete
@@ -36,6 +42,15 @@ THE FLOW
      the working piece (click-switch, Joshua 2026-10-25).
      A compass sits bottom-right of the canvas and a dynamic
      scale bar bottom-left; clicking the scale bar measures.
+     A BUILDING page runs the same verbs on the ring: drag a
+     corner to resize, drag an edge point to move its whole
+     edge, lasso a stretch of the outline, Resegment ADDS edge
+     points there (a building's edges start bare), corners
+     can't be deleted, and the ring-surgery tools (Add/Delete
+     Segment, Delete Section) are disabled — a closed ring has
+     no segments to spare. Its save writes only its own record
+     in the zone's buildings file, after re-verifying the
+     record still matches the building that was sent.
   3. Save — the suite's round trip: local save -> push -> close ->
      fresh download -> the screen shows the downloaded copy.
 
@@ -205,6 +220,13 @@ class PiecePage:
                 _raw_delete_points()
 
         self.canvas.delete_selected_points = _delete_points_timed
+        # Buildings (1.3.0): the density verbs mean something
+        # different on a ring whose edges start bare — Resegment
+        # ADDS the edge points, Coarsen clears them (the canvas's
+        # own verbs only re-mark existing road points as fine).
+        if getattr(self.session, "kind", "road") == "building":
+            self.canvas.resegment_focus = self._building_resegment
+            self.canvas.coarsen_focus = self._building_coarsen
         self.canvas.on_selection = \
             lambda: win._on_selection_changed(self)
         self.canvas.on_switch_request = \
@@ -215,8 +237,14 @@ class PiecePage:
         self.overview.main_camera = self.canvas.camera
         self.overview.main_view_rect = self.canvas.view_rect
         self.overview.on_jump = self._on_overview_jump
-        width = ROAD_WIDTHS.get(self.session.category,
-                                DEFAULT_ROAD_WIDTH)
+        # A road's ribbon width comes from the canvas's table by
+        # category; a building has no ribbon — its session's
+        # piece_width is the fit padding around its footprint.
+        if getattr(self.session, "kind", "road") == "building":
+            width = self.session.piece_width
+        else:
+            width = ROAD_WIDTHS.get(self.session.category,
+                                    DEFAULT_ROAD_WIDTH)
         self.canvas.set_session(self.session, width)
         self.overview.session = self.session
         self.overview.piece_width = width
@@ -264,6 +292,99 @@ class PiecePage:
         self.canvas.invalidate()
         self.overview.invalidate()
 
+    # -- building density (1.3.0) -------------------------------------
+    # On a building page the canvas's Resegment/Coarsen buttons
+    # land here (build_ui rebinds them): a building's edges start
+    # bare, so density means ADDING the riding points Resegment
+    # would only re-mark on a road, and clearing them for
+    # Coarsen. Both are one snapshot / one undo step, and both
+    # work on the edges the current focus/selection runs along.
+
+    def _focus_edges(self):
+        """The ring edges the focus/selection runs along:
+        consecutive span pairs name their segments' edges; a lone
+        selected edge point names its own edge."""
+        el = self.session.element
+        edges = []
+        chain = self.canvas.focus_chain
+        if chain and self.canvas.focus_lo is not None:
+            span = chain[self.canvas.focus_lo:
+                         self.canvas.focus_hi + 1]
+            for a, b in zip(span, span[1:]):
+                e = el.edge_of_segment(a, b)
+                if e and e not in edges:
+                    edges.append(e)
+        for i in sorted(self.canvas.selected_points):
+            kind = el.point_kind(i)
+            if kind[0] == "edge" and kind[1] not in edges:
+                edges.append(kind[1])
+        return edges
+
+    def _building_resegment(self):
+        """Resegment, building form: add riding points along the
+        focused edges, so they can be dragged (each drags its
+        whole edge)."""
+        edges = self._focus_edges()
+        if not edges:
+            self.window._set_status(
+                "Resegment: Shift+drag along the building's "
+                "outline first, so I know which edges to add "
+                "points to.")
+            return
+        el = self.session.element
+        if not el.resegment_additions(edges):
+            self.window._set_status(
+                "Those edges already carry all the points "
+                "Resegment adds — nothing changed.")
+            return
+        self.window._on_page_snapshot(self)
+        added = el.resegment_edges(edges)
+        self._after_density_change(
+            f"Added {added} edge point(s) — drag one to move its "
+            "whole edge. Edge points fold away when you save; "
+            "the rectangle is what is kept.")
+
+    def _building_coarsen(self):
+        """Coarsen, building form: clear the focused edges back
+        to their corners."""
+        edges = self._focus_edges()
+        if not edges:
+            self.window._set_status(
+                "Coarsen: Shift+drag along the building's "
+                "outline first, so I know which edges to clear.")
+            return
+        el = self.session.element
+        if not sum(el.edge_point_count(e) for e in edges):
+            self.window._set_status(
+                "Those edges carry no added points — nothing "
+                "changed.")
+            return
+        self.window._on_page_snapshot(self)
+        gone = el.coarsen_edges(edges)
+        self._after_density_change(
+            f"Cleared {gone} edge point(s) — the corners stay; "
+            "the rectangle is what is kept.")
+
+    def _after_density_change(self, msg):
+        """Shared landing for the building density verbs: the
+        ring's indices moved, so selection/focus reset, every
+        point becomes a handle, and the edit registers."""
+        canvas = self.canvas
+        canvas.selected_points = set()
+        canvas.selected_point = None
+        canvas.focus_chain = None
+        canvas.focus_lo = canvas.focus_hi = None
+        canvas.reset_segmentation()
+        canvas.fine_points = set(
+            range(len(self.session.element.points)))
+        canvas._compute_handles()
+        self.session.mark_dirty()
+        self.window._refresh_save_state()
+        canvas._selection_changed()
+        canvas.invalidate()
+        self.refresh_info()
+        self.window._set_status(msg)
+
     # -- neighbourhood ----------------------------------------------------
 
     def _context_index(self):
@@ -297,10 +418,16 @@ class PiecePage:
                 roads.append((cat, idx, pts, width,
                               min(xs), min(zs), max(xs), max(zs)))
         buildings = []
-        for b in model.buildings:
+        # Each drawn building carries its SOURCE row index (its
+        # identity — see detaildata.parse_buildings_indexed): a
+        # building page excludes its own building by index.
+        src_index = model.buildings_src_index
+        if len(src_index) != len(model.buildings):
+            src_index = list(range(len(model.buildings)))
+        for b, src in zip(model.buildings, src_index):
             x, z, bw, bd = b[0], b[1], b[2], b[3]
             r = max(bw, bd) / 2.0
-            buildings.append((b, x - r, z - r, x + r, z + r))
+            buildings.append((b, src, x - r, z - r, x + r, z + r))
         water = []
         for kind, pts in model.water:
             xs = [p[0] for p in pts]
@@ -331,10 +458,15 @@ class PiecePage:
                     or bz1 < z0 - margin or bz0 > z1 + margin:
                 continue
             roads.append((cat, idx, pts, width))
-        buildings = [b for b, bx0, bz0, bx1, bz1 in buildings_idx
-                     if not (bx1 < x0 - margin or bx0 > x1 + margin
-                             or bz1 < z0 - margin
-                             or bz0 > z1 + margin)]
+        open_src = self.session.index \
+            if getattr(self.session, "kind", "road") == "building" \
+            else None
+        buildings = [b for b, src, bx0, bz0, bx1, bz1
+                     in buildings_idx
+                     if src != open_src
+                     and not (bx1 < x0 - margin or bx0 > x1 + margin
+                              or bz1 < z0 - margin
+                              or bz0 > z1 + margin)]
         # Dressing stays light: when a wide view holds thousands
         # of buildings, keep the ones nearest the view's centre.
         if len(buildings) > 2500:
@@ -355,6 +487,9 @@ class PiecePage:
         """The info pane's readout: what this piece is, its shape
         in numbers, and its saved state — plain language."""
         s = self.session
+        if getattr(s, "kind", "road") == "building":
+            self._refresh_info_building()
+            return
         el = s.element
         length = 0.0
         for a, b in el.segments:
@@ -387,6 +522,48 @@ class PiecePage:
             "pushes the whole zone file (this piece's edits "
             "baked in) and shows the downloaded copy.")
 
+    def _refresh_info_building(self):
+        """The info pane for a building page (1.3.0): what the
+        building is, its rectangle in numbers, and how the ring
+        is edited — the record's own terms (centre, width,
+        depth; height is carried, never edited here)."""
+        s = self.session
+        el = s.element
+        x0, z0, x1, z1 = el.edges
+        cx, cz = (x0 + x1) / 2.0, (z0 + z1) / 2.0
+        wdt, dep = x1 - x0, z1 - z0
+        height = s.origin_row[4]
+        type_line = s.type_label or f"type {s.building_type}"
+        state = "Unsaved changes" if s.dirty else "Saved"
+        selected = len(self.canvas.selected_points)
+        sel_line = ""
+        if selected:
+            sel_line = (f"\nSelected: {selected} point(s) "
+                        f"together — Delete Selected removes "
+                        f"the edge points among them as one "
+                        f"step (one Undo); corners are kept.")
+        self.info.set_text(
+            f"{s.name}\n"
+            f"Zone: {s.model.name} · Building #{s.index} · "
+            f"{type_line}\n"
+            f"Sent by the Building Editor — identity verified "
+            f"against the downloaded zone data.\n\n"
+            f"Centre: ({cx:.1f}, {cz:.1f}) · Width: {wdt:.1f} m "
+            f"· Depth: {dep:.1f} m\n"
+            f"Height: {height:g} m (the Building Editor's — "
+            f"carried, not edited here)\n"
+            f"Ring: {len(el.points)} points · "
+            f"{len(el.segments)} segments · always a rectangle\n\n"
+            f"State: {state}{sel_line}\n\n"
+            "Drag a corner to resize (its two edges move). "
+            "Drag an edge point to move that whole edge. "
+            "Shift+drag lassos a stretch of the outline; "
+            "Resegment adds edge points along it. Corners "
+            "can't be deleted here — removing a building is "
+            "the Building Editor's job. Saving pushes the "
+            "zone's buildings file (only this record changes) "
+            "and shows the downloaded copy.")
+
     # -- the tab: pencil, name, close X --------------------------------
 
     def build_tab(self):
@@ -399,14 +576,20 @@ class PiecePage:
         """
         self.tab_box = Gtk.Box(
             orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
-        self.rename_btn = Gtk.Button()
-        self.rename_btn.set_relief(Gtk.ReliefStyle.NONE)
-        self.rename_btn.set_image(Gtk.Image.new_from_icon_name(
-            "document-edit", Gtk.IconSize.MENU))
-        self.rename_btn.set_tooltip_text("Rename this street")
-        self.rename_btn.connect("clicked",
-                                lambda _b: self.start_rename())
-        self.tab_box.pack_start(self.rename_btn, False, False, 0)
+        # The rename pencil exists only where the record carries
+        # a name: roads do, buildings don't (a building's name
+        # lives in the Building Editor, not in its record).
+        self.rename_btn = None
+        if getattr(self.session, "can_rename", True):
+            self.rename_btn = Gtk.Button()
+            self.rename_btn.set_relief(Gtk.ReliefStyle.NONE)
+            self.rename_btn.set_image(Gtk.Image.new_from_icon_name(
+                "document-edit", Gtk.IconSize.MENU))
+            self.rename_btn.set_tooltip_text("Rename this street")
+            self.rename_btn.connect("clicked",
+                                    lambda _b: self.start_rename())
+            self.tab_box.pack_start(self.rename_btn, False, False,
+                                    0)
         self.tab_label = Gtk.Label(label=self.session.title())
         self.tab_box.pack_start(self.tab_label, False, False, 0)
         close_btn = Gtk.Button()
@@ -630,10 +813,11 @@ class DetailWindow(Gtk.Window):
         self._placeholder = Gtk.Box(
             orientation=Gtk.Orientation.VERTICAL)
         label = layout_mod.hint_label(
-            "No piece is open.\n\nIf the Map Editor sent a piece "
-            "(its Detail Edit button), it opens here by itself. "
-            "Otherwise use File -> Open Piece… to pick a road piece "
-            "from a zone.")
+            "No piece is open.\n\nIf the Map Editor sent a piece, "
+            "or the Building Editor sent a building (their Detail "
+            "Edit buttons), it opens here by itself. Otherwise "
+            "use File -> Open Piece… to pick a road piece from "
+            "a zone.")
         label.set_valign(Gtk.Align.CENTER)
         label.set_halign(Gtk.Align.CENTER)
         self._placeholder.pack_start(label, True, True, 0)
@@ -903,12 +1087,12 @@ class DetailWindow(Gtk.Window):
         return False
 
     def _consume_handoff(self):
-        """Act on any waiting handoff: open a road piece, or
-        speak the notice an unsupported payload left behind. A
-        building handed to this roads-only editor must never
-        vanish in silence (1.2.2) — the notice names what it
-        was, and the payload itself is preserved aside, not
-        deleted (detaildata.read_handoff)."""
+        """Act on any waiting handoff: open a road piece or a
+        building, or speak the notice an unsupported payload
+        left behind. A handoff this app cannot open must never
+        vanish in silence (the 1.2.2 rule) — the notice names
+        what it was, and the payload itself is preserved aside,
+        not deleted (detaildata.read_handoff)."""
         doc = detaildata.read_handoff()
         notice = detaildata.pop_handoff_notice()
         if notice:
@@ -931,7 +1115,13 @@ class DetailWindow(Gtk.Window):
 
     def _open_handoff(self, doc):
         """Open the handed piece: download its zone (background,
-        progress bar), find the piece, open its tab."""
+        progress bar), find the piece, open its tab. Buildings
+        (the Building Editor's Detail Edit) take their own door —
+        their identity is zone + record index, verified against
+        the downloaded buildings data."""
+        if doc.get("element_type") == "building":
+            self._open_building(doc)
+            return
         zone = str(doc.get("zone") or "")
         if zone not in ZONE_IDS:
             self._set_status(
@@ -967,6 +1157,85 @@ class DetailWindow(Gtk.Window):
                 return False
             cat, idx, how = found
             self._open_piece(model, cat, idx, how)
+            return False
+
+        self._run_background(work, done)
+
+    def _open_building(self, doc):
+        """Open the building the Building Editor handed over:
+        download its zone (background, progress bar), fetch the
+        buildings data if the context dressing didn't land,
+        identity-check the record at the handoff's index, and
+        open its tab. Any mismatch refuses in plain words —
+        nothing opens on a stranger."""
+        zone = str(doc.get("zone") or "")
+        if zone not in ZONE_IDS:
+            self._set_status(
+                "The Building Editor sent a building, but its "
+                f"zone ('{zone}') is not one of the game's "
+                "zones — nothing opened.")
+            return
+        name = str(doc.get("name") or "").strip()
+        label = name or "a building"
+        self._set_status(
+            f"Opening {label} from the Building Editor…")
+
+        def work():
+            self.progress_start("zone", f"Downloading {zone}…")
+            try:
+                model = self.data.load_zone(
+                    zone, progress=self._progress_cb(
+                        "zone", f"{zone} data"))
+                if model.buildings_doc is None:
+                    # The dressing fetch failed open earlier;
+                    # editing needs the real document.
+                    self.data.load_zone_buildings(
+                        model, progress=self._progress_cb(
+                            "zone", f"{zone} buildings"))
+                found = detaildata.verify_building(model, doc)
+                return model, found
+            finally:
+                GLib.idle_add(self.progress_finish, "zone")
+
+        def done(result, err):
+            if err is not None:
+                self._set_status(
+                    f"Could not open the building: {err}")
+                return False
+            model, (index, row) = result
+            for page in self.pages:
+                s = page.session
+                if getattr(s, "kind", "road") == "building" \
+                        and s.model is model \
+                        and s.index == index \
+                        and s.origin_row == list(row):
+                    self.notebook.set_current_page(
+                        self.notebook.page_num(page.root))
+                    self._set_status(
+                        f"'{s.name}' is already open — focused "
+                        "its tab.")
+                    return False
+            session = detaildata.BuildingSession(
+                model, index, row, doc)
+            page = PiecePage(self, session)
+            self.pages.append(page)
+            tab_box = page.build_tab()
+            page.root.show_all()
+            self.notebook.append_page(page.root, tab_box)
+            if self.notebook.page_num(self._placeholder) >= 0 \
+                    and len(self.pages) == 1:
+                self.notebook.remove_page(
+                    self.notebook.page_num(self._placeholder))
+            self.notebook.set_current_page(
+                self.notebook.page_num(page.root))
+            page.canvas.fit_piece()
+            page.overview.fit()
+            self._set_status(
+                f"Opened '{session.name}' — its footprint as a "
+                "ring of 4 corners. Drag a corner to resize it, "
+                "or Shift+drag the outline and Resegment to add "
+                "edge points.")
+            self._refresh_save_state()
             return False
 
         self._run_background(work, done)
@@ -1167,6 +1436,20 @@ class DetailWindow(Gtk.Window):
 
     def _sync_toolbar_to_page(self):
         page = self._current_page()
+        # Building pages (1.3.0): the ring-surgery tools have no
+        # building meaning — a footprint ring can't gain chords
+        # or lose segments — so they are DISABLED there (the
+        # element refuses them too, as a backstop), and if one
+        # was armed it stands down to Select.
+        building = page is not None and getattr(
+            page.session, "kind", "road") == "building"
+        for name in ("add_segment", "del_segment", "del_section"):
+            btn = self.tool_buttons.get(name)
+            if btn is not None:
+                btn.set_sensitive(not building)
+        if building and page.canvas.tool in (
+                "add_segment", "del_segment", "del_section"):
+            page.canvas.set_tool("select")
         tool = page.canvas.tool if page else "select"
         self._setting_tool = True
         for name, btn in self.tool_buttons.items():
@@ -1289,9 +1572,16 @@ class DetailWindow(Gtk.Window):
 
         item("Resegment — fine points in this portion",
              canvas.resegment_focus, bool(focus))
+        if getattr(page.session, "kind", "road") == "building":
+            # Coarsen on a ring clears ADDED edge points; it has
+            # something to act on when the portion carries any.
+            _el = page.session.element
+            coarsen_ok = any(
+                _el.point_kind(i)[0] == "edge" for i in focus)
+        else:
+            coarsen_ok = bool(focus & canvas.fine_points)
         item("Coarsen this portion",
-             canvas.coarsen_focus,
-             bool(focus & canvas.fine_points))
+             canvas.coarsen_focus, coarsen_ok)
         menu.append(Gtk.SeparatorMenuItem())
         item(f"Delete selected points ({len(selected)})",
              canvas.delete_selected_points, bool(selected))
@@ -1534,18 +1824,33 @@ class DetailWindow(Gtk.Window):
             return
         # A plain-language review before anything is pushed.
         names = ", ".join(f"'{s.name}'" for s in dirty_sessions)
+        kinds = {getattr(s, "kind", "road") for s in dirty_sessions}
+        if kinds == {"building"}:
+            files_line = ("The zone's buildings file (with its "
+                          ".js twin) is saved locally, pushed to "
+                          "GitHub, then downloaded again")
+            changed_line = f"Buildings changed: {names}."
+        elif kinds == {"road", "building"}:
+            files_line = ("The zone's roads and buildings files "
+                          "(each with its .js twin) are saved "
+                          "locally, pushed to GitHub, then "
+                          "downloaded again")
+            changed_line = f"Pieces changed: {names}."
+        else:
+            files_line = ("The zone's roads file (with its .js "
+                          "twin) is saved locally, pushed to "
+                          "GitHub, then downloaded again")
+            changed_line = f"Pieces changed: {names}."
         dialog = Gtk.MessageDialog(
             transient_for=self, flags=0,
             message_type=Gtk.MessageType.QUESTION,
             buttons=Gtk.ButtonsType.OK_CANCEL,
             text=f"Save {model.name} to GitHub?")
         dialog.format_secondary_text(
-            f"Pieces changed: {names}.\n\nThe zone's roads file "
-            "(with its .js twin) is saved locally, pushed to "
-            "GitHub, then downloaded again — the copy you end up "
-            "looking at is the downloaded one, verified against "
-            "what was pushed. No other zone is touched, and no "
-            "elevation data is written.")
+            f"{changed_line}\n\n{files_line} — the copy you end "
+            "up looking at is the downloaded one, verified "
+            "against what was pushed. No other zone is touched, "
+            "and no elevation data is written.")
         resp = dialog.run()
         dialog.destroy()
         if resp != Gtk.ResponseType.OK:

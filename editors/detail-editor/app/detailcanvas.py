@@ -960,29 +960,45 @@ class DetailCanvas(StillCanvas):
                       "Shift+drag a lasso around a portion first.")
             return
         el = self.session.element
-        n = len(self.selected_points)
-        if n >= len(el.points):
+        if len(self.selected_points) >= len(el.points):
+            owner = getattr(el, "whole_delete_owner",
+                            "the Map Editor's Delete")
             self._say("Delete selected: that is EVERY point of "
-                      "the piece — deleting a whole piece is the "
-                      "Map Editor's Delete, not this. Lasso a "
-                      "smaller portion.")
+                      "the piece — deleting a whole piece is "
+                      f"{owner}, not this. Lasso a smaller "
+                      "portion.")
+            return
+        # Adapters that protect some points (a building's
+        # corners, 1.3.0) preview the delete: nothing deletable
+        # plus a reason refuses here, before the confirm and the
+        # undo snapshot; a partial delete carries the note into
+        # the outcome. The base element previews everything as
+        # deletable, so the road flow is unchanged.
+        deletable, note = el.delete_preview(
+            sorted(self.selected_points))
+        if not deletable:
+            if note:
+                self._say(note)
             return
         if self.confirm_points is not None and not \
-                self.confirm_points(n):
+                self.confirm_points(len(deletable)):
             self._say("Delete selected: cancelled — nothing "
                       "deleted.")
             return
         self._begin_change()
-        deleted = el.delete_points(sorted(self.selected_points))
+        deleted = el.delete_points(deletable)
         self.selected_points = set()
         self.selected_point = None
         self.focus_chain = None
         self.focus_lo = self.focus_hi = None
         self.reset_segmentation()
         self._selection_changed()
-        self._edited(f"Deleted {deleted} points together, with "
-                     f"their segments — one operation, one Undo "
-                     f"brings them all back.")
+        msg = (f"Deleted {deleted} points together, with "
+               f"their segments — one operation, one Undo "
+               f"brings them all back.")
+        if note:
+            msg += " " + note
+        self._edited(msg)
 
     # -- measure ---------------------------------------------------------
 
@@ -1068,6 +1084,12 @@ class DetailCanvas(StillCanvas):
             hit = self._pick_point(wx, wz)
             if hit is None:
                 self._say("Delete point: click a point to delete it.")
+                return
+            # Protected points (a building's corners) refuse in
+            # the moment, before any snapshot (1.3.0).
+            refusal = el.point_delete_refusal(hit)
+            if refusal is not None:
+                self._say(refusal)
                 return
             self._begin_change()
             el.delete_point(hit)
@@ -1243,17 +1265,33 @@ class DetailCanvas(StillCanvas):
         # The piece's FACE first (its material surface), then the
         # centreline structure over it — chain by chain, run by
         # run, so only what the view shows is ever drawn.
-        for chain in el.chains():
-            pts = [el.points[i] for i in chain]
-            self._draw_road_runs(cr, pts, self.piece_width,
-                                 FACE_COLOR, FACE_EDGE, rect, w, h)
+        if getattr(self.session, "face_mode", "ribbon") \
+                == "footprint":
+            # A building page (1.3.0): the piece IS its footprint
+            # — the filled ring in its own building colour, not a
+            # ribbon around a centreline.
+            self._draw_footprint(cr, w, h)
+        else:
+            for chain in el.chains():
+                pts = [el.points[i] for i in chain]
+                self._draw_road_runs(cr, pts, self.piece_width,
+                                     FACE_COLOR, FACE_EDGE, rect,
+                                     w, h)
         # The focused portion tints over the face.
         if self.focus_chain is not None and self.focus_lo is not None:
             span = [el.points[i] for i in
                     self.focus_chain[self.focus_lo:
                                      self.focus_hi + 1]]
             if len(span) >= 2:
-                face = ribbon_polygon(span, self.piece_width)
+                if getattr(self.session, "face_mode", "ribbon") \
+                        == "footprint":
+                    # The span is a stretch of the ring: tint the
+                    # wedge between it and the building's centre.
+                    bx = el.bounds()
+                    face = span + [[(bx[0] + bx[2]) / 2.0,
+                                    (bx[1] + bx[3]) / 2.0]]
+                else:
+                    face = ribbon_polygon(span, self.piece_width)
                 if face:
                     self._fill_polygon_rgba(cr, face, FOCUS_TINT,
                                             w, h)
@@ -1350,9 +1388,7 @@ class DetailCanvas(StillCanvas):
         muted building colour (chosen stably from its position +
         type, so a building keeps its colour between frames)."""
         x, z, bw, bd, _ht, btype = b
-        color = BUILDING_COLORS[
-            (int(abs(x) // 10 + abs(z) // 10) + btype * 3)
-            % len(BUILDING_COLORS)]
+        color = self._building_color(x, z, btype)
         hw, hd = bw / 2.0, bd / 2.0
         corners = [[x - hw, z - hd], [x + hw, z - hd],
                    [x + hw, z + hd], [x - hw, z + hd]]
@@ -1360,6 +1396,36 @@ class DetailCanvas(StillCanvas):
         if edged:
             self._stroke_polygon(cr, corners, BUILDING_EDGE,
                                  w, h, 1.0)
+
+    def _building_color(self, x, z, btype):
+        """The stable colour _draw_building would give a building
+        at (x, z) of this type — shared so the OPEN building (the
+        footprint below, the overview) wears the very colour it
+        wears as context."""
+        return BUILDING_COLORS[
+            (int(abs(x) // 10 + abs(z) // 10) + btype * 3)
+            % len(BUILDING_COLORS)]
+
+    def _draw_footprint(self, cr, w, h):
+        """The open building (1.3.0): its ring filled in its own
+        building colour with a clear edge — the same presentation
+        the building has as context, promoted to the piece."""
+        el = self.session.element
+        chains = el.chains()
+        if not chains:
+            return
+        ring = [el.points[i] for i in chains[0]]
+        if len(ring) >= 2 and ring[0] == ring[-1]:
+            ring = ring[:-1]        # the closing repeat
+        if len(ring) < 3:
+            return
+        bx = el.bounds()
+        color = self._building_color((bx[0] + bx[2]) / 2.0,
+                                     (bx[1] + bx[3]) / 2.0,
+                                     getattr(self.session,
+                                             "building_type", 0))
+        self._fill_polygon(cr, ring, color, w, h)
+        self._stroke_polygon(cr, ring, FACE_EDGE, w, h, 1.5)
 
     def _render_grid(self, cr, w, h, rect):
         """A faint 10 m grid (50 m when zoomed out) — scale sense
@@ -1639,22 +1705,50 @@ class OverviewCanvas(StillCanvas):
                 cr.fill()
         if self.session is not None:
             el = self.session.element
-            for chain in el.chains():
-                pts = [el.points[i] for i in chain]
-                for start, end in runs_in_view(pts, rect,
-                                               self.piece_width):
-                    face = ribbon_polygon(pts[start:end],
-                                          self.piece_width)
-                    if not face:
-                        continue
+            if getattr(self.session, "face_mode", "ribbon") \
+                    == "footprint":
+                # A building page (1.3.0): the filled footprint in
+                # its building colour (the formula the context
+                # buildings above use), not an asphalt ribbon.
+                chains = el.chains()
+                ring = [el.points[i] for i in chains[0]] \
+                    if chains else []
+                if len(ring) >= 2 and ring[0] == ring[-1]:
+                    ring = ring[:-1]
+                if len(ring) >= 3:
+                    bx = el.bounds()
+                    cx, cz = (bx[0] + bx[2]) / 2.0, \
+                        (bx[1] + bx[3]) / 2.0
+                    color = BUILDING_COLORS[
+                        (int(abs(cx) // 10 + abs(cz) // 10)
+                         + getattr(self.session, "building_type",
+                                   0) * 3)
+                        % len(BUILDING_COLORS)]
                     sp = [self.camera.world_to_screen(
-                        p[0], p[1], w, h) for p in face]
-                    cr.set_source_rgb(*FACE_COLOR)
+                        p[0], p[1], w, h) for p in ring]
+                    cr.set_source_rgb(*color)
                     cr.move_to(sp[0][0], sp[0][1])
                     for p in sp[1:]:
                         cr.line_to(p[0], p[1])
                     cr.close_path()
                     cr.fill()
+            else:
+                for chain in el.chains():
+                    pts = [el.points[i] for i in chain]
+                    for start, end in runs_in_view(pts, rect,
+                                                   self.piece_width):
+                        face = ribbon_polygon(pts[start:end],
+                                              self.piece_width)
+                        if not face:
+                            continue
+                        sp = [self.camera.world_to_screen(
+                            p[0], p[1], w, h) for p in face]
+                        cr.set_source_rgb(*FACE_COLOR)
+                        cr.move_to(sp[0][0], sp[0][1])
+                        for p in sp[1:]:
+                            cr.line_to(p[0], p[1])
+                        cr.close_path()
+                        cr.fill()
         # The working view's rectangle.
         if self.main_view_rect is not None:
             rect2 = self.main_view_rect()

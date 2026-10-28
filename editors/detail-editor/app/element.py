@@ -337,6 +337,24 @@ class Element:
         self.segments.append([end_i, new_i])
         return new_i
 
+    # -- canvas delete guards (1.3.0) ---------------------------------
+    # Adapters whose points are not all freely deletable (a
+    # building's corners) override these; the base element allows
+    # everything, so the road path is unchanged.
+    def point_delete_refusal(self, i):
+        """Plain-words reason point i must not be deleted, or None."""
+        return None
+
+    def delete_preview(self, indices):
+        """(deletable_indices, note_or_None) for a group delete.
+
+        The canvas consults this BEFORE its confirm dialog and
+        undo snapshot: an empty deletable list with a note refuses
+        the delete in the moment; a non-empty list with a note
+        deletes what it may and appends the note to the outcome.
+        """
+        return list(indices), None
+
     def delete_point(self, i):
         """
         DELETE a point. Its segments go with it; when it joined

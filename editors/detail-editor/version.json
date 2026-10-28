@@ -1,31 +1,31 @@
 {
-  "version": "1.2.2",
-  "changelog": "New in 1.2.2 \u2014 a handed-off building no longer vanishes. The Building Editor's Detail Edit writes building handoffs to the same file as road handoffs; this editor used to delete them unread, so the Detail Editor opened and the building simply never appeared, with no word why. Now an unsupported handoff is spoken plainly in the status bar ('That was a building \u2014 the Detail Editor works on roads; buildings aren't supported here yet'), and the payload is preserved aside as open-in-detail-editor.unsupported.json \u2014 never deleted, never re-consumed on every launch. Two road-path hardenings ride along: a handoff written while the editor is already open is now picked up when the window gains focus (before, it was only ever read once at startup), and the piece finder has a reach limit \u2014 a piece that has been changed or deleted can no longer silently resolve to a different far-away piece; the editor opens nothing and says 'Couldn't find that piece \u2014 it may have been changed or deleted.' No editing behaviour changes.",
+  "version": "1.3.0",
+  "changelog": "Building support: the Building Editor's Detail Edit handoffs now open the building itself \u2014 its footprint as a ring under the rectangle law (drag a corner to resize, edge points move whole edges, Shift+drag lasso and Resegment along the outline, corners protected). Saves write only that building's record in the zone's buildings.json (+ buildings.js twin), after re-verifying the record still matches the building that was sent. Carries 1.2.2's handoff honesty: unknown payloads are preserved aside and spoken, never silently discarded.",
   "files": [
     {
       "path": "VERSION",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/VERSION",
-      "sha256": "c62a5cc61ac4525935753f5ec284c0a052a4b1da4b3a3580dce2b7d77a2154ae"
+      "sha256": "64d23f858ef51b0f996e4966d4e27c0371b437e2d2787890b1f7ad22d4ec5663"
     },
     {
       "path": "app.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/app.py",
-      "sha256": "50999954684cbffb1c7e50d9a41fdb3b972d48955d52e4071d7953ee3a2a973f"
+      "sha256": "01a794cbcb0c890de3e9a1d15a745af2da559cfb22244e0eedf54090e2244a93"
     },
     {
       "path": "detailcanvas.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/detailcanvas.py",
-      "sha256": "96b66293783c618a3cc97fb399563d3aceb23df8458d0067f616230cb96d692b"
+      "sha256": "b5168eb8d85c97796e53c002e51a842574b03065be0823a5015d061078d6a0c6"
     },
     {
       "path": "detaildata.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/detaildata.py",
-      "sha256": "e65b2d2d089e696bbbf9819127912bde15275406d46504af00b859bf1d6d31a3"
+      "sha256": "39d43db572e79edae28075d35acad2d89b220d4b45ad82197623a22dbc2212f3"
     },
     {
       "path": "element.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/element.py",
-      "sha256": "6b8f8fd6adf6793eb6c4b7c2be7c25fbd1e547a3dffd221753dd874b14ce25aa"
+      "sha256": "43959006d10930be3e41217676f2be6e0ca6b79670f8bfd61e4bad11498c7aa4"
     },
     {
       "path": "mollie-icon.png",
@@ -70,27 +70,27 @@
   ],
   "selfupdate": {
     "payload_root": "editors/detail-editor/app",
-    "payload_sha256": "032832c16d09e9eb60dd1d8acf0567d89a05098b7f0460406ec88f3b00919df2",
+    "payload_sha256": "ea2cd965b5c9cca2c5680fc466c5106071ab28205a962ea3e7079c629f218919",
     "files": [
       {
         "path": "VERSION",
-        "sha256": "c62a5cc61ac4525935753f5ec284c0a052a4b1da4b3a3580dce2b7d77a2154ae"
+        "sha256": "64d23f858ef51b0f996e4966d4e27c0371b437e2d2787890b1f7ad22d4ec5663"
       },
       {
         "path": "app.py",
-        "sha256": "50999954684cbffb1c7e50d9a41fdb3b972d48955d52e4071d7953ee3a2a973f"
+        "sha256": "01a794cbcb0c890de3e9a1d15a745af2da559cfb22244e0eedf54090e2244a93"
       },
       {
         "path": "detailcanvas.py",
-        "sha256": "96b66293783c618a3cc97fb399563d3aceb23df8458d0067f616230cb96d692b"
+        "sha256": "b5168eb8d85c97796e53c002e51a842574b03065be0823a5015d061078d6a0c6"
       },
       {
         "path": "detaildata.py",
-        "sha256": "e65b2d2d089e696bbbf9819127912bde15275406d46504af00b859bf1d6d31a3"
+        "sha256": "39d43db572e79edae28075d35acad2d89b220d4b45ad82197623a22dbc2212f3"
       },
       {
         "path": "element.py",
-        "sha256": "6b8f8fd6adf6793eb6c4b7c2be7c25fbd1e547a3dffd221753dd874b14ce25aa"
+        "sha256": "43959006d10930be3e41217676f2be6e0ca6b79670f8bfd61e4bad11498c7aa4"
       },
       {
         "path": "mollie-icon.png",
