@@ -64,7 +64,7 @@ from pathlib import Path
 from element import Element
 
 # This editor's version (About dialog, the roads.js twin header).
-EDITOR_VERSION = "1.1.0"
+EDITOR_VERSION = "1.2.0"
 
 # The game's own name for a road with no name: the converted data
 # carries this literal, so a rename to "no name" writes exactly it.
@@ -112,6 +112,64 @@ def zone_roads_js_path(zone_id):
 def zone_meta_path(zone_id):
     """Repo path of one zone's zone.json metadata."""
     return f"detailed/zones/{zone_id}/zone.json"
+
+
+def zone_buildings_path(zone_id):
+    """Repo path of one zone's buildings.json (context dressing
+    for the colour views in 1.2.0 — READ-ONLY here: this app
+    never writes buildings; that is the Building Editor's file).
+    """
+    return f"detailed/zones/{zone_id}/buildings.json"
+
+
+def zone_water_path(zone_id):
+    """Repo path of one zone's water.json (context dressing,
+    read-only like buildings)."""
+    return f"detailed/zones/{zone_id}/water.json"
+
+
+def parse_buildings(doc):
+    """
+    A zone's buildings document -> the context list the canvases
+    draw: [x, z, w, d, h, type] rows (the game's own layout —
+    centre, width, depth, height, type code; index.html's
+    OSM_BUILDINGS). Malformed rows are skipped, never fatal:
+    buildings are dressing, and dressing must not break the
+    editor. Returns [] for anything unexpected.
+    """
+    out = []
+    rows = doc.get("buildings") if isinstance(doc, dict) else None
+    for row in rows or []:
+        try:
+            if len(row) < 6:
+                continue
+            out.append([float(row[0]), float(row[1]),
+                        float(row[2]), float(row[3]),
+                        float(row[4]), int(row[5])])
+        except Exception:
+            continue
+    return out
+
+
+def parse_water(doc):
+    """
+    A zone's water document -> [(kind, [[x, z], ...]), ...]:
+    each entry of the game's {"water": [[id, kind, outline],
+    ...]} becomes one drawable outline. Malformed entries are
+    skipped (dressing, as with buildings). Returns [] for
+    anything unexpected.
+    """
+    out = []
+    rows = doc.get("water") if isinstance(doc, dict) else None
+    for entry in rows or []:
+        try:
+            kind = str(entry[1])
+            pts = [[float(p[0]), float(p[1])] for p in entry[2]]
+            if len(pts) >= 3:
+                out.append((kind, pts))
+        except Exception:
+            continue
+    return out
 
 
 def serialize_json_compact(obj):
@@ -336,6 +394,14 @@ class ZoneModel:
         self.meta = None            # parsed zone.json
         self.roads = None           # {category: [record dicts]}
         self.baseline = None        # downloaded roads.json bytes
+        # Context dressing for the colour views (1.2.0): the
+        # zone's buildings + water, downloaded with the zone and
+        # drawn around the open piece. Read-only, never part of
+        # the dirty check or the push set — and allowed to be
+        # absent (an older zone, a failed fetch): the editor
+        # opens fine without its dressing.
+        self.buildings = []         # [[x, z, w, d, h, type]]
+        self.water = []             # [(kind, [[x, z], ...])]
 
     @property
     def name(self):
@@ -444,6 +510,23 @@ class DetailData:
                 setattr(model, attr, json.loads(raw.decode("utf-8")))
             except Exception as e:
                 raise DetailDataError(f"{path} is unreadable: {e}")
+        # The colour views' dressing (1.2.0): buildings + water
+        # ride the same download, through the same shared cache —
+        # but FAIL OPEN. A zone that lacks them, or a fetch that
+        # fails, leaves the lists empty and the piece still opens;
+        # dressing never blocks the work.
+        for path, attr, parse in (
+                (zone_buildings_path(zone_id), "buildings",
+                 parse_buildings),
+                (zone_water_path(zone_id), "water", parse_water)):
+            try:
+                raw, _err = self._fetcher.fetch_progress(
+                    REPO, path, progress=progress)
+                if raw is not None:
+                    setattr(model, attr,
+                            parse(json.loads(raw.decode("utf-8"))))
+            except Exception:
+                pass  # dressing only — see the note above
         self.zones[zone_id] = model
         return model
 
