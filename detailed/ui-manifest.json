@@ -173,9 +173,9 @@
   },
   {
    "name": "index.html",
-   "size": 1106812,
-   "sha256": "e2e2e28c9317d51e1c269034500926a6b79ba240af6b66239e978f674e1dab5e",
-   "hash": "e2e2e28c9317d51e1c269034500926a6b79ba240af6b66239e978f674e1dab5e"
+   "size": 1113942,
+   "sha256": "d670a56c70efdc9a41785c1fe851e4e824694add2e575e225ec2dcc89164cb63",
+   "hash": "d670a56c70efdc9a41785c1fe851e4e824694add2e575e225ec2dcc89164cb63"
   },
   {
    "name": "infracrew_system.js",
@@ -209,17 +209,17 @@
   },
   {
    "name": "map_loader.js",
-   "sha256": "d8c2f5f6ed1299baa713c0f823e4a4f05fa918112b6b79d97de34fdf66306f44",
-   "size": 30299,
+   "sha256": "77251cb4c85b5884f61ece6cdf04e5acf59f86cadc53d6ff0cfb86037566d50b",
+   "size": 42354,
    "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/map_loader.js",
-   "hash": "d8c2f5f6ed1299baa713c0f823e4a4f05fa918112b6b79d97de34fdf66306f44"
+   "hash": "77251cb4c85b5884f61ece6cdf04e5acf59f86cadc53d6ff0cfb86037566d50b"
   },
   {
    "name": "map_registry.js",
-   "sha256": "3f539224bd77d0879477aad64190781e8b9be4cc9126bb4d5814143ad86bacac",
-   "size": 10951,
+   "sha256": "d719d39ad82f725a8749acaf5c72fdc3143294c2efb6e66bc1e39c9aedd4817e",
+   "size": 12361,
    "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/map_registry.js",
-   "hash": "3f539224bd77d0879477aad64190781e8b9be4cc9126bb4d5814143ad86bacac"
+   "hash": "d719d39ad82f725a8749acaf5c72fdc3143294c2efb6e66bc1e39c9aedd4817e"
   },
   {
    "name": "mapdelivery.js",
@@ -235,9 +235,9 @@
   },
   {
    "name": "marta_bus_data.js",
-   "size": 171909,
-   "sha256": "ef99f042c58607e6e4aa83eb8a501988bf9e4eeaee190e6c5cfc4b2a43806de7",
-   "hash": "ef99f042c58607e6e4aa83eb8a501988bf9e4eeaee190e6c5cfc4b2a43806de7"
+   "size": 177907,
+   "sha256": "183dfa28a4893338dccee7c35e2b20d3e745ab137ae4fcd993590f63513dd9d9",
+   "hash": "183dfa28a4893338dccee7c35e2b20d3e745ab137ae4fcd993590f63513dd9d9"
   },
   {
    "name": "marta_bus_system.js",
@@ -247,9 +247,9 @@
   },
   {
    "name": "marta_data.js",
-   "size": 18608,
-   "sha256": "3fdbe011c1a5990b4d53a95e6a470a741610705c8fdd0403c140816468b791c8",
-   "hash": "3fdbe011c1a5990b4d53a95e6a470a741610705c8fdd0403c140816468b791c8"
+   "size": 20379,
+   "sha256": "f528d21d93c814203b2fb79f6dad554b6e8fa8dd67b0392477e4903a883c049f",
+   "hash": "f528d21d93c814203b2fb79f6dad554b6e8fa8dd67b0392477e4903a883c049f"
   },
   {
    "name": "marta_system.js",
@@ -517,9 +517,9 @@
   },
   {
    "name": "water_render.js",
-   "size": 8470,
-   "sha256": "d7c81b558479113d5e0ab5651a46a681ae5d73f3bbb7ba7737a3cbbd876ca527",
-   "hash": "d7c81b558479113d5e0ab5651a46a681ae5d73f3bbb7ba7737a3cbbd876ca527"
+   "size": 8784,
+   "sha256": "1114df154dd8b616e4bee5657f3d43edc1df3187f4410d1647d0e392e13ddb9c",
+   "hash": "1114df154dd8b616e4bee5657f3d43edc1df3187f4410d1647d0e392e13ddb9c"
   },
   {
    "name": "workerhousing.js",
@@ -731,6 +731,6 @@
    "hash": "99e3a8f264f836ba86b79c497fa2be946b3b469eafa442d0f70eabab239abeec"
   }
  ],
- "ui_version": "2026.10.28.6",
+ "ui_version": "2026.10.28.7",
  "version": "2026.10.17.9"
 }

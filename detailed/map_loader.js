@@ -24,12 +24,19 @@
         directed spot-traces (the Phase B inheritance: routing honours
         shared vertices — verified in the Phase C harness).
 
-   ACTIVATION: package mode is opt-in in Phase C (see map_registry.js —
-   ?mapsrc=package / localStorage / ?pkgbase= override) so Joshua's live
-   game keeps playing the legacy zone data untouched until Phase D flips
-   the default. A package that cannot be fetched (not yet dropped into
-   maps/<id>/, classic-engine shell, offline) leaves the game exactly as
-   it was — legacy loading is the structural fallback, never an error.
+   ACTIVATION (Phase D, 2026-10-28 — THE SWAP): the package is the
+   default world for Adamsville. index.html's zone seam calls
+   bootWorld() BEFORE the deferred queue reaches the world build: the
+   package loads, converts, and is re-expressed as the legacy-shaped
+   globals the whole game already consumes (ROAD_DATA / OSM_BUILDINGS /
+   WATER inputs / heightAt's terrain), so renderer, traffic, GPS and
+   every feature layer run on the redrawn map with no per-system
+   changes. This module's own late activation (provider + deck/rail
+   rendering + PACKAGE_RAIL) then runs on the SAME prebuilt package —
+   one load, one conversion. Legacy stays one switch away
+   (?mapsrc=legacy), and a package that cannot be fetched (classic-
+   engine shell, offline) leaves the game exactly as it was — legacy
+   loading is the structural fallback, never an error.
 
    This module is loadable under Node for the Phase C harness: every
    browser touchpoint (fetch, THREE, scene, Report) is guarded, and the
@@ -214,8 +221,14 @@ function buildPackage(raw){
       pkg.groundStructures.push({ id: s.id, kind: s.kind, name: s.name,
                                   poly: ring(s.span_poly), material: s.material });
     } else if (s.pts){
+      /* Centreline pavement (the FTY runway, taxilanes): carries its
+         authored width + elevation profile so the renderer can draw
+         the strip at its real width on its real grade (Phase D). */
       pkg.groundStructures.push({ id: s.id, kind: s.kind, name: s.name,
-                                  pts: ring(s.pts), material: s.material });
+                                  pts: ring(s.pts),
+                                  width_m: (typeof s.width_m === 'number') ? s.width_m : null,
+                                  ys: (s.profile || []).map(Y),
+                                  material: s.material });
     }
   });
 
@@ -592,8 +605,212 @@ function buildRenderGroup(pkg){
       g.add(rails);
     } catch(e){}
   });
+  /* ground structures (Phase D): the airport pavement the Phase C
+     renderer skipped — aprons/taxiways as flat shapes seated on the
+     terrain, the runway + taxilanes as width-true strips on their
+     authored elevation profiles. Purely visual: movers meet this
+     ground through the terrain and road surfaces, as before. */
+  var paveMat = new THREE.MeshLambertMaterial({ color: 0x74777c });
+  var closedMat = new THREE.MeshLambertMaterial({ color: 0x55524a });
+  pkg.groundStructures.forEach(function(s){
+    try {
+      if (s.poly && s.poly.length >= 3){
+        var cx = 0, cz = 0, i;
+        for (i = 0; i < s.poly.length; i++){ cx += s.poly[i][0]; cz += s.poly[i][1]; }
+        cx /= s.poly.length; cz /= s.poly.length;
+        var gy = pkg.terrain.heightYAtRuntime(cx, cz);
+        var shp = new THREE.Shape();
+        s.poly.forEach(function(pt, j){
+          if (j === 0) shp.moveTo(pt[0], -pt[1]); else shp.lineTo(pt[0], -pt[1]);
+        });
+        var gm = new THREE.Mesh(new THREE.ShapeGeometry(shp),
+                                s.kind === 'runway_closed' ? closedMat : paveMat);
+        gm.rotation.x = -Math.PI / 2;
+        gm.position.y = (gy === null ? 0 : gy) + 0.06;
+        g.add(gm);
+      } else if (s.pts && s.pts.length >= 2){
+        var hw = ((s.width_m || 10) * window.MapFrame.S) / 2;
+        var pos = [];
+        for (var i2 = 1; i2 < s.pts.length; i2++){
+          var a = s.pts[i2 - 1], b = s.pts[i2];
+          var dx = b[0] - a[0], dz = b[1] - a[1];
+          var len = Math.sqrt(dx * dx + dz * dz) || 1;
+          var nx = -dz / len * hw, nz = dx / len * hw;
+          var ya = (typeof s.ys[i2 - 1] === 'number') ? s.ys[i2 - 1] + 0.06
+                   : (pkg.terrain.heightYAtRuntime(a[0], a[1]) || 0) + 0.06;
+          var yb = (typeof s.ys[i2] === 'number') ? s.ys[i2] + 0.06
+                   : (pkg.terrain.heightYAtRuntime(b[0], b[1]) || 0) + 0.06;
+          pos.push(a[0] + nx, ya, a[1] + nz, a[0] - nx, ya, a[1] - nz, b[0] - nx, yb, b[1] - nz);
+          pos.push(a[0] + nx, ya, a[1] + nz, b[0] - nx, yb, b[1] - nz, b[0] + nx, yb, b[1] + nz);
+        }
+        var bg2 = new THREE.BufferGeometry();
+        bg2.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        var strip = new THREE.Mesh(bg2, s.kind === 'runway_closed' ? closedMat : paveMat);
+        strip.frustumCulled = false;
+        g.add(strip);
+      }
+    } catch(e){}
+  });
   scene.add(g);
   return g;
+}
+
+/* ================== legacy-shaped world (Phase D) ===================== */
+/* The world build (renderer, traffic, GPS, feature layers) consumes
+   legacy-shaped globals. Rather than rewriting any of them for the
+   swap, the converted package is RE-EXPRESSED in those shapes here —
+   one adapter, next to the one conversion. Shapes:
+     ROAD_DATA      {cat: [{name, pts, ys, ramp?}]} — records carrying
+                    ys take buildRoads' BAKED path (stored profile, no
+                    re-derivation), and the roadDrawData built from
+                    them feeds traffic + GPS unchanged.
+     OSM_BUILDINGS  [[x, z, w, d, h, type], ...] — each building's real
+                    ring reduced to its minimum-area oriented rectangle
+                    (centre + side lengths); h is the package height,
+                    carried in the same units the legacy records used
+                    (their height distributions match — same source).
+                    Collision truth stays the provider's real rings;
+                    this shape is the render/placement form, exactly
+                    the role it plays in legacy mode.
+     __PKG_WATER    {bodies: [{x, z, rx, rz, ring, surfaceY, depthFt,
+                    name}], streams: [{pts, name}]} for buildWater's
+                    package branch in index.html.
+   Category mapping follows the renderer's own table (ROAD_WIDTHS /
+   the INTERSTATES name rule in index.html): freeways land in
+   'highway' so I-20 / I-285 records pick up the interstate width by
+   name; arterials land in 'major_artery', the legacy big-street
+   bucket. */
+var PKG_ROAD_CAT = { motorway: 'highway', motorway_link: 'highway',
+                     arterial: 'major_artery', local: 'local',
+                     service: 'local' };
+/* Building type codes per index.html's osmBuildings: 0 house,
+   1 commercial, 2 apartment/large, 3 other. */
+var PKG_BLDG_TYPE = { house: 0, yes: 0, retail: 1, commercial: 1,
+                      apartments: 2 };
+function minAreaRect(ring){
+  /* Minimum-area oriented rectangle over a ring (each edge direction
+     tried as a candidate axis — rings are small). Returns
+     {cx, cz, w, d} in the ring's own coordinates. */
+  var best = null, i, j;
+  for (i = 0; i < ring.length - 1; i++){
+    var ex = ring[i + 1][0] - ring[i][0], ez = ring[i + 1][1] - ring[i][1];
+    var el = Math.sqrt(ex * ex + ez * ez);
+    if (el < 1e-9) continue;
+    var ux = ex / el, uz = ez / el, vx = -uz, vz = ux;
+    var mnU = 1e18, mxU = -1e18, mnV = 1e18, mxV = -1e18;
+    for (j = 0; j < ring.length; j++){
+      var pu = ring[j][0] * ux + ring[j][1] * uz;
+      var pv = ring[j][0] * vx + ring[j][1] * vz;
+      if (pu < mnU) mnU = pu; if (pu > mxU) mxU = pu;
+      if (pv < mnV) mnV = pv; if (pv > mxV) mxV = pv;
+    }
+    var area = (mxU - mnU) * (mxV - mnV);
+    if (!best || area < best.area){
+      var cu = (mnU + mxU) / 2, cvv = (mnV + mxV) / 2;
+      best = { area: area, cx: cu * ux + cvv * vx, cz: cu * uz + cvv * vz,
+               w: mxU - mnU, d: mxV - mnV };
+    }
+  }
+  if (!best){ /* degenerate ring: fall back to the plain bbox */
+    var mnx = 1e18, mxx = -1e18, mnz = 1e18, mxz = -1e18;
+    for (i = 0; i < ring.length; i++){
+      if (ring[i][0] < mnx) mnx = ring[i][0]; if (ring[i][0] > mxx) mxx = ring[i][0];
+      if (ring[i][1] < mnz) mnz = ring[i][1]; if (ring[i][1] > mxz) mxz = ring[i][1];
+    }
+    best = { cx: (mnx + mxx) / 2, cz: (mnz + mxz) / 2, w: mxx - mnx, d: mxz - mnz };
+  }
+  return best;
+}
+function buildLegacyGlobals(pkg){
+  var roadData = { highway: [], major_artery: [], minor_artery: [], local: [] };
+  pkg.roads.forEach(function(r){
+    var cat = PKG_ROAD_CAT[r.cls] || 'local';
+    var rec = { name: r.name || 'Unnamed St', pts: r.pts, ys: r.ys };
+    if (r.ramp) rec.ramp = true;
+    roadData[cat].push(rec);
+  });
+  var buildings = pkg.buildings.map(function(b){
+    var rect = minAreaRect(b.ring);
+    var t = PKG_BLDG_TYPE[b.use];
+    return [rect.cx, rect.cz, Math.max(1, rect.w), Math.max(1, rect.d),
+            (typeof b.height_m === 'number' && b.height_m > 0) ? b.height_m : 4.5,
+            (t === undefined) ? 3 : t];
+  });
+  var water = { bodies: [], streams: [] };
+  pkg.waterBodies.forEach(function(w){
+    var mnx = 1e18, mxx = -1e18, mnz = 1e18, mxz = -1e18, i;
+    for (i = 0; i < w.ring.length; i++){
+      if (w.ring[i][0] < mnx) mnx = w.ring[i][0]; if (w.ring[i][0] > mxx) mxx = w.ring[i][0];
+      if (w.ring[i][1] < mnz) mnz = w.ring[i][1]; if (w.ring[i][1] > mxz) mxz = w.ring[i][1];
+    }
+    var cx = (mnx + mxx) / 2, cz = (mnz + mxz) / 2;
+    /* Depth from the data: surveyed surface minus the carved bed at
+       the body's centre, in feet (the game's U_PER_FT = 0.304). */
+    var depthFt = 8;
+    if (typeof w.surfaceY === 'number'){
+      var bed = pkg.terrain.heightYAtRuntime(cx, cz);
+      if (typeof bed === 'number')
+        depthFt = Math.max(2, Math.min(40, (w.surfaceY - bed) / 0.304));
+    }
+    water.bodies.push({ x: cx, z: cz, rx: (mxx - mnx) / 2, rz: (mxz - mnz) / 2,
+                        ring: w.ring, surfaceY: w.surfaceY, depthFt: depthFt,
+                        name: w.name });
+  });
+  pkg.waterStreams.forEach(function(s){
+    water.streams.push({ pts: s.pts, name: s.name });
+  });
+  return { roadData: roadData, buildings: buildings, water: water };
+}
+
+/* bootWorld() — the Phase D seam entry, called by index.html's zone
+   seam BEFORE the deferred queue continues to the world build. Loads
+   the package, re-expresses it as the legacy-shaped globals (stashed
+   on window.__PKG_* for the seam to install), makes the package
+   terrain heightAt's source and the terrain mesh's precompute, and
+   resolves true. ANY failure resolves false and the seam falls back
+   to the legacy zone files — the swap fails safe, never strands the
+   boot. The loaded package is kept (__PKG_PREBUILT) so the late
+   activation below runs on the SAME load and conversion. */
+var _bootWorldPromise = null;
+function bootWorld(){
+  if (_bootWorldPromise) return _bootWorldPromise;
+  _bootWorldPromise = loadPackage(window.MapRegistry.defaultMapId,
+                                  window.MapSystem.packageBaseOverride())
+    .then(function(pkg){
+      window.__PKG_PREBUILT = pkg;
+      var g = buildLegacyGlobals(pkg);
+      window.__PKG_ROAD_DATA = g.roadData;
+      window.__PKG_BUILDINGS = g.buildings;
+      window.__PKG_BLDG_COUNT = g.buildings.length;
+      window.__PKG_WATER = g.water;
+      window.__PKG_HEIGHT_AT = pkg.terrain.heightYAtRuntime;
+      window.__PKG_WORLD = true;
+      /* Zone identity for the systems that read __ZONE_META (report
+         routing, crash logs, road sync's converted marker): the legacy
+         zone.json is not fetched in package mode, so publish the
+         package's identity in its place. Bounds stay on zoneloader's
+         literal table, which the package bounds match exactly. */
+      window.__ZONE_META = { id: pkg.id, converted: true, source: 'package' };
+      note('package world ready: ' + pkg.id + ' — adapter globals built (' +
+           g.buildings.length + ' buildings)');
+      /* The terrain mesh's precompute for the package heights, in the
+         identical vertex order the legacy bin uses (600x800 segments,
+         481,401 values). A miss is not fatal: __TERR_H_PRE = null makes
+         buildTerrain compute the mesh from heightAt — the same
+         package terrain through the hook, just slower. */
+      return fetchBin(pkg.base + 'terrain_heights_600x800.bin')
+        .then(function(buf){
+          var arr = new Float32Array(buf);
+          window.__TERR_H_PRE = (arr.length === 481401) ? arr : null;
+          return true;
+        })
+        .catch(function(){ window.__TERR_H_PRE = null; return true; });
+    })
+    .catch(function(err){
+      note('package world boot failed (' + err.message + ') — legacy zone data serves');
+      return false;
+    });
+  return _bootWorldPromise;
 }
 
 /* ============================ load + activate =========================== */
@@ -620,6 +837,8 @@ function loadPackage(mapId, baseOverride){
 }
 
 function activatePackage(pkg){
+  if (pkg._activated) return pkg;   /* one package, one activation */
+  pkg._activated = true;
   /* 1+2. material truth + ground sampler into the ONE gate */
   try {
     if (typeof CollisionMaterial !== 'undefined' && CollisionMaterial.setPackageProvider)
@@ -647,14 +866,26 @@ function activatePackage(pkg){
 }
 
 function tryBootPackage(){
+  /* Seam path (Phase D): index.html's seam already made the map
+     decision before the world build and set __PKG_SEAM_DONE. If it
+     built a package world, activate THAT prebuilt package (provider,
+     deck/rail rendering, PACKAGE_RAIL) — never load twice. If it fell
+     back to legacy (opt-out or fetch failure), activate nothing: a
+     package provider over a legacy world would be a second truth. */
+  if (window.__PKG_SEAM_DONE){
+    if (window.__PKG_PREBUILT) activatePackage(window.__PKG_PREBUILT);
+    return;
+  }
+  /* No-seam path (direct servings without index.html's seam): Phase
+     C's shape — load and activate when package mode is requested. */
   if (!window.MapSystem || !window.MapSystem.packageModeRequested()) return;
   var base = window.MapSystem.packageBaseOverride();
   loadPackage(window.MapRegistry.defaultMapId, base)
     .then(activatePackage)
     .catch(function(err){
-      /* Not an error state: until Phase D drops the package into
-         maps/<id>/, the fetch simply misses and the legacy zone system
-         serves — exactly the designed fallback. */
+      /* Not an error state: if the package is not in maps/<id>/ yet,
+         the fetch simply misses and the legacy zone system serves —
+         exactly the designed fallback. */
       note('package not loaded (' + err.message + ') — legacy zone data serves');
     });
 }
@@ -676,8 +907,10 @@ window.MapLoader = {
   loadPackage: loadPackage,
   buildPackage: buildPackage,
   activatePackage: activatePackage,
-  /* exposed for the Phase C harness + debugging */
+  bootWorld: bootWorld,
+  buildLegacyGlobals: buildLegacyGlobals,
+  /* exposed for the Phase C/D harnesses + debugging */
   _distToSeg: distToSeg, _pointInRing: pointInRing,
-  _ringInteriorPoint: ringInteriorPoint
+  _ringInteriorPoint: ringInteriorPoint, _minAreaRect: minAreaRect
 };
 })();

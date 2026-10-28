@@ -14,6 +14,12 @@
 (function WaterRenderer(){
   'use strict';
 
+  /* PHASE D (2026-10-28): in a package world the package's own water
+     (rendered by index.html's buildWater package branch) is the whole
+     water truth — these hand-kept river features belong to the legacy
+     dataset and stand down. */
+  if (typeof window !== 'undefined' && window.__PKG_WORLD) return;
+
   // URL for the water data file (same directory as this script).
   var WATER_URL = 'water_features.json';
 

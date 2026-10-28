@@ -2043,6 +2043,68 @@ function __injectZoneFiles(files, callback){
   /* v1.38 ZONE RETRY (Joshua 2026-10-11: laptop stuck at 18% — a single
      transient failure on roads data must not trap the loader forever).
      Each zone file gets one automatic retry before falling back. */
+  /* PHASE D — THE SWAP (2026-10-28): when the registry's map decision
+     for the current zone is PACKAGE (the default for Adamsville;
+     ?mapsrc=legacy is the opt-out), the legacy dataset is NOT fetched:
+     the package loads through MapLoader.bootWorld() and its adapter
+     globals become the world globals. The two legacy files the
+     package does not replace still load through the normal machinery
+     below: hero_buildings (hand-authored landmarks) and signs (exit
+     signs — the package's signs are traffic signals, a different
+     dataset). If the package fails for any reason, the full legacy
+     list loads exactly as it always has — the fallback is structural,
+     and __PKG_SEAM_FELL_BACK keeps it from ever looping. Either way
+     __PKG_SEAM_DONE records that the decision was made here, so
+     map_loader.js's late activation never layers a package provider
+     over a legacy world (or vice versa). */
+  var __pkgMode = false;
+  try {
+    __pkgMode = !!(window.MapSystem && window.MapLoader &&
+                   window.MapLoader.bootWorld &&
+                   !window.__PKG_SEAM_FELL_BACK &&
+                   window.MapSystem.packageModeRequested());
+  } catch(e){ __pkgMode = false; }
+  window.__PKG_SEAM_DONE = true;
+  if (__pkgMode){
+    var __fullFiles = files;
+    var __legacyCallback = callback;
+    files = files.filter(function(f){
+      return f.key === 'signs' || f.key === 'hero_buildings';
+    });
+    callback = function(){
+      window.MapLoader.bootWorld().then(function(ok){
+        if (ok){
+          window.ROAD_DATA = window.__PKG_ROAD_DATA;
+          window.OSM_BUILDINGS = window.__PKG_BUILDINGS;
+          window.OSM_REAL_COUNT = window.__PKG_BLDG_COUNT;
+          /* A package world must not inherit editor fixes/saved state
+             keyed to the legacy building list: this version string is
+             the guard bldgFixLoad already honours (a changed version
+             discards stored fixes), tied to the map version so every
+             future package drop re-keys it. */
+          window.OSM_BLDG_VERSION = 'pkg@' + (window.__MAPVER || '1');
+          /* Lifts and junction pins belong to the legacy road field;
+             the package bakes its crossings into the road data itself
+             (decks are level structures in the provider). */
+          window.TERRAIN_LIFTS = [];
+          window.JUNCTION_PINS = [];
+          /* The skipped dataset steps are served by the package —
+             mark them done so the load gate sees a complete load. */
+          try {
+            __loadStep('roads'); __loadStep('lifts');
+            __loadStep('pins'); __loadStep('buildings');
+          } catch(e){}
+          __legacyCallback();
+        } else {
+          window.__PKG_SEAM_FELL_BACK = true;
+          __injectZoneFiles(__fullFiles, __legacyCallback);
+        }
+      }, function(){
+        window.__PKG_SEAM_FELL_BACK = true;
+        __injectZoneFiles(__fullFiles, __legacyCallback);
+      });
+    };
+  }
   var i = 0;
   function nextFile(){
     if (i >= files.length){ if (callback) callback(); return; }
@@ -2772,6 +2834,12 @@ function __loadDeferredQueueInner(){
       /* zoneloader.js exposes zone files; inject them next in order. */
       if (src.indexOf('zoneloader.js') !== -1 && window.__zoneScriptFiles && !window.__zoneScriptsInjected){
         window.__zoneScriptsInjected = true;
+        /* PHASE D — THE SWAP (2026-10-28): the map decision is made
+           inside __injectZoneFiles, which this call reaches before
+           the deferred queue continues to the world build — the seam
+           Phase C's opt-in activation raced past. See its Phase D
+           branch: package mode (the default for Adamsville) loads the
+           package there; legacy remains the opt-out and the fallback. */
         __injectZoneFiles(window.__zoneScriptFiles, next);
         return;
       }
@@ -3102,6 +3170,14 @@ window.__applyCrewMaster = function(on){
      the deferred loader's finish()) and NEVER pauses this queue: the
      per-area deliveries keep owning their own downloads. -->
 <script data-dsrc="stockdelivery.js"></script>
+<!-- PHASE D (2026-10-28): the map registry + loader load BEFORE the
+     zone loader — the deferred-queue seam at the zoneloader step asks
+     MapSystem/MapLoader for the map decision and (in package mode)
+     awaits the package before the world build runs. In Phase C these
+     tags sat at the end of the queue, which is why package activation
+     raced the world build; the seam removes the race. -->
+<script data-dsrc="map_registry.js" data-dkey=""></script>
+<script data-dsrc="map_loader.js" data-dkey=""></script>
 <script data-dsrc="zoneloader.js" data-dkey="zoneloader"></script>
 <script data-dsrc="terrainfix.js" data-dkey=""></script>
 <script data-dsrc="vehicle_meshes.js" data-dkey="vehmeshes"></script>
@@ -4533,6 +4609,17 @@ function _liftGrid(){
   return g;
 }
 function heightAt(x, z){
+  /* PHASE D (2026-10-28): while a map package world is active, the
+     ground IS the package terrain (the USGS 3DEP grid, converted once
+     by map_loader.js) — the legacy analytic field below belongs to the
+     legacy zone data and is bypassed whole, never mixed. The seam
+     installs window.__PKG_HEIGHT_AT before this block runs. The
+     terrain-heights pipeline (build-terrain-heights.js) extracts this
+     function and runs it under Node, where window does not exist: the
+     guard is inert there and the legacy field is still what gets
+     baked for the legacy fallback. */
+  if (typeof window !== 'undefined' && window.__PKG_HEIGHT_AT)
+    return window.__PKG_HEIGHT_AT(x, z);
   var ll = latLon(x, z);
   var h = (elevRaw(ll.lat, ll.lon) - ELEV.min) * ELEV_SCALE;
   /* v0.6 HILL: the Dollar Mill Rd entrance hill is a major local climb — the old
@@ -7225,6 +7312,44 @@ try{ __wbStage('water'); }catch(e){}
      (42u west of the old spot); Joshua's ground truth: the road runs ADJACENT
      to the lake along its south shore, Boulder Park side is HIGH ground.
      New center + slightly smaller disc: water sits north of Boulder Park Dr. */
+  /* PHASE D (2026-10-28): a package world brings its own water — the
+     authored bodies (true rings, surveyed surfaces) and streams from
+     the map package, staged by the seam as window.__PKG_WATER. The
+     hand-authored features below belong to the legacy Adamsville
+     dataset and are skipped whole in package mode. Bodies render as
+     their true ring outline at the surveyed surface; the swim/sink
+     mechanics keep the ellipse form the WATER entries have always
+     used (centre + radii from the ring's bbox), with the true surface
+     carried as surfY for waterLevelAt and the depth computed from the
+     data by map_loader's adapter. */
+  if (window.__PKG_WATER){
+    var pw = window.__PKG_WATER;
+    var pwSurfMat = new THREE.MeshLambertMaterial({ color: 0x2e6f9e });
+    pw.bodies.forEach(function(b){
+      try {
+        var surfY = (typeof b.surfaceY === 'number') ? b.surfaceY : heightAt(b.x, b.z) + 0.35;
+        var shape = new THREE.Shape();
+        b.ring.forEach(function(pt, i){
+          if (i === 0) shape.moveTo(pt[0], -pt[1]); else shape.lineTo(pt[0], -pt[1]);
+        });
+        var mesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), pwSurfMat);
+        mesh.rotation.x = -Math.PI / 2;
+        mesh.position.y = surfY;
+        scene.add(mesh);
+        WATER.push({ x: b.x, z: b.z, rx: b.rx, rz: b.rz, name: b.name || '',
+                     depthFt: b.depthFt, surfY: surfY });
+        if (b.name){ try { labelAt(b.name, b.x, b.z, 14, 34, '#7fd4ff'); } catch(e){} }
+      } catch(e){}
+    });
+    pw.streams.forEach(function(s){
+      try {
+        scene.add(new THREE.Mesh(ribbonGeom(s.pts, 7, 0.18), pwSurfMat));
+        WATER.push({ creek: s.pts, name: s.name || 'creek', depthFt: 2 });
+      } catch(e){}
+    });
+    try { Report.setSys('water', { features: WATER.length, source: 'package' }); } catch(e){}
+    return;
+  }
   var lake = xz(33.74946, -84.52388);   // Tatum Lake — south shore clears Boulder Park Dr
   waterDisc(lake.x, lake.z, 75, 48, 'TATUM LAKE', 12);
   var pond = xz(33.74795, -84.52161);   // second pond from satellite
@@ -7295,7 +7420,12 @@ function waterLevelAt(x,z){
     var w=WATER[i], y;
     if (w.creek){ if (distToCreek(x,z)<4.5){ y=heightAt(x,z)+0.18; if(best===null||y<best) best=y; } }
     else if (w.river){ if (distToPolyline(w.river,x,z) < (w.width||30)/2){ y=heightAt(x,z)+0.25; if(best===null||y<best) best=y; } }
-    else { var dx=(x-w.x)/w.rx, dz=(z-w.z)/w.rz; if (dx*dx+dz*dz<1){ y=heightAt(w.x,w.z)+0.35; if(best===null||y<best) best=y; } }
+    /* PHASE D (2026-10-28): package water bodies carry their surveyed
+       surface (w.surfY, runtime Y) — package terrain at a lake centre
+       is the carved bed, so the legacy heightAt+0.35 estimate would
+       seat the swim surface under the bed. Legacy entries carry no
+       surfY and take the legacy path unchanged. */
+    else { var dx=(x-w.x)/w.rx, dz=(z-w.z)/w.rz; if (dx*dx+dz*dz<1){ y=(typeof w.surfY==='number')?w.surfY:heightAt(w.x,w.z)+0.35; if(best===null||y<best) best=y; } }
   }
   return best;
 }
@@ -9594,6 +9724,12 @@ try{
    (b) left (south) on Fulton Industrial, under I-20 again — (3338, 2711)
    NO invented bridges anywhere else. */
 (function(){
+  /* PHASE D (2026-10-28): in a package world this whole hand-built
+     layer stands down — the package authors Fulton Industrial Blvd
+     and every one of these crossings itself (I-20 over MLK and over
+     FIB are package roads on package decks). Running both would
+     double-draw the boulevard and stack duplicate decks. */
+  if (window.__PKG_WORLD) return;
   var fiPts=[[3806,2060],[3680,2140],[3560,2220],[3470,2300],[3400,2400],[3360,2500],[3342,2606],[3340,2660],[3338,2711],[3336,2780]];
   var fiDense=densify(fiPts, 20);  // v1.0: drape like the TIGER roads
   // v1.3: smoothed like the TIGER roads (paved feel) + roadSitY (v1.1 buried-road fix)
@@ -14977,8 +15113,6 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
      resolveCollision, own #action-btn listener) -- no game-code edits needed. -->
 <script data-dsrc="interior_system.js" data-dkey=""></script>
 <script data-dsrc="collision_material.js" data-dkey=""></script>
-<script data-dsrc="map_registry.js" data-dkey=""></script>
-<script data-dsrc="map_loader.js" data-dkey=""></script>
 <script data-dsrc="water_interaction.js" data-dkey=""></script> <!-- WATER INTERACTION (Joshua 2026-10-11) — sinking/shore-respawn helpers + fish system. Defensive: no-op if water data is missing. -->
 <!-- ===== INLINE SCRIPT BLOCK 3: final placement audit (v2.0 - Joshua's
      automatic check) ===== Runs ONCE, after EVERY building system has loaded

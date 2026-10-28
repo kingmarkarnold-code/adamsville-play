@@ -38,17 +38,23 @@
       through elevToRuntimeY(), so a road can never disagree with the
       ground it sits on — the same one-truth rule as the horizontal frame.
 
-   PACKAGE MODE (Phase C -> Phase D handoff)
-   -----------------------------------------
-   The live game keeps playing the legacy zone data until Phase D performs
-   the swap. Package mode is therefore OPT-IN in Phase C:
-     ?mapsrc=package        (URL parameter), or
-     localStorage sa_mapsrc = 'package'
-   and the package location can be overridden for test servings with
+   PACKAGE MODE (Phase D, 2026-10-28 — THE SWAP)
+   ---------------------------------------------
+   The package is now the DEFAULT for every map that has one published
+   (Adamsville). The decision is made by index.html's zone seam BEFORE
+   the world builds (see map_loader.js bootWorld). Legacy zone data
+   stays reachable as an explicit opt-out, per map:
+     ?mapsrc=legacy         (URL parameter — wins over localStorage), or
+     localStorage sa_mapsrc = 'legacy'
+   and ?mapsrc=package / a stored 'package' still force package mode
+   on. The package location can be overridden for test servings with
      ?pkgbase=<url-or-path>   (defaults to the registry's packageBase).
-   With package mode off (the default), this file and map_loader.js are
-   inert: the registry is readable, nothing loads, nothing changes.
-   Phase D flips the default; the mechanism does not change.
+   Maps and zones WITHOUT a published package always serve legacy zone
+   data — zone transitions reload with ?zone=<other>, and this check is
+   zone-scoped so a transition can never request a package that does
+   not exist. If a package fetch fails, the boot falls back to the
+   legacy zone path structurally (the seam in index.html), never to an
+   error screen: the player is never stranded on a broken map.
 
    CLASSIC-ENGINE (APK) NOTE: package mode rides the same fetch() the
    zone JSON loader already uses on the web build. On the classic r128
@@ -183,17 +189,33 @@ function makePkgTerrainSampler(zoneMeta, float32){
 }
 
 /* ---------------------------------------------------------------------------
-   Package-mode resolution (Phase C: opt-in; Phase D flips the default).
+   Package-mode resolution (Phase D: package is the default per map).
+   Zone-scoped: the CURRENT zone (from ?zone=, default the default map)
+   must have a registry entry WITH a packageBase, or the answer is
+   legacy — the other six zones have no package and always serve their
+   legacy zone data. Explicit opt-outs beat the default; the URL beats
+   localStorage (same precedence as Phase C).
    --------------------------------------------------------------------------- */
+function _currentZoneId(){
+  try {
+    var m = /[?&]zone=([a-z]+)/.exec(window.location.search || '');
+    return m ? m[1] : DEFAULT_MAP_ID;
+  } catch(e){ return DEFAULT_MAP_ID; }
+}
 function _mapPackageMode(){
+  var entry = MAP_REGISTRY[_currentZoneId()];
+  if (!entry || !entry.packageBase) return false;
   try {
     var q = new URLSearchParams(window.location.search);
     var m = q.get('mapsrc');
     if (m) return m === 'package';
-    if (window.localStorage && localStorage.getItem('sa_mapsrc') === 'package')
-      return true;
+    if (window.localStorage){
+      var s = localStorage.getItem('sa_mapsrc');
+      if (s === 'legacy') return false;
+      if (s === 'package') return true;
+    }
   } catch(e){}
-  return false;
+  return true;
 }
 function _mapPackageBaseOverride(){
   try {
@@ -213,6 +235,11 @@ window.MapRegistry = {
 window.MapFrame = {
   PKG_LAT0: PKG_LAT0, PKG_LON0: PKG_LON0,
   PKG_MPDLAT: PKG_MPDLAT, PKG_MPDLON: PKG_MPDLON,
+  /* Runtime units per package metre along a converted axis run (the
+     frame's distance scale — pkgToRuntime applies it about the frame
+     centre). Renderers sizing package-authored widths (runway strips,
+     aprons) convert through this, never a hand-typed constant. */
+  S: FRAME_S,
   pkgToLatLon: pkgToLatLon, latLonToPkg: latLonToPkg,
   latLonToRuntime: latLonToRuntime, runtimeToLatLon: runtimeToLatLon,
   pkgToRuntime: pkgToRuntime, runtimeToPkg: runtimeToPkg,
