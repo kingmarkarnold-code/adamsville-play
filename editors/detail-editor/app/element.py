@@ -64,6 +64,17 @@ OPERATIONS (the design's list, each implemented once, here):
                                    anchor points are joined by one
                                    straight segment: only the
                                    straight edge remains.
+    delete_points(indices)       — the LASSO case (1.2.0): a whole
+                                   SET of points, chosen together by
+                                   the lasso, deleted as ONE
+                                   operation. Every segment touching
+                                   a deleted point goes with it and
+                                   the two sides are NOT rejoined —
+                                   a middle run removed leaves the
+                                   element in two parts (the design's
+                                   confirmed break semantics, same as
+                                   a middle segment deletion); a run
+                                   at an end simply shortens it.
 
 Snapshots: pieces are small (a long road piece is a few hundred
 points), so undo is a whole-element snapshot — snapshot()/restore()
@@ -92,6 +103,36 @@ def point_segment_distance(px, pz, ax, az, bx, bz):
         t = max(0.0, min(1.0, t))
     cx, cz = ax + t * dx, az + t * dz
     return math.hypot(px - cx, pz - cz), t, cx, cz
+
+
+def point_in_polygon(x, z, polygon):
+    """
+    True when (x, z) lies inside `polygon` — a closed loop of
+    [x, z] points, given open (the last point joins back to the
+    first). Even-odd ray casting, plus an explicit on-the-boundary
+    test: a point sitting ON the loop's edge counts as inside (the
+    lasso the user drew around a point hugging the line still
+    means to take it). Pure geometry, shared by the canvas's
+    lasso selection and the harness.
+    """
+    n = len(polygon)
+    if n < 3:
+        return False
+    inside = False
+    for i in range(n):
+        ax, az = polygon[i]
+        bx, bz = polygon[(i + 1) % n]
+        # On the boundary counts as in.
+        d, _t, _cx, _cz = point_segment_distance(x, z, ax, az, bx, bz)
+        if d <= 1e-9:
+            return True
+        # Ray cast: does the edge straddle the horizontal ray
+        # running +x from the point?
+        if (az > z) != (bz > z):
+            x_cross = ax + (z - az) * (bx - ax) / (bz - az)
+            if x_cross > x:
+                inside = not inside
+    return inside
 
 
 def ribbon_polygon(points, width):
@@ -200,6 +241,21 @@ class Element:
         for a, b in self.segments:
             adjacency.setdefault(a, []).append(b)
             adjacency.setdefault(b, []).append(a)
+        # Segment lookup built ONCE for the whole walk (1.2.0).
+        # chains() used to call the linear-scan segment_index()
+        # for every step, which made it O(points^2) — on a
+        # 4,000-point piece that was ~15 million probes and over
+        # a second per call, and the canvas calls chains() several
+        # times per render: THE zoomed-in sluggishness. First
+        # match wins, exactly like segment_index().
+        seg_lookup = {}
+        for k, (x, y) in enumerate(self.segments):
+            seg_lookup.setdefault((x, y), k)
+            seg_lookup.setdefault((y, x), k)
+
+        def seg_index(a, b):
+            return seg_lookup.get((a, b))
+
         seen_points = set()
         seen_segments = set()
         chains = []
@@ -216,7 +272,7 @@ class Element:
                     chains.append([start])
                     seen_points.add(start)
                 continue
-            if all(self.segment_index(start, nb) in seen_segments
+            if all(seg_index(start, nb) in seen_segments
                    for nb in adjacency[start]):
                 continue
             chain = [start]
@@ -225,12 +281,12 @@ class Element:
             while True:
                 nexts = [nb for nb in adjacency.get(cur, [])
                          if nb != prev
-                         and self.segment_index(cur, nb)
+                         and seg_index(cur, nb)
                          not in seen_segments]
                 if not nexts:
                     break
                 nb = nexts[0]
-                seen_segments.add(self.segment_index(cur, nb))
+                seen_segments.add(seg_index(cur, nb))
                 chain.append(nb)
                 seen_points.add(nb)
                 prev, cur = cur, nb
@@ -302,6 +358,42 @@ class Element:
             a, b = (n - 1 if n > i else n for n in neighbours)
             if a != b and self.segment_index(a, b) is None:
                 self.segments.append([a, b])
+
+    def delete_points(self, indices):
+        """
+        DELETE A SET OF POINTS (the lasso case, 1.2.0): every
+        listed point goes, and every segment touching one goes
+        with it. The two sides are NOT rejoined — removing a
+        middle run leaves the element in two parts (chains()
+        shows it, and the road adapter writes two records, the
+        design's confirmed break semantics); removing a run at
+        an end simply shortens the element. Points outside the
+        set are never touched, and segments between two
+        surviving points survive. Returns the number of points
+        deleted. (Contrast delete_point(), singular: a lone
+        interior point DISSOLVES — its neighbours join straight.
+        A lassoed GROUP is a section, and a section breaks.)
+        """
+        doomed = sorted({i for i in indices
+                         if 0 <= i < len(self.points)})
+        if not doomed:
+            return 0
+        gone = set(doomed)
+        self.segments = [[a, b] for a, b in self.segments
+                         if a not in gone and b not in gone]
+        remap = {}
+        points, payloads = [], []
+        for i, (p, pay) in enumerate(zip(self.points,
+                                         self.payloads)):
+            if i in gone:
+                continue
+            remap[i] = len(points)
+            points.append(p)
+            payloads.append(pay)
+        self.points, self.payloads = points, payloads
+        self.segments = [[remap[a], remap[b]]
+                         for a, b in self.segments]
+        return len(doomed)
 
     def add_segment(self, a, b):
         """
