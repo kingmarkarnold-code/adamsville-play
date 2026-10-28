@@ -64,7 +64,7 @@ from pathlib import Path
 from element import Element
 
 # This editor's version (About dialog, the roads.js twin header).
-EDITOR_VERSION = "1.2.0"
+EDITOR_VERSION = "1.2.1"
 
 # The game's own name for a road with no name: the converted data
 # carries this literal, so a rename to "no name" writes exactly it.

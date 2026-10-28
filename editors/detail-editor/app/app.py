@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Adamsville Detail Editor (Native) 1.2.0 — main window.
+Adamsville Detail Editor (Native) 1.2.1 — main window.
 
 Joshua's design (game-map/detail-editor/DESIGN.md, 2026-10-18): a
 STANDALONE suite app — not a mode inside the Map Editor — for the
@@ -85,6 +85,7 @@ from suite_core import github_sync
 from suite_core import layout as layout_mod
 from suite_core import shared_cache
 from suite_core import updater as updater_mod
+from suite_core import reporting as reporting_mod
 
 import detaildata
 from detaildata import DetailData, DetailDataError, PieceSession, \
@@ -98,6 +99,14 @@ APP_VERSION = detaildata.EDITOR_VERSION
 PACKAGE_NAME = "adamsville-detail-editor-native"
 ICON_NAME = "adamsville-detail-editor-native"
 APP_REPO_DIR = "editors/detail-editor"
+
+# The self-update channel manifest (1.2.1): suite_core.updater's
+# staging path reads this same file through the Contents API; the
+# Help -> Check for Updates flow fetches it at this raw URL.
+_CHANNEL_MANIFEST_URL = (
+    "https://raw.githubusercontent.com/"
+    "kingmarkarnold-code/adamsville-play/main/"
+    "editors/detail-editor/version.json")
 
 # Per-app data (window state, the local save leg) — never the
 # shared cache (that is suite_core.shared_cache's, by design).
@@ -179,6 +188,23 @@ class PiecePage:
         self.canvas.on_snapshot = lambda: win._on_page_snapshot(self)
         self.canvas.confirm_section = win._confirm_section
         self.canvas.confirm_points = win._confirm_points
+        # Reporting (1.2.1): time the group delete. Every door to
+        # it — the Delete key, the toolbar's Delete Selected
+        # button, the canvas right-click menu — calls this one
+        # bound method, so wrapping it here times EVERY group
+        # delete exactly once, with its piece count, as a
+        # "delete" timing report.
+        _raw_delete_points = self.canvas.delete_selected_points
+
+        def _delete_points_timed():
+            n = len(self.canvas.selected_points)
+            if n > 1:
+                with reporting_mod.operation("delete", pieces=n):
+                    _raw_delete_points()
+            else:
+                _raw_delete_points()
+
+        self.canvas.delete_selected_points = _delete_points_timed
         self.canvas.on_selection = \
             lambda: win._on_selection_changed(self)
         self.canvas.on_switch_request = \
@@ -485,6 +511,7 @@ class DetailWindow(Gtk.Window):
         except Exception:
             pass
         self.connect("delete-event", self._on_delete)
+        self.connect("destroy", self._on_destroy)
         self.connect("key-press-event", self._on_key)
 
         # -- data ---------------------------------------------------
@@ -502,6 +529,78 @@ class DetailWindow(Gtk.Window):
         self._set_status("Downloading the map manifest…")
         self._run_background(self._load_manifest_bg,
                              self._on_manifest_done)
+        self._start_reporting_and_updates()
+
+    # ------------------------------------------------------------------
+    # Reporting + self-update (1.2.1): the door gets its hand
+    # ------------------------------------------------------------------
+
+    def _start_reporting_and_updates(self):
+        """Wire the app into the suite's reporting + self-update.
+
+        ORDER MATTERS (the reporting rule): reporting is
+        initialised BEFORE the background update check starts, so
+        if the launch-time check refuses a corrupt download, the
+        "update-refused" report files under THIS app's own
+        session (the updater only initialises reporting itself
+        when nothing has). The background check is the v3 staging
+        path: silent when the app is current or the check fails,
+        it downloads a newer payload into the updates folder —
+        the bootstrap launcher runs it on the next launch.
+
+        Fail-open throughout: a broken reporter or updater must
+        never stop the editor opening, so each step guards
+        itself (reporting's own functions never raise; these
+        guards are belt and braces).
+        """
+        try:
+            reporting_mod.init("detail-editor", APP_VERSION,
+                               data_versions={})
+            reporting_mod.session_start()
+        except Exception:
+            pass
+        try:
+            updater_mod.start_background_check(
+                "detail-editor", APP_VERSION,
+                fetch_file=github_sync.fetch_file,
+                on_progress=self._update_progress,
+                on_staged=self._on_update_staged,
+                gui=True)
+        except Exception:
+            pass
+
+    def _update_progress(self, done, total, label):
+        """Feed a self-update download into the corner bar (the
+        suite's progress-bar law). Runs on the UI thread —
+        start_background_check marshals with gui=True. Only ever
+        called while a payload is actually downloading."""
+        if done <= 0:
+            self.progress_start("self-update",
+                                label or "Downloading update…")
+        frac = (done / total) if total else None
+        self.progress_update("self-update", frac, label)
+        if total and done >= total:
+            self.progress_finish("self-update")
+
+    def _on_update_staged(self, info):
+        """A newer payload was staged in the background: note it
+        in the status bar. It runs on the NEXT launch (the
+        bootstrap launcher picks it up); the running app is
+        unchanged."""
+        version = (info or {}).get("version") or "newer"
+        self._set_status(
+            f"Update downloaded: version {version} will run "
+            f"next time you start the app.")
+
+    def _on_destroy(self, _window):
+        """The window is really going away (the delete-event
+        already had its say): close the report session. The
+        module's final flush is bounded — it never holds the
+        app open."""
+        try:
+            reporting_mod.session_end()
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # UI construction
@@ -1538,23 +1637,26 @@ class DetailWindow(Gtk.Window):
                                     ICON_NAME, PACKAGE_NAME)
 
     def _on_check_updates(self, _item):
-        """Fail-open update check (suite_core.updater)."""
+        """Help -> Check for Updates (suite_core.updater v3).
 
-        def work():
-            return updater_mod.check_for_update(
-                APP_REPO_DIR, APP_VERSION, github_sync.fetch_file)
-
-        def done(result, err):
-            if err is not None:
-                updater_mod.show_update_result(
-                    self, APP_NAME, APP_VERSION, None, str(err))
-            else:
-                info, uerr = result
-                updater_mod.show_update_result(
-                    self, APP_NAME, APP_VERSION, info, uerr)
-            return False
-
-        self._run_background(work, done)
+        The v3 semantics: an update that is already staged is
+        reported first — it runs on the next launch — and that
+        answer is truthful even with the network down. A newer
+        version on this app's channel is a SELF-UPDATE channel:
+        on the user's go-ahead it stages into their own updates
+        folder (no .deb, no admin password) and runs next
+        launch — never the v2 "install the new .deb the usual
+        way" flow. The helper runs its own worker thread and
+        marshals its dialogs back onto the UI thread, so it is
+        called directly from here. Fail-open: a broken updater
+        shows nothing rather than breaking the menu.
+        """
+        try:
+            updater_mod.check_for_updates_gui(
+                self, APP_NAME, APP_VERSION, "detail-editor",
+                _CHANNEL_MANIFEST_URL)
+        except Exception:
+            pass
 
     def _on_delete(self, _window, _event):
         """Remember the window geometry; unsaved edits get one

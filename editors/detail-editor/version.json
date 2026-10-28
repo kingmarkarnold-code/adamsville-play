@@ -1,16 +1,16 @@
 {
   "version": "1.2.1",
-  "changelog": "Behind-the-scenes only: this release carries the suite reporting module and the current updater (which files an Editor Report if an update download ever fails its integrity check) into the Detail Editor payload. Nothing about editing changes.",
+  "changelog": "New in 1.2.1 \u2014 the door gets its hand. The 1.2.0 install carried the bootstrap launcher, but its built-in updater was still the old Help-menu checker, so a staged update could never be fetched. This release wires the real self-update in: the editor now checks the channel in the background when it opens, downloads and hash-verifies a newer version into your own updates folder, and runs it on the next launch \u2014 no reinstall, no admin password. It also switches reporting on: session summaries, timings for heavy operations (group deletes carry their piece count), and errors now go silently to the same Player Reports inbox as the game's, and a corrupted update download \u2014 refused, with the installed version running untouched \u2014 files an update-refused report instead of failing silently. Help -> Check for Updates now speaks the same language: an already-downloaded update says it runs next launch. No editing behaviour changes.",
   "files": [
     {
       "path": "VERSION",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/VERSION",
-      "sha256": "1e5b51cde515396a9fa762909cf8ca6584ccc564b325d2eebeea76175fe95c4d"
+      "sha256": "6cf4e084b47f33c9b02ef79279d157833868f8f70514169a768be353ee328fea"
     },
     {
       "path": "app.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/app.py",
-      "sha256": "dfd76add01c9331f35ccfe9ea0b3141a51d160ecf12e1d2aa8efe3241e0ad9c5"
+      "sha256": "328eaf2466e891355c5d4aca1358795c19afeb3d0cbc49c7fd2b6551e39573e6"
     },
     {
       "path": "detailcanvas.py",
@@ -20,7 +20,7 @@
     {
       "path": "detaildata.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/detaildata.py",
-      "sha256": "ea79c6086734e41510376c89e31f21565a333d4aac28d2dc4138913dbaa22320"
+      "sha256": "f31407b5742ff6abf080b0063ea566c13ea25e76d342cf1c8aff40320ed7cf29"
     },
     {
       "path": "element.py",
@@ -70,15 +70,15 @@
   ],
   "selfupdate": {
     "payload_root": "editors/detail-editor/app",
-    "payload_sha256": "cf3af53053f88365263ecccfb7bdaebc97394f09b06a8d45c23bea1788f5aeb2",
+    "payload_sha256": "b51daa55dac69f1f99d299132e3f41931a56ac08d6fe6aa85523e3140f4178d8",
     "files": [
       {
         "path": "VERSION",
-        "sha256": "1e5b51cde515396a9fa762909cf8ca6584ccc564b325d2eebeea76175fe95c4d"
+        "sha256": "6cf4e084b47f33c9b02ef79279d157833868f8f70514169a768be353ee328fea"
       },
       {
         "path": "app.py",
-        "sha256": "dfd76add01c9331f35ccfe9ea0b3141a51d160ecf12e1d2aa8efe3241e0ad9c5"
+        "sha256": "328eaf2466e891355c5d4aca1358795c19afeb3d0cbc49c7fd2b6551e39573e6"
       },
       {
         "path": "detailcanvas.py",
@@ -86,7 +86,7 @@
       },
       {
         "path": "detaildata.py",
-        "sha256": "ea79c6086734e41510376c89e31f21565a333d4aac28d2dc4138913dbaa22320"
+        "sha256": "f31407b5742ff6abf080b0063ea566c13ea25e76d342cf1c8aff40320ed7cf29"
       },
       {
         "path": "element.py",
