@@ -1,6 +1,6 @@
 {
   "version": "1.10.0",
-  "changelog": "Layouts are now per screen size, the way you designed it. The Layout tab has an Environment choice — Application (APK) or Web — and a Size list with a named layout for each of your screens: Galaxy A17 5G, TCL K33 5G and FOXXD A67L, portrait and landscape each, plus standard phone and tablet sizes, laptop 1366×768 and a desktop reference size. Every size keeps its own full set of controls: move something on the A17's layout and the TCL's layout does not change. The Face default entry still covers any screen without a named size, and screens the game doesn't recognise fall back the way they always did. The game side now picks the layout that matches the screen it is actually running on — exact size first, then the nearest size, then the face. One honest note: the named phone sizes start from each model's standard screen numbers, because the truly visible area was never measured on your own phones; your first per-size tweaks will make them exact.",
+  "changelog": "Layouts are now per screen size, the way you designed it. The Layout tab has an Environment choice \u2014 Application (APK) or Web \u2014 and a Size list with a named layout for each of your screens: Galaxy A17 5G, TCL K33 5G and FOXXD A67L, portrait and landscape each, plus standard phone and tablet sizes, laptop 1366\u00d7768 and a desktop reference size. Every size keeps its own full set of controls: move something on the A17's layout and the TCL's layout does not change. The Face default entry still covers any screen without a named size, and screens the game doesn't recognise fall back the way they always did. The game side now picks the layout that matches the screen it is actually running on \u2014 exact size first, then the nearest size, then the face. One honest note: the named phone sizes start from each model's standard screen numbers, because the truly visible area was never measured on your own phones; your first per-size tweaks will make them exact.",
   "files": [
     {
       "path": "about.py",
@@ -62,5 +62,59 @@
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/ui-editor/updater.py",
       "sha256": "0c36b000830e5661165ac9f636466cd6d8402bab410bcab7da10b3e1e13e3a92"
     }
-  ]
+  ],
+  "selfupdate": {
+    "payload_root": "editors/ui-editor",
+    "payload_sha256": "d402fea008c0000c3083f560815ff5dbbcf43b3cead04d4b4be144f62bba4eec",
+    "files": [
+      {
+        "path": "about.py",
+        "sha256": "0b172aa3a3e94c80136473f95f42cef62f26927cfb9a8644f9aa14a4b3463140"
+      },
+      {
+        "path": "app.py",
+        "sha256": "3b0997be67dd9a409a4aa8a5944f5cf5d4f3b10bf2e9a153500eda3587a91345"
+      },
+      {
+        "path": "data.py",
+        "sha256": "73abe308cc9c88f53e85b31abe8c67121483849b2318bdc102049b200d142fd7"
+      },
+      {
+        "path": "game_menus.py",
+        "sha256": "f88aed32ea3d7865b5ecd50f205dbd4ad33609a31df8124e81fe5fa0427ef80d"
+      },
+      {
+        "path": "github_sync.py",
+        "sha256": "788a5c85667245a08f6c8508276eb41856a4c266049d44faa9f99040cefe8d13"
+      },
+      {
+        "path": "layout.py",
+        "sha256": "34f87b5c45fed70d8bacfe71ad6b7aff915e8e84bf6a0375e76d917b732a4284"
+      },
+      {
+        "path": "menus.py",
+        "sha256": "ed1700061e8776f92bcbfb2fcc867b6037af6eb886ca6b4dc1d9771fbe452e3f"
+      },
+      {
+        "path": "mollie-icon.png",
+        "sha256": "28990027fd79e03e2ef8416e8c1d3410ee284ec86383280968b245f08576e768"
+      },
+      {
+        "path": "preview.py",
+        "sha256": "6809a81007aaf80593e52bf7bf19bd8b58150140bb01d925d481230929e74f94"
+      },
+      {
+        "path": "shared_cache.py",
+        "sha256": "86e16770fdea09e684c882870f730a794e2d64a807c3f06195dcd3254dedbde5"
+      },
+      {
+        "path": "ui_layout_default.json",
+        "sha256": "ff96fa1c1935bec4d67c6772f30712b1cca16fa422d48f91e176c8005b39b9e3"
+      },
+      {
+        "path": "updater.py",
+        "sha256": "0c36b000830e5661165ac9f636466cd6d8402bab410bcab7da10b3e1e13e3a92"
+      }
+    ]
+  }
 }
