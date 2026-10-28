@@ -580,9 +580,47 @@ function fetchZoneJson(path){
   return fetchZoneText(path).then(function(text){ return JSON.parse(text); });
 }
 
+/* Package places for the package's own zone (2026-10-28 audit fix):
+   when a package world is live, the Go To panel's places for that
+   zone come from the PACKAGE (pkg.places — the redraw's surveyed
+   places: churches, schools, parks...), not the legacy zone file.
+   The package's places used to load into PACKAGE_MAP with nothing
+   reading them, so the panel searched the superseded dataset.
+   Records carrying a point use it directly; ring-only records (park
+   sub-features and the like) resolve to their ring centroid. Returns
+   null when no package serves this zone (legacy behaviour). */
+function packagePlacesFor(zoneId){
+  try{
+    if (typeof window === 'undefined' || !window.__PKG_WORLD) return null;
+    var pkg = window.__PKG_PREBUILT;
+    if (!pkg || pkg.id !== zoneId || !Array.isArray(pkg.places)) return null;
+    var out = [];
+    for (var i = 0; i < pkg.places.length; i++){
+      var p = pkg.places[i];
+      if (!p) continue;
+      if (p.at && isFinite(p.at[0]) && isFinite(p.at[1])){
+        out.push({ name: String(p.name || 'Place'), kind: String(p.kind || 'place'),
+                   x: p.at[0], z: p.at[1] });
+      } else if (p.ring && p.ring.length){
+        var cx = 0, cz = 0;
+        for (var j = 0; j < p.ring.length; j++){ cx += p.ring[j][0]; cz += p.ring[j][1]; }
+        out.push({ name: String(p.name || 'Place'), kind: String(p.kind || 'place'),
+                   x: cx / p.ring.length, z: cz / p.ring.length });
+      }
+    }
+    return out.length ? out : null;
+  }catch(e){ return null; }
+}
+
 function ensurePlaces(zoneId){
   var slot = _placesByZone[zoneId];
   if (slot && (slot.status === 'ok' || slot.status === 'loading')) return slot;
+  var pkgPlaces = packagePlacesFor(zoneId);
+  if (pkgPlaces){
+    slot = _placesByZone[zoneId] = { status: 'ok', places: pkgPlaces };
+    if (panelOpen) renderResults();
+    return slot;
+  }
   slot = _placesByZone[zoneId] = { status: 'loading', places: [] };
   fetchZoneJson('zones/' + zoneId + '/places.json').then(function(data){
     slot.places = CORE.normalizePlaces(data);

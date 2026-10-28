@@ -1975,12 +1975,17 @@ window.__startGameAfterLoad = false;
    done immediately so __tryStartGame never waits on a script that will never
    arrive. 'inspector' is special: crew inspectors only make sense when at
    least one crew runs, so they skip only if BOTH roadCrew and infraCrew are
-   off. '$anyCrew' (2026-10-28) is the wider gate for the two crew systems
+   off. '$anyCrew' (2026-10-28) is the wider gate for the crew systems
    that serve ALL crews — the municipal workforce (cityworkforce.js) and
    the veteran-crew brain (veteran_crew.js): they run when ANY of the four
    crew sub-options is on and skip only when ALL four are off. Both loaded
    with data-dkey="" (never skipped) until Joshua's 2026-10-28 hands-on:
-   he deselected the work crews and the workforce still ran. */
+   he deselected the work crews and the workforce still ran.
+   AUDIT FIX (2026-10-28): code enforcement (codeenforce_system.js —
+   it dispatches veteran construction crews) and worker housing
+   (workerhousing.js — it boots from the workforce roster) carried
+   empty dkeys and no gate at all, so both ran with every crew option
+   off; they take the same '$anyCrew' gate. */
 var __scriptOptSkip={
   bus:'martaBuses', busdata:'martaBuses',
   marta:'martaTrains', martadata:'martaTrains',
@@ -1989,7 +1994,8 @@ var __scriptOptSkip={
   drones:'drones',
   roadcrew:'roadCrew', survey:'surveyFleet', infra:'infraCrew', hq:'hqStaff',
   inspector:'$crews',
-  workforce:'$anyCrew', veteran:'$anyCrew'
+  workforce:'$anyCrew', veteran:'$anyCrew',
+  codeenforce:'$anyCrew', workerhousing:'$anyCrew'
 };
 function __scriptSkippedByOption(key){
   var opt=__scriptOptSkip[key];
@@ -2881,6 +2887,34 @@ function __loadDeferredQueueInner(){
     var _zone='adamsville';
     try{ var _m=/[?&]zone=([a-z]+)/.exec(location.search); if(_m) _zone=_m[1]; }catch(e){}
     if (_zone!=='adamsville' || typeof TERR_PRE_URL==='undefined'){ _go(); return; }
+    /* PACKAGE MODE (2026-10-28 audit fix): the package boot fetches
+       its OWN terrain precompute (maps/adamsville/terrain_heights_
+       600x800.bin via MapLoader.bootWorld) and overwrites __TERR_H_PRE
+       with it — so in package mode this legacy bin (1.9 MB) was fetched
+       on every boot and then discarded. Skip it when a package boot is
+       coming. The decision mirrors map_registry's _mapPackageMode for
+       adamsville (the only zone this gate serves, and the only one
+       with a package): MapSystem answers directly once the registry
+       has loaded; before that, the same raw inputs — ?mapsrc= wins,
+       then localStorage sa_mapsrc, default package. If the package
+       boot later fails, the seam falls back to legacy data and
+       buildTerrain computes synchronously (its standing fallback when
+       __TERR_H_PRE is null) — slower once, never wrong. */
+    try{
+      var _pkgBoot = null;
+      if (typeof MapSystem!=='undefined' && MapSystem.packageModeRequested)
+        _pkgBoot = !!MapSystem.packageModeRequested();
+      if (_pkgBoot===null){
+        var _ms=/[?&]mapsrc=([a-z]+)/.exec(location.search||'');
+        if (_ms) _pkgBoot = (_ms[1]==='package');
+        else{
+          var _stored=null;
+          try{ _stored=localStorage.getItem('sa_mapsrc'); }catch(e){}
+          _pkgBoot = (_stored!=='legacy');
+        }
+      }
+      if (_pkgBoot){ _go(); return; }
+    }catch(e){}
     try{
       fetch(_terrPreLiveUrl()).then(function(r){
         if(!r.ok) throw new Error('terrain precompute http '+r.status);
@@ -3397,22 +3431,44 @@ var MAPVER=(function(){
   // What map version did THIS session load with?
   function detectActive(){
     if (active) return active;
-    var b=mapBridge();
+    /* bridge() is MAPVER's own MapDownload helper — this used to call
+       mapBridge(), which exists only as a private inside the ASSETVER
+       IIFE, so every call here threw ReferenceError (audit fix
+       2026-10-28, same dead-call family as the boot clearing below). */
+    var b=bridge();
     if (b && b.getActiveMapVersion){
       try{ var v=b.getActiveMapVersion(); if(v){ active=v; lsSet(LS_ACTIVE,v); return v; } }catch(e){}
     }
     // Web (or bridge unavailable): the manifest served with this page load.
+    // The last session's record seeds the immediate return value so
+    // callers are never blocked, but it is NOT trusted as final:
+    // FIX 2026-10-28 (audit — the mirror of the ASSETVER fix from
+    // Joshua's hands-on the same day): this used to return the cached
+    // record and only re-read the live manifest when the record was
+    // missing, so a stale record (e.g. last week's map version) was
+    // trusted forever and checkPending() compared the LIVE manifest
+    // against it — the "update available" state could never clear
+    // even though the page that booted was already the new version.
+    // Now the web path ALWAYS re-reads the manifest served with this
+    // page (relative URL, cache:'no-store', after launcher
+    // confirmation — v1.28), records what it actually booted with,
+    // and clears a pending flag that names that same version. The
+    // APK path above is untouched: the native bridge stays the
+    // source of truth there (the bundled manifest can be older than
+    // the downloaded map).
     var cached=lsGet(LS_ACTIVE);
-    if (cached){ active=cached; return cached; }
-    active='unknown';
-    // Web only: on the APK the native bridge is the source of truth (the
-    // bundled manifest can be older than the downloaded map).
+    active=cached||'unknown';
     if (!b){
       /* v1.28: no downloads before the player confirms launch options. */
       try{
         window.__whenConfirmed(function(){
           fetch('map-manifest.json',{cache:'no-store'}).then(function(r){ return r.ok?r.json():null; })
-          .then(function(m){ if(m){ active=m.map_version||m.version||'unknown'; lsSet(LS_ACTIVE,active); } })
+          .then(function(m){
+            if(m){
+              active=m.map_version||m.version||'unknown'; lsSet(LS_ACTIVE,active);
+              if (pending && pending===active) pending=null;
+            }
+          })
           .catch(function(){});
         });
       }catch(e){}
@@ -3432,7 +3488,7 @@ var MAPVER=(function(){
   function checkPending(){
     /* v1.28: no downloads before the player confirms launch options. */
     if (!window.__launcherConfirmed) return;
-    var b=mapBridge();
+    var b=bridge();
     if (b && b.hasPendingMapUpdate){
       try{
         if (b.hasPendingMapUpdate()){
@@ -3498,7 +3554,7 @@ var MAPVER=(function(){
   // off (caller must NOT continue the in-place reset).
   function applyOnNewGame(){
     if (!pending) return false;
-    var b=mapBridge();
+    var b=bridge();
     if (b && b.applyPendingMapUpdate){
       try{
         var res=b.applyPendingMapUpdate()||'';
@@ -3523,13 +3579,15 @@ var MAPVER=(function(){
   function boot(){
     if (bootTried) return; bootTried=true;
     detectActive();
-    /* Joshua's rule: a restart applies downloaded updates, so any yellow
-       "restart needed" flags from the last session are now cleared. */
-    loadRestartNeeded();
-    var _hadRn=anyRestartNeeded();
-    for (var _ri=0;_ri<TYPES.length;_ri++) clearRestartNeeded(TYPES[_ri]);
-    clearRestartNeeded('map');
-    if (_hadRn){ try{ updateGearBadge(); refreshAdmTags(); }catch(e){} }
+    /* Joshua's rule: a restart applies downloaded updates, so the yellow
+       "restart needed" flags from the last session are cleared at boot.
+       That clearing lives in ASSETVER.boot (2026-10-28 audit fix): the
+       helpers it needs (loadRestartNeeded / anyRestartNeeded / TYPES /
+       clearRestartNeeded / updateGearBadge / refreshAdmTags) are
+       ASSETVER-IIFE privates, and this function used to call them bare —
+       an unguarded ReferenceError that killed MAPVER.boot before its
+       checkPending timers were ever registered. MAPVER keeps no part
+       of that path now, so this boot can never throw on it. */
     // First check shortly after load, then every 2 minutes (Joshua's spec).
     // Cheap: 4 small manifest fetches (~1-2KB each). Never disrupts play.
     // v1.28: timers start only after the player confirms launch options.
@@ -4230,6 +4288,18 @@ var ASSETVER=(function(){
   function boot(){
     if (bootTried) return; bootTried=true;
     detectActive();
+    /* Joshua's rule: a restart applies downloaded updates, so any yellow
+       "restart needed" flags from the last session are now cleared.
+       (2026-10-28 audit fix: this clearing used to be attempted from
+       MAPVER.boot, which cannot reach these ASSETVER-private helpers —
+       the calls were dead and threw. It lives here now, with the state
+       it owns, including the 'map' flag MAPVER shares the yellow UI
+       for.) */
+    loadRestartNeeded();
+    var _hadRn=anyRestartNeeded();
+    for (var _ri=0;_ri<TYPES.length;_ri++) clearRestartNeeded(TYPES[_ri]);
+    clearRestartNeeded('map');
+    if (_hadRn){ try{ updateGearBadge(); refreshAdmTags(); }catch(e){} }
     // Joshua's rule: UI/vehicle/music updates apply automatically on launch.
     try{ if (autoApplyBootUpdates()) return; }catch(e){}
     /* v1.28: timers start only after the player confirms launch options. */
@@ -6631,6 +6701,57 @@ try{ __parseSet('Placing street furniture', '', 40); }catch(e){}
     }
     // caps for performance
     lights=lights.slice(0,60); stops=stops.slice(0,150);  // v1.10.1 road-pass-1: raised caps
+    /* PACKAGE PROVEN SIGNALS (2026-10-28 audit fix): in a package world
+       the traffic lights are the package's SURVEYED signals (pkg.signs,
+       kind 'signal' — the junctions the reference sweep PROVED are
+       signalised), not the intersection heuristic above. The package
+       places/pins/signs used to load into PACKAGE_MAP with nothing
+       reading them, so the proven signals rendered nowhere while the
+       heuristic scattered lights by road class alone — the opposite of
+       the redraw's evidence doctrine. Here the heuristic light list is
+       REPLACED by the proven set, each placed with the same beside-the-
+       road rule (perpendicular offset past the half-width, SignRules
+       validation, ground sit) the heuristic items get. Legacy worlds
+       (__PKG_WORLD unset) keep the heuristic exactly as before. */
+    var __pkgSignalCount=0;
+    try{
+      if (window.__PKG_WORLD && window.__PKG_PREBUILT && window.__PKG_PREBUILT.signs){
+        var __sigs=window.__PKG_PREBUILT.signs.filter(function(s){ return s.kind==='signal' && s.at; });
+        if (__sigs.length){
+          var __pkgLights=[];
+          __sigs.forEach(function(sg, sidx){
+            /* nearest hashed road sample to the junction centre —
+               its road supplies the direction + width for the offset */
+            var __best=null, __bd=1e18;
+            Object.keys(hash).forEach(function(k){
+              var arr=hash[k];
+              for (var hi=0;hi<arr.length;hi++){
+                var hp=arr[hi], hd=(hp.x-sg.at[0])*(hp.x-sg.at[0])+(hp.z-sg.at[1])*(hp.z-sg.at[1]);
+                if (hd<__bd){ __bd=hd; __best=hp; }
+              }
+            });
+            if (!__best) return;
+            var __rA=roadDrawData[__best.ri];
+            var __p0=__rA.pts[0], __p1=__rA.pts[__rA.pts.length-1];
+            var __dx=__p1[0]-__p0[0], __dz=__p1[1]-__p0[1], __len=Math.hypot(__dx,__dz)||1;
+            __dx/=__len; __dz/=__len;
+            var __off=(__best.w||7)/2+2.5;
+            var __side=(sidx%2===0)?1:-1;
+            var __sx=sg.at[0]+(-__dz)*__off*__side, __sz=sg.at[1]+(__dx)*__off*__side;
+            try{
+              if(typeof SignRules!=='undefined'){
+                var __fv=SignRules.place(__sx, __sz, {type:'furniture', margin:2.5, dir:{dx:__dx, dz:__dz}});
+                __sx=__fv.x; __sz=__fv.z;
+              }
+            }catch(e){}
+            var __gy=0; try{ __gy=roadSitY(__sx,__sz); }catch(e){ try{ __gy=heightAt(__sx,__sz); }catch(e2){} }
+            __pkgLights.push({x:__sx, z:__sz, y:__gy, yaw:Math.atan2(__dx,__dz),
+              name:__best.name, nameB:'', pkgSignal:sg.id});
+          });
+          if (__pkgLights.length){ lights=__pkgLights; __pkgSignalCount=__pkgLights.length; }
+        }
+      }
+    }catch(e){}
     /* SIGNS OFF (Joshua 2026-10-24): SignRules.ENABLED is the master
        switch in sign_rules.js. While it is false, stop signs and
        street-name signs do not spawn: their collections are emptied
@@ -6731,7 +6852,7 @@ try{ __parseSet('Placing street furniture', '', 40); }catch(e){}
       m.instanceMatrix.needsUpdate=true; scene.add(m);
     });
     try{Report.setSys('furniture',{intersections:found.length, trafficLights:lights.length,
-      stopSigns:stops.length, streetSigns:nameSigns.length,
+      stopSigns:stops.length, streetSigns:nameSigns.length, pkgSignals:__pkgSignalCount,
       signs:(signsOff?'disabled-2026-10-24':'enabled'), status:'ok'});}catch(e){}
   }catch(e){ try{Report.noteError('furniture','build failed',String(e&&e.stack||e));}catch(x){} }
 })();
@@ -15053,7 +15174,7 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <script data-dsrc="stuck.js" data-dkey=""></script>
 <script data-dsrc="stuck_diag.js" data-dkey=""></script>
 <script data-dsrc="veteran_crew.js" data-dkey="veteran"></script>
-<script data-dsrc="codeenforce_system.js" data-dkey=""></script>
+<script data-dsrc="codeenforce_system.js" data-dkey="codeenforce"></script>
 <script data-dsrc="roadcrew_system.js" data-dkey="roadcrew"></script>
 <script data-dsrc="roadfix.js" data-dkey=""></script>
 <script data-dsrc="marta_data.js" data-dkey="martadata"></script>
@@ -15083,7 +15204,7 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <script data-dsrc="worldfix_sync.js" data-dkey=""></script>
 <script data-dsrc="hq_staff_system.js" data-dkey="hq"></script>
 <script data-dsrc="dialogue_director_npc.js" data-dkey=""></script>
-<script data-dsrc="workerhousing.js" data-dkey=""></script>
+<script data-dsrc="workerhousing.js" data-dkey="workerhousing"></script>
 <script data-dsrc="daycycle.js" data-dkey=""></script>
 <script data-dsrc="blob_shadows.js" data-dkey=""></script>
 <script data-dsrc="perf_budget.js" data-dkey=""></script>

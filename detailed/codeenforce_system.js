@@ -1179,8 +1179,15 @@ function updateJobs(dt){
   for (var i=CE.jobs.length-1;i>=0;i--){
     var j=CE.jobs[i];
     if (j.vet && typeof VeteranCrew!=='undefined'){
+      /* The veteran foreman's ctx.toast carried his filed reports
+         to the game view. Joshua 2026-10-24: reports are recorded,
+         not displayed — the ctx toast now writes into the dispatch
+         log instead (same treatment as infracrew_system.js and
+         roadcrew_system.js; audit fix 2026-10-28 — this call site
+         still passed the real viewport toast). The reports are
+         still generated and filed exactly as before. */
       var ph=VeteranCrew.updateJob(j, dt, {time:CE.time,
-        log:function(m){ clog(m); }, toast:function(m){ toast(m); }});
+        log:function(m){ clog(m); }, toast:function(m){ clog(m); }});
       if (ph==='fixing'){ j.t+=dt; ceFixTick(j,dt); }
       else if (ph==='done'){ finishJob(j); CE.jobs.splice(i,1); }
       ceWorkZoneNudge(j);

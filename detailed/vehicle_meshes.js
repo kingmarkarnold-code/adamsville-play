@@ -26,7 +26,9 @@
      repeats), pickupMesh (90s single-cab, open bed), suvMesh, semiMesh
      (stylized 18-wheeler), martaBusMesh (MARTA city bus, white + blue/green),
      schoolBusMesh. Shared: pickPaint, pickRimStyle, makeDonkWheel, addCarDoor,
-     setCarDoors, addCarInterior, vehMat (cached materials), groundY.
+     setCarDoors, addCarInterior, vehMat (cached materials), vehGroundY
+     (plain heightAt helper for standalone/watcher use — NOT the game's
+     snap-aware groundY, which lives in index.html; see its definition).
    NOTE: traffic_system.js has its own separate simple instanced sedan meshes
    for ambient traffic — those are NOT these builders (instancing vs. these
    detailed meshes). The player's drivable van is safariMesh.
@@ -926,7 +928,18 @@ function vehMat(color){
   if (!_vehMats[color]) _vehMats[color]=((typeof vehPaintMat==='function')?vehPaintMat(color):new THREE.MeshLambertMaterial({color:color}));
   return _vehMats[color];
 }
-function groundY(x,z){
+/* vehGroundY(x,z) — plain analytic-ground helper for standalone use of
+   this file (the watcher loads it without index.html). RENAMED
+   2026-10-28 (audit fix): this used to be a second global `groundY`
+   colliding with index.html's snap-aware groundY (v1.35 SNAP-TO-FACE)
+   — whichever of the two files the load order evaluated LAST decided
+   what every groundY() caller in the game got. The game now has
+   exactly one groundY (index.html's, snap-aware); this heightAt-only
+   variant keeps its own name and meaning. The builders in this file
+   never call either helper, and the watcher never calls groundY —
+   game callers of groundY() always meant the shared global, which is
+   now unambiguous. */
+function vehGroundY(x,z){
   try{ return heightAt(x,z); }catch(e){ return 0; }
 }
 

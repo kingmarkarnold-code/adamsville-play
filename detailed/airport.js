@@ -18,8 +18,14 @@
         window bands.
      4. Connector road: asphalt ribbon from I-85 to the Airport Loop Rd.
 
-   Coordinate anchor: the MARTA AIRPORT station (5780.0, 7476.2) sits at
-   the Domestic Terminal west end. 1 world unit ~ 1 meter.
+   Coordinate anchor: the MARTA AIRPORT station (9459.2, 17496.2) sits at
+   the Domestic Terminal west end. 1 world unit = 1 meter.
+   FRAME (2026-10-28 audit fix): this dataset was authored in the
+   pre-rescale frame and has been converted with the same transform
+   Phase D applied to the GTFS data (s=1609/568 about the stage
+   centre (3772.5, 2009)) — the anchor lands exactly on the corrected
+   AIRPORT station in marta_data.js, and positions/sizes scaled
+   together so the airport's internal layout is unchanged.
 
    Defensive: fully no-op if THREE/scene/heightAt are unavailable, or if
    the JSON is missing/corrupt. Never throws at load.
@@ -34,7 +40,7 @@
 
 /* ---------- configuration ------------------------------------------------- */
 /* Relative to detailed/ — same folder as this script. */
-var AIRPORT_URL = 'airport.json?v=1';
+var AIRPORT_URL = 'airport.json?v=2';   // v2 = frame-converted data (2026-10-28)
 /* Height offsets so airport geometry sits above the terrain skin. */
 var RUNWAY_LIFT = 0.6;   // runways float just above the ground plane
 var ROAD_LIFT   = 0.5;   // connector road ribbon lift
@@ -49,46 +55,46 @@ var TEX_W = 2048, TEX_H = 40;
    Keep in sync with airport.json when the data changes. */
 var DEFAULT_AIRPORT = {
   runways: [
-    {id:"08L/26R", heading:90, length:3000, width:50, center:[7000,6776]},
-    {id:"08R/26L", heading:90, length:3000, width:50, center:[7000,7076]},
-    {id:"09L/27R", heading:90, length:3000, width:50, center:[7000,7676]},
-    {id:"09R/27L", heading:90, length:3000, width:50, center:[7000,7976]},
-    {id:"10/28",   heading:90, length:3000, width:50, center:[7000,8276]}
+    {id:"08L/26R", heading:90, length:8498.2, width:141.6, center:[12915.2,15512.7]},
+    {id:"08R/26L", heading:90, length:8498.2, width:141.6, center:[12915.2,16362.5]},
+    {id:"09L/27R", heading:90, length:8498.2, width:141.6, center:[12915.2,18062.2]},
+    {id:"09R/27L", heading:90, length:8498.2, width:141.6, center:[12915.2,18912.0]},
+    {id:"10/28", heading:90, length:8498.2, width:141.6, center:[12915.2,19761.8]}
   ],
   terminals: [
-    {name:"Domestic Terminal", type:"airport_terminal", position:[5780,7426],
-     width:500, depth:260, floors:2, walkable:false,
+    {name:"Domestic Terminal", type:"airport_terminal",
+     position:[9459.2,17354.0], width:1416.4, depth:736.5, floors:2, walkable:false,
      wall_color:"#cfc8b8", roof_color:"#6a6f75"},
     {name:"Maynard H. Jackson Jr. International Terminal", type:"airport_terminal",
-     position:[7930,7426], width:460, depth:260, floors:2, walkable:false,
+     position:[15549.6,17354.0], width:1303.1, depth:736.5, floors:2, walkable:false,
      wall_color:"#cfc8b8", roof_color:"#6a6f75"}
   ],
   concourses: [
-    {name:"Concourse T", type:"airport_concourse", position:[6110,7426],
-     width:90, depth:460, floors:1, walkable:false,
+    {name:"Concourse T", type:"airport_concourse", position:[10394.0,17354.0],
+     width:254.9, depth:1303.1, floors:1, walkable:false,
      wall_color:"#c4bda9", roof_color:"#6a6f75"},
-    {name:"Concourse A", type:"airport_concourse", position:[6360,7426],
-     width:90, depth:460, floors:1, walkable:false,
+    {name:"Concourse A", type:"airport_concourse", position:[11102.2,17354.0],
+     width:254.9, depth:1303.1, floors:1, walkable:false,
      wall_color:"#c4bda9", roof_color:"#6a6f75"},
-    {name:"Concourse B", type:"airport_concourse", position:[6610,7426],
-     width:90, depth:460, floors:1, walkable:false,
+    {name:"Concourse B", type:"airport_concourse", position:[11810.4,17354.0],
+     width:254.9, depth:1303.1, floors:1, walkable:false,
      wall_color:"#c4bda9", roof_color:"#6a6f75"},
-    {name:"Concourse C", type:"airport_concourse", position:[6860,7426],
-     width:90, depth:460, floors:1, walkable:false,
+    {name:"Concourse C", type:"airport_concourse", position:[12518.6,17354.0],
+     width:254.9, depth:1303.1, floors:1, walkable:false,
      wall_color:"#c4bda9", roof_color:"#6a6f75"},
-    {name:"Concourse D", type:"airport_concourse", position:[7110,7426],
-     width:90, depth:460, floors:1, walkable:false,
+    {name:"Concourse D", type:"airport_concourse", position:[13226.8,17354.0],
+     width:254.9, depth:1303.1, floors:1, walkable:false,
      wall_color:"#c4bda9", roof_color:"#6a6f75"},
-    {name:"Concourse E", type:"airport_concourse", position:[7360,7426],
-     width:90, depth:460, floors:1, walkable:false,
+    {name:"Concourse E", type:"airport_concourse", position:[13935.0,17354.0],
+     width:254.9, depth:1303.1, floors:1, walkable:false,
      wall_color:"#c4bda9", roof_color:"#6a6f75"},
-    {name:"Concourse F", type:"airport_concourse", position:[7610,7426],
-     width:90, depth:460, floors:1, walkable:false,
+    {name:"Concourse F", type:"airport_concourse", position:[14643.2,17354.0],
+     width:254.9, depth:1303.1, floors:1, walkable:false,
      wall_color:"#c4bda9", roof_color:"#6a6f75"}
   ],
   airport_roads: [
-    {name:"Airport Connector (I-85 to Terminal Loop)", width:16,
-     pts:[[5660,7390],[5800,7340],[5950,7240],[6100,7130],[6139,7050]]}
+    {name:"Airport Connector (I-85 to Terminal Loop)", width:45.3,
+     pts:[[9119.3,17252.0],[9515.9,17110.4],[9940.8,16827.1],[10365.7,16515.5],[10476.2,16288.9]]}
   ]
 };
 

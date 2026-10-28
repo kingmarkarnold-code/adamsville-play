@@ -1,25 +1,25 @@
 {
-  "files": [
-    {
-      "name": "vehicle_meshes.js",
-      "size": 57985,
-      "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/vehicle_meshes.js",
-      "sha256": "fb8d284611c93ff056762e448590db8b6d8525118c4dcc8743ad5c88fe8e8da3",
-      "hash": "fb8d284611c93ff056762e448590db8b6d8525118c4dcc8743ad5c88fe8e8da3"
-    },
-    {
-      "name": "vehicle_library.js",
-      "size": 11347,
-      "sha256": "84ea7bd18b5df6cca4716ad2411f77a426d2d740bb30ce1c3e68d9d27cbd5705",
-      "hash": "84ea7bd18b5df6cca4716ad2411f77a426d2d740bb30ce1c3e68d9d27cbd5705"
-    },
-    {
-      "name": "vehicle_library.glb",
-      "size": 682768,
-      "sha256": "d748977bbb12cae8e3ddcdcfedc4f09674572ccad7b4266ed89fef275c53cade",
-      "hash": "d748977bbb12cae8e3ddcdcfedc4f09674572ccad7b4266ed89fef275c53cade"
-    }
-  ],
-  "vehicles_version": "2026.10.28.2",
-  "version": "1.13.0"
+ "files": [
+  {
+   "name": "vehicle_meshes.js",
+   "size": 58853,
+   "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/vehicle_meshes.js",
+   "sha256": "e4868d7192c65d2516f66ab20d975878741fe58e5a62f67c0ea6089f0fc23ffe",
+   "hash": "e4868d7192c65d2516f66ab20d975878741fe58e5a62f67c0ea6089f0fc23ffe"
+  },
+  {
+   "name": "vehicle_library.js",
+   "size": 11347,
+   "sha256": "84ea7bd18b5df6cca4716ad2411f77a426d2d740bb30ce1c3e68d9d27cbd5705",
+   "hash": "84ea7bd18b5df6cca4716ad2411f77a426d2d740bb30ce1c3e68d9d27cbd5705"
+  },
+  {
+   "name": "vehicle_library.glb",
+   "size": 682768,
+   "sha256": "d748977bbb12cae8e3ddcdcfedc4f09674572ccad7b4266ed89fef275c53cade",
+   "hash": "d748977bbb12cae8e3ddcdcfedc4f09674572ccad7b4266ed89fef275c53cade"
+  }
+ ],
+ "vehicles_version": "2026.10.28.3",
+ "version": "1.13.0"
 }

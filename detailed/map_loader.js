@@ -884,6 +884,22 @@ function activatePackage(pkg){
     });
     window.PACKAGE_RAIL = { marta: marta, csx: csx, all: pkg.rail, pkg: pkg };
   } catch(e){}
+  /* 5. proven signals handoff (2026-10-28 audit fix): the package's
+     surveyed traffic signals (pkg.signs, kind 'signal') as a named
+     surface. buildPackage's convPointRec already converted these
+     points to RUNTIME coordinates (the same conversion the package
+     places and rail carry) — they are published as-is, never
+     converted twice. index.html's street-furniture pass reads the
+     same records off the prebuilt package at world-build time (it
+     runs before activation in the boot order) and places its traffic
+     lights from them in package mode — see streetFurniture there. */
+  try {
+    window.PACKAGE_SIGNALS = pkg.signs.filter(function(s){ return s.kind === 'signal' && s.at; })
+      .map(function(s){
+        return { id: s.id || null, name: s.name || 'signal', kind: 'signal',
+                 x: s.at[0], z: s.at[1], at: [s.at[0], s.at[1]] };
+      });
+  } catch(e){}
   window.PACKAGE_MAP = pkg;
   window.MapSystem.activePackage = pkg;
   note('package ACTIVE: ' + pkg.id + ' — ' + pkg.roads.length + ' roads, ' +
@@ -892,41 +908,92 @@ function activatePackage(pkg){
   return pkg;
 }
 
+/* ===================== activation driver (2026-10-28 audit fix) =====
+   THE DEFECT THIS REPLACES: tryBootPackage used to fire ONCE, 50 ms
+   after DOMContentLoaded. The seam stamps __PKG_SEAM_DONE at the START
+   of zone injection, but __PKG_PREBUILT only lands when the ~25 MB
+   package fetch resolves — seconds later. The one-shot call therefore
+   saw "seam done, no prebuilt package" and returned, and NOTHING ever
+   called it again: on a normal package boot the collision provider,
+   the deck/rail rendering and PACKAGE_RAIL silently never activated.
+
+   THE DRIVER: a bounded poll (every 250 ms) that rides the seam's own
+   load instead of racing it —
+     * activation happens only after bootWorld() has resolved (the
+       prebuilt package exists) AND collision_material.js has defined
+       its registration API, so activatePackage can never half-apply
+       (provider missing while decks render);
+     * bootWorld() is idempotent (one cached promise), so the driver
+       can safely start it when the seam hasn't — the package is never
+       fetched twice, whichever path gets there first;
+     * a seam fallback (__PKG_SEAM_FELL_BACK) settles the driver at
+       once: legacy serves, and no package provider may be layered
+       over a legacy world (a second truth);
+     * direct servings without index.html's seam keep working: if the
+       seam has not run within the grace window, the driver starts
+       bootWorld() itself (the old no-seam path, now through the same
+       idempotent entry). */
+var _pkgDriverTicks = 0, _pkgDriverSettled = false;
+var PKG_DRIVER_TICK_MS = 250, PKG_DRIVER_MAX_TICKS = 480,  /* ~2 minutes */
+    PKG_NO_SEAM_GRACE_TICKS = 12;                          /* ~3 seconds */
+function _collisionApiReady(){
+  return typeof CollisionMaterial !== 'undefined' &&
+         typeof CollisionMaterial.setPackageProvider === 'function' &&
+         typeof CollisionMaterial.setGroundSampler === 'function';
+}
 function tryBootPackage(){
-  /* Seam path (Phase D): index.html's seam already made the map
-     decision before the world build and set __PKG_SEAM_DONE. If it
-     built a package world, activate THAT prebuilt package (provider,
-     deck/rail rendering, PACKAGE_RAIL) — never load twice. If it fell
-     back to legacy (opt-out or fetch failure), activate nothing: a
-     package provider over a legacy world would be a second truth. */
-  if (window.__PKG_SEAM_DONE){
-    if (window.__PKG_PREBUILT) activatePackage(window.__PKG_PREBUILT);
+  if (_pkgDriverSettled) return;
+  _pkgDriverTicks++;
+  /* A prebuilt package + the collision API = activate, exactly once
+     (activatePackage also guards on pkg._activated). */
+  if (window.__PKG_PREBUILT){
+    if (_collisionApiReady()){
+      _pkgDriverSettled = true;
+      activatePackage(window.__PKG_PREBUILT);
+    } else if (_pkgDriverTicks >= PKG_DRIVER_MAX_TICKS){
+      _pkgDriverSettled = true;
+      note('package built but collision_material never became ready — ' +
+           'provider NOT registered (world serves without the package gate)');
+    }
     return;
   }
-  /* No-seam path (direct servings without index.html's seam): Phase
-     C's shape — load and activate when package mode is requested. */
-  if (!window.MapSystem || !window.MapSystem.packageModeRequested()) return;
-  var base = window.MapSystem.packageBaseOverride();
-  loadPackage(window.MapRegistry.defaultMapId, base)
-    .then(activatePackage)
-    .catch(function(err){
-      /* Not an error state: if the package is not in maps/<id>/ yet,
-         the fetch simply misses and the legacy zone system serves —
-         exactly the designed fallback. */
-      note('package not loaded (' + err.message + ') — legacy zone data serves');
-    });
+  /* The seam fell back to legacy: settle, activate nothing. */
+  if (window.__PKG_SEAM_FELL_BACK){ _pkgDriverSettled = true; return; }
+  /* Every remaining path is bounded: a hung fetch or a seam that
+     never runs must not leave this poll alive for the whole session. */
+  if (_pkgDriverTicks >= PKG_DRIVER_MAX_TICKS){
+    _pkgDriverSettled = true;
+    note('package activation driver gave up waiting — legacy zone data serves');
+    return;
+  }
+  /* The seam's load is in flight (bootWorld called, promise pending):
+     keep polling — __PKG_PREBUILT appears when it resolves. */
+  if (_bootWorldPromise) return;
+  if (window.__PKG_SEAM_DONE){
+    /* The seam decided but never started bootWorld (e.g. the loader
+       was not ready at seam time). Start it here — idempotent, so the
+       seam's own later call would still share the one fetch. If the
+       seam chose legacy outright, settle instead. */
+    if (window.MapSystem && window.MapSystem.packageModeRequested()) bootWorld();
+    else _pkgDriverSettled = true;
+    return;
+  }
+  /* No seam yet. Inside the grace window, keep waiting for it; past
+     the grace window this serving has no seam — drive bootWorld()
+     directly (never a second fetch: bootWorld caches its promise). */
+  if (_pkgDriverTicks > PKG_NO_SEAM_GRACE_TICKS) bootWorld();
 }
 
-/* Boot attempt: deferred scripts run before the world builds; the fetch
-   resolves whenever it resolves and the provider swaps in atomically.
-   A short delay lets collision_material.js (earlier in the queue)
-   finish defining its API first. */
+/* Boot attempt: start the activation driver. Deferred scripts run
+   before the world builds; the driver polls until the seam's package
+   load and collision_material are both ready, then activates once. */
 try {
   if (typeof window !== 'undefined' && window.MapSystem &&
       window.MapSystem.packageModeRequested()){
-    if (typeof document !== 'undefined' && document.readyState === 'loading')
-      document.addEventListener('DOMContentLoaded', function(){ setTimeout(tryBootPackage, 50); });
-    else setTimeout(tryBootPackage, 50);
+    var _pkgDriverTimer = setInterval(function(){
+      try { tryBootPackage(); } catch(e){}
+      if (_pkgDriverSettled) clearInterval(_pkgDriverTimer);
+    }, PKG_DRIVER_TICK_MS);
   }
 } catch(e){}
 

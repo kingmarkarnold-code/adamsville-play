@@ -453,14 +453,16 @@ window.GitHubReports = (function(){
      form's "Crew Report" type. Keys are the Report categories
      / queue type slugs those systems use: the road, infra,
      survey, HQ-staff, code-enforcement and priority-dispatch
-     crews, the municipal workforce, the veteran foremen, the
-     crew inspector (its note category is 'crewinspector'; its
+     crews, the municipal workforce, the veteran foremen, worker
+     housing (added 2026-10-28 audit fix — its notes filed as
+     "Other", unthrottled, while every sibling crew kind was here),
+     the crew inspector (its note category is 'crewinspector'; its
      queued type is 'inspector-finding'), and the Administrator
      crew-reports view's own status category. */
   var CREW_KINDS = {
     'roadcrew': 1, 'infracrew': 1, 'surveyfleet': 1,
     'hqstaff': 1, 'cityworkforce': 1, 'codeenforce': 1,
-    'prioritydispatch': 1, 'veterancrew': 1,
+    'prioritydispatch': 1, 'veterancrew': 1, 'workerhousing': 1,
     'crewinspector': 1, 'inspector-finding': 1, 'crewreports': 1
   };
 

@@ -8,9 +8,9 @@
   },
   {
    "name": "airport.js",
-   "size": 12422,
-   "sha256": "0c1e4431e3c6b6d72cc948e6b8d028f8073690ff5f46558ce6c0232e0c8a3876",
-   "hash": "0c1e4431e3c6b6d72cc948e6b8d028f8073690ff5f46558ce6c0232e0c8a3876"
+   "size": 13047,
+   "sha256": "baa6fba1ea4e337df6ec65956bfe1baf93c614c8b15d219dbfa21e2cbf89608b",
+   "hash": "baa6fba1ea4e337df6ec65956bfe1baf93c614c8b15d219dbfa21e2cbf89608b"
   },
   {
    "name": "ambient_audio.js",
@@ -61,9 +61,9 @@
   },
   {
    "name": "codeenforce_system.js",
-   "size": 68442,
-   "sha256": "4c3920af6cffeb7b5b6148e1d67a4bca86dec2b496fa13f5e75c11c593b2972e",
-   "hash": "4c3920af6cffeb7b5b6148e1d67a4bca86dec2b496fa13f5e75c11c593b2972e",
+   "size": 68900,
+   "sha256": "c82144e0781f9ea1b4261660b98e3ffe48c219ae19f2f20b11752994a8c46852",
+   "hash": "c82144e0781f9ea1b4261660b98e3ffe48c219ae19f2f20b11752994a8c46852",
    "md5": "b283f39474ebdc04515ab58cbf860f13"
   },
   {
@@ -124,16 +124,16 @@
   },
   {
    "name": "github_reports.js",
-   "size": 58752,
-   "sha256": "7624613715665d1c8cf6076327a53ee81cc246ef8550c1b225cd9badf92bdd30",
-   "hash": "7624613715665d1c8cf6076327a53ee81cc246ef8550c1b225cd9badf92bdd30",
+   "size": 58911,
+   "sha256": "4c0c6d84d37f111016953e5523cfd1583e3f2b15a988dc820a6894049b3aaa47",
+   "hash": "4c0c6d84d37f111016953e5523cfd1583e3f2b15a988dc820a6894049b3aaa47",
    "md5": "03aeb1c6800997be8c363d0a600c8934"
   },
   {
    "name": "goto.js",
-   "size": 50176,
-   "sha256": "bac319fa0450ba3fe9b337b7b68118023e24db84b1b611ab9fc39951382a5bd1",
-   "hash": "bac319fa0450ba3fe9b337b7b68118023e24db84b1b611ab9fc39951382a5bd1"
+   "size": 51909,
+   "sha256": "ce9282c72fb4816a0f1b024ee11c9bfd1373973f6c9e99a230c37d1bfe18d16c",
+   "hash": "ce9282c72fb4816a0f1b024ee11c9bfd1373973f6c9e99a230c37d1bfe18d16c"
   },
   {
    "name": "gps_system.js",
@@ -173,9 +173,9 @@
   },
   {
    "name": "index.html",
-   "size": 1113942,
-   "sha256": "d670a56c70efdc9a41785c1fe851e4e824694add2e575e225ec2dcc89164cb63",
-   "hash": "d670a56c70efdc9a41785c1fe851e4e824694add2e575e225ec2dcc89164cb63"
+   "size": 1120768,
+   "sha256": "2c0ebdc8b8c99a4256716b2fe25276bb31abd102c124c1f42f925162d0e149cd",
+   "hash": "2c0ebdc8b8c99a4256716b2fe25276bb31abd102c124c1f42f925162d0e149cd"
   },
   {
    "name": "infracrew_system.js",
@@ -209,10 +209,10 @@
   },
   {
    "name": "map_loader.js",
-   "sha256": "d338d0bd3f5f848cd71476c83e7769fa01d8dffd902a594b843c2376fcbf7655",
-   "size": 43753,
+   "sha256": "edd402ddc9bab5214fe3b79e46f7f5cecfbb8958640db9664a6dfab2fc93b08c",
+   "size": 47270,
    "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/map_loader.js",
-   "hash": "d338d0bd3f5f848cd71476c83e7769fa01d8dffd902a594b843c2376fcbf7655"
+   "hash": "edd402ddc9bab5214fe3b79e46f7f5cecfbb8958640db9664a6dfab2fc93b08c"
   },
   {
    "name": "map_registry.js",
@@ -253,9 +253,9 @@
   },
   {
    "name": "marta_system.js",
-   "size": 41480,
-   "sha256": "f1ac484cfaf783ee72ccc28fe84b0e3444d0cb357ae6ecc7bbb316190c450060",
-   "hash": "f1ac484cfaf783ee72ccc28fe84b0e3444d0cb357ae6ecc7bbb316190c450060",
+   "size": 41523,
+   "sha256": "e646662d1cda6565371ebbffa25234aea6eaaaa6871174c68ccefd22f9eff9c7",
+   "hash": "e646662d1cda6565371ebbffa25234aea6eaaaa6871174c68ccefd22f9eff9c7",
    "md5": "631f61b2da27b720c1125865f1c970eb"
   },
   {
@@ -731,6 +731,6 @@
    "hash": "99e3a8f264f836ba86b79c497fa2be946b3b469eafa442d0f70eabab239abeec"
   }
  ],
- "ui_version": "2026.10.28.9",
+ "ui_version": "2026.10.28.10",
  "version": "2026.10.17.9"
 }

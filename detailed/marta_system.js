@@ -642,22 +642,21 @@ function updateRiding(dt){
    trains and station arc positions all derive from that path, so the
    trains run on the corridor the package draws.
 
-   WHY ONLY THIS LINE, ONLY IN PACKAGE MODE: the legacy GTFS data
-   files (marta_data.js, marta_bus_data.js) still carry PRE-CONVERSION
-   ("original frame") coordinates — the rail subsystem is internally
-   consistent (tracks, stations and trains all read the same data) but
-   offset from the converted world by the split-zones rescale. The
-   package corridor is authored in true metres and converted once, so
-   it lands on the real ground. Rewriting all GTFS data to the
-   converted frame is a Phase D data decision (it moves every bus
-   route too); Phase C aligns the trains to the authored corridor
-   when the package is live and leaves legacy mode byte-identical. */
-function _origToRuntime(x, z){
-  /* The pre-conversion frame -> runtime frame: the split-zones rescale
-     about the stage centre, i.e. what xz() applies after projecting. */
-  return [3772.5 + (x - 3772.5) * 2.8327464788732395,
-          2009 + (z - 2009) * 2.8327464788732395];
-}
+   WHY ONLY THIS LINE, ONLY IN PACKAGE MODE: the package corridor is
+   authored in true metres and converted once, so it lands on the real
+   ground; Phase C aligned the trains to it when the package is live
+   and left legacy mode byte-identical.
+
+   FRAME NOTE (2026-10-28 audit fix): Phase D converted the GTFS data
+   files themselves (marta_data.js, marta_bus_data.js) into the runtime
+   frame — HAMILTON E HOLMES sits at (7293.9, 5355.0), 1.3u from the
+   package corridor. This branch used to run the station coordinates
+   through the old pre-conversion rescale a SECOND time, which threw
+   every West Line stop ~6.4k units past the corridor's 120u match
+   gate and off the line entirely. Station coordinates are therefore
+   used AS-IS below; the legacy branch further down never converted
+   and is untouched. (The old _origToRuntime helper is gone — no
+   caller remains.) */
 function packageCorridorFor(L, D){
   try {
     if (!window.MapSystem || !MapSystem.packageActive() ||
@@ -711,9 +710,11 @@ function initMarta(){
     var L=D.lines[li];
     /* Phase C: the authored package corridor replaces the West line's
        legacy polyline while the package is active. Stops are re-seated
-       by projecting their (frame-corrected) station positions onto the
-       corridor path; stations too far from the corridor (out of the
-       package's span) drop off this line in package mode. */
+       by projecting their station positions onto the corridor path;
+       stations too far from the corridor (out of the package's span)
+       drop off this line in package mode. The station positions are
+       already in the runtime frame (Phase D data conversion) and are
+       used as-is — see the FRAME NOTE above. */
     var corridor=packageCorridorFor(L, D);
     if (corridor){
       var cext=extendPtsToEdge(corridor);
@@ -724,7 +725,7 @@ function initMarta(){
         for (var ck=0;ck<D.stations.length;ck++)
           if (D.stations[ck].name===L.stops[cs].name){ stn=D.stations[ck]; break; }
         if (!stn) continue;
-        var rp=_origToRuntime(stn.x, stn.z);
+        var rp=[stn.x, stn.z];
         var na=nearestArc(cpath, rp[0], rp[1]);
         if (na.dist>120) continue;   // not on the authored corridor's span
         cstops.push({ name:L.stops[cs].name, s:na.s });
