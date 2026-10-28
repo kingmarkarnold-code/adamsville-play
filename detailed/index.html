@@ -4817,7 +4817,8 @@ sun.position.set(400, 700, 250);
 scene.add(sun);
 
 /* ---------- COLLISION REGISTRY ----------
-   Three collider kinds, all resolved every frame by resolveCollision():
+   Three collider kinds, all resolved every frame by the material
+     pushOut (reached through the resolveCollision delegate):
      (1) colliders .... circle colliders (props, trees, cars) - floor-aware
                         via y0/y1 so multi-floor interiors only collide with
                         their own floor. Removable via removeCollider().
@@ -4845,27 +4846,15 @@ function addCollider(x, z, r, y0, y1){
   return c;
 }
 /* v1.28 PERF (FIX 1): parallel spatial grid for prop/tree/sign colliders.
-   Same 40u cell size as bldgGrid. resolvePropColliders() does the 3x3-cell
+   Same 40u cell size as bldgGrid. The material pushOut does the 3x3-cell
    lookup with the same floor-awareness the flat loop had. */
 var propGrid = {};
-function resolvePropColliders(p, radius, py){
-  var cx=Math.floor(p.x/40), cz=Math.floor(p.z/40);
-  for (var gx=cx-1; gx<=cx+1; gx++) for (var gz=cz-1; gz<=cz+1; gz++){
-    var cell=propGrid[gx+','+gz]; if (!cell) continue;
-    for (var i=0;i<cell.length;i++){
-      var c=cell[i];
-      if (py<c.y0||py>c.y1) continue; // floor-aware (same as old flat loop)
-      var dx=p.x-c.x, dz=p.z-c.z;
-      /* v1.28 PERF (FIX 2): Math.sqrt(dx*dx+dz*dz) instead of Math.hypot —
-         2-5x faster, identical result for game-scale coordinates. */
-      var d=Math.sqrt(dx*dx+dz*dz), min=c.r+radius;
-      if (d < min && d > 0.001){
-        var push=(min-d)/d;
-        p.x += dx*push; p.z += dz*push;
-      }
-    }
-  }
-}
+/* PHASE C (2026-10-28): resolvePropColliders() and resolveBldgColliders()
+   are DELETED. Their contact math moved into collision_material.js
+   pushOut(), which reads these same registries (propGrid / bldgGrid) --
+   one solver, one truth. index.html's resolveCollision() delegates
+   there now. The registries themselves stay: the camera, the spawners
+   and the material gate all read them. */
 /* removeCollider(c) - unregisters one circle collider from the global
    `colliders` registry. Used for TEMPORARY work-zone colliders (road-crew
    cones/barriers) that must stop blocking movement when the zone clears.
@@ -4891,8 +4880,8 @@ var bldgGrid = {};
 function addBldgCollider(x, z, r, h, rect){
   /* 2026-10-18 COLLISION TRUTH (Joshua): a caller that knows the building's
      real FOOTPRINT passes rect={hw, hd, yaw} (half width/depth + facing
-     yaw) and the entry carries the oriented rectangle; resolveBldgColliders
-     and the material gate then collide with the actual walls. The old
+     yaw) and the entry carries the oriented rectangle; the material gate
+     and its pushOut then collide with the actual walls. The old
      circle-only entries reached metres past the walls on a building's
      short sides (r was half the LONG side or half the diagonal), so the
      van took crash damage in visibly clear air. `r` stays the bounding
@@ -4906,98 +4895,44 @@ function addBldgCollider(x, z, r, h, rect){
   var k=Math.floor(x/40)+','+Math.floor(z/40);
   (bldgGrid[k]=bldgGrid[k]||[]).push(e);
 }
-function resolveBldgColliders(p, radius){
-  var cx=Math.floor(p.x/40), cz=Math.floor(p.z/40);
-  for (var gx=cx-1; gx<=cx+1; gx++) for (var gz=cz-1; gz<=cz+1; gz++){
-    var cell=bldgGrid[gx+','+gz]; if (!cell) continue;
-    for (var i=0;i<cell.length;i++){
-      var c=cell[i];
-      if (c.hw!==undefined){
-        /* 2026-10-18: oriented-rect footprint. Work in the building's
-           local frame (same rotation convention as the meshes and
-           rotXZ(): world = R(yaw) * local with wx = lx*cy + lz*sy,
-           wz = -lx*sy + lz*cy). Take the closest point on the rectangle
-           to the entity centre and push out to exactly `radius` from
-           it: contact happens at the real wall plus the entity's own
-           size -- never in clear air, never inside the wall. */
-        var rdx=p.x-c.x, rdz=p.z-c.z;
-        var lx=rdx*c.cy - rdz*c.sy, lz=rdx*c.sy + rdz*c.cy;
-        var qx=lx<-c.hw?-c.hw:(lx>c.hw?c.hw:lx);
-        var qz=lz<-c.hd?-c.hd:(lz>c.hd?c.hd:lz);
-        var ex=lx-qx, ez=lz-qz;
-        var ed2=ex*ex+ez*ez;
-        if (ed2>0.000001){
-          var ed=Math.sqrt(ed2);
-          if (ed<radius){
-            var rpush=(radius-ed)/ed;
-            var wpx=ex*rpush, wpz=ez*rpush;
-            p.x += wpx*c.cy + wpz*c.sy;
-            p.z += -wpx*c.sy + wpz*c.cy;
-          }
-        } else {
-          /* Centre is INSIDE the footprint: leave by the nearest face,
-             ending `radius` beyond it. */
-          var pxa=c.hw-Math.abs(lx), pza=c.hd-Math.abs(lz);
-          if (pxa<pza) lx=(lx<0?-1:1)*(c.hw+radius);
-          else lz=(lz<0?-1:1)*(c.hd+radius);
-          p.x = c.x + lx*c.cy + lz*c.sy;
-          p.z = c.z - lx*c.sy + lz*c.cy;
-        }
-        continue;
-      }
-      var dx=p.x-c.x, dz=p.z-c.z;
-      var d=Math.sqrt(dx*dx+dz*dz), min=c.r+radius;
-      if (d < min && d > 0.001){
-        var push=(min-d)/d;
-        p.x += dx*push; p.z += dz*push;
-      }
-    }
-  }
-}
 // wall SEGMENT colliders (zero thickness; door gaps are true gaps, not skipped circles)
 var segColliders = [];  // {x1,z1,x2,z2}
-function addSegCollider(x1,z1,x2,z2,y0,y1){ segColliders.push({x1:x1,z1:z1,x2:x2,z2:z2,
-  y0:(y0===undefined?-1e9:y0), y1:(y1===undefined?1e9:y1)}); }
-/* resolveCollision(p, radius) - THE collision solver. Called every frame for
-   every moving entity (player, vehicles, NPCs). Pushes position `p` out of
-   every overlapping collider by the minimal push vector, then runs a second
-   iteration so stacked overlaps settle. Resolves, in order:
-     (1) circle colliders in `colliders` (floor-aware: skipped when the
-         entity's Y is outside the collider's y0/y1 band);
-     (2) OSM building circles via resolveBldgColliders() (spatial hash - only
-         the 3x3 grid cells around the entity are checked);
-     (3) wall segments in `segColliders` (closest-point-on-segment push;
-         floor-aware the same way).
-   Mutates `p` in place; has no return value. */
+function addSegCollider(x1,z1,x2,z2,y0,y1){ var sg={x1:x1,z1:z1,x2:x2,z2:z2,
+  y0:(y0===undefined?-1e9:y0), y1:(y1===undefined?1e9:y1)};
+  segColliders.push(sg);
+  /* PHASE C (2026-10-28): wall segments are material push-out truth now.
+     Register with collision_material.js (its pushOut resolves them);
+     the segColliders array remains only as the staging buffer the
+     material module adopts for segments added before it loaded, plus
+     the length the boot self-test reports. */
+  try{ if (window.CollisionMaterial && CollisionMaterial.registerWallSegment)
+    CollisionMaterial.registerWallSegment(sg); }catch(e){}
+}
+/* resolveCollision(p, radius) - historical call signature, kept for the
+   player loop and traffic's temporary checks. Since Phase C (2026-10-28)
+   it is a DELEGATE: the one solver is collision_material.js pushOut(),
+   which resolves contact over the same registries the movement gate
+   reads (propGrid circles, bldgGrid footprints, wall segments, interior
+   material boxes, package building rings), two iterations so stacked
+   overlaps settle. Mutates `p` in place; has no return value. */
 function resolveCollision(p, radius){
-  /* v1.13.6 FIX (py hoisting): `py` was assigned mid-loop via `var` hoisting,
-     so on the first iteration it was `undefined` — `undefined<c.y0` is false,
-     so the floor-aware `continue` never fired and colliders on OTHER floors
-     pushed the player. Now initialized up front from p.y or the player mesh. */
-  var py=-1e9; try{ py=p.y!==undefined?p.y:(player&&player.mesh?player.mesh.position.y:-1e9); }catch(e){}
-  for (var iter=0; iter<2; iter++){
-    /* v1.28 PERF (FIX 1): prop/tree colliders now resolved via the propGrid
-       spatial hash (3x3 cells) instead of a flat O(3000+) scan. */
-    try{ resolvePropColliders(p, radius, py); }catch(e){}
-    try{ resolveBldgColliders(p, radius); }catch(e){}  // v1.3 OSM buildings
-    try{ py=player.mesh.position.y; }catch(e){}
-    for (var s=0;s<segColliders.length;s++){
-      var sg=segColliders[s];
-      if(py<sg.y0||py>sg.y1) continue; // floor-aware: skip walls on other floors
-      var vx=sg.x2-sg.x1, vz=sg.z2-sg.z1;
-      var len2=vx*vx+vz*vz; if (len2<0.0001) continue;
-      var t=((p.x-sg.x1)*vx+(p.z-sg.z1)*vz)/len2;
-      t=t<0?0:(t>1?1:t);
-      var cx=sg.x1+vx*t, cz=sg.z1+vz*t;
-      var ex=p.x-cx, ez=p.z-cz;
-      /* v1.28 PERF (FIX 2): sqrt instead of hypot in this per-frame hot path. */
-      var ed=Math.sqrt(ex*ex+ez*ez);
-      if (ed < radius && ed > 0.001){
-        var epush=(radius-ed)/ed;
-        p.x += ex*epush; p.z += ez*epush;
-      }
+  /* PHASE C (2026-10-28) -- RETIRED AS A SOLVER. This function used to
+     run three private solvers (prop circles, building circles/rects,
+     wall segments) over registries the material gate also reads --
+     two truths, and they disagreed (bounding circles blocked open
+     ground; unregistered items blocked nobody). The contact math now
+     lives in collision_material.js pushOut(), over the SAME registries
+     plus the interior material boxes and the package footprint rings.
+     This delegate keeps the historical call signature for the player
+     loop and traffic's temp checks; there is no second solver left. */
+  try{
+    if (window.CollisionMaterial && CollisionMaterial.pushOut){
+      CollisionMaterial.pushOut(p, radius);
+      return;
     }
-  }
+  }catch(e){}
+  /* Material module failed to load: do nothing rather than resurrect
+     a second truth. The movement gate still guards destinations. */
 }
 
 /* v1.44 TERRAIN RESOLUTION (expert #6; Joshua 2026-10-11: 600x800, finer than
@@ -12818,14 +12753,14 @@ function updatePlayer(dt){
        resolveCollision() below handle it. */
     var _nx = player.x + wx*spd*dt, _nz = player.z + wz*spd*dt;
     if (typeof canMoveTo === 'function'){
-      if (canMoveTo(player.x, player.z, _nx, _nz, 'player')){
+      if (canMoveTo(player.x, player.z, _nx, _nz, 'player', {levelY:(player.mesh?player.mesh.position.y:undefined)})){
         player.x = _nx; player.z = _nz;
       } else {
         /* Blocked: try sliding along each axis (wall-slide behavior).
            Two extra cheap lookups, still far cheaper than a collision scan. */
-        if (canMoveTo(player.x, player.z, _nx, player.z, 'player')){
+        if (canMoveTo(player.x, player.z, _nx, player.z, 'player', {levelY:(player.mesh?player.mesh.position.y:undefined)})){
           player.x = _nx;
-        } else if (canMoveTo(player.x, player.z, player.x, _nz, 'player')){
+        } else if (canMoveTo(player.x, player.z, player.x, _nz, 'player', {levelY:(player.mesh?player.mesh.position.y:undefined)})){
           player.z = _nz;
         }
         /* Fully blocked: don't move. resolveCollision() below still runs
@@ -13116,7 +13051,7 @@ function updateCar(dt){
   // or pull over anywhere). Buildings, deep water, closed doors still block.
   // resolveCollision() is KEPT as fallback for fine push-out.
   var tmp={x:nx,z:nz};
-  if (typeof canMoveTo === 'function' && !canMoveTo(car.x, car.z, nx, nz, 'vehicle', {playerDriven: true, speed: car.speed, key: 'player_car'})){
+  if (typeof canMoveTo === 'function' && !canMoveTo(car.x, car.z, nx, nz, 'vehicle', {playerDriven: true, speed: car.speed, key: 'player_car', levelY: (car.mesh?car.mesh.position.y:undefined)})){
     /* Material says no: don't move into the blocked position.
        Kill forward momentum (like hitting a barrier). */
     nx = car.x; nz = car.z;
@@ -15042,6 +14977,8 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
      resolveCollision, own #action-btn listener) -- no game-code edits needed. -->
 <script data-dsrc="interior_system.js" data-dkey=""></script>
 <script data-dsrc="collision_material.js" data-dkey=""></script>
+<script data-dsrc="map_registry.js" data-dkey=""></script>
+<script data-dsrc="map_loader.js" data-dkey=""></script>
 <script data-dsrc="water_interaction.js" data-dkey=""></script> <!-- WATER INTERACTION (Joshua 2026-10-11) — sinking/shore-respawn helpers + fish system. Defensive: no-op if water data is missing. -->
 <!-- ===== INLINE SCRIPT BLOCK 3: final placement audit (v2.0 - Joshua's
      automatic check) ===== Runs ONCE, after EVERY building system has loaded

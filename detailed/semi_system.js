@@ -224,6 +224,27 @@ function driveDirect(s, tx, tz, dt, maxSpeed){
    isn't stuck). Returns done (true = remove this semi). */
 function stepSemi(s,dt){
   var done=false;
+  /* PHASE C (2026-10-28) — THE MATERIAL GATE: a PERSON material ahead
+     holds the semi where it stands (road states), decided by the same
+     one gate every mover uses. A 40-ton truck stops for people, full
+     stop; the hold is a yield, not a stuck truck (the watchdog below
+     already treats yields as not-stuck, and this returns before it). */
+  s.personWait=false;
+  if (s.state==='i20_in'||s.state==='fib_out'||s.state==='fib_back'||s.state==='i20_out'){
+    try{
+      if (typeof canMoveTo==='function' && typeof getMaterialAt==='function' &&
+          typeof COLLISION_MATERIALS!=='undefined'){
+        var _sax=s.x+Math.sin(s.heading)*(s.speed*dt+9),
+            _saz=s.z+Math.cos(s.heading)*(s.speed*dt+9);
+        if (getMaterialAt(_sax,_saz,true)===COLLISION_MATERIALS.PERSON &&
+            !canMoveTo(s.x,s.z,_sax,_saz,MOVER_VEHICLE,
+                       {speed:s.speed, heading:s.heading, selfRef:s})){
+          s.personWait=true; s.speed=0;
+          return false;
+        }
+      }
+    }catch(e){}
+  }
   if (s.state==='i20_in'){
     // west on I-20: portal -> interchange
     s.t+=s.speed*dt; s.speed=Math.min(SEMI_SPEED,s.speed+8*dt);

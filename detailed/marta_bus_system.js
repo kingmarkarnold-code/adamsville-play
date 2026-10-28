@@ -311,6 +311,23 @@ function updateBus(b, dt){
         } else { b.waitVehT=0; b.assistReq=false; }
       }
     }catch(e){}
+    /* PHASE C (2026-10-28) — THE MATERIAL GATE: a PERSON material in
+       the bus's path stops the bus, through the same one gate traffic
+       uses. Buses wait, never go around (Joshua's rule), so a person
+       ahead simply zeroes the target until the path clears. */
+    b.personYield=false;
+    try{
+      if (b.state==='run' && b.speed>0.1 && typeof canMoveTo==='function' &&
+          typeof getMaterialAt==='function' &&
+          typeof COLLISION_MATERIALS!=='undefined'){
+        var _pp=route.path.posAt(b.s + b.dir*(b.speed*dt + Math.max(6, b.speed*0.55)));
+        if (getMaterialAt(_pp[0], _pp[1], true)===COLLISION_MATERIALS.PERSON &&
+            !canMoveTo(b.x, b.z, _pp[0], _pp[1], MOVER_VEHICLE,
+                       {speed:b.speed, heading:b.yaw, selfRef:b})){
+          target=0; b.personYield=true;
+        }
+      }
+    }catch(e){}
     b.speed+=(target-b.speed)*Math.min(1,dt*1.8);
     b.s+=b.dir*b.speed*dt;
     b.s=Math.max(0,Math.min(route.path.length,b.s));

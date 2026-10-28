@@ -16,6 +16,17 @@
 
    The old resolveCollision() system is KEPT as a fallback — this module
    runs first (cheap reject), old system runs after (fine push-out).
+
+   PHASE C AMENDMENT (2026-10-28, Joshua's material doctrine restated):
+   the fallback arrangement is RETIRED. This module is now the ONE
+   collision truth — the gate (canMoveTo), the level-aware lookup
+   (getMaterialAtLevel), the rest surfaces (surfaceYAt) and the push-out
+   (pushOut, which index.html's resolveCollision now delegates to) all
+   read the same registries, including the active map package's baked
+   materials (map_loader.js provider). Every mover routes through the
+   gate: player, NPC walkers (their private grid is deleted), traffic,
+   buses, semis, school buses. Interiors register their boxes here as
+   material solids; there is no second solver left.
    ============================================================================ */
 
 /* Material types. The numbers are identifiers — lookup priority comes from
@@ -96,6 +107,29 @@ function getMaterialAt(x, z, skipCache){
        never smeared by the 20u cell cache. --- */
     if (_personAt(x, z)){
       mat = COLLISION_MATERIALS.PERSON;
+    }
+    /* --- PACKAGE (Phase C): the active map package's baked material
+       truth (building rings, roads, water, rail corridor, deck
+       under-space) — map_loader.js registers its provider via
+       setPackageProvider(). A null answer means "the package has
+       nothing here" and the legacy probes below still serve (props,
+       doors and people are not package data). --- */
+    else if (_pkgProvider){
+      var _pm = null;
+      try { _pm = _pkgProvider.materialAt(x, z); } catch(e){ _pm = null; }
+      if (_pm !== null && _pm !== undefined) mat = _pm;
+      else if (typeof inWater === 'function' && inWater(x, z)){
+        mat = COLLISION_MATERIALS.WATER;
+      }
+      else if (typeof onRoad === 'function' && onRoad(x, z)){
+        mat = COLLISION_MATERIALS.ROAD;
+      }
+      else if (_isClosedDoorAt(x, z)){
+        mat = COLLISION_MATERIALS.DOOR;
+      }
+      else if (_isSolidAt(x, z)){
+        mat = COLLISION_MATERIALS.SOLID;
+      }
     }
     /* --- WATER: highest priority after DOOR --- */
     /* inWater() is defined in index.html; scans the small WATER array. */
@@ -178,6 +212,15 @@ MATERIAL_LAYERS[COLLISION_MATERIALS.ROAD]  = { base: COLLISION_MATERIALS.GRASS, 
    "where is the ground". Falls back to analytic heightAt only if the
    mesh grid isn't built yet. */
 function grassSurfaceY(x, z){
+  /* Phase C: while a map package is active, its terrain grid (USGS
+     3DEP, water carved) is the ground truth — installed via
+     setGroundSampler() by map_loader.js. */
+  if (_groundSampler){
+    try {
+      var gy = _groundSampler(x, z);
+      if (gy !== null && gy !== undefined && isFinite(gy)) return gy;
+    } catch(e){}
+  }
   try {
     if (typeof terrainMeshY === 'function'){
       var y = terrainMeshY(x, z);
@@ -255,13 +298,26 @@ function materialRoadTopY(x, z){
    Returns null when no valid surface exists. Callers MUST fall back to
    their previous Y or another reference (never teleport to 0).
    --------------------------------------------------------------------------- */
-function surfaceYAt(x, z){
+function surfaceYAt(x, z, levelY){
   try {
     /* Exact (uncached) material — a 20u cache cell can straddle a road
-       edge, and rest height must match the exact sample point. */
-    var mat = getMaterialAt(x, z, true);
+       edge, and rest height must match the exact sample point. Phase C:
+       when the caller supplies its current surface level (levelY), the
+       lookup is level-aware so a mover ON a bridge deck reads the deck,
+       not the ground under it. */
+    var mat = (typeof levelY === 'number' && isFinite(levelY))
+      ? getMaterialAtLevel(x, z, levelY) : getMaterialAt(x, z, true);
     /* SOLID: nothing to rest on. */
     if (mat === COLLISION_MATERIALS.SOLID) return null;
+    /* PACKAGE (Phase C): the active package knows its own surfaces —
+       deck tops at deck level and road profiles (level-matched when
+       stacked roads cross at an interchange). */
+    if (_pkgProvider){
+      try {
+        var psy = _pkgProvider.surfaceY(x, z, levelY);
+        if (psy !== null && psy !== undefined && isFinite(psy)) return psy;
+      } catch(e){}
+    }
     /* ROAD: exact rendered top (bridge-aware). */
     if (mat === COLLISION_MATERIALS.ROAD){
       try {
@@ -333,10 +389,11 @@ function registerDoor(x, z, radius){
    culled by zoneunlock, the blocker lapses on its own — no stale
    ghosts standing in the road.
 
-   SCOPE NOTE: this is the REGISTRATION half of the traffic-through-
-   people fix. The other half — routing every mover, traffic included,
-   through this one gate — is the map programme's Phase C unification;
-   traffic_system.js does not call canMoveTo() yet.
+   SCOPE NOTE (updated Phase C, 2026-10-28): the routing half is now
+   built — traffic_system.js, marta_bus_system.js, semi_system.js and
+   schoolbus_system.js all consult canMoveTo() before advancing, and
+   their probes stop the vehicle when this registry puts a PERSON in
+   its path. The registration above is the only half that lives here.
    --------------------------------------------------------------------------- */
 var _peoplePositions = [];  // {id, x, z, r, t} — registered by people systems
 function setPersonBlocker(id, x, z, radius){
@@ -430,13 +487,11 @@ function _isSolidAt(x, z){
     }
   } catch(e){}
 
-  /* 3. Interior furniture/walls via InteriorCollision (only when inside). */
-  try {
-    if (typeof window !== 'undefined' && window.InteriorCollision &&
-        window.InteriorCollision.checkCollision(x, z)){
-      return true;
-    }
-  } catch(e){}
+  /* 3. Interior furniture/walls — Phase C: interior boxes are
+     registered as material solids in THIS module (registerSolidBox);
+     interior_system.js no longer keeps a private collision store, so
+     this is the same truth the gate and the push-out read. */
+  if (solidBoxAt(x, z, R)) return true;
 
   return false;
 }
@@ -476,13 +531,21 @@ function _isSolidAt(x, z){
    --------------------------------------------------------------------------- */
 function canMoveTo(fromX, fromZ, toX, toZ, moverType, opts){
   moverType = moverType || MOVER_PLAYER;
-  opts = opts || {};  /* {playerDriven, speed, key, home, heading, selfRef} */
+  opts = opts || {};  /* {playerDriven, speed, key, home, heading, selfRef, levelY} */
   var targetMat, fromMat;
+
+  /* Phase C LEVELS: opts.levelY is the mover's current surface height.
+     When supplied, materials resolve at that level — a vehicle on a
+     bridge deck may cross the span; the same vehicle at ground level
+     meets the deck's blocked under-space. */
+  var _lvl = (typeof opts.levelY === 'number' && isFinite(opts.levelY))
+    ? opts.levelY : null;
 
   /* Fresh (uncached) lookups: the 20u cache cell can straddle a road
      edge, so from and to need exact materials for the grass rules. */
   try {
-    targetMat = getMaterialAt(toX, toZ, true);
+    targetMat = (_lvl !== null)
+      ? getMaterialAtLevel(toX, toZ, _lvl) : getMaterialAt(toX, toZ, true);
   } catch(e){ return true; }  // lookup failed -> permissive
 
   /* --- Universal blocks --- */
@@ -532,7 +595,8 @@ function canMoveTo(fromX, fromZ, toX, toZ, moverType, opts){
        Universal blocks (buildings, deep water, closed doors) still apply. */
     if (opts.playerDriven) return true;
 
-    try { fromMat = getMaterialAt(fromX, fromZ, true); }
+    try { fromMat = (_lvl !== null)
+      ? getMaterialAtLevel(fromX, fromZ, _lvl) : getMaterialAt(fromX, fromZ, true); }
     catch(e){ fromMat = COLLISION_MATERIALS.NONE; }
 
     var vKey = opts.key || null;   // vehicle identity for grass sessions
@@ -781,6 +845,309 @@ function tryMove(mover, newX, newZ, moverType, opts){
   return false;
 }
 
+
+/* ===========================================================================
+   PHASE C (2026-10-28) — ONE GATE FOR EVERY MOVER, PACKAGE TRUTH, LEVELS,
+   AND THE ONLY PUSH-OUT.
+
+   - setPackageProvider(provider): map_loader.js registers the active map
+     package's material provider (materialAt / materialAtLevel / surfaceY /
+     pushOutRings over the package's baked data). getMaterialAt consults it
+     after PERSON; surfaceYAt consults its surfaces. One provider at a
+     time; registering replaces and invalidates the material cache.
+   - getMaterialAtLevel(x, z, levelY): material at a point FOR A MOVER AT
+     levelY — bridge decks read as their surface on deck level and as
+     blocked under-space at ground level. Without a package, levels change
+     nothing (legacy world has no deck data) and this equals getMaterialAt.
+   - registerSolidBox / solidBoxAt: the interior system's furniture and
+     wall boxes live HERE now (material solids). interior_system.js
+     registers its boxes into this registry (early registrations stage
+     through window.__pendingSolidBoxes, adopted below at load).
+   - registerWallSegment: wall segments (hero-house walls, school and
+     hotel walls — zero-thickness, floor-banded) register here from
+     index.html's addSegCollider. A point lookup cannot see a zero-
+     thickness wall, so segments are push-out truth only — the gate
+     governs destinations, pushOut resolves contact, both read this one
+     registry (plus propGrid / bldgGrid, the same data _isSolidAt reads).
+   - pushOut(p, radius): THE solver. index.html's resolveCollision()
+     delegates here; its old private solvers (prop circles / building
+     rects / segment loop) were deleted with it. Two iterations, same
+     contact math the old solvers used, over the same registries the
+     gate reads — one truth, no second system.
+   =========================================================================== */
+var _pkgProvider = null;      // active map package provider (map_loader.js)
+var _groundSampler = null;    // active package terrain sampler (runtime Y)
+
+function setPackageProvider(provider){
+  _pkgProvider = provider || null;
+  invalidateMaterialCache();
+}
+function setGroundSampler(fn){
+  _groundSampler = (typeof fn === 'function') ? fn : null;
+  invalidateMaterialCache();
+}
+
+/* getMaterialAtLevel(x, z, levelY) — level-aware material lookup. */
+function getMaterialAtLevel(x, z, levelY){
+  if (typeof levelY !== 'number' || !isFinite(levelY))
+    return getMaterialAt(x, z, true);
+  /* People read at every level — a person on a deck still stops cars. */
+  try { if (_personAt(x, z)) return COLLISION_MATERIALS.PERSON; } catch(e){}
+  if (_pkgProvider){
+    try {
+      var m = _pkgProvider.materialAtLevel(x, z, levelY);
+      if (m !== null && m !== undefined) return m;
+    } catch(e){}
+  }
+  return getMaterialAt(x, z, true);
+}
+
+/* ---------------- material solid boxes (interiors) ---------------- */
+var _solidBoxes = [];            // {id,minX,maxX,minZ,maxZ,buildingId}
+var _solidBoxHash = {};          // "gx,gz" -> [box] (40u cells)
+var _solidBoxSeq = 0;
+function _solidBoxCells(b, fn){
+  var gx0 = Math.floor(b.minX / 40), gx1 = Math.floor(b.maxX / 40);
+  var gz0 = Math.floor(b.minZ / 40), gz1 = Math.floor(b.maxZ / 40);
+  /* A pathological box spanning the map would flood the hash; interior
+     boxes are room-scale — cap the span and fall back to a full scan in
+     solidBoxAt when a box was too large to hash (flagged _huge). */
+  if (gx1 - gx0 > 8 || gz1 - gz0 > 8){ b._huge = true; return; }
+  for (var gx = gx0; gx <= gx1; gx++)
+    for (var gz = gz0; gz <= gz1; gz++) fn(gx + ',' + gz);
+}
+function registerSolidBox(box){
+  if (!box) return null;
+  box.id = box.id || ('mbox' + (++_solidBoxSeq));
+  _solidBoxes.push(box);
+  _solidBoxCells(box, function(k){ (_solidBoxHash[k] = _solidBoxHash[k] || []).push(box); });
+  invalidateMaterialCache();
+  return box.id;
+}
+function unregisterSolidBox(id){
+  for (var i = 0; i < _solidBoxes.length; i++){
+    if (_solidBoxes[i].id === id){
+      var b = _solidBoxes[i];
+      _solidBoxes.splice(i, 1);
+      _solidBoxCells(b, function(k){
+        var cell = _solidBoxHash[k]; if (!cell) return;
+        var j = cell.indexOf(b); if (j >= 0) cell.splice(j, 1);
+      });
+      invalidateMaterialCache();
+      return true;
+    }
+  }
+  return false;
+}
+function solidBoxAt(x, z, pad){
+  /* pad (optional mover radius) restores the circle-vs-box semantics
+     the interior system's own checkCollision used before Phase C */
+  var p = pad || 0;
+  var k = Math.floor(x / 40) + ',' + Math.floor(z / 40);
+  var cell = _solidBoxHash[k];
+  if (cell){
+    for (var i = 0; i < cell.length; i++){
+      var b = cell[i];
+      if (x >= b.minX - p && x <= b.maxX + p && z >= b.minZ - p && z <= b.maxZ + p) return b;
+    }
+  }
+  for (var j = 0; j < _solidBoxes.length; j++){
+    var hb = _solidBoxes[j];
+    if (hb._huge && x >= hb.minX - p && x <= hb.maxX + p && z >= hb.minZ - p && z <= hb.maxZ + p)
+      return hb;
+  }
+  return null;
+}
+function listSolidBoxes(){ return _solidBoxes.slice(); }
+function setSolidBoxes(arr){
+  _solidBoxes = []; _solidBoxHash = {};
+  if (arr) for (var i = 0; i < arr.length; i++){
+    var b = arr[i];
+    b.id = b.id || ('mbox' + (++_solidBoxSeq));
+    _solidBoxes.push(b);
+    _solidBoxCells(b, function(k){ (_solidBoxHash[k] = _solidBoxHash[k] || []).push(b); });
+  }
+  invalidateMaterialCache();
+}
+/* Adopt boxes the interior system staged before this module loaded
+   (it sits earlier in the deferred queue). After adoption the registry
+   here is the only store; interior_system delegates to it. */
+try {
+  if (typeof window !== 'undefined' && window.__pendingSolidBoxes &&
+      window.__pendingSolidBoxes.length){
+    setSolidBoxes(window.__pendingSolidBoxes);
+    window.__pendingSolidBoxes = [];
+  }
+} catch(e){}
+
+/* ---------------- wall segments (push-out truth) ---------------- */
+var _wallSegs = [];              // {x1,z1,x2,z2,y0,y1}
+var _wallSegHash = {};           // "gx,gz" -> [seg] (40u cells, bbox-filed)
+function registerWallSegment(s){
+  if (!s) return;
+  var seg = { x1: s.x1, z1: s.z1, x2: s.x2, z2: s.z2,
+              y0: (s.y0 === undefined ? -1e9 : s.y0),
+              y1: (s.y1 === undefined ? 1e9 : s.y1) };
+  _wallSegs.push(seg);
+  var gx0 = Math.floor(Math.min(seg.x1, seg.x2) / 40), gx1 = Math.floor(Math.max(seg.x1, seg.x2) / 40);
+  var gz0 = Math.floor(Math.min(seg.z1, seg.z2) / 40), gz1 = Math.floor(Math.max(seg.z1, seg.z2) / 40);
+  for (var gx = gx0; gx <= gx1; gx++)
+    for (var gz = gz0; gz <= gz1; gz++)
+      (_wallSegHash[gx + ',' + gz] = _wallSegHash[gx + ',' + gz] || []).push(seg);
+  return seg;
+}
+function wallSegmentsNear(x, z){
+  var gx = Math.floor(x / 40), gz = Math.floor(z / 40), out = [], seen = [];
+  for (var ix = gx - 1; ix <= gx + 1; ix++)
+    for (var iz = gz - 1; iz <= gz + 1; iz++){
+      var c = _wallSegHash[ix + ',' + iz]; if (!c) continue;
+      for (var i = 0; i < c.length; i++)
+        if (seen.indexOf(c[i]) === -1){ seen.push(c[i]); out.push(c[i]); }
+    }
+  return out;
+}
+/* Adopt any wall segments index.html staged before this module loaded
+   (its segColliders array is the staging buffer; addSegCollider keeps
+   registering new ones here as walls are built). */
+try {
+  if (typeof window !== 'undefined' && window.segColliders &&
+      window.segColliders.length){
+    for (var _wsi = 0; _wsi < window.segColliders.length; _wsi++)
+      registerWallSegment(window.segColliders[_wsi]);
+  }
+} catch(e){}
+
+/* ---------------- pushOut(p, radius) — THE solver ----------------
+   Contact resolution over the SAME registries the gate reads:
+   propGrid circles (floor-banded), bldgGrid rects/circles, package
+   building rings, material solid boxes, wall segments (floor-banded).
+   Mutates p in place; two iterations so stacked overlaps settle. */
+function pushOut(p, radius){
+  if (!p) return;
+  radius = radius || 0.5;
+  var py = -1e9;
+  try { py = (p.y !== undefined) ? p.y
+    : ((typeof player !== 'undefined' && player && player.mesh)
+        ? player.mesh.position.y : -1e9); } catch(e){}
+  for (var iter = 0; iter < 2; iter++){
+    /* (1) prop/tree circles via propGrid (floor-aware) */
+    try {
+      if (typeof propGrid !== 'undefined' && propGrid){
+        var cx = Math.floor(p.x / 40), cz = Math.floor(p.z / 40);
+        for (var gx = cx - 1; gx <= cx + 1; gx++)
+        for (var gz = cz - 1; gz <= cz + 1; gz++){
+          var cell = propGrid[gx + ',' + gz]; if (!cell) continue;
+          for (var i = 0; i < cell.length; i++){
+            var c = cell[i];
+            if (py < c.y0 || py > c.y1) continue;
+            var dx = p.x - c.x, dz = p.z - c.z;
+            var d = Math.sqrt(dx * dx + dz * dz), min = c.r + radius;
+            if (d < min && d > 0.001){
+              var push = (min - d) / d;
+              p.x += dx * push; p.z += dz * push;
+            }
+          }
+        }
+      }
+    } catch(e){}
+    /* (2) buildings via bldgGrid — oriented rect where the entry carries
+       the real footprint (2026-10-18 collision truth), circle otherwise */
+    try {
+      if (typeof bldgGrid !== 'undefined' && bldgGrid){
+        var bx = Math.floor(p.x / 40), bz = Math.floor(p.z / 40);
+        for (var hx = bx - 1; hx <= bx + 1; hx++)
+        for (var hz = bz - 1; hz <= bz + 1; hz++){
+          var bcell = bldgGrid[hx + ',' + hz]; if (!bcell) continue;
+          for (var j = 0; j < bcell.length; j++){
+            var bc = bcell[j];
+            if (bc.hw !== undefined){
+              var rdx = p.x - bc.x, rdz = p.z - bc.z;
+              var lx = rdx * bc.cy - rdz * bc.sy, lz = rdx * bc.sy + rdz * bc.cy;
+              var qx = lx < -bc.hw ? -bc.hw : (lx > bc.hw ? bc.hw : lx);
+              var qz = lz < -bc.hd ? -bc.hd : (lz > bc.hd ? bc.hd : lz);
+              var ex = lx - qx, ez = lz - qz;
+              var ed2 = ex * ex + ez * ez;
+              if (ed2 > 0.000001){
+                var ed = Math.sqrt(ed2);
+                if (ed < radius){
+                  var rp = (radius - ed) / ed;
+                  var wpx = ex * rp, wpz = ez * rp;
+                  p.x += wpx * bc.cy + wpz * bc.sy;
+                  p.z += -wpx * bc.sy + wpz * bc.cy;
+                }
+              } else {
+                var pxa = bc.hw - Math.abs(lx), pza = bc.hd - Math.abs(lz);
+                if (pxa < pza) lx = (lx < 0 ? -1 : 1) * (bc.hw + radius);
+                else lz = (lz < 0 ? -1 : 1) * (bc.hd + radius);
+                p.x = bc.x + lx * bc.cy + lz * bc.sy;
+                p.z = bc.z - lx * bc.sy + lz * bc.cy;
+              }
+              continue;
+            }
+            var bdx = p.x - bc.x, bdz = p.z - bc.z;
+            var bd = Math.sqrt(bdx * bdx + bdz * bdz), bmin = bc.r + radius;
+            if (bd < bmin && bd > 0.001){
+              var bpush = (bmin - bd) / bd;
+              p.x += bdx * bpush; p.z += bdz * bpush;
+            }
+          }
+        }
+      }
+    } catch(e){}
+    /* (3) package building rings (baked footprint truth) */
+    if (_pkgProvider){
+      try { _pkgProvider.pushOutRings(p, radius); } catch(e){}
+    }
+    /* (4) material solid boxes (interiors): AABB push-out, slides along
+       faces; a centre inside the box ejects by the smallest penetration */
+    for (var bi = 0; bi < _solidBoxes.length; bi++){
+      var bb = _solidBoxes[bi];
+      if (p.x < bb.minX - radius || p.x > bb.maxX + radius ||
+          p.z < bb.minZ - radius || p.z > bb.maxZ + radius) continue;
+      var ccx = p.x < bb.minX ? bb.minX : (p.x > bb.maxX ? bb.maxX : p.x);
+      var ccz = p.z < bb.minZ ? bb.minZ : (p.z > bb.maxZ ? bb.maxZ : p.z);
+      var bdx2 = p.x - ccx, bdz2 = p.z - ccz;
+      var bd2 = bdx2 * bdx2 + bdz2 * bdz2;
+      if (bd2 < radius * radius){
+        if (bd2 > 1e-8){
+          var bd3 = Math.sqrt(bd2), bp2 = (radius - bd3) / bd3;
+          p.x += bdx2 * bp2; p.z += bdz2 * bp2;
+        } else {
+          var pl = p.x - bb.minX, pr = bb.maxX - p.x;
+          var pt = p.z - bb.minZ, pb = bb.maxZ - p.z;
+          var m = Math.min(pl, pr, pt, pb);
+          if (m === pl) p.x = bb.minX - radius;
+          else if (m === pr) p.x = bb.maxX + radius;
+          else if (m === pt) p.z = bb.minZ - radius;
+          else p.z = bb.maxZ + radius;
+        }
+      }
+    }
+    /* (5) wall segments (floor-banded, zero thickness) */
+    var segs = wallSegmentsNear(p.x, p.z);
+    for (var si = 0; si < segs.length; si++){
+      var sg = segs[si];
+      if (py < sg.y0 || py > sg.y1) continue;
+      var vx = sg.x2 - sg.x1, vz = sg.z2 - sg.z1;
+      var len2 = vx * vx + vz * vz; if (len2 < 0.0001) continue;
+      var t = ((p.x - sg.x1) * vx + (p.z - sg.z1) * vz) / len2;
+      t = t < 0 ? 0 : (t > 1 ? 1 : t);
+      var sx = sg.x1 + vx * t, sz = sg.z1 + vz * t;
+      var sex = p.x - sx, sez = p.z - sz;
+      var sed = Math.sqrt(sex * sex + sez * sez);
+      if (sed < radius && sed > 0.001){
+        var sp = (radius - sed) / sed;
+        p.x += sex * sp; p.z += sez * sp;
+      } else if (sed <= 0.001){
+        /* centre exactly ON the zero-thickness wall: no push direction
+           exists along the offset — step off along the wall's normal */
+        var nl = Math.sqrt(len2);
+        p.x += (-vz / nl) * radius; p.z += (vx / nl) * radius;
+      }
+    }
+  }
+}
+
 /* ---------------------------------------------------------------------------
    Public API
    --------------------------------------------------------------------------- */
@@ -803,11 +1170,26 @@ window.CollisionMaterial = {
   materialRoadTopY: materialRoadTopY,
   /* v1.63 vehicle rest surface (Joshua: "this should be a material thing
      for the cars"). */
-  surfaceYAt: surfaceYAt
+  surfaceYAt: surfaceYAt,
+  /* Phase C: levels, package provider, interior solid boxes, wall
+     segments, and the one push-out solver. */
+  getMaterialAtLevel: getMaterialAtLevel,
+  setPackageProvider: setPackageProvider,
+  setGroundSampler: setGroundSampler,
+  registerSolidBox: registerSolidBox,
+  unregisterSolidBox: unregisterSolidBox,
+  solidBoxAt: solidBoxAt,
+  listSolidBoxes: listSolidBoxes,
+  setSolidBoxes: setSolidBoxes,
+  registerWallSegment: registerWallSegment,
+  pushOut: pushOut,
+  setPersonBlocker: setPersonBlocker,
+  clearPersonBlocker: clearPersonBlocker
 };
 
 /* Also expose the key functions globally for index.html integration. */
 window.getMaterialAt = getMaterialAt;
+window.getMaterialAtLevel = getMaterialAtLevel;
 window.canMoveTo = canMoveTo;
 window.surfaceHeightAt = surfaceHeightAt;
 window.grassSurfaceY = grassSurfaceY;

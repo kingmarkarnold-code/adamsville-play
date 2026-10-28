@@ -16,8 +16,11 @@
      - Wraps window.updateActionButton: the game decides its own button first;
        this system then overrides it ONLY when an interior target (door /
        appliance / pickupable) is in range while player.inside is true.
-     - Wraps window.resolveCollision: after the game's own collision pass,
-       applies interior AABB push-out for the player, indoors only.
+     - (Phase C, 2026-10-28: the old window.resolveCollision wrap is
+       RETIRED. Interior boxes are material solids registered in
+       collision_material.js, so the one gate + the one push-out cover
+       interiors like everywhere else — no private wrapper, no second
+       collision store. InteriorCollision below is a delegating API.)
      - Adds its own 'click' listener on #action-btn. The game's own click
        handler ignores unknown action names (its if/else chain has no
        default else), and this listener only reacts to the action names
@@ -125,9 +128,11 @@ var DOOR_ANIM_T = 0.5;    // swing animation duration, seconds (spec)
    2. window.InteriorCollision -- furniture AABB collision API
    -------------------------------------------------------------------------- */
 
-/* checkCollision(x, z) -- spec API: true when the point (x,z) is inside ANY
-   registered box. */
-function checkCollision(x, z){
+/* checkCollisionLocal(x, z) -- pre-material-module fallback ONLY (this
+   file loads before collision_material.js in the deferred queue). Once
+   the material module is up, InteriorCollision.checkCollision delegates
+   to its registry — see the API object below. */
+function checkCollisionLocal(x, z){
   for (var i = 0; i < boxes.length; i++){
     var b = boxes[i];
     if (x >= b.minX && x <= b.maxX && z >= b.minZ && z <= b.maxZ) return true;
@@ -135,11 +140,11 @@ function checkCollision(x, z){
   return false;
 }
 
-/* resolvePlayer(p, radius) -- circle-vs-AABB push-out so the player slides
-   along furniture instead of stopping dead. Called from the wrapped
-   resolveCollision() after the game's own pass. Two iterations for
-   stability, mirroring the game's own resolveCollision loop. */
-function resolvePlayer(p, radius){
+/* resolvePlayerLocal(p, radius) -- circle-vs-AABB push-out, pre-material-
+   module fallback ONLY. The live path is CollisionMaterial.pushOut(),
+   which resolves these same boxes (plus walls, buildings, props) in the
+   game's single solver. */
+function resolvePlayerLocal(p, radius){
   var r = radius || 0.5;
   for (var iter = 0; iter < 2; iter++){
     for (var i = 0; i < boxes.length; i++){
@@ -170,28 +175,67 @@ function resolvePlayer(p, radius){
 }
 
 /* The public collision API (spec section 2). addBox returns the box id so
-   the caller (e.g. the door system) can remove it later. */
+   the caller (e.g. the door system) can remove it later.
+
+   PHASE C (2026-10-28): boxes are MATERIAL SOLIDS. addBox registers the
+   box in collision_material.js's registry — the one store the movement
+   gate and the push-out read. The local `boxes` array survives only as
+   the staging mirror for the window before the material module loads
+   (this file is earlier in the deferred queue): early registrations
+   also stage into window.__pendingSolidBoxes, which the material
+   module adopts at load; from then on every add/remove goes straight
+   to the registry. checkCollision / resolvePlayer delegate likewise. */
+function _matCM(){
+  try { return (typeof window !== 'undefined' && window.CollisionMaterial) || null; }
+  catch(e){ return null; }
+}
 window.InteriorCollision = {
   /* addBox(box) -- box = {minX,maxX,minZ,maxZ[,id][,buildingId]}. */
   addBox: function(box){
     if (!box) return null;
     box.id = box.id || ('ibox' + (++boxSeq));
     boxes.push(box);
+    var cm = _matCM();
+    if (cm && cm.registerSolidBox){ cm.registerSolidBox(box); }
+    else {
+      var pend = (window.__pendingSolidBoxes = window.__pendingSolidBoxes || []);
+      pend.push(box);
+    }
     return box.id;
   },
   /* removeBox(id) -- unregister one box; no-op when the id is unknown. */
   removeBox: function(id){
+    var found = false;
     for (var i = 0; i < boxes.length; i++){
-      if (boxes[i].id === id){ boxes.splice(i, 1); return true; }
+      if (boxes[i].id === id){ boxes.splice(i, 1); found = true; break; }
     }
-    return false;
+    var cm = _matCM();
+    if (cm && cm.unregisterSolidBox) cm.unregisterSolidBox(id);
+    var pend = window.__pendingSolidBoxes;
+    if (pend) for (var j = pend.length - 1; j >= 0; j--){
+      if (pend[j].id === id) pend.splice(j, 1);
+    }
+    return found;
   },
-  /* checkCollision(x, z) -- spec point test. */
-  checkCollision: checkCollision,
-  /* resolvePlayer(p, radius) -- push-out used by the movement hook. */
-  resolvePlayer: resolvePlayer,
+  /* checkCollision(x, z) -- spec point test (delegates to the material
+     registry when it is up; local scan is the pre-load fallback). */
+  checkCollision: function(x, z){
+    var cm = _matCM();
+    if (cm && cm.solidBoxAt) return !!cm.solidBoxAt(x, z);
+    return checkCollisionLocal(x, z);
+  },
+  /* resolvePlayer(p, radius) -- delegates to the one push-out. */
+  resolvePlayer: function(p, radius){
+    var cm = _matCM();
+    if (cm && cm.pushOut){ cm.pushOut(p, radius || 0.5); return; }
+    resolvePlayerLocal(p, radius);
+  },
   /* list() -- snapshot for debugging / the watcher. */
-  list: function(){ return boxes.slice(); }
+  list: function(){
+    var cm = _matCM();
+    if (cm && cm.listSolidBoxes) return cm.listSolidBoxes();
+    return boxes.slice();
+  }
 };
 
 /* --------------------------------------------------------------------------
@@ -852,28 +896,12 @@ function hookUpdateActionButton(){
   }catch(e){ return false; }
 }
 
-/* hookResolveCollision() -- wraps the game's resolveCollision(p, radius).
-   After the game's own pass, applies the interior AABB push-out, but ONLY
-   for the player and ONLY while player.inside is true, so outdoor movement
-   and other entities are completely unaffected. */
-function hookResolveCollision(){
-  try{
-    if (typeof window.resolveCollision !== 'function') return false;
-    if (window.resolveCollision.__interiorHooked) return true;
-    var orig = window.resolveCollision;
-    var wrapped = function(p, radius){
-      orig(p, radius);
-      try{
-        if (p && typeof player !== 'undefined' && p === player && player.inside){
-          resolvePlayer(p, radius || 0.5);
-        }
-      }catch(e){}
-    };
-    wrapped.__interiorHooked = true;
-    window.resolveCollision = wrapped;
-    return true;
-  }catch(e){ return false; }
-}
+/* Phase C (2026-10-28): hookResolveCollision is DELETED. It wrapped
+   window.resolveCollision to add the interior push-out after the game's
+   pass — a second solver reading a private box store. Interior boxes
+   are material solids now (section 2), and index.html's resolveCollision
+   delegates to the material push-out, so interiors are resolved by the
+   same solver as everything else, for every mover, indoors or out. */
 
 /* --------------------------------------------------------------------------
    9. WalkableBuildings auto-registration + init
@@ -917,6 +945,9 @@ window.InteriorSystem = {
   /* reset() -- test/dev helper: clears every registry and sleep state. */
   reset: function(){
     doors = []; appliances = []; pickupables = []; boxes = [];
+    try { window.__pendingSolidBoxes = []; } catch(e){}
+    var cm = _matCM();
+    if (cm && cm.setSolidBoxes) cm.setSolidBoxes([]);
     animDoors = []; sleepState.asleep = false;
     if (IS){ IS._target = null; IS._pendingDoor = null; IS._pendingPickupable = null; }
   },
@@ -931,8 +962,9 @@ IS = window.InteriorSystem; // let the internal functions reach shared state
 function tryInit(){
   var okBtn = hookActionClick();
   var okUab = hookUpdateActionButton();
-  var okCol = hookResolveCollision();
-  if (okBtn && okUab && okCol){
+  /* Phase C: no collision hook to install — interiors ride the
+     material system (section 2). */
+  if (okBtn && okUab){
     try{ scanWalkableBuildings(); }catch(e){}
     return true;
   }

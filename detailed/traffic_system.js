@@ -963,12 +963,38 @@ function stepCar(c,dt,px,pz){
   /* v1.47 JUNCTION PROTOCOL: waiting at a stop line because another
      stream holds the junction — stop, don't creep into the box. */
   if (c.jxWait) c.desired=0;
+  /* PHASE C (2026-10-28) — THE MATERIAL GATE (Joshua's doctrine: a
+     person is a material; vehicles stop for people). Before speed
+     integration, pose the car a braking distance ahead on its own path;
+     if that spot reads PERSON (the hero or a civilian NPC, registered
+     live in collision_material.js) and the ONE gate refuses the move,
+     the car brakes to a stop. blockedByPerson also exempts the stop
+     from the stuck audit below — waiting for a pedestrian is correct
+     driving, not a stuck car. This is the routing half of the fix for
+     Joshua's "vehicle drove through NPCs" report; the registration
+     half (setPersonBlocker) already lived in the material module. */
+  c.blockedByPerson=false;
+  if ((st==='drive'||st==='resuming') && c.speed>0.1 &&
+      typeof canMoveTo==='function' && typeof getMaterialAt==='function' &&
+      typeof COLLISION_MATERIALS!=='undefined'){
+    try{
+      var _ahead=Math.max(5, c.speed*0.55);
+      var _probe={road:c.road, segT:c.segT + c.dir*(c.speed*dt + _ahead),
+                  dir:c.dir, off:c.off, x:0, z:0, y:0, heading:0};
+      roadPose(_probe);
+      if (getMaterialAt(_probe.x, _probe.z, true)===COLLISION_MATERIALS.PERSON &&
+          !canMoveTo(c.x, c.z, _probe.x, _probe.z, MOVER_VEHICLE,
+                     {speed:c.speed, heading:c.heading, selfRef:c, levelY:c.y})){
+        c.desired=0; c.blockedByPerson=true;
+      }
+    }catch(e){}
+  }
   var dv=c.desired-c.speed, mx=dv>0?ACCEL_US*dt:BRAKE_US*dt;
   c.speed+=Math.max(-mx,Math.min(mx,dv));
   if (c.speed<0) c.speed=0;
   // stuck audit (only when genuinely trying, not when yielding)
   var trying=(st==='drive'||st==='pulling'||st==='resuming')&&c.desired>1;
-  if (trying&&c.speed<0.35&&!c.blockedByPlayer&&!c.blockedByBus&&!c.blockedBySchoolBus&&!c.jxWait){
+  if (trying&&c.speed<0.35&&!c.blockedByPlayer&&!c.blockedByBus&&!c.blockedBySchoolBus&&!c.jxWait&&!c.blockedByPerson){
     c.stuckT+=dt;
     if (c.stuckT>STUCK_AFTER_S){ logStuck(c); c.stuckT=-STUCK_COOLDOWN; }
   } else if (c.stuckT>0) c.stuckT=0;

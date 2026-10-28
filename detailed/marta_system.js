@@ -633,6 +633,69 @@ function updateRiding(dt){
   }catch(e){}
 }
 
+
+/* ---------------- Phase C: authored-corridor alignment ----------------
+   When the Adamsville package is active (map_loader.js), the West
+   (BLUE) line's path inside the game is the package's AUTHORED MARTA
+   corridor (converted to the runtime frame by the one conversion in
+   map_registry.js) instead of the legacy GTFS polyline. Track mesh,
+   trains and station arc positions all derive from that path, so the
+   trains run on the corridor the package draws.
+
+   WHY ONLY THIS LINE, ONLY IN PACKAGE MODE: the legacy GTFS data
+   files (marta_data.js, marta_bus_data.js) still carry PRE-CONVERSION
+   ("original frame") coordinates — the rail subsystem is internally
+   consistent (tracks, stations and trains all read the same data) but
+   offset from the converted world by the split-zones rescale. The
+   package corridor is authored in true metres and converted once, so
+   it lands on the real ground. Rewriting all GTFS data to the
+   converted frame is a Phase D data decision (it moves every bus
+   route too); Phase C aligns the trains to the authored corridor
+   when the package is live and leaves legacy mode byte-identical. */
+function _origToRuntime(x, z){
+  /* The pre-conversion frame -> runtime frame: the split-zones rescale
+     about the stage centre, i.e. what xz() applies after projecting. */
+  return [3772.5 + (x - 3772.5) * 2.8327464788732395,
+          2009 + (z - 2009) * 2.8327464788732395];
+}
+function packageCorridorFor(L, D){
+  try {
+    if (!window.MapSystem || !MapSystem.packageActive() ||
+        !window.PACKAGE_RAIL || !PACKAGE_RAIL.marta) return null;
+    var isWest = false;
+    for (var i = 0; i < (L.stops || []).length; i++){
+      var nm = (L.stops[i].name || '').toUpperCase();
+      if (nm.indexOf('HAMILTON') !== -1 || nm.indexOf('WEST LAKE') !== -1){
+        isWest = true; break;
+      }
+    }
+    if (!isWest) return null;
+    var pts = PACKAGE_RAIL.marta.pts;
+    if (!pts || pts.length < 2) return null;
+    return pts.map(function(p){ return [p[0], p[1]]; });
+  } catch(e){ return null; }
+}
+/* nearestArc(path, x, z) — arc position of the path point closest to
+   (x, z), by sampling (used to re-seat stop positions on the authored
+   corridor; stops are few, sampling is cheap). */
+function nearestArc(path, x, z){
+  var bestS = 0, bestD = 1e18;
+  var step = Math.max(1, Math.floor(path.length / 400));
+  for (var s = 0; s <= path.length; s += step){
+    var p = path.posAt(s);
+    var d = (p[0] - x) * (p[0] - x) + (p[1] - z) * (p[1] - z);
+    if (d < bestD){ bestD = d; bestS = s; }
+  }
+  /* refine around the coarse winner */
+  var lo = Math.max(0, bestS - step), hi = Math.min(path.length, bestS + step);
+  for (var s2 = lo; s2 <= hi; s2 += 1){
+    var p2 = path.posAt(s2);
+    var d2 = (p2[0] - x) * (p2[0] - x) + (p2[1] - z) * (p2[1] - z);
+    if (d2 < bestD){ bestD = d2; bestS = s2; }
+  }
+  return { s: bestS, dist: Math.sqrt(bestD) };
+}
+
 /* ---------------- init ---------------- */
 /* initMarta() — per line from MARTA_DATA: extend the track polyline to the
    map edges, shift all stop arc positions by the prepended offset, build the
@@ -646,6 +709,49 @@ function initMarta(){
   var built={};
   for (li=0;li<D.lines.length;li++){
     var L=D.lines[li];
+    /* Phase C: the authored package corridor replaces the West line's
+       legacy polyline while the package is active. Stops are re-seated
+       by projecting their (frame-corrected) station positions onto the
+       corridor path; stations too far from the corridor (out of the
+       package's span) drop off this line in package mode. */
+    var corridor=packageCorridorFor(L, D);
+    if (corridor){
+      var cext=extendPtsToEdge(corridor);
+      var cpath=makePath(cext.pts);
+      var cstops=[];
+      for (var cs=0;cs<L.stops.length;cs++){
+        var stn=null;
+        for (var ck=0;ck<D.stations.length;ck++)
+          if (D.stations[ck].name===L.stops[cs].name){ stn=D.stations[ck]; break; }
+        if (!stn) continue;
+        var rp=_origToRuntime(stn.x, stn.z);
+        var na=nearestArc(cpath, rp[0], rp[1]);
+        if (na.dist>120) continue;   // not on the authored corridor's span
+        cstops.push({ name:L.stops[cs].name, s:na.s });
+        /* remember the corrected station position for buildStation */
+        L.stops[cs]._rx=rp[0]; L.stops[cs]._rz=rp[1];
+      }
+      var cline={ id:L.id, name:L.name, color:L.color, headway:L.headway,
+                  stops:cstops, path:cpath, spawnEnd:1, corridor:true };
+      buildTrack(cline);
+      MT.lines.push(cline);
+      for (var csi=0;csi<cstops.length;csi++){
+        var csn=cstops[csi].name;
+        if (!built[csn]){
+          var crec=null;
+          for (var ckk=0;ckk<D.stations.length;ckk++)
+            if (D.stations[ckk].name===csn){ crec=D.stations[ckk]; break; }
+          if (crec){
+            var cstop=L.stops.filter(function(o){return o.name===csn;})[0];
+            var cview={ name:crec.name, x:(cstop&&cstop._rx!==undefined)?cstop._rx:crec.x,
+                        z:(cstop&&cstop._rz!==undefined)?cstop._rz:crec.z, lines:crec.lines };
+            var cbs=buildStation(cview, cline);
+            if (cbs){ MT.stations.push(cbs); built[csn]=cbs; }
+          }
+        }
+      }
+      continue;
+    }
     var ext=extendPtsToEdge(L.pts);
     for (var so=0;so<L.stops.length;so++) L.stops[so].s+=ext.sOffset;
     var line={ id:L.id, name:L.name, color:L.color, headway:L.headway,

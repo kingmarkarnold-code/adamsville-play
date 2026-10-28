@@ -41,8 +41,8 @@
 /* ============================================================================
    NPC PEDESTRIAN SYSTEM — "Surviving Adamsville" v1.20
    v1.20 SOLID WORLD (Joshua 2026-10-09): NPCs cannot walk through trees,
-   buildings, vehicles, or each other. npcColGrid (cell 20u) covers all
-   static colliders[] (tree trunks r=0.8, sign posts, light poles); per-frame
+   buildings, vehicles, or each other. (Phase C, 2026-10-28: the static
+   side of that promise is the material gate now — see npcBlocked.) Per-frame
    npcHash (cell 4u, persistent arrays) drives NPC-NPC separation; vehicle
    blockers (van, MARTA buses, traffic cars, semis, school buses) refresh
    4x/sec. Boarding/transit NPCs are exempt from vehicle blocking so they
@@ -207,51 +207,23 @@ function insideBorder(x,z){
 }
 
 /* ---------------- blockage probe ----------------
-   Cheap "can I step here?" test: water, road corridor, OSM building
-   colliders (spatial grid, cell 40u — same grid the game uses), ranch
-   houses (PLACED_HOUSES is small, direct loop), static world colliders
-   (trees/signs/poles via npcColGrid, cell 20u), and vehicles (van, MARTA
+   Cheap "can I step here?" test: water, road corridor, the material
+   gate's SOLID/DOOR verdict (buildings by their real footprints, placed
+   houses, trees/signs/poles, interior boxes, package rings), and
+   vehicles (van, MARTA
    buses, traffic cars, semis, school buses — refreshed 4x/sec).
    v1.20 SOLID WORLD (Joshua 2026-10-09): NPCs cannot walk through trees,
    buildings, vehicles, or each other. The old "trees intentionally ignored"
    rule is GONE — a trunk is solid. */
-/* npcColGrid — v1.20 spatial hash (cell 20u) over the world's static
-   colliders[] (trees r=0.8, sign posts r=0.4, light poles, small structures).
-   Built once at init; NPCs are blocked by every solid object, not just
-   buildings. Huge area colliders (r>20, POI zones) are skipped — NPC spawn
-   logic already avoids those districts, and including them would wall off
-   whole neighborhoods. */
-var npcColGrid=null;
-var NPC_COL_CELL=20;
-function buildNpcColGrid(){
-  npcColGrid={};
-  try{
-    if (typeof colliders==='undefined' || !colliders) return;
-    for (var i=0;i<colliders.length;i++){
-      var c=colliders[i];
-      if (!c || c.r>20) continue;   // skip POI-scale area colliders
-      var k=Math.floor(c.x/NPC_COL_CELL)+','+Math.floor(c.z/NPC_COL_CELL);
-      (npcColGrid[k]=npcColGrid[k]||[]).push(c);
-    }
-  }catch(e){}
-}
-/* npcHitsStatic(x,z) — v1.20: true if (x,z) is inside any static world
-   collider (tree trunk, sign post, light pole, small structure). NPC body
-   radius ~0.5u is added to the collider radius. */
-function npcHitsStatic(x,z){
-  if (!npcColGrid) return false;
-  try{
-    var cx=Math.floor(x/NPC_COL_CELL), cz=Math.floor(z/NPC_COL_CELL);
-    for (var gx=cx-1;gx<=cx+1;gx++) for (var gz=cz-1;gz<=cz+1;gz++){
-      var cell=npcColGrid[gx+','+gz]; if(!cell) continue;
-      for (var i=0;i<cell.length;i++){
-        var c=cell[i], dx=x-c.x, dz=z-c.z, rr=c.r+0.5;
-        if (dx*dx+dz*dz < rr*rr) return true;
-      }
-    }
-  }catch(e){}
-  return false;
-}
+/* PHASE C (2026-10-28) — THE PRIVATE NPC COLLIDER GRID IS RETIRED.
+   npcColGrid / buildNpcColGrid / npcHitsStatic are DELETED. NPC walkers
+   now consult the ONE material gate (collision_material.js) inside
+   npcBlocked(): the gate's SOLID test reads the same propGrid / bldgGrid
+   registries the old grid mirrored, plus interior material boxes and —
+   in package mode — the baked building footprint rings, so a tree, a
+   building wall and a package ring block an NPC by exactly the truth
+   that blocks the player. No second registry exists to drift.
+*/
 /* npcVehicleBlocked(x,z,n) — v1.20: true if (x,z) is inside a vehicle.
    Checks the player's van (when parked/slow), MARTA buses, AI traffic cars,
    semis, and school buses. NPCs already avoid road corridors via onRoad(),
@@ -419,9 +391,7 @@ function npcHitsVehicle(x,z,n){  // boarding / walking-to-transit NPCs must REAC
   return false;
 }
 /* npcBlocked(x,z,n) — cheap "can I step here?" probe. Returns true for water,
-   road corridors, border edges, OSM building colliders (40u spatial grid —
-   the same grid the game uses), ranch houses (small list, direct loop),
-   static world colliders (trees/signs/poles — v1.20 npcColGrid), and
+   road corridors, border edges, material SOLID/DOOR (the one gate), and
    vehicles (v1.20). n is the NPC asking (optional) — used for the
    boarding/transit vehicle exemption. All wrapped — a missing world feature
    degrades to "not blocked". */
@@ -430,24 +400,23 @@ function npcBlocked(x,z,n){
     if (typeof inWater==='function' && inWater(x,z)) return true;
     if (typeof onRoad==='function' && onRoad(x,z)) return true;
     if (!insideBorder(x,z)) return true;
-    if (typeof bldgGrid!=='undefined' && bldgGrid){
-      var cx=Math.floor(x/40), cz=Math.floor(z/40);
-      for (var gx=cx-1;gx<=cx+1;gx++) for (var gz=cz-1;gz<=cz+1;gz++){
-        var cell=bldgGrid[gx+','+gz]; if(!cell) continue;
-        for (var i=0;i<cell.length;i++){
-          var c=cell[i], dx=x-c.x, dz=z-c.z, rr=c.r+0.7;
-          if (dx*dx+dz*dz < rr*rr) return true;
-        }
+    /* PHASE C (2026-10-28): buildings, placed houses, trees, signs and
+       poles are ONE material truth — the gate's SOLID/DOOR test (its
+       _isSolidAt reads propGrid + bldgGrid rects, the same registries
+       this function used to re-scan with bounding circles, plus the
+       interior material boxes and package footprint rings). The old
+       bounding-circle re-scans here (bldgGrid circles, PLACED_HOUSES,
+       npcColGrid statics) are deleted: circles blocked open ground
+       beside rect buildings — the 2026-10-18 defect — and duplicated
+       the gate. canMoveTo() is the decision; only its SOLID/DOOR
+       verdict is taken here because NPC road-avoidance and wading keep
+       their own behavioural rules above and below. */
+    if (typeof canMoveTo==='function' && typeof COLLISION_MATERIALS!=='undefined'){
+      if (!canMoveTo(x, z, x, z, MOVER_NPC)){
+        var _mm = getMaterialAt(x, z, true);
+        if (_mm===COLLISION_MATERIALS.SOLID || _mm===COLLISION_MATERIALS.DOOR) return true;
       }
     }
-    if (typeof PLACED_HOUSES!=='undefined' && PLACED_HOUSES){
-      for (var j=0;j<PLACED_HOUSES.length;j++){
-        var h=PLACED_HOUSES[j];
-        var hx=x-h[0], hz=z-h[1], hr=Math.max(h[2],h[3])/2+1.7;
-        if (hx*hx+hz*hz < hr*hr) return true;
-      }
-    }
-    if (npcHitsStatic(x,z)) return true;      // v1.20: trees/signs/poles
     if (npcHitsVehicle(x,z,n)) return true;   // v1.20: vehicles
     if (npcHitsHeroHouse(x,z)) return true;   // v3.1: 535 Dollar Mill Rd
     if (npcHitsPlayer(x,z)) return true;      // v1.21: the player is solid to NPCs (Joshua 2026-10-09 bug: NPC walked through him)
@@ -1070,7 +1039,6 @@ function publishReport(){
    Meshes are frustumCulled=false (positions update every frame; culling the
    batch would hide everyone) with cast/receive shadows off for perf. */
 function initNPCs(){
-  try{ buildNpcColGrid(); }catch(e){}   // v1.20: static collider grid (trees/signs/poles)
   _m1=new THREE.Matrix4(); _m2=new THREE.Matrix4(); _m3=new THREE.Matrix4();
   _m4=new THREE.Matrix4(); _m5=new THREE.Matrix4(); _m6=new THREE.Matrix4();
   _m7=new THREE.Matrix4(); _out=new THREE.Matrix4();
