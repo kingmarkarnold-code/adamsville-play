@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Adamsville Detail Editor (Native) 1.1.0 — main window.
+Adamsville Detail Editor (Native) 1.2.0 — main window.
 
 Joshua's design (game-map/detail-editor/DESIGN.md, 2026-10-18): a
 STANDALONE suite app — not a mode inside the Map Editor — for the
@@ -15,15 +15,27 @@ launches this app, which opens on exactly that piece.
 THE FLOW
   1. Open — via the handoff (a piece arrives) or File -> Open
      Piece (pick a zone, then a piece; only that zone downloads).
-  2. Edit — the whole piece, framed: drag points to move them,
-     add/delete points, add/delete segments, delete a whole
-     section (the bulge case: bowed lines AND the face inside them
-     go; the ends join straight). Elevation is never touched.
-     The piece's tab also carries a rename PENCIL (left of
-     the name; the close X stays on the right): it edits
-     this piece's street name inline, named or unnamed
-     alike (Joshua, 2026-10-24), and the new name rides
-     the same save.
+  2. Edit — the whole piece, framed, IN COLOUR (the game's own
+     material colours; Joshua's findings, 2026-10-25): drag
+     points to move them, add/delete points, add/delete
+     segments, delete a whole section (the bulge case: bowed
+     lines AND the face inside them go; the ends join straight).
+     Elevation is never touched. The piece's tab also carries
+     a rename PENCIL (left of the name; the close X stays on
+     the right): it edits this piece's street name inline,
+     named or unnamed alike (Joshua, 2026-10-24), and the new
+     name rides the same save.
+     The SEGMENTATION is coarse by default (a handle every
+     ~30 m); Shift+drag draws the LASSO — the portion of the
+     piece inside the loop becomes the focus (the view zooms
+     to it), its points selected together for a one-step group
+     Delete, and the right-click menu offers RESEGMENT (fine
+     handles in that portion) and Coarsen. A clean click on
+     ANOTHER road switches pieces: this piece's edits save
+     first (the round trip), then the clicked road opens as
+     the working piece (click-switch, Joshua 2026-10-25).
+     A compass sits bottom-right of the canvas and a dynamic
+     scale bar bottom-left; clicking the scale bar measures.
   3. Save — the suite's round trip: local save -> push -> close ->
      fresh download -> the screen shows the downloaded copy.
 
@@ -42,6 +54,7 @@ Joshua's rule: all code commented.
 """
 
 import math
+import os
 import sys
 import threading
 import traceback
@@ -49,7 +62,18 @@ from pathlib import Path
 
 # The app dir rides on sys.path (the launcher runs this file by
 # path); the vendored suite_core package sits next to it.
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+#
+# APP_ROOT (1.2.0, the bootstrap-shim contract): the launcher may
+# point ADAMSVILLE_APP_ROOT at a staged update payload under
+# ~/.local/share/adamsville-suite/detail-editor/updates/current,
+# and then THIS file is that payload's app.py. The app resolves
+# its own files from APP_ROOT — the payload root — never from a
+# hardcoded /usr/share path, so a staged payload is complete in
+# itself. Without the variable, APP_ROOT is simply this file's
+# own directory (the installed payload).
+APP_ROOT = Path(os.environ.get("ADAMSVILLE_APP_ROOT")
+                or Path(__file__).resolve().parent)
+sys.path.insert(0, str(APP_ROOT))
 
 import gi
 gi.require_version("Gtk", "3.0")
@@ -86,7 +110,9 @@ CACHE_LOG_DIR = Path.home() / ".cache" / PACKAGE_NAME
 # state the app opens in — no tool is "armed" at startup.
 TOOLS = [
     ("select", "Select",
-     "Select: drag the map to pan, drag a point to move it."),
+     "Select: drag the map to pan, drag a point to move it, "
+     "Shift+drag lassos a portion, click another road to "
+     "switch to it."),
     ("add_point", "Add Point",
      "Add point: click a segment to split it, or click an end "
      "point then the ground to extend the piece."),
@@ -152,6 +178,14 @@ class PiecePage:
         self.canvas.on_edit = lambda: win._on_page_edited(self)
         self.canvas.on_snapshot = lambda: win._on_page_snapshot(self)
         self.canvas.confirm_section = win._confirm_section
+        self.canvas.confirm_points = win._confirm_points
+        self.canvas.on_selection = \
+            lambda: win._on_selection_changed(self)
+        self.canvas.on_switch_request = \
+            lambda cat, idx, pts: win._switch_to_piece(
+                self, cat, idx, pts)
+        self.canvas.on_context_menu = \
+            lambda event: win._show_canvas_menu(self, event)
         self.overview.main_camera = self.canvas.camera
         self.overview.main_view_rect = self.canvas.view_rect
         self.overview.on_jump = self._on_overview_jump
@@ -206,35 +240,88 @@ class PiecePage:
 
     # -- neighbourhood ----------------------------------------------------
 
-    def _context(self, rect):
+    def _context_index(self):
         """
-        The neighbourhood underlay: [(pts, width)] for every record
-        of the session's zone whose geometry touches the view rect,
-        EXCLUDING the open piece itself (it is drawn from its live
-        Element, edits and all). Cheap bbox gate first — a zone is
-        ~20k records and a still render must stay light.
+        The neighbourhood's geometry, indexed ONCE per session:
+        every road record's bounding box (with its identity, for
+        click-switch), every building, every water outline. The
+        1.1.0 provider recomputed every record's bbox from its
+        point list on EVERY render — over a ~8k-record zone that
+        per-frame list building was a real share of the pan
+        sluggishness Joshua reported. Built lazily on first use
+        and cached on the page; the zone document is only ever
+        replaced wholesale by a save's adopt, which also swaps
+        the session's origin — a save clears the cache (see
+        _on_page_edited's sibling, the window's save flow, which
+        invalidates every page of the zone).
         """
+        cached = getattr(self, "_context_cache", None)
+        if cached is not None:
+            return cached
         model = self.session.model
-        x0, z0, x1, z1 = rect
-        margin = 40.0
-        out = []
-        origin = self.session.origin_pts
+        roads = []
         for cat, records in (model.roads or {}).items():
             width = ROAD_WIDTHS.get(cat, DEFAULT_ROAD_WIDTH)
-            for rec in records:
+            for idx, rec in enumerate(records):
                 pts = rec.get("pts") or []
                 if len(pts) < 2:
                     continue
-                if cat == self.session.category and pts == origin:
-                    continue  # the open piece draws itself
                 xs = [p[0] for p in pts]
                 zs = [p[1] for p in pts]
-                if max(xs) < x0 - margin or min(xs) > x1 + margin \
-                        or max(zs) < z0 - margin \
-                        or min(zs) > z1 + margin:
-                    continue
-                out.append((pts, width))
-        return out
+                roads.append((cat, idx, pts, width,
+                              min(xs), min(zs), max(xs), max(zs)))
+        buildings = []
+        for b in model.buildings:
+            x, z, bw, bd = b[0], b[1], b[2], b[3]
+            r = max(bw, bd) / 2.0
+            buildings.append((b, x - r, z - r, x + r, z + r))
+        water = []
+        for kind, pts in model.water:
+            xs = [p[0] for p in pts]
+            zs = [p[1] for p in pts]
+            water.append((kind, pts,
+                          min(xs), min(zs), max(xs), max(zs)))
+        self._context_cache = (roads, buildings, water)
+        return self._context_cache
+
+    def _context(self, rect):
+        """
+        The neighbourhood underlay, as the canvases' context
+        dict: the roads (with identity), buildings and water
+        whose bounding boxes touch the view rect — EXCLUDING the
+        open piece itself (it is drawn from its live Element,
+        edits and all). Pure bbox filtering over the cached
+        index: cheap enough to run per render.
+        """
+        x0, z0, x1, z1 = rect
+        margin = 40.0
+        roads_idx, buildings_idx, water_idx = self._context_index()
+        origin = self.session.origin_pts
+        roads = []
+        for cat, idx, pts, width, bx0, bz0, bx1, bz1 in roads_idx:
+            if cat == self.session.category and pts == origin:
+                continue  # the open piece draws itself
+            if bx1 < x0 - margin or bx0 > x1 + margin \
+                    or bz1 < z0 - margin or bz0 > z1 + margin:
+                continue
+            roads.append((cat, idx, pts, width))
+        buildings = [b for b, bx0, bz0, bx1, bz1 in buildings_idx
+                     if not (bx1 < x0 - margin or bx0 > x1 + margin
+                             or bz1 < z0 - margin
+                             or bz0 > z1 + margin)]
+        # Dressing stays light: when a wide view holds thousands
+        # of buildings, keep the ones nearest the view's centre.
+        if len(buildings) > 2500:
+            cx, cz = (x0 + x1) / 2.0, (z0 + z1) / 2.0
+            buildings.sort(
+                key=lambda b: (b[0] - cx) ** 2 + (b[1] - cz) ** 2)
+            buildings = buildings[:2500]
+        water = [(kind, pts)
+                 for kind, pts, bx0, bz0, bx1, bz1 in water_idx
+                 if not (bx1 < x0 - margin or bx0 > x1 + margin
+                         or bz1 < z0 - margin or bz0 > z1 + margin)]
+        return {"roads": roads, "buildings": buildings,
+                "water": water}
 
     # -- info -------------------------------------------------------------
 
@@ -249,6 +336,12 @@ class PiecePage:
                                  el.points[a][1] - el.points[b][1])
         chains = len(el.chains())
         state = "Unsaved changes" if s.dirty else "Saved"
+        selected = len(self.canvas.selected_points)
+        sel_line = ""
+        if selected:
+            sel_line = (f"\nSelected: {selected} point(s) "
+                        f"together — Delete Selected removes "
+                        f"them as one section (one Undo).")
         matched = {"exact": "matched exactly",
                    "name+centre": "matched by name and position",
                    "centre": "matched by position only"}.get(
@@ -261,11 +354,12 @@ class PiecePage:
             f"{len(el.segments)} · Parts: {chains}\n"
             f"Length: {length:.0f} m · Face width: "
             f"{self.canvas.piece_width:.0f} m\n\n"
-            f"State: {state}\n\n"
-            "Drag a point to move it. Tools are on the toolbar; "
-            "Esc returns to Select. Saving pushes the whole zone "
-            "file (this piece's edits baked in) and shows the "
-            "downloaded copy.")
+            f"State: {state}{sel_line}\n\n"
+            "Drag a point to move it. Shift+drag lassos a "
+            "portion; right-click offers Resegment. Tools are "
+            "on the toolbar; Esc returns to Select. Saving "
+            "pushes the whole zone file (this piece's edits "
+            "baked in) and shows the downloaded copy.")
 
     # -- the tab: pencil, name, close X --------------------------------
 
@@ -526,6 +620,20 @@ class DetailWindow(Gtk.Window):
         self.redo_button.connect("clicked", self._on_redo)
         self.redo_button.set_sensitive(False)
         row.pack_start(self.redo_button, False, False, 0)
+        # Delete Selected (1.2.0): the lasso's group delete, as a
+        # visible button beside Undo — live only while a point
+        # selection exists; its label carries the count. (The
+        # Delete key and the right-click menu reach the same verb;
+        # the menu is a shortcut layer, never the only door.)
+        self.delete_selected_button = Gtk.Button(
+            label="Delete Selected")
+        self.delete_selected_button.set_tooltip_text(
+            "Delete every selected point as one operation "
+            "(Shift+drag a lasso to select a portion).")
+        self.delete_selected_button.connect(
+            "clicked", self._on_delete_selected)
+        self.delete_selected_button.set_sensitive(False)
+        row.pack_start(self.delete_selected_button, False, False, 0)
         row.pack_start(Gtk.Separator(
             orientation=Gtk.Orientation.VERTICAL), False, False, 2)
         self.orbit_button = Gtk.ToggleButton(label="ORBIT")
@@ -935,6 +1043,7 @@ class DetailWindow(Gtk.Window):
             self.orbit_button.set_active(page.canvas.orbit_mode)
         self._refresh_save_state()
         self._refresh_undo_buttons()
+        self._refresh_delete_button()
         return False
 
     def _on_tool_toggled(self, btn, name):
@@ -996,6 +1105,134 @@ class DetailWindow(Gtk.Window):
         self._refresh_save_state()
         self._refresh_undo_buttons()
 
+    # ------------------------------------------------------------------
+    # Selection, the portion menu, click-switch (1.2.0)
+    # ------------------------------------------------------------------
+
+    def _on_selection_changed(self, page):
+        """The canvas's point selection/focus changed: the info
+        pane's Selected line and the Delete Selected button
+        follow."""
+        page.refresh_info()
+        if page is self._current_page():
+            self._refresh_delete_button()
+
+    def _refresh_delete_button(self):
+        """Delete Selected is live exactly while the current
+        page's canvas holds a point selection; the label carries
+        the count."""
+        page = self._current_page()
+        n = len(page.canvas.selected_points) if page else 0
+        self.delete_selected_button.set_sensitive(n > 0)
+        self.delete_selected_button.set_label(
+            f"Delete Selected ({n})" if n else "Delete Selected")
+
+    def _on_delete_selected(self, _btn):
+        page = self._current_page()
+        if page is not None:
+            page.canvas.delete_selected_points()
+
+    def _show_canvas_menu(self, page, event):
+        """
+        The canvas's right-click menu (Joshua, 2026-10-25): the
+        home for the portion/selection verbs, where the hand
+        already is — RESEGMENT first, as he named it. ADDITIVE:
+        every verb here also lives somewhere else (toolbar,
+        keys); nothing was removed to make room for it. Entries
+        grey out honestly when they have nothing to act on.
+        """
+        canvas = page.canvas
+        menu = Gtk.Menu()
+        focus = canvas.focus_points()
+        selected = canvas.selected_points
+
+        def item(label, action, sensitive=True):
+            entry = Gtk.MenuItem(label=label)
+            entry.set_sensitive(sensitive)
+            if action is not None:
+                entry.connect("activate", lambda _i: action())
+            menu.append(entry)
+            return entry
+
+        item("Resegment — fine points in this portion",
+             canvas.resegment_focus, bool(focus))
+        item("Coarsen this portion",
+             canvas.coarsen_focus,
+             bool(focus & canvas.fine_points))
+        menu.append(Gtk.SeparatorMenuItem())
+        item(f"Delete selected points ({len(selected)})",
+             canvas.delete_selected_points, bool(selected))
+        item("Clear selection", canvas.clear_selection,
+             bool(selected or focus))
+        menu.append(Gtk.SeparatorMenuItem())
+        item("Zoom to fit the portion",
+             lambda: self._zoom_to_focus(page), bool(focus))
+        item("Show the whole piece",
+             lambda: (canvas.fit_piece(), page.overview.fit()))
+        menu.show_all()
+        menu.popup_at_pointer(event)
+
+    def _zoom_to_focus(self, page):
+        """Frame the focused portion in the working canvas."""
+        canvas = page.canvas
+        pts = [canvas.session.element.points[i]
+               for i in sorted(canvas.focus_points())]
+        if not pts:
+            return
+        alloc = canvas.get_allocation()
+        pad = canvas.piece_width
+        xs = [p[0] for p in pts]
+        zs = [p[1] for p in pts]
+        canvas.camera.fit_rect(
+            (min(xs) - pad, min(zs) - pad,
+             max(xs) + pad, max(zs) + pad),
+            max(alloc.width, 2), max(alloc.height, 2), margin=1.3)
+        canvas.invalidate()
+
+    def _switch_to_piece(self, page, category, index, pts):
+        """
+        CLICK-SWITCH (Joshua's rule, 2026-10-25): a clean click
+        on another road makes it the working piece — and the
+        current piece's edit progress SAVES FIRST when it has
+        any. Clean piece: the clicked road opens at once. Dirty:
+        the zone's round trip runs; only on success does the
+        clicked road open (a failed save keeps the user where
+        they are, looking at the piece that still needs saving).
+        The clicked record is re-found by its POINTS after any
+        save — indices can shift when a split added records;
+        geometry does not lie.
+        """
+        model = page.session.model
+        target_pts = [list(p) for p in pts]
+
+        def open_target():
+            found = detaildata.find_piece(
+                model.roads, category, "", target_pts)
+            # Only an EXACT geometry match may open — find_piece's
+            # centroid fallback could land on a different road,
+            # and switching to the wrong piece silently is worse
+            # than not switching.
+            if found is None or found[2] != "exact":
+                self._set_status(
+                    "The road you clicked could not be found "
+                    "again in the zone data — nothing switched.")
+                return
+            cat, idx, _how = found
+            self._open_piece(model, cat, idx, "switch")
+            name = (model.roads[cat][idx].get("name")
+                    or detaildata.UNNAMED_NAME)
+            self._set_status(
+                f"Now editing '{name}' — the whole piece, "
+                f"highlighted as the working piece.")
+
+        if page.session.dirty:
+            self._set_status(
+                "Saving this piece's edits before switching…")
+            self._save_zone(
+                model, after=lambda ok: ok and open_target())
+        else:
+            open_target()
+
     def _on_page_renamed(self, page, raw):
         """
         A rename confirmed from the tab's pencil. The new name
@@ -1028,7 +1265,10 @@ class DetailWindow(Gtk.Window):
             return
         page.redo_stack.append(page.session.element.snapshot())
         page.session.element.restore(page.undo_stack.pop())
-        page.canvas.selected_point = None
+        # Point indices may have shifted under the restore: the
+        # selection and the density layer reset with the element.
+        page.canvas.clear_selection()
+        page.canvas.reset_segmentation()
         page.canvas.invalidate()
         self._on_page_edited(page)
         self._set_status("Undid the last edit.")
@@ -1039,7 +1279,8 @@ class DetailWindow(Gtk.Window):
             return
         page.undo_stack.append(page.session.element.snapshot())
         page.session.element.restore(page.redo_stack.pop())
-        page.canvas.selected_point = None
+        page.canvas.clear_selection()
+        page.canvas.reset_segmentation()
         page.canvas.invalidate()
         self._on_page_edited(page)
         self._set_status("Redid the edit.")
@@ -1050,6 +1291,26 @@ class DetailWindow(Gtk.Window):
             bool(page and page.undo_stack))
         self.redo_button.set_sensitive(
             bool(page and page.redo_stack))
+
+    def _confirm_points(self, n_points):
+        """A lasso group deletion asks first, in the section
+        deletion's own pattern (it is the same class of act:
+        many points and the face between them, gone at once).
+        Undo can still bring them back until a save."""
+        dialog = Gtk.MessageDialog(
+            transient_for=self, flags=0,
+            message_type=Gtk.MessageType.QUESTION,
+            buttons=Gtk.ButtonsType.OK_CANCEL,
+            text="Delete the selected points?")
+        dialog.format_secondary_text(
+            f"{n_points} point(s) will be deleted together, "
+            "with every segment touching them — a middle run "
+            "leaves the piece in two parts; an end run shortens "
+            "it. It is ONE operation: one Undo brings them all "
+            "back, until you save.")
+        resp = dialog.run()
+        dialog.destroy()
+        return resp == Gtk.ResponseType.OK
 
     def _confirm_section(self, n_points, n_segments):
         """Section deletion is the one destructive click that asks
@@ -1197,6 +1458,11 @@ class DetailWindow(Gtk.Window):
                     session.rebind_after_save()
                 for page in self.pages:
                     if page.session.model is model:
+                        # The zone document was replaced by the
+                        # downloaded copy: the page's cached
+                        # context index describes the OLD records
+                        # — drop it (it rebuilds on next render).
+                        page._context_cache = None
                         page.refresh_info()
                         page.refresh_tab_title()
                         page.canvas.invalidate()
@@ -1213,11 +1479,24 @@ class DetailWindow(Gtk.Window):
     # ------------------------------------------------------------------
 
     def _on_key(self, _widget, event):
-        """Esc disarms to the base state; + / − zoom the current
-        canvas; Ctrl+Z / Ctrl+Y (or Ctrl+Shift+Z) undo/redo."""
+        """Esc steps back one layer at a time (measure mode,
+        then the selection/focus, then the armed tool); Delete
+        removes the selected points together; + / − zoom the
+        current canvas; Ctrl+Z / Ctrl+Y (or Ctrl+Shift+Z)
+        undo/redo."""
         key = event.keyval
         page = self._current_page()
         if key == Gdk.KEY_Escape:
+            if page is not None and page.canvas.measure_mode:
+                page.canvas.exit_measure()
+                self._set_status("Measure off.")
+                return True
+            if page is not None and (page.canvas.selected_points
+                                     or page.canvas.focus_chain
+                                     is not None):
+                page.canvas.clear_selection()
+                self._set_status("Selection cleared.")
+                return True
             self._setting_tool = True
             for name, btn in self.tool_buttons.items():
                 btn.set_active(name == "select")
@@ -1229,6 +1508,12 @@ class DetailWindow(Gtk.Window):
             return True
         if page is None:
             return False
+        if key in (Gdk.KEY_Delete, Gdk.KEY_BackSpace) \
+                and not (event.state & Gdk.ModifierType
+                         .CONTROL_MASK) \
+                and page.canvas.selected_points:
+            page.canvas.delete_selected_points()
+            return True
         ctrl = event.state & Gdk.ModifierType.CONTROL_MASK
         if ctrl and key in (Gdk.KEY_z, Gdk.KEY_Z):
             if event.state & Gdk.ModifierType.SHIFT_MASK:
