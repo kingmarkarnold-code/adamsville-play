@@ -1,0 +1,75 @@
+{
+  "version": "2.0.2",
+  "changelog": "The current Terrain Editor (2.0.2), now published to the self-update channel: from the next release on, updates download inside the app and apply on restart \u2014 no reinstall needed.",
+  "files": [
+    {
+      "path": "about.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/terrain-editor/about.py",
+      "sha256": "0b172aa3a3e94c80136473f95f42cef62f26927cfb9a8644f9aa14a4b3463140"
+    },
+    {
+      "path": "app.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/terrain-editor/app.py",
+      "sha256": "29f071847dd1a521a85be93ec0a337128d647f348ee72641640e0e54405501dd"
+    },
+    {
+      "path": "data.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/terrain-editor/data.py",
+      "sha256": "6aabd9cd2da1b4aa7c731dddc777a8d944806027d8f8014b450c36882a120178"
+    },
+    {
+      "path": "github_sync.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/terrain-editor/github_sync.py",
+      "sha256": "e4289f5ae72f438a079d994a388d5a5751268886659aeb35f6492ea81b89a3a9"
+    },
+    {
+      "path": "mollie-icon.png",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/terrain-editor/mollie-icon.png",
+      "sha256": "28990027fd79e03e2ef8416e8c1d3410ee284ec86383280968b245f08576e768"
+    },
+    {
+      "path": "terraincanvas.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/terrain-editor/terraincanvas.py",
+      "sha256": "089196cb89f88be2a22917614cb7df43fede3fb4b7a6afd3cdb59161ed76f669"
+    },
+    {
+      "path": "updater.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/terrain-editor/updater.py",
+      "sha256": "0c36b000830e5661165ac9f636466cd6d8402bab410bcab7da10b3e1e13e3a92"
+    }
+  ],
+  "selfupdate": {
+    "payload_root": "editors/terrain-editor",
+    "payload_sha256": "5afe026cc6a9bbef5d0c2036603582f26fcd45325470727e7107e85177135576",
+    "files": [
+      {
+        "path": "about.py",
+        "sha256": "0b172aa3a3e94c80136473f95f42cef62f26927cfb9a8644f9aa14a4b3463140"
+      },
+      {
+        "path": "app.py",
+        "sha256": "29f071847dd1a521a85be93ec0a337128d647f348ee72641640e0e54405501dd"
+      },
+      {
+        "path": "data.py",
+        "sha256": "6aabd9cd2da1b4aa7c731dddc777a8d944806027d8f8014b450c36882a120178"
+      },
+      {
+        "path": "github_sync.py",
+        "sha256": "e4289f5ae72f438a079d994a388d5a5751268886659aeb35f6492ea81b89a3a9"
+      },
+      {
+        "path": "mollie-icon.png",
+        "sha256": "28990027fd79e03e2ef8416e8c1d3410ee284ec86383280968b245f08576e768"
+      },
+      {
+        "path": "terraincanvas.py",
+        "sha256": "089196cb89f88be2a22917614cb7df43fede3fb4b7a6afd3cdb59161ed76f669"
+      },
+      {
+        "path": "updater.py",
+        "sha256": "0c36b000830e5661165ac9f636466cd6d8402bab410bcab7da10b3e1e13e3a92"
+      }
+    ]
+  }
+}
