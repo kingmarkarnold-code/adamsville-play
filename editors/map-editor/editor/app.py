@@ -65,7 +65,7 @@ import toolbaricons  # noqa: E402 -- toolbar pictograms (1.9.19)
 
 # App version shown in the Help -> About dialog (bump with each release).
 # Joshua 2026-10-11: version number must be prominent in About.
-APP_VERSION = "1.9.19"
+APP_VERSION = "1.9.20"
 # Display name and icon-theme name for the About dialog.
 APP_NAME = "Adamsville Map Editor"
 APP_ICON = "adamsville-map-editor-native"
@@ -106,7 +106,7 @@ TOOLS = [
      "Draw is on (the drag belongs to the new road). The road is "
      "saved like any other edit. Click Draw again to turn it off "
      "and get pan back."),
-    ("extend",  "Extend",  "Stretch a road endpoint",
+    ("extend",  "Extend",  "Extend: stretch a road endpoint",
      "Extend: Click on or near a road — the CLOSEST endpoint (either end) "
      "is auto-selected and highlighted. Then click the destination point "
      "and the road stretches there."),
@@ -979,8 +979,8 @@ class MapEditorApp:
         self.find_stacked_button.set_icon_widget(
             toolbaricons.icon_image("stacked"))
         self.find_stacked_button.set_tooltip_text(
-            "Find pieces lying on top of other pieces — "
-            "duplicates, zero-length records, covered pieces. "
+            "Find stacked pieces: pieces lying on top of other "
+            "pieces — duplicates, zero-length records, covered pieces. "
             "They are listed by name in the Pieces panel so a "
             "buried piece can be checked and deleted. The scan "
             "runs in the background and deletes nothing.")

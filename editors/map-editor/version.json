@@ -1,6 +1,6 @@
 {
-    "version": "1.9.19",
-    "changelog": "Three fixes, the update machinery itself, and a door \u2014 all Joshua's. (1) THE FIVE-MINUTE DELETE IS DEAD: deleting 18 lassoed segments used to re-save every zone and rebuild the whole road index once PER SEGMENT, wrapped in two full-map snapshots, all on the screen's own thread \u2014 minutes of frozen app while he stood there not knowing if it would ever finish. A delete now removes the pieces at once, then does ONE save and ONE index rebuild in the background while the corner progress bar shows 'Deleting k of N\u2026'; the click itself is instant and the whole thing lands in seconds. Undo of a delete is a small delta now (the pieces and their places), not a snapshot of the world. While a delete is still saving, a second delete waits its turn \u2014 the app says so in plain words rather than letting two saves collide. (2) PANNING NEVER COSTS YOU YOUR SELECTION: selecting used to happen on mouse-press, so the press that started a pan cleared the selection when it landed on empty ground, or dropped the piece under it \u2014 before the pan even began. Two pieces selected, pan to reach more, both gone. A press now only ARMS the click and the release decides: a press that travelled was a pan, and a pan touches nothing. Plain click, Shift+click to add, Ctrl+click to remove one, Shift+drag lasso \u2014 all exactly as before. (3) THE TOP BAR IS PICTURES NOW: the toolbar words Joshua ruled on back in October are compact drawn icons, so more fits and the bar reads at a glance. (The delete review's own Cancel/Delete buttons keep their words \u2014 that bar is a decision, not a toolbar.) (4) THE EDITOR NOW UPDATES ITSELF AND REPORTS HOME: the suite_core updater and reporting modules ship inside the app. On every start the editor quietly checks this channel, downloads and hash-verifies any newer payload into your own updates folder, and the bootstrap launcher in this release runs it on the next start \u2014 no more manual .deb installs. Help -> Check for Updates tells the truth about what is staged ('already downloaded \u2014 runs next launch'). The editor also reports home silently \u2014 session starts, operation timings (how long a delete of N pieces took), errors \u2014 to the same reports inbox the game uses, so problems arrive carrying their own specifics. (5) ON THE NUMBER: a channel-only 1.9.18 entry was published earlier today from the older 1.9.16 tree while this build was being finished; this release supersedes it, so the version steps over it to 1.9.19. If your editor staged 1.9.18, it stages this one over it \u2014 nothing rolls back. Everything else is 1.9.16 unchanged.",
+    "version": "1.9.20",
+    "changelog": "A small self-delivered fix, from Joshua's first hands-on with 1.9.19. (1) THE TOOLBAR ICONS ARE IN COLOUR NOW: the 1.9.19 pictograms were thin line drawings in one near-black ink, and on the toolbar's gray they read as a row of black smudges \u2014 'very hard to find out what's what.' Every tool is redrawn in its own saturated colour with a bold filled silhouette that reads at the toolbar's real 24x24 size: Zone is green land with yellow pins, Delete a red trash can, Draw a blue pencil, Merge teal and sky strands becoming one road, Detail Edit a cyan magnifier, and so on \u2014 neighbouring buttons are far apart in hue, so the row scans by colour alone. The old check only proved the pictures were non-blank; the new gate measures dominant hue per icon, hue separation between neighbours, and the near-black share. Two tooltips also name their tool properly now (Extend, Find Stacked). (2) THE REFERENCE PANE SAYS WHAT IT IS: the Resource and Reference pane draws the read-only source map by design, so roads deleted from the game still show there \u2014 with nothing saying so, it read as a bug. A plain line under the layer buttons now reads: 'Reference (source map) \u2014 deletions in the game don't remove these lines'. Nothing else changes: this payload arrives by itself \u2014 the editor staged it in the background and the launcher runs it on the next start, exactly as 1.9.19 promised.",
     "files": [
         {
             "path": "about.py",
@@ -10,7 +10,7 @@
         {
             "path": "app.py",
             "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/app.py",
-            "sha256": "7b178b51ebb15aa4cb1aacd54d8805c56b7939bf5ff5280733511f3829c2f2b2"
+            "sha256": "3daa5757519070ebf792ae04ea28a51b758b37589d7723c53029cbc69eeb00e8"
         },
         {
             "path": "areadata.py",
@@ -75,7 +75,7 @@
         {
             "path": "roadinspect.py",
             "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/roadinspect.py",
-            "sha256": "acd148a38fac8fe94713fd448a04d75963b0d696bb23c7a7db461e8b585d0dec"
+            "sha256": "c04e6eb1a9373dc7ece359a0b6e0cc54356d3644e777eda9ed683f51e30512a9"
         },
         {
             "path": "shared_cache.py",
@@ -100,12 +100,12 @@
         {
             "path": "toolbaricons.py",
             "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/map-editor/editor/toolbaricons.py",
-            "sha256": "caaa42524004356b43da917b8e910cc858ac17232451765eb2e1acd5c54fb6cc"
+            "sha256": "722b375927273499157dc928a1bd4d5b8d95de64858fe3a362bb100715010658"
         }
     ],
     "selfupdate": {
         "payload_root": "editors/map-editor/editor",
-        "payload_sha256": "c9de5d1a449ee59f7de45c9a743e8cc7796f0903aa04b9dff6781c85e0a46963",
+        "payload_sha256": "0a07e5ced88f9db8d6671cb3df0b9c0bc8ce4d7d3b83d90f640719a5225c0d70",
         "files": [
             {
                 "path": "about.py",
@@ -113,7 +113,7 @@
             },
             {
                 "path": "app.py",
-                "sha256": "7b178b51ebb15aa4cb1aacd54d8805c56b7939bf5ff5280733511f3829c2f2b2"
+                "sha256": "3daa5757519070ebf792ae04ea28a51b758b37589d7723c53029cbc69eeb00e8"
             },
             {
                 "path": "areadata.py",
@@ -165,7 +165,7 @@
             },
             {
                 "path": "roadinspect.py",
-                "sha256": "acd148a38fac8fe94713fd448a04d75963b0d696bb23c7a7db461e8b585d0dec"
+                "sha256": "c04e6eb1a9373dc7ece359a0b6e0cc54356d3644e777eda9ed683f51e30512a9"
             },
             {
                 "path": "shared_cache.py",
@@ -185,7 +185,7 @@
             },
             {
                 "path": "toolbaricons.py",
-                "sha256": "caaa42524004356b43da917b8e910cc858ac17232451765eb2e1acd5c54fb6cc"
+                "sha256": "722b375927273499157dc928a1bd4d5b8d95de64858fe3a362bb100715010658"
             }
         ]
     }

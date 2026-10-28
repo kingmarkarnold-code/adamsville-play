@@ -2578,6 +2578,23 @@ class RoadInspectorPanel(Gtk.VBox):
             layer_row.pack_start(lbtn, False, False, 0)
             self._layer_buttons[lname] = lbtn
         res_box.pack_start(layer_row, False, False, 0)
+        # Source-map note (1.9.20, Joshua's hands-on): this
+        # pane draws the read-only SOURCE map (map-data/) by
+        # design, so roads he deleted from the game still show
+        # here — and with nothing on the pane saying so, that
+        # read as a bug. One plain line under the layer buttons
+        # says what the pane is, in the coords label's style;
+        # it ellipsises in a narrow pane and its tooltip
+        # carries the full sentence.
+        self._ref_note_label = Gtk.Label(
+            label="Reference (source map) — deletions in the "
+                  "game don't remove these lines")
+        self._ref_note_label.set_xalign(0)
+        self._ref_note_label.set_ellipsize(Pango.EllipsizeMode.END)
+        self._ref_note_label.set_tooltip_text(
+            "Reference (source map) — deletions in the game "
+            "don't remove these lines")
+        res_box.pack_start(self._ref_note_label, False, False, 0)
         # The attribute name stays `elev_viewer`: refresh() and
         # anything outside this module that redraws the pane
         # keeps working across the 1.9.8 change — and across
