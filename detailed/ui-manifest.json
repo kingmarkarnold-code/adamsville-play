@@ -173,9 +173,9 @@
   },
   {
    "name": "index.html",
-   "size": 1120768,
-   "sha256": "2c0ebdc8b8c99a4256716b2fe25276bb31abd102c124c1f42f925162d0e149cd",
-   "hash": "2c0ebdc8b8c99a4256716b2fe25276bb31abd102c124c1f42f925162d0e149cd"
+   "size": 1123482,
+   "sha256": "767b4d41372cde71675a365828be5bd61bc08f3fd7e88478d5136302b38d84d1",
+   "hash": "767b4d41372cde71675a365828be5bd61bc08f3fd7e88478d5136302b38d84d1"
   },
   {
    "name": "infracrew_system.js",
@@ -719,6 +719,12 @@
    "hash": "b1632a703206c3d830de9fcbe515696770d04b71a15ee6b50afa6d2c3298c86f"
   },
   {
+   "name": "three-classic/GLTFLoader.r128.js",
+   "size": 97710,
+   "sha256": "88ba516836b3017ac072941f7728cae62cea81fd994b71bb906f1e78e1376afa",
+   "hash": "88ba516836b3017ac072941f7728cae62cea81fd994b71bb906f1e78e1376afa"
+  },
+  {
    "name": "hero.glb",
    "size": 417592,
    "sha256": "f691c0e5ce69b56360dd2c58e903ddb98f79cf4aa0d8f8f7506aa981d1832bb5",
@@ -731,6 +737,6 @@
    "hash": "99e3a8f264f836ba86b79c497fa2be946b3b469eafa442d0f70eabab239abeec"
   }
  ],
- "ui_version": "2026.10.28.10",
+ "ui_version": "2026.10.28.11",
  "version": "2026.10.17.9"
 }

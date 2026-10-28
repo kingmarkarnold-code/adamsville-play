@@ -9,9 +9,9 @@
   },
   {
    "name": "vehicle_library.js",
-   "size": 11347,
-   "sha256": "84ea7bd18b5df6cca4716ad2411f77a426d2d740bb30ce1c3e68d9d27cbd5705",
-   "hash": "84ea7bd18b5df6cca4716ad2411f77a426d2d740bb30ce1c3e68d9d27cbd5705"
+   "size": 11395,
+   "sha256": "35c9927a49106bf17c26fa4118440404d8e072bb08894cb8ea2b791f0a9d16c5",
+   "hash": "35c9927a49106bf17c26fa4118440404d8e072bb08894cb8ea2b791f0a9d16c5"
   },
   {
    "name": "vehicle_library.glb",
@@ -20,6 +20,6 @@
    "hash": "d748977bbb12cae8e3ddcdcfedc4f09674572ccad7b4266ed89fef275c53cade"
   }
  ],
- "vehicles_version": "2026.10.28.3",
+ "vehicles_version": "2026.10.28.4",
  "version": "1.13.0"
 }

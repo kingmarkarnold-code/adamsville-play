@@ -43,8 +43,7 @@
    their handcrafted builders — they are signature designs, not
    generic bodies.
 
-   FALLBACK (deliberate, not leftover): on the classic r128 engine
-   (the file:// APK today) there is no GLTFLoader, and if the GLB
+   FALLBACK (deliberate, not leftover): if the GLB
    ever fails to load, `ready` stays false and every consumer keeps
    the procedural builders / legacy traffic pool. The game never
    loses its cars. Every failure is REPORTED through the game's
@@ -255,9 +254,11 @@ if (typeof THREE !== 'undefined' && THREE.GLTFLoader){
       (e && e.message ? e.message : String(e)));
   }
 } else {
-  // classic engine: no GLTFLoader (see header) — reported like any
-  // other failure, so the APK's known limitation is on the record
-  // once per session instead of invisible.
+  // No GLTFLoader on this surface — since 2026-10-28 the engine gate
+  // loads the vendored r128 loader on the classic path too, so this
+  // branch means that loader itself failed to load. Reported like any
+  // other failure, so the limitation is on the record once per
+  // session instead of invisible.
   libFail('THREE.GLTFLoader is unavailable on this engine — baked vehicle bodies cannot load');
 }
 })();
