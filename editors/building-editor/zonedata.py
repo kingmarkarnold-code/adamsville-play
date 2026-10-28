@@ -141,7 +141,7 @@ STATION_EDITS_REPO_PATH = "editors/building-editor/station-edits.json"
 
 # Stamps into the version string of any zone file this editor saves
 # ("<date>-building-editor-<ver>-<zone>").
-EDITOR_VERSION = "2.0.7"
+EDITOR_VERSION = "2.0.8"
 
 # -- detail chunks (2.0.0 snapshot model) ------------------------------
 # buildings_detail.json stays the game's canonical detail file; the
@@ -1118,6 +1118,7 @@ class ZoneData:
         # from building the same view twice at once.
         self._roads_view = None
         self._roads_view_lock = threading.Lock()
+        self._nearby_bboxes = None
         # Pristine copies taken at materialisation (the state
         # GitHub held when editing began): the save path diffs
         # against them to know which records — and which chunk
@@ -1375,12 +1376,46 @@ class ZoneData:
                         except_zone=self.zone)
             return roads, index
 
+    def _record_bboxes(self, roads):
+        """Per-record bounding boxes for a parsed roads dict,
+        cached on the roads OBJECT identity (2.0.8, the speed
+        pass). nearby_segments used to walk every point of every
+        record in the zone on every call (~113k points for
+        adamsville) just to keep the handful near one building;
+        the bbox prefilter below rejects almost every record with
+        four number compares, and only bbox hits pay the original
+        per-point test — so the RESULT is identical, only the
+        cost changes. The cache keeps a reference to the roads
+        dict itself, so the identity check can never alias a
+        different dict that reused a freed address."""
+        cached = self._nearby_bboxes
+        if cached is not None and cached[0] is roads:
+            return cached[1]
+        out = []
+        for _cat, records in roads.items():
+            for rec in records or []:
+                pts = rec.get("pts") or []
+                if not pts:
+                    continue
+                xs = [p[0] for p in pts]
+                zs = [p[1] for p in pts]
+                out.append((min(xs), min(zs), max(xs), max(zs),
+                            rec.get("name") or "", pts))
+        self._nearby_bboxes = (roads, out)
+        return out
+
     def nearby_segments(self, ring, margin=60.0, roads=None):
         """[(name, pts)] for roads with any point within the ring's
         bounding box grown by `margin` — the inspector's backdrop.
         Parses the zone's roads transiently unless a parsed dict is
         supplied; only the matching segments are returned (and are
-        all the caller keeps)."""
+        all the caller keeps).
+
+        2.0.8: the scan runs over cached per-record bounding
+        boxes first (see _record_bboxes); records whose bbox
+        misses the query box provably have no point inside it,
+        and bbox hits still pass the exact per-point test, so
+        the returned list is unchanged."""
         if not ring:
             return []
         xs = [p[0] for p in ring]
@@ -1392,12 +1427,13 @@ class ZoneData:
         out = []
         if not roads:
             return out
-        for _cat, records in roads.items():
-            for rec in records or []:
-                pts = rec.get("pts") or []
-                if any(x0 <= p[0] <= x1 and z0 <= p[1] <= z1
-                       for p in pts):
-                    out.append((rec.get("name") or "", pts))
+        for bx0, bz0, bx1, bz1, name, pts in \
+                self._record_bboxes(roads):
+            if bx1 < x0 or bx0 > x1 or bz1 < z0 or bz0 > z1:
+                continue
+            if any(x0 <= p[0] <= x1 and z0 <= p[1] <= z1
+                   for p in pts):
+                out.append((name, pts))
         return out
 
     # -- zone attribution -------------------------------------------------

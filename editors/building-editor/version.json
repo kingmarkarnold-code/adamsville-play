@@ -1,16 +1,16 @@
 {
-  "version": "2.0.7",
-  "changelog": "Joshua's manipulation model, dictated 2026-10-26 after his hands-on with 2.0.6 \u2014 the editor exists to fix a building in the WRONG LOCATION (blocking streets, hidden by streets), by hand, on the building itself: (1) ROOF drag changes HEIGHT only. (2) FRONT FACE drag changes DEPTH, one-sided \u2014 the front wall moves, the back wall stays put. (3) LEFT/RIGHT FACE drag changes WIDTH, one-sided \u2014 that wall moves, the opposite wall stays. Face drags are measured from the pointer's ground position at press time, so the wall follows the hand exactly (the 2.0.6 comparison against the wall's own coordinate jumped by the view's parallax). (4) CORNER drag (a generous grip where two walls meet, low on the building) MOVES the building on the ground plane. (5) CORNER + SHIFT rotates the building (his 'use shift for control'), live degrees readout, same baked-ring storage as 2.0.6. Ctrl no longer rotates from a corner. (6) CORNER + CTRL scales the WHOLE building \u2014 footprint and height by one factor, anchored on the opposite corner, live factor readout \u2014 one isolated code path (ZoneData.scale). (7) SHAPE-PRESERVATION LAW (his hands-on bug): resizing a church/school footprint whose walls jut out and back DELETED the articulation in 2.0.6 \u2014 ZoneData.resize rebuilt the ring as a rectangle. That path is gone: every size path now SCALES the existing ring's points (per-axis for width/depth, uniform for the whole-size scale, rigid for rotate); the shape sequence is preserved, proportionally scaled, verified on the real Elizabeth Baptist Church record (43 points) through a save -> re-download round trip. One-sided anchoring is the resize-then-move composition in _apply_values. Kept from 2.0.6: the landed real editing tab, typed fields, Move/Resize/Delete, Detail Edit handoff, the Rotation field, part-click selection (now roof / front face / side face / corner, each named in the readouts), the drag threshold, Ctrl+drag off the building rotating the VIEW, and the manifest-safe save. The flagged lock now also refuses rotate and scale, and its message says so.",
+  "version": "2.0.8",
+  "changelog": "Speed pass on the 3D view (profiled first): the first-edit freeze is gone (edit data warms up in the background when a building lands), drags and steppers now update the picture lightly and settle after; picking rebuilt on the drawn footprint - every wall (front, back, sides) and every corner is grabbable; while a part is selected for sizing, pan and rotate pause and every drag sizes, with a banner showing the state; Edit this building is now a collapsible side panel and everything under the viewport scrolls; axis gizmo (X east-west, Z north-south, Y up) in the viewport's top-right; the view shows the surrounding streets, grass and neighbouring buildings in the game's colours; rotation and all numeric steppers turn the building live as you step - no Move / Resize needed; Detail Edit now says plainly that the Detail Editor works on roads and buildings are not supported there yet (nothing is sent); self-update and silent reporting built in.",
   "files": [
     {
       "path": "about.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/about.py",
-      "sha256": "0b172aa3a3e94c80136473f95f42cef62f26927cfb9a8644f9aa14a4b3463140"
+      "sha256": "cacfcf7cb7f0c020efca9d6ea1227e7a03e994275edcd49f1fdef0ff5f036461"
     },
     {
       "path": "app.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/app.py",
-      "sha256": "682136c47afbc5ad490fd1b0960e9fdd334ecbf64d40a7594b2041d03adcfdda"
+      "sha256": "95fbcfba74bb13c34df84d2a669e753c17f0b255f717c488e5df52ce42180f53"
     },
     {
       "path": "buildingcanvas.py",
@@ -33,6 +33,11 @@
       "sha256": "28990027fd79e03e2ef8416e8c1d3410ee284ec86383280968b245f08576e768"
     },
     {
+      "path": "reporting.py",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/reporting.py",
+      "sha256": "4ea71c8f69ab9cf22d7da96a160c6587734b0e6939f5b8f33b1760c1faca5972"
+    },
+    {
       "path": "shared_cache.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/shared_cache.py",
       "sha256": "86e16770fdea09e684c882870f730a794e2d64a807c3f06195dcd3254dedbde5"
@@ -50,7 +55,7 @@
     {
       "path": "updater.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/updater.py",
-      "sha256": "0c36b000830e5661165ac9f636466cd6d8402bab410bcab7da10b3e1e13e3a92"
+      "sha256": "f004bc7b51254c04014f0489db3447b6ddb67c94e89aefab77e84ed8e6e09cbc"
     },
     {
       "path": "vocab.py",
@@ -60,20 +65,20 @@
     {
       "path": "zonedata.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/building-editor/zonedata.py",
-      "sha256": "c38dda579f8a389e0b13e08419bc4155247826edb9aee11bf71101e90979fcba"
+      "sha256": "e6ebfedc67afec675809e05331e4e7453933c3bed68702e12b14fe1588a9eda7"
     }
   ],
   "selfupdate": {
     "payload_root": "editors/building-editor",
-    "payload_sha256": "787ce93e73d1e632e29d8bd36d3387c03498c9048b61cc9aa91e762fd0291c0c",
+    "payload_sha256": "2cf728e0f824ab705927d3e005116e9e691db0993da559a8451d486e54339ee9",
     "files": [
       {
         "path": "about.py",
-        "sha256": "0b172aa3a3e94c80136473f95f42cef62f26927cfb9a8644f9aa14a4b3463140"
+        "sha256": "cacfcf7cb7f0c020efca9d6ea1227e7a03e994275edcd49f1fdef0ff5f036461"
       },
       {
         "path": "app.py",
-        "sha256": "682136c47afbc5ad490fd1b0960e9fdd334ecbf64d40a7594b2041d03adcfdda"
+        "sha256": "95fbcfba74bb13c34df84d2a669e753c17f0b255f717c488e5df52ce42180f53"
       },
       {
         "path": "buildingcanvas.py",
@@ -92,6 +97,10 @@
         "sha256": "28990027fd79e03e2ef8416e8c1d3410ee284ec86383280968b245f08576e768"
       },
       {
+        "path": "reporting.py",
+        "sha256": "4ea71c8f69ab9cf22d7da96a160c6587734b0e6939f5b8f33b1760c1faca5972"
+      },
+      {
         "path": "shared_cache.py",
         "sha256": "86e16770fdea09e684c882870f730a794e2d64a807c3f06195dcd3254dedbde5"
       },
@@ -105,7 +114,7 @@
       },
       {
         "path": "updater.py",
-        "sha256": "0c36b000830e5661165ac9f636466cd6d8402bab410bcab7da10b3e1e13e3a92"
+        "sha256": "f004bc7b51254c04014f0489db3447b6ddb67c94e89aefab77e84ed8e6e09cbc"
       },
       {
         "path": "vocab.py",
@@ -113,7 +122,7 @@
       },
       {
         "path": "zonedata.py",
-        "sha256": "c38dda579f8a389e0b13e08419bc4155247826edb9aee11bf71101e90979fcba"
+        "sha256": "e6ebfedc67afec675809e05331e4e7453933c3bed68702e12b14fe1588a9eda7"
       }
     ]
   }
