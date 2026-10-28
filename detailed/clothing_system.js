@@ -291,6 +291,17 @@ function disposeTorsoMats(mats){
 function applyShirt(prevHex, nextHex){
   var p = hero();
   if (!p || !p.mesh || !p.mesh.traverse) return;
+  /* v2.0 GLB HERO (2026-10-28): the sculpted hero's clothing is three
+     named materials on a skinned mesh — there is no box rig to
+     traverse. Those materials are unique to the hero (never the shared
+     toon cache), so recoloring is a plain color set. player.heroMats
+     is installed by installGLBHERO() in index.html. The shirt-design
+     emblem texture has no GLB equivalent yet — the GLB shirt takes
+     the wardrobe color plain. */
+  if (p.heroMats && p.heroMats.shirt && p.heroMats.shirt.color){
+    p.heroMats.shirt.color.setHex(nextHex);
+    return;
+  }
   var newMat = matFor(nextHex);
   if (!newMat) return;
   p.mesh.traverse(function(o){
@@ -316,6 +327,11 @@ function applyShirt(prevHex, nextHex){
 function applyLegs(prevHex, nextHex, shoeMode){
   var p = hero();
   if (!p || !p.mesh || !p.mesh.traverse) return;
+  /* v2.0 GLB HERO: named Jeans/Shoe materials — see applyShirt. */
+  if (p.heroMats){
+    var gm = shoeMode ? p.heroMats.shoes : p.heroMats.pants;
+    if (gm && gm.color){ gm.color.setHex(nextHex); return; }
+  }
   var newMat = matFor(nextHex);
   if (!newMat) return;
   p.mesh.traverse(function(o){

@@ -49,9 +49,9 @@
     },
     {
       "name": "clothing_system.js",
-      "size": 26943,
-      "sha256": "b808eaeac7894a3129820d2af9d0c4c2d2f550e7ebbc7364ee71ff575fd5e30b",
-      "hash": "b808eaeac7894a3129820d2af9d0c4c2d2f550e7ebbc7364ee71ff575fd5e30b"
+      "size": 27736,
+      "sha256": "dc099a1785ca7157452bff3d366a5b5a62845600752bfd2fe49e8e0dea627da5",
+      "hash": "dc099a1785ca7157452bff3d366a5b5a62845600752bfd2fe49e8e0dea627da5"
     },
     {
       "name": "clubs_diners.js",
@@ -173,9 +173,9 @@
     },
     {
       "name": "index.html",
-      "size": 1100605,
-      "sha256": "e827f25b9f876c13456f75e486e537a762f2bc87347261a642e8b42ef8e6edd3",
-      "hash": "e827f25b9f876c13456f75e486e537a762f2bc87347261a642e8b42ef8e6edd3"
+      "size": 1106509,
+      "sha256": "6a55cee1a00e2e009adf6a1e7cff975a3327dee2333482bf542bca86d3a6fc62",
+      "hash": "6a55cee1a00e2e009adf6a1e7cff975a3327dee2333482bf542bca86d3a6fc62"
     },
     {
       "name": "infracrew_system.js",
@@ -703,8 +703,14 @@
       "size": 11535,
       "sha256": "b1632a703206c3d830de9fcbe515696770d04b71a15ee6b50afa6d2c3298c86f",
       "hash": "b1632a703206c3d830de9fcbe515696770d04b71a15ee6b50afa6d2c3298c86f"
+    },
+    {
+      "name": "hero.glb",
+      "size": 417592,
+      "sha256": "f691c0e5ce69b56360dd2c58e903ddb98f79cf4aa0d8f8f7506aa981d1832bb5",
+      "hash": "f691c0e5ce69b56360dd2c58e903ddb98f79cf4aa0d8f8f7506aa981d1832bb5"
     }
   ],
-  "ui_version": "2026.10.26.3",
+  "ui_version": "2026.10.28.1",
   "version": "2026.10.17.9"
 }
