@@ -154,10 +154,37 @@ function buildPackage(raw){
   var pkg = { id: raw.zone.id, name: raw.zone.name, zone: raw.zone,
               spawn: F.pkgToRuntime(0, 0) };
 
+  /* The terrain sampler is built FIRST (before the roads below) so a
+     road whose authored profile stops short of its last points can be
+     completed from the ground itself — see the profile repair in the
+     roads conversion. */
+  var terrainSampler = F.makePkgTerrainSampler(raw.zone, raw.terrain);
+
   /* --- roads: pts + per-point profile -> runtime pts + ys; arc lengths --- */
   pkg.roads = raw.roads.records.map(function(r){
     var pts = ring(r.pts);
     var ys = (r.profile || []).map(Y);
+    /* PROFILE REPAIR (Phase D): 4 of 8,579 Phase B records carry a
+       profile 1-3 entries shorter than their point list (the profile
+       stops before the tail points). A short ys would drop the record
+       off the renderer's baked path and onto legacy re-derivation.
+       The missing tail heights are sampled from the package terrain —
+       the same ground the profile itself follows — except on deck
+       records, where the last authored height extends instead (a deck
+       tail must never be pulled to the ground). Over-long profiles
+       truncate. Authored values are never altered. */
+    if (ys.length !== pts.length){
+      if (ys.length > pts.length) ys.length = pts.length;
+      var onDeck = (r.deck_structs || []).length > 0;
+      while (ys.length < pts.length){
+        var ti = ys.length;
+        if (onDeck || !terrainSampler) ys.push(ys[ys.length - 1] || 0);
+        else {
+          var e = terrainSampler.sampleElevM(r.pts[ti][0], r.pts[ti][1]);
+          ys.push(e === null ? (ys[ys.length - 1] || 0) : Y(e));
+        }
+      }
+    }
     var cum = [0];
     for (var i = 1; i < pts.length; i++){
       var dx = pts[i][0] - pts[i - 1][0], dz = pts[i][1] - pts[i - 1][1];
@@ -243,8 +270,8 @@ function buildPackage(raw){
   pkg.pins = raw.pins.records.map(convPointRec);
   pkg.signs = raw.signs.records.map(convPointRec);
 
-  /* --- terrain --- */
-  pkg.terrain = F.makePkgTerrainSampler(raw.zone, raw.terrain);
+  /* --- terrain (sampler built at the top of this function) --- */
+  pkg.terrain = terrainSampler;
 
   /* --- welded vertex graph over PACKAGE coords (welds are byte-exact in
      the package data, so exact keys are the truth; conversion happens only

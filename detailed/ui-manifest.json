@@ -209,10 +209,10 @@
   },
   {
    "name": "map_loader.js",
-   "sha256": "77251cb4c85b5884f61ece6cdf04e5acf59f86cadc53d6ff0cfb86037566d50b",
-   "size": 42354,
+   "sha256": "d338d0bd3f5f848cd71476c83e7769fa01d8dffd902a594b843c2376fcbf7655",
+   "size": 43753,
    "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/map_loader.js",
-   "hash": "77251cb4c85b5884f61ece6cdf04e5acf59f86cadc53d6ff0cfb86037566d50b"
+   "hash": "d338d0bd3f5f848cd71476c83e7769fa01d8dffd902a594b843c2376fcbf7655"
   },
   {
    "name": "map_registry.js",
@@ -731,6 +731,6 @@
    "hash": "99e3a8f264f836ba86b79c497fa2be946b3b469eafa442d0f70eabab239abeec"
   }
  ],
- "ui_version": "2026.10.28.7",
+ "ui_version": "2026.10.28.8",
  "version": "2026.10.17.9"
 }
