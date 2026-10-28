@@ -1,26 +1,26 @@
 {
-  "version": "1.1.0",
-  "changelog": "New in 1.1.0 \u2014 rename a street from its tab (Joshua, 2026-10-24). Every open piece's tab now carries a pencil on the LEFT of the name; the close X stays on the right. Clicking the pencil turns the tab's name into a text field, right there in the tab: type the new name and press Enter (or click away) to confirm it; Esc cancels and leaves the name untouched. It works on any street, named or unnamed alike \u2014 for an unnamed piece (whose stored name is the game's placeholder 'Unnamed St') the field starts EMPTY with that placeholder showing, and confirming the field empty keeps the piece unnamed. Only the open piece's own record is renamed: other pieces that happen to share the old name keep it. The new name is a changed variable like any other edit \u2014 it marks the piece unsaved and rides the same save round trip (local save, push, fresh download, the verified copy on screen), and after a middle-segment split the resulting records share the new name, exactly as they shared the old one.",
+  "version": "1.2.0",
+  "changelog": "New in 1.2.0 \u2014 Joshua's Detail Editor findings from 2026-10-25, built in full. (1) COLOUR: both viewpoints now show the world in the game's own colours \u2014 solid grass-green ground with the grid kept, asphalt road faces, buildings in muted building colours, water in the game's blue; the selected portion stands out in orange and gold. (2) COMPASS bottom-right and SCALE bottom-left, like the Map Editor: the scale reads miles zoomed out and feet zoomed in, both are real screen elements (clicks land on them, not through them), the compass click resets north, and clicking the scale opens a measure \u2014 click points and the length is reported. (3) SPEED: panning zoomed into a long road was sluggish because the old drawing rebuilt the road's chain structure the slow way on every frame and drew every point of the whole piece; now only the part in view is drawn and the chain is built once, properly \u2014 on a 4,000-point test piece a zoomed-in frame went from about 2,100 ms to about 16 ms. (4) SEGMENTATION DENSITY: roads now open with light segmentation (a handle about every 30 m, just enough to nudge the road); right-click a portion and choose Resegment to make just that portion fine, Coarsen to put it back \u2014 the road's own points are never created or destroyed by density. (5) LASSO: with a road open, Shift+drag draws a loop on the grass; the segmented pieces of THE OPEN ROAD ONLY inside it become the working portion, the view zooms to fit it, and the points inside are selected as a group \u2014 Delete (the toolbar button or the Delete key) then removes the whole section in ONE operation and ONE undo step: the points, their segments and the face inside go; a middle section leaves the two sides unconnected, an end section shortens the road. Panning never clears a selection. (6) CLICK-SWITCH: clicking another road now works \u2014 the current road's edits are saved first (the usual GitHub round trip), then the clicked road opens highlighted as the new working piece. This is also the LAST hand-installed Detail Editor: its launcher is a bootstrap shim \u2014 when the suite updater stages a newer payload under ~/.local/share/adamsville-suite/detail-editor/updates/current (with a VERSION file), the editor launches from there instead; anything wrong with the staged copy and the installed one starts, silently.",
   "files": [
     {
       "path": "app.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/app.py",
-      "sha256": "478d5bf8c254b69840ffc5662d072e0f6ece9cf7479669feb94977a5e7a1e537"
+      "sha256": "dfd76add01c9331f35ccfe9ea0b3141a51d160ecf12e1d2aa8efe3241e0ad9c5"
     },
     {
       "path": "detaildata.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/detaildata.py",
-      "sha256": "9cdc5b85ce436488a82e652db1816f44757f773a7e773d5468f522fb49e79936"
+      "sha256": "ea79c6086734e41510376c89e31f21565a333d4aac28d2dc4138913dbaa22320"
     },
     {
       "path": "detailcanvas.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/detailcanvas.py",
-      "sha256": "dad08e47ee0c3daa7a66618c672d74d204cf8558c6ed70ee2aee44f5a1752cb3"
+      "sha256": "96b66293783c618a3cc97fb399563d3aceb23df8458d0067f616230cb96d692b"
     },
     {
       "path": "element.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/element.py",
-      "sha256": "89451e3165bc24c17ddd26f7a0dbe48e4dea51872bb3ddfc77ffd8f738903add"
+      "sha256": "6b8f8fd6adf6793eb6c4b7c2be7c25fbd1e547a3dffd221753dd874b14ce25aa"
     },
     {
       "path": "mollie-icon.png",
@@ -35,7 +35,7 @@
     {
       "path": "suite_core/about.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/suite_core/about.py",
-      "sha256": "7d3d6ceb37bb4c83c5be662f5e32e2cdf3fa4415891445e4154202a6bc9c8fd5"
+      "sha256": "5561c0b939d10b7695dd1f73237b180b254251ae5ba0fa3345d26da4c303a20d"
     },
     {
       "path": "suite_core/github_sync.py",
@@ -56,27 +56,32 @@
       "path": "suite_core/updater.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/suite_core/updater.py",
       "sha256": "bd36c9f98f4a5dd74ea652df4057b10c195fbddaaaf023f21de3e32443263110"
+    },
+    {
+      "path": "VERSION",
+      "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/VERSION",
+      "sha256": "1e5b51cde515396a9fa762909cf8ca6584ccc564b325d2eebeea76175fe95c4d"
     }
   ],
   "selfupdate": {
     "payload_root": "editors/detail-editor/app",
-    "payload_sha256": "b43e6b6e56bcce215277a5ce112d461818097c372019cb1e052c125789bc4f41",
+    "payload_sha256": "2e495b57cea550acce299ef99dfd245231e0aae541552727de212c25dbd1b49e",
     "files": [
       {
         "path": "app.py",
-        "sha256": "478d5bf8c254b69840ffc5662d072e0f6ece9cf7479669feb94977a5e7a1e537"
-      },
-      {
-        "path": "detailcanvas.py",
-        "sha256": "dad08e47ee0c3daa7a66618c672d74d204cf8558c6ed70ee2aee44f5a1752cb3"
+        "sha256": "dfd76add01c9331f35ccfe9ea0b3141a51d160ecf12e1d2aa8efe3241e0ad9c5"
       },
       {
         "path": "detaildata.py",
-        "sha256": "9cdc5b85ce436488a82e652db1816f44757f773a7e773d5468f522fb49e79936"
+        "sha256": "ea79c6086734e41510376c89e31f21565a333d4aac28d2dc4138913dbaa22320"
+      },
+      {
+        "path": "detailcanvas.py",
+        "sha256": "96b66293783c618a3cc97fb399563d3aceb23df8458d0067f616230cb96d692b"
       },
       {
         "path": "element.py",
-        "sha256": "89451e3165bc24c17ddd26f7a0dbe48e4dea51872bb3ddfc77ffd8f738903add"
+        "sha256": "6b8f8fd6adf6793eb6c4b7c2be7c25fbd1e547a3dffd221753dd874b14ce25aa"
       },
       {
         "path": "mollie-icon.png",
@@ -88,7 +93,7 @@
       },
       {
         "path": "suite_core/about.py",
-        "sha256": "7d3d6ceb37bb4c83c5be662f5e32e2cdf3fa4415891445e4154202a6bc9c8fd5"
+        "sha256": "5561c0b939d10b7695dd1f73237b180b254251ae5ba0fa3345d26da4c303a20d"
       },
       {
         "path": "suite_core/github_sync.py",
@@ -105,6 +110,10 @@
       {
         "path": "suite_core/updater.py",
         "sha256": "bd36c9f98f4a5dd74ea652df4057b10c195fbddaaaf023f21de3e32443263110"
+      },
+      {
+        "path": "VERSION",
+        "sha256": "1e5b51cde515396a9fa762909cf8ca6584ccc564b325d2eebeea76175fe95c4d"
       }
     ]
   }
