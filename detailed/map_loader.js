@@ -33,10 +33,16 @@
    every feature layer run on the redrawn map with no per-system
    changes. This module's own late activation (provider + deck/rail
    rendering + PACKAGE_RAIL) then runs on the SAME prebuilt package —
-   one load, one conversion. Legacy stays one switch away
-   (?mapsrc=legacy), and a package that cannot be fetched (classic-
-   engine shell, offline) leaves the game exactly as it was — legacy
-   loading is the structural fallback, never an error.
+   one load, one conversion.
+
+   PHASE F (2026-10-28, later the same day) — THE MAP IS REMOVED and the
+   legacy fallback is GONE with it (Joshua's restart order): the package
+   and every legacy zone were archived out of the game (branch
+   world-map-removed-2026-10-28 in adamsville-play-archive). The
+   registry is empty, so bootWorld() resolves false and the boot seam
+   answers with the critical NO MAP DATA panel — the honest empty
+   state, never a fabricated world. When a new map package is
+   registered again, this loader works exactly as before.
 
    This module is loadable under Node for the Phase C harness: every
    browser touchpoint (fetch, THREE, scene, Report) is guarded, and the
@@ -822,10 +828,11 @@ function buildLegacyGlobals(pkg){
    the package, re-expresses it as the legacy-shaped globals (stashed
    on window.__PKG_* for the seam to install), makes the package
    terrain heightAt's source and the terrain mesh's precompute, and
-   resolves true. ANY failure resolves false and the seam falls back
-   to the legacy zone files — the swap fails safe, never strands the
-   boot. The loaded package is kept (__PKG_PREBUILT) so the late
-   activation below runs on the SAME load and conversion. */
+   resolves true. ANY failure resolves false and the seam degrades
+   into the NO MAP DATA state (Phase F: there is no legacy fallback —
+   the legacy datasets were removed with the map). The loaded package
+   is kept (__PKG_PREBUILT) so the late activation below runs on the
+   SAME load and conversion. */
 var _bootWorldPromise = null;
 function bootWorld(){
   if (_bootWorldPromise) return _bootWorldPromise;
@@ -862,7 +869,7 @@ function bootWorld(){
         .catch(function(){ window.__TERR_H_PRE = null; return true; });
     })
     .catch(function(err){
-      note('package world boot failed (' + err.message + ') — legacy zone data serves');
+      note('package world boot failed (' + err.message + ') — no map data; the NO MAP DATA state serves');
       return false;
     });
   return _bootWorldPromise;
@@ -985,13 +992,14 @@ function tryBootPackage(){
     }
     return;
   }
-  /* The seam fell back to legacy: settle, activate nothing. */
+  /* The seam found no bootable map (Phase F no-map state): settle,
+     activate nothing. */
   if (window.__PKG_SEAM_FELL_BACK){ _pkgDriverSettled = true; return; }
   /* Every remaining path is bounded: a hung fetch or a seam that
      never runs must not leave this poll alive for the whole session. */
   if (_pkgDriverTicks >= PKG_DRIVER_MAX_TICKS){
     _pkgDriverSettled = true;
-    note('package activation driver gave up waiting — legacy zone data serves');
+    note('package activation driver gave up waiting — no package active');
     return;
   }
   /* The seam's load is in flight (bootWorld called, promise pending):

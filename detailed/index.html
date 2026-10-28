@@ -1549,6 +1549,33 @@ function __showCriticalWarning(){
     if(startBtn) startBtn.style.display='none';
     var names=[];
     var fails=window.__criticalFailed||[];
+    /* NO-MAP STATE (Phase F, 2026-10-28): plain words, and NO Continue
+       button — there is no world to continue into, and starting anyway
+       would fabricate one. RETRY reloads, which re-checks whether a
+       map has been installed. */
+    if (window.__NO_MAP_DATA){
+      var nmDetails = '';
+      try{
+        var nmErrs = window.__zoneLoadErrors || {};
+        var nmSeen = {};
+        for (var ni=0; ni<fails.length; ni++){
+          var nmT = nmErrs[fails[ni]];
+          if (nmT && !nmSeen[nmT]){ nmSeen[nmT]=1; nmDetails += '<br><span style="font-weight:normal;font-size:0.85em;color:#aaa;">'+nmT+'</span>'; }
+        }
+      }catch(e){}
+      if(msg) msg.innerHTML='&#9888; <b>NO MAP DATA</b><br>'+
+        'No map is installed in the game right now — like a console with no disc in it. '+
+        'The game itself is here, but there is no world to load.'+nmDetails+'<br>'+
+        '<span style="font-weight:normal;font-size:0.9em;">Tap RETRY to check again.</span>';
+      var nmProg=document.getElementById('load-critprog'); if(nmProg) nmProg.textContent='';
+      var nmCb=document.getElementById('load-continue'); if(nmCb) nmCb.style.display='none';
+      if(w) w.style.display='block';
+      var nmRb=document.getElementById('load-retry');
+      if(nmRb && !nmRb.__wired){ nmRb.__wired=true; nmRb.addEventListener('click',function(){
+        try{ window.location.reload(); }catch(e){}
+      }); }
+      return;
+    }
     for(var i=0;i<fails.length;i++){
       var n=(window.__criticalLoadKeys||{})[fails[i]]||fails[i];
       if(names.indexOf(n)===-1) names.push(n);
@@ -2038,263 +2065,81 @@ function __collectDeferredScripts(){
   return queue;
 }
 function __injectZoneFiles(files, callback){
-  /* Dynamically fetch zone data JSON in order (replaces zoneloader's
-     document.write, which cannot run after parsing). */
-  /* v1.54 JSON ZONE DATA (2026-10-12): iOS Safari froze at 18% on Apple
-     mobile — JavaScriptCore is pathologically slow parsing the 1.6M-char
-     single lines in zone .js files. Zone data now ships as .json:
-     fetch() downloads off the main thread, JSON.parse is native C++,
-     and the main thread stays responsive so the progress bar updates.
-     The old .js files remain as fallback (loaded via <script> if JSON
-     fails after one retry). */
-  /* v1.38 ZONE RETRY (Joshua 2026-10-11: laptop stuck at 18% — a single
-     transient failure on roads data must not trap the loader forever).
-     Each zone file gets one automatic retry before falling back. */
-  /* PHASE D — THE SWAP (2026-10-28): when the registry's map decision
-     for the current zone is PACKAGE (the default for Adamsville;
-     ?mapsrc=legacy is the opt-out), the legacy dataset is NOT fetched:
-     the package loads through MapLoader.bootWorld() and its adapter
-     globals become the world globals. The two legacy files the
-     package does not replace still load through the normal machinery
-     below: hero_buildings (hand-authored landmarks) and signs (exit
-     signs — the package's signs are traffic signals, a different
-     dataset). If the package fails for any reason, the full legacy
-     list loads exactly as it always has — the fallback is structural,
-     and __PKG_SEAM_FELL_BACK keeps it from ever looping. Either way
-     __PKG_SEAM_DONE records that the decision was made here, so
-     map_loader.js's late activation never layers a package provider
-     over a legacy world (or vice versa). */
-  var __pkgMode = false;
-  try {
-    __pkgMode = !!(window.MapSystem && window.MapLoader &&
-                   window.MapLoader.bootWorld &&
-                   !window.__PKG_SEAM_FELL_BACK &&
-                   window.MapSystem.packageModeRequested());
-  } catch(e){ __pkgMode = false; }
+  /* ======================================================================
+     WORLD-DATA SEAM — NO-MAP ERA (Phase F, 2026-10-28, Joshua's restart
+     order). The whole world map was taken OUT of the game: every zone
+     file, the Adamsville package and the root world datasets now live
+     in the archive repo (adamsville-play-archive, branch
+     world-map-removed-2026-10-28). The legacy per-file loader that used
+     to live here is GONE — there is no fallback, and nothing in the
+     boot path can fetch a world that is not installed. Two paths only:
+
+       1. NO MAP INSTALLED (the state until the Adamsville-only rebuild
+          lands): every world dataset step is marked critically failed
+          with the plain reason "No map data" (see __enterNoMapState),
+          and the queue moves on; the core block sees __NO_MAP_DATA at
+          its first world-build stage and lands on the critical panel
+          instead of building a world out of nothing.
+       2. A MAP IS REGISTERED again one day: MapLoader.bootWorld()
+          loads its package; success installs the package globals
+          exactly as it did in Phase D; ANY failure degrades into the
+          same no-map state — never into a legacy fetch.
+     ====================================================================== */
   window.__PKG_SEAM_DONE = true;
-  if (__pkgMode){
-    var __fullFiles = files;
-    var __legacyCallback = callback;
-    files = files.filter(function(f){
-      return f.key === 'signs' || f.key === 'hero_buildings';
-    });
-    callback = function(){
-      window.MapLoader.bootWorld().then(function(ok){
-        if (ok){
+  var requested = false, installed = false;
+  try{ requested = !!(window.MapSystem && MapSystem.packageModeRequested()); }catch(e){}
+  try{ installed = !!(window.MapSystem && MapSystem.anyMapInstalled &&
+                      window.MapRegistry && MapRegistry.get(MapRegistry.defaultMapId)); }catch(e){}
+  if (!requested || !installed){
+    __enterNoMapState(!installed ? 'no map is installed'
+                                 : 'the installed map is not the requested one');
+    try{ callback(); }catch(e){}
+    return;
+  }
+  /* --- a map package is installed and requested: boot it via MapLoader -- */
+  var done = function(){ try{ callback(); }catch(e){} };
+  if (window.MapLoader && MapLoader.bootWorld){
+    MapLoader.bootWorld().then(function(ok){
+      if (ok){
+        try{
           window.ROAD_DATA = window.__PKG_ROAD_DATA;
-          window.OSM_BUILDINGS = window.__PKG_BUILDINGS;
-          window.OSM_REAL_COUNT = window.__PKG_BLDG_COUNT;
-          /* A package world must not inherit editor fixes/saved state
-             keyed to the legacy building list: this version string is
-             the guard bldgFixLoad already honours (a changed version
-             discards stored fixes), tied to the map version so every
-             future package drop re-keys it. */
-          window.OSM_BLDG_VERSION = 'pkg@' + (window.__MAPVER || '1');
-          /* Lifts and junction pins belong to the legacy road field;
-             the package bakes its crossings into the road data itself
-             (decks are level structures in the provider). */
+          window.OSM_BUILDINGS = window.__PKG_BUILDINGS || [];
+          window.OSM_BLDG_VERSION = 'pkg@' + (window.__MAPVER || '');
           window.TERRAIN_LIFTS = [];
           window.JUNCTION_PINS = [];
-          /* The skipped dataset steps are served by the package —
-             mark them done so the load gate sees a complete load. */
-          try {
-            __loadStep('roads'); __loadStep('lifts');
-            __loadStep('pins'); __loadStep('buildings');
-          } catch(e){}
-          __legacyCallback();
-        } else {
-          window.__PKG_SEAM_FELL_BACK = true;
-          __injectZoneFiles(__fullFiles, __legacyCallback);
-        }
-      }, function(){
-        window.__PKG_SEAM_FELL_BACK = true;
-        __injectZoneFiles(__fullFiles, __legacyCallback);
-      });
-    };
-  }
-  var i = 0;
-  function nextFile(){
-    if (i >= files.length){ if (callback) callback(); return; }
-    var f = files[i++];
-    loadZoneFile(f, 0);
-  }
-  /* v1.54: map a fetched JSON payload to the globals the game expects. */
-  function assignZoneGlobals(f, data){
-    if (f.key === 'buildings'){
-      /* buildings.json = {version, realCount, buildings} — expands to the
-         three globals the old buildings.js defined. */
-      window.OSM_BLDG_VERSION = data.version;
-      window.OSM_REAL_COUNT = data.realCount;
-      window.OSM_BUILDINGS = data.buildings;
-    } else if (f.key === 'zone'){
-      /* STAGE2 (conversion cutover, CONVERSION-DESIGN SS2.9/SS5 step 2e):
-         zone.json is real metadata now, not a dead file. The deferred
-         loader fetches it like the other zone files; here it is stored
-         for any consumer and handed to zoneloader, which adopts its
-         bounds over the literal fallback table (fail-open: if zone.json
-         is missing or malformed, the literals keep working as today). */
-      window.__ZONE_META = data;
-      try{ if (window.ZONELOADER && window.ZONELOADER.registerZoneMeta) window.ZONELOADER.registerZoneMeta(data); }catch(e){}
-    } else if (f.global){
-      window[f.global] = data;
-    } else {
-      throw new Error('no global mapping for zone key: ' + f.key);
-    }
-  }
-  function loadZoneFile(f, attempt){
-    /* v1.35 #35: cache-bust zone files with the live map_version (a map
-       update always changes the URL). Retry also busts so a stale CDN edge
-       cannot serve the same broken bytes twice. */
-    var _mver = window.__MAPVER || '';
-    function bust(url){
-      return url + (url.indexOf('?')===-1?'?':'&') + 'v=' + encodeURIComponent(_mver) +
-             (attempt > 0 ? '&retry='+Date.now() : '');
-    }
-    function finish(ok){
-      try{ if (f.key) __loadStep(f.key, !ok); }catch(e){}
-      nextFile();
-    }
-    /* STAGE2 (conversion cutover, design SS2.9): the zone.json metadata
-       entry is OPTIONAL -- if its JSON fetch already failed twice, do NOT
-       fall through to the .js fallback (converted zones ship zone.json
-       only; there is no zone.js, and the fallback's retries/timeouts
-       would stall the loader). Bounds simply stay on zoneloader's
-       literal fallback table -- fail-open, exactly like a missing
-       zone.json today. */
-    if (f.key === 'zone' && attempt >= 2){ finish(false); return; }
-    var isJson = /\.json(\?|$)/.test(f.src);
-    /* v1.55 BULLETPROOF LOADER (2026-10-12): If a previous zone file's JSON
-       fetch returned 404, the .json files aren't deployed yet — skip the JSON
-       attempts entirely and go straight to the .js fallback. This avoids
-       wasting 2x45s timeouts per file when JSON isn't on the server. */
-    if (isJson && window.__zoneJsonMissing){
-      try{ console.warn('[deferred] JSON not deployed, using .js directly: '+f.src); }catch(e){}
-      isJson = false;
-    }
-    /* MAP DELIVERY (Joshua 2026-10-16): local-store first. On the first
-       attempt, ask MapDelivery for this file's cached bytes — if the
-       startup check downloaded a newer copy, THOSE are the bytes the
-       game must parse. A miss or any error falls through to the normal
-       network fetch below (f.__mdTried guards the re-entry). */
-    if (isJson && attempt === 0 && !f.__mdTried && !window.__zoneJsonMissing){
-      f.__mdTried = true;
-      var _mdServe = null;
-      try{ if (window.MapDelivery && MapDelivery.serveText) _mdServe = MapDelivery.serveText(f.src); }catch(e){}
-      if (_mdServe && typeof _mdServe.then === 'function'){
-        _mdServe.then(function(cachedText){
-          if (cachedText != null){
-            try {
-              assignZoneGlobals(f, JSON.parse(cachedText));
-              try{ console.log('[deferred] Zone file served from local map store: '+f.src); }catch(e){}
-              finish(true);
-              return;
-            } catch(e){
-              try{ console.warn('[deferred] Cached zone file unusable, fetching fresh: '+f.src); }catch(ee){}
-            }
-          }
-          loadZoneFile(f, 0);
-        }).catch(function(){ loadZoneFile(f, 0); });
-        return;
-      }
-    }
-    if (isJson && attempt < 2){
-      /* --- JSON path (attempts 0-1): fetch + JSON.parse, off-thread ---
-         PROGRESS-BASED TIMEOUT (2026-10-17 — Joshua's streetless-world
-         report): the old flat 45s cap killed the 2.4MB roads.json on
-         slow links on EVERY attempt (worse while the map-delivery sync
-         raced a second fetch of the same file), the roads step failed,
-         and CONTINUE ANYWAY started a world with no streets. The fetch
-         now streams under a 20s INACTIVITY watchdog — a slow download
-         that keeps making progress is allowed to finish — and reports
-         live progress to the loader. Retry/fallback semantics are
-         unchanged: attempt 0 retries, attempt 1 falls back to .js. */
-      var _capMs = __loadCapMs(__mapFileSize(f.src));
-      __fetchTextWithProgress(bust(f.src), {}, function(received, total){
-        try{ if (window.__zoneFileProgress) window.__zoneFileProgress(f.key, received, total); }catch(e){}
-      }, 20000, _capMs).then(function(rawText){
-        try{ if (window.__zoneFileProgress) window.__zoneFileProgress(f.key, -1, 0); }catch(e){}
-        try {
-          var data = JSON.parse(rawText);
-          /* MAP DELIVERY (Joshua 2026-10-16): warm the local map store
-             with the bytes just fetched, so later launches can serve
-             this file locally (see mapdelivery.js remember()). */
-          try{ if (window.MapDelivery && MapDelivery.remember) MapDelivery.remember(f.src, rawText); }catch(e){}
-          assignZoneGlobals(f, data);
-          finish(true);
-        } catch(e){
-          try{ console.warn('[deferred] Zone JSON assign failed: '+e.message); }catch(ee){}
-          loadZoneFile(f, attempt+1);
-        }
-      }).catch(function(err){
-        try{ if (window.__zoneFileProgress) window.__zoneFileProgress(f.key, -1, 0); }catch(e){}
-        /* v1.55: 404 means JSON isn't deployed — flag it so remaining files
-           skip JSON and go straight to .js fallback. */
-        if (err && err.status === 404){
-          try{ window.__zoneJsonMissing = true; }catch(e){}
-        }
-        /* v1.55: Record the specific failure reason for diagnostics. */
-        try{
-          if (!window.__zoneLoadErrors) window.__zoneLoadErrors = {};
-          /* Only record the FINAL failure reason (not intermediate retries). */
-          if (attempt >= 1){
-            window.__zoneLoadErrors[f.key] = 'JSON fetch failed for '+f.src+': '+(err&&err.message||'unknown');
-          }
         }catch(e){}
-        try{ console.warn('[deferred] Zone JSON failed ('+(err&&err.message)+'), '+(attempt<1?'retrying':'falling back to .js')+': '+f.src); }catch(e){}
-        loadZoneFile(f, attempt+1);
-      });
-      return;
-    }
-    /* --- .js fallback path (attempt 2+, or non-JSON src): original script
-       injection. The old zone .js files are kept for this fallback only. */
-    var jsSrc = isJson ? f.src.replace(/\.json(\?|$)/, '.js$1') : f.src;
-    var s = document.createElement('script');
-    var done = false;
-    function finishJs(ok){
-      if (done) return; done = true;
-      if(!ok && attempt < 3){
-        /* One retry on the fallback path before giving up. */
-        try{ console.warn('[deferred] Zone script failed, retrying: '+jsSrc); }catch(e){}
-        setTimeout(function(){ loadZoneFile(f, attempt+1); }, 2000);
-        return;
+        __loadStep('roads');
+        __loadStep('lifts');
+        __loadStep('pins');
+        __loadStep('buildings');
+        done();
+      } else {
+        try{ window.__PKG_SEAM_FELL_BACK = true; }catch(e){}
+        __enterNoMapState('the installed map package failed to load');
+        done();
       }
-      finish(ok);
-    }
-    s.onload = function(){
-      /* v1.55: Verify the .js actually defined the expected global. A script
-         can 'load' (HTTP 200) but fail to define globals if it threw during
-         parse/execute. Check before declaring success. */
-      var globalOk = true;
-      try{
-        if (f.key === 'buildings'){
-          globalOk = (typeof window.OSM_BUILDINGS !== 'undefined' && window.OSM_BUILDINGS);
-        } else if (f.global){
-          globalOk = (typeof window[f.global] !== 'undefined' && window[f.global]);
-        }
-      }catch(e){ globalOk = false; }
-      if (!globalOk){
-        try{ console.warn('[deferred] .js loaded but global missing for '+f.key+', retrying'); }catch(e){}
-      }
-      finishJs(globalOk);
-    };
-    s.onerror = function(){
-      try{
-        /* v1.55: Record the specific failure for diagnostics. */
-        var reason = 'script load failed: ' + jsSrc;
-        if (!window.__zoneLoadErrors) window.__zoneLoadErrors = {};
-        window.__zoneLoadErrors[f.key] = reason;
-      }catch(e){}
-      finishJs(false);
-    };
-    /* SIZE-SCALED CAP (2026-10-17): script tags expose no progress
-       events, so this watchdog stays a cap — but it scales with the
-       file's manifest size instead of the flat 45s that killed slow
-       downloads of the 2.4MB roads.js (see __loadCapMs). */
-    setTimeout(function(){ if(!done){ try{ console.warn('[deferred] Zone script timeout: '+jsSrc); }catch(e){} finishJs(false); } }, __loadCapMs(__mapFileSize(jsSrc)));
-    s.src = bust(jsSrc);
-    document.head.appendChild(s);
+    });
+  } else {
+    __enterNoMapState('the map loader is missing');
+    done();
   }
-  nextFile();
+}
+function __enterNoMapState(reason){
+  /* The honest empty state (Joshua, 2026-10-28: "no map data — no
+     disc"). Flags every world dataset step as critically failed with
+     the plain reason, so the critical panel names what is missing, and
+     sets the flag the core block checks before it builds anything.
+     Idempotent: the first call wins. */
+  if (window.__NO_MAP_DATA) return;
+  window.__NO_MAP_DATA = true;
+  if (!window.__zoneLoadErrors) window.__zoneLoadErrors = {};
+  var keys = ['elev', 'roads', 'signs', 'lifts', 'pins', 'buildings'];
+  for (var i = 0; i < keys.length; i++){
+    window.__zoneLoadErrors[keys[i]] = 'No map data — ' + reason +
+      '. The world map was removed and the new Adamsville map is not installed yet.';
+    __loadStep(keys[i], true);
+  }
+  try{ console.error('[loader] NO MAP DATA — ' + reason); }catch(e){}
 }
 /* v1.44 TERRAIN-PRECOMPUTE (expert report #6 — Dr. Elena Vasquez; Joshua
    2026-10-11 spec: 600x800): the 600x800 heightfield is precomputed on the
@@ -2493,7 +2338,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
    stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.10.28.12';
+window.__DOC_UIVER = '2026.10.28.13';
 function __checkDocVersionHeal(){
   var live = window.__UIVER || '';
   if (!live || live === window.__DOC_UIVER){
@@ -2957,6 +2802,12 @@ function __loadDeferredQueueInner(){
       if (_pkgBoot){ _go(); return; }
     }catch(e){}
     try{
+    /* Phase F (2026-10-28): the precompute bin was removed with the
+       map and is no longer in ui-manifest — do not fetch a world file
+       that is not installed. (If a future map ships the bin again, its
+       manifest entry returns and this gate opens.) */
+    try{ if (window.__UISIZE && !window.__UISIZE['terrain_heights_adamsville_600x800.bin']){ _go(); return; } }catch(e){}
+
       fetch(_terrPreLiveUrl()).then(function(r){
         if(!r.ok) throw new Error('terrain precompute http '+r.status);
         return r.arrayBuffer();
@@ -3228,7 +3079,6 @@ window.__applyCrewMaster = function(on){
 <script data-dsrc="toon_mats.js"></script>
 <script data-dsrc="rounded_box.js"></script>
 <script data-dsrc="three_shim.js" data-dkey="engine"></script>
-<script data-dsrc="elev.js" data-dkey="elev"></script>
 <!-- v2.0 ZONE-SEPARATED MAPS (2026-10-10, Joshua's directive):
      Zone data files are now loaded per-zone from zones/<zone_id>/.
      zoneloader.js reads ?zone= from URL (default 'adamsville') and
@@ -4671,7 +4521,8 @@ function elevRaw(lat, lon){
 /* ELEV_SCALE: compresses real-world relief (ELEV.min..max meters) into
    game-world vertical units. 60u of relief across the whole map keeps hills
    readable at the game's camera distances without dwarfing buildings. */
-var ELEV_SCALE = 60/(ELEV.max-ELEV.min);
+/* Phase F (2026-10-28): ELEV (elev.js) was removed with the map; heightAt is never called in the no-map state, so a missing grid must not kill this block before the no-map guard below runs. */
+var ELEV_SCALE = (typeof ELEV !== 'undefined' && ELEV) ? 60/(ELEV.max-ELEV.min) : 0;
 var HOME = xz(33.7411, -84.52645);
 /* gauss(x,z,cx,cz,amp,sig): symmetric gaussian bump (amp>0) or carve
    (amp<0), sigma sig. The building block for all hand-tuned terrain
@@ -4951,6 +4802,19 @@ window.addEventListener('keydown', function(e){
    transient failures (context-slot pressure): one retry with antialias
    off, then a NAMED critical crash record before the throw propagates
    to the loader's (now reporting) eval seam. */
+/* NO-MAP STATE (Phase F, 2026-10-28): with no map installed there is no
+   world to build. Mark the world steps failed, put the critical panel
+   up, and stop this block here — no terrain, no roads, nothing built
+   out of empty data. The throw is caught by the deferred queue's
+   inline-block seam (the core block is marked failed and the panel is
+   shown again — harmless), and __tryStartGame further down never gets
+   defined, so no start path exists in this state. */
+if (window.__NO_MAP_DATA){
+  __loadStep('world', true);
+  __loadStep('music', true);
+  try{ __showCriticalWarning(); }catch(e){}
+  throw new Error('No map data - world build skipped');
+}
 try{ __wbStage('renderer/scene'); }catch(e){}
 var renderer = null;
 try {
@@ -15344,7 +15208,6 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <script data-dsrc="npc_system.js" data-dkey="npc"></script>
 <script data-dsrc="face_platform.js" data-dkey=""></script>
 <script data-dsrc="refnpc_system.js" data-dkey="refnpc"></script>
-<script data-dsrc="gas_stations_real.js" data-dkey="gasdata"></script>
 <!-- v1.31 shared vehicle-avoidance (Joshua's no-drive-through rule) -->
 <script data-dsrc="vehicle_avoid.js" data-dkey=""></script>
 <script data-dsrc="sim_core.js" data-dkey=""></script>
@@ -15400,9 +15263,7 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <script data-dsrc="codeenforce_system.js" data-dkey="codeenforce"></script>
 <script data-dsrc="roadcrew_system.js" data-dkey="roadcrew"></script>
 <script data-dsrc="roadfix.js" data-dkey=""></script>
-<script data-dsrc="marta_data.js" data-dkey="martadata"></script>
 <script data-dsrc="marta_system.js" data-dkey="marta"></script>
-<script data-dsrc="marta_bus_data.js" data-dkey="busdata"></script>
 <script data-dsrc="marta_bus_system.js" data-dkey="bus"></script>
 <!-- VISUAL INSPECT (Joshua 2026-10-11): visual/material defect detection for inspectors + drones. Always loads (shared utility). -->
 <script data-dsrc="visual_inspect.js" data-dkey=""></script>

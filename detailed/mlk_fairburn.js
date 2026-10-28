@@ -17,6 +17,7 @@
    Loaded via <script src="mlk_fairburn.js"> after school_plaza.js.
    ============================================================================ */
 (function buildFairburnPlaza() {
+  if (typeof heightAt !== 'function' || typeof scene === 'undefined') return; /* no world to build on (Phase F no-map state) — this module's declared dependencies are absent */
   var cx = 3910, cz = 3020;
   /* v2.0 auto-check: nudge clear of roads if needed (never on road) */
   try { var _mf = placeStruct(cx, cz, 24, 3, 'FairburnPlaza'); if (_mf) { cx = _mf.x; cz = _mf.z; } } catch (e) {}

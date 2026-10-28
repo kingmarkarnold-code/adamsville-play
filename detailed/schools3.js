@@ -31,6 +31,7 @@
    Main: center (3558, 3185), 52 x 20, 5u single-story. Front faces WEST.
    ============================================================================ */
 (function buildAdamsvilleElem() {
+  if (typeof heightAt !== 'function' || typeof scene === 'undefined') return; /* no world to build on (Phase F no-map state) — this module's declared dependencies are absent */
   var brick = 0x9d5f43, trim = 0xf2ede2, roofC = 0x4a3a2e;
   var cx = 3554, cz = 3185;
   /* v2.0 auto-check: nudge clear of roads if needed (never on road) */
@@ -112,6 +113,7 @@
    Main: center (4220, 2525), 64 x 26, 8u two-story. Front faces WEST.
    ============================================================================ */
 (function buildUsherMiddle() {
+  if (typeof heightAt !== 'function' || typeof scene === 'undefined') return; /* no world to build on (Phase F no-map state) — this module's declared dependencies are absent */
   var brick = 0x8a4f38, trim = 0xf2ede2, roofC = 0x3a3a3e;
   var cx = 4220, cz = 2525;
   /* v2.0 auto-check: nudge clear of roads if needed (never on road) */
@@ -203,6 +205,7 @@
    Colors: Carolina blue + gold accents (Raiders).
    ============================================================================ */
 (function buildMaysHigh() {
+  if (typeof heightAt !== 'function' || typeof scene === 'undefined') return; /* no world to build on (Phase F no-map state) — this module's declared dependencies are absent */
   var conc = 0xb8a888, blue = 0x4a90c4, gold = 0xddbb33, roofC = 0x3a3a3e;
   var cx = 3875, cz = 3952;
   /* v2.0 auto-check: nudge clear of roads if needed (never on road) */

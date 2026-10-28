@@ -61,23 +61,31 @@
    engine / file:// shell, if the package cannot be fetched the loader
    reports and the game stays on the legacy zone path — the fallback is
    structural, not a special case.
+
+   PHASE F (2026-10-28, later the same day) — THE MAP IS REMOVED.
+   Joshua's restart order: the whole world map comes OUT of the game and
+   waits in the archive (adamsville-play-archive, branch
+   world-map-removed-2026-10-28) while Adamsville is rebuilt from
+   scratch. The registry below is EMPTY — no map is installed — and the
+   legacy fallback described above is GONE with the data it loaded:
+   ?mapsrc=legacy and the sa_mapsrc setting now name a source that does
+   not exist, and the boot seam answers every no-map boot with the
+   critical "NO MAP DATA" panel. Nothing can resurrect a map that is
+   not installed. A future map registers here again (one entry + a
+   package folder) and package mode revives with it.
    ============================================================================ */
 
 /* ---------------------------------------------------------------------------
-   The registry. packageBase is resolved relative to detailed/ (the game's
-   own directory) so web, dev (generated www) and the APK shell all address
-   the same layout. Phase D drops the Adamsville package at maps/adamsville/.
+   The registry. EMPTY since Phase F (2026-10-28) — no map is installed.
+   A future map entry looks like:
+     adamsville: { id:'adamsville', name:'Adamsville', isDefault:true,
+       packageBase:'maps/adamsville/',
+       origin:{ lat:33.74110, lon:-84.52645 } }
+   packageBase is resolved relative to detailed/ (the game's own
+   directory) so web, dev (generated www) and the APK shell all address
+   the same layout.
    --------------------------------------------------------------------------- */
 var MAP_REGISTRY = {
-  adamsville: {
-    id: 'adamsville',
-    name: 'Adamsville',
-    isDefault: true,
-    packageBase: 'maps/adamsville/',
-    legacyZone: 'adamsville',
-    /* Package frame origin (the spawn address) — Phase B zone.json. */
-    origin: { lat: 33.74110, lon: -84.52645 }
-  }
 };
 var DEFAULT_MAP_ID = 'adamsville';
 
@@ -251,5 +259,12 @@ window.MapSystem = {
   activePackage: null,
   packageActive: function(){ return !!window.MapSystem.activePackage; },
   packageModeRequested: _mapPackageMode,
-  packageBaseOverride: _mapPackageBaseOverride
+  packageBaseOverride: _mapPackageBaseOverride,
+  /* Phase F (2026-10-28): true only when at least one map is registered.
+     The registry is empty after the map removal, so this is false and the
+     boot seam answers with the NO MAP DATA state. */
+  anyMapInstalled: function(){
+    for (var k in MAP_REGISTRY){ if (MAP_REGISTRY.hasOwnProperty(k)) return true; }
+    return false;
+  }
 };

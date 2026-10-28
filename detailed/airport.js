@@ -51,51 +51,19 @@ var FLOOR_H = 4.5;
 var TEX_W = 2048, TEX_H = 40;
 
 /* ---------- embedded fallback data -----------------------------------------
-   Same content as airport.json. Used when the fetch fails (offline, 404).
-   Keep in sync with airport.json when the data changes. */
+   PHASE F (2026-10-28): this used to hold an embedded copy of
+   airport.json ("same content — used when the fetch fails"). The
+   airport layout is world data, and the whole world map was removed
+   from the game on Joshua's restart order and archived
+   (adamsville-play-archive, branch world-map-removed-2026-10-28);
+   airport.json went with it. The embedded copy is therefore EMPTY:
+   with no airport data anywhere, this module builds nothing. When an
+   airport is authored again it arrives as data, not as code. */
 var DEFAULT_AIRPORT = {
-  runways: [
-    {id:"08L/26R", heading:90, length:8498.2, width:141.6, center:[12915.2,15512.7]},
-    {id:"08R/26L", heading:90, length:8498.2, width:141.6, center:[12915.2,16362.5]},
-    {id:"09L/27R", heading:90, length:8498.2, width:141.6, center:[12915.2,18062.2]},
-    {id:"09R/27L", heading:90, length:8498.2, width:141.6, center:[12915.2,18912.0]},
-    {id:"10/28", heading:90, length:8498.2, width:141.6, center:[12915.2,19761.8]}
-  ],
-  terminals: [
-    {name:"Domestic Terminal", type:"airport_terminal",
-     position:[9459.2,17354.0], width:1416.4, depth:736.5, floors:2, walkable:false,
-     wall_color:"#cfc8b8", roof_color:"#6a6f75"},
-    {name:"Maynard H. Jackson Jr. International Terminal", type:"airport_terminal",
-     position:[15549.6,17354.0], width:1303.1, depth:736.5, floors:2, walkable:false,
-     wall_color:"#cfc8b8", roof_color:"#6a6f75"}
-  ],
-  concourses: [
-    {name:"Concourse T", type:"airport_concourse", position:[10394.0,17354.0],
-     width:254.9, depth:1303.1, floors:1, walkable:false,
-     wall_color:"#c4bda9", roof_color:"#6a6f75"},
-    {name:"Concourse A", type:"airport_concourse", position:[11102.2,17354.0],
-     width:254.9, depth:1303.1, floors:1, walkable:false,
-     wall_color:"#c4bda9", roof_color:"#6a6f75"},
-    {name:"Concourse B", type:"airport_concourse", position:[11810.4,17354.0],
-     width:254.9, depth:1303.1, floors:1, walkable:false,
-     wall_color:"#c4bda9", roof_color:"#6a6f75"},
-    {name:"Concourse C", type:"airport_concourse", position:[12518.6,17354.0],
-     width:254.9, depth:1303.1, floors:1, walkable:false,
-     wall_color:"#c4bda9", roof_color:"#6a6f75"},
-    {name:"Concourse D", type:"airport_concourse", position:[13226.8,17354.0],
-     width:254.9, depth:1303.1, floors:1, walkable:false,
-     wall_color:"#c4bda9", roof_color:"#6a6f75"},
-    {name:"Concourse E", type:"airport_concourse", position:[13935.0,17354.0],
-     width:254.9, depth:1303.1, floors:1, walkable:false,
-     wall_color:"#c4bda9", roof_color:"#6a6f75"},
-    {name:"Concourse F", type:"airport_concourse", position:[14643.2,17354.0],
-     width:254.9, depth:1303.1, floors:1, walkable:false,
-     wall_color:"#c4bda9", roof_color:"#6a6f75"}
-  ],
-  airport_roads: [
-    {name:"Airport Connector (I-85 to Terminal Loop)", width:45.3,
-     pts:[[9119.3,17252.0],[9515.9,17110.4],[9940.8,16827.1],[10365.7,16515.5],[10476.2,16288.9]]}
-  ]
+  runways: [],
+  terminals: [],
+  concourses: [],
+  airport_roads: []
 };
 
 /* ---------- module state --------------------------------------------------- */

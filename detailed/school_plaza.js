@@ -216,6 +216,7 @@ function spShelf(x, z, len, gy, alongX) {
    (N of Collier Dr NW). Front faces SOUTH (+z) toward Collier Dr.
    ============================================================================ */
 (function buildHarperArcher() {
+  if (typeof heightAt !== 'function' || typeof scene === 'undefined') return; /* no world to build on (Phase F no-map state) — this module's declared dependencies are absent */
   var brick = 0x9d5f43, trim = 0xf2ede2, roofC = 0x4a3a2e, inC = 0xe8dcc0;
 
   /* ---- main building: center (4060, 2595), 76 x 32, 9u (2 stories) ---- */
@@ -377,6 +378,7 @@ function spShelf(x, z, len, gy, alongX) {
    Fictitious anchor: ALL GREENS. 10 storefronts.
    ============================================================================ */
 (function buildCascadePlaza() {
+  if (typeof heightAt !== 'function' || typeof scene === 'undefined') return; /* no world to build on (Phase F no-map state) — this module's declared dependencies are absent */
   var cx = 3750, cz = 4297;
   /* v2.0 auto-check: nudge clear of roads if needed (never on road) */
   try{ var _sp2=placeStruct(cx,cz,50,4,'ShopsAtCascade'); if(_sp2){cx=_sp2.x;cz=_sp2.z;} }catch(e){}
