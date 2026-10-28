@@ -1,16 +1,16 @@
 {
-  "version": "1.2.1",
-  "changelog": "New in 1.2.1 \u2014 the door gets its hand. The 1.2.0 install carried the bootstrap launcher, but its built-in updater was still the old Help-menu checker, so a staged update could never be fetched. This release wires the real self-update in: the editor now checks the channel in the background when it opens, downloads and hash-verifies a newer version into your own updates folder, and runs it on the next launch \u2014 no reinstall, no admin password. It also switches reporting on: session summaries, timings for heavy operations (group deletes carry their piece count), and errors now go silently to the same Player Reports inbox as the game's, and a corrupted update download \u2014 refused, with the installed version running untouched \u2014 files an update-refused report instead of failing silently. Help -> Check for Updates now speaks the same language: an already-downloaded update says it runs next launch. No editing behaviour changes.",
+  "version": "1.2.2",
+  "changelog": "New in 1.2.2 \u2014 a handed-off building no longer vanishes. The Building Editor's Detail Edit writes building handoffs to the same file as road handoffs; this editor used to delete them unread, so the Detail Editor opened and the building simply never appeared, with no word why. Now an unsupported handoff is spoken plainly in the status bar ('That was a building \u2014 the Detail Editor works on roads; buildings aren't supported here yet'), and the payload is preserved aside as open-in-detail-editor.unsupported.json \u2014 never deleted, never re-consumed on every launch. Two road-path hardenings ride along: a handoff written while the editor is already open is now picked up when the window gains focus (before, it was only ever read once at startup), and the piece finder has a reach limit \u2014 a piece that has been changed or deleted can no longer silently resolve to a different far-away piece; the editor opens nothing and says 'Couldn't find that piece \u2014 it may have been changed or deleted.' No editing behaviour changes.",
   "files": [
     {
       "path": "VERSION",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/VERSION",
-      "sha256": "6cf4e084b47f33c9b02ef79279d157833868f8f70514169a768be353ee328fea"
+      "sha256": "c62a5cc61ac4525935753f5ec284c0a052a4b1da4b3a3580dce2b7d77a2154ae"
     },
     {
       "path": "app.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/app.py",
-      "sha256": "328eaf2466e891355c5d4aca1358795c19afeb3d0cbc49c7fd2b6551e39573e6"
+      "sha256": "50999954684cbffb1c7e50d9a41fdb3b972d48955d52e4071d7953ee3a2a973f"
     },
     {
       "path": "detailcanvas.py",
@@ -20,7 +20,7 @@
     {
       "path": "detaildata.py",
       "url": "https://raw.githubusercontent.com/kingmarkarnold-code/adamsville-play/main/editors/detail-editor/app/detaildata.py",
-      "sha256": "f31407b5742ff6abf080b0063ea566c13ea25e76d342cf1c8aff40320ed7cf29"
+      "sha256": "e65b2d2d089e696bbbf9819127912bde15275406d46504af00b859bf1d6d31a3"
     },
     {
       "path": "element.py",
@@ -70,15 +70,15 @@
   ],
   "selfupdate": {
     "payload_root": "editors/detail-editor/app",
-    "payload_sha256": "b51daa55dac69f1f99d299132e3f41931a56ac08d6fe6aa85523e3140f4178d8",
+    "payload_sha256": "032832c16d09e9eb60dd1d8acf0567d89a05098b7f0460406ec88f3b00919df2",
     "files": [
       {
         "path": "VERSION",
-        "sha256": "6cf4e084b47f33c9b02ef79279d157833868f8f70514169a768be353ee328fea"
+        "sha256": "c62a5cc61ac4525935753f5ec284c0a052a4b1da4b3a3580dce2b7d77a2154ae"
       },
       {
         "path": "app.py",
-        "sha256": "328eaf2466e891355c5d4aca1358795c19afeb3d0cbc49c7fd2b6551e39573e6"
+        "sha256": "50999954684cbffb1c7e50d9a41fdb3b972d48955d52e4071d7953ee3a2a973f"
       },
       {
         "path": "detailcanvas.py",
@@ -86,7 +86,7 @@
       },
       {
         "path": "detaildata.py",
-        "sha256": "f31407b5742ff6abf080b0063ea566c13ea25e76d342cf1c8aff40320ed7cf29"
+        "sha256": "e65b2d2d089e696bbbf9819127912bde15275406d46504af00b859bf1d6d31a3"
       },
       {
         "path": "element.py",

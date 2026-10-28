@@ -7,9 +7,14 @@ Everything this app reads or writes, in one module:
   * THE HANDOFF — the file the Map Editor's Detail Edit button
     writes (~/.local/share/adamsville-suite/open-in-detail-
     editor.json), consumed with the suite's lifecycle: a FRESH
-    handoff (< 48 hours old) applies ONCE and the file is deleted;
-    an unparseable file is renamed .bad so it cannot loop; a stale
-    one is removed unread. (The Map Editor's own consumption of
+    road handoff (< 48 hours old) applies ONCE and the file is
+    deleted; an unparseable file is renamed .bad so it cannot
+    loop; a stale road one is removed unread. A payload for an
+    element this app cannot open (the Building Editor's Detail
+    Edit writes "building" ones) is NEVER silently destroyed
+    (1.2.2): it is preserved aside as *.unsupported.json and a
+    plain-language notice is left for the app to speak —
+    pop_handoff_notice(). (The Map Editor's own consumption of
     the Building Editor's street-jump handoff is the precedent.)
 
   * DOWNLOADS — only what the open piece needs: the map manifest
@@ -58,13 +63,14 @@ Joshua's rule: all code commented.
 """
 
 import json
+import math
 from datetime import datetime, timezone
 from pathlib import Path
 
 from element import Element
 
 # This editor's version (About dialog, the roads.js twin header).
-EDITOR_VERSION = "1.2.1"
+EDITOR_VERSION = "1.2.2"
 
 # The game's own name for a road with no name: the converted data
 # carries this literal, so a rename to "no name" writes exactly it.
@@ -89,6 +95,9 @@ CATEGORY_ORDER = ("interstate", "highway", "major_artery",
 # directory github_sync keeps the suite token in).
 HANDOFF_NAME = "open-in-detail-editor.json"
 HANDOFF_MAX_AGE_S = 48 * 3600  # the suite's freshness window
+# Where a payload for an element this app cannot open is
+# preserved (never deleted — read_handoff, 1.2.2).
+HANDOFF_UNSUPPORTED_NAME = "open-in-detail-editor.unsupported.json"
 
 
 class DetailDataError(Exception):
@@ -222,17 +231,88 @@ def handoff_path():
             / HANDOFF_NAME)
 
 
+# The plain-language word about the most recent handoff that
+# was NOT opened (an unsupported payload), spoken by the app
+# after read_handoff() returns — see pop_handoff_notice().
+_handoff_notice = None
+
+
+def pop_handoff_notice():
+    """The notice the last read_handoff() left, or None. Reading
+    clears it: a notice is spoken once, never repeated on every
+    later check."""
+    global _handoff_notice
+    note = _handoff_notice
+    _handoff_notice = None
+    return note
+
+
+def _unsupported_notice(doc):
+    """Say plainly what arrived and why it cannot open here."""
+    etype = str(doc.get("element_type") or "")
+    name = str(doc.get("name") or "").strip()
+    if etype == "building":
+        return ("That was a building"
+                + (f" ('{name}')" if name else "")
+                + " — the Detail Editor works on roads; "
+                  "buildings aren't supported here yet. "
+                  "The handoff was kept aside, not deleted.")
+    what = f"a {etype}" if etype else "an element"
+    if name:
+        what += f" ('{name}')"
+    return (f"That was {what} — the Detail Editor works on "
+            "roads, so it can't open that here. "
+            "The handoff was kept aside, not deleted.")
+
+
+def _preserve_unsupported(path):
+    """Move an unsupported handoff aside, NEVER delete it:
+    open-in-detail-editor.unsupported.json, timestamped when
+    that name is already taken (an earlier preserved payload is
+    evidence too and is never overwritten)."""
+    target = path.with_name(HANDOFF_UNSUPPORTED_NAME)
+    if target.exists():
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        target = path.with_name(
+            f"open-in-detail-editor.unsupported-{stamp}.json")
+        n = 2
+        while target.exists():
+            target = path.with_name(
+                f"open-in-detail-editor.unsupported-{stamp}-{n}.json")
+            n += 1
+    try:
+        path.rename(target)
+    except Exception:
+        # Preservation itself failed (a read-only directory?):
+        # fall back to the suite's parse-failure treatment so the
+        # payload still cannot be re-consumed on every launch —
+        # and the notice has already been left either way.
+        try:
+            path.rename(path.with_suffix(".json.bad"))
+        except Exception:
+            pass
+
+
 def read_handoff():
     """
     Consume the Detail Edit handoff, once, by the suite lifecycle.
-    Returns the handoff document dict when a FRESH one was waiting,
-    else None. The file is deleted either way (a stale one is
-    simply removed); an unparseable file is renamed .bad so it
-    cannot loop. A document is:
+    Returns the handoff document dict when a FRESH road one was
+    waiting, else None. A road file is deleted either way (a stale
+    one is simply removed); an unparseable file is renamed .bad so
+    it cannot loop. A document is:
         {"element_type": "road", "zone": <zone id>, "category": ...,
          "name": ..., "x": ..., "z": ..., "points": [[x, z], ...],
          "writtenBy": ..., "timestamp": <iso>}
+
+    A payload whose element_type is anything else is NOT for
+    this app — the Building Editor's Detail Edit writes
+    "building" ones to this same file. Before 1.2.2 those were
+    deleted here in silence and the building simply never
+    appeared. Now the payload is preserved aside
+    (_preserve_unsupported) and a notice is left for the app to
+    speak (pop_handoff_notice).
     """
+    global _handoff_notice
     path = handoff_path()
     if not path.exists():
         return None
@@ -245,6 +325,13 @@ def read_handoff():
             path.rename(path.with_suffix(".json.bad"))
         except Exception:
             pass
+        return None
+    if doc.get("element_type") not in (None, "road"):
+        # Not for this app: never silently destroy. Preserve the
+        # payload aside (so it is neither lost nor re-consumed on
+        # every launch) and leave the user a plain explanation.
+        _preserve_unsupported(path)
+        _handoff_notice = _unsupported_notice(doc)
         return None
     # Consumed (or stale): the file never applies twice.
     try:
@@ -262,8 +349,6 @@ def read_handoff():
                 return None  # stale: removed above, not applied
         except Exception:
             pass  # an odd timestamp never blocks a plausible handoff
-    if doc.get("element_type") not in (None, "road"):
-        return None  # not for this build (roads are the wired type)
     return doc
 
 
@@ -287,6 +372,31 @@ def _pts_match(a, b, tol=0.011):
                for pa, pb in zip(a, b))
 
 
+# The nearest-centroid rules in find_piece may only reach this
+# far (metres) from the handed centre, at minimum — past it, the
+# handed piece is gone (changed or deleted), and opening a
+# DIFFERENT piece silently is worse than opening nothing (1.2.2).
+FIND_PIECE_MIN_REACH_M = 50.0
+
+
+def _reach(points):
+    """How far find_piece's nearest rules may reach for a piece
+    with these handed points: HALF the piece's own span, floored
+    at FIND_PIECE_MIN_REACH_M. The bound is geometric, not a
+    guess: the records that may legitimately answer a handoff
+    are the piece itself, lightly edited (its centroid moves by
+    metres), or a split successor — a contiguous run of the
+    original points, whose centroid cannot sit farther than
+    half the original span from the original centroid. Anything
+    beyond that is a different piece that happens to be near."""
+    if not points:
+        return FIND_PIECE_MIN_REACH_M
+    xs = [p[0] for p in points]
+    zs = [p[1] for p in points]
+    span = math.hypot(max(xs) - min(xs), max(zs) - min(zs))
+    return max(FIND_PIECE_MIN_REACH_M, span / 2.0)
+
+
 def find_piece(roads_doc, category, name, points, centre=None):
     """
     Locate the handoff's piece in a zone's roads document.
@@ -294,7 +404,11 @@ def find_piece(roads_doc, category, name, points, centre=None):
     first): the exact points under the handed category+name; the
     named records nearest the handed centre; any record in the
     category nearest the centre. `how` says which rule matched, so
-    the UI can report honestly how sure the match is.
+    the UI can report honestly how sure the match is. The two
+    nearest rules are reach-capped (_reach): a "nearest" record
+    beyond the reach is no match at all — before 1.2.2 a changed
+    or deleted piece could silently resolve to whatever record
+    happened to be closest, however far away.
     """
     cats = [category] if category in roads_doc else list(roads_doc)
     if centre is None:
@@ -306,7 +420,9 @@ def find_piece(roads_doc, category, name, points, centre=None):
                 continue
             if points and _pts_match(rec.get("pts") or [], points):
                 return cat, i, "exact"
-    # 2/3. Nearest centroid — named records first, then any.
+    # 2/3. Nearest centroid — named records first, then any —
+    # each accepted only within the reach.
+    reach = _reach(points)
     for want_name in (True, False):
         best = None
         for cat in cats:
@@ -318,7 +434,7 @@ def find_piece(roads_doc, category, name, points, centre=None):
                 d = (cx - centre[0]) ** 2 + (cz - centre[1]) ** 2
                 if best is None or d < best[0]:
                     best = (d, cat, i)
-        if best is not None:
+        if best is not None and math.sqrt(best[0]) <= reach:
             return best[1], best[2], "name+centre" if want_name \
                 else "centre"
     return None

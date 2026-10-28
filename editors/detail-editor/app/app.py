@@ -513,6 +513,9 @@ class DetailWindow(Gtk.Window):
         self.connect("delete-event", self._on_delete)
         self.connect("destroy", self._on_destroy)
         self.connect("key-press-event", self._on_key)
+        # A handoff can land while this window is already running
+        # (1.2.2): recheck whenever the window gains focus.
+        self.connect("focus-in-event", self._on_focus_in)
 
         # -- data ---------------------------------------------------
         self._fetcher = shared_cache.CachedFetcher(
@@ -522,6 +525,10 @@ class DetailWindow(Gtk.Window):
         self.data = DetailData(self._fetcher, github_sync.fetch_file)
         self.pages = []             # [PiecePage]
         self._manifest_version = None
+        # Set once the startup manifest flow has had its turn
+        # (success OR failure): from then on, focus-in re-checks
+        # the handoff (see _on_focus_in).
+        self._handoff_armed = False
 
         self._build_ui()
         self.show_all()
@@ -880,6 +887,9 @@ class DetailWindow(Gtk.Window):
             GLib.idle_add(self.progress_finish, "manifest")
 
     def _on_manifest_done(self, version, err):
+        # The startup flow has had its turn either way: focus-in
+        # handoff rechecks are live from here on.
+        self._handoff_armed = True
         if err is not None:
             self._set_status(
                 f"Could not download the map manifest: {err} — "
@@ -889,9 +899,34 @@ class DetailWindow(Gtk.Window):
         self._manifest_version = version
         self._set_status(f"Map data {version}. Ready.")
         # The handoff: a piece the Map Editor sent us.
+        self._consume_handoff()
+        return False
+
+    def _consume_handoff(self):
+        """Act on any waiting handoff: open a road piece, or
+        speak the notice an unsupported payload left behind. A
+        building handed to this roads-only editor must never
+        vanish in silence (1.2.2) — the notice names what it
+        was, and the payload itself is preserved aside, not
+        deleted (detaildata.read_handoff)."""
         doc = detaildata.read_handoff()
+        notice = detaildata.pop_handoff_notice()
+        if notice:
+            self._set_status(notice)
         if doc is not None:
             self._open_handoff(doc)
+
+    def _on_focus_in(self, _window, _event):
+        """The window gained focus: recheck for a handoff. Before
+        1.2.2 the handoff was read exactly once, at startup — a
+        piece (or building) sent while the editor was already
+        open simply never appeared, and no amount of waiting
+        helped. The startup read is guarded off here: until the
+        manifest flow has had its turn, it owns the first
+        consumption."""
+        if not self._handoff_armed:
+            return False
+        self._consume_handoff()
         return False
 
     def _open_handoff(self, doc):
@@ -927,9 +962,8 @@ class DetailWindow(Gtk.Window):
                 if doc.get("x") is not None else None)
             if found is None:
                 self._set_status(
-                    "The handed piece could not be found in the "
-                    "downloaded zone data — it may have changed "
-                    "since the Map Editor sent it.")
+                    "Couldn't find that piece — it may have "
+                    "been changed or deleted.")
                 return False
             cat, idx, how = found
             self._open_piece(model, cat, idx, how)
