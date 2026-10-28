@@ -459,6 +459,14 @@ window.GitHubReports = (function(){
      the crew inspector (its note category is 'crewinspector'; its
      queued type is 'inspector-finding'), and the Administrator
      crew-reports view's own status category. */
+  /* CREWS REMOVED 2026-10-28 (Joshua's order; archived in
+     adamsville-play-archive, branch world-map-removed-2026-10-28).
+     This table classifies report-type STRINGS only — it reads no crew
+     state and calls no crew code, so nothing dangles: with the crews
+     gone these kinds simply never occur, except reports already
+     sitting in a player's saved queue from before the removal, which
+     still drain through this throttle exactly as designed. Restore
+     path: re-install the crew systems from the archive branch. */
   var CREW_KINDS = {
     'roadcrew': 1, 'infracrew': 1, 'surveyfleet': 1,
     'hqstaff': 1, 'cityworkforce': 1, 'codeenforce': 1,

@@ -898,12 +898,7 @@ window.SAView = (function(){
        UI with you restored. Behaviour lives in ui_update_flow.js. -->
   <button class="row" id="adm-uiflow">Download newest UI</button>
   <div id="adm-hrlog"></div>
-  <button class="row" id="adm-dispatch">&#128679; Road Dispatch Log</button>
-  <!-- CREW REPORTS (Joshua 2026-10-24): the construction crews'
-       reports no longer appear on the game view — this row opens
-       the reports view (crew_reports_view.js) listing what the
-       road and infrastructure crews have filed. -->
-  <button class="row" id="adm-crewreports">&#128203; Crew Reports</button>
+  <!-- Road Dispatch Log + Crew Reports rows removed 2026-10-28 with the work crews (Joshua's order; crews archived in adamsville-play-archive, branch world-map-removed-2026-10-28). -->
   <!-- AGENT REPORTS (Joshua 2026-10-26): the agent buttons/report
        tray no longer sits on the game view — the always-on-screen
        dock icon is gone at his word ("the report icon is still on
@@ -1055,7 +1050,7 @@ window.SAView = (function(){
     background:#ffd75e;color:#111;font-weight:bold;width:100%;}
 
 /* ===== v1.22 LAUNCHER OPTIONS SCREEN (Joshua 2026-10-10) =====
-   Pre-game options screen: checkbox column for heavy systems (NPCs, crews,
+   Pre-game options screen: checkbox column for heavy systems (NPCs,
    MARTA, drones) + graphics (shadows, antialiasing, building detail).
    Shown BEFORE the loader; game does not start until user picks options. */
 #launcher{position:fixed;inset:0;z-index:200;background:rgba(10,12,20,.97);
@@ -1170,16 +1165,6 @@ window.SAView = (function(){
     <h3>⚙️ PERFORMANCE</h3>
     <label class="launch-opt"><input type="checkbox" data-opt="npcs" checked>
       <span class="opt-label">NPCs (1,000 citizens)</span><span class="opt-impact heavy">HEAVY</span></label>
-    <label class="launch-opt"><input type="checkbox" data-opt="crews" checked>
-      <span class="opt-label">Work crews (all)</span><span class="opt-impact medium">MEDIUM</span></label>
-    <label class="launch-opt sub"><input type="checkbox" data-opt="roadCrew" checked>
-      <span class="opt-label">↳ Road crew</span><span class="opt-impact light">LIGHT</span></label>
-    <label class="launch-opt sub"><input type="checkbox" data-opt="surveyFleet" checked>
-      <span class="opt-label">↳ Survey fleet</span><span class="opt-impact light">LIGHT</span></label>
-    <label class="launch-opt sub"><input type="checkbox" data-opt="infraCrew" checked>
-      <span class="opt-label">↳ Infra crew</span><span class="opt-impact light">LIGHT</span></label>
-    <label class="launch-opt sub"><input type="checkbox" data-opt="hqStaff" checked>
-      <span class="opt-label">↳ HQ staff</span><span class="opt-impact light">LIGHT</span></label>
     <label class="launch-opt"><input type="checkbox" data-opt="martaBuses" checked>
       <span class="opt-label">MARTA buses</span><span class="opt-impact medium">MEDIUM</span></label>
     <label class="launch-opt"><input type="checkbox" data-opt="martaTrains" checked>
@@ -1338,17 +1323,17 @@ function phaseAdvance(px,pz,x,z,dt){
   return adv>cap?cap:adv;
 }
 /* v1.11 loading-screen bootstrap — runs before the game scripts */
-window.__loadOrder=['engine','elev','zoneloader','roads','signs','lifts','pins','buildings','vehmeshes','world','music','npc','refnpc','gasdata','traffic','semis','roadcrew','marta','busdata','bus'];
+window.__loadOrder=['engine','elev','zoneloader','roads','signs','lifts','pins','buildings','vehmeshes','world','music','npc','refnpc','gasdata','traffic','semis','marta','busdata','bus'];
 window.__loadNames={engine:'3D engine',elev:'Elevation data',zoneloader:'Zone loader',roads:'Roads',signs:'Exit signs',
   lifts:'Terrain lifts',pins:'Junction pins',buildings:'Buildings',vehmeshes:'Vehicle models',world:'Game world',music:'Music',
-  npc:'NPC system',refnpc:'Photo NPCs',gasdata:'Gas station data',traffic:'Traffic system',semis:'Delivery trucks',roadcrew:'Road crew',marta:'MARTA rail',busdata:'MARTA bus data',bus:'MARTA buses',
-  martadata:'MARTA rail data',trafficassist:'Traffic assist',drones:'Drones',survey:'Survey fleet',infra:'Infra crew',hq:'HQ staff',inspector:'Crew inspectors'};
+  npc:'NPC system',refnpc:'Photo NPCs',gasdata:'Gas station data',traffic:'Traffic system',semis:'Delivery trucks',marta:'MARTA rail',busdata:'MARTA bus data',bus:'MARTA buses',
+  martadata:'MARTA rail data',trafficassist:'Traffic assist',drones:'Drones'};
 /* v1.15: REAL file sizes in bytes (measured 2026-10-10). The progress bar is
    weighted by these so a 2.8MB file moves the bar proportionally more than
    a 4KB file. Steps without a listed size default to 40KB. */
 window.__loadWeight={engine:604160,elev:4505,zoneloader:8521,roads:2936012,signs:57344,
   lifts:623616,pins:1258291,buildings:454656,vehmeshes:40960,world:40960,music:40960,
-  npc:72704,refnpc:37888,gasdata:40960,traffic:44032,semis:40960,roadcrew:56320,
+  npc:72704,refnpc:37888,gasdata:40960,traffic:44032,semis:40960,
   marta:40960,busdata:171008,bus:40960};
 window.__loadDone={};
 function __loadWeightOf(key){ return window.__loadWeight[key]||40960; }
@@ -1907,7 +1892,7 @@ function __armResumeStartGate(){
    TypeError was swallowed by try/catch, and NO launcher listeners ever
    attached (dead buttons/checkboxes). Init must precede wiring.
    Pre-game options screen: lets Joshua pick which heavy systems run
-   (NPCs, crews, MARTA, drones, traffic) and graphics (shadows, AA,
+   (NPCs, MARTA, drones, traffic) and graphics (shadows, AA,
    building detail). Persisted in localStorage['sa_launch_opts_v1'].
    v1.23: defaults are all-OFF for web browsers (fresh visits start with
    nothing checked; user opts in). APK keeps the old all-on defaults.
@@ -1921,7 +1906,7 @@ function __armResumeStartGate(){
   try{isAPK=/SurvivingAdamsville|wv/i.test(navigator.userAgent||'');}catch(e){}
   var dflt=isAPK;  // web: false (everything off), APK: true (everything on)
   window.__launchOpts={
-    npcs:dflt,roadCrew:dflt,surveyFleet:dflt,infraCrew:dflt,hqStaff:dflt,
+    npcs:dflt,
     martaBuses:dflt,martaTrains:dflt,drones:dflt,traffic:dflt,
     shadows:dflt,antialias:dflt,hiDetail:dflt,
     drawDist:'medium'  // v1.25: draw distance preset ('short'|'medium'|'long') — not a boolean, excluded from SELECT ALL/NONE presets
@@ -1935,7 +1920,7 @@ function __armResumeStartGate(){
    empty ghost town; everything else keeps the platform default for the
    session. __criticalLoadKeys maps the same idea onto loader step keys, so a
    failed download of a critical system blocks the start gate with a clear
-   error instead of loading silently broken. Optional systems (crews, MARTA,
+   error instead of loading silently broken. Optional systems (MARTA,
    drones, shadows, AA, hi-detail) may stay off with no warning. */
 window.__criticalSystems=['npcs','traffic'];
 /* v1.53 #34 CRITICAL LOADER FAILURES (Jennifer Wu, QA — Joshua approved fix).
@@ -2001,38 +1986,22 @@ window.__startGameAfterLoad = false;
    launch-option map. When the player unchecks a system, its script is NOT
    downloaded at all, and its load step (if tracked in __loadOrder) is marked
    done immediately so __tryStartGame never waits on a script that will never
-   arrive. 'inspector' is special: crew inspectors only make sense when at
-   least one crew runs, so they skip only if BOTH roadCrew and infraCrew are
-   off. '$anyCrew' (2026-10-28) is the wider gate for the crew systems
-   that serve ALL crews — the municipal workforce (cityworkforce.js) and
-   the veteran-crew brain (veteran_crew.js): they run when ANY of the four
-   crew sub-options is on and skip only when ALL four are off. Both loaded
-   with data-dkey="" (never skipped) until Joshua's 2026-10-28 hands-on:
-   he deselected the work crews and the workforce still ran.
-   AUDIT FIX (2026-10-28): code enforcement (codeenforce_system.js —
-   it dispatches veteran construction crews) and worker housing
-   (workerhousing.js — it boots from the workforce roster) carried
-   empty dkeys and no gate at all, so both ran with every crew option
-   off; they take the same '$anyCrew' gate. */
+     arrive. CREW GATES REMOVED 2026-10-28 (Joshua's order): the work
+     crews were taken out of the game and archived (adamsville-play-
+     archive, branch world-map-removed-2026-10-28); their dkey->option
+     entries and the '$crews'/'$anyCrew' skip gates went with them. */
 var __scriptOptSkip={
   bus:'martaBuses', busdata:'martaBuses',
   marta:'martaTrains', martadata:'martaTrains',
   npc:'npcs', refnpc:'npcs',
   traffic:'traffic', trafficassist:'traffic',
-  drones:'drones',
-  roadcrew:'roadCrew', survey:'surveyFleet', infra:'infraCrew', hq:'hqStaff',
-  inspector:'$crews',
-  workforce:'$anyCrew', veteran:'$anyCrew',
-  codeenforce:'$anyCrew', workerhousing:'$anyCrew'
+  drones:'drones'
 };
 function __scriptSkippedByOption(key){
   var opt=__scriptOptSkip[key];
   if(!opt) return false;
   try{
     var o=window.__launchOpts||{};
-    if(opt==='$crews') return o.roadCrew===false && o.infraCrew===false;
-    if(opt==='$anyCrew') return o.roadCrew===false && o.surveyFleet===false &&
-                               o.infraCrew===false && o.hqStaff===false;
     return o[opt]===false;
   }catch(e){ return false; }
 }
@@ -2338,7 +2307,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
    stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.10.28.13';
+window.__DOC_UIVER = '2026.10.28.14';
 function __checkDocVersionHeal(){
   var live = window.__UIVER || '';
   if (!live || live === window.__DOC_UIVER){
@@ -2848,13 +2817,6 @@ window.__whenConfirmed(function(){
 window.__saveLaunchOpts = function(){
   try { localStorage.setItem('sa_launch_opts_v1', JSON.stringify(window.__launchOpts)); } catch(e){}
 };
-/* v1.22: "crews" master checkbox controls all four sub-crew flags. */
-window.__applyCrewMaster = function(on){
-  window.__launchOpts.roadCrew = on;
-  window.__launchOpts.surveyFleet = on;
-  window.__launchOpts.infraCrew = on;
-  window.__launchOpts.hqStaff = on;
-};
 /* ===== v1.22 LAUNCHER UI WIRING (runs in block 1 so the launcher is
    interactive during the download phase, before block 2's sync init) ===== */
 (function __wireLauncher(){
@@ -2866,11 +2828,7 @@ window.__applyCrewMaster = function(on){
     function syncBoxes(){
       for (var i = 0; i < boxes.length; i++) {
         var key = boxes[i].getAttribute('data-opt');
-        if (key === 'crews') {
-          // master: checked if ANY sub-crew is on
-          boxes[i].checked = !!(window.__launchOpts.roadCrew || window.__launchOpts.surveyFleet ||
-                                window.__launchOpts.infraCrew || window.__launchOpts.hqStaff);
-        } else if (key in window.__launchOpts) {
+        if (key in window.__launchOpts) {
           boxes[i].checked = !!window.__launchOpts[key];
         }
       }
@@ -2899,9 +2857,7 @@ window.__applyCrewMaster = function(on){
       }
       if (!t || !t.getAttribute('data-opt')) return;
       var key = t.getAttribute('data-opt');
-      if (key === 'crews') {
-        window.__applyCrewMaster(t.checked);
-      } else if (key === 'drawDist' && t.tagName === 'SELECT') {
+      if (key === 'drawDist' && t.tagName === 'SELECT') {
         // v1.25: draw distance dropdown — string preset, not boolean
         if (t.value === 'short' || t.value === 'medium' || t.value === 'long') {
           window.__launchOpts.drawDist = t.value;
@@ -2909,7 +2865,7 @@ window.__applyCrewMaster = function(on){
       } else if (t.tagName === 'INPUT' && key in window.__launchOpts) {
         window.__launchOpts[key] = t.checked;
       }
-      syncBoxes(); // keep master/sub in sync
+      syncBoxes(); // reflect any linked state
     });
     // Presets
     function setAll(on){
@@ -4213,9 +4169,6 @@ var ASSETVER=(function(){
       document.getElementById('adm-ui').addEventListener('click',function(){ confirmRedownload('ui'); });
       document.getElementById('adm-vehicles').addEventListener('click',function(){ confirmRedownload('vehicles'); });
       document.getElementById('adm-music').addEventListener('click',function(){ confirmRedownload('music'); });
-      document.getElementById('adm-dispatch').addEventListener('click',function(){
-        try{ if(typeof window.toggleDispatchLog==='function') window.toggleDispatchLog(true); }catch(e){}
-      });
       document.getElementById('adm-testconn').addEventListener('click',function(){ testConnection(); });
       /* v1.12.11: "Send Reports to Mollie" button — Joshua's spec. */
       document.getElementById('adm-sendreports').addEventListener('click',function(){ sendReportsToMollie(); });
@@ -15259,9 +15212,6 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <script data-dsrc="poi_map.js" data-dkey=""></script>
 <script data-dsrc="stuck.js" data-dkey=""></script>
 <script data-dsrc="stuck_diag.js" data-dkey=""></script>
-<script data-dsrc="veteran_crew.js" data-dkey="veteran"></script>
-<script data-dsrc="codeenforce_system.js" data-dkey="codeenforce"></script>
-<script data-dsrc="roadcrew_system.js" data-dkey="roadcrew"></script>
 <script data-dsrc="roadfix.js" data-dkey=""></script>
 <script data-dsrc="marta_system.js" data-dkey="marta"></script>
 <script data-dsrc="marta_bus_system.js" data-dkey="bus"></script>
@@ -15269,15 +15219,6 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <script data-dsrc="visual_inspect.js" data-dkey=""></script>
 <script data-dsrc="bird_drones.js" data-dkey="drones"></script>
 <script data-dsrc="schoolbus_system.js" data-dkey=""></script>
-<script data-dsrc="infracrew_system.js" data-dkey="infra"></script>
-<script data-dsrc="surveyfleet_system.js" data-dkey="survey"></script>
-<script data-dsrc="cityworkforce.js" data-dkey="workforce"></script>
-<script data-dsrc="inspector_crew.js" data-dkey="inspector"></script>
-<!-- CREW REPORTS VIEW (Joshua 2026-10-24): the Administrator menu's
-     "Crew Reports" view — the construction crews' reports live
-     here now, not on the game view. Reads ROADCREW.log /
-     INFRACREW.log lazily when opened, so load order is safe. -->
-<script data-dsrc="crew_reports_view.js" data-dkey=""></script>
 <script data-dsrc="police_system.js" data-dkey=""></script>
 <script data-dsrc="github-config.js" data-dkey=""></script>
 <script data-dsrc="github_reports.js" data-dkey=""></script>
@@ -15286,15 +15227,12 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
      report uploader whose config it shares. -->
 <script data-dsrc="crashlog.js" data-dkey=""></script>
 <script data-dsrc="worldfix_sync.js" data-dkey=""></script>
-<script data-dsrc="hq_staff_system.js" data-dkey="hq"></script>
 <script data-dsrc="dialogue_director_npc.js" data-dkey=""></script>
-<script data-dsrc="workerhousing.js" data-dkey="workerhousing"></script>
 <script data-dsrc="daycycle.js" data-dkey=""></script>
 <script data-dsrc="blob_shadows.js" data-dkey=""></script>
 <script data-dsrc="perf_budget.js" data-dkey=""></script>
 <script data-dsrc="ambient_audio.js" data-dkey=""></script>
 <script data-dsrc="helicopter_system.js" data-dkey=""></script>
-<script data-dsrc="priority_dispatch.js" data-dkey=""></script>
 <script data-dsrc="stayawake.js" data-dkey=""></script>
 <script data-dsrc="agentdock.js" data-dkey=""></script>
 <script data-dsrc="zoneunlock.js" data-dkey=""></script>

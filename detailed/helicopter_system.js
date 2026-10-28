@@ -20,10 +20,11 @@
        defects (exit signs floating far from any road, road segments with
        NaN coordinates or impossible point jumps). Findings are NOT invented
        — each one is computed from the data. As a helicopter flies within
-       range of an undiscovered finding, it files a report through
-       window.INFRACREW.reportIssue() — the same pipeline the sign teams
-       and watcher feedback use. Reported findings persist in localStorage
-       so nothing is double-reported across sessions.
+       range of an undiscovered finding, it records the finding in its
+       own log. (Until 2026-10-28 findings were also filed onward to the
+       infra crew; the crews were removed on Joshua's order and archived.)
+       Reported findings persist in localStorage so nothing is
+       double-reported across sessions.
      - Two helipads near the Municipal Services HQ (7750.5, 2574.9).
      - Weather grounding: helicopters do not fly in rainy weather — they
        wait at the pad (honest sim behavior, same spirit as the crews).
@@ -36,11 +37,10 @@
      hard hats, no reflective stripes. They are aviators, and they dress
      like it.
 
-   RELATIONSHIP TO CityWorkforce:
-     The pilots are municipal Aerial Survey staff, coordinated with the
-     Municipal Services HQ departments. This module keeps its own roster
-     and HUD (the CityWorkforce 58-person roster is a fixed list) and
-     documents the pilots as the aerial arm of the same workforce.
+   The pilots are municipal Aerial Survey staff. This module keeps its
+   own roster and HUD. (It was once documented as the aerial arm of the
+   CityWorkforce roster; the workforce and the other work crews were
+   removed 2026-10-28 on Joshua's order and archived.)
 
    STANDALONE MODULE. Include AFTER daycycle.js in index.html — zero edits
    to index.html game logic required (one <script> tag):
@@ -397,28 +397,14 @@ function scanFindings(){
 }
 
 /* ---------------- patrol waypoints (lawnmower grid per sector) ----------------
-   v1.20 PRIORITY DISPATCH (Joshua 2026-10-09): when window.PRIORITY_DISPATCH
-   is active, both units fly concentrated lawnmower patterns over the Adamsville
-   priority zone (covering I-285, MLK, Fulton Industrial, Boulder Park,
-   Dollar Mill, Bakers Ferry) instead of their full north/south sectors. */
+   (The v1.20 priority-dispatch concentration went out 2026-10-28 with
+   the work crews — see the note inside buildWaypoints.) */
 function buildWaypoints(north){
   var wps=[];
-  /* priority dispatch: concentrate on Adamsville zone */
-  var PD=null;
-  try{ PD=(window.PRIORITY_DISPATCH && window.PRIORITY_DISPATCH.active)?window.PRIORITY_DISPATCH:null; }catch(e){}
-  if (PD){
-    var Z=PD.zone;
-    var step=400;  // tighter grid for thorough corridor coverage
-    var rows=[];
-    for(var z=Z.zMin; z<=Z.zMax; z+=step) rows.push(z);
-    rows.forEach(function(rz,ri){
-      var xs=[];
-      for(var x=Z.xMin;x<=Z.xMax;x+=step) xs.push(x);
-      if(ri%2===1) xs.reverse();  /* boustrophedon */
-      xs.forEach(function(wx){ wps.push({x:wx,z:rz}); });
-    });
-    return wps;
-  }
+  /* Priority-dispatch concentration removed 2026-10-28 with the work
+     crews (Joshua's order; priority_dispatch.js archived in
+     adamsville-play-archive, branch world-map-removed-2026-10-28):
+     patrols always fly their full sectors now. */
   /* STEP2 stretch (Joshua 2026-10-16): the lawnmower grid now spans the
      §6.2 stage rect inset by 200 (was the old core rect 200..8000 x
      200..11800): x runs -7281..16115, z rows span -4049..30678, still
@@ -509,15 +495,10 @@ function reportFinding(u, f){
   var msg=u.callsign+' spotted '+f.kind+' issue @ ('+Math.round(f.x)+','+Math.round(f.z)+'): '+f.desc;
   dlog(msg);
   u.log.push({t:fmtTime(gameMin()), msg:'Reported: '+f.desc});
-  try{
-    if(window.INFRACREW && typeof window.INFRACREW.reportIssue==='function'){
-      window.INFRACREW.reportIssue({
-        kind: f.kind, x: f.x, z: f.z,
-        desc: '[Aerial survey '+u.callsign+'] '+f.desc,
-        street: 'Aerial survey sector '+(u.north?'North':'South')
-      });
-    }
-  }catch(e){}
+  /* Findings used to be filed onward to the infra crew
+     (INFRACREW.reportIssue) — that hand-off was removed 2026-10-28 with
+     the work crews (Joshua's order; archived). Findings still land in
+     this unit's own log above and persist as reported. */
 }
 
 /* ---------------- per-unit update ---------------- */
