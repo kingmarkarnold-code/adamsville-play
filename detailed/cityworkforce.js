@@ -159,6 +159,14 @@ function _log(msg){
   try{
     try{ window.localStorage.setItem(LS_LOG, JSON.stringify(deployLog.slice(-80))); }catch(e){}
   }catch(e){}
+  /* Silent-automatic crew reporting (2026-10-28): every workforce
+     deployment event ALSO files through Report.note, so it rides
+     the automatic report sender to Mollie as a Crew Report — no
+     "Send Reports to Mollie" push. This is the chattiest crew
+     stream (a line per worker move); the sender dedupes identical
+     lines and caps each crew kind per rolling window, so it
+     can't flood the form. */
+  try{ if (typeof Report!=='undefined' && Report.note) Report.note('cityworkforce', String(msg)); }catch(e){}
 }
 function _saveRoster(){
   try{

@@ -85,6 +85,51 @@
      the Administrator crew reports (crewinspector findings):
      they are automatic reports and ride this same flush.
      No changes to other files needed.
+
+   CREW REPORTS GO SILENT-AUTOMATIC (Joshua's directives,
+   2026-10-28):
+   * The crews' own dispatch/event logs (road crew dlog, infra
+     crew dlog, survey fleet dlog, code enforcement clog, city
+     workforce _log, veteran fileReport) used to live ONLY in
+     the crews' local logs + the Report panel's system state —
+     reaching Mollie required Joshua to push "Send Reports to
+     Mollie". Each of those emitters now ALSO files through
+     Report.note (in its own file), so every crew finding rides
+     this sender automatically, in the background, while the
+     crews are selected on. The in-game surfaces (Administrator
+     Crew Reports view, dispatch panels) are untouched — he can
+     still LOOK at everything; nothing needs his push any more.
+   * CREW CATEGORY: crew/workforce kinds map to the form's new
+     "Crew Report" type choice (added to the form 2026-10-28;
+     same entry code — choices are values, not fields). The
+     kind list lives in CREW_KINDS below; a crew system's
+     ERRORS file as Crew Report too (an infra dispatch failure
+     is a crew finding, not a game crash). All other kinds keep
+     their previous mapping.
+   * THROTTLE: crew logs are chatty (a workforce deployment
+     line per worker move), so crew reports pass a per-kind
+     gate in queueReport: identical messages deduped inside a
+     10-minute window, and each crew kind capped per rolling
+     10 minutes. Dropped reports are counted (status().
+     crewDropped) — throttling is never silent in the data.
+     Non-crew reports are never throttled.
+
+   TELEMETRY (Joshua's directive, 2026-10-28):
+   * Perf reports and the exit/session (Stats) report carry a
+     standard `telemetry` block in their details (built by
+     telemetryBlock below): current FPS + the session FPS band
+     and quality-change count (PerfBudget.getTelemetry — the
+     perf system's own counters), the governor values actually
+     in force (__perfTrafficCap / __perfNpcDist /
+     __perfShadowDist), the file-loading state (stock + map
+     delivery results, the vehicle library's ready/failed
+     state, and how many delivery-defect reports this session
+     queued), and the map mode (package vs legacy + how it was
+     requested). Every value is READ from the system that owns
+     it; the sender tracks nothing of its own except counting
+     the reports it queues. A source that doesn't exist yet
+     (delivery hasn't run, library hasn't loaded) is simply
+     absent from the block — never estimated.
    * Reports sit in a memory queue. Every flushIntervalMs
      (default 5 minutes, see github-config.js) the queue is
      sent: on the form path, ONE form POST per queued report
@@ -402,6 +447,222 @@ window.GitHubReports = (function(){
     return 200;
   }
 
+  /* ---------- crew reports (2026-10-28) ----------
+
+     The crew/workforce systems whose findings file as the
+     form's "Crew Report" type. Keys are the Report categories
+     / queue type slugs those systems use: the road, infra,
+     survey, HQ-staff, code-enforcement and priority-dispatch
+     crews, the municipal workforce, the veteran foremen, the
+     crew inspector (its note category is 'crewinspector'; its
+     queued type is 'inspector-finding'), and the Administrator
+     crew-reports view's own status category. */
+  var CREW_KINDS = {
+    'roadcrew': 1, 'infracrew': 1, 'surveyfleet': 1,
+    'hqstaff': 1, 'cityworkforce': 1, 'codeenforce': 1,
+    'prioritydispatch': 1, 'veterancrew': 1,
+    'crewinspector': 1, 'inspector-finding': 1, 'crewreports': 1
+  };
+
+  /* The crew kind a report belongs to, or null. Candidates, in
+     order: the report's details._category (set by the Report
+     wrappers), the queue type itself, and the type with an
+     'error-' prefix stripped (Report.noteError queues crew
+     errors as 'error-<category>' — they are crew findings). */
+  function crewKindOf(type, details){
+    try{
+      var cands = [];
+      if(details && typeof details==='object' &&
+         typeof details._category==='string' && details._category)
+        cands.push(details._category.toLowerCase());
+      var t = String(type==null?'':type).toLowerCase();
+      if(t) cands.push(t);
+      if(t.indexOf('error-')===0) cands.push(t.substring(6));
+      for(var i=0;i<cands.length;i++)
+        if(CREW_KINDS[cands[i]]) return cands[i];
+    }catch(e){}
+    return null;
+  }
+
+  /* Crew throttle state: per-kind rolling send windows and the
+     last-sent stamp of each (kind, message) pair for dedupe.
+     crewDropped counts every report the gate turned away, and
+     status() exposes it — the cap is a flood guard, not a
+     silent filter. */
+  var crewWindow = {};     // kind -> [timestamps sent]
+  var crewSeen = {};       // kind + '\n' + message -> last sent ts
+  var crewDropped = 0;     // reports dropped by the crew gate
+  var CREW_WINDOW_MS = 10*60*1000;   // rolling window
+  var CREW_MAX_PER_WINDOW = 10;      // per kind per window
+  var CREW_DEDUPE_MS = 10*60*1000;   // identical message resend gap
+
+  /* True when a report may pass. Non-crew reports always pass.
+     Crew reports pass when the (kind, message) pair hasn't been
+     sent inside the dedupe gap AND the kind is under its
+     per-window cap. */
+  function crewGatePass(type, details){
+    var kind = crewKindOf(type, details);
+    if(!kind) return true;
+    var now = Date.now();
+    var msg = '';
+    try{
+      if(details && typeof details==='object' &&
+         typeof details.message==='string') msg = details.message;
+      else if(typeof details==='string') msg = details;
+    }catch(e){}
+    if(msg){
+      var key = kind+'\n'+msg;
+      var last = crewSeen[key];
+      if(last && (now-last) < CREW_DEDUPE_MS){ crewDropped++; return false; }
+      crewSeen[key] = now;
+      /* Keep the dedupe map bounded: when it grows large, drop
+         entries older than the dedupe gap (they can no longer
+         suppress anything). */
+      try{
+        var keys = Object.keys(crewSeen);
+        if(keys.length > 400){
+          for(var i=0;i<keys.length;i++)
+            if(now-(crewSeen[keys[i]]||0) >= CREW_DEDUPE_MS)
+              delete crewSeen[keys[i]];
+        }
+      }catch(e){}
+    }
+    var arr = crewWindow[kind] || (crewWindow[kind] = []);
+    while(arr.length && (now-arr[0]) > CREW_WINDOW_MS) arr.shift();
+    if(arr.length >= CREW_MAX_PER_WINDOW){ crewDropped++; return false; }
+    arr.push(now);
+    return true;
+  }
+
+  /* Delivery-defect reports queued this session (the stock
+     delivery layer's defect reports and the vehicle library's
+     load-failure reports ride this same queue under their own
+     types). Counted here — the sender counting its own queue,
+     like reportsQueuedTotal — for the telemetry block's
+     file-loading section. */
+  var deliveryReportsQueued = 0;
+
+  /* ---------- telemetry (2026-10-28) ----------
+
+     The standard telemetry block attached to perf reports and
+     the exit/session report (see queueReport /
+     sessionReportDetails). Every value is read live from the
+     system that owns it; absent sources are omitted, never
+     estimated. Never throws. */
+  function telemetryBlock(){
+    var t = {};
+    /* Performance: PerfBudget's own counters (fps now, session
+       band, level + change count, manual override) plus the
+       governor values actually published for other systems. */
+    try{
+      if(typeof window!=='undefined' && window.PerfBudget){
+        var pb = window.PerfBudget;
+        if(typeof pb.getTelemetry==='function'){
+          var pt = pb.getTelemetry();
+          if(pt && typeof pt==='object') t.perf = pt;
+        } else {
+          t.perf = {
+            fps: (typeof pb.getFps==='function' ? pb.getFps() : null),
+            level: (typeof pb.getLevel==='function' ? pb.getLevel() : null),
+            levelLabel: (typeof pb.getLevelLabel==='function' ?
+                         pb.getLevelLabel() : null)
+          };
+        }
+      }
+    }catch(e){}
+    /* File loading: the delivery layers publish their startup
+       results on window (index.html stores them); the vehicle
+       library publishes ready/failed on itself. */
+    try{
+      var fl = {};
+      var sr = (typeof window!=='undefined') ?
+        window.__STOCKDELIVERY_RESULT : null;
+      if(sr && typeof sr==='object'){
+        fl.stockDelivery = { status: String(sr.status||''),
+          error: (typeof sr.error==='string' ? sr.error : null) };
+      }
+      var mr = (typeof window!=='undefined') ?
+        window.__MAPDELIVERY_RESULT : null;
+      if(mr && typeof mr==='object'){
+        fl.mapDelivery = { status: String(mr.status||'') };
+      }
+      var vl = (typeof window!=='undefined') ? window.VehicleLibrary : null;
+      if(vl && typeof vl==='object'){
+        fl.vehicleLibrary = { ready: !!vl.ready, failed: !!vl.failed,
+          types: 0 };
+        try{ fl.vehicleLibrary.types = Object.keys(vl.types||{}).length; }
+        catch(e){}
+      }
+      fl.deliveryReportsQueuedThisSession = deliveryReportsQueued;
+      if(Object.keys(fl).length) t.fileLoading = fl;
+    }catch(e){}
+    /* Map mode: package vs legacy, whether package was
+       requested, and the raw mapsrc signal (URL parameter,
+       else the stored preference, else the registry default —
+       read the same way map_registry.js reads it). */
+    try{
+      if(typeof window!=='undefined' && window.MapSystem){
+        var ms = window.MapSystem;
+        var src = 'default';
+        try{
+          var q = new URLSearchParams(window.location.search||'');
+          if(q.get('mapsrc')) src = 'url:'+q.get('mapsrc');
+          else if(window.localStorage){
+            var s = window.localStorage.getItem('sa_mapsrc');
+            if(s) src = 'stored:'+s;
+          }
+        }catch(e){}
+        t.map = {
+          mode: (typeof ms.packageActive==='function' &&
+                 ms.packageActive()) ? 'package' : 'legacy',
+          packageRequested: (typeof ms.packageModeRequested==='function' ?
+                             !!ms.packageModeRequested() : null),
+          mapsrc: src
+        };
+      }
+    }catch(e){}
+    return t;
+  }
+
+  /* One readable line summarising a telemetry block, for the
+     session report's message head. '' when the block is empty. */
+  function telemetryLine(t){
+    try{
+      if(!t || typeof t!=='object') return '';
+      var bits = [];
+      if(t.perf){
+        var p = t.perf;
+        var s = 'fps '+p.fps;
+        if(p.fpsLow!=null && p.fpsHigh!=null)
+          s += ' (session band '+p.fpsLow+'–'+p.fpsHigh+')';
+        s += ', quality '+(p.levelLabel||p.level);
+        if(typeof p.levelChanges==='number')
+          s += ' after '+p.levelChanges+' change'+
+               (p.levelChanges===1?'':'s');
+        bits.push(s);
+        var gov = [];
+        if(p.trafficCap!=null) gov.push('trafficCap '+p.trafficCap);
+        if(p.npcDist!=null) gov.push('npcDist '+p.npcDist);
+        if(p.shadowDist!=null) gov.push('shadowDist '+p.shadowDist);
+        if(gov.length) bits.push('governor '+gov.join(' · '));
+      }
+      if(t.fileLoading){
+        var fl = t.fileLoading, fbits = [];
+        if(fl.stockDelivery)
+          fbits.push('stock '+(fl.stockDelivery.status||'?'));
+        if(fl.mapDelivery)
+          fbits.push('map files '+(fl.mapDelivery.status||'?'));
+        if(fl.vehicleLibrary)
+          fbits.push('vehicle library '+
+            (fl.vehicleLibrary.failed ? 'FAILED (legacy bodies)' :
+             fl.vehicleLibrary.ready ? 'ready' : 'not loaded'));
+        if(fbits.length) bits.push('files: '+fbits.join(', '));
+      }
+      if(t.map) bits.push('map mode: '+t.map.mode);
+      return bits.length ? ('Telemetry: '+bits.join('; ')) : '';
+    }catch(e){ return ''; }
+  }
+
   /* ---------- the queue ---------- */
 
   var queue = [];          // pending report objects
@@ -413,10 +674,28 @@ window.GitHubReports = (function(){
      JSON-serializable (object preferred). */
   function queueReport(type, details){
     try{
+      /* Crew gate (2026-10-28): crew/workforce reports are
+         deduped + per-kind capped so a chatty crew log can't
+         flood the form; everything else passes untouched. A
+         gated-out report is counted (status().crewDropped),
+         never queued. */
+      if(!crewGatePass(type, details)) return;
       /* Session tracking: count every queued report and take a
          position/zone sample (queueing moments are natural,
          already-paid-for sample points). */
       reportsQueuedTotal++;
+      /* Delivery-defect tally for the telemetry block (the
+         sender counting its own queue — see deliveryReportsQueued). */
+      var slugType = slug(type);
+      if(slugType==='stock-delivery' || slugType==='vehicle-library')
+        deliveryReportsQueued++;
+      /* Telemetry (2026-10-28): perf reports carry the standard
+         telemetry block, attached here at queue time so the
+         values describe the moment the perf event fired. */
+      if(slugType.indexOf('perf')===0 && details &&
+         typeof details==='object' && !details.telemetry){
+        try{ details.telemetry = telemetryBlock(); }catch(e){}
+      }
       samplePlayer();
       var q = queue;
       q.push({
@@ -439,13 +718,15 @@ window.GitHubReports = (function(){
 
   /* Map a queued report's kind (its slug) to the form's
      "Report type" radio choice. The submitted value must match
-     one of Bug / Crash / Feedback / Other / Stats EXACTLY
-     or Google
-     silently drops just that one answer. Mapping (GOOGLE-FORM.md):
-     crash/error kinds are crashes; player-initiated kinds are
-     feedback; the game's automatic diagnostic kinds (inspector
-     findings, stuck vehicles, perf, input diagnostics, explicit
-     bug reports) are bugs; anything else is Other. */
+     one of Bug / Crash / Feedback / Other / Stats / Crew Report
+     EXACTLY or Google silently drops just that one answer.
+     Mapping (GOOGLE-FORM.md): crew/workforce kinds are Crew
+     Reports (2026-10-28, checked before the crash rule so crew
+     errors file as crew findings); crash/error kinds are
+     crashes; player-initiated kinds are feedback; the game's
+     automatic diagnostic kinds (stuck vehicles, perf, input
+     diagnostics, explicit bug reports) are bugs; anything
+     else is Other. */
   function formTypeFor(type){
     var t = String(type==null?'':type).toLowerCase();
     /* The exit/session report (kind 'session') maps to the
@@ -455,6 +736,12 @@ window.GitHubReports = (function(){
        a mis-tap he reversed; the "Other" fallback below is
        unchanged). */
     if(t==='session' || t.indexOf('session')>=0) return 'Stats';
+    /* Crew/workforce kinds (2026-10-28): the form's "Crew
+       Report" choice (added 2026-10-28; a choice is a VALUE in
+       the same type entry, so no entry code changed). Checked
+       BEFORE the crash rule so a crew system's errors file as
+       crew findings, not game crashes. */
+    if(crewKindOf(t, null)) return 'Crew Report';
     if(t.indexOf('crash')>=0 || t.indexOf('error')>=0) return 'Crash';
     if(t.indexOf('feedback')>=0 || t.indexOf('manual')===0) return 'Feedback';
     if(t==='bug' || t.indexOf('inspector')>=0 || t.indexOf('stuck')>=0 ||
@@ -593,6 +880,10 @@ window.GitHubReports = (function(){
          samplePlayer from the game's player position / zone;
        - performance at exit (level label + fps) ONLY when
          window.PerfBudget exposes them;
+       - the standard telemetry block (2026-10-28: fps band +
+         quality changes + governor, file-loading state, map
+         mode — see telemetryBlock) in the details, with its
+         one-line summary in the message;
        - how many OTHER reports this session queued (counted
          before this report itself is queued).
      No player name is ever attached: session reports are
@@ -647,6 +938,17 @@ window.GitHubReports = (function(){
           exact: !!pk.exact, visibleW: pk.vw, visibleH: pk.vh };
       }
     }catch(e){}
+    /* Telemetry (2026-10-28): the standard block rides in the
+       details, and one readable summary line joins the message
+       head — so the Stats answer shows the tuning evidence
+       (fps band, quality changes, governor, file-loading
+       state, map mode) without opening the folded JSON. */
+    var telem = null, telemText = '';
+    try{
+      telem = telemetryBlock();
+      telemText = telemetryLine(telem);
+    }catch(e){ telem = null; telemText = ''; }
+    if(telemText) lines.push(telemText);
     lines.push('Other reports queued this session: '+reportsQueuedTotal);
     lines.push('Exit path: '+String(reason||'exit'));
     var details = {
@@ -660,6 +962,7 @@ window.GitHubReports = (function(){
     };
     if(perfBits.length) details.perfAtExit = perfBits.join(' · ');
     if(layoutPick) details.layoutPick = layoutPick;
+    if(telem && Object.keys(telem).length) details.telemetry = telem;
     return details;
   }
 
@@ -944,7 +1247,12 @@ window.GitHubReports = (function(){
           try{
             queueReport('error-'+slug(category), {
               code: String(code==null?'':code),
-              message: String(msg==null?'':msg)
+              message: String(msg==null?'':msg),
+              /* The originating system, named like note()'s
+                 _category (2026-10-28): the crew gate/mapping
+                 reads it, and the folded diagnostics name the
+                 system that errored. */
+              _category: String(category==null?'':category)
             });
           }catch(e){}
           return origErr.apply(Report, arguments);
@@ -1095,6 +1403,9 @@ window.GitHubReports = (function(){
            how long the session has run so far. */
         sessionReportQueued: sessionReportQueued,
         sessionSeconds: sessionSeconds(),
+        /* Crew gate state (2026-10-28): how many crew reports
+           the dedupe/cap gate turned away this session. */
+        crewDropped: crewDropped,
         lastFlush: lastFlush,
         lastError: lastError
       };

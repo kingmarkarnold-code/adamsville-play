@@ -275,6 +275,25 @@ function fileReport(issue, a, crew){
   while(_reports.length>MAX_REPORTS) _reports.shift();
   _saveReports();
   try{ issue.vetReportId=id; }catch(e){}
+  /* Silent-automatic crew reporting (2026-10-28): the filed field
+     report ALSO goes out through Report.note as a Crew Report, so
+     it reaches Mollie via the automatic report sender — the
+     one-line rendering still lands in the owning crew's dispatch
+     log via ctx.log (see updateJob), and this carries the full
+     structured record (problem / root cause / fix / materials). */
+  try{
+    if (typeof Report!=='undefined' && Report.note){
+      Report.note('veterancrew', {
+        message: reportLine(r),
+        reportId: r.id, crew: r.crew, foreman: r.foreman,
+        site: r.site, kind: r.kind, problem: r.problem,
+        rootCause: r.rootCause, recommendation: r.recommendation,
+        materials: r.materials, estMin: r.estMin,
+        confidence: r.confidence, note: r.note,
+        street: String(issue.street||'')
+      });
+    }
+  }catch(e){}
   return r;
 }
 /* reportLine(r) — one-line rendering of a report for the dispatch log. */

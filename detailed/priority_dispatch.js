@@ -280,6 +280,16 @@ function redirectBirds(){
 }
 
 /* ---------------- boot ---------------- */
+/* Boot-status note guard (2026-10-28): init() runs on EVERY boot-
+   poll tick (every 500 ms until seeding + drone redirection finish),
+   and the status branch below files a Report.note each time it runs —
+   with crews ON, a persisted ACTIVE dispatch re-noted "still ACTIVE"
+   several times inside one boot (the fix pass measured 3 in 1.7 s),
+   and those notes are real form reports. The boot STATUS is a
+   once-per-boot fact: this flag makes the branch (stand-down note
+   AND still-ACTIVE note alike) run exactly once per boot. loadLS()
+   and the setSys snapshot stay per-tick — they are idempotent. */
+var _bootStatusNoted=false;
 function init(){
   loadLS();
   /* CREW-TOGGLE STAND-DOWN (2026-10-28, Joshua's hands-on): a persisted
@@ -300,24 +310,31 @@ function init(){
     crewsOff=(o.roadCrew===false && o.surveyFleet===false &&
               o.infraCrew===false && o.hqStaff===false);
   }catch(e){}
-  if (crewsOff){
-    if (PD.active){
-      PD.active=false;
-      PD.activatedAt=null;
-      dlog('Priority dispatch stood down at boot — all crew launch options are off; the ACTIVE dispatch (persisted or default) was cleared rather than re-asserted.');
-    }
-  } else {
-    // Joshua's standing order: active on load unless explicitly recalled.
-    // If no saved state, activate now.
-    try{
-      var raw=window.localStorage.getItem(LS_KEY);
-      if(!raw){
-        activate();
-      } else if(PD.active){
-        dlog('Priority dispatch still ACTIVE from previous session — crews holding Adamsville focus.');
+  /* The whole status branch runs ONCE per boot (see _bootStatusNoted
+     above): the stand-down still clears + persists the dispatch on
+     the first tick exactly as before, and the still-ACTIVE re-assert
+     still fires — just never twice. */
+  if (!_bootStatusNoted){
+    _bootStatusNoted=true;
+    if (crewsOff){
+      if (PD.active){
+        PD.active=false;
+        PD.activatedAt=null;
+        dlog('Priority dispatch stood down at boot — all crew launch options are off; the ACTIVE dispatch (persisted or default) was cleared rather than re-asserted.');
       }
-    }catch(e){
-      if(!PD.activatedAt) activate();
+    } else {
+      // Joshua's standing order: active on load unless explicitly recalled.
+      // If no saved state, activate now.
+      try{
+        var raw=window.localStorage.getItem(LS_KEY);
+        if(!raw){
+          activate();
+        } else if(PD.active){
+          dlog('Priority dispatch still ACTIVE from previous session — crews holding Adamsville focus.');
+        }
+      }catch(e){
+        if(!PD.activatedAt) activate();
+      }
     }
   }
   try{

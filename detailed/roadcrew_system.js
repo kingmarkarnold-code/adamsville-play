@@ -150,12 +150,20 @@ function nowT(){ var d=new Date(); function p(n){return (n<10?'0':'')+n;} return
 
 /* dlog(msg) — timestamped dispatch event log. Capped at 60 entries,
    persisted to localStorage, refreshes the HUD panel + spec board, and
-   reports to the Report panel. Every notable road-crew event goes here. */
+   reports to the Report panel. Every notable road-crew event goes here.
+   Since 2026-10-28 every event ALSO files through Report.note, so it
+   rides the automatic report sender to Mollie as a Crew Report —
+   silent, in the background, no "Send Reports to Mollie" push. */
 function dlog(msg){
   RC.log.push({t:nowT(), msg:msg});
   if (RC.log.length>60) RC.log.splice(0, RC.log.length-60);
   saveLS(); refreshPanel(); refreshBoard();
   try{ Report.setSys('roadcrew', sysReport()); }catch(e){}
+  /* Silent-automatic crew reporting (2026-10-28): the sender
+     (github_reports.js) maps crew kinds to the Crew Report form
+     type and dedupes/caps them per kind, so this stream can't
+     flood the form. Guarded like every Report call in this file. */
+  try{ if(typeof Report!=='undefined' && Report.note) Report.note('roadcrew', msg); }catch(e){}
 }
 function sysReport(){
   var st={}; DEFECTS.forEach(function(d){ st[d.id]=d.state; });

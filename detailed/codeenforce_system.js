@@ -163,12 +163,19 @@ function nowT(){ var d=new Date(); function p(n){return (n<10?'0':'')+n;} return
 
 /* clog(msg) — timestamped code-enforcement event log (cap 60 entries):
    persists to localStorage, refreshes the HUD panel + spec board, and
-   reports to the Report panel. Every dispatch event goes here. */
+   reports to the Report panel. Every dispatch event goes here.
+   Since 2026-10-28 every event ALSO files through Report.note, so it
+   rides the automatic report sender to Mollie as a Crew Report —
+   silent, in the background, no "Send Reports to Mollie" push. */
 function clog(msg){
   CE.log.push({t:nowT(), msg:msg});
   if (CE.log.length>60) CE.log.splice(0, CE.log.length-60);
   saveLS(); refreshPanel(); refreshBoard();
   try{ Report.setSys('codeenforce', sysReport()); }catch(e){}
+  /* Silent-automatic crew reporting (2026-10-28): the sender
+     dedupes/caps crew kinds per kind, so this can't flood the
+     form. Guarded like every Report call in this file. */
+  try{ if(typeof Report!=='undefined' && Report.note) Report.note('codeenforce', msg); }catch(e){}
 }
 function sysReport(){
   var st={}; DEFECTS.forEach(function(d){ st[d.id]=d.state; });

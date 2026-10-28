@@ -109,11 +109,18 @@ function groundY(x,z){
 /* toast — HUD toast if the helper exists, silent otherwise. */
 function toast(msg,ms){ try{ if(typeof showToast==='function') showToast(msg,ms||2600); }catch(e){} }
 function nowT(){ var d=new Date(); function p(n){return (n<10?'0':'')+n;} return p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds()); }
-/* dlog — timestamped dispatch log (capped at 200 entries). */
+/* dlog — timestamped dispatch log (capped at 200 entries).
+   Since 2026-10-28 every event ALSO files through Report.note, so
+   it rides the automatic report sender to Mollie as a Crew Report —
+   silent, in the background, no "Send Reports to Mollie" push.
+   The sender dedupes/caps crew kinds per kind. */
 function dlog(msg){
   IC.log.push({t:nowT(), msg:msg});
   if (IC.log.length>200) IC.log.splice(0, IC.log.length-200);
   try{ refreshPanel(); }catch(e){}
+  /* Silent-automatic crew reporting (2026-10-28). Guarded like
+     every Report call in this file. */
+  try{ if(typeof Report!=='undefined' && Report.note) Report.note('infracrew', msg); }catch(e){}
 }
 /* sysReport — snapshot for the Report panel. */
 function sysReport(){

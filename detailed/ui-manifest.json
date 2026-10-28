@@ -43,9 +43,9 @@
   },
   {
    "name": "cityworkforce.js",
-   "size": 29393,
-   "sha256": "a60b991f7c43225949d34ab2d4f5f237dda1ad54c7570640a778fd961795c362",
-   "hash": "a60b991f7c43225949d34ab2d4f5f237dda1ad54c7570640a778fd961795c362"
+   "size": 29924,
+   "sha256": "9248dd15715cdcc88eee0ecd62d465750d66bd80f16752bc8c3efbc2bcd3f679",
+   "hash": "9248dd15715cdcc88eee0ecd62d465750d66bd80f16752bc8c3efbc2bcd3f679"
   },
   {
    "name": "clothing_system.js",
@@ -61,9 +61,9 @@
   },
   {
    "name": "codeenforce_system.js",
-   "size": 67957,
-   "sha256": "b31a14cd82f74b079d9f8e2a7a5986f36ea729e7274b039d17df5a53c4384a7e",
-   "hash": "b31a14cd82f74b079d9f8e2a7a5986f36ea729e7274b039d17df5a53c4384a7e",
+   "size": 68442,
+   "sha256": "4c3920af6cffeb7b5b6148e1d67a4bca86dec2b496fa13f5e75c11c593b2972e",
+   "hash": "4c3920af6cffeb7b5b6148e1d67a4bca86dec2b496fa13f5e75c11c593b2972e",
    "md5": "b283f39474ebdc04515ab58cbf860f13"
   },
   {
@@ -117,16 +117,16 @@
   },
   {
    "name": "github-config.js",
-   "size": 6671,
-   "sha256": "f9e65d8242b25f2131e16c45d9184c0eec55ea9170e6a2ac8ae8cf0a46106927",
-   "hash": "f9e65d8242b25f2131e16c45d9184c0eec55ea9170e6a2ac8ae8cf0a46106927",
+   "size": 6900,
+   "sha256": "8ad1f6736f9a5cb23e32ba119a2b7791530b88309bd57498c9b9cb6f0cb0f086",
+   "hash": "8ad1f6736f9a5cb23e32ba119a2b7791530b88309bd57498c9b9cb6f0cb0f086",
    "md5": "d003265ada76b4056b2fa36a457b2c2f"
   },
   {
    "name": "github_reports.js",
-   "size": 44638,
-   "sha256": "ba103c1aeeaa13ad1e234e364cc570d5c902cb64729554e83f481c32f37d66e6",
-   "hash": "ba103c1aeeaa13ad1e234e364cc570d5c902cb64729554e83f481c32f37d66e6",
+   "size": 58752,
+   "sha256": "7624613715665d1c8cf6076327a53ee81cc246ef8550c1b225cd9badf92bdd30",
+   "hash": "7624613715665d1c8cf6076327a53ee81cc246ef8550c1b225cd9badf92bdd30",
    "md5": "03aeb1c6800997be8c363d0a600c8934"
   },
   {
@@ -179,9 +179,9 @@
   },
   {
    "name": "infracrew_system.js",
-   "size": 40219,
-   "sha256": "1c44dd6827b16b4814b736c1062159fa498ba424113f361791b67cf2dc82dc22",
-   "hash": "1c44dd6827b16b4814b736c1062159fa498ba424113f361791b67cf2dc82dc22",
+   "size": 40670,
+   "sha256": "33387c716caa4288e707d9371e476aee454448fcccf91b20f9eee059fe6ae335",
+   "hash": "33387c716caa4288e707d9371e476aee454448fcccf91b20f9eee059fe6ae335",
    "md5": "70fc117796afd2ca861ecd504101a767"
   },
   {
@@ -289,9 +289,9 @@
   },
   {
    "name": "perf_budget.js",
-   "sha256": "74775423ff9b3f1e9d7d942189625f859c2a4160606af66da4afd51d52f1dc24",
-   "hash": "74775423ff9b3f1e9d7d942189625f859c2a4160606af66da4afd51d52f1dc24",
-   "size": 15785
+   "sha256": "742ec6a645890f26b3b0f1416d33848cca9fecb2563f41ec993cccb3ab72096e",
+   "hash": "742ec6a645890f26b3b0f1416d33848cca9fecb2563f41ec993cccb3ab72096e",
+   "size": 18120
   },
   {
    "name": "player.gif",
@@ -313,9 +313,9 @@
   },
   {
    "name": "priority_dispatch.js",
-   "size": 14526,
-   "sha256": "3657a3e39938ee28d5f3ca68a30c0e3e9b089e8d8fddc69d985b0f07f77ec882",
-   "hash": "3657a3e39938ee28d5f3ca68a30c0e3e9b089e8d8fddc69d985b0f07f77ec882"
+   "size": 15517,
+   "sha256": "18a29a053857306cb2fdcdb6d9bf172b047450e5d45da4dd1a9359efc86031bd",
+   "hash": "18a29a053857306cb2fdcdb6d9bf172b047450e5d45da4dd1a9359efc86031bd"
   },
   {
    "name": "refnpc_system.js",
@@ -331,9 +331,9 @@
   },
   {
    "name": "roadcrew_system.js",
-   "size": 60602,
-   "sha256": "840378d4042416383d90de05a8e256bb90912991cb42dbb60bf5c1cae6978bcc",
-   "hash": "840378d4042416383d90de05a8e256bb90912991cb42dbb60bf5c1cae6978bcc",
+   "size": 61159,
+   "sha256": "0d59bb481be630dabb021ff04bed303d7a4fa669f065fefa28ad0ae8607b21eb",
+   "hash": "0d59bb481be630dabb021ff04bed303d7a4fa669f065fefa28ad0ae8607b21eb",
    "md5": "d01d621faafecefce0cbd31b7fff9bbf"
   },
   {
@@ -422,9 +422,9 @@
   },
   {
    "name": "surveyfleet_system.js",
-   "size": 61134,
-   "sha256": "7fbd49fb8a8ac5dd6f03517069fdd3993a1630478274333998c3f17b1411bca3",
-   "hash": "7fbd49fb8a8ac5dd6f03517069fdd3993a1630478274333998c3f17b1411bca3",
+   "size": 61547,
+   "sha256": "b4266c71df1f70dbe6dde66bd481dae5f4b7c342e58a61097b7f5049846a9b79",
+   "hash": "b4266c71df1f70dbe6dde66bd481dae5f4b7c342e58a61097b7f5049846a9b79",
    "md5": "5a8c39942a7fb99cc20c30d18af7d82c"
   },
   {
@@ -500,9 +500,9 @@
   },
   {
    "name": "veteran_crew.js",
-   "size": 29207,
-   "sha256": "bc664a30fb9a53493533081fcbd3b2d830f9cfb1fe330d00ea4e93570d2d0dff",
-   "hash": "bc664a30fb9a53493533081fcbd3b2d830f9cfb1fe330d00ea4e93570d2d0dff"
+   "size": 30078,
+   "sha256": "b6dca75449c6d9f2198abbb78a16abfabcbe1b94d9b7e91c3f5341ab4b465203",
+   "hash": "b6dca75449c6d9f2198abbb78a16abfabcbe1b94d9b7e91c3f5341ab4b465203"
   },
   {
    "name": "visual_inspect.js",
@@ -731,6 +731,6 @@
    "hash": "99e3a8f264f836ba86b79c497fa2be946b3b469eafa442d0f70eabab239abeec"
   }
  ],
- "ui_version": "2026.10.28.8",
+ "ui_version": "2026.10.28.9",
  "version": "2026.10.17.9"
 }

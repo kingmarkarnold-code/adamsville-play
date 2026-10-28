@@ -131,6 +131,12 @@ function dlog(msg){
   SF.log.push({t:nowT(), msg:msg});
   if (SF.log.length>250) SF.log.splice(0, SF.log.length-250);
   try{ refreshPanel(); }catch(e){}
+  /* Silent-automatic crew reporting (2026-10-28): every dispatch
+     event ALSO files through Report.note, so it rides the
+     automatic report sender to Mollie as a Crew Report — no
+     "Send Reports to Mollie" push. The sender dedupes/caps crew
+     kinds per kind, so this stream can't flood the form. */
+  try{ if(typeof Report!=='undefined' && Report.note) Report.note('surveyfleet', msg); }catch(e){}
 }
 /* roadY — interpolated road-surface Y from a segment's ys array at point
    index fi (float). Falls back to terrain when ys is missing. */

@@ -80,7 +80,7 @@ window.GITHUB_CONFIG = {
      from the new form — the questions' wording would stay
      the same but the codes would not. */
   REPORT_FORM_ENTRIES: {
-    type:    "entry.245308779",   // "Report type" (Bug/Crash/Feedback/Other/Stats — the Stats choice was added to the form 2026-10-25 as "Session" and renamed "Stats" the same day on Joshua's corrected word; the entry code did not change)
+    type:    "entry.245308779",   // "Report type" (Bug/Crash/Feedback/Other/Stats/Crew Report — the Stats choice was added to the form 2026-10-25 as "Session" and renamed "Stats" the same day on Joshua's corrected word; "Crew Report" was added 2026-10-28 for the silent-automatic crew reports. Choices are VALUES submitted in this one entry, so adding a choice never changes the entry code — re-verified from the live form 2026-10-28: all six entry codes unchanged)
     message: "entry.722588258",   // "What happened?" (player words first)
     version: "entry.1808724204",  // "Game version" (auto-filled)
     where:   "entry.613460102",   // "Where in the game" (auto-filled)

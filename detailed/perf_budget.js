@@ -102,6 +102,17 @@ var MAX_LEVEL = LEVELS.length - 1;
 var level = 0;                 /* current quality level */
 var manualOverride = null;     /* null = auto, else 0..3 forced */
 var emaFps = 60;               /* smoothed FPS */
+/* Telemetry counters (2026-10-28, Joshua's reporting rework): this
+   module already tracks FPS and the quality level, so it also keeps
+   the session facts the automatic reports' telemetry block reads —
+   how many times quality changed, and the FPS band (lowest/highest
+   smoothed FPS after a short warmup, so the boot transient doesn't
+   poison the low). Counted HERE, in the owning system; the report
+   sender (github_reports.js) only reads them via getTelemetry(). */
+var levelChanges = 0;          /* post-boot quality level changes */
+var minEmaFps = null;          /* lowest smoothed FPS after warmup */
+var maxEmaFps = null;          /* highest smoothed FPS after warmup */
+var FPS_WARMUP_SECS = 5;       /* ignore the first seconds of FPS */
 var belowSince = 0;            /* timestamp when FPS first dropped below 28 */
 var aboveSince = 0;            /* timestamp when FPS first rose above 32 */
 var lastFrameT = 0;
@@ -172,6 +183,9 @@ function updateIndicator(){
 /* ---------------- apply a quality level ---------------- */
 function applyLevel(lv, force){
   if (lv === lastAppliedLevel && !force) return;
+  /* Telemetry: count genuine post-boot level changes (the boot
+     apply has lastAppliedLevel === -1 and is not a "change"). */
+  if (lastAppliedLevel !== -1 && lv !== lastAppliedLevel) levelChanges++;
   lastAppliedLevel = lv;
   var L = LEVELS[lv];
 
@@ -223,6 +237,12 @@ function tick(){
     }
   }
   lastFrameT = now;
+
+  /* Telemetry: extend the session FPS band (post-warmup only). */
+  if (now / 1000 > FPS_WARMUP_SECS) {
+    if (minEmaFps === null || emaFps < minEmaFps) minEmaFps = emaFps;
+    if (maxEmaFps === null || emaFps > maxEmaFps) maxEmaFps = emaFps;
+  }
 
   /* Manual override: hold the forced level, skip auto logic. */
   if (manualOverride !== null) {
@@ -311,6 +331,27 @@ window.PerfBudget = {
   getLevelLabel: function(){ return LEVELS[level].label; },
   getFps: function(){ return Math.round(emaFps); },
   getTarget: function(){ return TARGET_FPS; },
+  /* Telemetry snapshot (2026-10-28): everything the automatic
+     reports' standard telemetry block needs from this system —
+     current FPS, the session FPS band, the quality level and how
+     often it changed, and the governor values actually published
+     for the other systems to obey (the window.__perf* globals;
+     null = stock / no override at FULL). Read by github_reports.js;
+     nothing here sends anything itself. */
+  getTelemetry: function(){
+    return {
+      fps: Math.round(emaFps),
+      fpsLow: (minEmaFps === null ? null : Math.round(minEmaFps)),
+      fpsHigh: (maxEmaFps === null ? null : Math.round(maxEmaFps)),
+      level: level,
+      levelLabel: LEVELS[level].label,
+      levelChanges: levelChanges,
+      manualOverride: (manualOverride === null ? 'auto' : LEVELS[manualOverride].label),
+      trafficCap: (typeof window.__perfTrafficCap === 'number' ? window.__perfTrafficCap : null),
+      npcDist: (typeof window.__perfNpcDist === 'number' ? window.__perfNpcDist : null),
+      shadowDist: (typeof window.__perfShadowDist === 'number' ? window.__perfShadowDist : null)
+    };
+  },
   setManual: window.__setPerfQuality,
   getManual: window.__getPerfQuality,
   /* Test/DI hook: force a level without touching the timers. */
