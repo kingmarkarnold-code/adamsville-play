@@ -264,9 +264,9 @@
     },
     {
       "name": "npc_system.js",
-      "size": 96703,
-      "sha256": "ce82b694fc6b404e59a40738292af1d2b88472657df8eac152d989a3bc396a72",
-      "hash": "ce82b694fc6b404e59a40738292af1d2b88472657df8eac152d989a3bc396a72"
+      "size": 99689,
+      "sha256": "951fd70f5c124c8d2b5be3255acfc6c0920c62921d0d6bbad48421303c7d99e1",
+      "hash": "951fd70f5c124c8d2b5be3255acfc6c0920c62921d0d6bbad48421303c7d99e1"
     },
     {
       "name": "pause_system.js",
@@ -717,6 +717,6 @@
       "hash": "99e3a8f264f836ba86b79c497fa2be946b3b469eafa442d0f70eabab239abeec"
     }
   ],
-  "ui_version": "2026.10.28.2",
+  "ui_version": "2026.10.28.3",
   "version": "2026.10.17.9"
 }

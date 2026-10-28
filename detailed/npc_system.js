@@ -108,6 +108,19 @@ var SKINS  = [0x4a2f1c,0x5a3a24,0x6b4429,0x7d5230,0x8a5f36,0x93683c,0xa07a48];
 var SHIRTS = [0xc23b2e,0x2e5fa3,0x2e8b57,0xe0e0e0,0xe8b923,0x1f8a8a,0xd96c2c,
               0x7b4fa3,0x555c66,0x222226,0xb03060,0x3a7d44,0xc7c7c7,0x8a2be2];
 var PANTS  = [0x2e4a6b,0x1f2a3a,0x141414,0x9a8a6a,0x5a4632,0x666c75,0x3b3f4a];
+/* v2.0 CIVILIAN REBUILD (Joshua 2026-10-28): civilians are rebuilt on
+   the PLAYER PROTOTYPE — the hero's body lineage, varied the way his
+   vehicle bake system varies cars: ONE baked body family (shaped
+   parts in initNPCs, hero proportions), variety by palette swaps at
+   spawn. Hair and shoe palettes join skin/shirt/pants here; height
+   and build stay scl/wid. Work-crew NPCs are a different system and
+   keep their crew look — untouched. */
+var HAIRS  = [0x16110c,0x2a1c10,0x4a2f1c,0x6e5136,0x9a7a4a,0xb8b0a4,0x30302e];
+var SHOES  = [0x222226,0x3a2e24,0xf2f2f2,0x5a1f1f,0x1f2a3a,0x6e5136];
+/* The body plan's proportions already mirror the hero rig (v1.57);
+   its absolute height was 1.63u against the hero's 1.88u. Civilians
+   now stand at hero height — scl variety (boys 0.85) rides on top. */
+var HERO_NPC_SCALE = 1.88/1.63;
 
 /* ---------------- state ---------------- */
 var npcs=[];            // the population: plain data objects, nothing else
@@ -571,6 +584,8 @@ function spawnNPC(id){
     skin: SKINS[(srand()*SKINS.length)|0],
     shirt:SHIRTS[(srand()*SHIRTS.length)|0],
     pants:PANTS[(srand()*PANTS.length)|0],
+    hair: HAIRS[(srand()*HAIRS.length)|0],   /* v2.0: palette swap at spawn */
+    shoes:SHOES[(srand()*SHOES.length)|0],  /* v2.0: palette swap at spawn */
     /* v1.17 transit commuter fields (Joshua's citizen rule): commuter 0 =
        wanderer, 1 = bus commuter, 2 = train commuter. transit = target
        {kind,stop|station...}, goto = walk target {x,z}, waiting = standing
@@ -830,16 +845,18 @@ function assignSlot(s,n){
   _mesh.head.setColorAt(s,_col);
   _mesh.uArmL.setColorAt(s,_col); _mesh.uArmR.setColorAt(s,_col);
   _mesh.fArmL.setColorAt(s,_col); _mesh.fArmR.setColorAt(s,_col);
+  _col.set(n.hair||0x16110c); _mesh.hair.setColorAt(s,_col);   /* v2.0 hair cap */
   _col.set(n.shirt); _mesh.torso.setColorAt(s,_col);
   _col.set(n.pants);
   _mesh.thighL.setColorAt(s,_col); _mesh.thighR.setColorAt(s,_col);
   _mesh.shinL.setColorAt(s,_col);  _mesh.shinR.setColorAt(s,_col);
-  /* ROUNDED TOE (Joshua 2026-10-11): shoe boxes + toe tips share the one
-     dark NPC shoe color (NPC_SHOE). */
-  _col.set(NPC_SHOE);
+  /* ROUNDED TOE (Joshua 2026-10-11): shoe boxes + toe tips share the
+     NPC's shoe color — one shared dark (NPC_SHOE) before v2.0, a
+     per-civilian palette swap now. */
+  _col.set(n.shoes||NPC_SHOE);
   _mesh.shoeL.setColorAt(s,_col); _mesh.shoeR.setColorAt(s,_col);
   _mesh.toeL.setColorAt(s,_col);  _mesh.toeR.setColorAt(s,_col);
-  var mk=[_mesh.torso,_mesh.head,_mesh.uArmL,_mesh.uArmR,_mesh.fArmL,_mesh.fArmR,
+  var mk=[_mesh.torso,_mesh.head,_mesh.hair,_mesh.uArmL,_mesh.uArmR,_mesh.fArmL,_mesh.fArmR,
           _mesh.thighL,_mesh.thighR,_mesh.shinL,_mesh.shinR,
           _mesh.shoeL,_mesh.shoeR,_mesh.toeL,_mesh.toeR];
   for (var i=0;i<mk.length;i++) if (mk[i].instanceColor) mk[i].instanceColor.needsUpdate=true;
@@ -933,6 +950,12 @@ function renderNPCs(dt,px,pz){
   for (s=0;s<MAX_VISIBLE;s++){
     n=slots[s]; if(!n) continue;
     vis++;
+    /* Person-blocker registration (Joshua's amendment, 2026-10-28):
+       every RENDERED civilian is a dynamic PERSON material in
+       collision_material.js — vehicle movers must stop for them.
+       Registration expires in 600ms; this loop runs per frame, and
+       unslotted (far) civilians lapse on their own. */
+    try{ if (typeof setPersonBlocker==='function') setPersonBlocker('npc'+n.id, n.x, n.z, 0.9); }catch(e){}
     var dx=n.x-px, dz=n.z-pz, near=(dx*dx+dz*dz)<AR2;
     /* v1.17: lockY pins the render height for train-platform waiters
        (platforms are elevated; heightAt would drop them to the ground). */
@@ -963,7 +986,7 @@ function renderNPCs(dt,px,pz){
     var sw=sP*0.55*n.walkAmt;       // legs oppose...
     var asw=sP*0.45*n.walkAmt;      // ...arms counter-swing
     if (!near){ sw=0; asw=0; }                    // distant: static pose
-    var scl=n.scl, yaw=n.heading, wid=n.wid;
+    var scl=n.scl*HERO_NPC_SCALE, yaw=n.heading, wid=n.wid;  /* v2.0: hero height */
     /* v1.57 JOINTED LIMBS (expert #24, Katherine Brooks): elbow/knee bend
        angles mirror the hero rig — knees flex on the swing-through
        (max(0,sin(phase-0.7))), elbows flex on the counter-swing; everything
@@ -978,6 +1001,9 @@ function renderNPCs(dt,px,pz){
     var elbR=(-0.22-Math.max(0, sP)*0.35)*n.walkAmt;
     _mesh.torso.setMatrixAt(s, partMat(n.x,y,n.z,yaw,scl, 0,1.075,0, 0,0, 0.42*wid,0.55,0.26*wid));
     _mesh.head.setMatrixAt (s, partMat(n.x,y,n.z,yaw,scl, 0,1.49,0,  0,0, 0.24,0.28,0.24));
+    /* v2.0: hair cap — a slightly larger half-sphere riding the head,
+       offset up/back the way the hero's hair sits (hero.glb finish). */
+    _mesh.hair.setMatrixAt (s, partMat(n.x,y,n.z,yaw,scl, 0,1.505,-0.012, 0,0, 0.255,0.30,0.255));
     // upper arms: shoulder pivot, same swing the old one-piece arms used
     _mesh.uArmL.setMatrixAt(s, partMat(n.x,y,n.z,yaw,scl, -0.265*wid,1.28,0, -asw,-0.145, 0.11,0.29,0.11));
     _mesh.uArmR.setMatrixAt(s, partMat(n.x,y,n.z,yaw,scl,  0.265*wid,1.28,0,  asw,-0.145, 0.11,0.29,0.11));
@@ -1014,7 +1040,7 @@ function renderNPCs(dt,px,pz){
     _mesh.toeR.setMatrixAt(s, partMat(n.x,y,n.z,yaw,scl, shxR,shyR-0.015*cR-0.095*sR,shzR-0.015*sR+0.095*cR, aR,0, 0.14,0.098,0.14));
   }
   visCount=vis;
-  var mk=[_mesh.torso,_mesh.head,_mesh.uArmL,_mesh.uArmR,_mesh.fArmL,_mesh.fArmR,
+  var mk=[_mesh.torso,_mesh.head,_mesh.hair,_mesh.uArmL,_mesh.uArmR,_mesh.fArmL,_mesh.fArmR,
           _mesh.thighL,_mesh.thighR,_mesh.shinL,_mesh.shinR,
           _mesh.shoeL,_mesh.shoeR,_mesh.toeL,_mesh.toeR];
   for (var i=0;i<mk.length;i++){ mk[i].count=vis; mk[i].instanceMatrix.needsUpdate=true; }
@@ -1037,9 +1063,10 @@ function publishReport(){
 
 /* ---------------- init ---------------- */
 /* initNPCs() — allocates scratch matrices, builds the border, fills spawn
-   pools, creates all 1000 NPCs, the 40 render slots, and the 14
-   InstancedMeshes (one per body part: unit-box geometry scaled per part,
-   plus unit-sphere geometry for the rounded toe tips).
+   pools, creates all 1000 NPCs, the 40 render slots, and the 15
+   InstancedMeshes (one per body part: the v2.0 shaped hero-lineage
+   geometries scaled per part, plus unit-sphere geometry for the
+   rounded toe tips).
    Meshes are frustumCulled=false (positions update every frame; culling the
    batch would hide everyone) with cast/receive shadows off for perf. */
 function initNPCs(){
@@ -1057,6 +1084,21 @@ function initNPCs(){
      box) for the instanced toe tips — scaled flat per instance so every NPC
      gets the same rounded toe tip as the hero. */
   var unitSphere=new THREE.SphereGeometry(0.5,10,8);
+  /* v2.0 CIVILIAN REBUILD (Joshua 2026-10-28): the unit-BOX body family
+     is retired. The baked body family is now SHAPED in the hero's
+     finish direction — a tapered cylinder torso (shoulders wider than
+     hips, like hero.glb), cylinder limbs, a sphere head, and a sphere
+     hair cap — authored ONCE here and shared by every InstancedMesh,
+     exactly the vehicle-bake pattern: bodies baked once, variety by
+     palette/build/height at spawn. Same part envelopes as the boxes
+     (partMat scale factors unchanged), so the walk math, foot
+     planting and ground contact are untouched. Shoes stay boxes —
+     shoes ARE boxy. All geometries exist identically on the r186 and
+     r128 engines. */
+  var torsoGeo=new THREE.CylinderGeometry(0.50,0.43,1,10);
+  var limbGeo=new THREE.CylinderGeometry(0.46,0.40,1,8);
+  var headGeo=new THREE.SphereGeometry(0.5,12,10);
+  var hairGeo=new THREE.SphereGeometry(0.5,12,8,0,Math.PI*2,0,Math.PI*0.52);
   /* v1.48 (#18, Aria Nakamura): NPC body parts use the shared toon palette
      (MeshToonMaterial) — Pixar-style stepped shading. Falls back to Lambert
      if toon_mats.js is unavailable. */
@@ -1068,15 +1110,15 @@ function initNPCs(){
     m.castShadow=false; m.receiveShadow=false;
     m.count=0; scene.add(m); return m;
   }
-  _mesh={ torso:im(), head:im(),
-           uArmL:im(), uArmR:im(), fArmL:im(), fArmR:im(),
-           thighL:im(), thighR:im(), shinL:im(), shinR:im(),
+  _mesh={ torso:im(torsoGeo), head:im(headGeo), hair:im(hairGeo),
+           uArmL:im(limbGeo), uArmR:im(limbGeo), fArmL:im(limbGeo), fArmR:im(limbGeo),
+           thighL:im(limbGeo), thighR:im(limbGeo), shinL:im(limbGeo), shinR:im(limbGeo),
            shoeL:im(), shoeR:im(),                    // shoe: heel/midfoot box
            toeL:im(unitSphere), toeR:im(unitSphere) };// ROUNDED TOE: squashed-sphere toe tip
   /* v1.21 NPC KILL SWITCH: register meshes globally so __setNpcPaused can
      hide/show them instantly without touching the NPC data. */
   try {
-    window.__npcMeshes=[_mesh.torso,_mesh.head,
+    window.__npcMeshes=[_mesh.torso,_mesh.head,_mesh.hair,
       _mesh.uArmL,_mesh.uArmR,_mesh.fArmL,_mesh.fArmR,
       _mesh.thighL,_mesh.thighR,_mesh.shinL,_mesh.shinR,
       _mesh.shoeL,_mesh.shoeR,_mesh.toeL,_mesh.toeR];  // ROUNDED TOE: shoes pause too
