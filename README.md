@@ -1,1 +1,3 @@
 After many years of thinking of making my own game and some failed attempts this is the beginning of a game that I am designing with the help of Meta's AI Muse. I believe that it will come along nicely and hope to have a full product soon.
+
+If you've every played SIMs or Saints Row the you know where I got the ideal that I could turn my life into a game. With missions and goals or you can just free roam. I hope this game bring some joy to someone somewhere.
