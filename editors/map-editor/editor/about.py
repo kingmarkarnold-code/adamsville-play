@@ -20,6 +20,7 @@ the app icon alone.
 Joshua's rule: all code commented.
 """
 
+import os
 from pathlib import Path
 
 import gi
@@ -35,11 +36,18 @@ def _find_mollie_icon(package_name):
     """
     Locate the Mollie icon PNG.
 
-    Checks the installed location first (/usr/share/<package>/...),
-    then falls back to a copy next to this module (dev runs).
-    Returns the path string, or None if not found.
+    Checks the running payload first (ADAMSVILLE_APP_ROOT,
+    set by the launcher shim when an updated payload is
+    running — 1.9.19), then the installed location
+    (/usr/share/<package>/...), then a copy next to this
+    module (dev runs). Returns the path string, or None if
+    not found.
     """
-    candidates = [
+    candidates = []
+    _root = os.environ.get("ADAMSVILLE_APP_ROOT")
+    if _root:
+        candidates.append(Path(_root) / "mollie-icon.png")
+    candidates += [
         Path(f"/usr/share/{package_name}/mollie-icon.png"),
         Path(__file__).parent / "mollie-icon.png",
     ]

@@ -133,6 +133,12 @@ def collect_records(app, corners):
             cat, road = si.roads[fi][0], si.roads[fi][1]
         except Exception:
             continue
+        # 1.9.19: a record whose delete is still saving in the
+        # background is already out of the working copy — the
+        # live index lists it only until the rebuild lands, and
+        # a collection must never gather a piece that is gone.
+        if id(road) in getattr(app, "_pending_delete_ids", ()):
+            continue
         pts = road.get("pts") or []
         if len(pts) >= 2 and road_intersects_poly(pts, corners):
             out.append((cat, fi, road))
@@ -466,18 +472,35 @@ class BatchDeleteDialog(Gtk.Dialog):
         n = len(picked)
         if n == 0:
             return
-        self.app.undo_begin("Batch Delete")
-        ok = self.app.apply_road_delete_batch(picked)
-        self.app.undo_commit()
+        if getattr(self.app, "_delete_apply_in_flight", 0) > 0:
+            # One delete flight at a time (1.9.19): refuse with
+            # the panel still open — the checked list survives
+            # and the confirm can be clicked again when the
+            # corner progress bar finishes.
+            self.app.set_status(
+                "A delete is still saving in the background — "
+                "give it a moment, then delete.")
+            return
+        # 1.9.19: the panel closes first (panes revert; closing
+        # never touches data), then the app's one batched async
+        # apply removes exactly the checked records — the save
+        # and index rebuild finish in the background under the
+        # corner progress bar, and the outcome lands in the
+        # status line with this panel's long-standing wording.
         self._close()
-        if ok:
-            self.app.set_status(
-                f"Batch delete: removed {n} segment(s).")
-            self.app.canvas.queue_draw()
-        else:
-            self.app.set_status(
-                "Batch delete failed: could not save every "
-                "piece — check the map before trusting it.")
+
+        def landed(ok, _n):
+            if ok:
+                self.app.set_status(
+                    f"Batch delete: removed {n} segment(s).")
+                self.app.canvas.queue_draw()
+            else:
+                self.app.set_status(
+                    "Batch delete failed: could not save every "
+                    "piece — check the map before trusting it.")
+
+        self.app.apply_road_delete_batch_async(
+            picked, "Batch Delete", on_landed=landed)
 
     def _on_delete_event(self, _w, _event):
         self._close()

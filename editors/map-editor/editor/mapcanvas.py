@@ -474,6 +474,13 @@ class MapCanvas(Gtk.DrawingArea):
         self.drag_start = (0, 0)    # Screen coords where drag started
         self.cam_start = (0, 0)     # Camera position when drag started
         self.mouse_pos = (0, 0)     # Current mouse position (screen)
+        # 1.9.19: a resting left press does NOT pick on press —
+        # it records press_pick = (x, y) and the click (if it
+        # stays a click) is decided on release. A press that
+        # travels is a pan, and a pan never touches the
+        # selection (Joshua's rule, 2026-10-28 — see
+        # on_button_release).
+        self.press_pick = None
         # Shift+drag state (1.9.8 band, 1.9.11 lasso): band_drag is
         # (start_x, start_y, cur_x, cur_y) in screen px while a
         # Shift+drag is in progress, and band_path is the freeform
@@ -1309,9 +1316,16 @@ class MapCanvas(Gtk.DrawingArea):
 
         # Group by category for draw order. Categories are normalized
         # (legacy "arterial" -> "minor_artery") so old data keeps working.
+        # 1.9.19: records a confirmed delete already removed from
+        # the working copy are skipped here while the worker's
+        # index rebuild is still in flight — the picture must not
+        # keep showing roads that are already deleted.
+        hidden = getattr(self.app, "_pending_delete_ids", None)
         by_cat = {c: [] for c in CATEGORY_ORDER}
         for idx in indices:
             cat, road, _, _, _, _ = self.app.spatial_index.roads[idx]
+            if hidden and id(road) in hidden:
+                continue
             by_cat.setdefault(normalize_category(cat), []).append(
                 (road, idx))
 
@@ -2246,10 +2260,16 @@ class MapCanvas(Gtk.DrawingArea):
             # Select mode): EVERY left press starts a potential pan
             # drag, from a road or from empty ground alike, because
             # pan is always on. At rest (no editing tool active) the
-            # press ALSO selects: clicking a road toggle-selects it
-            # (the ordinary selection, unchanged), clicking empty
-            # space clears the selection. A press that turns into a
-            # drag simply pans with whatever the press selected.
+            # press also ARMS a click: if the gesture stays a
+            # click, the release selects (a road toggle-selects;
+            # empty space clears). 1.9.19: the pick is decided on
+            # RELEASE, never on press — a press that turns into a
+            # drag is a pan, and a pan must never disturb a
+            # selection already made (Joshua, 2026-10-28: two
+            # pieces selected, panned to reach more, both gone,
+            # because the press on empty ground cleared them
+            # before the pan even began — and a press ON a
+            # selected piece toggle-deselected it the same way).
             #
             # 1.9.8 (Joshua's batch rule): Shift+left-drag draws
             # the batch selection SQUARE — on release, every road
@@ -2279,13 +2299,16 @@ class MapCanvas(Gtk.DrawingArea):
             self.cam_start = (self.cam_x, self.cam_y)
 
             if self.active_tool is None:
-                self._pick_road(event.x, event.y)
+                # Arm the click; on_button_release fires it only
+                # if the pointer stayed put (see press_pick).
+                self.press_pick = (event.x, event.y)
 
         elif event.button == 3:  # right click — always pan
             # …except while Draw is active: Draw owns the drags
             # and panning is disabled (Joshua's Draw ruling).
             if self.active_tool == "draw":
                 return True
+            self.press_pick = None  # a right press disarms a click
             self.dragging = True
             self.drag_start = (event.x, event.y)
             self.cam_start = (self.cam_x, self.cam_y)
@@ -2380,6 +2403,18 @@ class MapCanvas(Gtk.DrawingArea):
                 f"({n} pins, x {bx0:.0f}..{bx1:.0f}, z {bz0:.0f}..{bz1:.0f})")
             self.drag_pin = None
             self.queue_draw()
+        # 1.9.19: a resting press that stayed a click picks NOW,
+        # on release — the same travel test the building click
+        # below uses (< 6 px from the press point). A press that
+        # travelled was a pan: the armed click is dropped and
+        # the selection is left exactly as it was (Joshua's
+        # rule: once a selection has begun, panning must not
+        # eliminate it).
+        if event.button == 1 and self.press_pick is not None:
+            _ppx, _ppy = self.press_pick
+            self.press_pick = None
+            if math.hypot(event.x - _ppx, event.y - _ppy) < 6:
+                self._pick_road(event.x, event.y)
         # The building click (1.9.13): only a plain resting
         # press that stayed a click can offer the Building
         # Editor jump — every other gesture keeps its meaning.
@@ -2401,13 +2436,13 @@ class MapCanvas(Gtk.DrawingArea):
           rule's own threshold) — a press that travelled was a
           pan, and a pan NEVER prompts (his stated failure mode);
         * no road under the point — a road click is a road
-          click, exactly as it has always been (the press
-          already selected it);
+          click, exactly as it has always been (the release
+          pick just selected it);
         * a building under the point (the store's hit-test).
 
-        The press already did whatever a normal click does to
-        the road selection; this adds only the offer, and
-        cancelling the offer changes nothing more.
+        The release pick already did whatever a normal click
+        does to the road selection; this adds only the offer,
+        and cancelling the offer changes nothing more.
         """
         if self.active_tool is not None:
             return
@@ -3188,6 +3223,13 @@ class MapCanvas(Gtk.DrawingArea):
                     self.app.spatial_index.roads[idx]
                 if rcat != cat:
                     continue
+                # 1.9.19: a record whose delete is still saving
+                # in the background is already out of the
+                # working copy — the live index lists it only
+                # until the worker's rebuild lands, and a pick
+                # must never land on a piece that is gone.
+                if id(road) in self.app._pending_delete_ids:
+                    continue
                 # Quick bbox check (expanded by radius)
                 if (wx < rx0 - radius or wx > rx1 + radius or
                         wz < rz0 - radius or wz > rz1 + radius):
@@ -3349,6 +3391,11 @@ class MapCanvas(Gtk.DrawingArea):
                 rcat, road, rx0, rz0, rx1, rz1 = \
                     self.app.spatial_index.roads[idx]
                 if rcat != cat:
+                    continue
+                # 1.9.19: same pending-delete skip as
+                # _pick_key — a piece whose delete is still
+                # saving is gone, for every kind of pick.
+                if id(road) in self.app._pending_delete_ids:
                     continue
                 if (wx < rx0 - radius or wx > rx1 + radius or
                         wz < rz0 - radius or wz > rz1 + radius):
@@ -4850,6 +4897,14 @@ class MapCanvas(Gtk.DrawingArea):
         if self.delete_preview is not None \
                 or self.delete_prep is not None:
             return  # a preview or preparation already owns the bar
+        if getattr(self.app, "_delete_apply_in_flight", 0) > 0:
+            # One delete flight at a time (1.9.19): a preview
+            # opened now would be decided against a world whose
+            # save is still in the background.
+            self.app.set_status(
+                "A delete is still saving in the background — "
+                "give it a moment, then delete.")
+            return
         roads = [(cat, idx, road) for cat, idx, road in picked
                  if len(road.get("pts", [])) >= 2]
         if not roads:
@@ -5223,12 +5278,20 @@ class MapCanvas(Gtk.DrawingArea):
         """
         Confirm a pending delete from the bar's Delete button.
 
-        Removes exactly the records the highlight framed (the app's
-        apply_road_delete path, one undo snapshot around the whole
-        batch, the standing save rule inside each apply) and clears
-        the preview. The view STAYS framed on the spot — calmer
-        than jumping back — so Joshua sees the roads vanish from
-        the picture he was just shown.
+        Removes exactly the records the highlight framed and
+        clears the preview. The view STAYS framed on the spot —
+        calmer than jumping back — so Joshua sees the roads
+        vanish from the picture he was just shown.
+
+        1.9.19: the commit is the app's ONE batched async apply
+        (the old code looped the single-delete apply once per
+        record, and each apply re-saved and re-indexed the
+        WHOLE map on this thread — an 18-piece delete froze the
+        app for minutes on Joshua's laptop). The records come
+        out of the working copy at once, the undo entry is the
+        app's delete delta, and the save + index rebuild finish
+        in the background under the corner progress bar; the
+        status line reports when the save lands.
         """
         pv = self.delete_preview
         if pv is None:
@@ -5236,31 +5299,38 @@ class MapCanvas(Gtk.DrawingArea):
         roads = pv["roads"]
         self.delete_preview = None
         self.app.hide_delete_bar()
-        # Undo (Joshua 2026-10-12): snapshot before the delete.
-        self.app.undo_begin("Delete Road")
-        results = [self.app.apply_road_delete(cat, road)
-                   for cat, _idx, road in roads]
-        ok = all(results)
-        # One-object rule (1.9.11): a whole grp object reports
-        # as what it was — one object, however many runs.
-        grp_vals = [road.get("grp") for _c, _i, road in roads]
-        grp_object = len(roads) > 1 and grp_vals[0] \
-            and all(g == grp_vals[0] for g in grp_vals)
-        if ok and grp_object:
-            name = roads[0][2].get("name") or "Unnamed"
-            self.app.set_status(
-                f"Deleted one object: {name} "
-                f"({len(roads)} runs).")
-        elif ok and len(roads) == 1:
-            name = roads[0][2].get("name") or "Unnamed"
-            self.app.set_status(f"Deleted road: {name}.")
-        elif ok:
-            self.app.set_status(f"Deleted {len(roads)} roads.")
-        else:
-            self.app.set_status("Delete failed: could not save.")
-        self.app.undo_commit()
+        picked = [(cat, road) for cat, _idx, road in roads]
+
+        def landed(ok, _n):
+            # The same outcome wording this confirm has always
+            # carried — now spoken when the background save
+            # lands (seconds, under the progress bar).
+            # One-object rule (1.9.11): a whole grp object
+            # reports as what it was — one object, however
+            # many runs.
+            grp_vals = [road.get("grp") for _c, _i, road in roads]
+            grp_object = len(roads) > 1 and grp_vals[0] \
+                and all(g == grp_vals[0] for g in grp_vals)
+            if ok and grp_object:
+                name = roads[0][2].get("name") or "Unnamed"
+                self.app.set_status(
+                    f"Deleted one object: {name} "
+                    f"({len(roads)} runs).")
+            elif ok and len(roads) == 1:
+                name = roads[0][2].get("name") or "Unnamed"
+                self.app.set_status(f"Deleted road: {name}.")
+            elif ok:
+                self.app.set_status(f"Deleted {len(roads)} roads.")
+            else:
+                self.app.set_status("Delete failed: could not save.")
+
+        self.app.apply_road_delete_batch_async(
+            picked, "Delete Road", on_landed=landed)
         # Comparison over (confirmed): panes revert to the normal
         # synced views, which now show the post-delete world.
+        # (After the apply call, as before 1.9.19: the apply has
+        # already cleared the selection by this line, so the
+        # Pieces panel resync inside sees the post-delete state.)
         try:
             self.app.on_delete_preview_end()
         except Exception:

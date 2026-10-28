@@ -27,6 +27,18 @@ try:
 except Exception:
     updater = None
     _UPDATER_AVAILABLE = False
+# Editor reporting (suite_core, Joshua 2026-10-28): silent,
+# automatic reports home — app/version, operation timings,
+# errors, session summaries — to the same inbox as the game's
+# reports. Soft import for the same reason as the updater: a
+# missing or broken reporting module must never stop the
+# editor opening, and every call site guards on this flag.
+try:
+    import reporting  # noqa: E402 -- suite_core editor reporting
+    _REPORTING_AVAILABLE = True
+except Exception:
+    reporting = None
+    _REPORTING_AVAILABLE = False
 from undo import UndoManager, UndoCommand  # noqa: E402 -- undo/redo stacks
 from data import (
     ensure_data_dir, needs_download, download_roads, load_roads,
@@ -48,11 +60,12 @@ from piecespanel import PiecesPanel  # noqa: E402
 import stacked as stacked_mod  # noqa: E402 -- the finder scan (pure)
 # Overpass linking + smart pillar placement (Joshua 2026-10-11).
 import overpass as overpass_mod  # noqa: E402
+import toolbaricons  # noqa: E402 -- toolbar pictograms (1.9.19)
 
 
 # App version shown in the Help -> About dialog (bump with each release).
 # Joshua 2026-10-11: version number must be prominent in About.
-APP_VERSION = "1.9.16"
+APP_VERSION = "1.9.19"
 # Display name and icon-theme name for the About dialog.
 APP_NAME = "Adamsville Map Editor"
 APP_ICON = "adamsville-map-editor-native"
@@ -169,6 +182,33 @@ class MapEditorApp:
         # second lasso is drawn while the first still collects.
         self._lasso_token = 0
 
+        # Delete apply (1.9.19 — the five-minute delete fix):
+        # a confirmed delete removes its records on the UI thread
+        # (fast), then persists + rebuilds the road index on a
+        # worker thread under the corner progress bar. The state:
+        # _model_io_lock serialises the game model's adopt+save
+        # between that worker and persist_road_edits (an RLock —
+        # one thread may hold it through nested calls);
+        # _delete_apply_in_flight counts background delete saves
+        # still running (undo/redo wait for them — see
+        # on_undo_clicked); _delete_apply_seq numbers the jobs
+        # so each owns a distinct progress-bar entry;
+        # _index_seq / _index_installed_seq order spatial-index
+        # builds: builds are numbered under the IO lock (so a
+        # higher number always holds newer data), and a landing
+        # installs its build only if no newer one is live.
+        self._model_io_lock = threading.RLock()
+        self._delete_apply_in_flight = 0
+        self._delete_apply_seq = 0
+        self._index_seq = 0
+        self._index_installed_seq = 0
+        # Records removed by a delete whose index rebuild has
+        # not landed yet: the canvas hides them from the stale
+        # index so a confirmed delete vanishes from the picture
+        # at once. Cleared whenever a fresh index is installed
+        # (its entries are unreachable in a fresh index anyway).
+        self._pending_delete_ids = set()
+
         # --- Main window ---
         # Native GTK window with standard decorations (min/max/close)
         self.window = Gtk.Window(title="Adamsville Map Editor")
@@ -280,8 +320,87 @@ class MapEditorApp:
 
         self.window.show_all()
 
+        # Editor reporting + the launch self-update check
+        # (1.9.19, Joshua's editors rules): the window exists
+        # now, which is the updater's launch contract. Both are
+        # silent and fail-open — see the method.
+        self._start_reporting_and_update_check()
+
         # Fit view after window is realized (needs allocation)
         GLib.idle_add(self._initial_setup)
+
+    def _start_reporting_and_update_check(self):
+        """
+        Launch wiring for suite_core (1.9.19): reporting init +
+        session start, and the updater's background check.
+
+        Reporting (Joshua's editor reporting rule): the app
+        reports home silently and automatically — session
+        start/end, operation timings (the delete timing rides
+        apply_road_delete_batch_async), errors — to the same
+        Player Reports inbox as the game, so problems arrive
+        with specifics instead of being reconstructed from
+        timestamps.
+
+        The update check (Joshua's editors-self-update rule):
+        on a daemon thread, stage_self_update compares the
+        channel manifest against APP_VERSION and, when newer,
+        downloads + hash-verifies the payload into
+        ~/.local/share/adamsville-suite/map-editor/updates/
+        and flips `current` — the bootstrap launcher runs it
+        on the NEXT start. Download progress feeds the
+        bottom-right progress bar (his standing law) through
+        the adapter below; a staged update notes itself on the
+        status line. Everything here is fail-open: no network,
+        a broken module, a bad manifest — the editor simply
+        opens, exactly as it always has.
+        """
+        if _REPORTING_AVAILABLE and reporting is not None:
+            try:
+                reporting.init(UPDATE_SLUG, APP_VERSION)
+                reporting.session_start()
+            except Exception:
+                pass
+        if _UPDATER_AVAILABLE and updater is not None:
+            try:
+                updater.start_background_check(
+                    UPDATE_SLUG, APP_VERSION,
+                    on_progress=self._self_update_progress,
+                    on_staged=self._self_update_staged,
+                    gui=True)
+            except Exception:
+                pass
+
+    def _self_update_progress(self, done, total, label):
+        """Updater progress -> the corner progress bar (the
+        callback arrives on the GTK thread — start_background_
+        check was given gui=True). Only downloads call this."""
+        job = "self-update"
+        try:
+            if done <= 0:
+                self.progress_start(
+                    job, label or "Downloading the update…")
+            self.progress_update(
+                job,
+                fraction=(done / total) if total else None,
+                label=label)
+            if total and done >= total:
+                self.progress_finish(job)
+        except Exception:
+            pass
+
+    def _self_update_staged(self, info):
+        """A newer payload was staged by the launch check: say
+        so once, plainly — it runs on the next start (the Help
+        -> Check for Updates dialog says the same)."""
+        try:
+            self.progress_finish("self-update")
+        except Exception:
+            pass
+        version = (info or {}).get("version") or ""
+        self.set_status(
+            f"Update downloaded: version {version} will run "
+            "next time you start the app.")
 
     # ------------------------------------------------------------------
     # Window geometry
@@ -460,6 +579,14 @@ class MapEditorApp:
         # window geometry AND pane sizes (the live debounced
         # saves mean it is almost always already current).
         self._save_layout_now()
+        # Editor reporting (1.9.19): the session summary goes
+        # home with the close — silent and fail-open like
+        # everything in that module.
+        if _REPORTING_AVAILABLE and reporting is not None:
+            try:
+                reporting.session_end()
+            except Exception:
+                pass
         Gtk.main_quit()
         return False
 
@@ -722,7 +849,13 @@ class MapEditorApp:
     def _build_toolbar(self):
         """Build the native GTK toolbar with tool buttons."""
         toolbar = Gtk.Toolbar()
-        toolbar.set_style(Gtk.ToolbarStyle.BOTH)  # icon + text
+        # Icons only (1.9.19 — Joshua's ruling, 2026-10-24 and
+        # again 2026-10-28): the toolbar's buttons carry compact
+        # PICTURES like undo/redo always did, so more fit across
+        # the top; every button's word lives in its tooltip.
+        # (Was BOTH — icon + text — which is why the word
+        # buttons took the whole bar.)
+        toolbar.set_style(Gtk.ToolbarStyle.ICONS)
 
         # Undo/Redo buttons first (Joshua 2026-10-12): standard icons,
         # disabled until there is something to undo/redo.
@@ -750,6 +883,10 @@ class MapEditorApp:
             # buttons while Pan/Select were modes; a radio group
             # would force some tool to always be active.)
             btn = Gtk.ToggleToolButton(label=label)
+            # 1.9.19: the tool's picture (see toolbaricons.py);
+            # the label stays as the button's name, the tooltip
+            # carries the full explanation.
+            btn.set_icon_widget(toolbaricons.icon_image(tool_id))
             btn.set_tooltip_text(tooltip)
             # Capture tool_id in default arg
             btn.connect("toggled", self.on_tool_toggled, tool_id)
@@ -766,6 +903,8 @@ class MapEditorApp:
         toolbar.insert(Gtk.SeparatorToolItem(), -1)
 
         self.merge_button = Gtk.ToolButton(label="Merge")
+        self.merge_button.set_icon_widget(
+            toolbaricons.icon_image("merge"))
         self.merge_button.set_tooltip_text(
             "Merge exactly 2 selected roads (connect for traffic "
             "flow). First selected = source, second = target.")
@@ -774,6 +913,8 @@ class MapEditorApp:
         toolbar.insert(self.merge_button, -1)
 
         self.join_button = Gtk.ToolButton(label="Join")
+        self.join_button.set_icon_widget(
+            toolbaricons.icon_image("join"))
         self.join_button.set_tooltip_text(
             "Join 2 or more selected roads into one road object "
             "(keeps the first road's name).")
@@ -787,6 +928,8 @@ class MapEditorApp:
         # frames the whole road and lights it up before any
         # decision); with nothing selected it just says so.
         self.delete_button = Gtk.ToolButton(label="Delete")
+        self.delete_button.set_icon_widget(
+            toolbaricons.icon_image("delete"))
         self.delete_button.set_tooltip_text(
             "Delete the selected road(s). First the map frames the "
             "whole road and lights it up so you can check it — "
@@ -798,7 +941,9 @@ class MapEditorApp:
         # Rename action (1.9.8 — the pencil): renames the SELECTED
         # PIECE (one record, the piece-scoping Joshua ruled for
         # Delete). Sits with the other selection actions.
-        self.rename_button = Gtk.ToolButton(label="✎ Rename")
+        self.rename_button = Gtk.ToolButton(label="Rename")
+        self.rename_button.set_icon_widget(
+            toolbaricons.icon_image("rename"))
         self.rename_button.set_tooltip_text(
             "Rename the selected road piece. Only that piece "
             "gets the new name — the rest of the street keeps "
@@ -813,6 +958,8 @@ class MapEditorApp:
         # selected it prepares the detail handoff file and
         # launches the Detail Editor when it is installed.
         self.detail_button = Gtk.ToolButton(label="Detail Edit")
+        self.detail_button.set_icon_widget(
+            toolbaricons.icon_image("detail"))
         self.detail_button.set_tooltip_text(
             "Open the selected piece in the Detail Editor — the "
             "separate suite app for fine detail work (moving, "
@@ -829,6 +976,8 @@ class MapEditorApp:
         # Delete flow.
         self.find_stacked_button = Gtk.ToolButton(
             label="Find stacked")
+        self.find_stacked_button.set_icon_widget(
+            toolbaricons.icon_image("stacked"))
         self.find_stacked_button.set_tooltip_text(
             "Find pieces lying on top of other pieces — "
             "duplicates, zero-length records, covered pieces. "
@@ -844,6 +993,8 @@ class MapEditorApp:
         # deck on the map. The terrain ramps up to the deck, the road
         # connects, and the overpass takes the road's street name.
         self.link_overpass_button = Gtk.ToolButton(label="Link to Overpass")
+        self.link_overpass_button.set_icon_widget(
+            toolbaricons.icon_image("overpass"))
         self.link_overpass_button.set_tooltip_text(
             "Link the selected road to an overpass: lifts the terrain "
             "as a smooth ramp, connects the road to the deck, and "
@@ -3013,7 +3164,7 @@ class MapEditorApp:
         if insp is not None:
             insp.clear_compare()
         # 1.9.10: a confirmed delete cleared the selection
-        # inside apply_road_delete (which does not funnel
+        # inside the delete apply (which does not funnel
         # through on_roads_selected) — resync the Pieces panel
         # here so its list never shows a deleted piece.
         self._refresh_pieces_panel()
@@ -3363,10 +3514,43 @@ class MapEditorApp:
                 return True
         return False
 
+    def _io_lock(self):
+        """
+        The model IO lock (1.9.19): serialises the game model's
+        adopt+save (and the delete worker's index build) between
+        the UI thread and background workers. Created lazily so
+        partially built (headless) app objects are safe too.
+        """
+        lock = getattr(self, "_model_io_lock", None)
+        if lock is None:
+            lock = threading.RLock()
+            self._model_io_lock = lock
+        return lock
+
     def _rebuild_road_index(self):
         """Rebuild the spatial index from the working copy (after edits)."""
-        self.spatial_index = SpatialIndex(cell_size=500)
-        self.spatial_index.build(self.roads_data)
+        index = SpatialIndex(cell_size=500)
+        index.build(self.roads_data)
+        # A synchronous rebuild is by definition the newest
+        # build: number it past every background build so a
+        # stale worker landing can never overwrite it.
+        self._index_seq = getattr(self, "_index_seq", 0) + 1
+        self._index_installed_seq = self._index_seq
+        self._install_road_index(index)
+
+    def _install_road_index(self, index):
+        """
+        Make a built spatial index the live one and refresh the
+        views that read it. Split out (1.9.19) so a background
+        worker can BUILD the index off the UI thread and hand
+        the finished object here (through its landing) — the
+        build is pure computation; only this installation and
+        the view refreshes belong on the UI thread.
+        """
+        self.spatial_index = index
+        # A fresh index is built from the live working copy, so
+        # any pending-delete hides are moot from here on.
+        self._pending_delete_ids = set()
         self.canvas.queue_draw()
         # The 3D inspector shows post-edit geometry (Joshua 2026-10-11:
         # visual verification that join/merge worked correctly).
@@ -3420,8 +3604,13 @@ class MapEditorApp:
         if not self._dirty_road_cats:
             return
         if self.game_model is not None and self.roads_data is not None:
-            self.game_model.adopt_merged_roads(self.roads_data)
-            ok, err = save_local_cache(self.game_model)
+            # 1.9.19: the adopt+save runs under the model IO
+            # lock — a background delete save may be doing the
+            # same two calls on its worker thread, and the two
+            # must never interleave writes to the cache files.
+            with self._io_lock():
+                self.game_model.adopt_merged_roads(self.roads_data)
+                ok, err = save_local_cache(self.game_model)
             if not ok:
                 self.set_status(f"local-save-failed: {err}")
                 return
@@ -3488,6 +3677,14 @@ class MapEditorApp:
         """
         from data import (ZONES, ZONE_EDITS_FILE, CUSTOM_ZONES_FILE,
                           save_overpasses)
+        # 1.9.19: a delete's undo state is a DELTA (the removed
+        # records and their list positions), not a full snapshot
+        # — restoring it touches only the roads it names.
+        if isinstance(snap, dict) \
+                and snap.get("kind") == "delete-delta":
+            self._restore_delete_delta(snap)
+            self._refresh_undo_ui()
+            return
         # Roads: replace the working copy outright.
         self.roads_data = copy.deepcopy(snap["roads"])
         # Overpasses: replace and re-persist.
@@ -3622,6 +3819,15 @@ class MapEditorApp:
         Edit -> Undo (or Ctrl+Z, or the toolbar button).
         Restores the before-state of the most recent edit.
         """
+        if getattr(self, "_delete_apply_in_flight", 0):
+            # 1.9.19: a delete's background save is still
+            # adopting/writing the model — restoring state now
+            # would race it. The flight lasts seconds; say so
+            # and leave the command on the stack.
+            self.set_status(
+                "Undo: a delete is still saving in the "
+                "background — give it a moment.")
+            return
         cmd = self.undo_manager.undo()
         if cmd is None:
             return
@@ -3633,6 +3839,12 @@ class MapEditorApp:
         Edit -> Redo (or Ctrl+Y / Ctrl+Shift+Z, or the toolbar button).
         Re-applies the most recently undone edit.
         """
+        if getattr(self, "_delete_apply_in_flight", 0):
+            # 1.9.19: same guard as Undo — see on_undo_clicked.
+            self.set_status(
+                "Redo: a delete is still saving in the "
+                "background — give it a moment.")
+            return
         cmd = self.undo_manager.redo()
         if cmd is None:
             return
@@ -3754,19 +3966,288 @@ class MapEditorApp:
         self._rebuild_road_index()
         return True
 
-    def apply_road_delete(self, cat, road):
-        """Delete tool commit: remove the road entirely. Returns True."""
+    # ------------------------------------------------------------------
+    # Delete commit (1.9.19 — the five-minute delete, fixed)
+    #
+    # Joshua's hands-on, 2026-10-28 (1.9.15): lasso-selected 18
+    # segments under a school site, confirmed the delete — and
+    # the app sat unresponsive for on the order of five minutes.
+    # The old confirm looped the SINGLE-delete apply once per
+    # segment, and every single apply re-serialised and rewrote
+    # EVERY zone's roads file (~62k roads, ~20 MB) and rebuilt
+    # the whole spatial index — O(segments x whole map), all of
+    # it synchronous on the UI thread, with no progress bar.
+    # (Measured on the real data: 18 x (full save + full index)
+    # = ~30 s on a fast VM disk/CPU; on his laptop that shape is
+    # minutes.) The two full-map undo snapshots around it
+    # (deep copies of all 62k roads, before AND after) added
+    # seconds more on top.
+    #
+    # The fix, in three parts:
+    #   1. ONE batched apply for any number of segments — the
+    #      records come out of the working copy on the UI thread
+    #      (identity removals are fast), then ONE persist and
+    #      ONE index rebuild happen for the whole batch.
+    #   2. The persist + index build run on a WORKER thread
+    #      under the bottom-right progress bar (the Progress Bar
+    #      Law) — the UI thread never blocks on them, and the
+    #      review that confirmed the delete is already gone.
+    #   3. The undo entry is a DELTA — the removed records and
+    #      their exact list positions — not two deep copies of
+    #      the whole map. Restoring it is _restore_delete_delta.
+    # Delete semantics are unchanged: exactly the picked
+    # records go, never the whole named road.
+    # ------------------------------------------------------------------
+
+    def _capture_delete_delta(self, picked):
+        """
+        The undo record for a delete: for each (category, road)
+        picked, its index in the category's CURRENT list and a
+        deep copy of the record. Taken before anything is
+        removed. Only the removed records are copied — for an
+        18-piece delete that is 18 small dicts, not the map.
+        """
+        removed = []
         if self.roads_data is None:
+            return removed
+        for cat, road in picked:
+            lst = self.roads_data.get(cat, [])
+            for i, r in enumerate(lst):
+                if r is road:
+                    removed.append((cat, i, copy.deepcopy(road)))
+                    break
+        return removed
+
+    def _begin_delete_report(self, n):
+        """Start the delete's timing report (1.9.19, Joshua's
+        editor reporting rule: the editor must report how long
+        a delete of N pieces took). Returns the operation
+        timer, or None when reporting is unavailable — the
+        delete never depends on it."""
+        if not _REPORTING_AVAILABLE or reporting is None:
+            return None
+        try:
+            op = reporting.operation("delete", pieces=n)
+            op.__enter__()
+            return op
+        except Exception:
+            return None
+
+    def _end_delete_report(self, op, ok):
+        """Fire the delete's timing report (see _begin_delete_
+        report). The duration is click-to-landed: the whole
+        delete as Joshua experiences it, background save and
+        all."""
+        if op is None:
+            return
+        try:
+            op.set(saved=bool(ok))
+            op.__exit__(None, None, None)
+        except Exception:
+            pass
+
+    def apply_road_delete_batch_async(self, picked, undo_label,
+                                      on_landed=None):
+        """
+        The one delete commit (1.9.19), used by the delete
+        preview's confirm and by the batch panel alike, for one
+        segment or dozens. picked is a list of (category, road).
+
+        On the UI thread: capture the undo delta, remove the
+        records, clear the selection, push the undo command,
+        start the corner progress bar ("Deleting k of N…").
+        On a worker thread: adopt the working copy into the
+        model, save the local cache ONCE, build the spatial
+        index ONCE. On landing (UI thread): install the index
+        (unless a newer build superseded it), mark unpublished,
+        finish the progress bar, and report through
+        on_landed(ok, n_removed) so each caller keeps its own
+        status wording. ok is False when any record was not
+        found or the save failed.
+
+        ONE FLIGHT AT A TIME: while a delete save is in the
+        background, a second apply is refused (returns False,
+        on_landed NOT called, a plain status explains) — its
+        delta would be captured against a half-moved world,
+        and until the rebuild lands the live index still lists
+        the records being deleted, so picks and collectors skip
+        them explicitly (canvas._pick_key,
+        batchdelete.collect_records) and no new preview opens
+        (canvas.begin_delete_preview refuses too). The same
+        one-at-a-time rule Undo already follows. Returns True
+        when the delete was taken (flight started, or landed
+        at once with no model).
+        """
+        if getattr(self, "_delete_apply_in_flight", 0) > 0:
+            self.set_status(
+                "A delete is still saving in the background — "
+                "give it a moment, then delete.")
             return False
-        if not self._remove_road_from_working_copy(cat, road):
-            return False
-        self._dirty_road_cats.add(cat)
-        self.persist_road_edits()
-        self._rebuild_road_index()
-        # Clear selection if it pointed at the deleted road
+        if self.roads_data is None:
+            if on_landed is not None:
+                on_landed(False, 0)
+            return True
+        n = len(picked)
+        # The timing report starts here — the delete is taken
+        # from this point (see _begin_delete_report).
+        report_op = self._begin_delete_report(n)
+        # Undo before anything moves (positions are pre-delete).
+        removed = self._capture_delete_delta(picked)
+        self._delete_apply_seq = \
+            getattr(self, "_delete_apply_seq", 0) + 1
+        job = f"delete-apply-{self._delete_apply_seq}"
+        self.progress_start(
+            job, f"Deleting {n} segment(s)…" if n != 1
+            else "Deleting 1 segment…")
+        # Remove here and now: identity removals against the
+        # category lists, cheap even in a batch — and the
+        # progress fraction tracks them honestly.
+        done = 0
+        all_removed = True
+        for cat, road in picked:
+            if self._remove_road_from_working_copy(cat, road):
+                self._dirty_road_cats.add(cat)
+                # Gone from the picture at once, even though
+                # the live spatial index still lists the record
+                # until the worker's rebuild lands.
+                self._pending_delete_ids.add(id(road))
+                done += 1
+            else:
+                all_removed = False
+            if n:
+                self.progress_update(
+                    job, fraction=done / n,
+                    label=f"Deleting {done} of {n}…")
         self.canvas.selected_roads = []
         self._update_merge_join_buttons()
+        if removed:
+            self.undo_manager.push(UndoCommand(
+                undo_label,
+                {"kind": "delete-delta", "present": True,
+                 "removed": removed},
+                {"kind": "delete-delta", "present": False,
+                 "removed": removed}))
+            self._refresh_undo_ui()
+        if self.game_model is None:
+            # No model to persist into (partial/headless app):
+            # land at once — the records are out of the working
+            # copy, which is all the old sync path could do here
+            # either (its persist no-ops without a model).
+            self._rebuild_road_index()
+            self.progress_finish(job)
+            if on_landed is not None:
+                on_landed(all_removed, done)
+            self._end_delete_report(report_op, all_removed)
+            return True
+        self.progress_update(job, fraction=None,
+                             label="Saving the delete…")
+        self._delete_apply_in_flight = \
+            getattr(self, "_delete_apply_in_flight", 0) + 1
+
+        def worker():
+            ok, err, index, seq = all_removed, None, None, 0
+            try:
+                # The lock serialises adopt+save+build against
+                # every other model writer, so seq order is
+                # always data order.
+                with self._io_lock():
+                    self.game_model.adopt_merged_roads(
+                        self.roads_data)
+                    saved, err = save_local_cache(self.game_model)
+                    ok = ok and saved
+                    self._index_seq = \
+                        getattr(self, "_index_seq", 0) + 1
+                    seq = self._index_seq
+                    index = SpatialIndex(cell_size=500)
+                    index.build(self.roads_data)
+            except Exception as e:  # never strand the flight flag
+                ok, err = False, str(e)
+            GLib.idle_add(self._delete_apply_landed, job, index,
+                          seq, ok, err, done, on_landed, report_op)
+
+        threading.Thread(target=worker, daemon=True).start()
         return True
+
+    def _delete_apply_landed(self, job_id, index, seq, ok, err,
+                             done, on_landed, report_op=None):
+        """
+        UI-thread landing for one background delete save
+        (1.9.19): release the flight slot, finish the progress
+        bar, install the worker's index build unless a newer
+        build is already live, mark the session unpublished on
+        success, and hand the outcome to the caller's callback.
+        """
+        self._delete_apply_in_flight = max(
+            0, getattr(self, "_delete_apply_in_flight", 1) - 1)
+        self.progress_finish(job_id)
+        if index is not None and seq > getattr(
+                self, "_index_installed_seq", 0):
+            self._index_installed_seq = seq
+            self._install_road_index(index)
+        if ok:
+            self._mark_unpublished()
+        if on_landed is not None:
+            on_landed(ok, done)
+        elif not ok:
+            self.set_status(
+                "Delete failed: could not save."
+                + (f" ({err})" if err else ""))
+        # The delete's timing report fires at the landing —
+        # its duration is the whole delete, click to saved.
+        self._end_delete_report(report_op, ok)
+        return False  # GLib.idle_add one-shot
+
+    def _restore_delete_delta(self, snap):
+        """
+        Undo/redo landing for a delete delta (1.9.19); called
+        from _map_state_restore. Deletes never touch zones or
+        overpasses, so restoring one touches only the roads it
+        names — no full-state machinery.
+
+        present=True (undo of a delete): put the records back
+        at the exact list positions they were taken from — per
+        category, ascending index order, so a multi-piece
+        removal from one list regains its original order
+        exactly. present=False (redo): take them out again,
+        matched by value — after an intervening full-snapshot
+        restore the live records are deep copies of the stored
+        ones (a byte-identical record in the same category is
+        the same record for this purpose). Insertions deep-copy
+        the stored records, so the undo entry itself is never
+        aliased by live state (the snapshot discipline the full
+        restores keep). The change then persists and re-indexes
+        like any other edit.
+        """
+        if self.roads_data is None:
+            return
+        removed = snap.get("removed") or []
+        if snap.get("present"):
+            by_cat = {}
+            for cat, idx, road in removed:
+                by_cat.setdefault(cat, []).append((idx, road))
+            for cat, items in by_cat.items():
+                lst = self.roads_data.setdefault(cat, [])
+                for idx, road in sorted(items,
+                                        key=lambda t: t[0]):
+                    lst.insert(min(idx, len(lst)),
+                               copy.deepcopy(road))
+                self._dirty_road_cats.add(cat)
+        else:
+            for cat, _idx, road in removed:
+                lst = self.roads_data.get(cat, [])
+                for i, r in enumerate(lst):
+                    if r is road or r == road:
+                        del lst[i]
+                        break
+                self._dirty_road_cats.add(cat)
+        self.canvas.selected_roads = []
+        self._update_merge_join_buttons()
+        self.persist_road_edits()
+        self._rebuild_road_index()
+        try:
+            self._refresh_pieces_panel()
+        except Exception:
+            pass
 
     def apply_road_add(self, cat, new_road):
         """
@@ -3816,28 +4297,6 @@ class MapEditorApp:
             f"Draw: new road added ({len(points)} points). "
             "It is selected — Rename gives it a name.")
         return True
-
-    def apply_road_delete_batch(self, picked):
-        """
-        Batch delete commit: remove many records with ONE persist
-        and ONE index rebuild (the single-delete apply persists
-        per record — a batch of dozens must not). picked is a
-        list of (category, road). Returns True when every record
-        was removed.
-        """
-        if self.roads_data is None:
-            return False
-        ok = True
-        for cat, road in picked:
-            if self._remove_road_from_working_copy(cat, road):
-                self._dirty_road_cats.add(cat)
-            else:
-                ok = False
-        self.persist_road_edits()
-        self._rebuild_road_index()
-        self.canvas.selected_roads = []
-        self._update_merge_join_buttons()
-        return ok
 
     def apply_road_rename(self, cat, road, new_name):
         """
