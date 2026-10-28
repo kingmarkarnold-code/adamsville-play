@@ -1,0 +1,53 @@
+{
+ "bounds_latlon": {
+  "latMax": 33.84450666666667,
+  "latMin": 33.7272824,
+  "lonMax": -84.45774545,
+  "lonMin": -84.556006925
+ },
+ "bounds_m": {
+  "xMax": 6366.452,
+  "xMin": -2738.869,
+  "zMax": 1532.616,
+  "zMin": -11469.629
+ },
+ "counts": {
+  "roads": 8579,
+  "buildings": 24407,
+  "water": 331,
+  "rail": 29,
+  "structures": 136,
+  "places": 290,
+  "pins": 5,
+  "signs": 4
+ },
+ "decisions_used": "verify/DECISIONS-USED.md (D1/D2/D3 on register defaults, reversible)",
+ "frame": {
+  "axes": "x east, z south from origin",
+  "elevations": "absolute metres ASL, USGS 3DEP",
+  "formula": "MPDLAT = 111132.92 - 559.82*cos(2*LAT0) + 1.175*cos(4*LAT0); MPDLON = 111412.84*cos(LAT0) - 93.5*cos(3*LAT0) \u2014 verbatim from the reference sweep tooling (anchor-checked Pass 3); Phase C converts ONCE at load",
+  "legacy_frame_replaced": "split-zones rescale s=1609/568 about centre (3772.5, 2009) \u2014 NOT used by this package",
+  "mpdlat": 110917.6952,
+  "mpdlon": 92664.2028,
+  "units": "true metres, 1 unit = 1 m"
+ },
+ "generated": "2026-10-28",
+ "generator": "Phase B redraw build, staging (NOT yet the live zone)",
+ "id": "adamsville",
+ "name": "Adamsville",
+ "origin": {
+  "lat": 33.7411,
+  "lon": -84.52645,
+  "note": "535 Dollar Mill Rd SW \u2014 frame origin, (0,0)"
+ },
+ "source_register": "reference/ADAMSVILLE-REDRAW-REGISTER.md (72 items)",
+ "terrain": {
+  "file": "terrain.bin",
+  "layout": "Float32 LE row-major; row 0 = north (zMin), rows +south, cols +east; metres ASL",
+  "nx": 912,
+  "nz": 1301,
+  "post_m": 10.0,
+  "source": "USGS 3DEP 1/3 arc-second DEM n34w085 (20260326), bilinear resample; water carved B1"
+ },
+ "phase": "B (package authored in staging; NOT yet swapped into the live repo \u2014 Phase D)"
+}

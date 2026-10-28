@@ -1,0 +1,3884 @@
+{
+ "records": [
+  {
+   "id": "AN-02",
+   "batch": "B6",
+   "kind": "park",
+   "name": "Wilson Mill Park",
+   "note": "Grounds ~600x330 m (capture outline 152,640 m2 is the baseline). Sub-features below carry surveyed dims; the outline ring itself is owed (landuse source).",
+   "material": "GRASS",
+   "at": [
+    1248.3,
+    -1223.8
+   ]
+  },
+  {
+   "id": "AN-02-F",
+   "batch": "B6",
+   "kind": "sports_field",
+   "name": "Wilson Mill Park \u2014 field",
+   "note": "196x117 m (Sweep 3). Axis-aligned; orientation unsurveyed.",
+   "material": "GRASS",
+   "ring": [
+    [
+     1150.3,
+     -1282.3
+    ],
+    [
+     1346.3,
+     -1282.3
+    ],
+    [
+     1346.3,
+     -1165.3
+    ],
+    [
+     1150.3,
+     -1165.3
+    ]
+   ]
+  },
+  {
+   "id": "AN-02-D",
+   "batch": "B6",
+   "kind": "baseball_diamond",
+   "name": "Wilson Mill Park \u2014 diamond",
+   "note": "~37x47 m at (33.7535, -84.5131) (Sweep 3).",
+   "material": "GRASS",
+   "ring": [
+    [
+     1218.6,
+     -1398.9
+    ],
+    [
+     1255.6,
+     -1398.9
+    ],
+    [
+     1255.6,
+     -1351.9
+    ],
+    [
+     1218.6,
+     -1351.9
+    ]
+   ]
+  },
+  {
+   "id": "AN-02-C",
+   "batch": "B6",
+   "kind": "courts",
+   "name": "Wilson Mill Park \u2014 courts",
+   "note": "~42x44 m at (33.7527, -84.5126) (Sweep 3).",
+   "material": "SOLID",
+   "ring": [
+    [
+     1262.4,
+     -1308.6
+    ],
+    [
+     1304.4,
+     -1308.6
+    ],
+    [
+     1304.4,
+     -1264.6
+    ],
+    [
+     1262.4,
+     -1264.6
+    ]
+   ]
+  },
+  {
+   "id": "AN-25",
+   "batch": "B6",
+   "kind": "school_campus",
+   "name": "The Kindezi School - West",
+   "note": "Campus (historic: Adamsville Elementary, closed 2013). Footprint 114.0x92.4 m stands (buildings, B10); west play area, entrance canopy, front drive loop (service pieces authored as roads in this batch).",
+   "material": "NONE",
+   "at": [
+    1132.4,
+    -1532.7
+   ]
+  },
+  {
+   "id": "AN-26",
+   "batch": "B6",
+   "kind": "cemetery",
+   "name": "Donahoo Family Cemetery",
+   "note": "Parcel at (33.75529, -84.51463); a 157 m2 structure ring stands 24.7 m from the point (buildings, B10). Parcel ring unsurveyed \u2014 point authored, ring owed.",
+   "material": "NONE",
+   "at": [
+    1095.6,
+    -1573.9
+   ]
+  },
+  {
+   "id": "AN-27-1",
+   "batch": "B6",
+   "kind": "parking_area",
+   "name": "Mount Gilead Mount Hermon Church of God \u2014 parking lot",
+   "note": "Lot north of the 490 Wilson Mill building (AN-27). Present in the street render, absent as data; dims unsurveyed.",
+   "material": "NONE",
+   "at": [
+    876.6,
+    -838.1
+   ]
+  },
+  {
+   "id": "AN-27-2",
+   "batch": "B6",
+   "kind": "parking_area",
+   "name": "New Life Christian Bible Church \u2014 gravel lot",
+   "note": "Gravel lot at 264 Wilson Mill (AN-27, satellite). Dims unsurveyed.",
+   "material": "NONE",
+   "at": [
+    1165.3,
+    -1635.5
+   ]
+  },
+  {
+   "id": "AN-06",
+   "batch": "B7",
+   "kind": "airport",
+   "name": "Fulton County Airport (FTY) \u2014 Charlie Brown Field",
+   "ring": [
+    [
+     -310.8,
+     -4030.3
+    ],
+    [
+     -417.5,
+     -4113.7
+    ],
+    [
+     -438.5,
+     -4210.4
+    ],
+    [
+     -270.2,
+     -4240.3
+    ],
+    [
+     -256.4,
+     -4288.3
+    ],
+    [
+     -302.5,
+     -4345.8
+    ],
+    [
+     -227.8,
+     -4437.4
+    ],
+    [
+     -107.7,
+     -4312.0
+    ],
+    [
+     -33.7,
+     -4318.2
+    ],
+    [
+     25.3,
+     -4340.2
+    ],
+    [
+     60.5,
+     -4306.5
+    ],
+    [
+     234.3,
+     -4338.7
+    ],
+    [
+     319.5,
+     -4376.7
+    ],
+    [
+     331.2,
+     -4388.8
+    ],
+    [
+     305.4,
+     -4392.7
+    ],
+    [
+     299.0,
+     -4435.5
+    ],
+    [
+     1216.0,
+     -4602.4
+    ],
+    [
+     1230.5,
+     -4521.8
+    ],
+    [
+     1561.5,
+     -4580.7
+    ],
+    [
+     1578.4,
+     -4478.2
+    ],
+    [
+     1418.8,
+     -4279.1
+    ],
+    [
+     1414.4,
+     -4270.0
+    ],
+    [
+     1412.5,
+     -4259.9
+    ],
+    [
+     1415.5,
+     -4253.0
+    ],
+    [
+     1329.4,
+     -4094.0
+    ],
+    [
+     1213.6,
+     -4073.7
+    ],
+    [
+     1231.5,
+     -3988.5
+    ],
+    [
+     1100.6,
+     -3970.6
+    ],
+    [
+     1061.8,
+     -4086.5
+    ],
+    [
+     993.1,
+     -4072.1
+    ],
+    [
+     985.9,
+     -4115.9
+    ],
+    [
+     765.5,
+     -4078.3
+    ],
+    [
+     739.6,
+     -4063.8
+    ],
+    [
+     730.9,
+     -4048.0
+    ],
+    [
+     694.6,
+     -3875.9
+    ],
+    [
+     666.8,
+     -3839.5
+    ],
+    [
+     803.0,
+     -3684.0
+    ],
+    [
+     844.0,
+     -3647.7
+    ],
+    [
+     880.0,
+     -3626.1
+    ],
+    [
+     1015.6,
+     -3562.8
+    ],
+    [
+     1013.5,
+     -3543.4
+    ],
+    [
+     828.6,
+     -3390.2
+    ],
+    [
+     627.7,
+     -3242.3
+    ],
+    [
+     580.5,
+     -3248.7
+    ],
+    [
+     152.8,
+     -3641.5
+    ],
+    [
+     -264.0,
+     -3975.6
+    ],
+    [
+     -254.3,
+     -3987.9
+    ],
+    [
+     -310.8,
+     -4030.3
+    ]
+   ],
+   "note": "3977 Aviation Cir NW. Field elevation 841.1 ft (FAA surveyed; its exact point is owed \u2014 O4). Ground = terrain grid shelf (TR-07): pavement reads 799.6-814.1 ft on 8/26, ground falls NW to Sandy Creek, rises SE to ~880 ft.",
+   "material": "GRASS"
+  },
+  {
+   "id": "place-0000",
+   "batch": "B10",
+   "kind": "school",
+   "name": "Margaret Fain Elementary School",
+   "at": [
+    2663.3,
+    -1676.9
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0001",
+   "batch": "B10",
+   "kind": "church",
+   "name": "Liberty Hill Church",
+   "at": [
+    -91.0,
+    -7037.7
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0002",
+   "batch": "B10",
+   "kind": "church",
+   "name": "Mount Zion Church",
+   "at": [
+    5185.9,
+    -4511.4
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0003",
+   "batch": "B10",
+   "kind": "church",
+   "name": "Riverside Church",
+   "at": [
+    5108.7,
+    -7284.2
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0004",
+   "batch": "B10",
+   "kind": "school",
+   "name": "William J Scott Elementary School",
+   "at": [
+    5125.5,
+    -6912.3
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0005",
+   "batch": "B10",
+   "kind": "school",
+   "name": "Jean Childs Young Middle School",
+   "at": [
+    3435.5,
+    911.2
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0006",
+   "batch": "B10",
+   "kind": "school",
+   "name": "Atlanta Youth Development Center",
+   "at": [
+    -991.9,
+    -1338.0
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0007",
+   "batch": "B10",
+   "kind": "church",
+   "name": "Truelove Baptist Church",
+   "at": [
+    5288.9,
+    -3956.8
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0008",
+   "batch": "B10",
+   "kind": "church",
+   "name": "Good Samaritan Baptist Church",
+   "at": [
+    4387.9,
+    -4234.1
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0009",
+   "batch": "B10",
+   "kind": "school",
+   "name": "Center Hill School",
+   "at": [
+    5700.7,
+    -4018.4
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0010",
+   "batch": "B10",
+   "kind": "church",
+   "name": "Kingdom Hall of Jehovahs Witnesses",
+   "at": [
+    6009.6,
+    -3248.1
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0011",
+   "batch": "B10",
+   "kind": "church",
+   "name": "Hillcrest Church",
+   "at": [
+    -1944.3,
+    -4234.1
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0012",
+   "batch": "B10",
+   "kind": "church",
+   "name": "Riverside Church",
+   "at": [
+    372.3,
+    -7499.9
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0013",
+   "batch": "B10",
+   "kind": "school",
+   "name": "Adamsville Elementary School",
+   "at": [
+    1170.3,
+    -1522.8
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0014",
+   "batch": "B10",
+   "kind": "school",
+   "name": "Lenora P Miles Elementary School",
+   "at": [
+    89.2,
+    -1646.0
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0015",
+   "batch": "B10",
+   "kind": "school",
+   "name": "George A Towns Elementary School",
+   "at": [
+    2019.7,
+    -3864.4
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0016",
+   "batch": "B10",
+   "kind": "school",
+   "name": "Mays High School",
+   "at": [
+    2081.7,
+    795.4
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0017",
+   "batch": "B10",
+   "kind": "school",
+   "name": "Archer High School",
+   "at": [
+    6009.6,
+    -7068.6
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0018",
+   "batch": "B10",
+   "kind": "school",
+   "name": "Beecher Hills Elementary School",
+   "at": [
+    5855.2,
+    603.1
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0019",
+   "batch": "B10",
+   "kind": "school",
+   "name": "Rosalie Wright Elementary School",
+   "at": [
+    6241.3,
+    -536.8
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0020",
+   "batch": "B10",
+   "kind": "school",
+   "name": "West Manor Elementary School",
+   "at": [
+    3409.8,
+    140.9
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0021",
+   "batch": "B10",
+   "kind": "school",
+   "name": "Alfred Blalock Elementary School",
+   "at": [
+    2534.6,
+    -5867.0
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0022",
+   "batch": "B10",
+   "kind": "school",
+   "name": "Imhotep Academy",
+   "at": [
+    2602.1,
+    -3444.0
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0023",
+   "batch": "B10",
+   "kind": "amenity_other",
+   "name": "Southwest Performing Arts Center",
+   "at": [
+    -1394.6,
+    1231.2
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0024",
+   "batch": "B10",
+   "kind": "fire_police",
+   "name": "Atlanta Fire Rescue Department - Fire Station 9",
+   "at": [
+    2265.9,
+    -1856.0
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0025",
+   "batch": "B10",
+   "kind": "fire_police",
+   "name": "Fulton County Station 19 Fire Station",
+   "at": [
+    949.8,
+    -3704.7
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0026",
+   "batch": "B10",
+   "kind": "fire_police",
+   "name": "Fulton County Headquarters Fire Station",
+   "at": [
+    708.9,
+    -3638.1
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0027",
+   "batch": "B10",
+   "kind": "fire_police",
+   "name": "Fulton County Fire Station 2",
+   "at": [
+    310.4,
+    1242.3
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0028",
+   "batch": "B10",
+   "kind": "shop_business",
+   "name": "Southeast Metro Automated Routing Terminal",
+   "at": [
+    1599.8,
+    -5111.9
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0029",
+   "batch": "B10",
+   "kind": "amenity_other",
+   "name": "Parking Lot",
+   "at": [
+    3440.0,
+    1046.6
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0030",
+   "batch": "B10",
+   "kind": "medical",
+   "name": "Publix",
+   "at": [
+    69.1,
+    -7152.4
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0031",
+   "batch": "B10",
+   "kind": "transit_station",
+   "name": "Hamilton E. Holmes",
+   "at": [
+    5235.7,
+    -1487.7
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0032",
+   "batch": "B10",
+   "kind": "shop_business",
+   "name": "Ebony Beauty Supply",
+   "at": [
+    5582.4,
+    -3935.8
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0033",
+   "batch": "B10",
+   "kind": "medical",
+   "name": "Health Education, Assessment & Leadership",
+   "at": [
+    5002.1,
+    -1346.0
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0034",
+   "batch": "B10",
+   "kind": "shop_business",
+   "name": "ARKIVE Information Management",
+   "at": [
+    -157.5,
+    -4910.4
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0035",
+   "batch": "B10",
+   "kind": "shop_business",
+   "name": "Walmart Supercenter",
+   "at": [
+    1718.2,
+    1412.0
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0036",
+   "batch": "B10",
+   "kind": "shop_business",
+   "name": "Riverline Transfer",
+   "at": [
+    1168.9,
+    -6134.5
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0037",
+   "batch": "B10",
+   "kind": "shop_business",
+   "name": "MAD Industries",
+   "at": [
+    1263.2,
+    -6213.3
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0038",
+   "batch": "B10",
+   "kind": "shop_business",
+   "name": "Same Day Flower Delivery Atlanta GA - Send Flowers",
+   "at": [
+    -2570.0,
+    -6089.6
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0039",
+   "batch": "B10",
+   "kind": "shop_business",
+   "name": "Turner Transfer",
+   "at": [
+    1905.4,
+    -6861.4
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0040",
+   "batch": "B10",
+   "kind": "shop_business",
+   "name": "Howard's Collision Center",
+   "at": [
+    1858.0,
+    -6816.3
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0041",
+   "batch": "B10",
+   "kind": "restaurant",
+   "name": "Deshi Masala Grill and Cafe",
+   "at": [
+    3020.5,
+    -5218.3
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0042",
+   "batch": "B10",
+   "kind": "shop_business",
+   "name": "Global Education Institute of Science",
+   "at": [
+    889.1,
+    -7106.7
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0043",
+   "batch": "B10",
+   "kind": "restaurant",
+   "name": "Domino's",
+   "at": [
+    2728.8,
+    -1523.0
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0044",
+   "batch": "B10",
+   "kind": "restaurant",
+   "name": "Popeyes",
+   "at": [
+    2697.9,
+    -1529.3
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0045",
+   "batch": "B10",
+   "kind": "restaurant",
+   "name": "Taco Bell",
+   "at": [
+    1906.4,
+    -1978.1
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0046",
+   "batch": "B10",
+   "kind": "restaurant",
+   "name": "Bellwood Coffee",
+   "at": [
+    4590.6,
+    -7670.4
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0047",
+   "batch": "B10",
+   "kind": "shop_business",
+   "name": "ET Motor Freight",
+   "at": [
+    -2030.1,
+    -1746.1
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0048",
+   "batch": "B10",
+   "kind": "amenity_other",
+   "name": "CAT Scale",
+   "at": [
+    3578.6,
+    -5477.3
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0049",
+   "batch": "B10",
+   "kind": "amenity_other",
+   "name": "CAT Scale",
+   "at": [
+    3479.0,
+    -4989.9
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0050",
+   "batch": "B10",
+   "kind": "cemetery",
+   "name": "Wood-Hudson Family Cemetery",
+   "at": [
+    5420.2,
+    -5608.8
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0051",
+   "batch": "B10",
+   "kind": "amenity_other",
+   "name": "Kid's Time Early Learning Center #2",
+   "at": [
+    1985.4,
+    1366.5
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0052",
+   "batch": "B10",
+   "kind": "shop_business",
+   "name": "Starship",
+   "at": [
+    -554.7,
+    -2639.8
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0053",
+   "batch": "B10",
+   "kind": "shop_business",
+   "name": "346 Unlimited Bargins",
+   "at": [
+    -341.6,
+    -2348.2
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0054",
+   "batch": "B10",
+   "kind": "school",
+   "name": "Frederick Douglass High School",
+   "at": [
+    5444.0,
+    -2321.0
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0055",
+   "batch": "B10",
+   "kind": "school",
+   "name": "A D Williams Elementary School",
+   "at": [
+    4550.7,
+    -4888.1
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0056",
+   "batch": "B10",
+   "kind": "school",
+   "name": "Lindley Middle School",
+   "at": [
+    -2513.8,
+    -8064.0
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0057",
+   "batch": "B10",
+   "kind": "school",
+   "name": "Lindley Sixth Grade Academy",
+   "at": [
+    1534.4,
+    -8483.9
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0058",
+   "batch": "B10",
+   "kind": "amenity_other",
+   "name": "H. E. Holmes Park & Ride",
+   "at": [
+    5186.0,
+    -1385.7
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0059",
+   "batch": "B10",
+   "kind": "amenity_other",
+   "name": "Teacher's Parking Lot",
+   "at": [
+    3355.9,
+    847.0
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0060",
+   "batch": "B10",
+   "kind": "church",
+   "name": "Elizabeth Baptist Church",
+   "at": [
+    -39.0,
+    615.1
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0061",
+   "batch": "B10",
+   "kind": "post_office",
+   "name": "USPS Atlanta Network Distribution Center",
+   "at": [
+    4345.5,
+    -6930.5
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0062",
+   "batch": "B10",
+   "kind": "amenity_other",
+   "name": "Southwest Arts Center",
+   "at": [
+    -1415.5,
+    1272.2
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0063",
+   "batch": "B10",
+   "kind": "gas_station",
+   "name": "Petro",
+   "at": [
+    3539.2,
+    -5341.5
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0064",
+   "batch": "B10",
+   "kind": "amenity_other",
+   "name": "Blue Beacon",
+   "at": [
+    3500.1,
+    -4971.9
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0065",
+   "batch": "B10",
+   "kind": "church",
+   "name": "Zion Hill Baptist Church",
+   "at": [
+    3440.5,
+    824.5
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0066",
+   "batch": "B10",
+   "kind": "shop_business",
+   "name": "Kenworth",
+   "at": [
+    2676.4,
+    -7637.3
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0067",
+   "batch": "B10",
+   "kind": "gas_station",
+   "name": "Shell",
+   "at": [
+    4687.8,
+    -7855.9
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0068",
+   "batch": "B10",
+   "kind": "restaurant",
+   "name": "B's CRACKLIN' BBQ",
+   "at": [
+    5035.3,
+    -7868.9
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0069",
+   "batch": "B10",
+   "kind": "school",
+   "name": "Chattahoochee Elementary School",
+   "at": [
+    4535.9,
+    -7492.9
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0070",
+   "batch": "B10",
+   "kind": "church",
+   "name": "First Baptist Church Chattahoochee",
+   "at": [
+    4281.9,
+    -7577.0
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0071",
+   "batch": "B10",
+   "kind": "gas_station",
+   "name": "Chevron",
+   "at": [
+    4671.8,
+    -7784.2
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0072",
+   "batch": "B10",
+   "kind": "church",
+   "name": "Riverside Church of God",
+   "at": [
+    5058.8,
+    -7981.7
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0073",
+   "batch": "B10",
+   "kind": "church",
+   "name": "Aarons Tabernacle Church",
+   "at": [
+    5222.9,
+    -7025.2
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0074",
+   "batch": "B10",
+   "kind": "church",
+   "name": "Greater Leavy Baptist Church",
+   "at": [
+    2623.5,
+    -5615.5
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0075",
+   "batch": "B10",
+   "kind": "church",
+   "name": "Deliverance Tabernacle Church",
+   "at": [
+    5956.2,
+    -5185.2
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0076",
+   "batch": "B10",
+   "kind": "fire_police",
+   "name": "Atlanta Fire Rescue - Station 38",
+   "at": [
+    3986.8,
+    -4523.8
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0077",
+   "batch": "B10",
+   "kind": "church",
+   "name": "Henry Street Church of God",
+   "at": [
+    3201.9,
+    -5477.2
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0078",
+   "batch": "B10",
+   "kind": "plaza_commercial",
+   "name": "Chevron",
+   "at": [
+    2944.7,
+    -5129.3
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0079",
+   "batch": "B10",
+   "kind": "shop_business",
+   "name": "U-Haul",
+   "at": [
+    2960.4,
+    -5111.9
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0080",
+   "batch": "B10",
+   "kind": "gas_station",
+   "name": "BP",
+   "at": [
+    3015.1,
+    -5185.3
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0081",
+   "batch": "B10",
+   "kind": "church",
+   "name": "New Cedar Creek Baptist Church",
+   "at": [
+    5808.8,
+    -5183.5
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0082",
+   "batch": "B10",
+   "kind": "fire_police",
+   "name": "Atlanta Precinct Number 1 Police Station",
+   "at": [
+    6091.1,
+    -4013.3
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0083",
+   "batch": "B10",
+   "kind": "church",
+   "name": "South Atlantic Conference of Seventh-Day Adventists",
+   "at": [
+    5182.6,
+    -2460.4
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0084",
+   "batch": "B10",
+   "kind": "plaza_commercial",
+   "name": "The Grocery Spot",
+   "at": [
+    5053.5,
+    -3874.2
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0085",
+   "batch": "B10",
+   "kind": "church",
+   "name": "Berean Outreach Ministry Center",
+   "at": [
+    5178.5,
+    -2539.2
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0086",
+   "batch": "B10",
+   "kind": "medical",
+   "name": "Adamsville Health Center",
+   "at": [
+    1564.3,
+    -2446.9
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0087",
+   "batch": "B10",
+   "kind": "church",
+   "name": "Kingdom Hall of Jehovah\u2019s Witnesses",
+   "at": [
+    1599.7,
+    -2328.1
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0088",
+   "batch": "B10",
+   "kind": "church",
+   "name": "Jackson Memorial Baptist Church",
+   "at": [
+    2368.7,
+    -3146.5
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0089",
+   "batch": "B10",
+   "kind": "church",
+   "name": "Berean Seventh-Day Adventist Church",
+   "at": [
+    5296.5,
+    -2431.6
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0090",
+   "batch": "B10",
+   "kind": "church",
+   "name": "Faith Tabernacle Baptist Church",
+   "at": [
+    5595.4,
+    -3877.6
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0091",
+   "batch": "B10",
+   "kind": "church",
+   "name": "Mt. Calvary Baptist Church",
+   "at": [
+    1897.1,
+    -1909.3
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0092",
+   "batch": "B10",
+   "kind": "restaurant",
+   "name": "McDonald's",
+   "at": [
+    2133.7,
+    -1845.6
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0093",
+   "batch": "B10",
+   "kind": "restaurant",
+   "name": "KFC",
+   "at": [
+    1908.5,
+    -1981.8
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0094",
+   "batch": "B10",
+   "kind": "church",
+   "name": "First Church Of Our Lord Jesus Christ, Inc.",
+   "at": [
+    1977.9,
+    -1747.5
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0095",
+   "batch": "B10",
+   "kind": "church",
+   "name": "Christ Apostolic Church",
+   "at": [
+    1992.0,
+    -1637.5
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0096",
+   "batch": "B10",
+   "kind": "church",
+   "name": "Saint Paul's Episcopal Church",
+   "at": [
+    4626.9,
+    -663.1
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0097",
+   "batch": "B10",
+   "kind": "restaurant",
+   "name": "McDonald's",
+   "at": [
+    5482.9,
+    -1093.9
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0098",
+   "batch": "B10",
+   "kind": "restaurant",
+   "name": "Burger King",
+   "at": [
+    5424.4,
+    -1097.6
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0099",
+   "batch": "B10",
+   "kind": "medical",
+   "name": "CVS Pharmacy",
+   "at": [
+    5532.8,
+    -1235.2
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0100",
+   "batch": "B10",
+   "kind": "restaurant",
+   "name": "Wendy's",
+   "at": [
+    5523.7,
+    -1297.3
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0101",
+   "batch": "B10",
+   "kind": "church",
+   "name": "Faith AME Zion Church",
+   "at": [
+    5404.0,
+    -1345.9
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0102",
+   "batch": "B10",
+   "kind": "shop_business",
+   "name": "MLK Quick Mart",
+   "at": [
+    3140.4,
+    -1300.1
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0103",
+   "batch": "B10",
+   "kind": "gas_station",
+   "name": "76",
+   "at": [
+    3136.2,
+    -1274.1
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0104",
+   "batch": "B10",
+   "kind": "library",
+   "name": "Adamsville-Collier Heights Branch Library",
+   "at": [
+    2435.7,
+    -1543.2
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0105",
+   "batch": "B10",
+   "kind": "shop_business",
+   "name": "EZ Shopper",
+   "at": [
+    3077.5,
+    -1326.2
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0106",
+   "batch": "B10",
+   "kind": "plaza_commercial",
+   "name": "Westside Package Store",
+   "at": [
+    2956.1,
+    -1388.2
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0107",
+   "batch": "B10",
+   "kind": "church",
+   "name": "Bethlehem United Methodist Church",
+   "at": [
+    199.8,
+    -1450.9
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0108",
+   "batch": "B10",
+   "kind": "gas_station",
+   "name": "Marathon",
+   "at": [
+    -911.4,
+    -2252.0
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0109",
+   "batch": "B10",
+   "kind": "restaurant",
+   "name": "Wendy's",
+   "at": [
+    626.8,
+    -3146.8
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0110",
+   "batch": "B10",
+   "kind": "plaza_commercial",
+   "name": "Flag Package Store",
+   "at": [
+    89.4,
+    -2971.3
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0111",
+   "batch": "B10",
+   "kind": "plaza_commercial",
+   "name": "Georgia Auto Pawn",
+   "at": [
+    137.9,
+    -2867.0
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0112",
+   "batch": "B10",
+   "kind": "gas_station",
+   "name": "BP",
+   "at": [
+    -286.6,
+    -2762.6
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0113",
+   "batch": "B10",
+   "kind": "shop_business",
+   "name": "Chevron",
+   "at": [
+    -312.9,
+    -2622.6
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0114",
+   "batch": "B10",
+   "kind": "restaurant",
+   "name": "Golden Panda Buffet",
+   "at": [
+    -338.8,
+    -2765.5
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0115",
+   "batch": "B10",
+   "kind": "shop_business",
+   "name": "BP Shop",
+   "at": [
+    -298.5,
+    -2776.3
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0116",
+   "batch": "B10",
+   "kind": "church",
+   "name": "New Hope Baptist Church",
+   "at": [
+    -1334.0,
+    892.9
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0117",
+   "batch": "B10",
+   "kind": "restaurant",
+   "name": "Waffle House",
+   "at": [
+    -413.9,
+    -2570.9
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0118",
+   "batch": "B10",
+   "kind": "plaza_commercial",
+   "name": "Fireworks City",
+   "at": [
+    -917.7,
+    -2410.7
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0119",
+   "batch": "B10",
+   "kind": "shop_business",
+   "name": "Valero",
+   "at": [
+    -627.5,
+    -2594.3
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0120",
+   "batch": "B10",
+   "kind": "restaurant",
+   "name": "Wendy's",
+   "at": [
+    -96.3,
+    -7133.8
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0121",
+   "batch": "B10",
+   "kind": "plaza_commercial",
+   "name": "Food Mart",
+   "at": [
+    -200.1,
+    -7230.7
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0122",
+   "batch": "B10",
+   "kind": "restaurant",
+   "name": "McDonald's",
+   "at": [
+    -376.4,
+    -7232.1
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0123",
+   "batch": "B10",
+   "kind": "gas_station",
+   "name": "Shell",
+   "at": [
+    -219.6,
+    -7209.4
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0124",
+   "batch": "B10",
+   "kind": "shop_business",
+   "name": "Walgreens",
+   "at": [
+    -255.8,
+    -7286.8
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0125",
+   "batch": "B10",
+   "kind": "amenity_other",
+   "name": "Bank of America",
+   "at": [
+    -163.9,
+    -7189.2
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0126",
+   "batch": "B10",
+   "kind": "restaurant",
+   "name": "Dunkin'",
+   "at": [
+    -402.2,
+    -7260.1
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0127",
+   "batch": "B10",
+   "kind": "gas_station",
+   "name": "QuikTrip",
+   "at": [
+    -971.7,
+    -4383.3
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0128",
+   "batch": "B10",
+   "kind": "church",
+   "name": "Vinings Lake Church",
+   "at": [
+    -2545.9,
+    -9248.9
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0129",
+   "batch": "B10",
+   "kind": "fire_police",
+   "name": "Atlanta Fire Rescue - Station 28;Atlanta Fire Rescue Department - Fire Station 28",
+   "at": [
+    5080.5,
+    -7490.5
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0130",
+   "batch": "B10",
+   "kind": "amenity_other",
+   "name": "Carrie Steele-Pitts Home",
+   "at": [
+    2579.4,
+    -3426.2
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0131",
+   "batch": "B10",
+   "kind": "amenity_other",
+   "name": "Atlanta Center for Medical Research",
+   "at": [
+    1360.6,
+    131.9
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0132",
+   "batch": "B10",
+   "kind": "airport",
+   "name": "Legacy Medical Center Heliport",
+   "at": [
+    1288.1,
+    21.6
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0133",
+   "batch": "B10",
+   "kind": "amenity_other",
+   "name": "H. E. Holmes Park & Ride",
+   "at": [
+    5309.9,
+    -1352.1
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0134",
+   "batch": "B10",
+   "kind": "amenity_other",
+   "name": "H. E. Holmes Park & Ride",
+   "at": [
+    5091.4,
+    -1593.4
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0135",
+   "batch": "B10",
+   "kind": "amenity_other",
+   "name": "H. E. Holmes Park & Ride",
+   "at": [
+    5194.7,
+    -1592.7
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0136",
+   "batch": "B10",
+   "kind": "gas_station",
+   "name": "BP",
+   "at": [
+    -2300.0,
+    -3635.7
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0137",
+   "batch": "B10",
+   "kind": "restaurant",
+   "name": "Waffle House",
+   "at": [
+    1264.8,
+    -6373.8
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0138",
+   "batch": "B10",
+   "kind": "gas_station",
+   "name": "Chevron",
+   "at": [
+    1180.1,
+    -6457.3
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0139",
+   "batch": "B10",
+   "kind": "amenity_other",
+   "name": "Leland Veterinary Clinic",
+   "at": [
+    -1822.7,
+    -7956.6
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0140",
+   "batch": "B10",
+   "kind": "library",
+   "name": "Northwest Library at Scotts Crossing",
+   "at": [
+    5214.6,
+    -7121.1
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0141",
+   "batch": "B10",
+   "kind": "gas_station",
+   "name": "Chevron",
+   "at": [
+    2968.7,
+    -5140.7
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0142",
+   "batch": "B10",
+   "kind": "restaurant",
+   "name": "Pizza Hut",
+   "at": [
+    4663.2,
+    -7816.8
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0143",
+   "batch": "B10",
+   "kind": "shop_business",
+   "name": "Family Dollar",
+   "at": [
+    4703.8,
+    -7691.0
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0144",
+   "batch": "B10",
+   "kind": "restaurant",
+   "name": "Waffle House",
+   "at": [
+    4729.6,
+    -7724.3
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0145",
+   "batch": "B10",
+   "kind": "restaurant",
+   "name": "Chattahoochee Coffee Company",
+   "at": [
+    2212.2,
+    -6739.5
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0146",
+   "batch": "B10",
+   "kind": "shop_business",
+   "name": "Dollar Tree",
+   "at": [
+    -393.5,
+    -7417.8
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0147",
+   "batch": "B10",
+   "kind": "shop_business",
+   "name": "Cyclone Supplies & Ride Photo",
+   "at": [
+    -2357.6,
+    -3241.1
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0148",
+   "batch": "B10",
+   "kind": "shop_business",
+   "name": "Goliath Gifts and Ride Photos",
+   "at": [
+    -2213.0,
+    -3134.8
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0149",
+   "batch": "B10",
+   "kind": "shop_business",
+   "name": "The Riddler Mindbender Ride Photo",
+   "at": [
+    -1903.3,
+    -3210.0
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0150",
+   "batch": "B10",
+   "kind": "shop_business",
+   "name": "Gotham City Gifts",
+   "at": [
+    -1884.9,
+    -3198.8
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0151",
+   "batch": "B10",
+   "kind": "restaurant",
+   "name": "Birds of Prey Cafe",
+   "at": [
+    -1925.7,
+    -3161.2
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0152",
+   "batch": "B10",
+   "kind": "amenity_other",
+   "name": "Magnolia Pavilion",
+   "at": [
+    -2229.0,
+    -2618.0
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0153",
+   "batch": "B10",
+   "kind": "amenity_other",
+   "name": "Dogwood Pavilion",
+   "at": [
+    -2168.8,
+    -2659.9
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0154",
+   "batch": "B10",
+   "kind": "amenity_other",
+   "name": "Peachtree Pavilion",
+   "at": [
+    -2122.8,
+    -2701.7
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0155",
+   "batch": "B10",
+   "kind": "gas_station",
+   "name": "RaceTrac",
+   "at": [
+    -915.2,
+    -4477.1
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0156",
+   "batch": "B10",
+   "kind": "shop_business",
+   "name": "RaceTrac",
+   "at": [
+    -895.9,
+    -4505.9
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0157",
+   "batch": "B10",
+   "kind": "church",
+   "name": "Springfield Baptist Church",
+   "at": [
+    5151.8,
+    -6779.3
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0158",
+   "batch": "B10",
+   "kind": "shop_business",
+   "name": "Publix",
+   "at": [
+    87.1,
+    -7186.2
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0159",
+   "batch": "B10",
+   "kind": "shop_business",
+   "name": "Family Dollar",
+   "at": [
+    -333.3,
+    -7189.7
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0160",
+   "batch": "B10",
+   "kind": "restaurant",
+   "name": "US Deli",
+   "at": [
+    -211.8,
+    -7240.0
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0161",
+   "batch": "B10",
+   "kind": "shop_business",
+   "name": "Barbershop",
+   "at": [
+    -188.0,
+    -7221.4
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0162",
+   "batch": "B10",
+   "kind": "shop_business",
+   "name": "Smoothie King",
+   "at": [
+    -42.1,
+    -7117.5
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0163",
+   "batch": "B10",
+   "kind": "medical",
+   "name": "Peachtree Immediate Care",
+   "at": [
+    -51.6,
+    -7122.1
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0164",
+   "batch": "B10",
+   "kind": "airport",
+   "name": "Fulton County Airport-Brown Field",
+   "at": [
+    252.9,
+    -3923.3
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0165",
+   "batch": "B10",
+   "kind": "church",
+   "name": "Christ Abundant Life Ministries",
+   "at": [
+    -1152.4,
+    -4414.1
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0166",
+   "batch": "B10",
+   "kind": "gas_station",
+   "name": "BP",
+   "at": [
+    -266.4,
+    -2780.6
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0167",
+   "batch": "B10",
+   "kind": "church",
+   "name": "New Creations in Christ Ministries",
+   "at": [
+    -1235.8,
+    -4391.3
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0168",
+   "batch": "B10",
+   "kind": "restaurant",
+   "name": "Burger King",
+   "at": [
+    3239.4,
+    -5040.4
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0169",
+   "batch": "B10",
+   "kind": "gas_station",
+   "name": "Shell",
+   "at": [
+    3337.7,
+    -4999.3
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0170",
+   "batch": "B10",
+   "kind": "gas_station",
+   "name": "RaceTrac",
+   "at": [
+    -915.2,
+    -4477.4
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0171",
+   "batch": "B10",
+   "kind": "church",
+   "name": "New Home Church",
+   "at": [
+    -1687.4,
+    -4661.2
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0172",
+   "batch": "B10",
+   "kind": "church",
+   "name": "Impact Worship Center",
+   "at": [
+    -1370.9,
+    -4863.9
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0173",
+   "batch": "B10",
+   "kind": "restaurant",
+   "name": "Grand Champion BBQ",
+   "at": [
+    2231.1,
+    -6727.0
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0174",
+   "batch": "B10",
+   "kind": "gas_station",
+   "name": "RaceTrac",
+   "at": [
+    1233.0,
+    -6518.0
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0175",
+   "batch": "B10",
+   "kind": "church",
+   "name": "Pebblebrook Church",
+   "at": [
+    -596.0,
+    -8833.2
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0176",
+   "batch": "B10",
+   "kind": "church",
+   "name": "Mount Harmony Baptist Church",
+   "at": [
+    -1081.1,
+    -7979.1
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0177",
+   "batch": "B10",
+   "kind": "cemetery",
+   "name": "Christ Abundant Life Church Cemetery",
+   "at": [
+    -1186.3,
+    -4429.0
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0178",
+   "batch": "B10",
+   "kind": "school",
+   "name": "Peyton Forest Elementary School",
+   "at": [
+    4386.1,
+    -843.4
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0179",
+   "batch": "B10",
+   "kind": "school",
+   "name": "Usher-Collier Heights Elementary School",
+   "at": [
+    3057.8,
+    -3457.3
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0180",
+   "batch": "B10",
+   "kind": "school",
+   "name": "Harper-Archer Elementary School",
+   "at": [
+    2592.5,
+    -3141.8
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0181",
+   "batch": "B10",
+   "kind": "cemetery",
+   "name": "Mount Harmony Baptist Church Cemetery",
+   "at": [
+    -978.2,
+    -7917.6
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0182",
+   "batch": "B10",
+   "kind": "gas_station",
+   "name": "BP",
+   "at": [
+    3019.2,
+    -1338.4
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0183",
+   "batch": "B10",
+   "kind": "shop_business",
+   "name": "Circle K",
+   "at": [
+    3027.2,
+    -1363.7
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0184",
+   "batch": "B10",
+   "kind": "gas_station",
+   "name": "Texaco",
+   "at": [
+    5410.8,
+    -1599.5
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0185",
+   "batch": "B10",
+   "kind": "shop_business",
+   "name": "Texaco",
+   "at": [
+    5408.9,
+    -1605.1
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0186",
+   "batch": "B10",
+   "kind": "gas_station",
+   "name": "Valero",
+   "at": [
+    -620.3,
+    -2571.3
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0187",
+   "batch": "B10",
+   "kind": "gas_station",
+   "name": "Chevron",
+   "at": [
+    -319.5,
+    -2638.4
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0188",
+   "batch": "B10",
+   "kind": "school",
+   "name": "CSK and BEST School Campus",
+   "at": [
+    4293.2,
+    -5360.8
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0189",
+   "batch": "B10",
+   "kind": "landuse_other",
+   "name": "Tatum Lake",
+   "at": [
+    243.7,
+    -690.9
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0190",
+   "batch": "B10",
+   "kind": "park",
+   "name": "Utoy Boulder Park",
+   "at": [
+    -1249.3,
+    -228.8
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0191",
+   "batch": "B10",
+   "kind": "landuse_other",
+   "name": "Wildwood Lake",
+   "at": [
+    629.7,
+    -259.7
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0192",
+   "batch": "B10",
+   "kind": "park",
+   "name": "Collier Drive Park",
+   "at": [
+    1788.0,
+    -3186.6
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0193",
+   "batch": "B10",
+   "kind": "park",
+   "name": "Utoy Park",
+   "at": [
+    784.2,
+    1465.7
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0194",
+   "batch": "B10",
+   "kind": "park",
+   "name": "Dale Creek Park",
+   "at": [
+    4542.4,
+    -2786.0
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0195",
+   "batch": "B10",
+   "kind": "park",
+   "name": "Lincoln Homes Park",
+   "at": [
+    4387.9,
+    -6359.9
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0196",
+   "batch": "B10",
+   "kind": "leisure_other",
+   "name": "Adamsville Recreation Center",
+   "at": [
+    2506.6,
+    -1708.1
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0197",
+   "batch": "B10",
+   "kind": "leisure_other",
+   "name": "Allen Temple Recreation Center",
+   "at": [
+    3470.3,
+    -1375.4
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0198",
+   "batch": "B10",
+   "kind": "leisure_other",
+   "name": "The Hidden Gym",
+   "at": [
+    4570.8,
+    -7696.9
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0199",
+   "batch": "B10",
+   "kind": "park",
+   "name": "BIKE ART",
+   "at": [
+    3627.7,
+    -7804.8
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0200",
+   "batch": "B10",
+   "kind": "park",
+   "name": "KIDS MICRO LOOP",
+   "at": [
+    3616.8,
+    -7871.3
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0201",
+   "batch": "B10",
+   "kind": "landuse_other",
+   "name": "Fulco Yard",
+   "at": [
+    -478.7,
+    244.2
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0202",
+   "batch": "B10",
+   "kind": "cemetery",
+   "name": "Mount Harmony Memorial Gardens Cemetery",
+   "at": [
+    -842.5,
+    -8063.2
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0203",
+   "batch": "B10",
+   "kind": "cemetery",
+   "name": "Lincoln Cemetery",
+   "at": [
+    5826.4,
+    -2655.4
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0204",
+   "batch": "B10",
+   "kind": "cemetery",
+   "name": "Magnolia Cemetery",
+   "at": [
+    5329.4,
+    -6306.0
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0205",
+   "batch": "B10",
+   "kind": "park",
+   "name": "Trammel Crow Park",
+   "at": [
+    -2473.2,
+    1163.4
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0206",
+   "batch": "B10",
+   "kind": "park",
+   "name": "Westmanor Park",
+   "at": [
+    3270.6,
+    609.1
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0207",
+   "batch": "B10",
+   "kind": "park",
+   "name": "Isabel Gates Webster Park",
+   "at": [
+    4668.6,
+    -870.3
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0208",
+   "batch": "B10",
+   "kind": "park",
+   "name": "Dr. Mary Shy Scott Memorial Park",
+   "at": [
+    3331.3,
+    -2690.2
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0209",
+   "batch": "B10",
+   "kind": "park",
+   "name": "Center Hill Park",
+   "at": [
+    6185.2,
+    -4132.6
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0210",
+   "batch": "B10",
+   "kind": "park",
+   "name": "Williams Park",
+   "at": [
+    4550.2,
+    -5054.6
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0211",
+   "batch": "B10",
+   "kind": "park",
+   "name": "English Park",
+   "at": [
+    2960.8,
+    -5484.0
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0212",
+   "batch": "B10",
+   "kind": "park",
+   "name": "Peyton Park",
+   "at": [
+    4369.7,
+    -7530.4
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0213",
+   "batch": "B10",
+   "kind": "park",
+   "name": "Whittier Mill Park",
+   "at": [
+    3760.7,
+    -7707.4
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0214",
+   "batch": "B10",
+   "kind": "park",
+   "name": "Spink Collins Park",
+   "at": [
+    6245.0,
+    -7422.6
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0215",
+   "batch": "B10",
+   "kind": "park",
+   "name": "River Line Park",
+   "at": [
+    1680.0,
+    -7029.2
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0216",
+   "batch": "B10",
+   "kind": "landuse_other",
+   "name": "Brookside Village",
+   "at": [
+    913.4,
+    -6781.9
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0217",
+   "batch": "B10",
+   "kind": "restaurant",
+   "name": "B's CRACKLIN' BBQ",
+   "at": [
+    5035.3,
+    -7868.9
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0218",
+   "batch": "B10",
+   "kind": "leisure_other",
+   "name": "Aaron Tabernacle Gymnasium",
+   "at": [
+    5151.0,
+    -7013.7
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0219",
+   "batch": "B10",
+   "kind": "plaza_commercial",
+   "name": "Chevron",
+   "at": [
+    2944.7,
+    -5129.3
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0220",
+   "batch": "B10",
+   "kind": "plaza_commercial",
+   "name": "The Grocery Spot",
+   "at": [
+    5053.5,
+    -3874.2
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0221",
+   "batch": "B10",
+   "kind": "leisure_other",
+   "name": "C.T. Martin Recreation Center",
+   "at": [
+    3195.8,
+    -1441.2
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0222",
+   "batch": "B10",
+   "kind": "plaza_commercial",
+   "name": "Westside Package Store",
+   "at": [
+    2956.1,
+    -1388.2
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0223",
+   "batch": "B10",
+   "kind": "landuse_other",
+   "name": "Databank",
+   "at": [
+    -1625.3,
+    -1352.9
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0224",
+   "batch": "B10",
+   "kind": "plaza_commercial",
+   "name": "Flag Package Store",
+   "at": [
+    89.4,
+    -2971.3
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0225",
+   "batch": "B10",
+   "kind": "plaza_commercial",
+   "name": "Georgia Auto Pawn",
+   "at": [
+    137.9,
+    -2867.0
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0226",
+   "batch": "B10",
+   "kind": "plaza_commercial",
+   "name": "Fireworks City",
+   "at": [
+    -917.7,
+    -2410.7
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0227",
+   "batch": "B10",
+   "kind": "plaza_commercial",
+   "name": "Food Mart",
+   "at": [
+    -200.1,
+    -7230.7
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0228",
+   "batch": "B10",
+   "kind": "park",
+   "name": "Whittier Mill Park",
+   "at": [
+    3775.6,
+    -7718.7
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0229",
+   "batch": "B10",
+   "kind": "leisure_other",
+   "name": "Field 1",
+   "at": [
+    1794.2,
+    -8440.0
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0230",
+   "batch": "B10",
+   "kind": "park",
+   "name": "Nickajack Park",
+   "at": [
+    1692.0,
+    -8334.4
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0231",
+   "batch": "B10",
+   "kind": "leisure_other",
+   "name": "Center Hill Park Playground",
+   "at": [
+    6152.4,
+    -4019.0
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0232",
+   "batch": "B10",
+   "kind": "leisure_other",
+   "name": "Center Hill Park Splashpad",
+   "at": [
+    6181.0,
+    -4003.9
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0233",
+   "batch": "B10",
+   "kind": "leisure_other",
+   "name": "Central Hill Park Mini-Pitch",
+   "at": [
+    6256.4,
+    -3988.8
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0234",
+   "batch": "B10",
+   "kind": "plaza_commercial",
+   "name": "UPS Customer Center",
+   "at": [
+    1875.7,
+    -4907.1
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0235",
+   "batch": "B10",
+   "kind": "cemetery",
+   "name": "Mayson Methodist Church Cemetery",
+   "at": [
+    2900.3,
+    -5328.5
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0236",
+   "batch": "B10",
+   "kind": "landuse_other",
+   "name": "Chattahoochee Brick",
+   "at": [
+    3428.7,
+    -7580.3
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0237",
+   "batch": "B10",
+   "kind": "park",
+   "name": "Mossman Forest",
+   "at": [
+    5430.1,
+    -7921.7
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0238",
+   "batch": "B10",
+   "kind": "leisure_other",
+   "name": "Calypso Bay Wave Pool",
+   "at": [
+    -2484.5,
+    -2571.5
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0239",
+   "batch": "B10",
+   "kind": "landuse_other",
+   "name": "Colonal Pipeline",
+   "at": [
+    3757.2,
+    -7079.0
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0240",
+   "batch": "B10",
+   "kind": "park",
+   "name": "Riverview Park",
+   "at": [
+    2232.0,
+    -6612.6
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0241",
+   "batch": "B10",
+   "kind": "park",
+   "name": "Discovery Park at the River Line",
+   "at": [
+    835.6,
+    -5561.9
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0242",
+   "batch": "B10",
+   "kind": "leisure_other",
+   "name": "Hurricane Harbor",
+   "at": [
+    -2469.4,
+    -2613.1
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0243",
+   "batch": "B10",
+   "kind": "leisure_other",
+   "name": "Looney Tunes Adventure Camp",
+   "at": [
+    -2304.4,
+    -3031.7
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0244",
+   "batch": "B10",
+   "kind": "cemetery",
+   "name": "Howell Cemetery",
+   "at": [
+    -1255.8,
+    -4472.1
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0245",
+   "batch": "B10",
+   "kind": "landuse_other",
+   "name": "Trumbull Atlanta Asphalt Facility",
+   "at": [
+    -1814.8,
+    -2346.2
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0246",
+   "batch": "B10",
+   "kind": "cemetery",
+   "name": "Alsobrook Family Cemetery",
+   "at": [
+    3203.6,
+    -3917.9
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0247",
+   "batch": "B10",
+   "kind": "cemetery",
+   "name": "Pet Heaven Memorial Park",
+   "at": [
+    4684.2,
+    -5964.7
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0248",
+   "batch": "B10",
+   "kind": "cemetery",
+   "name": "McDonald Family Cemetery",
+   "at": [
+    1319.2,
+    -2752.8
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0249",
+   "batch": "B10",
+   "kind": "cemetery",
+   "name": "Bethlehem United Methodist Church Cemetery",
+   "at": [
+    288.9,
+    -1419.2
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0250",
+   "batch": "B10",
+   "kind": "cemetery",
+   "name": "Du\ufeffnn Cemet\ufeffer\ufeffy",
+   "at": [
+    5259.2,
+    -6950.9
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0251",
+   "batch": "B10",
+   "kind": "cemetery",
+   "name": "Springfield Missionary Baptist Church Cemetery",
+   "at": [
+    5271.4,
+    -7019.9
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0252",
+   "batch": "B10",
+   "kind": "cemetery",
+   "name": "Poe Lola V Cemetery",
+   "at": [
+    5301.8,
+    -6976.3
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0253",
+   "batch": "B10",
+   "kind": "cemetery",
+   "name": "Mt. Olive Methodist Church Cemetery",
+   "at": [
+    3566.5,
+    -5186.7
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0254",
+   "batch": "B10",
+   "kind": "cemetery",
+   "name": "New Hope Baptist Church Cemetery",
+   "at": [
+    -1390.9,
+    981.6
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0255",
+   "batch": "B10",
+   "kind": "cemetery",
+   "name": "Green Cemetery",
+   "at": [
+    -83.8,
+    -3421.0
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0256",
+   "batch": "B10",
+   "kind": "cemetery",
+   "name": "Philadelphia Baptist Church Cemetery",
+   "at": [
+    5172.0,
+    1416.4
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0257",
+   "batch": "B10",
+   "kind": "cemetery",
+   "name": "Saint John Missionary Baptist Church Cemetery",
+   "at": [
+    1995.8,
+    -1710.1
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0258",
+   "batch": "B10",
+   "kind": "cemetery",
+   "name": "Sharon Baptist Church Cemetery",
+   "at": [
+    5410.5,
+    -1432.5
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0259",
+   "batch": "B10",
+   "kind": "cemetery",
+   "name": "William Wilson Family Cemetery",
+   "at": [
+    1420.0,
+    513.1
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0260",
+   "batch": "B10",
+   "kind": "landuse_other",
+   "name": "Twin Oaks Mobile Home Park",
+   "at": [
+    -2249.4,
+    -5167.7
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0261",
+   "batch": "B10",
+   "kind": "cemetery",
+   "name": "Felker and Ward Cemetery",
+   "at": [
+    -1456.0,
+    -6329.7
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0262",
+   "batch": "B10",
+   "kind": "cemetery",
+   "name": "Kitchen Family Plot",
+   "at": [
+    -996.7,
+    -7977.6
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0263",
+   "batch": "B10",
+   "kind": "cemetery",
+   "name": "Pace-Wallace Cemetery",
+   "at": [
+    -744.4,
+    -6334.2
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0264",
+   "batch": "B10",
+   "kind": "cemetery",
+   "name": "Queen Cemetery",
+   "at": [
+    -1086.8,
+    -5546.8
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0265",
+   "batch": "B10",
+   "kind": "cemetery",
+   "name": "Turner-Sewell Cemetery",
+   "at": [
+    1228.1,
+    -6300.5
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0266",
+   "batch": "B10",
+   "kind": "plaza_commercial",
+   "name": "Fulton Plaza",
+   "at": [
+    -802.4,
+    -2488.7
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "place-0267",
+   "batch": "B10",
+   "kind": "landuse_other",
+   "name": "Populus Apartments",
+   "at": [
+    4320.7,
+    -5674.4
+   ],
+   "note": "",
+   "material": "NONE"
+  },
+  {
+   "id": "RS-01",
+   "batch": "B10",
+   "kind": "church",
+   "name": "West Side Community Church",
+   "note": "Restored (RS-01): absent from the game's places; no footprint within 30 m in the game \u2014 the capture check is recorded in the B10 report. Footprint remains an author-time question if the capture also lacks it.",
+   "material": "NONE",
+   "at": [
+    6420.7,
+    -998.3
+   ]
+  },
+  {
+   "id": "AN-21-P1",
+   "batch": "B10",
+   "kind": "platform",
+   "name": "Holmes Station platform",
+   "note": "Station footprint 187-189 x 22 m verified (Pass 4).",
+   "material": "SOLID",
+   "ring": [
+    [
+     5142.0,
+     -1498.9
+    ],
+    [
+     5329.0,
+     -1498.9
+    ],
+    [
+     5329.0,
+     -1493.9
+    ],
+    [
+     5142.0,
+     -1493.9
+    ]
+   ]
+  },
+  {
+   "id": "AN-21-P2",
+   "batch": "B10",
+   "kind": "platform",
+   "name": "Holmes Station platform",
+   "note": "Station footprint 187-189 x 22 m verified (Pass 4).",
+   "material": "SOLID",
+   "ring": [
+    [
+     5142.0,
+     -1480.9
+    ],
+    [
+     5329.0,
+     -1480.9
+    ],
+    [
+     5329.0,
+     -1475.9
+    ],
+    [
+     5142.0,
+     -1475.9
+    ]
+   ]
+  },
+  {
+   "id": "AN-21-BUS",
+   "batch": "B10",
+   "kind": "bus_apron",
+   "name": "Holmes Station bus apron",
+   "note": "Bus apron AREA ~55x40 m at the station's east end (AN-21). Placement approximate.",
+   "material": "ROAD",
+   "ring": [
+    [
+     5328.0,
+     -1472.4
+    ],
+    [
+     5383.0,
+     -1472.4
+    ],
+    [
+     5383.0,
+     -1432.4
+    ],
+    [
+     5328.0,
+     -1432.4
+    ]
+   ]
+  },
+  {
+   "id": "AN-28-F",
+   "batch": "B10",
+   "kind": "field_track",
+   "name": "Harper-Archer \u2014 field/track strip",
+   "note": "~102x236 m incl. margins, east of the main block (AN-28). Placement from the register's relative description.",
+   "material": "GRASS",
+   "ring": [
+    [
+     2618.2,
+     -3213.3
+    ],
+    [
+     2854.2,
+     -3213.3
+    ],
+    [
+     2854.2,
+     -3111.3
+    ],
+    [
+     2618.2,
+     -3111.3
+    ]
+   ]
+  },
+  {
+   "id": "AN-28-P",
+   "batch": "B10",
+   "kind": "practice_field",
+   "name": "Harper-Archer \u2014 practice field",
+   "note": "~105x66 m north of the main block (AN-28).",
+   "material": "GRASS",
+   "ring": [
+    [
+     2508.7,
+     -3295.3
+    ],
+    [
+     2613.7,
+     -3295.3
+    ],
+    [
+     2613.7,
+     -3229.3
+    ],
+    [
+     2508.7,
+     -3229.3
+    ]
+   ]
+  },
+  {
+   "id": "AN-28-L",
+   "batch": "B10",
+   "kind": "parking_area",
+   "name": "Harper-Archer \u2014 SE lot",
+   "note": "Small lot ~36x72 m SE (AN-28).",
+   "material": "ROAD",
+   "ring": [
+    [
+     2620.2,
+     -3085.3
+    ],
+    [
+     2692.2,
+     -3085.3
+    ],
+    [
+     2692.2,
+     -3049.3
+    ],
+    [
+     2620.2,
+     -3049.3
+    ]
+   ]
+  },
+  {
+   "id": "AN-29",
+   "batch": "B10",
+   "kind": "grounds",
+   "name": "Carrie Steele-Pitts Home \u2014 grounds",
+   "note": "Grounds ~104x33 m at (33.770969, -84.49807) (AN-29). The building cluster is in buildings.json (unnamed \u2014 the place point is NEAR its ring, Tier 2, not attached).",
+   "material": "GRASS",
+   "ring": [
+    [
+     2577.8,
+     -3329.5
+    ],
+    [
+     2681.8,
+     -3329.5
+    ],
+    [
+     2681.8,
+     -3296.5
+    ],
+    [
+     2577.8,
+     -3296.5
+    ]
+   ]
+  },
+  {
+   "id": "AN-30",
+   "batch": "B10",
+   "kind": "parking_area",
+   "name": "Jackson Memorial Baptist Church \u2014 lot",
+   "note": "Lot ~103x124 m (AN-30). Placement approximate.",
+   "material": "ROAD",
+   "ring": [
+    [
+     2312.4,
+     -3102.6
+    ],
+    [
+     2415.4,
+     -3102.6
+    ],
+    [
+     2415.4,
+     -2978.6
+    ],
+    [
+     2312.4,
+     -2978.6
+    ]
+   ]
+  },
+  {
+   "id": "AN-22-1",
+   "batch": "B10",
+   "kind": "park_and_ride",
+   "name": "H. E. Holmes Park & Ride \u2014 north pad W",
+   "ring": [
+    [
+     5039.4,
+     -1630.4
+    ],
+    [
+     5143.4,
+     -1630.4
+    ],
+    [
+     5143.4,
+     -1556.4
+    ],
+    [
+     5039.4,
+     -1556.4
+    ]
+   ],
+   "note": "Lot authored as an AREA ~104x74 m (AN-22 register dims) centred on the capture place point; orientation unsurveyed.",
+   "material": "ROAD"
+  },
+  {
+   "id": "AN-22-2",
+   "batch": "B10",
+   "kind": "park_and_ride",
+   "name": "H. E. Holmes Park & Ride \u2014 north pad E",
+   "ring": [
+    [
+     5137.7,
+     -1629.7
+    ],
+    [
+     5251.7,
+     -1629.7
+    ],
+    [
+     5251.7,
+     -1555.7
+    ],
+    [
+     5137.7,
+     -1555.7
+    ]
+   ],
+   "note": "Lot authored as an AREA ~114x74 m (AN-22 register dims) centred on the capture place point; orientation unsurveyed.",
+   "material": "ROAD"
+  },
+  {
+   "id": "AN-22-3",
+   "batch": "B10",
+   "kind": "park_and_ride",
+   "name": "H. E. Holmes Park & Ride \u2014 south main lot",
+   "ring": [
+    [
+     5110.0,
+     -1430.2
+    ],
+    [
+     5262.0,
+     -1430.2
+    ],
+    [
+     5262.0,
+     -1341.2
+    ],
+    [
+     5110.0,
+     -1341.2
+    ]
+   ],
+   "note": "Lot authored as an AREA ~152x89 m (AN-22 register dims) centred on the capture place point; orientation unsurveyed.",
+   "material": "ROAD"
+  },
+  {
+   "id": "AN-22-4",
+   "batch": "B10",
+   "kind": "park_and_ride",
+   "name": "H. E. Holmes Park & Ride \u2014 east lot",
+   "ring": [
+    [
+     5272.4,
+     -1396.6
+    ],
+    [
+     5347.4,
+     -1396.6
+    ],
+    [
+     5347.4,
+     -1307.6
+    ],
+    [
+     5272.4,
+     -1307.6
+    ]
+   ],
+   "note": "Lot authored as an AREA ~75x89 m (AN-22 register dims) centred on the capture place point; orientation unsurveyed.",
+   "material": "ROAD"
+  }
+ ]
+}

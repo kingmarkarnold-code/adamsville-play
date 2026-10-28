@@ -1,0 +1,64 @@
+{
+ "records": [
+  {
+   "id": "AN-24-1",
+   "batch": "B5",
+   "kind": "junction_furniture",
+   "name": "Channelised slip lane \u2014 Wendy's (SE corner)",
+   "at": [
+    631.4,
+    -3188.6
+   ],
+   "note": "Free-flow right-turn slip lane at the SE corner (Wendy's).",
+   "material": "NONE"
+  },
+  {
+   "id": "AN-24-2",
+   "batch": "B5",
+   "kind": "junction_furniture",
+   "name": "Triangular island \u2014 Citgo (W corner)",
+   "at": [
+    581.4,
+    -3213.6
+   ],
+   "note": "Channelising island at the W corner (Citgo / U-Haul).",
+   "material": "NONE"
+  },
+  {
+   "id": "AN-24-3",
+   "batch": "B5",
+   "kind": "junction_furniture",
+   "name": "Hatched median noses + turn pockets",
+   "at": [
+    606.4,
+    -3213.6
+   ],
+   "note": "Median noses hatched; turn pockets on the approaches.",
+   "material": "NONE"
+  },
+  {
+   "id": "AN-24-4",
+   "batch": "B5",
+   "kind": "junction_furniture",
+   "name": "Crosswalks on all legs",
+   "at": [
+    606.4,
+    -3213.6
+   ],
+   "note": "Marked crosswalks across all four legs.",
+   "material": "NONE"
+  },
+  {
+   "id": "AN-24-5",
+   "batch": "B5",
+   "kind": "junction_furniture",
+   "name": "North-wedge grass",
+   "at": [
+    606.4,
+    -3253.6
+   ],
+   "note": "Grass wedge north of the junction (airport grassland NW).",
+   "material": "NONE"
+  }
+ ]
+}

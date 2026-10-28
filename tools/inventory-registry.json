@@ -70,8 +70,8 @@
    "class": "tooling",
    "pattern": "editors/detail-editor/*.json",
    "reason": "Detail Editor data (version.json). The Detail Editor (Joshua, 2026-10-18) is a live suite app; its updater reads version.json from this folder, and its app sources live under editors/detail-editor/app/."
- },
- {
+  },
+  {
    "class": "tooling",
    "pattern": "editors/elevation-editor/*.json",
    "reason": "Elevation Editor data (terrain.json, version.json). The Elevation Editor is parked by Joshua (2026-10-16) and its code still points at its pre-consolidation repo; these files are its data of record, kept with the source set until it is unparked."
@@ -144,7 +144,7 @@
   {
    "class": "tooling",
    "pattern": "tools/map-view/*",
-   "reason": "The Google-Maps-style viewable map of the rebuilt world (Joshua, 2026-10-18): map-view.html (pan/zoom/search viewer with Street / Satellite (Esri World Imagery tiles) / Terrain base layers, aligned through the conversion's own lat/lon frame), its generated overview dataset map-view-overview.json, and the generator that rebuilds that dataset from the game's zone files. The viewer only READS map-data/ and detailed/zones/ — map-data is the read-only resource map, so the tool lives here, never inside it."
+   "reason": "The Google-Maps-style viewable map of the rebuilt world (Joshua, 2026-10-18): map-view.html (pan/zoom/search viewer with Street / Satellite (Esri World Imagery tiles) / Terrain base layers, aligned through the conversion's own lat/lon frame), its generated overview dataset map-view-overview.json, and the generator that rebuilds that dataset from the game's zone files. The viewer only READS map-data/ and detailed/zones/ \u2014 map-data is the read-only resource map, so the tool lives here, never inside it."
   },
   {
    "class": "doc",
@@ -204,7 +204,12 @@
   {
    "class": "tooling",
    "pattern": "editors/suite-core/*",
-   "reason": "The shared suite core (Joshua's no-repeated-code law, 2026-10-17): the ONE Python library every editor consumes — GitHub round-trip with the 409-retry, the shared download cache, ground/lift math, the 3D viewport and building-snapshot renderers, the layout grammar, the About dialog, both updater halves, and Draw for Mollie. Consolidated 2026-10-18 into the suite_core package (EXTRACTION-REPORT.md section 4 executed); the top-level flat files are compatibility shims naming the package modules. Editors vendor snapshots of it at build time; this is its published home."
+   "reason": "The shared suite core (Joshua's no-repeated-code law, 2026-10-17): the ONE Python library every editor consumes \u2014 GitHub round-trip with the 409-retry, the shared download cache, ground/lift math, the 3D viewport and building-snapshot renderers, the layout grammar, the About dialog, both updater halves, and Draw for Mollie. Consolidated 2026-10-18 into the suite_core package (EXTRACTION-REPORT.md section 4 executed); the top-level flat files are compatibility shims naming the package modules. Editors vendor snapshots of it at build time; this is its published home."
+  },
+  {
+   "class": "stock",
+   "pattern": "detailed/maps/*",
+   "reason": "Runtime map packages for the multiple-maps system (Phase D, 2026-10-28): per-map data packages (zone/roads/buildings/water/rail/structures/places/pins/signs JSON + terrain.bin + the terrain-mesh precompute bin) loaded by detailed/map_loader.js from the registry's packageBase ('maps/<id>/' relative to detailed/). Package files are fetched by constructed path (base + filename), so no single literal reference names them \u2014 the same dataset status the zone files get from the zoneloader rule. Contents are authored data (the redrawn Adamsville package, Phase B), verified per-file by sha256 against the staging package at publish time."
   }
  ],
  "external": [

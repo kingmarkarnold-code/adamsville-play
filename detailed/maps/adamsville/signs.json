@@ -1,0 +1,56 @@
+{
+ "records": [
+  {
+   "id": "AN-23-1",
+   "batch": "B5",
+   "kind": "signal",
+   "name": "Traffic signal \u2014 MLK x FIB",
+   "at": [
+    606.4,
+    -3213.6
+   ],
+   "junction": "MLK x FIB",
+   "basis": "Signalised: Google + Joshua photo 06 (Pass 1). PROVEN.",
+   "material": "NONE"
+  },
+  {
+   "id": "AN-23-2-1",
+   "batch": "B5",
+   "kind": "signal",
+   "name": "Traffic signal \u2014 I-20 x FIB ramp terminal on FIB",
+   "at": [
+    -171.1,
+    -2776.4
+   ],
+   "junction": "I-20 x FIB ramp terminal on FIB",
+   "basis": "Signals on FIB at the ramp terminals (Pass 6, photo 07). PROVEN.",
+   "material": "NONE"
+  },
+  {
+   "id": "AN-23-2-2",
+   "batch": "B5",
+   "kind": "signal",
+   "name": "Traffic signal \u2014 I-20 x FIB ramp terminal on FIB",
+   "at": [
+    17.2,
+    -2854.4
+   ],
+   "junction": "I-20 x FIB ramp terminal on FIB",
+   "basis": "Signals on FIB at the ramp terminals (Pass 6, photo 07). PROVEN.",
+   "material": "NONE"
+  },
+  {
+   "id": "AN-23-3",
+   "batch": "B5",
+   "kind": "signal",
+   "name": "Traffic signal \u2014 FIB x Donald Lee Hollowell Pkwy",
+   "at": [
+    2804.9,
+    -5414.6
+   ],
+   "junction": "FIB x Donald Lee Hollowell Pkwy",
+   "basis": "Signalised per ARC Boulevard CID freight plan (Pass 6). PROVEN.",
+   "material": "NONE"
+  }
+ ]
+}
