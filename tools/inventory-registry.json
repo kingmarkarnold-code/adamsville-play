@@ -220,6 +220,11 @@
    "class": "tooling",
    "pattern": "tools/terrain-test-preview/*",
    "reason": "Standalone 3D preview of the EXPANDED Step-2 terrain TEST package (Boulder Park Dr x Bakers Ferry to Fairburn Rd, MLK Jr Dr to Utoy Creek, 2026-10-28): renders the built package data itself (USGS 3DEP 10 m ground with carved waterways, measured lake levels, NLCD canopy masses) so Joshua can inspect it on phone and laptop before any of it becomes game map data. The game stays in its NO MAP DATA state; nothing here is registered as game data."
+  },
+  {
+   "class": "tooling",
+   "pattern": "tools/terrain-house-test/*",
+   "reason": "Standalone 3D look-test (Step 2, 2026-10-28): two ranch houses on the Dollar Mill crest pad inside the terrain-test area, with individual trees derived from the package canopy data and a short Dollar Mill Rd stretch (7.2 m, no centre line) \u2014 built so Joshua can verify the clearing rule (no tree inside a house footprint + 6 m margin) and the intended look before the buildings step. Test scene only; renders from the test package without modifying it. The game stays in its NO MAP DATA state; nothing here is registered as game data."
   }
  ],
  "external": [
