@@ -210,6 +210,11 @@
    "class": "stock",
    "pattern": "detailed/maps/*",
    "reason": "Runtime map packages for the multiple-maps system (Phase D, 2026-10-28): per-map data packages (zone/roads/buildings/water/rail/structures/places/pins/signs JSON + terrain.bin + the terrain-mesh precompute bin) loaded by detailed/map_loader.js from the registry's packageBase ('maps/<id>/' relative to detailed/). Package files are fetched by constructed path (base + filename), so no single literal reference names them \u2014 the same dataset status the zone files get from the zoneloader rule. Contents are authored data (the redrawn Adamsville package, Phase B), verified per-file by sha256 against the staging package at publish time."
+  },
+  {
+   "class": "tooling",
+   "pattern": "tools/terrain-preview/*",
+   "reason": "Standalone 3D terrain preview pages (Joshua's Step-2 inspection slices, first: Dollar Mill / Utoy Circle to Boulder Park, 2026-10-28): a self-contained Three.js page rendering the USGS 3DEP terrain for one small area so Joshua can inspect the new ground \u2014 pan/zoom/orbit \u2014 before any of it becomes game map data. Preview only: nothing here is registered as game data."
   }
  ],
  "external": [
