@@ -245,6 +245,11 @@
    "class": "tooling",
    "pattern": "tools/mlk-i285-interchange/*",
    "reason": "Standalone 3D look-test (Step 2, 2026-10-29): the MLK (GA-139) x I-285 interchange, exit 9 \u2014 the third crossing type, built so Joshua can compare it against the plain overpass: MLK passes OVER I-285 on an 80 m deck at 886 ft (clearance 5.11 m / 16.8 ft over the freeway's 862 ft surface), and ONE ramp pair carries the terrain story \u2014 the SE loop off-ramp climbs from I-285's level to MLK on rising earthworks and the SW on-ramp descends back (redraw package ramp geometries and their recorded profiles, smoothed fitted centrelines throughout). The crossing sits ~390 m east of the terrain-test package, so the ground is an EXTENSION built from the same USGS 3DEP tile by the same method on the same frame lattice (declared in the scene); 2,266 real individual trees (8 ft foliage rule, NLCD canopy with its east edge extended by nearest column, also declared). Standing-gate audits on the delivered build: coverage/flanking \u2014 zero covered points on every drawn surface (111k+ samples, deck air check clean); ribbon quality \u2014 all surfaces from smoothed fitted centrelines at <=2.1 m stations, centreline sawtooth <=0.060 m, constant width exact. Test scene only; the game stays in its NO MAP DATA state."
+  },
+  {
+   "class": "tooling",
+   "pattern": "tools/zone-terrain-preview/*",
+   "reason": "Standalone 3D look-test (Step 2, 2026-10-29): the WHOLE Adamsville zone's Stage-1 terrain foundation \u2014 pure ground at Joshua's ruled D mix (2 m near roads/houses, 10 m elsewhere; preview mesh decimated for the web to 8 m near / 30 m far, heights sampled from the stage-1 package grids only, reconstruction verified exact at all 11,032,992 near posts). Heights are the USGS 1 m lidar truth (100% coverage); 23 surveyed water bodies drawn at their levels, 54 pending-bed basins as outlines only (no invented water); no roads, houses or carved channels (stage 2 awaits rulings). Test scene only; the game stays in its NO MAP DATA state."
   }
  ],
  "external": [
