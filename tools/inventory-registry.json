@@ -225,6 +225,11 @@
    "class": "tooling",
    "pattern": "tools/terrain-house-test/*",
    "reason": "Standalone 3D look-test (Step 2, 2026-10-28): two ranch houses on the Dollar Mill crest pad inside the terrain-test area, with individual trees derived from the package canopy data and a short Dollar Mill Rd stretch (7.2 m, no centre line) \u2014 built so Joshua can verify the clearing rule (no tree inside a house footprint + 6 m margin) and the intended look before the buildings step. Test scene only; renders from the test package without modifying it. The game stays in its NO MAP DATA state; nothing here is registered as game data."
+  },
+  {
+   "class": "tooling",
+   "pattern": "tools/tatum-lake-scene/*",
+   "reason": "Standalone 3D look-test (Step 2, 2026-10-28): Tatum Lake with the crest scene's treatment (package terrain, real individual trees with the 8 ft foliage rule) plus its two features \u2014 the outlet falls as a boulder-step cascade (44 boulders; the audited 6.0 ft step broken into three ~2 ft drops, animated trickle + foam) and the Boulder Park Dr culvert (2.5 m diameter corrugated pipe, 19 m, road at grade over the fill, mouths open on both faces) \u2014 and the canopy-off-open-water rule applied to its trees (0 of 478 in the lake or any open water). Built so Joshua can verify the falls/culvert treatments before the water/structures step. Test scene only; renders from the test package without modifying it. The game stays in its NO MAP DATA state; nothing here is registered as game data."
   }
  ],
  "external": [
