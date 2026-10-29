@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Tatum Lake — Shoreline Inspection (Step 2 terrain test)</title>
+<style>
+  html, body { margin:0; padding:0; height:100%; overflow:hidden; background:#b9d2e4;
+               font-family: Georgia, 'Times New Roman', serif; }
+  #scene { position:absolute; inset:0; }
+  canvas { display:block; touch-action:none; }
+  .panel { position:absolute; background:rgba(255,252,244,.94); border:1px solid #8a7a52;
+           border-radius:10px; padding:8px 10px; color:#22301c; box-shadow:0 2px 10px rgba(30,40,20,.25); }
+  .phead { font-weight:bold; font-size:13.5px; color:#12203a; cursor:pointer; user-select:none;
+           display:flex; justify-content:space-between; align-items:center; gap:10px; }
+  .phead .chev { color:#6d5c33; font-size:12px; }
+  .panel.folded .body { display:none; }
+  #info { top:10px; left:10px; max-width:256px; }
+  #info p  { font-size:12px; line-height:1.45; margin:3px 0; }
+  #info .spots { font-size:12px; margin-top:5px; border-top:1px solid #cbbd93; padding-top:5px; }
+  #controls { bottom:10px; left:10px; max-width:256px; }
+  #controls p { font-size:12px; line-height:1.5; margin:2px 0; }
+  #controls .row { display:flex; align-items:center; gap:8px; margin-top:7px; flex-wrap:wrap; }
+  button { font-family:inherit; font-size:13px; padding:6px 13px; border-radius:8px;
+           border:1px solid #6d5c33; background:#f3e9cf; color:#22301c; cursor:pointer; }
+  button[aria-pressed="true"] { background:#2e6da4; color:#fff; border-color:#1d4e77; }
+  input[type=range] { width:130px; }
+  #compass { top:12px; right:12px; width:74px; height:74px; border-radius:50%; padding:0;
+             display:flex; align-items:center; justify-content:center; }
+  #compass .dial { position:relative; width:64px; height:64px; }
+  #compass .n { position:absolute; left:50%; top:1px; transform:translateX(-50%);
+                font-weight:bold; color:#b02a1e; font-size:14px; }
+  #compass .arrow { position:absolute; left:50%; top:16px; transform:translateX(-50%);
+                    color:#b02a1e; font-size:17px; line-height:1; }
+  #compass .s { position:absolute; left:50%; bottom:1px; transform:translateX(-50%);
+                color:#5a5a5a; font-size:11px; }
+  #scalebar { bottom:12px; right:12px; text-align:center; }
+  #scalebar .bar { height:6px; border:1px solid #22301c; background:linear-gradient(90deg,#22301c 50%,#fffdf4 50%); background-size:100% 100%; margin-top:3px; }
+  #scalebar .t { font-size:12px; }
+  .lbl { position:absolute; transform:translate(-50%,-130%); pointer-events:none;
+         font-size:13px; font-weight:bold; color:#12203a; white-space:nowrap;
+         text-shadow:0 0 4px #fffdf4, 0 0 4px #fffdf4, 0 0 7px #fffdf4, 1px 1px 2px #fffdf4; }
+  .lbl.creek { color:#0b4f86; }
+  .lbl.star  { color:#8a5b00; font-size:14px; }
+  #err { position:absolute; inset:auto 12px 110px auto; max-width:330px; display:none;
+         background:#fbe9e7; border-color:#a33; color:#611; }
+  @media (max-width:640px){ #info{max-width:210px} #controls{max-width:210px} .lbl{font-size:11px}
+    #compass{ width:56px; height:56px; } #compass .dial{ width:48px; height:48px; }
+    #compass .arrow{ top:11px; font-size:14px; } }
+</style>
+</head>
+<body>
+<div id="scene"></div>
+
+<div class="panel" id="info">
+  <div class="phead"><span>Tatum Lake — shoreline check</span><span class="chev">▾</span></div>
+  <div class="body">
+  <p><b>Tatum Lake, up close</b> — drawn from the built terrain test
+     package itself (10 m grid, full detail). The pale line is
+     <b>Boulder Park Dr</b> for orientation; the dark green masses are
+     <b>tree canopy</b>. This is the shoreline inspection: is the water
+     properly surrounded by land? Vertical scale is <b>TRUE (1.0)</b>
+     unless you change it below.</p>
+  <p><b>What the audit found:</b> the land stands <b>above the water all
+     the way around</b> — the only place it falls away is the outlet on
+     the south shore, where the creek leaves. At the meeting point the
+     surface steps down <b>6.0 ft</b> — the little falls you described,
+     a touch bigger than "a foot or a few"; noted for the structures
+     pass. The lake bed is flat at <b>820½ ft</b> under the water — no
+     dry humps poking through.</p>
+  <p><b>One defect — in the tree layer, not the ground:</b> the canopy
+     source (NLCD) misreads this small wooded lake as forest
+     (<b>81% cover</b>), so as stored, the tree masses roof the water.
+     The ground and water underneath are right. Use <b>Canopy: OFF</b>
+     in Controls to inspect the shoreline; the zone build must keep
+     canopy off open water — the same clearing rule as houses.</p>
+  <div class="spots">
+    Shoreline numbers (ft): water level <b>822½</b> · lowest banks
+    outside the outlet: west shore <b>+0.4</b> above the water,
+    northwest <b>+0.6</b>, east <b>+1.1</b> · typical bank <b>+6</b> ·
+    outlet drop <b>6.0</b> · NW inflow joins <b>at lake level</b> ·
+    NE inflow pours in about <b>2 ft</b> above.
+  </div>
+  </div>
+</div>
+
+<div class="panel" id="controls">
+  <div class="phead"><span>Controls</span><span class="chev">▾</span></div>
+  <div class="body">
+  <p><b>Move around:</b> drag = <b>pan</b> · mouse wheel / pinch = <b>zoom</b> ·
+     <b>+</b> and <b>−</b> keys = zoom · <b>Ctrl+drag</b> = rotate.</p>
+  <div class="row">
+    <button id="orbitBtn" aria-pressed="false">Orbit: OFF</button>
+    <button id="canopyBtn">Canopy: ON</button>
+    <button id="resetBtn">Reset view</button>
+  </div>
+  <div class="row">
+    <label for="exagg" style="font-size:13px;">Vertical stretch:</label>
+    <input type="range" id="exagg" min="1" max="3" step="0.25" value="1">
+    <span id="exaggVal" style="font-size:13px;">×1.0 (true)</span>
+  </div>
+  </div>
+</div>
+
+<div class="panel" id="compass"><div class="dial" id="dial">
+  <div class="n">N</div><div class="arrow">▲</div><div class="s">S</div>
+</div></div>
+
+<div class="panel" id="scalebar"><div class="t" id="scaleTxt">100 m</div><div class="bar" id="scaleBar" style="width:100px"></div>
+  <div class="t" style="margin-top:3px;">Scene ≈ 470 m N–S × 330 m E–W</div></div>
+
+<div class="panel" id="err"></div>
+
+<script src="three.min.js"></script>
+<script>
+var DATA = {"frame": {"latC": 33.7411, "lonC": -84.52645, "mpdLat": 110917.6952, "mpdLon": 92664.2028}, "latMax": 33.74908789589332, "lonMin": -84.52544335077727, "dyDeg": 9.015694008037773e-05, "dxDeg": 0.00010791653840246495, "nrows": 47, "ncols": 33, "gridB64": "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", "canopyB64": "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", "coverB64": "SE1NUldVVVlaWVhWV1hYWVlWOyk1QUxSUlJTVVhVUDsmTVBQUlRUVVlcXVtWVllZWlhVPCYdIkFRUlNUVlhRRykPUVJSUlJUVlhbXVtVVVlZWVhWQCoRDzpRUlNUVlhOQh4BUVJTUlJVV1ZWWFdUVVdXV1laTToXDzpRU1RVVlhQRiAFUVNTU1NXWVVTU1RUVVVVVVpeV0gcDjZOU1RSUlNQSyUNUlNTU1NVVlZXWFhXVlVVVVdZVUgcBxwzTU09OjpFUDsvU1NTU1NTVFhaXFxaWFZVVFRUUkgcAQIZR0UoISE6VVJQU1NTVVZWVllbXFxbWVVVV1VUU0gcAAAOKS4nJSU6UFFSVFRUV1pZWVpaXFxdWVNWWldUU0kdAAADChYnKys6S05SU1NUWFtaWlpaW1xcWVNWW1dTU0wqEQYAABIvNjhBS05SUVJTV1taWlpaWltbWFNWW1dSUk8+Kg4AABY5REdLTlBSUVJTV1paWllZWVpbWFJVWVdUU1FLPSARESRCTFBQUFFSVFNSVllZWVhYWFlaV1FTVldYVlRRSzw1ND1MUFFQUFFSV1VTVlhYV1dXV1haVlBRVFdbWFdXVlJQTlBSUlFRUFFSWVhXWFlWVFRVVldXVVFSVFdaWlpaWFNRUlJTUlFRUFFRWlpbW1pVUVJTVlZVU1FTVVdZW11dW1RSVVVTUlFRUFBQWlpbWllUUVJTVVZVU1FTVVZWWVpYVVJSVVVTVFZVVVJQWVpbWlhUUVJTVFVVU1FTVlRTVldTUE9RVVVTVlpaWlRQVFVWV1hUUlRVVlZUUlFOSk9TUlBOTk9QU1RVV1lbXFlVTU9PVFhVU1ZYWFZTUVFHPEhUTUhKTE5QUVRWV1daXl1cS0xMUldVVVdZWVRKRkY8MENWTEVITFBSU1RWVldbX15eS0xMUlZWVlhZWU47NDQuJkBYTUVITFNXV1ZUVVdbXl1dS01NUVVVVVhZWU02Ly4rJkFaT0ZJTlZaW1hUVVdbXlxbTE5QUlNSUlVXWVJDPj07OUpaUUpNUldbXFtZWFZaXVpXS09SUVBPTlBTV1ZPTElJSVJaU05RVFhbXV5eWlVZXFhVR01VTEVEQj5BT1VVUUpJSU9VVFNSUldaW1tbWVVXWFZVQktXSDk5NisuRlVbVktJSUxQVVhTUVZYWVlZV1VVVFVVOkRPOycnJh8kPE5aWE9QUlRWVlZSUVRWVFVYV1ZVVFNSMzxGLRUVFRIaMUZYWlRXXFxcWFNRUVNTUFJWV1dVVFJQLzpGLBQTEhIZL0NXWlZYWltaVlJSU1RTUlNWV1dWVVFPLTtKMRoYFhYdMENVWlhWVFRUU1JUVVRVV1dXV1dXVlJPKDRCNCUeGBggNUdXWlhTTlBSUlJUVVNVWVlWVVRUVFJQISYtNDgmGBgjP1FaWlVOR01TU1NSUVBTWVdSUE9PT1FTHRwdNEYwHx8qSFdYU0xHQktUVFNRT05RWFZOTUxMTFFVIR4eNEdBPDtATk9DOzQ4P0tWVFFQT05RVlRNTlFRUVNVJSAeNElRV1VUU0cvIxwqPEtYU1BQUE9QVFJMUFVVVVVWJSAeM0dQVVFIOiwgFxAcLUJWU1BQUFBQUlFQUVNSUVFSJSAeMkVOU0w9IRIQCwQOHTlUUlBQUFFQT1FTU1FPTk5PMSwoN0ZKTEk7HhAQDQgUJD1UU1JSU1NST09QUFFPTk9RQDozPkdGRUY8IBMTEhEfMENUVFRVVlZUUE1KTVFRUFJUR0M9Pj48PEVCKx0WFRUjNURSTUpMTUhEQT07QEhLTlJVSUhGOS4uM0ZMPCwbFRUjNUNPQjg8Oy8oJyUkLTlCS1BVS0hEMyMjKkVRSDYdFRUiMT9LNygtLCEcHBkWIC07SE9VTUEyKiIfJEFQSTgeFRUdKDdDLh0fIigrKyQYHik5SE9VTzwlJCMcHz1OSjoeFRUZHy47JRQTGi85OC0aHSY3SE9UT0U0NDIkID5OSjkeFBQXGiczIhQUHDQ/Oy4aHSY4Sk5RT01EREErIj9OSjkdFBQUFCArHhQUHjlEPi8bHSY4S0xN", "streams": [{"name": "Unnamed tributary", "pts": [[33.749451, -84.52558, 254.18], [33.749279, -84.525508, 254.26], [33.749197, -84.525456, 254.3], [33.749125, -84.525396, 254.3], [33.748982, -84.525257, 254.24], [33.748801, -84.525021, 253.2], [33.74862, -84.524785, 251.55], [33.748576, -84.524685, 250.7]]}, {"name": "Unnamed tributary", "pts": [[33.747158, -84.524029, 250.7], [33.747031, -84.523936, 248.38], [33.746965, -84.523866, 248.38], [33.746882, -84.523849, 248.38]]}, {"name": "Unnamed tributary", "pts": [[33.746882, -84.523849, 247.18], [33.746824, -84.523686, 247.18]]}, {"name": "Unnamed tributary", "pts": [[33.746824, -84.523686, 247.18], [33.746703, -84.523625, 247.15], [33.74657, -84.523668, 247.22], [33.746482, -84.523668, 247.2], [33.746388, -84.523655, 246.95], [33.746218, -84.523583, 246.23], [33.746119, -84.523523, 245.28], [33.746064, -84.523477, 245.28], [33.745976, -84.523471, 243.9], [33.745889, -84.523498, 243.9], [33.745707, -84.52353, 242.87], [33.745438, -84.523524, 242.51]]}, {"name": "Unnamed tributary", "pts": [[33.749492, -84.522206, 251.9], [33.749201, -84.522347, 251.85], [33.74891, -84.522489, 251.55], [33.748581, -84.522668, 251.43], [33.748262, -84.522871, 251.39], [33.748119, -84.522995, 251.36], [33.748079, -84.523042, 251.35]]}], "bodies": [{"name": "Tatum Lake", "ring": [[33.748603, -84.52468], [33.748653, -84.524634], [33.748669, -84.524561], [33.748653, -84.524522], [33.74851, -84.52439], [33.74835, -84.524292], [33.748272, -84.524225], [33.748207, -84.524154], [33.74813, -84.524101], [33.748042, -84.524095], [33.747861, -84.524056], [33.747692, -84.52395], [33.747658, -84.523917], [33.747647, -84.523879], [33.747658, -84.523825], [33.747696, -84.52372], [33.747812, -84.523582], [33.74785, -84.523484], [33.747998, -84.523358], [33.74808, -84.523266], [33.748103, -84.52316], [33.748103, -84.523116], [33.74808, -84.523042], [33.748047, -84.523017], [33.747987, -84.523009], [33.747943, -84.523048], [33.747884, -84.523129], [33.747806, -84.523186], [33.747718, -84.523213], [33.747575, -84.523345], [33.747454, -84.523503], [33.747383, -84.523568], [33.747328, -84.523653], [33.747301, -84.523753], [33.747224, -84.52395], [33.747108, -84.524089], [33.747103, -84.524114], [33.747108, -84.524174], [33.74713, -84.524207], [33.747202, -84.524279], [33.74728, -84.524332], [33.747537, -84.524411], [33.747686, -84.524535], [33.747955, -84.524575], [33.748213, -84.524686], [33.74839, -84.524713], [33.748504, -84.524719], [33.748576, -84.524685], [33.748603, -84.52468]], "level": 250.7}], "streets": [{"name": "Boulder Park Dr", "pts": [[33.746195, -84.525406], [33.746203, -84.525097], [33.746255, -84.524572], [33.746285, -84.524416], [33.746341, -84.524215], [33.746419, -84.524078], [33.746571, -84.523898], [33.746659, -84.523844], [33.747086, -84.523651], [33.747143, -84.523619], [33.747308, -84.523469], [33.747357, -84.523404], [33.747408, -84.523327], [33.747453, -84.523238], [33.747649, -84.52282], [33.74775, -84.522529], [33.747782, -84.522388], [33.7478, -84.52226], [33.747825, -84.521901], [33.7478251853211, -84.5218]]}]};
+(function(){
+'use strict';
+var errBox = document.getElementById('err');
+function fail(msg){ errBox.style.display='block'; errBox.textContent = msg; }
+if (typeof THREE === 'undefined') { fail('The 3D library (three.min.js) did not load.'); return; }
+
+var F = DATA.frame, MPD_LAT = F.mpdLat, MPD_LON = F.mpdLon;
+var ELEV_BASE = 218.0;               // metres; below the lowest ground (741 ft) so relief scales honestly
+function decodeF32(b64){ return new Float32Array(new Uint8Array(atob(b64).split('').map(function(c){return c.charCodeAt(0);})).buffer); }
+var grid = decodeF32(DATA.gridB64);
+var canopyGrid = decodeF32(DATA.canopyB64);
+var coverGrid = new Uint8Array(atob(DATA.coverB64).split('').map(function(c){return c.charCodeAt(0);}));
+var NR = DATA.nrows, NC = DATA.ncols;
+var DXM = DATA.dxDeg * MPD_LON, DYM = DATA.dyDeg * MPD_LAT;   // posting in metres (~8.6 x ~10.3)
+
+function llToWorld(lat, lon){ return [ (lon - F.lonC) * MPD_LON, (F.latC - lat) * MPD_LAT ]; } // [x east, z south]
+function demAt(lat, lon){
+  var r = (DATA.latMax - lat) / DATA.dyDeg, c = (lon - DATA.lonMin) / DATA.dxDeg;
+  r = Math.min(Math.max(r, 0), NR - 1.001); c = Math.min(Math.max(c, 0), NC - 1.001);
+  var r0 = Math.floor(r), c0 = Math.floor(c), fr = r - r0, fc = c - c0;
+  function g(i,j){ return grid[i*NC + j]; }
+  return g(r0,c0)*(1-fr)*(1-fc) + g(r0,c0+1)*(1-fr)*fc + g(r0+1,c0)*fr*(1-fc) + g(r0+1,c0+1)*fr*fc;
+}
+function groundY(lat, lon){ return demAt(lat, lon) - ELEV_BASE; }
+
+/* ---------- scene ---------- */
+var container = document.getElementById('scene');
+var renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias:true });
+} catch(e){ fail('WebGL is not available in this browser.'); return; }
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0xb9d2e4);
+container.appendChild(renderer.domElement);
+var scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0xb9d2e4, 5200, 15000);
+var camera = new THREE.PerspectiveCamera(46, window.innerWidth/window.innerHeight, 1, 24000);
+
+var world = new THREE.Group(); scene.add(world);
+
+/* ---------- terrain mesh: hypsometric tint x hillshade, baked into vertex colours ---------- */
+function tintRGB(ft){
+  var stops = [ [738,0x477a52],[762,0x5da35c],[792,0x86b364],[822,0xb0bd76],[852,0xcfc084],
+                [882,0xd9b57c],[912,0xc99e6b],[942,0xb3855a],[972,0x9c7248],[990,0x8a6242] ];
+  if (ft <= stops[0][0]) return stops[0][1];
+  for (var i=1;i<stops.length;i++){
+    if (ft <= stops[i][0]){
+      var t = (ft - stops[i-1][0]) / (stops[i][0] - stops[i-1][0]);
+      var a = stops[i-1][1], b = stops[i][1];
+      var r = ((a>>16)&255) + (((b>>16)&255) - ((a>>16)&255)) * t;
+      var g = ((a>>8)&255)  + (((b>>8)&255)  - ((a>>8)&255))  * t;
+      var bl = (a&255)      + ((b&255)      - (a&255))       * t;
+      return [r/255, g/255, bl/255];
+    }
+  }
+  var last = stops[stops.length-1][1];
+  return [((last>>16)&255)/255, ((last>>8)&255)/255, (last&255)/255];
+}
+(function buildTerrain(){
+  var pos = new Float32Array(NR*NC*3), col = new Float32Array(NR*NC*3);
+  var L = [ -0.55, 0.72, -0.42 ];  // light dir (from NW, up): x west, y up, z north(-)
+  var ll = Math.sqrt(L[0]*L[0]+L[1]*L[1]+L[2]*L[2]); L = [L[0]/ll, L[1]/ll, L[2]/ll];
+  var i, r, c;
+  for (r=0;r<NR;r++){
+    for (c=0;c<NC;c++){
+      i = r*NC + c;
+      var lat = DATA.latMax - r*DATA.dyDeg, lon = DATA.lonMin + c*DATA.dxDeg;
+      var w = llToWorld(lat, lon), e = grid[i];
+      pos[i*3] = w[0]; pos[i*3+1] = e - ELEV_BASE; pos[i*3+2] = w[1];
+      // hillshade from central differences (true metre spacing)
+      var gx = (grid[r*NC + Math.min(c+1,NC-1)] - grid[r*NC + Math.max(c-1,0)]) / ((Math.min(c+1,NC-1)-Math.max(c-1,0))*DXM);
+      var gz = (grid[Math.min(r+1,NR-1)*NC + c] - grid[Math.max(r-1,0)*NC + c]) / ((Math.min(r+1,NR-1)-Math.max(r-1,0))*DYM);
+      // normal of surface y=e(x east, z south): n = (-de/dx, 1, -de/dz); note rows go N->S = +z
+      var nx = -gx, ny = 1, nz = -gz, nl = Math.sqrt(nx*nx+ny*ny+nz*nz);
+      var shade = Math.max(0, (nx*L[0] + ny*L[1] + nz*L[2]) / nl);
+      var amb = 0.52 + 0.48 * shade;
+      var t = tintRGB(e * 3.28084);
+      if (!Array.isArray(t)) t = [((t>>16)&255)/255, ((t>>8)&255)/255, (t&255)/255];
+      col[i*3] = t[0]*amb; col[i*3+1] = t[1]*amb; col[i*3+2] = t[2]*amb;
+    }
+  }
+  var idx = new Uint32Array((NR-1)*(NC-1)*6), k = 0;
+  for (r=0;r<NR-1;r++) for (c=0;c<NC-1;c++){
+    var a = r*NC+c, b = a+1, d = a+NC, e2 = d+1;
+    idx[k++]=a; idx[k++]=d; idx[k++]=b; idx[k++]=b; idx[k++]=d; idx[k++]=e2;
+  }
+  var geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  geo.setIndex(new THREE.BufferAttribute(idx, 1));
+  var mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors:true }));
+  world.add(mesh);
+  window.__groundTris = (NR-1)*(NC-1)*2;
+})();
+
+/* ---------- canopy masses: a second surface at canopy-top height over wooded cells ---------- */
+(function buildCanopy(){
+  var pos = [], col = [], idx = [], n = 0, quads = 0;
+  function pushVert(r, c){
+    var lat = DATA.latMax - r*DATA.dyDeg, lon = DATA.lonMin + c*DATA.dxDeg;
+    var w = llToWorld(lat, lon), i = r*NC + c;
+    pos.push(w[0], canopyGrid[i] - ELEV_BASE, w[1]);
+    var cov = coverGrid[i] / 100;                       // green deepens with cover
+    col.push(0.13 + 0.10 * (1 - cov), 0.30 + 0.13 * cov, 0.11 + 0.07 * (1 - cov));
+    return n++;
+  }
+  for (var r=0;r<NR-1;r++) for (var c=0;c<NC-1;c++){
+    var i00=r*NC+c, i01=i00+1, i10=i00+NC, i11=i10+1;
+    if (canopyGrid[i00] < -999 || canopyGrid[i01] < -999 || canopyGrid[i10] < -999 || canopyGrid[i11] < -999) continue;
+    var a = pushVert(r, c), b = pushVert(r, c+1), d = pushVert(r+1, c), e2 = pushVert(r+1, c+1);
+    idx.push(a, d, b, b, d, e2); quads++;
+  }
+  if (!quads) return;
+  var geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(col), 3));
+  geo.setIndex(idx);
+  var mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors:true }));
+  window.__canopyMesh = mesh;
+  world.add(mesh);
+  window.__canopyTris = quads * 2;
+})();
+
+/* ---------- ribbons (creeks + street shapes) draped on the ground ---------- */
+function ribbon(pts, widthM, colorHex, yOff, opacity){
+  if (!pts || pts.length < 2) return;
+  var hw = widthM/2, verts = [], idx = [], n = 0;
+  for (var i=0;i<pts.length;i++){
+    var p = pts[i], prev = pts[Math.max(0,i-1)], next = pts[Math.min(pts.length-1,i+1)];
+    var a = llToWorld(prev[0], prev[1]), b = llToWorld(next[0], next[1]);
+    var dx = b[0]-a[0], dz = b[1]-a[1], len = Math.sqrt(dx*dx+dz*dz) || 1;
+    var px = -dz/len, pz = dx/len;
+    var w = llToWorld(p[0], p[1]), y = groundY(p[0], p[1]) + yOff;
+    verts.push(w[0]-px*hw, y, w[1]-pz*hw,  w[0]+px*hw, y, w[1]+pz*hw);
+    if (i>0){ var s = (n-1)*2; idx.push(s, s+1, s+2, s+1, s+3, s+2); }
+    n++;
+  }
+  var geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(verts), 3));
+  geo.setIndex(idx);
+  var mat = new THREE.MeshBasicMaterial({ color: colorHex, transparent: opacity<1, opacity: opacity, side: THREE.DoubleSide, depthWrite:false });
+  var m = new THREE.Mesh(geo, mat); m.renderOrder = 2; world.add(m);
+}
+function waterRibbon(pts, widthM){
+  if (!pts || pts.length < 2) return;
+  var hw = widthM/2, verts = [], idx = [], n = 0;
+  for (var i=0;i<pts.length;i++){
+    var p = pts[i], prev = pts[Math.max(0,i-1)], next = pts[Math.min(pts.length-1,i+1)];
+    var a = llToWorld(prev[0], prev[1]), b = llToWorld(next[0], next[1]);
+    var dx = b[0]-a[0], dz = b[1]-a[1], len = Math.sqrt(dx*dx+dz*dz) || 1;
+    var px = -dz/len, pz = dx/len;
+    var w = llToWorld(p[0], p[1]), y = p[2] - ELEV_BASE + 0.15;
+    verts.push(w[0]-px*hw, y, w[1]-pz*hw,  w[0]+px*hw, y, w[1]+pz*hw);
+    if (i>0){ var s = (n-1)*2; idx.push(s, s+1, s+2, s+1, s+3, s+2); }
+    n++;
+  }
+  var geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(verts), 3));
+  geo.setIndex(idx);
+  var m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x2f6fb4, transparent:true, opacity:0.92, side: THREE.DoubleSide, depthWrite:false }));
+  m.renderOrder = 2; world.add(m);
+}
+DATA.streams.forEach(function(s){ waterRibbon(s.pts, 9); });
+DATA.streets.forEach(function(s){ ribbon(s.pts, 11, 0xf3ecd8, 0.55, 0.95); });
+
+/* ---------- water bodies (flat fills at their real level) ---------- */
+DATA.bodies.forEach(function(b){
+  var shape = new THREE.Shape();
+  b.ring.forEach(function(p, i){
+    var w = llToWorld(p[0], p[1]);
+    if (i===0) shape.moveTo(w[0], w[1]); else shape.lineTo(w[0], w[1]);
+  });
+  var geo = new THREE.ShapeGeometry(shape);
+  geo.rotateX(Math.PI/2);   // shape (x, zSouth) -> world XZ, keeping south as +z
+  var m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x2f6fb4, transparent:true, opacity:0.9, depthWrite:false, side: THREE.DoubleSide }));
+  m.position.y = b.level - ELEV_BASE + 0.25; m.renderOrder = 1;
+  world.add(m);
+});
+
+/* ---------- labels ---------- */
+var labelDefs = [
+  { t:'Tatum Lake — water 822½ ft', at:[33.74775, -84.52410], cls:'lbl creek' },
+  { t:'wooded point',    at:[33.74825, -84.52365], cls:'lbl' },
+  { t:'Inflow creek',    at:[33.74872, -84.52482], cls:'lbl creek' },
+  { t:'Inflow creek',    at:[33.74832, -84.52282], cls:'lbl creek' },
+  { t:'Outlet — small drop at the lip', at:[33.74698, -84.52305], cls:'lbl creek' },
+  { t:'Boulder Park Dr', at:[33.74655, -84.52495], cls:'lbl' },
+  { t:'Creek from Tatum Lake', at:[33.74572, -84.52342], cls:'lbl creek' },
+];
+var labelEls = labelDefs.map(function(d){
+  var el = document.createElement('div'); el.className = d.cls; el.textContent = d.t;
+  document.body.appendChild(el); return { d:d, el:el };
+});
+
+/* ---------- camera + Joshua's viewport controls ----------
+   drag (no Orbit) = PAN · wheel / pinch = ZOOM · + / − keys = zoom ·
+   Ctrl+drag = rotate · Orbit button ON: drag rotates.            */
+var view = { theta: 0.0, phi: 1.02, radius: 560, tx: 235, tz: -715 };
+var HOME = JSON.parse(JSON.stringify(view));
+var orbitOn = false;
+function camTarget(){ return new THREE.Vector3(view.tx, groundYat(view.tx, view.tz) + 4, view.tz); }
+function groundYat(x, z){
+  var lat = F.latC - z / MPD_LAT, lon = F.lonC + x / MPD_LON;
+  return groundY(lat, lon);
+}
+function applyCam(){
+  var t = camTarget();
+  var sp = Math.sin(view.phi), x = t.x + view.radius * sp * Math.sin(view.theta),
+      y = t.y + view.radius * Math.cos(view.phi),
+      z = t.z + view.radius * sp * Math.cos(view.theta);
+  camera.position.set(x, y, z);
+  camera.lookAt(t);
+  document.getElementById('dial').style.transform = 'rotate(' + (-view.theta * 180/Math.PI) + 'deg)';
+  updateScale(t);
+}
+function updateScale(t){
+  var a = new THREE.Vector3(t.x - 50, t.y, t.z).project(camera);
+  var b = new THREE.Vector3(t.x + 50, t.y, t.z).project(camera);
+  var pxPer100 = Math.abs(b.x - a.x) / 2 * window.innerWidth;
+  var choices = [25, 50, 100, 200, 500, 1000];
+  var best = 100, bestPx = pxPer100;
+  for (var i=0;i<choices.length;i++){
+    var px = pxPer100 * choices[i] / 100;
+    if (px >= 60 && px <= 220){ best = choices[i]; bestPx = px; break; }
+  }
+  document.getElementById('scaleTxt').textContent = best + ' m';
+  document.getElementById('scaleBar').style.width = bestPx + 'px';
+}
+var el = renderer.domElement, pointers = new Map(), lastPinch = 0;
+function panBy(dxPx, dyPx){
+  // Grasp-the-world pan: the ground follows the pointer, so the target
+  // moves opposite the drag horizontally and with it vertically.
+  var wpp = 2 * view.radius * Math.tan(camera.fov * Math.PI/360) / window.innerHeight;
+  var rx = Math.cos(view.theta), rz = -Math.sin(view.theta);   // camera-right, on the ground
+  var fx = -Math.sin(view.theta), fz = -Math.cos(view.theta);  // camera-forward, on the ground
+  view.tx += (-dxPx * rx + dyPx * fx) * wpp;
+  view.tz += (-dxPx * rz + dyPx * fz) * wpp;
+  view.tx = Math.min(3600, Math.max(-3600, view.tx));
+  view.tz = Math.min(3600, Math.max(-3600, view.tz));
+}
+function rotateBy(dxPx, dyPx){
+  view.theta -= dxPx * 0.005;
+  view.phi = Math.min(1.52, Math.max(0.12, view.phi - dyPx * 0.005));
+}
+el.addEventListener('pointerdown', function(e){
+  el.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId, { x:e.clientX, y:e.clientY, ctrl:e.ctrlKey });
+  lastPinch = 0;
+});
+el.addEventListener('pointermove', function(e){
+  if (!pointers.has(e.pointerId)) return;
+  var prev = pointers.get(e.pointerId);
+  var dx = e.clientX - prev.x, dy = e.clientY - prev.y;
+  pointers.set(e.pointerId, { x:e.clientX, y:e.clientY, ctrl:e.ctrlKey });
+  if (pointers.size === 2){
+    var ps = Array.from(pointers.values());
+    var d = Math.hypot(ps[0].x-ps[1].x, ps[0].y-ps[1].y);
+    if (lastPinch > 0) view.radius = Math.min(7600, Math.max(120, view.radius * lastPinch / d));
+    lastPinch = d; return;
+  }
+  if (orbitOn || e.ctrlKey || prev.ctrl) rotateBy(dx, dy); else panBy(dx, dy);
+});
+function endPointer(e){ pointers.delete(e.pointerId); lastPinch = 0; }
+el.addEventListener('pointerup', endPointer);
+el.addEventListener('pointercancel', endPointer);
+el.addEventListener('wheel', function(e){
+  e.preventDefault();
+  view.radius = Math.min(7600, Math.max(120, view.radius * Math.exp(e.deltaY * 0.0011)));
+}, { passive:false });
+window.addEventListener('keydown', function(e){
+  if (e.key === '+' || e.key === '=') view.radius = Math.max(120, view.radius * 0.85);
+  else if (e.key === '-' || e.key === '_') view.radius = Math.min(7600, view.radius / 0.85);
+});
+var orbitBtn = document.getElementById('orbitBtn');
+orbitBtn.addEventListener('click', function(){
+  orbitOn = !orbitOn;
+  orbitBtn.setAttribute('aria-pressed', orbitOn ? 'true' : 'false');
+  orbitBtn.textContent = orbitOn ? 'Orbit: ON' : 'Orbit: OFF';
+});
+document.getElementById('resetBtn').addEventListener('click', function(){ view = JSON.parse(JSON.stringify(HOME)); });
+var canopyBtn = document.getElementById('canopyBtn');
+canopyBtn.addEventListener('click', function(){
+  var m = window.__canopyMesh; if (!m) return;
+  m.visible = !m.visible;
+  canopyBtn.textContent = m.visible ? 'Canopy: ON' : 'Canopy: OFF';
+});
+var exagg = document.getElementById('exagg'), exaggVal = document.getElementById('exaggVal');
+exagg.addEventListener('input', function(){
+  var v = parseFloat(exagg.value);
+  world.scale.y = v;
+  exaggVal.textContent = '×' + v.toFixed(2).replace(/\.?0+$/,'') + (v === 1 ? ' (true)' : '');
+});
+
+/* ---------- label projection + main loop ---------- */
+var v3 = new THREE.Vector3();
+function placeLabels(){
+  labelEls.forEach(function(L){
+    var w = llToWorld(L.d.at[0], L.d.at[1]);
+    v3.set(w[0], (groundY(L.d.at[0], L.d.at[1]) + 6) * world.scale.y, w[1]).project(camera);
+    if (v3.z > 1 || v3.z < -1){ L.el.style.display = 'none'; return; }
+    L.el.style.display = 'block';
+    L.el.style.left = ((v3.x + 1) / 2 * window.innerWidth) + 'px';
+    L.el.style.top = ((-v3.y + 1) / 2 * window.innerHeight) + 'px';
+  });
+}
+function loop(){ requestAnimationFrame(loop); applyCam(); renderer.render(scene, camera); placeLabels(); }
+window.addEventListener('resize', function(){
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+/* ---------- collapsible panels: one tap on the header folds/opens;
+   on a small screen both panels start folded so the terrain gets the room ---------- */
+document.querySelectorAll('.panel .phead').forEach(function(h){
+  h.addEventListener('click', function(){
+    var p = h.parentElement; p.classList.toggle('folded');
+    h.querySelector('.chev').textContent = p.classList.contains('folded') ? '▸' : '▾';
+  });
+});
+if (window.innerWidth < 640){
+  document.querySelectorAll('#info, #controls').forEach(function(p){
+    p.classList.add('folded');
+    var ch = p.querySelector('.chev'); if (ch) ch.textContent = '▸';
+  });
+}
+window.__triCount = (window.__groundTris || 0) + (window.__canopyTris || 0);
+applyCam();
+loop();
+window.__ready = true;
+})();
+</script>
+</body>
+</html>
