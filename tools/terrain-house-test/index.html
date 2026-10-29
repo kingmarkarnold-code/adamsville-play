@@ -67,7 +67,9 @@
      one in this scene from the package's canopy data (density follows the
      measured cover; mature hardwoods, 12–20 m tall, broad crowns). The
      package itself still stores canopy <i>masses</i> — the final tree
-     system is decided at the buildings/vegetation step.</p>
+     system is decided at the buildings/vegetation step. The foliage
+     starts about <b>8 ft (2.4 m)</b> up — just over the 6&prime;1&Prime;
+     player's head — with the trunk running up into the crown.</p>
   <p><b>The road</b> is a short look-test stretch of Dollar Mill Rd:
      7.2 m wide, two 3.6 m lanes, <b>no centre line</b>, asphalt, seated on
      the ground and level across the pad — the confirmed crest profile.</p>
@@ -237,31 +239,71 @@ function tintRGB(ft){
   function quad(a, b, c, d){ idx.push(a, b, c, a, c, d); }
   var BROWN = [0.36, 0.26, 0.17];
   var GREENS = [[0.15,0.33,0.12],[0.19,0.39,0.14],[0.23,0.44,0.16],[0.12,0.28,0.10]];
+  /* Foliage starts ≈8 ft up (Joshua 2026-10-28): the crown mass comes
+     DOWN to just over the 6'1" player's head instead of the trunk
+     stretching up to a high crown. The trunk still runs up INTO the
+     crown (top buried in the main blob) so the join is solid. */
+  var FOLIAGE_BASE = 2.44;   // metres above local ground ≈ 8.0 ft
+  function limb(ax, ay, az, bx, by, bz, ra, rb){
+    var dx = bx - ax, dy = by - ay, dz = bz - az;
+    var len = Math.sqrt(dx*dx + dy*dy + dz*dz) || 1; dx /= len; dy /= len; dz /= len;
+    var ux = -dz, uy = 0, uz = dx, ul = Math.sqrt(ux*ux + uz*uz);
+    if (ul < 1e-4){ ux = 1; uy = 0; uz = 0; ul = 1; }
+    ux /= ul; uz /= ul;
+    var vx = dy*uz - dz*uy, vy = dz*ux - dx*uz, vz = dx*uy - dy*ux;
+    var A = [], B = [], k, a2;
+    for (k = 0; k < 5; k++){
+      a2 = k / 5 * Math.PI * 2 + ax * 0.7 + az * 0.3;
+      var ca = Math.cos(a2), sa = Math.sin(a2);
+      A.push(vert(ax + (ux*ca + vx*sa) * ra, ay + (uy*ca + vy*sa) * ra, az + (uz*ca + vz*sa) * ra, BROWN));
+      B.push(vert(bx + (ux*ca + vx*sa) * rb, by + (uy*ca + vy*sa) * rb, bz + (uz*ca + vz*sa) * rb, BROWN));
+    }
+    for (k = 0; k < 5; k++){ var k2 = (k + 1) % 5; quad(A[k], A[k2], B[k2], B[k]); }
+  }
   DATA.trees.forEach(function(t){
     var gy = t.g - ELEV_BASE, x = t.x, z = t.z;
-    var trunkH = Math.min(0.45 * t.h, 5.5), r = t.trunkR;
-    var ring0 = [], ring1 = [], k, a2;
-    for (k = 0; k < 5; k++){
-      a2 = k / 5 * Math.PI * 2 + x * 0.7 + z * 0.3;
-      ring0.push(vert(x + Math.cos(a2) * r, gy - 0.2, z + Math.sin(a2) * r, BROWN));
-      ring1.push(vert(x + Math.cos(a2) * r * 0.8, gy + trunkH, z + Math.sin(a2) * r * 0.8, BROWN));
-    }
-    for (k = 0; k < 5; k++){ var k2 = (k + 1) % 5; quad(ring0[k], ring0[k2], ring1[k2], ring1[k]); }
-    var blobs = [[0, 0.60, 0, 1.0], [0.38, 0.78, 0.15, 0.72], [-0.34, 0.84, -0.20, 0.64]];
-    blobs.forEach(function(b, bi){
-      var cxp = x + b[0] * t.crownR, czp = z + b[2] * t.crownR;
-      var cyp = gy + trunkH + (t.h - trunkH) * b[1];
-      var rr = t.crownR * b[3], sy = rr * 0.62;
+    var r = t.trunkR, k, a2;
+    /* trunk: ground up into the lowered crown; bare for the bottom
+       ~8 ft alongside the foliage base, top buried in the main blob */
+    var trunkTop = Math.max(3.9, Math.min(0.30 * t.h, 5.2));
+    var ringSpec = [[-0.25, 1.0], [0.5 * trunkTop, 0.88], [trunkTop, 0.58]];
+    var rings = ringSpec.map(function(rg){
+      var arr = [];
+      for (k = 0; k < 5; k++){
+        a2 = k / 5 * Math.PI * 2 + x * 0.7 + z * 0.3;
+        arr.push(vert(x + Math.cos(a2) * r * rg[1], gy + rg[0], z + Math.sin(a2) * r * rg[1], BROWN));
+      }
+      return arr;
+    });
+    for (var j = 0; j + 1 < rings.length; j++)
+      for (k = 0; k < 5; k++){ var k2 = (k + 1) % 5; quad(rings[j][k], rings[j][k2], rings[j+1][k2], rings[j+1][k]); }
+    /* crown: main blob deepened downward — underside at FOLIAGE_BASE,
+       top at 0.80*h; two layered blobs above it (tops ≈ h, as before).
+       Horizontal radii unchanged, so the clearing numbers hold. */
+    var blobGeo = [
+      { dx: 0,     dz: 0,     rr: t.crownR,        cy: (FOLIAGE_BASE + 0.80 * t.h) / 2, sy: (0.80 * t.h - FOLIAGE_BASE) / 2 },
+      { dx: 0.38,  dz: 0.15,  rr: t.crownR * 0.72, cy: 0.87 * t.h,  sy: t.crownR * 0.72 * 0.62 },
+      { dx: -0.34, dz: -0.20, rr: t.crownR * 0.64, cy: 0.90 * t.h,  sy: t.crownR * 0.64 * 0.62 }
+    ];
+    blobGeo.forEach(function(b, bi){
+      var cxp = x + b.dx * t.crownR, czp = z + b.dz * t.crownR, cyp = gy + b.cy;
+      b.cx = cxp; b.cyy = cyp; b.cz = czp;
       var gcol = GREENS[(bi + (t.tone > 0.5 ? 1 : 0)) % GREENS.length];
       var geo = new THREE.IcosahedronGeometry(1, 0);
       var pa = geo.getAttribute('position'), ia = geo.getIndex(), base = n, vi, ii;
       for (vi = 0; vi < pa.count; vi++){
         var sh = 0.70 + 0.42 * (pa.getY(vi) * 0.5 + 0.5);   // baked light: top lit, underside dark
-        vert(cxp + pa.getX(vi) * rr, cyp + pa.getY(vi) * sy, czp + pa.getZ(vi) * rr,
+        vert(cxp + pa.getX(vi) * b.rr, cyp + pa.getY(vi) * b.sy, czp + pa.getZ(vi) * b.rr,
              [gcol[0] * sh, gcol[1] * sh, gcol[2] * sh]);
       }
       if (ia) { for (ii = 0; ii < ia.count; ii++) idx.push(base + ia.getX(ii)); }
       else { for (ii = 0; ii < pa.count; ii++) idx.push(base + ii); }
+    });
+    /* branch limbs: from low on the trunk, angling up into each blob */
+    blobGeo.forEach(function(b){
+      limb(x, gy + 1.7, z,
+           x + (b.cx - x) * 0.5, gy + 1.7 + (b.cyy - (gy + 1.7)) * 0.5, z + (b.cz - z) * 0.5,
+           r * 0.5, r * 0.15);
     });
   });
   var geo = new THREE.BufferGeometry();
