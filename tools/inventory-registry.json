@@ -250,6 +250,11 @@
    "class": "tooling",
    "pattern": "tools/zone-terrain-preview/*",
    "reason": "Standalone 3D look-test (Step 2, 2026-10-29): the WHOLE Adamsville zone's Stage-1 terrain foundation \u2014 pure ground at Joshua's ruled D mix (2 m near roads/houses, 10 m elsewhere; preview mesh decimated for the web to 8 m near / 30 m far, heights sampled from the stage-1 package grids only, reconstruction verified exact at all 11,032,992 near posts). Heights are the USGS 1 m lidar truth (100% coverage); 23 surveyed water bodies drawn at their levels, 54 pending-bed basins as outlines only (no invented water); no roads, houses or carved channels (stage 2 awaits rulings). Test scene only; the game stays in its NO MAP DATA state."
+  },
+  {
+   "class": "tooling",
+   "pattern": "tools/zone-terrain-stage2/*",
+   "reason": "Standalone 3D look-test (Step 2, 2026-10-29): the WHOLE Adamsville zone's Stage-2 SHAPED terrain \u2014 Joshua's Q3 pads levelled at all 24,407 buildings, Q6 nature's-standard channels with 151 Q7 dams carved through, water beds set; heights sampled from the stage-2 package grids only (D mix 2 m near / 10 m far honoured in the draw at 8 m / 30 m preview density; reconstruction verified exact at all 11,032,992 near posts). Water drawn by class: 28 bodies whose level sits in real ground filled blue; 48 flagged polygons + 3 inherited 'reach' polygons drawn AMBER as unverified (not basins in the real ground; await a Google check); the Chattahoochee drawn along its derived main stem at its own per-post levels, extents measured on the stage-2 grid (contiguous ground at/below level, 60 m cap). Test scene only; the game stays in its NO MAP DATA state."
   }
  ],
  "external": [
