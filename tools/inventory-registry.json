@@ -215,6 +215,11 @@
    "class": "tooling",
    "pattern": "tools/terrain-preview/*",
    "reason": "Standalone 3D terrain preview pages (Joshua's Step-2 inspection slices, first: Dollar Mill / Utoy Circle to Boulder Park, 2026-10-28): a self-contained Three.js page rendering the USGS 3DEP terrain for one small area so Joshua can inspect the new ground \u2014 pan/zoom/orbit \u2014 before any of it becomes game map data. Preview only: nothing here is registered as game data."
+  },
+  {
+   "class": "tooling",
+   "pattern": "tools/terrain-test-preview/*",
+   "reason": "Standalone 3D preview of the EXPANDED Step-2 terrain TEST package (Boulder Park Dr x Bakers Ferry to Fairburn Rd, MLK Jr Dr to Utoy Creek, 2026-10-28): renders the built package data itself (USGS 3DEP 10 m ground with carved waterways, measured lake levels, NLCD canopy masses) so Joshua can inspect it on phone and laptop before any of it becomes game map data. The game stays in its NO MAP DATA state; nothing here is registered as game data."
   }
  ],
  "external": [
