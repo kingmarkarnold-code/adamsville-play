@@ -2005,6 +2005,38 @@ function __scriptSkippedByOption(key){
     return o[opt]===false;
   }catch(e){ return false; }
 }
+/* PHASE G PARTIAL-MAP DISABLES (2026-10-30, Joshua's directive): while a
+   PARTIAL map package is active (terrain + water only), the systems that
+   need a complete map — buildings and building-content builders, NPCs,
+   vehicles/traffic, MARTA, interiors, Go To / GPS routing, legacy water
+   rendering, the zone-unlock ceremony — must not run at all. Their
+   scripts are skipped AT EXECUTION TIME in the deferred queue below:
+   the queue is collected before any script runs, but it EXECUTES in
+   document order and the map seam (zoneloader step) resolves the
+   package — setting window.__PKG_PARTIAL — before the core block and
+   long before these late scripts are reached. A skipped script's load
+   step (when it has one) is marked done, exactly like an option skip,
+   so the start gate never waits on a system that will never arrive.
+   Gates, not deletions: when a later build step publishes the full
+   package (partial flag off), every one of these loads and runs as
+   before with no further changes here. */
+var __PARTIAL_DISABLED_SRC={
+  'npc_system.js':1,'refnpc_system.js':1,'face_platform.js':1,
+  'dialogue_director_npc.js':1,
+  'traffic_system.js':1,'traffic_assist.js':1,'vehicle_avoid.js':1,
+  'semi_system.js':1,'schoolbus_system.js':1,'police_system.js':1,
+  'marta_system.js':1,'marta_bus_system.js':1,'helicopter_system.js':1,
+  'bird_drones.js':1,'truck_restrictions.js':1,
+  'airport.js':1,'schools3.js':1,'school_plaza.js':1,'marriott.js':1,
+  'clubs_diners.js':1,'mlk_fairburn.js':1,'residential_detail.js':1,
+  'dress535.js':1,'basketball_court.js':1,'interior_system.js':1,
+  'poi_map.js':1,'goto.js':1,'gps_system.js':1,'water_render.js':1,
+  'zoneunlockflow.js':1
+};
+function __partialDisabledSrc(src){
+  var base=String(src||'').split('?')[0].split('/').pop();
+  return !!__PARTIAL_DISABLED_SRC[base];
+}
 function __collectDeferredScripts(){
   var queue = [];
   var scripts = document.querySelectorAll('script[data-dsrc], script[type="text/x-deferred"]');
@@ -2307,7 +2339,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
    stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.10.28.14';
+window.__DOC_UIVER = '2026.10.30.1';
 function __checkDocVersionHeal(){
   var live = window.__UIVER || '';
   if (!live || live === window.__DOC_UIVER){
@@ -2444,6 +2476,15 @@ function __loadDeferredQueueInner(){
       return;
     }
     var item = queue[idx++];
+    /* PHASE G: partial-map execution skip (see __PARTIAL_DISABLED_SRC).
+       Checked per item at execution time — by now the seam has run and
+       window.__PKG_PARTIAL tells the truth for this boot. */
+    if (item.type === 'external' && item.src && window.__PKG_PARTIAL &&
+        __partialDisabledSrc(item.src)){
+      try{ if (item.key) __loadStep(item.key, false); }catch(e){}
+      try{ console.log('[partial-map] disabled in partial mode, not loaded: ' + item.src); }catch(e){}
+      next(); return;
+    }
     if (item.type === 'inline'){
       try{ __wbStage('eval:inline-'+(item.inlineIdx!=null?item.inlineIdx:'?')); }catch(e){}
       try{ (0,eval)(item.code); }catch(e){
@@ -4958,6 +4999,13 @@ function resolveCollision(p, radius){
    world-units-per-cell used by terrainMeshY(). */
 var TERR_SEGX=600, TERR_SEGZ=800;
 var TERR_CX=WX/TERR_SEGX, TERR_CZ=WZ/TERR_SEGZ;
+/* PHASE G (2026-10-30): terrain-grid ORIGIN offsets. Zero in every
+   legacy/package mode (the mesh covers [0,WX]x[0,WZ] from the origin).
+   In partial-map mode buildTerrain covers the package's own runtime
+   bounds instead (the rebuilt map extends past the legacy core rect),
+   sets these to the grid's west/north edge, and terrainMeshY reads
+   them — one lattice, one truth, wherever the mesh starts. */
+var TERR_OX=0, TERR_OZ=0;
 /* ================= TEXTURES (Joshua 2026-10-25: "Wire the textures into
    the game") =================
    The CC0 stock textures downloaded Oct 19 (editors/stock/textures/) now
@@ -5100,9 +5148,25 @@ try{ window.SAtex=SAtex; }catch(e){}
 try{ __wbStage('terrain'); }catch(e){}
 (function buildTerrain(){
   var SEGX=TERR_SEGX, SEGZ=TERR_SEGZ;
-  var geo = new THREE.PlaneGeometry(WX, WZ, SEGX, SEGZ);
+  /* PHASE G (2026-10-30): partial-map mode — the mesh covers the
+     PACKAGE's runtime bounds (map_loader's __PKG_TERRAIN_GRID, aligned
+     outward to this same cell lattice), not the legacy core rect: the
+     rebuilt Adamsville extends north/west/east past [0,WX]x[0,WZ], and
+     ground must be DRAWN under the player everywhere the collision
+     sampler has ground truth. The grid globals are re-pointed so
+     terrainMeshY (and the aprons below, which sample it) read the new
+     grid; south of the package the apron silhouette takes over exactly
+     as it does beyond the core rect in legacy mode. */
+  var _PW=WX, _PH=WZ, _OX=0, _OZ=0;
+  if (window.__PKG_PARTIAL && window.__PKG_TERRAIN_GRID){
+    var _pg=window.__PKG_TERRAIN_GRID;
+    SEGX=_pg.segx; SEGZ=_pg.segz; _OX=_pg.ox; _OZ=_pg.oz;
+    _PW=SEGX*TERR_CX; _PH=SEGZ*TERR_CZ;
+    TERR_SEGX=SEGX; TERR_SEGZ=SEGZ; TERR_OX=_OX; TERR_OZ=_OZ;
+  }
+  var geo = new THREE.PlaneGeometry(_PW, _PH, SEGX, SEGZ);
   geo.rotateX(-Math.PI/2);
-  geo.translate(WX/2, 0, WZ/2);  // v0.3 FIX: plane is centered at origin by default;
+  geo.translate(_OX+_PW/2, 0, _OZ+_PH/2);  // v0.3 FIX: plane is centered at origin by default;
   // without this the terrain spanned -4000..4000 (wrong half of the world, wrong heights)
   var pos = geo.attributes.position;
   var colors = [];
@@ -5211,10 +5275,15 @@ try{ __wbStage('terrain'); }catch(e){}
       scene.add(m2);
       return m2;
     }
-    _apronStrip(STAGE_X0,0,STAGE_Z0,STAGE_Z1,true);   /* WEST  (corners incl.) */
-    _apronStrip(WX,STAGE_X1,STAGE_Z0,STAGE_Z1,true); /* EAST  (corners incl.) */
-    _apronStrip(0,WX,STAGE_Z0,0,false);               /* NORTH */
-    _apronStrip(0,WX,WZ,STAGE_Z1,false);             /* SOUTH */
+    /* PHASE G: in partial-map mode the aprons ring the PACKAGE grid
+       rect (the mesh above), not the legacy core rect — same silhouette
+       role, no hole and no overlap between the real mesh and the
+       clamped-edge apron surface. */
+    var _ax0=_OX, _az0=_OZ, _ax1=_OX+_PW, _az1=_OZ+_PH;
+    _apronStrip(STAGE_X0,_ax0,STAGE_Z0,STAGE_Z1,true);   /* WEST  (corners incl.) */
+    _apronStrip(_ax1,STAGE_X1,STAGE_Z0,STAGE_Z1,true); /* EAST  (corners incl.) */
+    _apronStrip(_ax0,_ax1,STAGE_Z0,_az0,false);               /* NORTH */
+    _apronStrip(_ax0,_ax1,_az1,STAGE_Z1,false);             /* SOUTH */
   }catch(e){}
 })();
 /* v1.16 GREEN PHASE: terrain built (15%) — browser still frozen, label queued.
@@ -5256,7 +5325,8 @@ function terrainMeshY(x,z){
      That was the bumpiness AND the "not true roads" look. */
   /* v1.44: generalized from hardcoded 200x300/40u to TERR_SEGX/TERR_SEGZ. */
   var _st=TERR_SEGX+1;
-  var fx=Math.max(0,Math.min(TERR_SEGX-0.001,x/TERR_CX)), fz=Math.max(0,Math.min(TERR_SEGZ-0.001,z/TERR_CZ));
+  /* PHASE G: grid-origin offsets (zero outside partial-map mode). */
+  var fx=Math.max(0,Math.min(TERR_SEGX-0.001,(x-TERR_OX)/TERR_CX)), fz=Math.max(0,Math.min(TERR_SEGZ-0.001,(z-TERR_OZ)/TERR_CZ));
   var ix=Math.floor(fx), iz=Math.floor(fz), u=fx-ix, v=fz-iz;
   var i00=iz*_st+ix;
   var a=TERR_H[i00], b=TERR_H[i00+1], c=TERR_H[i00+_st], d=TERR_H[i00+_st+1];
@@ -6808,6 +6878,10 @@ try{ __parseSet('Placing street furniture', '', 40); }catch(e){}
    the old core rect 60 .. WX-60 / WZ-60). */
 (function borderVisual(){
   try{
+    /* PHASE G: the stage-edge barrier visual traces the seven-zone
+       stage; a partial map's edge is the package rect — no barrier
+       visual until the full-map step draws one for it. */
+    if (window.__PKG_PARTIAL) return;
     var H=150;
     var xc=document.createElement('canvas'); xc.width=xc.height=128;
     var g=xc.getContext('2d');
@@ -7322,7 +7396,15 @@ try{ __wbStage('water'); }catch(e){}
     });
     pw.streams.forEach(function(s){
       try {
-        scene.add(new THREE.Mesh(ribbonGeom(s.pts, 7, 0.18), pwSurfMat));
+        /* PHASE G (2026-10-30): a stream with a surveyed surface
+           profile (the Chattahoochee stem) renders as a true-width
+           ribbon ON that profile (ribbonGeomY) — its water level is
+           data, not a terrain hug. Streams without a profile keep the
+           legacy terrain-hugging ribbon. */
+        if (s.ys && s.ys.length === s.pts.length)
+          scene.add(new THREE.Mesh(ribbonGeomY(s.pts, s.width || 7, s.ys), pwSurfMat));
+        else
+          scene.add(new THREE.Mesh(ribbonGeom(s.pts, s.width || 7, 0.18), pwSurfMat));
         WATER.push({ creek: s.pts, name: s.name || 'creek', depthFt: 2 });
       } catch(e){}
     });
@@ -7463,6 +7545,9 @@ var BORDER_LL = [
 ];
 var BORDER = BORDER_LL.map(function(ll){ return xz(ll[0], ll[1]); });
 (function drawBorder(){
+  /* PHASE G: the red border line belongs to the legacy world frame;
+     a partial package brings no border posts. */
+  if (window.__PKG_PARTIAL) return;
   var pts=[];
   for (var e=0;e<BORDER.length;e++){
     var a=BORDER[e], b=BORDER[(e+1)%BORDER.length];
@@ -7577,6 +7662,11 @@ function heroPorchY(x, z){
 }
 try{ __wbStage('hero-house'); }catch(e){}
 (function buildHeroHouse(){
+  /* PHASE G (2026-10-30): partial map — buildings are disabled until
+     the buildings build step. 535's lot is bare graded ground (the
+     Stage 2 pad) for the player to inspect; the house returns with
+     that step. */
+  if (window.__PKG_PARTIAL) return;
   /* v1.66 HERO DATA (2026-10-12 Joshua: "535 wasn't in the editor"):
      The 535 Dollar Mill spec now lives in zones/adamsville/hero_buildings.json
      (baked into game data per Joshua's standing rule — the building editor
@@ -8124,6 +8214,8 @@ function ranchHouse(x, z, style){
 })();
 // scattered area-accurate shells in other neighborhoods
 (function areaShells(){
+  /* PHASE G: partial map — no buildings until the buildings step. */
+  if (window.__PKG_PARTIAL) return;
   var spots=[
     [4200,3300],[4350,3450],[4100,3600],[4500,3200],[3900,3500],  // Adamsville
     [7100,10400],[7300,10800],[7050,11000],[7400,10500],          // Riverdale suburbia
@@ -8588,6 +8680,15 @@ function runOsmBuildings(){
   try{ __wbStage('buildings-placement'); }catch(e){}
   try{
     if (typeof OSM_BUILDINGS==='undefined' || !OSM_BUILDINGS || !OSM_BUILDINGS.length){
+      /* PHASE G (2026-10-30): in partial-map mode, empty buildings are
+         the INTENDED state — buildings are disabled until their own
+         build step — not the v1.63 failure this branch exists to
+         catch. Report the mode plainly and stand down, no crash. */
+      if (window.__PKG_PARTIAL){
+        try{Report.setSys('osmBuildings',{status:'partial-mode — buildings disabled by design'});}catch(e){}
+        try{ if (window.__bldgGateResolve) window.__bldgGateResolve(); }catch(e){}
+        return;
+      }
       try{Report.setSys('osmBuildings',{status:'no-data'});}catch(e){}
       /* v1.63 CRASH LOG (Joshua's template case): the map can download and
          verify while the buildings never spawn — that is a CRITICAL, and
@@ -9411,6 +9512,8 @@ window.BUSINESSES=BUSINESSES;
 var INSPECTOR_BLDG=null;
 (function buildInspector(){
   try{
+    /* PHASE G: partial map — no buildings until the buildings step. */
+    if (window.__PKG_PARTIAL) return;
     var bx=7670, bz=3038;  // downtown
     var gy=0; try{ gy=heightAt(bx,bz); }catch(e){}
     // 6-story office block, distinct from houses
@@ -9473,6 +9576,8 @@ var PLACES_OF_INTEREST=[];
 try{ __wbStage('churches-schools'); }catch(e){}
 (function buildChurchesSchools(){
   try{
+    /* PHASE G: partial map — no buildings until the buildings step. */
+    if (window.__PKG_PARTIAL) return;
     var rng=mulberry32(19959);
     // Find residential clusters (dense type=0 areas) for placement
     var houses=[];
@@ -9594,6 +9699,7 @@ try{
 // Center, 3201 MLK Jr Dr SW (33.7540927, -84.4919619 per Nominatim). Game coords
 // are within ~35m. It IS in Adamsville; label kept as-is per Joshua's spec.
 (function(){
+  if (window.__PKG_PARTIAL) return;   /* PHASE G: no buildings in partial mode */
   var p=xz(33.75378, -84.49187), gy=heightAt(p.x,p.z);
   box(45,9,28, 0xb09a78, p.x, p.z);
   box(20,6,14, 0x9a8a70, p.x+34, p.z+6);
@@ -9607,6 +9713,7 @@ try{
 // but this marker is intentionally the OLD location. Old coords kept per
 // Joshua's never-delete rule; confirm this is the right historical spot.
 (function(){
+  if (window.__PKG_PARTIAL) return;   /* PHASE G: no buildings in partial mode */
   var p=xz(33.81297, -84.57214);
   box(16,5.5,11, 0xa08464, p.x, p.z);
   labelAt('SOUTH COBB LIBRARY (1967-2006)', p.x, p.z, 12, 40);
@@ -9614,6 +9721,7 @@ try{
 })();
 // Riverdale High + apartments
 (function(){
+  if (window.__PKG_PARTIAL) return;   /* PHASE G: no buildings in partial mode */
   var p=xz(33.55658, -84.40224);
   box(60,7,16, 0x9d5f43, p.x, p.z);
   labelAt('RIVERDALE HIGH', p.x, p.z, 14, 44, '#ffd75e');
@@ -9628,6 +9736,7 @@ try{
 })();
 // Downtown Atlanta 1995 skyline
 (function(){
+  if (window.__PKG_PARTIAL) return;   /* PHASE G: no buildings in partial mode */
   var p=xz(33.7586, -84.38908);
   [[0,0,60],[24,-10,44],[-22,8,38],[12,22,30],[-14,-20,50],[38,10,24]].forEach(function(t){
     box(16,t[2],16, 0x8fa3b8, p.x+t[0], p.z+t[1]); addCollider(p.x+t[0], p.z+t[1], 12);
@@ -9656,6 +9765,7 @@ try{
   // Techwood demolition = VACANT LOT (rule: torn-down in 1995 -> empty lot)
   /* #26 LANDMARK AUDIT (2026-10-11): corrected from (33.767,-84.395) — was ~1.1km S. */
   /* Source: Techwood Homes historical site (demolished 1995), near Techwood Dr NW / Georgia Tech. */
+  if (window.__PKG_PARTIAL) return;   /* PHASE G: no buildings in partial mode */
   var t=xz(33.777,-84.393);
   var lot=new THREE.Mesh(new THREE.PlaneGeometry(120,80),
     new THREE.MeshLambertMaterial({ color:0x8a7a5a }));
@@ -9666,6 +9776,7 @@ try{
 (function(){
   /* #26 LANDMARK AUDIT (2026-10-11): corrected from (33.57,-84.574) — was on NE Broad St, ~800m off. */
   /* Source: Nominatim/OSM — West Broad Street, Fairburn, GA 30213. */
+  if (window.__PKG_PARTIAL) return;   /* PHASE G: no buildings in partial mode */
   var m=xz(33.56621, -84.58205);
   for (var i=0;i<4;i++){ box(18,10+i%2*3,14, 0x96543c, m.x-42+i*24, m.z); addCollider(m.x-42+i*24, m.z, 12); }  // v1.61 COLLISION AUDIT (2026-10-12, Joshua's rule): 18x14 bldg, half-diag 11.4 — was 14
   labelAt('W BROAD ST — FAIRBURN', m.x, m.z, 20, 44);
@@ -9674,6 +9785,7 @@ try{
 })();
 // Fulton County Airport — Brown Field (verified 33.77716,-84.52134)
 (function(){
+  if (window.__PKG_PARTIAL) return;   /* PHASE G: no buildings in partial mode */
   var p=xz(33.77716, -84.52134), gy=heightAt(p.x,p.z);
   var rw=new THREE.Mesh(new THREE.BoxGeometry(26,0.4,520),
     new THREE.MeshLambertMaterial({ color:0x3a3d42 }));
@@ -10176,6 +10288,10 @@ var TREE_SPECIES=[
 ];
 try{ __wbStage('trees'); }catch(e){}
 (function plantTrees(){
+  /* PHASE G (2026-10-30): partial map — the legacy scatter would invent
+     a forest from the old world's logic. The rebuilt terrain carries
+     no tree placement yet; trees arrive with their own build step. */
+  if (window.__PKG_PARTIAL) return;
   var COUNT=2600;
   // species picker: cumulative weights, deterministic seed so the forest is
   // stable across loads (same seed every boot).
@@ -10946,6 +11062,9 @@ var car=null;
    Now we track the van explicitly. */
 var _vanSpawned=false;
 function spawnPlayerVan(){
+  /* PHASE G: partial map — vehicles are disabled; the player explores
+     on foot. Returning true retires the retry loop below cleanly. */
+  if (window.__PKG_PARTIAL) return true;
   if (_vanSpawned && car && car.mesh) return true;  // already spawned — don't double up
   /* Joshua's GMC Safari van (brown/gold two-tone), parked in the 535 driveway.
      v3.1 FIX (2026-10-09 inspection): yaw 0 = nose SOUTH toward Dollar Mill Rd
@@ -11023,6 +11142,8 @@ spawnPlayerVan();  // first attempt — may fail if vehicle_meshes.js isn't here
    they arrive (or 10s passes). Already-spawned = no-op. */
 var _parkedCarsSpawned=false;
 function spawnParkedCars(){
+  /* PHASE G: partial map — vehicles are disabled (see spawnPlayerVan). */
+  if (window.__PKG_PARTIAL) return true;
   if (_parkedCarsSpawned) return true;  // already spawned — don't double up
   /* v1.61: don't try until the mesh builders actually exist. vehicle_meshes.js
      loads deferred — bail now, the retry loop below picks it up once the

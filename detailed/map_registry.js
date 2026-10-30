@@ -73,19 +73,35 @@
    critical "NO MAP DATA" panel. Nothing can resurrect a map that is
    not installed. A future map registers here again (one entry + a
    package folder) and package mode revives with it.
+
+   PHASE G (2026-10-30) — that future map is here: the rebuilt
+   Adamsville terrain + fresh water package is registered below as a
+   PARTIAL map (see the registry comment). The legacy fallback stays
+   revoked; a partial package is the only installed map.
    ============================================================================ */
 
 /* ---------------------------------------------------------------------------
-   The registry. EMPTY since Phase F (2026-10-28) — no map is installed.
-   A future map entry looks like:
-     adamsville: { id:'adamsville', name:'Adamsville', isDefault:true,
-       packageBase:'maps/adamsville/',
-       origin:{ lat:33.74110, lon:-84.52645 } }
+   The registry. EMPTY from Phase F (2026-10-28) until Phase G.
+
+   PHASE G (2026-10-30, Joshua's directive) — ADAMSVILLE RETURNS AS A
+   PARTIAL MAP. The rebuilt terrain (Stage 1-3: USGS/Google ground,
+   pads, channels) plus the fresh verified water layer are published
+   as a package, and the game loads it in PARTIAL mode: the player
+   spawns at 535 and can run the whole board on foot on the real
+   ground, while buildings, NPCs, vehicles/traffic, crews and every
+   system that needs a complete map stay disabled (map_loader.js and
+   index.html gate on pkg.partial / window.__PKG_PARTIAL) until their
+   own build steps land. The entry's `partial: true` is part of the
+   package contract: zone.json in the package carries the same flag.
    packageBase is resolved relative to detailed/ (the game's own
    directory) so web, dev (generated www) and the APK shell all address
    the same layout.
    --------------------------------------------------------------------------- */
 var MAP_REGISTRY = {
+  adamsville: { id: 'adamsville', name: 'Adamsville', isDefault: true,
+    packageBase: 'maps/adamsville/',
+    origin: { lat: 33.74110, lon: -84.52645 },
+    partial: true }
 };
 var DEFAULT_MAP_ID = 'adamsville';
 
@@ -197,6 +213,102 @@ function makePkgTerrainSampler(zoneMeta, float32){
 }
 
 /* ---------------------------------------------------------------------------
+   D-GRID TERRAIN SAMPLER (Phase G, 2026-10-30). The rebuilt Adamsville
+   terrain ships in the two-level "D-grid" encoding Joshua ruled in Q2
+   (2 m posts near roads & houses, 10 m elsewhere) — the sampler learns
+   that layout; the data is NOT flattened to a single coarse grid.
+
+   Encoding (Stage 1 near_index.json, format-verified at publish time):
+     heights_base_10m.bin  Float32, nx x nz posts at 10 m over the whole
+                           bounds (row 0 = north edge = bounds zMin).
+     heights_near_2m.bin   Float32 values for the STORED 2 m posts only,
+                           in row-major scan order over the post mask.
+     nearpost_mask.bin     one bit per 2 m post (MSB-first within each
+                           byte, global bit index = row*nx + col); a post
+                           is stored iff its bit is set.
+     nearpost_rows.bin     Uint64 LE, nz+1 entries: entry r is the value
+                           index of row r's first stored post; the value
+                           index of a stored post (row, col) is
+                           rows[row] + (set bits in the row before col).
+                           (The loader converts the u64 table to a plain
+                           Uint32Array before calling this factory.)
+   Base posts are every 5th near post, bit-identical in the source, so
+   one surface exists: a stored post reads its 2 m value; an unstored
+   post reads the 10 m base grid bilinearly at its own location; a
+   sample bilinearly blends its four surrounding 2 m posts. Continuous
+   everywhere, exact 2 m truth wherever the near field is stored.
+   --------------------------------------------------------------------------- */
+function makeDGridSampler(zoneMeta, data){
+  var t = (zoneMeta && zoneMeta.terrain) || {};
+  var b = (zoneMeta && zoneMeta.bounds_m) || {};
+  var nearMeta = t.near || {};
+  var bnx = t.nx || 0, bnz = t.nz || 0, bpost = t.post_m || 10;
+  var nnx = nearMeta.nx || 0, nnz = nearMeta.nz || 0, npost = nearMeta.post_m || 2;
+  var x0 = b.xMin, z0 = b.zMin;   /* west edge, NORTH edge */
+  var base = data && data.base, near = data && data.near,
+      mask = data && data.mask, rows = data && data.rows;
+  /* Byte popcount LUT + a global byte-prefix table, so the within-row
+     rank of any post is O(1): full bytes come from the prefix table,
+     the two partial bytes are counted bit by bit (MSB-first order). */
+  var lut = new Uint8Array(256);
+  for (var li = 0; li < 256; li++){
+    var lv = li, lc = 0;
+    while (lv){ lc += lv & 1; lv >>= 1; }
+    lut[li] = lc;
+  }
+  var bytePref = new Uint32Array(mask ? mask.length + 1 : 1);
+  if (mask) for (var bi = 0; bi < mask.length; bi++)
+    bytePref[bi + 1] = bytePref[bi] + lut[mask[bi]];
+  function bitAt(gi){ return (mask[gi >> 3] >> (7 - (gi & 7))) & 1; }
+  function countBits(from, to){
+    var n = 0, i = from;
+    while (i < to && (i & 7) !== 0){ n += bitAt(i); i++; }
+    var eb = to >> 3;
+    if ((i >> 3) < eb){ n += bytePref[eb] - bytePref[i >> 3]; i = eb << 3; }
+    while (i < to){ n += bitAt(i); i++; }
+    return n;
+  }
+  function baseAt(px, pz){
+    var fx = (px - x0) / bpost, fz = (pz - z0) / bpost;
+    if (fx < 0) fx = 0; if (fz < 0) fz = 0;
+    if (fx > bnx - 1) fx = bnx - 1; if (fz > bnz - 1) fz = bnz - 1;
+    var i0 = Math.floor(fx), j0 = Math.floor(fz);
+    var i1 = Math.min(i0 + 1, bnx - 1), j1 = Math.min(j0 + 1, bnz - 1);
+    var ax = fx - i0, az = fz - j0;
+    var a = base[j0 * bnx + i0], bb = base[j0 * bnx + i1];
+    var c = base[j1 * bnx + i0], d = base[j1 * bnx + i1];
+    return a + (bb - a) * ax + (c - a) * az + (a - bb - c + d) * ax * az;
+  }
+  function postValue(row, col){
+    var gi = row * nnx + col;
+    if (bitAt(gi))
+      return near[rows[row] + countBits(row * nnx, gi)];
+    return baseAt(x0 + col * npost, z0 + row * npost);
+  }
+  function sampleElevM(px, pz){
+    if (!base || !near || !mask || !rows || !nnx || !nnz) return null;
+    var fx = (px - x0) / npost, fz = (pz - z0) / npost;
+    if (fx < 0) fx = 0; if (fz < 0) fz = 0;
+    if (fx > nnx - 1) fx = nnx - 1; if (fz > nnz - 1) fz = nnz - 1;
+    var i0 = Math.floor(fx), j0 = Math.floor(fz);
+    var i1 = Math.min(i0 + 1, nnx - 1), j1 = Math.min(j0 + 1, nnz - 1);
+    var ax = fx - i0, az = fz - j0;
+    var a = postValue(j0, i0), bb = postValue(j0, i1);
+    var c = postValue(j1, i0), d = postValue(j1, i1);
+    return a + (bb - a) * ax + (c - a) * az + (a - bb - c + d) * ax * az;
+  }
+  return {
+    nx: nnx, nz: nnz, post_m: npost, dgrid: true,
+    sampleElevM: sampleElevM,
+    heightYAtRuntime: function(x, z){
+      var p = runtimeToPkg(x, z);
+      var e = sampleElevM(p.x, p.z);
+      return (e === null) ? null : elevToRuntimeY(e);
+    }
+  };
+}
+
+/* ---------------------------------------------------------------------------
    Package-mode resolution (Phase D: package is the default per map).
    Zone-scoped: the CURRENT zone (from ?zone=, default the default map)
    must have a registry entry WITH a packageBase, or the answer is
@@ -252,7 +364,8 @@ window.MapFrame = {
   latLonToRuntime: latLonToRuntime, runtimeToLatLon: runtimeToLatLon,
   pkgToRuntime: pkgToRuntime, runtimeToPkg: runtimeToPkg,
   elevToRuntimeY: elevToRuntimeY, runtimeYToElev: runtimeYToElev,
-  makePkgTerrainSampler: makePkgTerrainSampler
+  makePkgTerrainSampler: makePkgTerrainSampler,
+  makeDGridSampler: makeDGridSampler
 };
 window.MapSystem = {
   /* Filled by map_loader.js when a package activates; null in legacy mode. */
@@ -261,8 +374,9 @@ window.MapSystem = {
   packageModeRequested: _mapPackageMode,
   packageBaseOverride: _mapPackageBaseOverride,
   /* Phase F (2026-10-28): true only when at least one map is registered.
-     The registry is empty after the map removal, so this is false and the
-     boot seam answers with the NO MAP DATA state. */
+     With the registry empty after the map removal this was false and the
+     boot seam answered with the NO MAP DATA state. Phase G (2026-10-30)
+     registers Adamsville again (partial), so this is true once more. */
   anyMapInstalled: function(){
     for (var k in MAP_REGISTRY){ if (MAP_REGISTRY.hasOwnProperty(k)) return true; }
     return false;

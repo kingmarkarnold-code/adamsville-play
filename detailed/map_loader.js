@@ -44,6 +44,25 @@
    state, never a fabricated world. When a new map package is
    registered again, this loader works exactly as before.
 
+   PHASE G (2026-10-30) — THE NEW MAP PACKAGE IS REGISTERED: the
+   rebuilt Adamsville terrain (D-grid format — see map_registry.js
+   makeDGridSampler) plus the fresh verified water layer, as a PARTIAL
+   package (zone.json carries "partial": true; every other record file
+   is an empty records list). bootWorld publishes window.__PKG_PARTIAL
+   and window.__PKG_TERRAIN_GRID before the core block runs; the
+   collision provider activates as usual (its water truth is real —
+   the lakes wade at their surveyed depth), and index.html disables
+   buildings / NPCs / vehicles / full-map systems on the flag.
+ *
+ * The WOODLAND ships with the terrain too (Joshua, 2026-10-30:
+ * "trees or wooded areas are a part of terrain"): when zone.json
+ * declares a "canopy" layer, loadPackage fetches it alongside (NLCD
+ * 2021 cover % per 10 m cell; house pads and open water already
+ * cleared in the data — zone-build/build-canopy.py) and bootWorld
+ * publishes it as window.__PKG_CANOPY; index.html's buildPkgCanopy
+ * draws it as canopy masses in partial mode. A canopy fetch failure
+ * never fails the boot — the world loads, the trees just don't.
+
    This module is loadable under Node for the Phase C harness: every
    browser touchpoint (fetch, THREE, scene, Report) is guarded, and the
    data path (fetch -> convert -> build -> provider) runs headless.
@@ -137,6 +156,51 @@ function fetchBin(url){
     return r.arrayBuffer();
   });
 }
+/* fetchBinParts(base, desc) — chunked big-file fetch. desc =
+   { parts: [fileName, ...], bytes: totalBytes, sha256: hex }, as
+   declared in zone.json terrain.files.nearParts. Fetches EVERY part
+   (any single failure rejects the whole job — never assemble a
+   partial buffer), concatenates the parts in order into one
+   ArrayBuffer, and verifies the assembled length — plus the sha256
+   wherever WebCrypto is available — against the descriptor. A
+   mismatch rejects, so the boot fails honestly (the NO MAP DATA
+   state) instead of sampling a truncated or corrupted height field.
+   The returned buffer is byte-identical to the single file it
+   replaces, so downstream consumers (the D-grid sampler) never see
+   the seam. Exists because the GitHub blob API rejects the 44 MB
+   heights_near_2m.bin monolith ("input too large"); the parts are
+   each <= 8 MB. */
+function fetchBinParts(base, desc){
+  var names = (desc && desc.parts) || [];
+  if (!names.length)
+    return Promise.reject(new Error('nearParts: empty parts list'));
+  return Promise.all(names.map(function(n){ return fetchBin(base + n); }))
+    .then(function(bufs){
+      var total = 0, i;
+      for (i = 0; i < bufs.length; i++) total += bufs[i].byteLength;
+      if (desc.bytes && total !== desc.bytes)
+        throw new Error('nearParts: assembled ' + total +
+                        ' bytes, descriptor says ' + desc.bytes);
+      var out = new Uint8Array(total), off = 0;
+      for (i = 0; i < bufs.length; i++){
+        out.set(new Uint8Array(bufs[i]), off);
+        off += bufs[i].byteLength;
+      }
+      var buf = out.buffer;
+      if (desc.sha256 && typeof crypto !== 'undefined' &&
+          crypto.subtle && crypto.subtle.digest){
+        return crypto.subtle.digest('SHA-256', buf).then(function(d){
+          var dv = new Uint8Array(d), hex = '', j;
+          for (j = 0; j < dv.length; j++)
+            hex += ('0' + dv[j].toString(16)).slice(-2);
+          if (hex !== String(desc.sha256).toLowerCase())
+            throw new Error('nearParts: assembled sha256 mismatch');
+          return buf;
+        });
+      }
+      return buf;
+    });
+}
 function note(msg, extra){
   try { console.log('[map-loader] ' + msg); } catch(e){}
   try {
@@ -163,8 +227,17 @@ function buildPackage(raw){
   /* The terrain sampler is built FIRST (before the roads below) so a
      road whose authored profile stops short of its last points can be
      completed from the ground itself — see the profile repair in the
-     roads conversion. */
-  var terrainSampler = F.makePkgTerrainSampler(raw.zone, raw.terrain);
+     roads conversion. Phase G: a package whose terrain.format is
+     'dgrid' carries the two-level D-grid (base 10 m + sparse near 2 m)
+     and gets the D-grid sampler — same sampleElevM interface, no
+     flattening of the ruled 2 m fineness. */
+  var terrainSampler = raw.dgrid
+    ? F.makeDGridSampler(raw.zone, raw.dgrid)
+    : F.makePkgTerrainSampler(raw.zone, raw.terrain);
+  /* Phase G: a PARTIAL package (terrain + water only; every other
+     record file empty) — index.html gates buildings/NPCs/vehicles and
+     every full-map system on this flag. */
+  pkg.partial = !!raw.zone.partial;
 
   /* --- roads: pts + per-point profile -> runtime pts + ys; arc lengths --- */
   pkg.roads = raw.roads.records.map(function(r){
@@ -225,7 +298,16 @@ function buildPackage(raw){
                              material: w.material });
     else
       pkg.waterStreams.push({ id: w.id, name: w.name, pts: ring(w.pts),
-                              halfW: 3.0, material: w.material });
+                              /* Phase G: a stream may carry its surveyed
+                                 per-point water surface (profile, metres
+                                 ASL — the Chattahoochee stem rides 0.5 m
+                                 over its thalweg) and a true width; the
+                                 legacy default (terrain-hugging ribbon,
+                                 3 m half width) stands when absent. */
+                              ys: (w.profile || []).map(Y),
+                              halfW: (typeof w.width_m === 'number')
+                                ? w.width_m / 2 : 3.0,
+                              material: w.material });
   });
 
   /* --- rail: centrelines with profiles; layer: -1 under, 0 grade, 1 over --- */
@@ -818,7 +900,8 @@ function buildLegacyGlobals(pkg){
                         name: w.name });
   });
   pkg.waterStreams.forEach(function(s){
-    water.streams.push({ pts: s.pts, name: s.name });
+    water.streams.push({ pts: s.pts, name: s.name, ys: s.ys,
+                         width: s.halfW * 2 });
   });
   return { roadData: roadData, buildings: buildings, water: water };
 }
@@ -833,6 +916,28 @@ function buildLegacyGlobals(pkg){
    the legacy datasets were removed with the map). The loaded package
    is kept (__PKG_PREBUILT) so the late activation below runs on the
    SAME load and conversion. */
+/* pkgTerrainGrid(boundsRuntime) — Phase G: the terrain-mesh grid for a
+   partial package. index.html's buildTerrain normally draws the legacy
+   core rect [0,WX]x[0,WZ] as a 600x800-cell plane (TERR_CX = WX/600,
+   TERR_CZ = WZ/800 — the constants below MUST match index.html's).
+   The rebuilt Adamsville package extends past that rect (north, west
+   and east fringes), so in partial mode the mesh instead covers the
+   package's own runtime bounds, aligned OUTWARD to the same cell
+   lattice (origin offsets are whole cells, so the mesh vertices sit
+   on the same lattice the legacy grid uses and terrainMeshY stays
+   coherent). The publish-time generator (zone-build/
+   publish-partial-package.js) computes the identical grid from the
+   identical formula and bakes terrain_heights_pkg.bin from it; the
+   harness cross-checks the two computations. */
+function pkgTerrainGrid(br){
+  if (!br) return null;
+  var CX = 8000 / 600, CZ = 12000 / 800;
+  var ox = Math.floor(br.x0 / CX) * CX, oz = Math.floor(br.z0 / CZ) * CZ;
+  var segx = Math.ceil((br.x1 - ox) / CX), segz = Math.ceil((br.z1 - oz) / CZ);
+  if (!(segx > 0 && segz > 0) || segx * segz > 4000000) return null;
+  return { ox: ox, oz: oz, segx: segx, segz: segz };
+}
+
 var _bootWorldPromise = null;
 function bootWorld(){
   if (_bootWorldPromise) return _bootWorldPromise;
@@ -840,6 +945,14 @@ function bootWorld(){
                                   window.MapSystem.packageBaseOverride())
     .then(function(pkg){
       window.__PKG_PREBUILT = pkg;
+      /* Phase G: publish the partial flag + terrain grid BEFORE the
+         core block evaluates (the seam awaits this promise), so every
+         gate in index.html and the deferred-queue skip see them. */
+      if (pkg.partial){
+        window.__PKG_PARTIAL = true;
+        window.__PKG_TERRAIN_GRID = pkgTerrainGrid(pkg.boundsRuntime);
+        window.__PKG_CANOPY = pkg.canopy || null;
+      }
       var g = buildLegacyGlobals(pkg);
       window.__PKG_ROAD_DATA = g.roadData;
       window.__PKG_BUILDINGS = g.buildings;
@@ -859,7 +972,20 @@ function bootWorld(){
          identical vertex order the legacy bin uses (600x800 segments,
          481,401 values). A miss is not fatal: __TERR_H_PRE = null makes
          buildTerrain compute the mesh from heightAt — the same
-         package terrain through the hook, just slower. */
+         package terrain through the hook, just slower.
+         Phase G partial packages bake their own precompute instead:
+         terrain_heights_pkg.bin covers the partial terrain grid
+         (__PKG_TERRAIN_GRID above; (segx+1) x (segz+1) values in the
+         same row-major vertex order buildTerrain consumes). */
+      if (pkg.partial){
+        return fetchBin(pkg.base + 'terrain_heights_pkg.bin')
+          .then(function(buf){
+            var arr = new Float32Array(buf);
+            window.__TERR_H_PRE = arr.length ? arr : null;
+            return true;
+          })
+          .catch(function(){ window.__TERR_H_PRE = null; return true; });
+      }
       return fetchBin(pkg.base + 'terrain_heights_600x800.bin')
         .then(function(buf){
           var arr = new Float32Array(buf);
@@ -876,25 +1002,83 @@ function bootWorld(){
 }
 
 /* ============================ load + activate =========================== */
+/* nearpost_rows.bin is Uint64 LE (row-start value indices, nz+1
+   entries ending at the stored-post total). Indices stay far below
+   2^32, so the table converts losslessly to a Uint32Array for the
+   D-grid sampler. */
+function u64RowsToU32(buf){
+  var dv = new DataView(buf);
+  var n = Math.floor(buf.byteLength / 8);
+  var out = new Uint32Array(n);
+  for (var i = 0; i < n; i++) out[i] = Number(dv.getBigUint64(i * 8, true));
+  return out;
+}
+
 function loadPackage(mapId, baseOverride){
   var entry = window.MapRegistry.get(mapId);
   if (!entry) return Promise.reject(new Error('unknown map ' + mapId));
   var base = baseOverride || entry.packageBase;
   if (!/\/$/.test(base)) base += '/';
-  return Promise.all([
-    fetchJSON(base + 'zone.json'), fetchJSON(base + 'roads.json'),
-    fetchJSON(base + 'buildings.json'), fetchJSON(base + 'water.json'),
-    fetchJSON(base + 'rail.json'), fetchJSON(base + 'structures.json'),
-    fetchJSON(base + 'places.json'), fetchJSON(base + 'pins.json'),
-    fetchJSON(base + 'signs.json'), fetchBin(base + 'terrain.bin')
-  ]).then(function(parts){
-    var raw = { zone: parts[0], roads: parts[1], buildings: parts[2],
-                water: parts[3], rail: parts[4], structures: parts[5],
-                places: parts[6], pins: parts[7], signs: parts[8],
-                terrain: new Float32Array(parts[9]) };
-    var pkg = buildPackage(raw);
-    pkg.base = base;
-    return pkg;
+  /* zone.json loads FIRST on its own: it declares the terrain format,
+     and the terrain fetch depends on it (single-grid terrain.bin for
+     Phase B/C packages; the four D-grid files for Phase G). Every
+     other package file is format-independent and fetches in parallel
+     with the terrain. */
+  return fetchJSON(base + 'zone.json').then(function(zone){
+    var names = ['roads', 'buildings', 'water', 'rail', 'structures',
+                 'places', 'pins', 'signs'];
+    var jsonJobs = names.map(function(n){ return fetchJSON(base + n + '.json'); });
+    var terrainJob;
+    if (zone.terrain && zone.terrain.format === 'dgrid'){
+      var f = zone.terrain.files || {};
+      /* Chunked near-heights: when terrain.files.nearParts is
+         declared, the near file travels in <= 8 MB parts (the 44 MB
+         monolith exceeds the GitHub blob API) and fetchBinParts
+         reassembles the identical byte stream for the sampler.
+         Without nearParts, the single-file fetch runs as before. */
+      var nearJob = (f.nearParts && f.nearParts.parts &&
+                     f.nearParts.parts.length)
+        ? fetchBinParts(base, f.nearParts)
+        : fetchBin(base + (f.near || 'heights_near_2m.bin'));
+      terrainJob = Promise.all([
+        fetchBin(base + (f.base || 'heights_base_10m.bin')),
+        nearJob,
+        fetchBin(base + (f.mask || 'nearpost_mask.bin')),
+        fetchBin(base + (f.rows || 'nearpost_rows.bin'))
+      ]).then(function(bs){
+        return { dgrid: { base: new Float32Array(bs[0]),
+                          near: new Float32Array(bs[1]),
+                          mask: new Uint8Array(bs[2]),
+                          rows: u64RowsToU32(bs[3]) } };
+      });
+    } else {
+      terrainJob = fetchBin(base + 'terrain.bin')
+        .then(function(buf){ return { grid: new Float32Array(buf) }; });
+    }
+    /* Canopy (optional): fetched with the rest; any failure resolves
+       to null — the woodland is dressing on the terrain, never a
+       reason to fail the boot (see the header note). */
+    var canopyJob = (zone.canopy && zone.canopy.file)
+      ? fetchBin(base + zone.canopy.file).then(
+          function(buf){ return new Uint8Array(buf); },
+          function(){ return null; })
+      : Promise.resolve(null);
+    return Promise.all([Promise.all(jsonJobs), terrainJob, canopyJob])
+      .then(function(res){
+        var j = res[0], terr = res[1];
+        var raw = { zone: zone, roads: j[0], buildings: j[1],
+                    water: j[2], rail: j[3], structures: j[4],
+                    places: j[5], pins: j[6], signs: j[7],
+                    terrain: terr.grid || null, dgrid: terr.dgrid || null };
+        var pkg = buildPackage(raw);
+        pkg.base = base;
+        if (res[2] && zone.canopy) pkg.canopy = {
+          cover: res[2], cols: zone.canopy.cols|0, rows: zone.canopy.rows|0,
+          cellM: zone.canopy.cell_m || 10,
+          x0: zone.bounds_m.xMin, z0: zone.bounds_m.zMin,
+          threshold: zone.canopy.threshold_pct || 30 };
+        return pkg;
+      });
   });
 }
 

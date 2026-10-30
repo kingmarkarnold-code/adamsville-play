@@ -1,0 +1,99 @@
+{
+ "id": "adamsville",
+ "name": "Adamsville",
+ "partial": true,
+ "phase": "G (2026-10-30) \u2014 PARTIAL package: rebuilt terrain + fresh verified water only (water fix 2026-10-30: Chattahoochee stepped pools, Tatum outlet creek authored). Roads, buildings, rail, structures, places, pins and signs are later build steps; their record files are empty on purpose.",
+ "origin": {
+  "lat": 33.7411,
+  "lon": -84.52645,
+  "note": "535 Dollar Mill Rd SW \u2014 frame origin, (0,0)"
+ },
+ "bounds_m": {
+  "xMin": -2740,
+  "xMax": 6370,
+  "zMin": -11470,
+  "zMax": 1540
+ },
+ "bounds_latlon": {
+  "latMin": 33.727215831227625,
+  "latMax": 33.844510010272195,
+  "lonMin": -84.55601913152228,
+  "lonMax": -84.45770716503763
+ },
+ "frame": {
+  "axes": "x east, z south from origin",
+  "elevations": "absolute metres ASL, USGS 3DEP",
+  "units": "true metres, 1 unit = 1 m"
+ },
+ "terrain": {
+  "format": "dgrid",
+  "layout": "TWO-LEVEL: heights_base_10m.bin = Float32 posts every 10 m (912 x 1302, row 0 = north edge); heights_near_2m.bin = Float32 values for the stored 2 m posts only (4556 x 6506 lattice), indexed by nearpost_mask.bin (1 bit per post, MSB-first) + nearpost_rows.bin (Uint64 LE row starts). Base posts are every 5th near post. Shipping form: the near file travels chunked as files.nearParts (ordered parts, each <= 8 MB \u2014 GitHub blob-API size limit); the loader fetches every part, concatenates them in order and verifies length + sha256 against the descriptor, reproducing the identical heights_near_2m.bin byte stream before sampling. Nothing else about the layout changes.",
+  "nx": 912,
+  "nz": 1302,
+  "post_m": 10,
+  "near": {
+   "nx": 4556,
+   "nz": 6506,
+   "post_m": 2
+  },
+  "files": {
+   "base": "heights_base_10m.bin",
+   "near": "heights_near_2m.bin",
+   "nearParts": {
+    "parts": [
+     "heights_near_2m.bin.part00",
+     "heights_near_2m.bin.part01",
+     "heights_near_2m.bin.part02",
+     "heights_near_2m.bin.part03",
+     "heights_near_2m.bin.part04",
+     "heights_near_2m.bin.part05"
+    ],
+    "bytes": 44131968,
+    "sha256": "919908a4db755c6faebad16eb167f2a2db4d946c2de895212737cad8a9010bd9"
+   },
+   "mask": "nearpost_mask.bin",
+   "rows": "nearpost_rows.bin"
+  },
+  "source": "Stage 1-3 rebuild (USGS 3DEP 1 m lidar, Q2 ruling D grid; pads + channels shaped; water beds carved at level - 0.6 m inside Google-verified outlines only; 2026-10-30 water fix: Chattahoochee stepped pools + Tatum outlet creek \u2014 surfaces only, terrain bytes unchanged)"
+ },
+ "counts": {
+  "roads": 0,
+  "buildings": 0,
+  "water": 87,
+  "rail": 0,
+  "structures": 0,
+  "places": 0,
+  "pins": 0,
+  "signs": 0,
+  "canopy_woodland_cells": 539577
+ },
+ "generated": "2026-10-30",
+ "generator": "zone-build/publish-partial-package.js from zone-build/stage2-fresh/stage3/",
+ "canopy": {
+  "file": "canopy_cover_10m.bin",
+  "format": "uint8 canopy cover % per 10 m cell; row 0 = north edge (bounds zMin), cols run east from bounds xMin; woodland where cover >= threshold_pct",
+  "cols": 911,
+  "rows": 1301,
+  "cell_m": 10,
+  "threshold_pct": 30,
+  "height_rule_m": "crown top = ground + (10 + 14 * cover/100) m (Oct 28 test-build rule, cover>=30 only); foliage bottom = ground + 2.44 m (8 ft tree-form rule), trunk below \u2014 drawn by index.html buildPkgCanopy in partial mode",
+  "source": "USGS NLCD 2021 Tree Canopy Cover (CONUS) v2021-4 via MRLC GeoServer WCS (full-zone clip fetched 2026-10-30; native pixels ~18.5 x 22.2 m, nearest-sampled at cell centres \u2014 no invented smoothing)",
+  "clearings": "house pads: cover zeroed within footprint + 6 m and feathered (smoothstep) over 6-14 m, from Stage 2 pad posts (Oct 28 house-in-forest rule); open water: zeroed inside the Phase 3 body outlines and the Chattahoochee stem corridor at its published width (Tatum rule)",
+  "stats": {
+   "cells": 1185211,
+   "cols": 911,
+   "rows": 1301,
+   "cell_m": 10,
+   "raw_woodland_frac": 0.5842,
+   "test_window_raw_woodland_frac": 0.6091,
+   "woodland_cells": 539577,
+   "woodland_frac": 0.4553,
+   "pad_cleared_cells": 240957,
+   "water_cells": 8581,
+   "sha256": "ffc8102f743e0605c0cd9bb94f9ef5df381563991261722682fa0c776cd9a367",
+   "crosscheck_blocks": 25,
+   "crosscheck_corr": 0.895
+  },
+  "generator": "zone-build/build-canopy.py"
+ }
+}
