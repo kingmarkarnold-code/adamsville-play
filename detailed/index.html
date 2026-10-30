@@ -2339,7 +2339,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
    stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.10.30.1';
+window.__DOC_UIVER = '2026.10.30.2';
 function __checkDocVersionHeal(){
   var live = window.__UIVER || '';
   if (!live || live === window.__DOC_UIVER){
@@ -5286,6 +5286,153 @@ try{ __wbStage('terrain'); }catch(e){}
     _apronStrip(_ax0,_ax1,_az1,STAGE_Z1,false);             /* SOUTH */
   }catch(e){}
 })();
+
+/* ================= PHASE G CANOPY — the woodland ships WITH the
+   terrain (Joshua, 2026-10-30: "trees or wooded areas are a part of
+   terrain. So in the terrain data as I explore the map, I should have
+   seen the foliage.") =================
+   Partial mode only. The package carries NLCD 2021 canopy cover % per
+   10 m package cell (loader publishes window.__PKG_CANOPY; the data
+   is built by zone-build/build-canopy.py — open water already
+   excluded in the data itself). House clearings are NOT cut in this
+   build: Joshua's 2026-10-30 ruling pulled the inherited pads out of
+   the terrain ("new means new"), so the woodland follows the
+   coverage as it lies; clearings are cut fresh with the pads at the
+   buildings step. Drawn as canopy MASSES on the
+   terrain mesh's own lattice, the Oct 28 test-build way (the locked
+   crest-scene look): a crown surface at ground + (10 + 14*cover/100)
+   metres wherever all four corners of a mesh cell are wooded
+   (cover >= threshold), coloured by cover; the mass's perimeter
+   drops in two bands — foliage green down to ground + 2.44 m, trunk
+   brown below it — the TREE FORM RULE: foliage bottom ≈ 8 ft, trunks
+   joining solidly into the crowns. Heights ride TERR_H itself (the
+   very heights the terrain mesh drew), converted at the package
+   elevation scale, so the crowns can never float off the ground. */
+(function buildPkgCanopy(){
+  if (!window.__PKG_PARTIAL || !window.__PKG_CANOPY) return;
+  try{ __wbStage('canopy'); }catch(e){}
+  var C = window.__PKG_CANOPY, MF = window.MapFrame;
+  if (!C || !C.cover || !MF || typeof TERR_H === 'undefined' || !TERR_H) return;
+  var SEGX = TERR_SEGX, SEGZ = TERR_SEGZ, NVX = SEGX + 1, NV = NVX * (SEGZ + 1);
+  if (TERR_H.length !== NV) return;
+  /* runtime Y units per metre of elevation (the package scale) */
+  var YS = (MF.elevToRuntimeY(100) - MF.elevToRuntimeY(0)) / 100;
+  var THR = C.threshold || 30;
+  var cov = new Uint8Array(NV), wood = new Uint8Array(NV);
+  var vx, iy, i, x, z, p, cc, rr;
+  for (iy = 0; iy <= SEGZ; iy++){
+    z = TERR_OZ + iy * TERR_CZ;
+    for (vx = 0; vx <= SEGX; vx++){
+      x = TERR_OX + vx * TERR_CX;
+      p = MF.runtimeToPkg(x, z);
+      cc = Math.floor((p.x - C.x0) / C.cellM); rr = Math.floor((p.z - C.z0) / C.cellM);
+      i = iy * NVX + vx;
+      if (cc >= 0 && rr >= 0 && cc < C.cols && rr < C.rows){
+        cov[i] = C.cover[rr * C.cols + cc];
+        if (cov[i] >= THR) wood[i] = 1;
+      }
+    }
+  }
+  var pos = [], col = [], idx = [], swy = [], vTop = new Int32Array(NV).fill(-1), nv = 0;
+  function topVert(vi){
+    if (vTop[vi] >= 0) return vTop[vi];
+    var lx = vi % NVX, lz = (vi / NVX) | 0;
+    var wx = TERR_OX + lx * TERR_CX, wz = TERR_OZ + lz * TERR_CZ;
+    var f = cov[vi] / 100;
+    var sh = 0.92 + 0.08 * Math.sin(wx * 0.011 + wz * 0.017);
+    pos.push(wx, TERR_H[vi] + (10 + 14 * f) * YS, wz);
+    /* WIND SWAY weight (Joshua, 2026-10-30): zero at the foliage
+       bottom (ground + 2.44 m — the trunk/canopy junction), strongest
+       at the crown top. Consumed by the vertex shader below. */
+    swy.push(Math.max(0, Math.min(1, ((10 + 14 * f) - 2.44) / 12)));
+    col.push((0.13 + 0.10 * (1 - f)) * sh, (0.30 + 0.13 * f) * sh, (0.11 + 0.07 * (1 - f)) * sh);
+    vTop[vi] = nv++;
+    return vTop[vi];
+  }
+  var drawn = new Uint8Array(SEGX * SEGZ), quads = 0;
+  for (iy = 0; iy < SEGZ; iy++) for (vx = 0; vx < SEGX; vx++){
+    var a = iy * NVX + vx, b = a + 1, d = a + NVX, e2 = d + 1;
+    if (wood[a] && wood[b] && wood[d] && wood[e2]){
+      var ta = topVert(a), tb = topVert(b), td = topVert(d), te = topVert(e2);
+      idx.push(ta, td, tb, tb, td, te);
+      drawn[iy * SEGX + vx] = 1; quads++;
+    }
+  }
+  if (!quads) return;
+  /* Perimeter skirts: for every drawn-quad edge whose neighbouring
+     quad is not drawn, drop a foliage band (crown top -> ground +
+     2.44 m, the 8 ft foliage bottom) and a trunk band below it
+     (ground + 2.44 m -> the ground itself). */
+  function skirt(va, vb){
+    var ax = TERR_OX + (va % NVX) * TERR_CX, az = TERR_OZ + ((va / NVX) | 0) * TERR_CZ;
+    var bx = TERR_OX + (vb % NVX) * TERR_CX, bz = TERR_OZ + ((vb / NVX) | 0) * TERR_CZ;
+    var f = ((cov[va] + cov[vb]) / 2) / 100;
+    var fr = (0.13 + 0.10 * (1 - f)) * 0.85, fg = (0.30 + 0.13 * f) * 0.85,
+        fb = (0.11 + 0.07 * (1 - f)) * 0.85;
+    var tA = topVert(va), tB = topVert(vb), base = nv;
+    pos.push(ax, TERR_H[va] + 2.44 * YS, az,  bx, TERR_H[vb] + 2.44 * YS, bz,
+             ax, TERR_H[va], az,             bx, TERR_H[vb], bz);
+    swy.push(0, 0, 0, 0);   /* skirt + trunk verts never sway (trunks still) */
+    col.push(fr, fg, fb,  fr, fg, fb,  0.32, 0.23, 0.13,  0.32, 0.23, 0.13);
+    nv += 4;
+    idx.push(tA, base, tB,  tB, base, base + 1);            /* foliage band */
+    idx.push(base, base + 2, base + 1,  base + 1, base + 2, base + 3);  /* trunk band */
+  }
+  var skirtEdges = 0;
+  for (iy = 0; iy < SEGZ; iy++) for (vx = 0; vx < SEGX; vx++){
+    if (!drawn[iy * SEGX + vx]) continue;
+    var a2 = iy * NVX + vx, b2 = a2 + 1, d2 = a2 + NVX, e3 = d2 + 1;
+    if (vx === 0 || !drawn[iy * SEGX + vx - 1]){ skirt(a2, d2); skirtEdges++; }
+    if (vx === SEGX - 1 || !drawn[iy * SEGX + vx + 1]){ skirt(b2, e3); skirtEdges++; }
+    if (iy === 0 || !drawn[(iy - 1) * SEGX + vx]){ skirt(a2, b2); skirtEdges++; }
+    if (iy === SEGZ - 1 || !drawn[(iy + 1) * SEGX + vx]){ skirt(d2, e3); skirtEdges++; }
+  }
+  var geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(col), 3));
+  geo.setAttribute('aSway', new THREE.BufferAttribute(new Float32Array(swy), 1));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  /* WIND (Joshua, 2026-10-30): vertex-shader sway on the canopy ONLY —
+     each vertex displaced by a sine whose phase comes from its world
+     position (the forest never moves in lockstep), amplitude weighted
+     by aSway (height above the foliage bottom) and by one global wind
+     strength uniform fed from the same wind signal that drives the
+     weather and the wind SOUND (daycycle's wind, mph — calm vs storm =
+     gentle vs strong sway), plus a slow gust modulation (second sine).
+     ZERO per-frame CPU cost beyond two uniform writes on a 50 ms
+     timer; it rides the canopy's single existing draw call. */
+  var canopyMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+  canopyMat.onBeforeCompile = function(sh){
+    sh.uniforms.uWindT = window.__PKG_WIND_U = { value: 0 };
+    sh.uniforms.uWindS = window.__PKG_WIND_S = { value: 0.15 };
+    sh.vertexShader = 'uniform float uWindT;\nuniform float uWindS;\nattribute float aSway;\n' +
+      sh.vertexShader.replace('#include <begin_vertex>', [
+        '#include <begin_vertex>',
+        'float wPh = position.x * 0.05 + position.z * 0.043;',
+        'float wGust = 0.6 + 0.4 * sin(uWindT * 0.23 + position.x * 0.004 + position.z * 0.003);',
+        'float wAmp = aSway * uWindS * wGust;',
+        'transformed.x += sin(uWindT * 1.35 + wPh) * wAmp;',
+        'transformed.z += cos(uWindT * 1.02 + wPh * 1.3) * wAmp * 0.7;'
+      ].join('\n'));
+  };
+  if (!window.__pkgWindTimer){
+    window.__pkgWindTimer = setInterval(function(){
+      try {
+        var mph = (typeof window.__windMphNow === 'function') ? window.__windMphNow() : 7;
+        if (window.__PKG_WIND_U) window.__PKG_WIND_U.value += 0.05;
+        if (window.__PKG_WIND_S) window.__PKG_WIND_S.value = Math.max(0, Math.min(1, (mph - 2) / 20)) * 0.5;
+      } catch(e){}
+    }, 50);
+  }
+  var mesh = new THREE.Mesh(geo, canopyMat);
+  mesh.name = 'pkgCanopy';
+  scene.add(mesh);
+  window.__PKG_CANOPY_BUILT = { quads: quads, skirtEdges: skirtEdges,
+    tris: idx.length / 3, verts: nv };
+  try{ if (typeof Report !== 'undefined' && Report.setSys) Report.setSys('canopy', window.__PKG_CANOPY_BUILT); }catch(e){}
+})();
+
 /* v1.16 GREEN PHASE: terrain built (15%) — browser still frozen, label queued.
    CSS dots animate to prove aliveness. */
 try{ __parseSet('Building roads',
@@ -7377,7 +7524,110 @@ try{ __wbStage('water'); }catch(e){}
      data by map_loader's adapter. */
   if (window.__PKG_WATER){
     var pw = window.__PKG_WATER;
-    var pwSurfMat = new THREE.MeshLambertMaterial({ color: 0x2e6f9e });
+    /* WATER ANIMATION (Joshua, 2026-10-30 — his Oct 28 water-effects
+       ruling: no live fluid simulation; shader flow/ripple/foam instead).
+       One ShaderMaterial family for every package water surface:
+       uKind 0 = still body (ripple + shoreline foam), 1 = stream
+       (directional flow along the ribbon, foam streaks at the edges,
+       whitewater where the surface profile drops steeply — the Tatum
+       outlet trickle over its falls). Per-vertex data rides in aData:
+       x = shore factor (bodies: 0 at the ring, 1 deep; streams: 0..1
+       across the ribbon), y = arc length along a stream (0 on bodies),
+       z = drop foam 0..1 (streams). Attributes are computed ONCE at
+       build; the only per-frame CPU cost is one shared time uniform,
+       driven by a single Sim tick — no textures, one pass, cheap. */
+    var pwWaterMats = [];
+    function pwWaterMat(kind){
+      var m = new THREE.ShaderMaterial({
+        uniforms: { uTime: { value: 0 }, uKind: { value: kind } },
+        vertexShader: [
+          'attribute vec3 aData;',
+          'varying vec3 vW; varying vec3 vD;',
+          'void main(){ vD = aData;',
+          ' vec4 wp = modelMatrix * vec4(position, 1.0); vW = wp.xyz;',
+          ' gl_Position = projectionMatrix * viewMatrix * wp; }'
+        ].join('\n'),
+        fragmentShader: [
+          'uniform float uTime; uniform float uKind;',
+          'varying vec3 vW; varying vec3 vD;',
+          'float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }',
+          'void main(){',
+          ' vec3 deep = vec3(0.075, 0.30, 0.47);',
+          ' vec3 shal = vec3(0.20, 0.55, 0.72);',
+          ' float t = uTime;',
+          ' float rip = sin(vW.x * 0.55 + t * 1.6) * sin(vW.z * 0.62 - t * 1.3);',
+          ' rip += 0.5 * sin(vW.x * 1.7 - t * 2.2) * sin(vW.z * 1.9 + t * 1.8);',
+          ' vec3 col = mix(deep, shal, 0.5 + 0.28 * rip);',
+          ' float foam = 0.0;',
+          ' if (uKind > 0.5) {',
+          '   float flow = sin(vD.y * 1.4 - t * 3.2 + sin(vD.x * 6.2831) * 1.2);',
+          '   col = mix(col, shal * 1.15, 0.35 + 0.30 * flow);',
+          '   float streak = smoothstep(0.75, 1.0, sin(vD.y * 2.6 - t * 5.0 + vD.x * 9.0));',
+          '   col = mix(col, vec3(0.92, 0.97, 1.0), streak * 0.35);',
+          '   col = mix(col, vec3(0.95, 0.98, 1.0), clamp(vD.z, 0.0, 1.0) * (0.55 + 0.25 * sin(t * 7.0 + vD.y * 8.0)));',
+          '   float ef = min(vD.x, 1.0 - vD.x);',
+          '   foam = (1.0 - smoothstep(0.0, 0.18, ef)) * step(0.72, hash(floor(vW.xz * 1.5) + floor(t * 2.0)));',
+          ' } else {',
+          '   foam = (1.0 - smoothstep(0.0, 0.22, vD.x)) * step(0.72, hash(floor(vW.xz * 1.5) + floor(t * 2.0))) * (0.5 + 0.5 * sin(t * 2.0 + vW.x * 2.0 + vW.z * 1.7));',
+          ' }',
+          ' col = mix(col, vec3(0.93, 0.97, 0.99), clamp(foam, 0.0, 1.0) * 0.8);',
+          ' float sparkle = step(0.985, hash(floor(vW.xz * 3.0) + floor(t * 3.0)));',
+          ' col += vec3(0.25) * sparkle;',
+          ' gl_FragColor = vec4(col, 1.0);',
+          '}'
+        ].join('\n')
+      });
+      pwWaterMats.push(m);
+      return m;
+    }
+    var pwBodyMat = pwWaterMat(0), pwStreamMat = pwWaterMat(1);
+    try {
+      if (!window.__pkgWaterTick && window.Sim && typeof Sim.onTick === 'function'){
+        window.__pkgWaterTick = true;
+        Sim.onTick('render', 45, function(dt){
+          window.__pkgWaterT = (window.__pkgWaterT || 0) + (dt || 0.016);
+          for (var mi = 0; mi < pwWaterMats.length; mi++)
+            pwWaterMats[mi].uniforms.uTime.value = window.__pkgWaterT;
+        });
+      }
+    } catch(e){}
+    /* aData for a body: shore factor from the ring (0 at shore -> 1 at
+       >=10 m inside). ShapeGeometry local coords are (x, -z). */
+    function pwBodyData(geo, ring){
+      var posA = geo.getAttribute('position'), n = posA.count, out = new Float32Array(n * 3);
+      for (var vi = 0; vi < n; vi++){
+        var wx = posA.getX(vi), wz = -posA.getY(vi), best = 1e18;
+        for (var si = 0; si < ring.length; si++){
+          var a = ring[si], b = ring[(si + 1) % ring.length];
+          var abx = b[0] - a[0], abz = b[1] - a[1], l2 = abx * abx + abz * abz || 1;
+          var tt = ((wx - a[0]) * abx + (wz - a[1]) * abz) / l2;
+          tt = tt < 0 ? 0 : (tt > 1 ? 1 : tt);
+          var dx = wx - (a[0] + abx * tt), dz = wz - (a[1] + abz * tt);
+          var d2 = dx * dx + dz * dz; if (d2 < best) best = d2;
+        }
+        out[vi * 3] = Math.min(1, Math.sqrt(best) / 10);
+      }
+      geo.setAttribute('aData', new THREE.BufferAttribute(out, 3));
+      return geo;
+    }
+    /* aData for a stream ribbon (2 verts per station): across 0/1,
+       arc length at the station, drop foam from the profile slope —
+       steep drops (the Tatum outlet falls) read as whitewater. */
+    function pwStreamData(geo, s){
+      var n = s.pts.length, out = new Float32Array(n * 2 * 3), arc = 0;
+      for (var i = 0; i < n; i++){
+        if (i > 0) arc += Math.hypot(s.pts[i][0] - s.pts[i - 1][0], s.pts[i][1] - s.pts[i - 1][1]);
+        var foam = 0;
+        if (s.ys && i > 0 && i < n - 1){
+          var dl = Math.hypot(s.pts[i + 1][0] - s.pts[i - 1][0], s.pts[i + 1][1] - s.pts[i - 1][1]) || 1;
+          foam = Math.max(0, Math.min(1, ((s.ys[i - 1] - s.ys[i + 1]) / dl) / 0.10));
+        }
+        out[(i * 2) * 3] = 0;     out[(i * 2) * 3 + 1] = arc; out[(i * 2) * 3 + 2] = foam;
+        out[(i * 2 + 1) * 3] = 1; out[(i * 2 + 1) * 3 + 1] = arc; out[(i * 2 + 1) * 3 + 2] = foam;
+      }
+      geo.setAttribute('aData', new THREE.BufferAttribute(out, 3));
+      return geo;
+    }
     pw.bodies.forEach(function(b){
       try {
         var surfY = (typeof b.surfaceY === 'number') ? b.surfaceY : heightAt(b.x, b.z) + 0.35;
@@ -7385,7 +7635,7 @@ try{ __wbStage('water'); }catch(e){}
         b.ring.forEach(function(pt, i){
           if (i === 0) shape.moveTo(pt[0], -pt[1]); else shape.lineTo(pt[0], -pt[1]);
         });
-        var mesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), pwSurfMat);
+        var mesh = new THREE.Mesh(pwBodyData(new THREE.ShapeGeometry(shape), b.ring), pwBodyMat);
         mesh.rotation.x = -Math.PI / 2;
         mesh.position.y = surfY;
         scene.add(mesh);
@@ -7402,10 +7652,20 @@ try{ __wbStage('water'); }catch(e){}
            data, not a terrain hug. Streams without a profile keep the
            legacy terrain-hugging ribbon. */
         if (s.ys && s.ys.length === s.pts.length)
-          scene.add(new THREE.Mesh(ribbonGeomY(s.pts, s.width || 7, s.ys), pwSurfMat));
+          scene.add(new THREE.Mesh(pwStreamData(ribbonGeomY(s.pts, s.width || 7, s.ys), s), pwStreamMat));
         else
-          scene.add(new THREE.Mesh(ribbonGeom(s.pts, s.width || 7, 0.18), pwSurfMat));
-        WATER.push({ creek: s.pts, name: s.name || 'creek', depthFt: 2 });
+          scene.add(new THREE.Mesh(ribbonGeom(s.pts, s.width || 7, 0.18), pwBodyMat));
+        /* INTEGRATION (2026-10-30): streams register as RIVERS with
+           their true width + data depth, not as the legacy home creek
+           (the creek registration measured every stream against the
+           LAST creek polyline (distToCreek) and capped all stream
+           depth at 2 ft — the Chattahoochee could never be swum).
+           profYs carries the surveyed surface profile so
+           waterLevelAt/waterDepthAt read the DATA depth: creek
+           ~0.6 m (wade), river thalweg ~1.8 m (swim). */
+        WATER.push({ river: s.pts, width: s.width || 7, name: s.name || 'stream',
+                     depthFt: (typeof s.depthFt === 'number') ? s.depthFt : 2,
+                     profYs: (s.ys && s.ys.length === s.pts.length) ? s.ys : null });
       } catch(e){}
     });
     try { Report.setSys('water', { features: WATER.length, source: 'package' }); } catch(e){}
@@ -7475,12 +7735,28 @@ function inWater(x,z){
    land. Lakes/ponds sit 0.35u above the analytic terrain at their center;
    the creek rides 0.18u above terrain. (Visual meshes use the same rule —
    see waterDisc.) */
+/* pkgStreamYAt(w, x, z): surveyed surface Y at the point of a package
+   stream nearest to (x,z), interpolated along the segment — package
+   streams carry their surface as data (w.profYs, runtime Y), so the
+   swim surface is the measured surface, never a terrain estimate. */
+function pkgStreamYAt(w, x, z){
+  var pts = w.river, ys = w.profYs, best = 1e18, by = null;
+  for (var i = 0; i < pts.length - 1; i++){
+    var ax = pts[i][0], az = pts[i][1], bx = pts[i + 1][0], bz = pts[i + 1][1];
+    var abx = bx - ax, abz = bz - az, l2 = abx * abx + abz * abz || 1;
+    var tt = ((x - ax) * abx + (z - az) * abz) / l2;
+    tt = tt < 0 ? 0 : (tt > 1 ? 1 : tt);
+    var dx = x - (ax + abx * tt), dz = z - (az + abz * tt), d2 = dx * dx + dz * dz;
+    if (d2 < best){ best = d2; by = ys[i] + (ys[i + 1] - ys[i]) * tt; }
+  }
+  return by;
+}
 function waterLevelAt(x,z){
   var best=null;
   for (var i=0;i<WATER.length;i++){
     var w=WATER[i], y;
     if (w.creek){ if (distToCreek(x,z)<4.5){ y=heightAt(x,z)+0.18; if(best===null||y<best) best=y; } }
-    else if (w.river){ if (distToPolyline(w.river,x,z) < (w.width||30)/2){ y=heightAt(x,z)+0.25; if(best===null||y<best) best=y; } }
+    else if (w.river){ if (distToPolyline(w.river,x,z) < (w.width||30)/2){ y=w.profYs?pkgStreamYAt(w,x,z):heightAt(x,z)+0.25; if(y!==null&&(best===null||y<best)) best=y; } }
     /* PHASE D (2026-10-28): package water bodies carry their surveyed
        surface (w.surfY, runtime Y) — package terrain at a lake centre
        is the carved bed, so the legacy heightAt+0.35 estimate would
@@ -7525,7 +7801,12 @@ function waterDepthAt(x,z){
     if (w.creek){ if (distToCreek(x,z)<4.5) d=maxd; }
     else if (w.river){
       var rd=distToPolyline(w.river,x,z), hw=(w.width||30)/2;
-      if (rd<hw){ var t=rd/hw; d=maxd*(1-0.5*t*t); }  // center deep, banks ~half
+      if (rd<hw){
+        if (w.profYs){ /* data depth: surveyed surface minus the bed */
+          var sy=pkgStreamYAt(w,x,z);
+          if (sy!==null) d=Math.max(0, sy-heightAt(x,z));
+        } else { var t=rd/hw; d=maxd*(1-0.5*t*t); }  // center deep, banks ~half
+      }
     }
     else {
       var dx=(x-w.x)/w.rx, dz=(z-w.z)/w.rz, r2=dx*dx+dz*dz;
@@ -10288,9 +10569,15 @@ var TREE_SPECIES=[
 ];
 try{ __wbStage('trees'); }catch(e){}
 (function plantTrees(){
-  /* PHASE G (2026-10-30): partial map — the legacy scatter would invent
-     a forest from the old world's logic. The rebuilt terrain carries
-     no tree placement yet; trees arrive with their own build step. */
+  /* PHASE G (2026-10-30): partial map — the legacy scatter stays OFF:
+     it would invent a forest from the old world's logic (random
+     placement, old-zone clearings). The rebuilt map's woodland ships
+     as DATA with the terrain instead — NLCD canopy masses drawn by
+     buildPkgCanopy above from window.__PKG_CANOPY, with the open-
+     water exclusions baked into the data (house clearings arrive
+     with the buildings step: the inherited pads were pulled from
+     the terrain by Joshua's 2026-10-30 ruling).
+     This scatter remains the legacy-mode path only. */
   if (window.__PKG_PARTIAL) return;
   var COUNT=2600;
   // species picker: cumulative weights, deterministic seed so the forest is

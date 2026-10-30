@@ -54,7 +54,7 @@ var DOWNTOWN_LATLNG = [33.7586, -84.38908];
 
 /* ---- module state ---- */
 var ctx = null, master = null, noiseBuf = null;
-var gTraffic = null, gWind = null, gCrickets = null;
+var gTraffic = null, gWind = null, gCrickets = null, gWater = null;
 var wLFOdepth = null, crLFOdepth = null;   /* LFO depth gains (see buildLayers) */
 var retargetT = 0, enabled = true;
 var downtown = null;                        /* {x,z} once resolved */
@@ -183,6 +183,15 @@ function buildLayers(){
   w.connect(wF); wF.connect(gWind); gWind.connect(master);
   w.start(t); wLFO.start(t);
 
+  /* --- water: noise -> low-pass, proximity-driven (see retarget) ---
+     The sound of moving water: present at the shore and in the water,
+     absent inland. One more looped noise source — negligible CPU. */
+  var wa = loopNoise(0.85), waF = ctx.createBiquadFilter();
+  waF.type = 'lowpass'; waF.frequency.value = 750;
+  gWater = ctx.createGain(); gWater.gain.value = 0;
+  wa.connect(waF); waF.connect(gWater); gWater.connect(master);
+  wa.start(t);
+
   /* --- crickets: 4.3 kHz sine, pulsed by a 17 Hz LFO --- */
   var cr = ctx.createOscillator(), crLFO = ctx.createOscillator();
   cr.type = 'sine'; cr.frequency.value = 4300;
@@ -217,14 +226,83 @@ function retarget(){
   gTraffic.gain.setTargetAtTime(
     running ? 0.028 * busy * (0.45 + 0.55 * dens) : 0, t, 1.2);
 
-  /* Wind: always a faint bed, breathing slowly. */
-  gWind.gain.setTargetAtTime(running ? 0.010 : 0, t, 1.5);
-  wLFOdepth.gain.setTargetAtTime(running ? 0.006 : 0, t, 1.5);
+  /* Wind (Joshua, 2026-10-30): audible ONLY over 5 mph, strength
+     following the SAME wind signal that sways the trees and drives
+     the weather (daycycle's window.__windMphNow) — silent at or
+     below the threshold, so sound, sway and weather never disagree. */
+  var mph = 0;
+  try{ if (typeof window.__windMphNow === 'function') mph = window.__windMphNow(); }catch(e){}
+  var wT = (running && mph > 5) ? 0.012 + Math.min(0.05, (mph - 5) * 0.0028) : 0;
+  gWind.gain.setTargetAtTime(wT, t, 1.5);
+  wLFOdepth.gain.setTargetAtTime(wT * 0.6, t, 1.5);
+
+  /* Water (Joshua, 2026-10-30): volume by distance to the nearest
+     water surface/shore, from the same water data the collision
+     gate uses (the package's __PKG_WATER in a package world; the
+     WATER registry otherwise). Full at the shore / in the water,
+     fading to nothing ~55 m inland. Recomputed on the normal 2 s
+     retarget cadence — no per-frame audio work. */
+  var wDist = waterDist(p);
+  var waT = 0;
+  if (running && wDist !== null){
+    var wf = Math.max(0, 1 - Math.max(0, wDist - 2) / 55);
+    waT = 0.055 * wf * wf;
+  }
+  if (gWater) gWater.gain.setTargetAtTime(waT, t, 1.2);
 
   /* Crickets: night only. */
   var nightF = day ? 0 : 1;
   gCrickets.gain.setTargetAtTime(running ? 0.0075 * nightF : 0, t, 2.0);
   crLFOdepth.gain.setTargetAtTime(running ? 0.0035 * nightF : 0, t, 2.0);
+}
+
+/* waterDist(p) — metres from the player to the nearest water
+   surface/shore (0 = in the water), or null when no water data is
+   loaded. Package bodies carry ring bboxes (centre + radii) and
+   streams carry centrelines + width; legacy WATER entries carry
+   centre + radii or a river polyline. Stream distance samples the
+   polyline points (every 4th) minus half width — an approximation
+   that is honest at audio falloff ranges (~55 m). */
+function waterDist(p){
+  if (!p) return null;
+  var best = null;
+  function upd(d){ if (d !== null && isFinite(d) && (best === null || d < best)) best = d; }
+  try{
+    var PW = (typeof window !== 'undefined') ? window.__PKG_WATER : null;
+    if (PW){
+      for (var i = 0; i < (PW.bodies || []).length; i++){
+        var b = PW.bodies[i];
+        var qx = (p.x - b.x) / Math.max(1, b.rx), qz = (p.z - b.z) / Math.max(1, b.rz);
+        var q = Math.sqrt(qx * qx + qz * qz);
+        upd(q < 1 ? 0 : (q - 1) * Math.min(b.rx, b.rz));
+      }
+      for (var j = 0; j < (PW.streams || []).length; j++){
+        var s = PW.streams[j], hw = (s.width || 7) / 2;
+        for (var k = 0; k < s.pts.length; k += 4){
+          var dx = p.x - s.pts[k][0], dz = p.z - s.pts[k][1];
+          upd(Math.max(0, Math.sqrt(dx * dx + dz * dz) - hw));
+        }
+      }
+      return best;
+    }
+    if (typeof WATER !== 'undefined'){
+      for (var m = 0; m < WATER.length; m++){
+        var w = WATER[m];
+        if (w.river){
+          var hw2 = (w.width || 30) / 2;
+          for (var n = 0; n < w.river.length; n += 4){
+            var dx2 = p.x - w.river[n][0], dz2 = p.z - w.river[n][1];
+            upd(Math.max(0, Math.sqrt(dx2 * dx2 + dz2 * dz2) - hw2));
+          }
+        } else if (!w.creek && typeof w.rx === 'number'){
+          var ex = (p.x - w.x) / Math.max(1, w.rx), ez = (p.z - w.z) / Math.max(1, w.rz);
+          var eq = Math.sqrt(ex * ex + ez * ez);
+          upd(eq < 1 ? 0 : (eq - 1) * Math.min(w.rx, w.rz));
+        }
+      }
+    }
+  }catch(e){}
+  return best;
 }
 
 /* ------------------------------------------------------------------ */

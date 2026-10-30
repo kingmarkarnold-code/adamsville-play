@@ -72,6 +72,18 @@ var _cA=new (typeof THREE!=='undefined'?THREE.Color:function(){})(),
 /* ---------------- state ---------------- */
 var DC=null;   // state object once initialized
 
+/* WIND SIGNAL (Joshua, 2026-10-30): ONE wind value for the whole world
+   — a slowly varying RANDOM process in mph (gusts and lulls, NOT a
+   loop). It drives the canopy's vertex-shader sway (index.html), the
+   wind SOUND (ambient_audio.js — silent at or below 5 mph, Joshua's
+   threshold), and biases up when the weather turns rainy. Consumers
+   read window.__windMphNow(); sound, sway and weather can therefore
+   never disagree about the wind. */
+var _windEff = 7;
+if (typeof window !== 'undefined'){
+  window.__windMphNow = function(){ return _windEff; };
+}
+
 function seasonForDay(dayNum){
   var idx=Math.floor((dayNum-1)/DAYS_PER_SEASON)%4;
   return SEASON_ORDER[idx];
@@ -123,6 +135,7 @@ function init(){
     dayNum: saved?saved.dayNum:START_DAY,
     season: seasonForDay(saved?saved.dayNum:START_DAY),
     weather:'sunny', wxTimer: 25+rng()*40,   // game-minutes until re-roll
+    windMph: 7, windTarget: 7, windTimer: 5, // wind random walk (mph)
     cloudCover: 0.15,                         // 0..1 eased toward target
     t:0, lastSave:0,
     keys:{sky:new THREE.Color(), fog:new THREE.Color(), sunC:new THREE.Color(), sunI:0.85, hemiI:0.95}
@@ -223,6 +236,7 @@ function init(){
   window.__daycycle={
     get gameMin(){return DC.gameMin;}, get dayNum(){return DC.dayNum;},
     get season(){return DC.season;}, get weather(){return DC.weather;},
+    get windMph(){return _windEff;},
     setTime:function(min,day){ DC.gameMin=min; DC.dayNum=day||DC.dayNum;
       /* v1.47: keep the tick-driven WorldClock in sync. */
       try{ if(window.WorldClock && WorldClock.setTime) WorldClock.setTime(DC.gameMin, DC.dayNum); }catch(e){} }
@@ -272,6 +286,19 @@ function updateDayCycle(){
     else { DC.weather=(r<0.70)?'cloudy':'rainy'; }
     DC.wxTimer=20+Math.random()*50;   // game-minutes until next re-roll
   }
+  /* --- wind: random-walk toward a wandering target (mph) --- */
+  DC.windTimer-=dt*GAME_MIN_PER_SEC;
+  if(DC.windTimer<=0){
+    var wr=Math.random();
+    DC.windTarget = wr<0.62 ? 2+Math.random()*6          // calm spells
+                  : wr<0.88 ? 6+Math.random()*8          // breezy
+                  : 12+Math.random()*10;                 // gusty spells
+    if(DC.weather==='rainy') DC.windTarget+=5;           // storms are windy
+    DC.windTimer=8+Math.random()*20;                     // game-minutes
+  }
+  DC.windMph+=(DC.windTarget-DC.windMph)*Math.min(1,dt*0.05);
+  _windEff=Math.max(0, DC.windMph + Math.sin(DC.t*0.5)*1.2 + Math.sin(DC.t*0.131)*1.8);
+
   var targetCover=DC.weather==='sunny'?0.15:(DC.weather==='cloudy'?0.55:0.95);
   DC.cloudCover+=(targetCover-DC.cloudCover)*Math.min(1,dt*0.25);
 

@@ -57,8 +57,10 @@
  * The WOODLAND ships with the terrain too (Joshua, 2026-10-30:
  * "trees or wooded areas are a part of terrain"): when zone.json
  * declares a "canopy" layer, loadPackage fetches it alongside (NLCD
- * 2021 cover % per 10 m cell; house pads and open water already
- * cleared in the data — zone-build/build-canopy.py) and bootWorld
+ * 2021 cover % per 10 m cell; open water already excluded in the
+ * data — zone-build/build-canopy.py; house clearings arrive at the
+ * buildings step, the inherited pads having been pulled from the
+ * terrain by Joshua's 2026-10-30 ruling) and bootWorld
  * publishes it as window.__PKG_CANOPY; index.html's buildPkgCanopy
  * draws it as canopy masses in partial mode. A canopy fetch failure
  * never fails the boot — the world loads, the trees just don't.
@@ -887,21 +889,38 @@ function buildLegacyGlobals(pkg){
       if (w.ring[i][1] < mnz) mnz = w.ring[i][1]; if (w.ring[i][1] > mxz) mxz = w.ring[i][1];
     }
     var cx = (mnx + mxx) / 2, cz = (mnz + mxz) / 2;
-    /* Depth from the data: surveyed surface minus the carved bed at
-       the body's centre, in feet (the game's U_PER_FT = 0.304). */
-    var depthFt = 8;
-    if (typeof w.surfaceY === 'number'){
-      var bed = pkg.terrain.heightYAtRuntime(cx, cz);
-      if (typeof bed === 'number')
-        depthFt = Math.max(2, Math.min(40, (w.surfaceY - bed) / 0.304));
-    }
+    /* Depth (integration, 2026-10-30): NOT derived from the terrain
+       bed. Over open water the lidar DEM reads the water SURFACE, so
+       the carved bed (surface - 0.6 m — the anti-burial floor) would
+       cap every lake at ~2 ft and the player could never swim in one,
+       against Joshua's explore ruling (lakes/ponds are SWIM water,
+       2026-10-30). Lake depth is the game's per-feature model
+       (waterDepthFt in index.html): Tatum ~12 ft (Joshua's 2026-10-11
+       ground truth), ponds ~6 ft, lakes ~12 ft. The named anchor
+       carries its depth here; the rest fall through to that model. */
+    var depthFt = /tatum/i.test(w.name || '') ? 12 : undefined;
     water.bodies.push({ x: cx, z: cz, rx: (mxx - mnx) / 2, rz: (mxz - mnz) / 2,
                         ring: w.ring, surfaceY: w.surfaceY, depthFt: depthFt,
                         name: w.name });
   });
   pkg.waterStreams.forEach(function(s){
+    /* Depth from the data (integration, 2026-10-30): surveyed surface
+       profile minus the terrain bed at the stations, in feet — the
+       creek reads ~2 ft (wading), the Chattahoochee thalweg ~6 ft
+       (swimming). buildWater's stream registration carries it through;
+       waterDepthAt prefers the exact per-point profile depth anyway. */
+    var depthFt = 2;
+    if (s.ys && s.ys.length === s.pts.length){
+      var mx = 0;
+      for (var di = 0; di < s.pts.length; di++){
+        var bd = pkg.terrain.heightYAtRuntime(s.pts[di][0], s.pts[di][1]);
+        if (typeof bd === 'number' && typeof s.ys[di] === 'number')
+          mx = Math.max(mx, (s.ys[di] - bd) / 0.304);
+      }
+      if (mx > 0) depthFt = Math.max(2, Math.min(40, mx));
+    }
     water.streams.push({ pts: s.pts, name: s.name, ys: s.ys,
-                         width: s.halfW * 2 });
+                         width: s.halfW * 2, depthFt: depthFt });
   });
   return { roadData: roadData, buildings: buildings, water: water };
 }
