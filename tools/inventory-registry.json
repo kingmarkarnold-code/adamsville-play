@@ -260,6 +260,11 @@
    "class": "tooling",
    "pattern": "tools/zone-terrain-stage3/*",
    "reason": "Standalone 3D look-test (Phase 3 fresh water, 2026-10-30): the whole Adamsville zone's Stage-2 shaped ground (Q3 pads at all 24,407 buildings, Q6 nature's-standard channels, 151 Q7 dams carved) with Stage 2's old-list water step REMOVED (97,557 bed posts restored to post-pads ground) and the water layer rebuilt FRESH from the new ground only: 22 ponds/lakes confirmed by a Google satellite pass over the fresh Phase 1/2a inventory (Phase 2b verdicts), the two surveyed anchors (Tatum Lake 822.5 ft, Wildwood Lake 813.5 ft), and the Chattahoochee main stem derived from the Stage 1 drainage. Levels from the ponds' own DEM flat surfaces / basin floors, never above spill - 0.15 m; beds carved to level - 0.6 m inside the confirmed outlines only (audit: 0 posts above level, min depth 0.600 m, 0 unexplained changes vs the Stage 2 shaped grid). Unchecked candidates are NOT drawn \u2014 no amber/unverified shapes. Heights sampled from the stage-3 package grids only (reconstruction exact at all 11,032,992 near posts). Test scene only; the game stays in its NO MAP DATA state."
+  },
+  {
+   "class": "tooling",
+   "pattern": "tools/zone-terrain-stage2-fresh/*",
+   "reason": "Standalone 3D look-test (Phase 3 fresh water, 2026-10-30): the whole Adamsville zone's Stage-2 shaped terrain (Q3 pads, Q6/Q7 channels \u2014 unchanged) with the water layer REBUILT FRESH under the NEW MEANS NEW doctrine: the old water list was discarded entirely; the only water drawn is the fresh inventory \u2014 22 ponds/lakes confirmed by eye on Google satellite in Phase 2b, Tatum Lake at its surveyed 822.5 ft, Wildwood Lake at 813.5 ft from its ground-measured surface, and the Chattahoochee along its derived main stem at per-post levels. 277 Google-NO_WATER sites, 1 unresolved canopy-hidden site, and all unchecked candidates are excluded \u2014 nothing unverified is drawn. Levels come from each water's own measured surface (flat plateau/band or basin floor), beds cut 0.6 m below level; audit: zero bed violations, containment verified on the flow network, untouched-ground proof vs Stage 1 and vs a no-water reference build. Heights sampled from the Phase 3 package grids only. Test scene only; the game stays in its NO MAP DATA state."
   }
  ],
  "external": [
