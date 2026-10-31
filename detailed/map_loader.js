@@ -119,6 +119,77 @@ function ringInteriorPoint(ring){
   return [ring[0][0], ring[0][1]];
 }
 
+/* ================= MINIMAP SCOPE (Joshua 2026-10-31) =================
+   The minimap shows ONLY the zone(s) that are OPEN — maps are cut per
+   zone, so the minimap's coverage follows the open set, never the old
+   whole-world extent. And an open zone does NOT pull its surroundings
+   onto the minimap by itself: neighbouring ground appears ONLY as a
+   reveal strip beyond a zone edge, and only while the player is close
+   to that edge (within REVEAL_M). Proximity to the border is what
+   brings the neighbouring area into view — nothing else.
+
+   compute(openRects, px, pz) is a PURE function (harness-testable):
+     openRects — [{x0,x1,z0,z1}, ...] in the runtime frame (package
+                 mode: the one open zone is pkg.boundsRuntime).
+     returns { current: [the open rect(s) the player stands in — or
+               the nearest open rect when outside all of them],
+               strips:  [reveal strips beyond current-rect edges the
+               player is within REVEAL_M of],
+               visible: current + strips }
+   index.html's drawMinimap clips its feature drawing to `visible`
+   and darkens the rest of the disc; poi_map.js tests its dots
+   against the same set (window.__mmScopeNow, published per draw).
+   Future zones slot in by adding their rect to openRects — the
+   reveal rule itself does not change. */
+var MM_SCOPE_REVEAL_M = 300;   /* border-proximity distance, metres */
+function mmScopeCompute(openRects, px, pz){
+  var out = { current: [], strips: [], visible: [] };
+  if (!openRects || !openRects.length) return out;
+  /* The player's zone(s): any open rect containing the point. If the
+     point is outside every open rect (should not happen in play —
+     movement is gated to open ground), fall back to the NEAREST rect
+     so the scope still anchors somewhere sane. */
+  var containing = openRects.filter(function(r){
+    return px >= r.x0 && px <= r.x1 && pz >= r.z0 && pz <= r.z1;
+  });
+  if (!containing.length){
+    var best = null, bestD = 1e18;
+    openRects.forEach(function(r){
+      var dx = Math.max(r.x0 - px, 0, px - r.x1);
+      var dz = Math.max(r.z0 - pz, 0, pz - r.z1);
+      var d = Math.sqrt(dx * dx + dz * dz);
+      if (d < bestD){ bestD = d; best = r; }
+    });
+    containing = [best];
+  }
+  out.current = containing;
+  containing.forEach(function(r){
+    /* distance from the player to each edge, measured INSIDE the rect */
+    var dW = px - r.x0, dE = r.x1 - px, dN = pz - r.z0, dS = r.z1 - pz;
+    if (dW < MM_SCOPE_REVEAL_M)
+      out.strips.push({ x0: r.x0 - MM_SCOPE_REVEAL_M, x1: r.x0, z0: r.z0, z1: r.z1, edge: 'W' });
+    if (dE < MM_SCOPE_REVEAL_M)
+      out.strips.push({ x0: r.x1, x1: r.x1 + MM_SCOPE_REVEAL_M, z0: r.z0, z1: r.z1, edge: 'E' });
+    if (dN < MM_SCOPE_REVEAL_M)
+      out.strips.push({ x0: r.x0, x1: r.x1, z0: r.z0 - MM_SCOPE_REVEAL_M, z1: r.z0, edge: 'N' });
+    if (dS < MM_SCOPE_REVEAL_M)
+      out.strips.push({ x0: r.x0, x1: r.x1, z0: r.z1, z1: r.z1 + MM_SCOPE_REVEAL_M, edge: 'S' });
+  });
+  out.visible = containing.concat(out.strips);
+  return out;
+}
+/* Point test against a computed scope (POI dots + the harness use
+   it). No scope at all returns true — legacy behaviour untouched. */
+function mmScopeTest(scope, x, z){
+  if (!scope || !scope.visible) return true;
+  for (var i = 0; i < scope.visible.length; i++){
+    var r = scope.visible[i];
+    if (x >= r.x0 && x <= r.x1 && z >= r.z0 && z <= r.z1) return true;
+  }
+  return false;
+}
+window.__MM_SCOPE = { REVEAL_M: MM_SCOPE_REVEAL_M, compute: mmScopeCompute, test: mmScopeTest };
+
 /* Spatial hash (40u cells, the game's standard) over segment records. */
 function segHash(cell){
   var h = {};
@@ -387,6 +458,16 @@ function buildPackage(raw){
     });
     return { x0: x0, x1: x1, z0: z0, z1: z1 };
   })();
+
+  /* MINIMAP SCOPE (Joshua 2026-10-31): this package is the one OPEN
+     zone, so its bounds are the minimap's home extent. drawMinimap
+     asks here (via __MM_SCOPE.compute over [boundsRuntime]) what may
+     be drawn; neighbouring ground joins only as a border-proximity
+     reveal strip. See the MINIMAP SCOPE block at the top of this
+     file. */
+  pkg.minimapScope = function(px, pz){
+    return pkg.boundsRuntime ? mmScopeCompute([pkg.boundsRuntime], px, pz) : null;
+  };
 
   /* --- terrain (sampler built at the top of this function) --- */
   pkg.terrain = terrainSampler;

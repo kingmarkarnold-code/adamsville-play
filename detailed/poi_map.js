@@ -187,6 +187,14 @@ function drawPOIsMinimap(){
     var P = POIS[i];
     var dx = P.x - px, dz = P.z - pz;
     if (Math.abs(dx) > range || Math.abs(dz) > range) continue;
+    /* MINIMAP SCOPE (Joshua 2026-10-31): POI dots obey the same
+       open-zone scope as the base minimap — drawMinimap publishes
+       the current scope per draw (window.__mmScopeNow); a dot
+       outside the open zone (and outside any border-proximity
+       reveal strip) is not drawn. No scope (legacy mode) = draw
+       exactly as before. */
+    try{ if (window.__mmScopeNow && window.__MM_SCOPE &&
+             !window.__MM_SCOPE.test(window.__mmScopeNow, P.x, P.z)) continue; }catch(e){}
     var rx = -(dx * c - dz * s), rz = -(dx * s + dz * c);
     var mx = R + rx / range * R, my = R + rz / range * R;
     mm.fillStyle = POI_STYLE[P.type].color;

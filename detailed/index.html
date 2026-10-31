@@ -2339,7 +2339,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
    stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.10.30.2';
+window.__DOC_UIVER = '2026.10.31.1';
 function __checkDocVersionHeal(){
   var live = window.__UIVER || '';
   if (!live || live === window.__DOC_UIVER){
@@ -13142,6 +13142,34 @@ function drawMinimap(dt){
     var rx=-(dx*c-dz*s), rz=-(dx*s+dz*c);
     return [R+rx/range*R, R+rz/range*R];
   }
+  /* MINIMAP SCOPE (Joshua 2026-10-31): in package mode the minimap
+     shows ONLY the open zone — the package's boundsRuntime, the same
+     extent the full map already scopes to (fmActiveExtent). Ground
+     beyond an edge is drawn solely as a reveal strip while the
+     player is within __MM_SCOPE.REVEAL_M of that edge: the border
+     coming into view is what reveals the neighbouring area, never
+     the zone merely being open. The feature drawing below (water,
+     roads, names, markers, routes) is clipped to the scope's visible
+     rects, and the out-of-scope part of the disc is darkened once
+     the clip comes off. The pure scope math lives in map_loader.js
+     (__MM_SCOPE.compute) so future zones slot in by their bounds.
+     Legacy mode (no package): mmScope stays null and every behaviour
+     here is exactly what it was. */
+  var mmScope=null;
+  try{
+    var _mmExt=fmActiveExtent();
+    if (_mmExt && window.__MM_SCOPE) mmScope=window.__MM_SCOPE.compute([_mmExt], px, pz);
+  }catch(e){}
+  /* poi_map.js tests its minimap dots against this per-draw scope */
+  window.__mmScopeNow = mmScope;
+  function mmScopePath(){
+    mm.beginPath();
+    mmScope.visible.forEach(function(r){
+      var a=toMap(r.x0,r.z0), b=toMap(r.x1,r.z0), c=toMap(r.x1,r.z1), d=toMap(r.x0,r.z1);
+      mm.moveTo(a[0],a[1]); mm.lineTo(b[0],b[1]); mm.lineTo(c[0],c[1]); mm.lineTo(d[0],d[1]); mm.closePath();
+    });
+  }
+  if (mmScope){ mm.save(); mmScopePath(); mm.clip(); }
   // water
   mm.fillStyle='#2e6f9e';
   WATER.forEach(function(w){
@@ -13274,6 +13302,27 @@ function drawMinimap(dt){
     mm.fillStyle=c.dead?'#7a2a2a':'#ff4444';
     mm.beginPath(); mm.arc(cm[0],cm[1],5,0,Math.PI*2); mm.fill();
   });
+  /* MINIMAP SCOPE (Joshua 2026-10-31): feature clip off — the player
+     arrow and compass always draw. Then the out-of-scope part of the
+     disc (unopened ground, or neighbouring ground not yet revealed
+     by border proximity) is darkened, and the open zone's own border
+     is stroked so the edge itself reads on the map. */
+  if (mmScope){
+    mm.restore();
+    mm.save();
+    mm.beginPath(); mm.arc(R,R,R-2,0,Math.PI*2);
+    mmScope.visible.forEach(function(r){
+      var a=toMap(r.x0,r.z0), b=toMap(r.x1,r.z0), c=toMap(r.x1,r.z1), d=toMap(r.x0,r.z1);
+      mm.moveTo(a[0],a[1]); mm.lineTo(b[0],b[1]); mm.lineTo(c[0],c[1]); mm.lineTo(d[0],d[1]); mm.closePath();
+    });
+    mm.fillStyle='rgba(3,10,6,.58)'; mm.fill('evenodd');
+    mmScope.current.forEach(function(r){
+      var a=toMap(r.x0,r.z0), b=toMap(r.x1,r.z0), c=toMap(r.x1,r.z1), d=toMap(r.x0,r.z1);
+      mm.beginPath(); mm.moveTo(a[0],a[1]); mm.lineTo(b[0],b[1]); mm.lineTo(c[0],c[1]); mm.lineTo(d[0],d[1]); mm.closePath();
+      mm.strokeStyle='rgba(255,215,94,.55)'; mm.lineWidth=1.5; mm.stroke();
+    });
+    mm.restore();
+  }
   // player arrow (center, pointing up — map rotates under it, GTA SA style)
   mm.fillStyle='#ffffff';
   mm.beginPath(); mm.moveTo(R,R-11); mm.lineTo(R-7,R+8); mm.lineTo(R+7,R+8); mm.closePath(); mm.fill();

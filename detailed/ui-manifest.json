@@ -147,9 +147,9 @@
     },
     {
       "name": "index.html",
-      "size": 1145131,
-      "sha256": "ed234d3a7e43aa82c257bd3443fe645d4688f379cd9f29ba5c381da6bb7888a3",
-      "hash": "ed234d3a7e43aa82c257bd3443fe645d4688f379cd9f29ba5c381da6bb7888a3"
+      "size": 1147707,
+      "sha256": "364539474ec29b359936c9d7250fc89c1d75e41242f15ed20689a58ad8cab528",
+      "hash": "364539474ec29b359936c9d7250fc89c1d75e41242f15ed20689a58ad8cab528"
     },
     {
       "name": "input_diag.js",
@@ -171,9 +171,9 @@
     },
     {
       "name": "map_loader.js",
-      "size": 59627,
-      "sha256": "49deded25478e9fa85c70a5ce23bd12115732917f0f15446ba8d5e25c460fbc7",
-      "hash": "49deded25478e9fa85c70a5ce23bd12115732917f0f15446ba8d5e25c460fbc7"
+      "size": 63676,
+      "sha256": "1db77b9b86e28120fe9ef0d285b5534c2943dd339699808da1fe74b15c67c77f",
+      "hash": "1db77b9b86e28120fe9ef0d285b5534c2943dd339699808da1fe74b15c67c77f"
     },
     {
       "name": "map_registry.js",
@@ -249,9 +249,9 @@
     },
     {
       "name": "poi_map.js",
-      "size": 11303,
-      "sha256": "e332f85e2c1a75133ca592600584dbb05490a8e51fc56fb42bf1f11b8f5b1eb3",
-      "hash": "e332f85e2c1a75133ca592600584dbb05490a8e51fc56fb42bf1f11b8f5b1eb3"
+      "size": 11805,
+      "sha256": "d887a8793ae67ea423f55782a7c292aba151b2129a91f1630814ceb0ebd8d6f7",
+      "hash": "d887a8793ae67ea423f55782a7c292aba151b2129a91f1630814ceb0ebd8d6f7"
     },
     {
       "name": "police_system.js",
@@ -648,6 +648,6 @@
       "hash": "99e3a8f264f836ba86b79c497fa2be946b3b469eafa442d0f70eabab239abeec"
     }
   ],
-  "ui_version": "2026.10.30.2",
+  "ui_version": "2026.10.31.1",
   "version": "2026.10.17.9"
 }
