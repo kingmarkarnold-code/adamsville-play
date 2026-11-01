@@ -102,6 +102,8 @@ var wLFOdepth = null, crLFOdepth = null;   /* LFO depth gains (see buildLayers) 
 var fallsPt = null;        /* {x,z} Tatum Lake outlet, resolved lazily */
 /* B4 wading state: position-tracked speed + water state, splash timer. */
 var splashCount = 0;
+var splashLog = [];        /* last 16 bursts {kind, peak, at} — __AMB evidence */
+var lastSplash = null;
 var wadeState = { inWater: false, swimming: false, depth: 0, speed: 0,
                   nextSplash: 0, wasInWater: false, lx: null, lz: null, lt: 0 };
 var retargetT = 0, enabled = true;
@@ -501,19 +503,36 @@ function computeLevels(p, gm, running){
    wade / swim-moving / tread) and his speed from position deltas.
    Every splash is a short shaped burst of the water-noise buffer —
    generated in-code, no assets. splashCount is the instrumentation
-   the harness reads to prove the voices fire. */
-function splashBurst(kind, depthFrac){
+   the harness reads to prove the voices fire.
+
+   GAIN STAGING FIX (2026-11-01 fix batch v2, item 4): Joshua ran
+   the Tatum creek's length on build .6 and heard NO splashing,
+   though the triggers fired (harness-proven: state reads wading,
+   bursts trigger, grass stays silent). The bursts were inaudible
+   because the step peak scaled with depth/SWIM_DEPTH: in the
+   shallow creek (0.24 u of 1.216) a step peaked at 0.055 — UNDER
+   the creek's own continuous layer (0.085) and in the same band
+   (760 Hz vs the layer's ~950 Hz), so the water masked its own
+   splashes. A splash is a STRIDE sound, not a depth sound: steps
+   now peak 0.15-0.26 scaled by SPEED, brighter (1280 Hz) and a
+   touch longer so they read as splatter over the bed layer;
+   strokes rise to 0.20 over the river layer (0.110); enter 0.22.
+   Every burst is logged (kind, peak, time) on __AMB.gains() so
+   the audibility staging is verifiable, not asserted. */
+function splashBurst(kind, opt){
+  opt = opt || {};
   if (!ctx || ctx.state !== 'running' || !master || isMuted() || !enabled)
     return;
   try{
     var t = ctx.currentTime;
-    var dur  = kind === 'stroke' ? 0.30 : kind === 'enter' ? 0.42 :
-               kind === 'tread' ? 0.22 : 0.17;
-    var freq = kind === 'stroke' ? 470 : kind === 'enter' ? 540 :
-               kind === 'tread' ? 620 : 760;
-    var peak = kind === 'stroke' ? 0.105 : kind === 'enter' ? 0.12 :
-               kind === 'tread' ? 0.020 :
-               0.045 + 0.05 * Math.max(0, Math.min(1, depthFrac || 0));
+    var speedF = Math.max(0, Math.min(1, opt.speed || 0));
+    var dur  = kind === 'stroke' ? 0.32 : kind === 'enter' ? 0.42 :
+               kind === 'tread' ? 0.24 : 0.22;
+    var freq = kind === 'stroke' ? 620 : kind === 'enter' ? 880 :
+               kind === 'tread' ? 700 : 1280;
+    var peak = kind === 'stroke' ? 0.20 : kind === 'enter' ? 0.22 :
+               kind === 'tread' ? 0.045 :
+               0.15 + 0.11 * speedF;
     var s = ctx.createBufferSource();
     s.buffer = waterBuf; s.loop = true;
     s.playbackRate.value = 0.85 + Math.random() * 0.3;
@@ -528,6 +547,9 @@ function splashBurst(kind, depthFrac){
     s.connect(bp); bp.connect(g); g.connect(master);
     s.start(t); s.stop(t + dur + 0.05);
     splashCount++;
+    lastSplash = { kind: kind, peak: +peak.toFixed(3), at: Date.now() };
+    splashLog.push(lastSplash);
+    if (splashLog.length > 16) splashLog.shift();
   }catch(e){}
 }
 function tickWading(dt){
@@ -562,21 +584,21 @@ function tickWading(dt){
   wadeState.inWater = inWater;
   wadeState.swimming = swimming;
   wadeState.depth = depth;
-  if (inWater && !wadeState.wasInWater) splashBurst('enter', 1);
+  if (inWater && !wadeState.wasInWater) splashBurst('enter', {});
   wadeState.wasInWater = inWater;
   if (!inWater || !ctx || ctx.state !== 'running') return;
   wadeState.nextSplash -= wallDt;
   if (wadeState.nextSplash > 0) return;
   var moving = wadeState.speed > 0.6;
-  var SWIMD = 1.216;   /* index.html SWIM_DEPTH (runtime units) */
+  var speedF = Math.min(1, wadeState.speed / 6);
   if (swimming && moving){
-    splashBurst('stroke', 1);
+    splashBurst('stroke', { speed: speedF });
     wadeState.nextSplash = 0.55;          /* stroke rhythm */
   } else if (swimming && !moving){
-    splashBurst('tread', 1);
+    splashBurst('tread', {});
     wadeState.nextSplash = 1.7;           /* faint, occasional */
   } else if (moving){
-    splashBurst('step', Math.min(1, depth / SWIMD));
+    splashBurst('step', { speed: speedF });
     /* stride cadence: a step every ~2.4 u of travel, clamped */
     wadeState.nextSplash =
       Math.min(0.85, Math.max(0.30, 2.4 / Math.max(1, wadeState.speed)));
@@ -739,6 +761,8 @@ function boot(){
                musicPlaying: (typeof musicAudio !== 'undefined' &&
                               musicAudio) ? !musicAudio.paused : null,
                splashes: splashCount,
+               lastSplash: lastSplash,
+               splashLog: splashLog.slice(),
                wading: { inWater: wadeState.inWater,
                          swimming: wadeState.swimming,
                          depth: +wadeState.depth.toFixed(3),

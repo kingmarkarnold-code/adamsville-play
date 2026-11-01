@@ -14,9 +14,9 @@
     },
     {
       "name": "ambient_audio.js",
-      "size": 32979,
-      "sha256": "41e0fce02ee8677aafb2ce76f97f52cee0426711fa84c200ca473079b2b85f08",
-      "hash": "41e0fce02ee8677aafb2ce76f97f52cee0426711fa84c200ca473079b2b85f08"
+      "size": 34251,
+      "sha256": "5b33db626279f0cd9958e88d890848519dccd5854e3ef352c17c2c656acb3326",
+      "hash": "5b33db626279f0cd9958e88d890848519dccd5854e3ef352c17c2c656acb3326"
     },
     {
       "name": "basketball.html",
@@ -147,9 +147,9 @@
     },
     {
       "name": "index.html",
-      "size": 1184568,
-      "sha256": "d0f2dccd6c8f5dca1f16f3666970fc8be0b35cd4c0b13ec2687fcb42bad8a3ad",
-      "hash": "d0f2dccd6c8f5dca1f16f3666970fc8be0b35cd4c0b13ec2687fcb42bad8a3ad"
+      "size": 1191123,
+      "sha256": "f1bbd2870cc544ce77cafef57b293999c7e03f3fe3948754e7fa84f6cf8d632e",
+      "hash": "f1bbd2870cc544ce77cafef57b293999c7e03f3fe3948754e7fa84f6cf8d632e"
     },
     {
       "name": "input_diag.js",
@@ -171,9 +171,9 @@
     },
     {
       "name": "map_loader.js",
-      "size": 63676,
-      "sha256": "1db77b9b86e28120fe9ef0d285b5534c2943dd339699808da1fe74b15c67c77f",
-      "hash": "1db77b9b86e28120fe9ef0d285b5534c2943dd339699808da1fe74b15c67c77f"
+      "size": 65593,
+      "sha256": "cfe7edd48b5c8ffe2cc5b022a40194340c8d9ad2dfbb51be820ad55d7b813cea",
+      "hash": "cfe7edd48b5c8ffe2cc5b022a40194340c8d9ad2dfbb51be820ad55d7b813cea"
     },
     {
       "name": "map_registry.js",
@@ -648,6 +648,6 @@
       "hash": "99e3a8f264f836ba86b79c497fa2be946b3b469eafa442d0f70eabab239abeec"
     }
   ],
-  "ui_version": "2026.11.01.7",
+  "ui_version": "2026.11.01.8",
   "version": "2026.10.17.9"
 }

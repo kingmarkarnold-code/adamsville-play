@@ -2384,7 +2384,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
    stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.11.01.7';
+window.__DOC_UIVER = '2026.11.01.8';
 function __checkDocVersionHeal(){
   var live = window.__UIVER || '';
   if (!live || live === window.__DOC_UIVER){
@@ -8120,6 +8120,55 @@ try{ __wbStage('water'); }catch(e){}
       geo.setAttribute('aData', new THREE.BufferAttribute(out, 3));
       return geo;
     }
+    /* SINGLE-SURFACE STREAM GEOMETRY (2026-11-01 fix batch v2;
+       Joshua's verdict on .6/.3 + his method ruling: nothing
+       stacked). A profiled stream that carries surf_rings draws as
+       ONE triangulated sheet per ring — the same construction the
+       lakes use (ShapeGeometry over a simple polygon) — instead of
+       a per-station ribbon. Measured on the shipped build: the
+       creek's 24 per-record ribbons double-drew 2,762.5 m^2 at
+       their joins, the Chattahoochee's ribbon folded over itself
+       for 50,843 m^2 on bends, and NO strip triangulation can fix
+       that (perpendicular or miter cross-sections fold wherever
+       the spine turns inside its own width — a 2 m-station ribbon
+       rebuild measured WORSE: 5,616 / 137,473 m^2). A simple
+       polygon's triangulation partitions it exactly: overlap is
+       impossible by construction. The rings are baked into the
+       package by the zone build (union of the strip footprint;
+       ring vertices carry the surveyed surface + shader data).
+       Vertex Y and aData are matched by COORDINATE, not index, so
+       ShapeGeometry's winding normalisation cannot misalign them.
+       Local coords follow the lake rule: shape (x, -z), the sheet's
+       height rides in local Z (rotation.x = -PI/2 maps it to world
+       Y), and the mesh carries no position.y offset. */
+    function pwSurfGeom(ring){
+      var shape = new THREE.Shape();
+      ring.pts.forEach(function(pt, i){
+        if (i === 0) shape.moveTo(pt[0], -pt[1]); else shape.lineTo(pt[0], -pt[1]);
+      });
+      var geo = new THREE.ShapeGeometry(shape);
+      var posA = geo.getAttribute('position'), n = posA.count;
+      var adata = new Float32Array(n * 3), lut = {};
+      for (var i = 0; i < ring.pts.length; i++)
+        lut[ring.pts[i][0].toFixed(1) + ',' + ring.pts[i][1].toFixed(1)] = i;
+      for (var vi = 0; vi < n; vi++){
+        var gx = posA.getX(vi), gz = -posA.getY(vi);
+        var idx = lut[gx.toFixed(1) + ',' + gz.toFixed(1)];
+        if (idx === undefined){
+          var bd = 1e18; idx = 0;
+          for (var j = 0; j < ring.pts.length; j++){
+            var dx = ring.pts[j][0] - gx, dz = ring.pts[j][1] - gz, dd = dx * dx + dz * dz;
+            if (dd < bd){ bd = dd; idx = j; }
+          }
+        }
+        posA.setZ(vi, ring.ys[idx]);
+        adata[vi * 3] = ring.across[idx] || 0;
+        adata[vi * 3 + 1] = ring.arc[idx] || 0;
+        adata[vi * 3 + 2] = ring.foam[idx] || 0;
+      }
+      geo.setAttribute('aData', new THREE.BufferAttribute(adata, 3));
+      return geo;
+    }
     pw.bodies.forEach(function(b){
       try {
         var surfY = (typeof b.surfaceY === 'number') ? b.surfaceY : heightAt(b.x, b.z) + 0.35;
@@ -8142,8 +8191,21 @@ try{ __wbStage('water'); }catch(e){}
            profile (the Chattahoochee stem) renders as a true-width
            ribbon ON that profile (ribbonGeomY) — its water level is
            data, not a terrain hug. Streams without a profile keep the
-           legacy terrain-hugging ribbon. */
-        if (s.ys && s.ys.length === s.pts.length)
+           legacy terrain-hugging ribbon.
+           2026-11-01 fix batch v2: a profiled stream carrying
+           surf_rings (the merged Tatum creek, the Chattahoochee)
+           draws as ONE continuous triangulated surface per ring
+           (pwSurfGeom) — no per-record ribbons, no folds, nothing
+           stacked. ribbonGeomY remains the fallback for profiled
+           streams that carry no baked surface. */
+        if (s.surfRings && s.surfRings.length && s.ys && s.ys.length === s.pts.length){
+          for (var ri = 0; ri < s.surfRings.length; ri++){
+            var sm = new THREE.Mesh(pwSurfGeom(s.surfRings[ri]), pwStreamMat);
+            sm.rotation.x = -Math.PI / 2;
+            scene.add(sm);
+          }
+        }
+        else if (s.ys && s.ys.length === s.pts.length)
           scene.add(new THREE.Mesh(pwStreamData(ribbonGeomY(s.pts, s.width || 7, s.ys), s), pwStreamMat));
         else
           scene.add(new THREE.Mesh(ribbonGeom(s.pts, s.width || 7, 0.18), pwBodyMat));
@@ -8157,6 +8219,13 @@ try{ __wbStage('water'); }catch(e){}
            ~0.6 m (wade), river thalweg ~1.8 m (swim). */
         WATER.push({ river: s.pts, width: s.width || 7, name: s.name || 'stream',
                      depthFt: (typeof s.depthFt === 'number') ? s.depthFt : 2,
+                     /* 2026-11-01 fix batch v2: per-station widths
+                        (runtime units, parallel to river pts) — the
+                        merged creek runs 4-20 m wide; the water
+                        queries use the LOCAL width at the closest
+                        segment instead of one width for the whole
+                        stream. Null for constant-width streams. */
+                     widths: s.widths || null,
                      profYs: (s.ys && s.ys.length === s.pts.length) ? s.ys : null });
       } catch(e){}
     });
@@ -8210,6 +8279,26 @@ function distToCreek(x,z){
   if (!pts) return 1e9;
   return distToPolyline(pts,x,z);
 }
+/* streamSpan(w, x, z): distance to a registered river's centreline
+   AND the local half-width at the closest segment (2026-11-01 fix
+   batch v2). Streams with per-station widths (w.widths, parallel to
+   w.river) vary along their course — the merged Tatum creek runs
+   4-20 m wide — so the inside test and the depth falloff must use
+   the width where the player actually is, not one stream-wide
+   number. Constant-width streams keep their single width. */
+function streamSpan(w, x, z){
+  var pts = w.river, ws = w.widths, best = 1e9, hw = (w.width || 30) / 2;
+  for (var i = 0; i < pts.length - 1; i++){
+    var ax = pts[i][0], az = pts[i][1], bx = pts[i + 1][0], bz = pts[i + 1][1];
+    var vx = bx - ax, vz = bz - az, len2 = vx * vx + vz * vz;
+    var t = len2 > 0 ? ((x - ax) * vx + (z - az) * vz) / len2 : 0;
+    t = t < 0 ? 0 : (t > 1 ? 1 : t);
+    var dx = x - (ax + vx * t), dz = z - (az + vz * t);
+    var d = Math.sqrt(dx * dx + dz * dz);
+    if (d < best){ best = d; if (ws) hw = (ws[i] + (ws[i + 1] - ws[i]) * t) / 2; }
+  }
+  return { d: best, hw: hw };
+}
 /* inWater(x,z): true inside a lake/pond disc (normalized ellipse test),
    within 4.5u of the creek centerline, or inside a river/stream ribbon
    (within half the channel width of its centerline). Drives swimming,
@@ -8218,7 +8307,8 @@ function inWater(x,z){
   for (var i=0;i<WATER.length;i++){
     var w=WATER[i];
     if (w.creek){ if (distToCreek(x,z)<4.5) return true; }
-    else if (w.river){ if (distToPolyline(w.river,x,z) < (w.width||30)/2) return true; }
+    else if (w.river){ if (w.widths){ var sp0 = streamSpan(w, x, z); if (sp0.d < sp0.hw) return true; }
+                       else if (distToPolyline(w.river,x,z) < (w.width||30)/2) return true; }
     else { var dx=(x-w.x)/w.rx, dz=(z-w.z)/w.rz; if (dx*dx+dz*dz<1) return true; }
   }
   return false;
@@ -8248,7 +8338,9 @@ function waterLevelAt(x,z){
   for (var i=0;i<WATER.length;i++){
     var w=WATER[i], y;
     if (w.creek){ if (distToCreek(x,z)<4.5){ y=heightAt(x,z)+0.18; if(best===null||y<best) best=y; } }
-    else if (w.river){ if (distToPolyline(w.river,x,z) < (w.width||30)/2){ y=w.profYs?pkgStreamYAt(w,x,z):heightAt(x,z)+0.25; if(y!==null&&(best===null||y<best)) best=y; } }
+    else if (w.river){ var inR = w.widths ? (function(){ var sp1 = streamSpan(w, x, z); return sp1.d < sp1.hw; })()
+                                          : (distToPolyline(w.river,x,z) < (w.width||30)/2);
+                       if (inR){ y=w.profYs?pkgStreamYAt(w,x,z):heightAt(x,z)+0.25; if(y!==null&&(best===null||y<best)) best=y; } }
     /* PHASE D (2026-10-28): package water bodies carry their surveyed
        surface (w.surfY, runtime Y) — package terrain at a lake centre
        is the carved bed, so the legacy heightAt+0.35 estimate would
@@ -8292,7 +8384,11 @@ function waterDepthAt(x,z){
     var w=WATER[i], d=0, maxd=waterDepthFt(w)*U_PER_FT;
     if (w.creek){ if (distToCreek(x,z)<4.5) d=maxd; }
     else if (w.river){
-      var rd=distToPolyline(w.river,x,z), hw=(w.width||30)/2;
+      /* 2026-11-01 v2: per-station widths — distance and half-width
+         come from the closest segment (streamSpan) when present. */
+      var rd, hw;
+      if (w.widths){ var sp2 = streamSpan(w, x, z); rd = sp2.d; hw = sp2.hw; }
+      else { rd = distToPolyline(w.river,x,z); hw = (w.width||30)/2; }
       if (rd<hw){
         if (w.profYs){ /* data depth: surveyed surface minus the bed */
           var sy=pkgStreamYAt(w,x,z);
@@ -12236,6 +12332,31 @@ function setDrivingUI(on){
 document.getElementById('cam-btn').addEventListener('click', function(){
   car.camMode = (car.camMode==='chase') ? 'driver' : 'chase';
 });
+/* ITEM F HARDENING (2026-11-01 fix batch v2, item 5): Joshua's
+   hands-on video showed the CAM button on screen while his state
+   read ON FOOT, although the .7 gate tests clean through the real
+   boot path (cold boot, both orientations: every pedal hidden,
+   computed display none). setDrivingUI only runs at transitions,
+   so any foreign state that leaves a pedal shown while on foot —
+   a resurrected pre-.7 tab, a mixed update — would persist for the
+   whole session. The driving UI is therefore also asserted against
+   the player's ACTUAL state on a slow render tick: not driving
+   (car.driving is the game's only in-car state) but a driving
+   control is visibly shown -> setDrivingUI(false). While driving
+   it never fires. Cheap: one style read every ~45 ticks. */
+try{
+  if (window.Sim && typeof Sim.onTick === 'function'){
+    var __drvGuardN = 0;
+    Sim.onTick('render', 86, function(){
+      try{
+        if ((__drvGuardN = (__drvGuardN + 1) % 45) !== 0) return;
+        if (typeof car !== 'undefined' && car && car.driving) return;
+        var cb = document.getElementById('cam-btn');
+        if (cb && cb.style.display === 'block') setDrivingUI(false);
+      }catch(e){}
+    });
+  }
+}catch(e){}
 var pendingCar=null;
 function exitCar(fromWater){
   /* v1.58: null-car guard — exitCar should only run with a valid car. */

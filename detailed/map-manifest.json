@@ -1,11 +1,11 @@
 {
   "version": "2.0.0",
-  "map_version": "2026.11.01.3",
+  "map_version": "2026.11.01.4",
   "files": [
     {
       "name": "maps/adamsville/zone.json",
-      "size": 6883,
-      "sha256": "96fed5073550a765c828bbeacdffbd0273fa8dd4d73bafd92b8960073c3b3454",
+      "size": 8272,
+      "sha256": "431a8a13f02092dca0b699907573fcb859754d7600f5b2ee3c0039e56b8bbfcd",
       "hash": ""
     },
     {
@@ -52,68 +52,68 @@
     },
     {
       "name": "maps/adamsville/water.json",
-      "size": 237992,
-      "sha256": "5a62647beaa09738b7bcb398a41ae0f75d8ca49c30f065f8380128725d3778d6",
+      "size": 950527,
+      "sha256": "81398b83bd0fabde9d564d262b651f3c514fe8d482874ed771edfb91f21a5825",
       "hash": ""
     },
     {
       "name": "maps/adamsville/heights_base_10m.bin",
       "size": 4749696,
-      "sha256": "d3097d539aef0dcb3bca08ff2209e7d62a8d7aa761f7e674783b714bbde9fc02",
+      "sha256": "88d6af4226d104d60053c2763f144cab8d43e3e369164f354f1363f0c1718d72",
       "hash": ""
     },
     {
       "name": "maps/adamsville/heights_near_2m.bin.part00",
       "size": 8000000,
-      "sha256": "9141f988c169a477dad7683bde4763f248ec448ad57cb8385aa5cd301c9ae642",
+      "sha256": "1f835521c7515742caec5ba6eccaf6c3b8f711fccc09e302c2089514a3d0456c",
       "hash": ""
     },
     {
       "name": "maps/adamsville/heights_near_2m.bin.part01",
       "size": 8000000,
-      "sha256": "41ef647fb1334e0533331af137851bbf256564e36949b92c996db37b64ca353a",
+      "sha256": "7107764d83ce394332ab78c946030a73e0583e2fc543bc1298b6567e61d267a5",
       "hash": ""
     },
     {
       "name": "maps/adamsville/heights_near_2m.bin.part02",
       "size": 8000000,
-      "sha256": "10c1fecc30628961b17c3429084d9e1256697e470fd30b320832d216cfe686fd",
+      "sha256": "ab862179a9be4c9e1e647a903934ec932b01fe171220c2da50f2ae1ad756ab91",
       "hash": ""
     },
     {
       "name": "maps/adamsville/heights_near_2m.bin.part03",
       "size": 8000000,
-      "sha256": "026ad873d2adb323c7be97b6d2ae43a4470575b5058908fc4de2580d116cdf60",
+      "sha256": "7122213e928618c5390854a1315b9f19e9f72682e8b8b561fbc4701bcd17ecff",
       "hash": ""
     },
     {
       "name": "maps/adamsville/heights_near_2m.bin.part04",
       "size": 8000000,
-      "sha256": "7ef477d134a81a5a76d6b3ae38600db2853c1456e1e5001df2ce532b92acc641",
+      "sha256": "594189cf1d96bdf9f7c4c89897893f23ef41e93dd6f5658664264de21c5aa185",
       "hash": ""
     },
     {
       "name": "maps/adamsville/heights_near_2m.bin.part05",
-      "size": 5476976,
-      "sha256": "63ab4c497af3aba2d213607aa1ea20e5553e5f6394b86383325a044b80558bdb",
+      "size": 5494324,
+      "sha256": "192e46bd44c8ebcf2473942f047834f6cbea85f22cb112bc5d4a957b2fcf059e",
       "hash": ""
     },
     {
       "name": "maps/adamsville/nearpost_mask.bin",
       "size": 3705167,
-      "sha256": "136cf5953d0d2c23c15230ff2feedf656f50983e7dee1ee3f73f9cdd4b663fd5",
+      "sha256": "ab743609c32cafe4beb0b264e6033d3f301b09217b53175422c493618c8eb66b",
       "hash": ""
     },
     {
       "name": "maps/adamsville/nearpost_rows.bin",
       "size": 52056,
-      "sha256": "e9cf01a51a7039b8e33ea19483c258b91652d3cfa9808846eed34b361a689158",
+      "sha256": "eb4d7432966ba8744f2072056eb473012ee52aa7a67e98a6eaf130fdde06909f",
       "hash": ""
     },
     {
       "name": "maps/adamsville/terrain_heights_pkg.bin",
       "size": 2320164,
-      "sha256": "c10eed809f563e86fe8075cd5bef71cff8faf57148cdcca41d05bf79fd20f9bd",
+      "sha256": "b49ddc9ecca7cec9ebbcd671b9d29ab3cdbff3b791e0bc00c7ff98410b21d5e2",
       "hash": ""
     },
     {

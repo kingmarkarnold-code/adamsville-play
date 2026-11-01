@@ -379,7 +379,30 @@ function buildPackage(raw){
                                  3 m half width) stands when absent. */
                               ys: (w.profile || []).map(Y),
                               halfW: (typeof w.width_m === 'number')
-                                ? w.width_m / 2 : 3.0,
+                                ? w.width_m / 2
+                                : ((w.widths_m && w.widths_m.length)
+                                    ? Math.max.apply(null, w.widths_m) / 2 : 3.0),
+                              /* 2026-11-01 fix batch v2: per-station
+                                 widths (widths_m, pkg metres) for
+                                 streams whose width varies along the
+                                 course (the merged Tatum creek runs
+                                 4-20 m), and surf_rings — the baked
+                                 single-surface outline the game draws
+                                 (see build_merged_water.py; a simple
+                                 polygon per ring, so the translucent
+                                 sheet can never double-draw). Ring
+                                 profile is ASL metres, converted like
+                                 the spine profile. */
+                              widths: (w.widths_m && w.widths_m.length)
+                                ? w.widths_m.slice() : null,
+                              surfRings: (w.surf_rings && w.surf_rings.length)
+                                ? w.surf_rings.map(function(r){
+                                    return { pts: ring(r.pts),
+                                             ys: (r.profile || []).map(Y),
+                                             across: r.across || [],
+                                             arc: r.arc || [],
+                                             foam: r.foam || [] };
+                                  }) : null,
                               material: w.material });
   });
 
@@ -1001,7 +1024,13 @@ function buildLegacyGlobals(pkg){
       if (mx > 0) depthFt = Math.max(2, Math.min(40, mx));
     }
     water.streams.push({ pts: s.pts, name: s.name, ys: s.ys,
-                         width: s.halfW * 2, depthFt: depthFt });
+                         width: s.halfW * 2, depthFt: depthFt,
+                         /* 2026-11-01 fix batch v2: per-station widths
+                            + the baked single-surface rings ride
+                            through to buildWater (see map_loader's
+                            stream adapter). */
+                         widths: s.widths || null,
+                         surfRings: s.surfRings || null });
   });
   return { roadData: roadData, buildings: buildings, water: water };
 }
