@@ -1,11 +1,11 @@
 {
   "version": "2.0.0",
-  "map_version": "2026.11.01.1",
+  "map_version": "2026.11.01.2",
   "files": [
     {
       "name": "maps/adamsville/zone.json",
-      "size": 5312,
-      "sha256": "4c56d89f68711a74b30d0dcdbd30e291c6bfcd73df1296048e9d0d568cce2d45",
+      "size": 5961,
+      "sha256": "e74f22ada656f47b9a187e3418b503e4d9a11d9f4a792d6a4b470499d60a7eba",
       "hash": ""
     },
     {
@@ -59,7 +59,7 @@
     {
       "name": "maps/adamsville/heights_base_10m.bin",
       "size": 4749696,
-      "sha256": "9363a1d786170158ccf1f1af7d608bcca54891e5c57b9a1577dc0306b8564e3e",
+      "sha256": "26cc07afebc03c99b62538bb941bc3b4e1167a74e322f4a79ac7fab53180b6c4",
       "hash": ""
     },
     {
@@ -89,31 +89,31 @@
     {
       "name": "maps/adamsville/heights_near_2m.bin.part04",
       "size": 8000000,
-      "sha256": "6a478ee857bea09b17dc23ad1ae21728ad12b0f33f36cdf0f6c9f898135dc07e",
+      "sha256": "f1ed0cc94985a5e6288c569a1513ca54ed8606dbf5233742de4a3995e7c14698",
       "hash": ""
     },
     {
       "name": "maps/adamsville/heights_near_2m.bin.part05",
-      "size": 5452940,
-      "sha256": "3b9a78d4d384fb93e37a11cf96383484627575c19436cb0dfdda5b1fb6bb6524",
+      "size": 5464656,
+      "sha256": "a937582efbf803bd97b07c0a6321b1b9554440ba3cc46a8b9e9cd3e0c2d391ff",
       "hash": ""
     },
     {
       "name": "maps/adamsville/nearpost_mask.bin",
       "size": 3705167,
-      "sha256": "bba602901a0c26e69e32692f181675be18e4d9732417fbb3c022382559899360",
+      "sha256": "2ea8f8662657913bb1c987f257ed75992f460c2222e3e5e1cd35fdd4100623c0",
       "hash": ""
     },
     {
       "name": "maps/adamsville/nearpost_rows.bin",
       "size": 52056,
-      "sha256": "13b5280b80a95dd87a4fd58c63fe9049c3cf4a036ce739ddd1350af44567ac47",
+      "sha256": "33e22186a5283c92129ac3757d3a5273a324f5b7f1f5e8667072d79edf37f396",
       "hash": ""
     },
     {
       "name": "maps/adamsville/terrain_heights_pkg.bin",
       "size": 2320164,
-      "sha256": "74f49a97112963519d6c38bf37962e5e1a35d93391ffb57beb333deb98134535",
+      "sha256": "e8497365d1bbbfd290c989a87e5397d4b814f4f80b2aba7db859146f868b74d8",
       "hash": ""
     },
     {

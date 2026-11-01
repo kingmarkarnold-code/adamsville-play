@@ -178,8 +178,14 @@ function drawPOIsFullMap(){
 /* ---------- SMALL rotating minimap: colored dots + compass ---------- */
 function drawPOIsMinimap(){
   var S = 296, R = S / 2, range = 260;
-  var px = car.driving ? car.x : player.x, pz = car.driving ? car.z : player.z;
-  var yaw = car.driving ? car.yaw : player.yaw;
+  /* NULL-CAR GUARD (2026-11-01): was `car.driving ? ...` unguarded —
+     in Phase G partial mode car is null all session, so this threw
+     on every minimap draw; the wrapper's try/catch swallowed it and
+     the POI dots (and the compass below, same defect) silently
+     never drew on a package map. Same (car && car.driving) idiom
+     index.html's own map code uses. */
+  var px = (car && car.driving) ? car.x : player.x, pz = (car && car.driving) ? car.z : player.z;
+  var yaw = (car && car.driving) ? car.yaw : player.yaw;
   var c = Math.cos(yaw), s = Math.sin(yaw);
   mm.save();
   mm.beginPath(); mm.arc(R, R, R - 2, 0, Math.PI * 2); mm.clip();
@@ -204,7 +210,7 @@ function drawPOIsMinimap(){
 }
 function drawMinimapCompass(){
   var S = 296, R = S / 2;
-  var yaw = car.driving ? car.yaw : player.yaw;
+  var yaw = (car && car.driving) ? car.yaw : player.yaw;  // null-car guard (2026-11-01, see drawPOIsMinimap)
   // world north (0,-1) through the minimap's rotation -> screen direction
   var nx = -Math.sin(yaw), ny = Math.cos(yaw);
   var ccx = R, ccy = 36, rr = 18;

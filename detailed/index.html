@@ -2376,7 +2376,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
    stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.11.01.3';
+window.__DOC_UIVER = '2026.11.01.4';
 function __checkDocVersionHeal(){
   var live = window.__UIVER || '';
   if (!live || live === window.__DOC_UIVER){
@@ -5518,7 +5518,18 @@ try{ __wbStage('terrain'); }catch(e){}
        radius), the pattern the fish/NPC systems already use;
      - crowns sway through the same wind shader injection and the
        same shared uniforms as the canopy; trunks carry aSway 0 and
-       never move. Legacy mode never runs any of this. */
+       never move. Legacy mode never runs any of this.
+     - TRUNK COLLISION (Joshua, 2026-11-01 hands-on of .3: "we need
+       to make it so that the trunks — the character is not able to
+       walk through them"): collision is material meeting material,
+       so each emitted trunk registers a circle collider in the
+       game's ONE registry (addCollider -> propGrid, read by the
+       movement gate and the push-out solver — the same registry
+       legacy trees use) at the trunk's own base radius; the tile
+       record keeps the handles and buildTile's streaming partner in
+       tick() removes them when the tile dies, so a streamed-out
+       tree leaves no invisible wall. Only near-field trees carry
+       colliders; the far canopy mass has none (Joshua's ruling). */
 (function buildPkgTrees(){
   if (!window.__PKG_PARTIAL || !window.__PKG_CANOPY) return;
   var C = window.__PKG_CANOPY, MF = window.MapFrame;
@@ -5529,8 +5540,8 @@ try{ __wbStage('terrain'); }catch(e){}
   var KILL_R = 330;           /* drop tiles whose centre is beyond this */
   var HOLE_R = 218;           /* canopy-mass hole radius (follows player) */
   var OS = 1.88 / 1.8;        /* object scale: world units per metre */
-  var tiles = {};             /* "ix,iz" -> THREE.Mesh | null (claimed, empty) */
-  var tilesBuilt = 0, treesTotal = 0;
+  var tiles = {};             /* "ix,iz" -> {mesh, cols} (cols = trunk colliders) */
+  var tilesBuilt = 0, treesTotal = 0, trunksLive = 0;
   function th(a, b, k){
     var x = Math.sin(a * 127.1 + b * 311.7 + k * 74.7) * 43758.5453;
     return x - Math.floor(x);
@@ -5630,6 +5641,9 @@ try{ __wbStage('terrain'); }catch(e){}
     if (h3 > 0.35)
       puff(ax + leanX + Math.cos(h2 * 6.283) * rh * 0.50, cy + rv * 0.50,
            az + leanZ + Math.sin(h2 * 6.283) * rh * 0.50, rh * 0.58, rv * 0.58, 23);
+    /* the caller registers trunk collision at this radius (the
+       trunk's visible base radius — see buildTile) */
+    return rB;
   }
   function buildTile(ix, iz){
     var key = ix + ',' + iz;
@@ -5649,6 +5663,7 @@ try{ __wbStage('terrain'); }catch(e){}
     var rr0 = Math.max(0, Math.floor((pz0 - C.z0) / C.cellM)),
         rr1 = Math.min(C.rows - 1, Math.floor((pz1 - C.z0) / C.cellM));
     var P = { pos: [], col: [], swy: [], idx: [], nv: 0 };
+    var cols = [];   /* this tile's trunk colliders (removed with the tile) */
     var rr, cc, k;
     for (rr = rr0; rr <= rr1; rr++) for (cc = cc0; cc <= cc1; cc++){
       var cov = C.cover[rr * C.cols + cc];
@@ -5669,12 +5684,18 @@ try{ __wbStage('terrain'); }catch(e){}
         try { gy = heightAt(rt.x, rt.z); } catch(e){ continue; }
         try { var my = terrainMeshY(rt.x, rt.z); if (my > gy) gy = my; } catch(e){}
         try { if (typeof inWater === 'function' && inWater(rt.x, rt.z)) continue; } catch(e){}
-        emitTree(P, rt.x, rt.z, gy, f,
+        var rbk = emitTree(P, rt.x, rt.z, gy, f,
           [th(cc, rr, 30 + k), th(cc, rr, 40 + k), th(cc, rr, 50 + k), th(cc, rr, 60 + k)]);
+        /* TRUNK COLLISION (see the system header): register the
+           trunk in the one collision registry at its own base
+           radius; the handle rides the tile record so tick() can
+           unregister it when the tile streams out. */
+        try { var tcol = addCollider(rt.x, rt.z, rbk);
+          if (tcol){ cols.push(tcol); trunksLive++; } } catch(e){}
         treesTotal++;
       }
     }
-    tiles[key] = null;   /* claim the tile even when empty */
+    tiles[key] = { mesh: null, cols: cols };   /* claim the tile even when empty */
     tilesBuilt++;
     if (!P.nv) return;
     var geo = new THREE.BufferGeometry();
@@ -5686,7 +5707,7 @@ try{ __wbStage('terrain'); }catch(e){}
     var mesh = new THREE.Mesh(geo, mat());
     mesh.name = 'pkgTrees';
     scene.add(mesh);
-    tiles[key] = mesh;
+    tiles[key].mesh = mesh;
   }
   function tick(){
     try {
@@ -5712,8 +5733,15 @@ try{ __wbStage('terrain'); }catch(e){}
         var pr = key.split(',');
         var tcx = TERR_OX + (+pr[0] + 0.5) * TILE, tcz = TERR_OZ + (+pr[1] + 0.5) * TILE;
         if (Math.hypot(tcx - px, tcz - pz) > KILL_R){
-          var ms = tiles[key];
-          if (ms){ try { scene.remove(ms); ms.geometry.dispose(); } catch(e){} }
+          var rec = tiles[key];
+          if (rec){
+            if (rec.mesh){ try { scene.remove(rec.mesh); rec.mesh.geometry.dispose(); } catch(e){} }
+            /* trunk colliders die with the tile — a streamed-out
+               tree must leave no invisible wall behind */
+            if (rec.cols) for (var ci2 = 0; ci2 < rec.cols.length; ci2++){
+              try { removeCollider(rec.cols[ci2]); trunksLive--; } catch(e){}
+            }
+          }
           delete tiles[key];
         }
       }
@@ -5721,7 +5749,7 @@ try{ __wbStage('terrain'); }catch(e){}
   }
   setInterval(tick, 400);
   window.__PKG_TREES = { tiles: tiles,
-    stats: function(){ return { tiles: tilesBuilt, trees: treesTotal }; } };
+    stats: function(){ return { tiles: tilesBuilt, trees: treesTotal, trunks: trunksLive }; } };
 })();
 
 /* v1.16 GREEN PHASE: terrain built (15%) — browser still frozen, label queued.
@@ -13536,8 +13564,18 @@ function drawMinimap(dt){
   // water
   mm.fillStyle='#2e6f9e';
   WATER.forEach(function(w){
-    if (w.creek){ mm.strokeStyle='#2e6f9e'; mm.lineWidth=4; mm.beginPath();
-      w.creek.forEach(function(p,i){ var m=toMap(p[0],p[1]); i?mm.lineTo(m[0],m[1]):mm.moveTo(m[0],m[1]); });
+    /* PACKAGE STREAMS (2026-11-01, Joshua's .3 hands-on: "the main
+       map was not showing the creeks"): package water registers its
+       streams as {river: pts} (see buildWater's package branch) —
+       only legacy hand-authored water uses {creek: pts}. Testing
+       w.creek alone sent every package stream to the ellipse branch
+       with undefined x/z/rx, where canvas silently draws nothing:
+       the creeks and the Chattahoochee were invisible on BOTH maps.
+       A stream is a polyline in either shape — stroke whichever the
+       entry carries. */
+    var wline = w.creek || w.river;
+    if (wline){ mm.strokeStyle='#2e6f9e'; mm.lineWidth=4; mm.beginPath();
+      wline.forEach(function(p,i){ var m=toMap(p[0],p[1]); i?mm.lineTo(m[0],m[1]):mm.moveTo(m[0],m[1]); });
       mm.stroke();
     } else { var m=toMap(w.x,w.z); mm.beginPath(); mm.arc(m[0],m[1],Math.max(3,w.rx/range*R),0,Math.PI*2); mm.fill(); }
   });
@@ -13723,8 +13761,15 @@ function drawFullMap(){
   // water
   g.fillStyle='#2e6f9e';
   WATER.forEach(function(w){
-    if (w.creek){ g.strokeStyle='#2e6f9e'; g.lineWidth=2; g.beginPath();
-      w.creek.forEach(function(p,i){ var m=M(p[0],p[1]); i?g.lineTo(m[0],m[1]):g.moveTo(m[0],m[1]); });
+    /* PACKAGE STREAMS (2026-11-01 — same fix as drawMinimap above):
+       package streams carry {river: pts}, legacy water {creek: pts};
+       stroke either polyline or the full map shows no creeks at all
+       (Joshua's .3 hands-on). Through M() the lines ride the same
+       transform as the terrain tile blitted above, so a creek sits
+       in its valley. */
+    var wline = w.creek || w.river;
+    if (wline){ g.strokeStyle='#2e6f9e'; g.lineWidth=2; g.beginPath();
+      wline.forEach(function(p,i){ var m=M(p[0],p[1]); i?g.lineTo(m[0],m[1]):g.moveTo(m[0],m[1]); });
       g.stroke();
     } else { var m=M(w.x,w.z); g.beginPath(); g.ellipse(m[0],m[1],Math.max(2,w.rx*sc),Math.max(2,w.rz*sc),0,0,Math.PI*2); g.fill(); }
   });
@@ -13780,9 +13825,24 @@ function drawFullMap(){
   g.lineTo(qx-fx*8-pxp*7, qy-fz*8-pzp*7);
   g.closePath(); g.fill();
   g.fillStyle='#000'; g.font='bold 11px Arial'; g.fillText('YOU', qx, qy-14);
-  var cm=M(car.x,car.z);
-  g.fillStyle='#ff4444'; g.beginPath(); g.arc(cm[0],cm[1],6,0,Math.PI*2); g.fill();
-  g.fillStyle='#fff'; g.fillText('CAR', cm[0], cm[1]-11);
+  /* v1.59 NULL-CAR GUARD (2026-11-01, Joshua's phone session on
+     ui .3: 200+ crash reports, 'Cannot read properties of null
+     (reading x)' at this line — stack: drawFullMap <- openFullMap,
+     then <- the fmCanvas pan/zoom handlers on EVERY redraw). In
+     Phase G partial mode no car ever spawns, so `car` is null for
+     the whole session and this unguarded read threw on opening the
+     map and on every pan/zoom redraw while it stayed open — the
+     player sat in a crashing map and travelled 1 m in 2m36s. The
+     same defect fired once on his desktop .2 walk. Fix is the
+     function's own v1.58 idiom: no car -> no CAR marker, exactly
+     like openFullMap already picks the arrow target with
+     (car && car.driving). Do not un-guard while any mode can run
+     car-less. */
+  if (car){
+    var cm=M(car.x,car.z);
+    g.fillStyle='#ff4444'; g.beginPath(); g.arc(cm[0],cm[1],6,0,Math.PI*2); g.fill();
+    g.fillStyle='#fff'; g.fillText('CAR', cm[0], cm[1]-11);
+  }
   cars.forEach(function(c){   // other vehicles
     if (c===car||c.sunk) return;
     var om=M(c.x,c.z);

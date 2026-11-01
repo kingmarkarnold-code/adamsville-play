@@ -147,9 +147,9 @@
     },
     {
       "name": "index.html",
-      "size": 1168818,
-      "sha256": "4f5384d550fb8fbb26aa6cc6cac4f016967272d16d9a4395bbad6c87ab62dc9f",
-      "hash": "4f5384d550fb8fbb26aa6cc6cac4f016967272d16d9a4395bbad6c87ab62dc9f"
+      "size": 1172393,
+      "sha256": "51b14974a4e5a67664c5d6eaa045f8206c23af1ffadd782c2f71103f73d4e930",
+      "hash": "51b14974a4e5a67664c5d6eaa045f8206c23af1ffadd782c2f71103f73d4e930"
     },
     {
       "name": "input_diag.js",
@@ -249,9 +249,9 @@
     },
     {
       "name": "poi_map.js",
-      "size": 11805,
-      "sha256": "d887a8793ae67ea423f55782a7c292aba151b2129a91f1630814ceb0ebd8d6f7",
-      "hash": "d887a8793ae67ea423f55782a7c292aba151b2129a91f1630814ceb0ebd8d6f7"
+      "size": 12273,
+      "sha256": "84316622331a730a5ce94499d0dc728cb96d4f8ef291ea2a031ec8c4fac6c970",
+      "hash": "84316622331a730a5ce94499d0dc728cb96d4f8ef291ea2a031ec8c4fac6c970"
     },
     {
       "name": "police_system.js",
@@ -648,6 +648,6 @@
       "hash": "99e3a8f264f836ba86b79c497fa2be946b3b469eafa442d0f70eabab239abeec"
     }
   ],
-  "ui_version": "2026.11.01.3",
+  "ui_version": "2026.11.01.4",
   "version": "2026.10.17.9"
 }
