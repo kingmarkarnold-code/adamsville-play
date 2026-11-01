@@ -2376,7 +2376,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
    stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.11.01.1';
+window.__DOC_UIVER = '2026.11.01.2';
 function __checkDocVersionHeal(){
   var live = window.__UIVER || '';
   if (!live || live === window.__DOC_UIVER){
@@ -14094,17 +14094,30 @@ function updateCamera(dt){
     camera.lookAt(car.x+sy*40, car.mesh.position.y+eyeH, car.z+cy2*40);
     return;
   }
-  if (car.mesh.userData.cab) car.mesh.userData.cab.visible=true;
+  /* 2026-11-01 NULL-CAR FIX (Joshua's hands-on crash, ui 2026.11.01.1):
+     in Phase G PARTIAL mode vehicles are gated off, so no car EVER
+     spawns and `car` stays null for the whole session. The cab-restore
+     line below and the car.driving reads further down were written in
+     the legacy era, when a car always existed by the time the camera
+     ran; unguarded, the first one threw "Cannot read properties of
+     null (reading 'mesh')" EVERY FRAME — updateCamera died before it
+     could place the camera, simTick aborted, and Joshua saw a world
+     with no character in it (plus a flood of identical crash reports).
+     Every car read in this function is now null-guarded, matching the
+     v1.58 guard idiom already used above: no car simply means the
+     on-foot camera path, which is the correct partial-mode behaviour.
+     Do NOT remove these guards while any mode can run car-less. */
+  if (car && car.mesh && car.mesh.userData.cab) car.mesh.userData.cab.visible=true;
   var fx, fz, yaw;
   /* v1.58: null-car guard — car may not have spawned yet. */
   if (car && car.driving){ yaw=car.yaw; fx=car.x; fz=car.z; }
   else { yaw=camYaw; fx=player.x; fz=player.z; }   // v0.8: orbit camera owns its yaw
   // GTA-style: behind + above, angled down; right-drag adds yaw offset (driving chase cam)
   var cy=yaw+Math.PI+look.yawOff;
-  var dist=car.driving?9:4.6, height=car.driving?4.2:3.0;
+  var dist=(car && car.driving)?9:4.6, height=(car && car.driving)?4.2:3.0;   // null-car safe (2026-11-01 fix above)
   var lx=fx+Math.sin(yaw)*3, lz=fz+Math.cos(yaw)*3;
-  var ly=(car.driving?heightAt(car.x,car.z):player.mesh.position.y)+1.2;
-  var ty=(car.driving?heightAt(car.x,car.z):player.mesh.position.y)+height;
+  var ly=((car && car.driving)?heightAt(car.x,car.z):player.mesh.position.y)+1.2;
+  var ty=((car && car.driving)?heightAt(car.x,car.z):player.mesh.position.y)+height;
   /* v1.37 CAMERA COLLISION: pull the camera in when a building blocks the
      view, instead of letting it clip through walls. */
   var ecy=(camSnapT>0)?(yaw+Math.PI):cy;   // snap branch ignores drag offset
@@ -14130,7 +14143,7 @@ function updateCamera(dt){
   // camera + player/car move in unison, zero drift. (look.yawOff still orbits
   // the view when he drags; this only kills the positional lag.)
   camera.position.set(camX, camY, camZ);
-  if (car.driving && !look.dragging && car.speed>3 && camSnapT<=0){
+  if (car && car.driving && !look.dragging && car.speed>3 && camSnapT<=0){   // null-car safe (2026-11-01 fix above)
     look.yawOff*=Math.pow(0.35,dt);  // v0.6: ease back behind while driving
   }
   camera.lookAt(lx, ly, lz);
