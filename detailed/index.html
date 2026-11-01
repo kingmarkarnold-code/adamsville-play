@@ -2113,6 +2113,43 @@ function __injectZoneFiles(files, callback){
         __loadStep('lifts');
         __loadStep('pins');
         __loadStep('buildings');
+        /* BOOT-STALL FIX (2026-11-01): the four marks above were only
+           PART of the world-data step table the package satisfies.
+           'elev' and 'signs' were never marked on this path — in the
+           legacy era the zone files themselves (elev.js, exit_signs.js)
+           reported their steps on load, and those files were removed
+           with the old map. The package IS the elevation data (its
+           terrain heights drive heightAt) and IS the sign data
+           (signs.json rides the package; the proven signals are handed
+           off at activation), so a successful package boot marks both
+           here, alongside the four it already marked.
+           'gasdata'/'busdata' are orphaned the same way (their legacy
+           data files are gone; nothing in the tree can ever report
+           them) — but the package does not supply that data either, so
+           they are marked ONLY in partial mode, where gas stations and
+           MARTA buses are disabled by design (Phase G) and a completed
+           step is the honest state — the same treatment the deferred
+           queue gives a partial-disabled script's step. A future FULL
+           package that ships places/MARTA data must give those steps a
+           real owner instead of relying on this mark.
+           WHY THIS MATTERS (the stall Joshua hit, ui 2026.10.31.1):
+           __tryStartGame refuses to start while ANY step is pending,
+           and the progress watchdog only stands down when the pending
+           list is empty — so these four unmarkable steps trapped every
+           package boot on the loader forever: the world built, the
+           loader sat at "Still loading… 100%", the watchdog filed
+           false boot-stall reports at 45s ("Elevation data", sub-stage
+           'buildings-placement' — merely the last stage stamp of the
+           finished build), and at 180s the failsafe force-completed
+           only the OPTIONAL pair and put 'elev'/'signs' on the
+           critical-failure panel. The main thread was never blocked;
+           the gate simply had no way to open. */
+        __loadStep('elev');
+        __loadStep('signs');
+        if (window.__PKG_PARTIAL){
+          __loadStep('gasdata');
+          __loadStep('busdata');
+        }
         done();
       } else {
         try{ window.__PKG_SEAM_FELL_BACK = true; }catch(e){}
@@ -2339,7 +2376,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
    stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.10.31.1';
+window.__DOC_UIVER = '2026.11.01.1';
 function __checkDocVersionHeal(){
   var live = window.__UIVER || '';
   if (!live || live === window.__DOC_UIVER){
