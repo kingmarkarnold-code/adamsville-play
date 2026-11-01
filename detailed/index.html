@@ -2384,7 +2384,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
    stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.11.01.6';
+window.__DOC_UIVER = '2026.11.01.7';
 function __checkDocVersionHeal(){
   var live = window.__UIVER || '';
   if (!live || live === window.__DOC_UIVER){
@@ -12212,10 +12212,19 @@ bindHold('brake-btn', function(v){ drive.brake=v; });
 bindHold('handbrake-btn', function(v){ drive.hb=v; });
 
 function setDrivingUI(on){
-  var mob=isMobileUI();  // v1.11: CAM stays in the top-left stack on mobile
+  /* ITEM F (Joshua, 2026-11-01): the CAM button is a VEHICLE-context
+     control — it toggles the car's camera (chase/driver, see the
+     cam-btn handler below) — so it follows the SAME state signal as
+     every other pedal: shown while driving, hidden on foot, swimming
+     and inside. This removes the v1.11 mobile exception that forced
+     CAM visible on mobile in both states (it sat in the top-left
+     stack in his Nov 1 gameplay video while his state read ON FOOT).
+     The button and its function are untouched — visibility only, and
+     it agrees with the mode tag because modeText(on) is fed by this
+     same `on` two lines below (and with GPS travelMode, which reads
+     the same car.driving state). */
   ['steer-left','steer-right','gas-btn','brake-btn','handbrake-btn','cam-btn'].forEach(function(id){
     var el=document.getElementById(id);
-    if(id==='cam-btn'&&mob){ el.style.display='block'; return; }
     el.style.display = on?'block':'none';
   });
   modeTag.textContent = modeText(on);
