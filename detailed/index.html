@@ -2376,7 +2376,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
    stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.11.01.2';
+window.__DOC_UIVER = '2026.11.01.3';
 function __checkDocVersionHeal(){
   var live = window.__UIVER || '';
   if (!live || live === window.__DOC_UIVER){
@@ -5443,14 +5443,30 @@ try{ __wbStage('terrain'); }catch(e){}
   canopyMat.onBeforeCompile = function(sh){
     sh.uniforms.uWindT = window.__PKG_WIND_U = { value: 0 };
     sh.uniforms.uWindS = window.__PKG_WIND_S = { value: 0.15 };
-    sh.vertexShader = 'uniform float uWindT;\nuniform float uWindS;\nattribute float aSway;\n' +
+    /* NEAR-FIELD TREE HOLE (2026-11-01, Joshua: "that trees don't look
+       like trees"): the individual-tree system (buildPkgTrees, below)
+       grows real trunk+crown trees around the player; inside that
+       radius the canopy MASS must not also draw, or the woodland is
+       doubled (roof over trees). The mass sinks below the ground
+       inside uHoleR of uHoleC — a hole that follows the player, driven
+       per-tick by buildPkgTrees through window.__PKG_CANOPY_HOLE.
+       Defaults park the hole a billion units away at ~zero radius, so
+       until the tree system drives it, nothing sinks anywhere. */
+    sh.uniforms.uHoleC = { value: new THREE.Vector2(1e9, 1e9) };
+    sh.uniforms.uHoleR = { value: 0.0001 };
+    window.__PKG_CANOPY_HOLE = { c: sh.uniforms.uHoleC, r: sh.uniforms.uHoleR };
+    sh.vertexShader = 'uniform float uWindT;\nuniform float uWindS;\nuniform vec2 uHoleC;\nuniform float uHoleR;\nattribute float aSway;\n' +
       sh.vertexShader.replace('#include <begin_vertex>', [
         '#include <begin_vertex>',
         'float wPh = position.x * 0.05 + position.z * 0.043;',
         'float wGust = 0.6 + 0.4 * sin(uWindT * 0.23 + position.x * 0.004 + position.z * 0.003);',
         'float wAmp = aSway * uWindS * wGust;',
         'transformed.x += sin(uWindT * 1.35 + wPh) * wAmp;',
-        'transformed.z += cos(uWindT * 1.02 + wPh * 1.3) * wAmp * 0.7;'
+        'transformed.z += cos(uWindT * 1.02 + wPh * 1.3) * wAmp * 0.7;',
+        'float holeD = distance(position.xz, uHoleC);',
+        'float holeK = 1.0 - smoothstep(uHoleR * 0.86, uHoleR, holeD);',
+        'transformed.y -= holeK * 60.0;',
+        'transformed.xz = mix(transformed.xz, uHoleC, holeK * 0.85);'
       ].join('\n'));
   };
   if (!window.__pkgWindTimer){
@@ -5468,6 +5484,244 @@ try{ __wbStage('terrain'); }catch(e){}
   window.__PKG_CANOPY_BUILT = { quads: quads, skirtEdges: skirtEdges,
     tris: idx.length / 3, verts: nv };
   try{ if (typeof Report !== 'undefined' && Report.setSys) Report.setSys('canopy', window.__PKG_CANOPY_BUILT); }catch(e){}
+})();
+
+/* ================= PHASE G TREES — the near field reads as TREES
+   (Joshua, 2026-11-01 hands-on of ui .2: "that trees don't look like
+   trees"). The package canopy (buildPkgCanopy, above) draws the whole
+   woodland as ONE crown mass on the terrain lattice: from a distance
+   it reads as forest, but at eye level it is a green roof on a brown
+   wall — no trunks, no individual trees. This system keeps the mass
+   for the FAR field and grows individual trees in the NEAR field:
+     - one deterministic tree per anchor: a 5-sided trunk rising from
+       the ground to the foliage bottom — 2.44 m, the 8 ft TREE FORM
+       RULE — and continuing up INTO a two-puff crown, so the trunk
+       joins the crown solidly, never floats beside it;
+     - heights follow the canopy's own data rule (10 + 14*cover/100 m)
+       BUT at the OBJECT scale: the hero measures 1.88 world units for
+       ~1.8 m, so objects draw ~1.04 units per metre. The mass uses
+       the terrain elevation scale (0.435 units/m), which puts its
+       foliage bottom at ~1.1 units — waist height on the player —
+       which is part of why the mass reads wrong up close. Trees are
+       objects, so they use the object scale;
+     - the canopy mass sinks below the ground inside a hole that
+       follows the player (uHoleC/uHoleR in the canopy shader, driven
+       from the tick below), so the same woodland is never drawn
+       twice — trees inside the hole, mass outside it;
+     - placement is a pure hash of the NLCD cell + tree index: the
+       same tree stands in the same spot every visit, no RNG state;
+     - anchors respect the water (inWater): no trees inside a drawn
+       lake or a stream ribbon, matching the canopy data's own
+       open-water exclusion;
+     - trees live in 64-unit tiles streamed around the player (built
+       lazily a few per tick, nearest first; dropped beyond the kill
+       radius), the pattern the fish/NPC systems already use;
+     - crowns sway through the same wind shader injection and the
+       same shared uniforms as the canopy; trunks carry aSway 0 and
+       never move. Legacy mode never runs any of this. */
+(function buildPkgTrees(){
+  if (!window.__PKG_PARTIAL || !window.__PKG_CANOPY) return;
+  var C = window.__PKG_CANOPY, MF = window.MapFrame;
+  if (!C || !C.cover || !MF || typeof TERR_OX === 'undefined') return;
+  var THR = C.threshold || 30;
+  var TILE = 64;              /* world units per tile side */
+  var BUILD_R = 235;          /* grow tiles whose centre is within this */
+  var KILL_R = 330;           /* drop tiles whose centre is beyond this */
+  var HOLE_R = 218;           /* canopy-mass hole radius (follows player) */
+  var OS = 1.88 / 1.8;        /* object scale: world units per metre */
+  var tiles = {};             /* "ix,iz" -> THREE.Mesh | null (claimed, empty) */
+  var tilesBuilt = 0, treesTotal = 0;
+  function th(a, b, k){
+    var x = Math.sin(a * 127.1 + b * 311.7 + k * 74.7) * 43758.5453;
+    return x - Math.floor(x);
+  }
+  /* crown solid: icosahedron detail 0 (12 verts, 20 faces) */
+  var IT = (1 + Math.sqrt(5)) / 2;
+  var ICO_V = [[-1,IT,0],[1,IT,0],[-1,-IT,0],[1,-IT,0],[0,-1,IT],[0,1,IT],
+               [0,-1,-IT],[0,1,-IT],[IT,0,-1],[IT,0,1],[-IT,0,-1],[-IT,0,1]];
+  var ICO_F = [[0,11,5],[0,5,1],[0,1,7],[0,7,10],[0,10,11],[1,5,9],[5,11,4],
+               [11,10,2],[10,7,6],[7,1,8],[3,9,4],[3,4,2],[3,2,6],[3,6,8],
+               [3,8,9],[4,9,5],[2,4,11],[6,2,10],[8,6,7],[9,8,1]];
+  for (var ii = 0; ii < 12; ii++){
+    var il = Math.hypot(ICO_V[ii][0], ICO_V[ii][1], ICO_V[ii][2]);
+    ICO_V[ii] = [ICO_V[ii][0] / il, ICO_V[ii][1] / il, ICO_V[ii][2] / il];
+  }
+  var treeMat = null;
+  function mat(){
+    if (treeMat) return treeMat;
+    treeMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+    treeMat.onBeforeCompile = function(sh){
+      sh.uniforms.uWindT = window.__PKG_WIND_U || (window.__PKG_WIND_U = { value: 0 });
+      sh.uniforms.uWindS = window.__PKG_WIND_S || (window.__PKG_WIND_S = { value: 0.15 });
+      sh.vertexShader = 'uniform float uWindT;\nuniform float uWindS;\nattribute float aSway;\n' +
+        sh.vertexShader.replace('#include <begin_vertex>', [
+          '#include <begin_vertex>',
+          'float wPh = position.x * 0.05 + position.z * 0.043;',
+          'float wGust = 0.6 + 0.4 * sin(uWindT * 0.23 + position.x * 0.004 + position.z * 0.003);',
+          'float wAmp = aSway * uWindS * wGust;',
+          'transformed.x += sin(uWindT * 1.35 + wPh) * wAmp;',
+          'transformed.z += cos(uWindT * 1.02 + wPh * 1.3) * wAmp * 0.7;'
+        ].join('\n'));
+    };
+    return treeMat;
+  }
+  if (!window.__pkgWindTimer){
+    window.__pkgWindTimer = setInterval(function(){
+      try {
+        var mph = (typeof window.__windMphNow === 'function') ? window.__windMphNow() : 7;
+        if (window.__PKG_WIND_U) window.__PKG_WIND_U.value += 0.05;
+        if (window.__PKG_WIND_S) window.__PKG_WIND_S.value = Math.max(0, Math.min(1, (mph - 2) / 20)) * 0.5;
+      } catch(e){}
+    }, 50);
+  }
+  /* emit one tree at world anchor (ax, az), ground Y gy, cover
+     fraction f, per-tree hashes hs[0..3] into the tile arrays P */
+  function emitTree(P, ax, az, gy, f, hs){
+    var h1 = hs[0], h2 = hs[1], h3 = hs[2], h4 = hs[3];
+    var topM = (10 + 14 * f) * (0.82 + 0.36 * h1);  /* crown-top height (m) */
+    var H = topM * OS;                             /* ... in world units */
+    var folBot = 2.44 * OS;                        /* 8 ft foliage bottom */
+    /* --- trunk: 5-sided prism, sunk 0.5 into the ground, top ring
+       reaching well into the crown so the join is solid --- */
+    var rB = 0.15 + 0.010 * H, rT = rB * 0.55;
+    var leanX = (h2 - 0.5) * 0.35, leanZ = (h3 - 0.5) * 0.35;
+    var y0 = gy - 0.5, y1 = gy + folBot + H * 0.16;
+    var tc = 0.85 + 0.3 * h4, base = P.nv, i, j;
+    for (i = 0; i < 5; i++){
+      var ca = Math.cos(i / 5 * Math.PI * 2), sa = Math.sin(i / 5 * Math.PI * 2);
+      P.pos.push(ax + ca * rB, y0, az + sa * rB);
+      P.col.push(0.34 * tc, 0.25 * tc, 0.14 * tc); P.swy.push(0);
+      P.pos.push(ax + leanX + ca * rT, y1, az + leanZ + sa * rT);
+      P.col.push(0.37 * tc, 0.27 * tc, 0.15 * tc); P.swy.push(0);
+    }
+    for (i = 0; i < 5; i++){
+      j = (i + 1) % 5;
+      P.idx.push(base + i * 2, base + j * 2, base + i * 2 + 1,
+                 base + i * 2 + 1, base + j * 2, base + j * 2 + 1);
+    }
+    P.nv += 10;
+    /* --- crown: one or two icosahedron puffs, same green family as
+       the canopy mass so near trees and far forest read as one
+       woodland; per-vertex shade jitter for texture --- */
+    var grn = 0.30 + 0.13 * f, red = 0.13 + 0.10 * (1 - f), blu = 0.11 + 0.07 * (1 - f);
+    function puff(cx, cy, cz, rh, rv, seed){
+      var st = P.nv, vi, fi, v;
+      for (vi = 0; vi < 12; vi++){
+        v = ICO_V[vi];
+        var wx = cx + v[0] * rh, wy = cy + v[1] * rv, wz = cz + v[2] * rh;
+        var sh2 = 0.80 + 0.40 * th(Math.round(cx * 3 + vi * 7), Math.round(cz * 3), seed);
+        P.pos.push(wx, wy, wz);
+        P.col.push(red * sh2, grn * sh2, blu * sh2);
+        P.swy.push(Math.max(0, Math.min(0.9, (wy - (gy + folBot)) / Math.max(1, H - folBot))));
+      }
+      for (fi = 0; fi < 20; fi++)
+        P.idx.push(st + ICO_F[fi][0], st + ICO_F[fi][1], st + ICO_F[fi][2]);
+      P.nv += 12;
+    }
+    /* crown proportions: the first cut made rv 0.52 of the crown zone
+       and rh ~rv — crowns as wide as the tree is tall, merging into a
+       flat ceiling (harness shot, 2026-11-01). A real hardwood crown
+       spans roughly a third of the tree's height: rv 0.40 of the zone
+       with rh just under rv keeps the foliage bottom at the 8 ft line
+       (cy - rv ~ folBot) while each crown stays its own shape. */
+    var cy = gy + folBot + (H - folBot) * 0.46;
+    var rv = (H - folBot) * 0.40, rh = rv * (0.78 + 0.18 * h4);
+    puff(ax + leanX, cy, az + leanZ, rh, rv, 11);
+    if (h3 > 0.35)
+      puff(ax + leanX + Math.cos(h2 * 6.283) * rh * 0.50, cy + rv * 0.50,
+           az + leanZ + Math.sin(h2 * 6.283) * rh * 0.50, rh * 0.58, rv * 0.58, 23);
+  }
+  function buildTile(ix, iz){
+    var key = ix + ',' + iz;
+    if (key in tiles) return;
+    var x0 = TERR_OX + ix * TILE, z0 = TERR_OZ + iz * TILE;
+    /* cells are package data: find the package-frame span this tile
+       covers by converting its world corners back */
+    var corners = [[x0, z0], [x0 + TILE, z0], [x0, z0 + TILE], [x0 + TILE, z0 + TILE]]
+      .map(function(c){ return MF.runtimeToPkg(c[0], c[1]); });
+    var px0 = 1e18, px1 = -1e18, pz0 = 1e18, pz1 = -1e18, ci;
+    for (ci = 0; ci < 4; ci++){
+      px0 = Math.min(px0, corners[ci].x); px1 = Math.max(px1, corners[ci].x);
+      pz0 = Math.min(pz0, corners[ci].z); pz1 = Math.max(pz1, corners[ci].z);
+    }
+    var cc0 = Math.max(0, Math.floor((px0 - C.x0) / C.cellM)),
+        cc1 = Math.min(C.cols - 1, Math.floor((px1 - C.x0) / C.cellM));
+    var rr0 = Math.max(0, Math.floor((pz0 - C.z0) / C.cellM)),
+        rr1 = Math.min(C.rows - 1, Math.floor((pz1 - C.z0) / C.cellM));
+    var P = { pos: [], col: [], swy: [], idx: [], nv: 0 };
+    var rr, cc, k;
+    for (rr = rr0; rr <= rr1; rr++) for (cc = cc0; cc <= cc1; cc++){
+      var cov = C.cover[rr * C.cols + cc];
+      if (cov < THR) continue;
+      var f = cov / 100;
+      var expect = f * 3.2;
+      var n = Math.floor(expect) + ((th(cc, rr, 5) < expect - Math.floor(expect)) ? 1 : 0);
+      if (n > 4) n = 4;
+      for (k = 0; k < n; k++){
+        var pkx = C.x0 + (cc + 0.5) * C.cellM + (th(cc, rr, 10 + k) - 0.5) * 8;
+        var pkz = C.z0 + (rr + 0.5) * C.cellM + (th(cc, rr, 20 + k) - 0.5) * 8;
+        var rt = MF.pkgToRuntime(pkx, pkz);
+        /* the tile that owns the anchor builds it (an anchor near a
+           tile edge can jitter across it — no tree is built twice) */
+        if (Math.floor((rt.x - TERR_OX) / TILE) !== ix ||
+            Math.floor((rt.z - TERR_OZ) / TILE) !== iz) continue;
+        var gy;
+        try { gy = heightAt(rt.x, rt.z); } catch(e){ continue; }
+        try { var my = terrainMeshY(rt.x, rt.z); if (my > gy) gy = my; } catch(e){}
+        try { if (typeof inWater === 'function' && inWater(rt.x, rt.z)) continue; } catch(e){}
+        emitTree(P, rt.x, rt.z, gy, f,
+          [th(cc, rr, 30 + k), th(cc, rr, 40 + k), th(cc, rr, 50 + k), th(cc, rr, 60 + k)]);
+        treesTotal++;
+      }
+    }
+    tiles[key] = null;   /* claim the tile even when empty */
+    tilesBuilt++;
+    if (!P.nv) return;
+    var geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(P.pos), 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(P.col), 3));
+    geo.setAttribute('aSway', new THREE.BufferAttribute(new Float32Array(P.swy), 1));
+    geo.setIndex(P.idx);
+    geo.computeVertexNormals();
+    var mesh = new THREE.Mesh(geo, mat());
+    mesh.name = 'pkgTrees';
+    scene.add(mesh);
+    tiles[key] = mesh;
+  }
+  function tick(){
+    try {
+      if (!window.__gameStarted || typeof player === 'undefined' || !player) return;
+      var px = player.x, pz = player.z, ix, iz;
+      if (window.__PKG_CANOPY_HOLE){
+        window.__PKG_CANOPY_HOLE.c.value.set(px, pz);
+        window.__PKG_CANOPY_HOLE.r.value = HOLE_R;
+      }
+      var cix = Math.floor((px - TERR_OX) / TILE), ciz = Math.floor((pz - TERR_OZ) / TILE);
+      var span = Math.ceil(BUILD_R / TILE) + 1, missing = [];
+      for (iz = ciz - span; iz <= ciz + span; iz++)
+        for (ix = cix - span; ix <= cix + span; ix++){
+          var cx = TERR_OX + (ix + 0.5) * TILE, cz = TERR_OZ + (iz + 0.5) * TILE;
+          var d = Math.hypot(cx - px, cz - pz);
+          if (d <= BUILD_R && !((ix + ',' + iz) in tiles)) missing.push([d, ix, iz]);
+        }
+      missing.sort(function(a, b){ return a[0] - b[0]; });
+      var budget = (tilesBuilt < 10) ? 8 : 3, m;
+      for (m = 0; m < Math.min(budget, missing.length); m++)
+        buildTile(missing[m][1], missing[m][2]);
+      for (var key in tiles){
+        var pr = key.split(',');
+        var tcx = TERR_OX + (+pr[0] + 0.5) * TILE, tcz = TERR_OZ + (+pr[1] + 0.5) * TILE;
+        if (Math.hypot(tcx - px, tcz - pz) > KILL_R){
+          var ms = tiles[key];
+          if (ms){ try { scene.remove(ms); ms.geometry.dispose(); } catch(e){} }
+          delete tiles[key];
+        }
+      }
+    } catch(e){}
+  }
+  setInterval(tick, 400);
+  window.__PKG_TREES = { tiles: tiles,
+    stats: function(){ return { tiles: tilesBuilt, trees: treesTotal }; } };
 })();
 
 /* v1.16 GREEN PHASE: terrain built (15%) — browser still frozen, label queued.
@@ -13159,6 +13413,67 @@ function closeFullMap(){ fullMapOpen=false; document.getElementById('fullmap').c
 /* ================= MINIMAP ================= */
 var mm=mmCanvas.getContext('2d');
 var mmTimer=0;
+/* ================= MINIMAP TERRAIN (Joshua, 2026-11-01: "also the
+   mini map should show the terrain") =================
+   The minimap (and full map) used to paint the Adamsville zone as one
+   flat dark-green disc: no hills, no valley, no river low ground.
+   This builds ONE offscreen terrain tile from TERR_H — the exact
+   height lattice the 3D terrain mesh was drawn from, already in
+   memory, so NO extra download — coloured by elevation
+   (hypsometric ramp: valley green -> ridge tan) and shaded by a
+   north-west hillshade from the lattice gradients. The tile is in
+   world coordinates (TERR_OX/TERR_OZ + lattice extent), so both map
+   views blit it through the same transform they use for every other
+   feature and it can never drift out of alignment with the player
+   marker. Built lazily on first map draw, then cached. Package mode
+   only; legacy keeps the flat disc. */
+function mmTerrainTile(){
+  if (window.__MM_TILE !== undefined) return window.__MM_TILE;
+  var t = null;
+  try {
+    if (window.__PKG_PARTIAL && typeof TERR_H !== 'undefined' && TERR_H &&
+        TERR_H.length === (TERR_SEGX + 1) * (TERR_SEGZ + 1)){
+      var NX = TERR_SEGX + 1, NZ = TERR_SEGZ + 1, MF = window.MapFrame, i, ix, iy;
+      var cv = document.createElement('canvas'); cv.width = NX; cv.height = NZ;
+      var g2 = cv.getContext('2d'), img = g2.createImageData(NX, NZ);
+      /* elevation stops (metres, [r, g, b]) from the package sampler:
+         Chattahoochee low ground ~228 m up to the MLK ridge ~280 m */
+      var stops = [[224, 44, 96, 58], [234, 62, 124, 74], [244, 84, 146, 78],
+                   [256, 120, 162, 90], [268, 168, 168, 104], [280, 208, 190, 132],
+                   [292, 226, 210, 164]];
+      var ramp = function(e){
+        if (e <= stops[0][0]) return stops[0];
+        for (var s = 1; s < stops.length; s++){
+          if (e <= stops[s][0]){
+            var a = stops[s - 1], b = stops[s], u = (e - a[0]) / (b[0] - a[0]);
+            return [0, a[1] + (b[1] - a[1]) * u, a[2] + (b[2] - a[2]) * u, a[3] + (b[3] - a[3]) * u];
+          }
+        }
+        return stops[stops.length - 1];
+      };
+      for (iy = 0; iy < NZ; iy++) for (ix = 0; ix < NX; ix++){
+        i = iy * NX + ix;
+        var e = MF.runtimeYToElev(TERR_H[i]);
+        /* hillshade: ground rising toward the east/south catches the
+           NW light; falling ground (facing NW is lit, facing SE is in
+           shade) — gradients are world-Y over one lattice cell */
+        var hx = TERR_H[iy * NX + Math.min(ix + 1, NX - 1)] - TERR_H[iy * NX + Math.max(ix - 1, 0)];
+        var hz = TERR_H[Math.min(iy + 1, NZ - 1) * NX + ix] - TERR_H[Math.max(iy - 1, 0) * NX + ix];
+        var sh = 1 + (hx + hz) * 0.042;
+        sh = sh < 0.55 ? 0.55 : (sh > 1.45 ? 1.45 : sh);
+        var c = ramp(e), o = i * 4;
+        img.data[o] = c[1] * sh; img.data[o + 1] = c[2] * sh;
+        img.data[o + 2] = c[3] * sh; img.data[o + 3] = 255;
+      }
+      g2.putImageData(img, 0, 0);
+      t = { cv: cv, x0: TERR_OX, z0: TERR_OZ,
+            w: TERR_SEGX * TERR_CX, h: TERR_SEGZ * TERR_CZ };
+    }
+  } catch(e){ t = null; }
+  window.__MM_TILE = t;
+  return t;
+}
+
 function drawMinimap(dt){
   // v1.0: throttle to ~5Hz — 14k road features are too heavy every frame
   mmTimer-=dt||0.016; if (mmTimer>0) return; mmTimer=0.2;
@@ -13207,6 +13522,17 @@ function drawMinimap(dt){
     });
   }
   if (mmScope){ mm.save(); mmScopePath(); mm.clip(); }
+  /* terrain under everything else (see mmTerrainTile): same rotation
+     and scale as toMap() — translate to disc centre, rotate with the
+     player's heading, scale world units to disc pixels, then draw
+     the tile offset by the player's position */
+  var mmTile = window.__PKG_PARTIAL ? mmTerrainTile() : null;
+  if (mmTile){
+    mm.save();
+    mm.translate(R, R); mm.rotate(yaw + Math.PI); mm.scale(R / range, R / range);
+    mm.drawImage(mmTile.cv, mmTile.x0 - px, mmTile.z0 - pz, mmTile.w, mmTile.h);
+    mm.restore();
+  }
   // water
   mm.fillStyle='#2e6f9e';
   WATER.forEach(function(w){
@@ -13384,6 +13710,16 @@ function drawFullMap(){
   }
   function Mdir(fx,fz){ return [fx*cr-fz*sr, fx*sr+fz*cr]; }  // world dir -> screen dir
   g.fillStyle='#122a1c'; g.fillRect(0,0,W,H);
+  /* terrain tile (see mmTerrainTile): drawn through the same
+     transform as fmPt() — centre, rotate, scale, tile offset by the
+     view centre — so relief sits exactly under roads/water/markers */
+  var fmTile = window.__PKG_PARTIAL ? mmTerrainTile() : null;
+  if (fmTile){
+    g.save();
+    g.translate(W / 2, H / 2); g.rotate(rot); g.scale(sc, sc);
+    g.drawImage(fmTile.cv, fmTile.x0 - fmView.cx, fmTile.z0 - fmView.cz, fmTile.w, fmTile.h);
+    g.restore();
+  }
   // water
   g.fillStyle='#2e6f9e';
   WATER.forEach(function(w){
