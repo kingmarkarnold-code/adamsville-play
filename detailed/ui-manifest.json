@@ -147,9 +147,9 @@
     },
     {
       "name": "index.html",
-      "size": 1191123,
-      "sha256": "f1bbd2870cc544ce77cafef57b293999c7e03f3fe3948754e7fa84f6cf8d632e",
-      "hash": "f1bbd2870cc544ce77cafef57b293999c7e03f3fe3948754e7fa84f6cf8d632e"
+      "size": 1194980,
+      "sha256": "9c7b341a99dae3a98a42adcacfe7723cfaf7c63acfd21b945355dc3e36ba9818",
+      "hash": "9c7b341a99dae3a98a42adcacfe7723cfaf7c63acfd21b945355dc3e36ba9818"
     },
     {
       "name": "input_diag.js",
@@ -171,15 +171,15 @@
     },
     {
       "name": "map_loader.js",
-      "size": 65593,
-      "sha256": "cfe7edd48b5c8ffe2cc5b022a40194340c8d9ad2dfbb51be820ad55d7b813cea",
-      "hash": "cfe7edd48b5c8ffe2cc5b022a40194340c8d9ad2dfbb51be820ad55d7b813cea"
+      "size": 66189,
+      "sha256": "1c61f88be5d91d2c2abcb68c40fead33e1c5cd094dd3bebbc0ebeeba6d326e07",
+      "hash": "1c61f88be5d91d2c2abcb68c40fead33e1c5cd094dd3bebbc0ebeeba6d326e07"
     },
     {
       "name": "map_registry.js",
-      "size": 19195,
-      "sha256": "953cc902ee2c1883c8b25b13d6ee91e037907db085fa45dd4943d8d5e52c9fc3",
-      "hash": "953cc902ee2c1883c8b25b13d6ee91e037907db085fa45dd4943d8d5e52c9fc3"
+      "size": 19831,
+      "sha256": "07e00212a852237f3b82d96679b577851ca65f58a46f75aa05ef71c292ed7760",
+      "hash": "07e00212a852237f3b82d96679b577851ca65f58a46f75aa05ef71c292ed7760"
     },
     {
       "name": "mapdelivery.js",
@@ -648,6 +648,6 @@
       "hash": "99e3a8f264f836ba86b79c497fa2be946b3b469eafa442d0f70eabab239abeec"
     }
   ],
-  "ui_version": "2026.11.01.8",
+  "ui_version": "2026.11.01.9",
   "version": "2026.10.17.9"
 }

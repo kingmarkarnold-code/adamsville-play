@@ -217,6 +217,15 @@ function segHash(cell){
 var _uidSeq = 1;
 
 /* ============================ fetch helpers ============================= */
+/* TRANSPORT NOTE (v1.17.2, 2026-11-01): these helpers fetch RELATIVE
+   urls ('maps/adamsville/zone.json', ...). On the web that is the
+   whole story. Inside the APK shell the document's origin is file:,
+   where Chromium refuses fetch() to file: urls — the SHELL FETCH
+   TRANSPORT shim in index.html's head rewrites these references to
+   the shell's reserved https origin and the shell serves the
+   gate-verified package bytes. Do not "fix" a shell load failure by
+   changing the urls here; the transport lives in index.html +
+   MainActivity, and this file stays transport-agnostic. */
 function fetchJSON(url){
   return fetch(url, { cache: 'no-store' }).then(function(r){
     if (!r.ok) throw new Error('HTTP ' + r.status + ' for ' + url);

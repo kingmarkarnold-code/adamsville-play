@@ -56,11 +56,21 @@
    legacy zone path structurally (the seam in index.html), never to an
    error screen: the player is never stranded on a broken map.
 
-   CLASSIC-ENGINE (APK) NOTE: package mode rides the same fetch() the
-   zone JSON loader already uses on the web build. On the classic r128
-   engine / file:// shell, if the package cannot be fetched the loader
-   reports and the game stays on the legacy zone path — the fallback is
-   structural, not a special case.
+   CLASSIC-ENGINE (APK) NOTE — CORRECTED 2026-11-01 (v1.17.2): the
+   earlier wording here claimed a failed package fetch "stays on the
+   legacy zone path". Both halves of that sentence died: Phase F
+   removed the legacy path (a failed fetch lands on NO MAP DATA),
+   and the fetch itself could never succeed in the shell — Chromium
+   refuses fetch() to file: urls on the shell's file:// page origin,
+   so bootWorld()'s relative fetches were rejected before any byte
+   moved (proven on-device, app 1.17.1: gate census COMPLETE,
+   packageRequested=true, page still booted "No map data"). Package
+   mode inside the APK now rides the SHELL FETCH TRANSPORT: the
+   shim in index.html's head rewrites relative fetch() references
+   to the shell's reserved https origin and the shell's interceptor
+   serves the gate-verified package files from the phone. See the
+   SHELL FETCH TRANSPORT block in index.html before changing how
+   the loader fetches.
 
    PHASE F (2026-10-28, later the same day) — THE MAP IS REMOVED.
    Joshua's restart order: the whole world map comes OUT of the game and

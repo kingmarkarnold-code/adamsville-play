@@ -88,6 +88,80 @@
 <script data-engine="three-migration">window.__threeReady = new Promise(function(r){ window.__threeReadyResolve = r; });
 window.__threeBridgeError = function(){ if (window.__threeReadyResolve) window.__threeReadyResolve(false); };
 if (location.protocol === 'file:'){ setTimeout(function(){ if (!window.__threeModern && window.__threeReadyResolve) window.__threeReadyResolve(false); }, 2500); }</script>
+<script data-engine="shell-fetch">
+/* ======================================================================
+   SHELL FETCH TRANSPORT (v1.17.2, 2026-11-01) — the page-side half of
+   the APK map-handoff fix. Read this before touching fetch() anywhere
+   in the game: it is the reason the package boots inside the app.
+
+   THE DEFECT (proven on Joshua's TCL, app 1.17.1, Player Reports
+   sessions smvy4n03i52h98 + smvy4ndeg6arty): the native launch gate
+   verified the downloaded map package on the phone (census COMPLETE)
+   and routed to the game — but the page booted into "No map data".
+   The boot seam DID request package mode (the sessions' own
+   telemetry: packageRequested=true, mapsrc=default), so the failure
+   sat one layer down: bootWorld() reads the package with fetch() of
+   RELATIVE urls ('maps/adamsville/zone.json'), and on the shell's
+   file:// page origin Chromium refuses fetch() to file: urls
+   outright — the same refusal the three-migration note above
+   records for module fetches, proven on-device in October. Every
+   fetch-based load failed identically: vehicle_library.glb died in
+   the same two sessions with three's "Failed to fetch", while
+   <script>-tag loads (the game's own modules) and https fetches
+   (the report posts) worked fine. The gate's bytes were never the
+   problem; the page had no working road to them.
+
+   THE FIX: inside the shell ONLY (file: origin + the shell's
+   MapDownload bridge present), relative fetch() references — the
+   page's own files — are rewritten to the shell's reserved https
+   origin, https://sa-map.invalid/ : a name that is never a real
+   host. The shell's shouldInterceptRequest answers it from the
+   phone's files in the interceptor's usual order (downloaded map
+   dir for maps/... paths, downloaded asset copies, then the
+   bundled assets). fetch() to https demonstrably works on this
+   page (the report pipeline posts that way every session), so the
+   bytes the gate census verified become the bytes the page reads.
+   The shell half of this contract lives in MainActivity
+   (SHELL_FETCH_ORIGIN) with the path hygiene in
+   LaunchGate.shellFetchRel — the origin string must match there.
+
+   INERT EVERYWHERE ELSE: on the web build (http/https origin) and
+   in any browser without the bridge, this block returns without
+   touching fetch — GitHub Pages serves the package exactly as
+   before, and no legacy fallback is introduced anywhere.
+   ====================================================================== */
+(function(){
+  try{
+    if (window.location.protocol !== 'file:') return;
+    if (!window.MapDownload) return;
+    if (window.__SA_SHELL_FETCH) return;
+    var ORIGIN = 'https://sa-map.invalid/';
+    window.__SA_SHELL_FETCH = ORIGIN;
+    var pageDir = window.location.href.split(/[?#]/)[0];
+    pageDir = pageDir.substring(0, pageDir.lastIndexOf('/') + 1);
+    var nativeFetch = window.fetch;
+    window.fetch = function(input, init){
+      try{
+        var url = (typeof input === 'string') ? input
+                : (input && typeof input.url === 'string') ? input.url : '';
+        /* Only relative references reroute. Absolute urls (GitHub,
+           the report form) pass through untouched, as do
+           scheme-relative and root-absolute references. */
+        if (url && !/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(url) &&
+            url.charAt(0) !== '/'){
+          var resolved = new URL(url, pageDir).href;
+          if (resolved.indexOf(pageDir) === 0){
+            var target = ORIGIN + resolved.substring(pageDir.length);
+            if (typeof input === 'string') input = target;
+            else input = new Request(target, input);
+          }
+        }
+      }catch(e){ /* any surprise: fall through with the original input */ }
+      return nativeFetch.call(window, input, init);
+    };
+  }catch(e){}
+})();
+</script>
 <script type="importmap">{"imports":{"three":"./three.module.js","three/addons/":"./three-addons/"}}</script>
 <script type="module" src="./three_bridge.js" onerror="window.__threeBridgeError&&window.__threeBridgeError()"></script>
 <!-- ===== MAIN CSS (every visual in the game chrome) =====
@@ -2384,7 +2458,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
    stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.11.01.8';
+window.__DOC_UIVER = '2026.11.01.9';
 function __checkDocVersionHeal(){
   var live = window.__UIVER || '';
   if (!live || live === window.__DOC_UIVER){
