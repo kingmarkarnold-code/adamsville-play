@@ -14,9 +14,9 @@
     },
     {
       "name": "ambient_audio.js",
-      "size": 17627,
-      "sha256": "379e0d717a52a82dba0b621176d26f3753b7ae2bf630725636b4ebd6cc184940",
-      "hash": "379e0d717a52a82dba0b621176d26f3753b7ae2bf630725636b4ebd6cc184940"
+      "size": 32979,
+      "sha256": "41e0fce02ee8677aafb2ce76f97f52cee0426711fa84c200ca473079b2b85f08",
+      "hash": "41e0fce02ee8677aafb2ce76f97f52cee0426711fa84c200ca473079b2b85f08"
     },
     {
       "name": "basketball.html",
@@ -117,9 +117,9 @@
     },
     {
       "name": "gps_system.js",
-      "size": 116383,
-      "sha256": "010eec2010f6634bb16d8cfdb16e9ad0ee589dfb3b176d310065f7e2f48aa828",
-      "hash": "010eec2010f6634bb16d8cfdb16e9ad0ee589dfb3b176d310065f7e2f48aa828"
+      "size": 122227,
+      "sha256": "1bff50371b4c9b2ec5105ef1f357d41f8c7927a700ebddac921726d7be09b86d",
+      "hash": "1bff50371b4c9b2ec5105ef1f357d41f8c7927a700ebddac921726d7be09b86d"
     },
     {
       "name": "helicopter_system.js",
@@ -147,9 +147,9 @@
     },
     {
       "name": "index.html",
-      "size": 1181167,
-      "sha256": "8705ce8d44932b10000e4f7c1242517e7480302619263bf85244a750d906e57b",
-      "hash": "8705ce8d44932b10000e4f7c1242517e7480302619263bf85244a750d906e57b"
+      "size": 1183979,
+      "sha256": "d591702ff204d6edcc4241c9e2b4ec03c4a9dffcba1f157a843723fccc0fc050",
+      "hash": "d591702ff204d6edcc4241c9e2b4ec03c4a9dffcba1f157a843723fccc0fc050"
     },
     {
       "name": "input_diag.js",
@@ -648,6 +648,6 @@
       "hash": "99e3a8f264f836ba86b79c497fa2be946b3b469eafa442d0f70eabab239abeec"
     }
   ],
-  "ui_version": "2026.11.01.5",
+  "ui_version": "2026.11.01.6",
   "version": "2026.10.17.9"
 }

@@ -39,6 +39,47 @@
    Joshua's rule: documentation comments on all game code. This file
    follows it.
    ============================================================================ */
+/* ============================================================================
+   v1.1 WATER + NATURE AUDIO (2026-11-01, fixes batch item B — Joshua's
+   gameplay video + spoken notes on build .4):
+
+   B1 CREEK SOUND WAS MISSING. The v1.0 water layer was brown noise
+   through a 750 Hz low-pass at max gain 0.055 — nearly all its energy
+   sits under 200 Hz, where a phone speaker emits almost nothing, and
+   0.055 sits far under the 0.35 music track. At the creek bank it was,
+   for practical purposes, silent. v1.1 re-voices water in the mid band
+   (where small speakers live) with distance-based gains (see LEVELS).
+   B2 WATERFALL at the Tatum Lake outlet — its own voice (bright
+   small-fall trickle, NOT a roar; Joshua: "just a little trickle"),
+   anchored at the outlet point with a tight radius.
+   B3 CRICKETS + GRASSHOPPERS near the creek — a riparian insect layer
+   gated by distance to the nearest stream, daytime-weighted (the
+   video is a summer day); the v1.0 night crickets stay as they were.
+   B4 WADING + SWIMMING SOUNDS — movement through water splashes:
+   stride-synced wading steps in the shallows, a stroke rhythm when
+   swimming, faint treads when treading water (the game's three-state
+   water model), and a bigger splash on entering the water. Grass
+   stays silent; water no longer reuses that silence.
+   B5 MIX BALANCE — the music elements (index.html, MUSIC_VOL 0.35)
+   are ducked by proximity to nature's strongest voice: this module
+   publishes window.__musicDuck (consumed by the music crossfade code
+   in index.html) and applies it to the playing element between
+   fades. At the bank the music eases to ~55% so water and insects
+   stay audible; away from water the music is untouched.
+
+   LEVELS (target gains at each layer's gain node, master = 1):
+     creek  0.085 * f^1.6,  f = clamp(1 - d/45),  d = shore distance m
+     river  0.110 * f^1.6,  f = clamp(1 - d/70)
+     falls  0.075 * f^1.8,  f = clamp(1 - d/38),  d = m to the outlet
+     lake shores feed the creek voice at half gain (a gentle lap).
+   Joshua's falloff rule holds: inaudible far away (every voice is
+   exactly 0 at its radius), growing on approach, clear at the bank.
+
+   VERIFICATION (a headless rig cannot hear): window.__AMB.levels()
+   returns the very targets retarget() applies — one code path, so
+   the measured numbers ARE the shipped behaviour — and __AMB.gains()
+   reads the live node gains + wading state + splash counter.
+   ============================================================================ */
 (function ambientAudio(){
 'use strict';
 
@@ -53,9 +94,16 @@ var RETARGET_S = 2.0;
 var DOWNTOWN_LATLNG = [33.7586, -84.38908];
 
 /* ---- module state ---- */
-var ctx = null, master = null, noiseBuf = null;
-var gTraffic = null, gWind = null, gCrickets = null, gWater = null;
+var ctx = null, master = null, noiseBuf = null, waterBuf = null;
+var gTraffic = null, gWind = null, gCrickets = null;
+var gCreek = null, gRiver = null, gFalls = null, gInsects = null;
+var fallsFlutter = null;                   /* falls gain LFO depth */
 var wLFOdepth = null, crLFOdepth = null;   /* LFO depth gains (see buildLayers) */
+var fallsPt = null;        /* {x,z} Tatum Lake outlet, resolved lazily */
+/* B4 wading state: position-tracked speed + water state, splash timer. */
+var splashCount = 0;
+var wadeState = { inWater: false, swimming: false, depth: 0, speed: 0,
+                  nextSplash: 0, wasInWater: false, lx: null, lz: null, lt: 0 };
 var retargetT = 0, enabled = true;
 var downtown = null;                        /* {x,z} once resolved */
 var birdTO = null, sirenTO = null;
@@ -73,7 +121,9 @@ function gameMin(){
 }
 function isDay(gm){ return gm >= DAY_START && gm <= DAY_END; }
 function isMuted(){
+  try{ if (window.__musicState) return !!window.__musicState.muted; }catch(e){}
   try{ return (typeof musicMuted !== 'undefined' && musicMuted); }catch(e){}
+  try{ return localStorage.getItem('sa_music_muted') === '1'; }catch(e){}
   return false;
 }
 function playerPos(){
@@ -134,6 +184,7 @@ function ensureCtx(){
     master.gain.value = 0;       /* fades in on first retarget */
     master.connect(ctx.destination);
     noiseBuf = makeNoise(ctx);
+    waterBuf = makeWaterNoise(ctx);
     buildLayers();
     return true;
   }catch(e){ ctx = null; return false; }
@@ -148,6 +199,20 @@ function makeNoise(c){
     var w = Math.random() * 2 - 1;
     last = (last + 0.02 * w) / 1.02;
     d[i] = last * 3.2;
+  }
+  return buf;
+}
+/* Water noise: white noise through a one-pole smoother — a soft hiss
+   with body, none of brown noise's sub-200 Hz rumble dominance. The
+   band-pass voices below shape it into creek/river/falls. */
+function makeWaterNoise(c){
+  var len = Math.floor(c.sampleRate * 2);
+  var buf = c.createBuffer(1, len, c.sampleRate);
+  var d = buf.getChannelData(0), last = 0;
+  for (var i = 0; i < len; i++){
+    var w = Math.random() * 2 - 1;
+    last += 0.32 * (w - last);
+    d[i] = last * 1.9;
   }
   return buf;
 }
@@ -183,14 +248,60 @@ function buildLayers(){
   w.connect(wF); wF.connect(gWind); gWind.connect(master);
   w.start(t); wLFO.start(t);
 
-  /* --- water: noise -> low-pass, proximity-driven (see retarget) ---
-     The sound of moving water: present at the shore and in the water,
-     absent inland. One more looped noise source — negligible CPU. */
-  var wa = loopNoise(0.85), waF = ctx.createBiquadFilter();
-  waF.type = 'lowpass'; waF.frequency.value = 750;
-  gWater = ctx.createGain(); gWater.gain.value = 0;
-  wa.connect(waF); waF.connect(gWater); gWater.connect(master);
-  wa.start(t);
+  /* --- water voices (v1.1, item B): all fed by the smoothed
+     water-noise buffer and band-passed into the mid band, so they
+     read on small speakers (the v1.0 brown-noise low-pass voice was
+     inaudible there). Creek = SOFT rushing water (band ~950 Hz, not
+     ocean surf); river = the same family lower and stronger;
+     falls = a bright small-fall trickle (~1900 Hz) with a fast
+     flutter on its gain. Each is proximity-driven in retarget(). --- */
+  function waterVoice(freq, q){
+    var s = ctx.createBufferSource();
+    s.buffer = waterBuf; s.loop = true;
+    s.playbackRate.value = 0.9 + Math.random() * 0.2;
+    var hp = ctx.createBiquadFilter();
+    hp.type = 'highpass'; hp.frequency.value = 240;
+    var bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass'; bp.frequency.value = freq; bp.Q.value = q;
+    var g = ctx.createGain(); g.gain.value = 0;
+    s.connect(hp); hp.connect(bp); bp.connect(g); g.connect(master);
+    s.start(t);
+    return { g: g, bp: bp };
+  }
+  var cv = waterVoice(950, 0.55); gCreek = cv.g;
+  var rv = waterVoice(430, 0.5);  gRiver = rv.g;
+  var fv = waterVoice(1900, 0.7); gFalls = fv.g;
+  /* Creek burble: a slow wander of the creek band frequency, so the
+     rush breathes instead of sitting on one filtered tone. */
+  var bLFO = ctx.createOscillator();
+  bLFO.type = 'sine'; bLFO.frequency.value = 0.13;
+  var bDepth = ctx.createGain(); bDepth.gain.value = 210;
+  bLFO.connect(bDepth); bDepth.connect(cv.bp.frequency); bLFO.start(t);
+  /* Falls flutter: 4.7 Hz shimmer depth, scaled with the falls level
+     in retarget (0 when the falls voice is silent). */
+  var fLFO = ctx.createOscillator();
+  fLFO.type = 'sine'; fLFO.frequency.value = 4.7;
+  fallsFlutter = ctx.createGain(); fallsFlutter.gain.value = 0;
+  fLFO.connect(fallsFlutter); fallsFlutter.connect(gFalls.gain);
+  fLFO.start(t);
+
+  /* --- riparian insects (v1.1, B3): two pulse-gated sines — cricket
+     4.4 kHz at a 13 Hz pulse, grasshopper 5.6 kHz at 21 Hz — summed
+     into one gain. retarget() gates it by distance to the nearest
+     stream and by daylight, so the chorus lives along the creek. --- */
+  gInsects = ctx.createGain(); gInsects.gain.value = 0;
+  [[4400, 13], [5600, 21]].forEach(function(cfg){
+    var o = ctx.createOscillator();
+    o.type = 'sine'; o.frequency.value = cfg[0];
+    var og = ctx.createGain(); og.gain.value = 0.5;
+    var lfo = ctx.createOscillator();
+    lfo.type = 'square'; lfo.frequency.value = cfg[1];
+    var lg = ctx.createGain(); lg.gain.value = 0.5;
+    lfo.connect(lg); lg.connect(og.gain);
+    o.connect(og); og.connect(gInsects);
+    o.start(t); lfo.start(t);
+  });
+  gInsects.connect(master);
 
   /* --- crickets: 4.3 kHz sine, pulsed by a 17 Hz LFO --- */
   var cr = ctx.createOscillator(), crLFO = ctx.createOscillator();
@@ -236,19 +347,25 @@ function retarget(){
   gWind.gain.setTargetAtTime(wT, t, 1.5);
   wLFOdepth.gain.setTargetAtTime(wT * 0.6, t, 1.5);
 
-  /* Water (Joshua, 2026-10-30): volume by distance to the nearest
-     water surface/shore, from the same water data the collision
-     gate uses (the package's __PKG_WATER in a package world; the
-     WATER registry otherwise). Full at the shore / in the water,
-     fading to nothing ~55 m inland. Recomputed on the normal 2 s
-     retarget cadence — no per-frame audio work. */
-  var wDist = waterDist(p);
-  var waT = 0;
-  if (running && wDist !== null){
-    var wf = Math.max(0, 1 - Math.max(0, wDist - 2) / 55);
-    waT = 0.055 * wf * wf;
-  }
-  if (gWater) gWater.gain.setTargetAtTime(waT, t, 1.2);
+  /* Water + riparian insects + mix (v1.1, item B): all targets come
+     from computeLevels() — the same function __AMB.levels() exposes
+     for instrumented verification, so the measured numbers are the
+     shipped behaviour. Recomputed on the normal 2 s cadence. */
+  var L = computeLevels(p, gm, running);
+  if (gCreek) gCreek.gain.setTargetAtTime(L.creek, t, 0.9);
+  if (gRiver) gRiver.gain.setTargetAtTime(L.river, t, 0.9);
+  if (gFalls) gFalls.gain.setTargetAtTime(L.falls, t, 0.9);
+  if (fallsFlutter) fallsFlutter.gain.setTargetAtTime(L.falls * 0.3, t, 0.9);
+  if (gInsects) gInsects.gain.setTargetAtTime(L.insects, t, 1.2);
+  /* B5 mix balance: publish the duck. The music elements are private
+     to index.html's music block (no other file can reach them — the
+     harness probe verified this), so the APPLYING lives there: the
+     crossfade targets multiply by musicDuck() and a 1.5 s applier in
+     the music block holds the playing element at MUSIC_VOL * duck
+     between fades. Presence = the strongest nature voice's proximity
+     fraction, so the music eases down only where the water and
+     insects actually are. */
+  window.__musicDuck = L.duck;
 
   /* Crickets: night only. */
   var nightF = day ? 0 : 1;
@@ -256,53 +373,216 @@ function retarget(){
   crLFOdepth.gain.setTargetAtTime(running ? 0.0035 * nightF : 0, t, 2.0);
 }
 
-/* waterDist(p) — metres from the player to the nearest water
-   surface/shore (0 = in the water), or null when no water data is
-   loaded. Package bodies carry ring bboxes (centre + radii) and
-   streams carry centrelines + width; legacy WATER entries carry
-   centre + radii or a river polyline. Stream distance samples the
-   polyline points (every 4th) minus half width — an approximation
-   that is honest at audio falloff ranges (~55 m). */
-function waterDist(p){
-  if (!p) return null;
-  var best = null;
-  function upd(d){ if (d !== null && isFinite(d) && (best === null || d < best)) best = d; }
+/* ------------------------------------------------------------------ */
+/* waterProximity(p) — v1.1 proximity model for the water voices.
+   Distances are SHORE distances in runtime units (~metres): 0 in the
+   water or at the bank. Streams measure to the centreline segments
+   minus half width (exact segment projection, not point sampling);
+   bodies use the v1.0 ellipse approximation on their bboxes. Falls
+   distance is to the Tatum outlet anchor point. Fractions are the
+   falloff curves from the header (0 at the radius, 1 at the shore). */
+function segDist(px, pz, ax, az, bx, bz){
+  var abx = bx - ax, abz = bz - az;
+  var l2 = abx * abx + abz * abz;
+  var t = l2 > 0 ? ((px - ax) * abx + (pz - az) * abz) / l2 : 0;
+  t = t < 0 ? 0 : (t > 1 ? 1 : t);
+  var dx = px - (ax + abx * t), dz = pz - (az + abz * t);
+  return Math.sqrt(dx * dx + dz * dz);
+}
+function fallsAnchor(){
+  if (fallsPt) return fallsPt;
   try{
-    var PW = (typeof window !== 'undefined') ? window.__PKG_WATER : null;
-    if (PW){
-      for (var i = 0; i < (PW.bodies || []).length; i++){
-        var b = PW.bodies[i];
-        var qx = (p.x - b.x) / Math.max(1, b.rx), qz = (p.z - b.z) / Math.max(1, b.rz);
-        var q = Math.sqrt(qx * qx + qz * qz);
-        upd(q < 1 ? 0 : (q - 1) * Math.min(b.rx, b.rz));
-      }
-      for (var j = 0; j < (PW.streams || []).length; j++){
-        var s = PW.streams[j], hw = (s.width || 7) / 2;
-        for (var k = 0; k < s.pts.length; k += 4){
-          var dx = p.x - s.pts[k][0], dz = p.z - s.pts[k][1];
-          upd(Math.max(0, Math.sqrt(dx * dx + dz * dz) - hw));
-        }
-      }
-      return best;
+    var PW = window.__PKG_WATER;
+    if (!PW) return null;
+    var lake = null;
+    (PW.bodies || []).forEach(function(b){
+      if (/tatum/i.test(b.name || '')) lake = b;
+    });
+    if (!lake) return null;
+    var best = null, bd = Infinity;
+    (PW.streams || []).forEach(function(s){
+      if (!/outlet/i.test(s.name || '') || !s.pts || !s.pts.length) return;
+      [s.pts[0], s.pts[s.pts.length - 1]].forEach(function(pt){
+        var d = Math.hypot(pt[0] - lake.x, pt[1] - lake.z);
+        if (d < bd){ bd = d; best = { x: pt[0], z: pt[1] }; }
+      });
+    });
+    if (best) fallsPt = best;
+  }catch(e){}
+  return fallsPt;
+}
+function waterProximity(p){
+  var out = { creekF: 0, riverF: 0, fallsF: 0,
+              dCreek: null, dRiver: null, dFalls: null,
+              dLake: null, dStream: null };
+  if (!p) return out;
+  function upd(key, d){
+    if (d !== null && isFinite(d) && (out[key] === null || d < out[key]))
+      out[key] = d;
+  }
+  function streamDist(s){
+    var best = Infinity;
+    var pts = s.pts || [];
+    for (var k = 0; k < pts.length - 1; k++){
+      var d = segDist(p.x, p.z, pts[k][0], pts[k][1],
+                      pts[k + 1][0], pts[k + 1][1]);
+      if (d < best) best = d;
     }
-    if (typeof WATER !== 'undefined'){
+    if (pts.length === 1)
+      best = Math.hypot(p.x - pts[0][0], p.z - pts[0][1]);
+    return best - ((s.width || 7) / 2);
+  }
+  try{
+    var PW = window.__PKG_WATER;
+    if (PW){
+      (PW.streams || []).forEach(function(s){
+        var d = Math.max(0, streamDist(s));
+        upd('dStream', d);
+        if ((s.width || 7) >= 30) upd('dRiver', d); else upd('dCreek', d);
+      });
+      (PW.bodies || []).forEach(function(b){
+        var qx = (p.x - b.x) / Math.max(1, b.rx),
+            qz = (p.z - b.z) / Math.max(1, b.rz);
+        var q = Math.sqrt(qx * qx + qz * qz);
+        upd('dLake', q < 1 ? 0 : (q - 1) * Math.min(b.rx, b.rz));
+      });
+      var fa = fallsAnchor();
+      if (fa) out.dFalls = Math.hypot(p.x - fa.x, p.z - fa.z);
+    } else if (typeof WATER !== 'undefined'){
+      /* Legacy registry fallback (same classes as the package path). */
       for (var m = 0; m < WATER.length; m++){
         var w = WATER[m];
         if (w.river){
-          var hw2 = (w.width || 30) / 2;
-          for (var n = 0; n < w.river.length; n += 4){
-            var dx2 = p.x - w.river[n][0], dz2 = p.z - w.river[n][1];
-            upd(Math.max(0, Math.sqrt(dx2 * dx2 + dz2 * dz2) - hw2));
-          }
-        } else if (!w.creek && typeof w.rx === 'number'){
-          var ex = (p.x - w.x) / Math.max(1, w.rx), ez = (p.z - w.z) / Math.max(1, w.rz);
+          var ss = { pts: w.river, width: w.width || (w.creek ? 8 : 30) };
+          var dd = Math.max(0, streamDist(ss));
+          upd('dStream', dd);
+          if (w.creek) upd('dCreek', dd); else upd('dRiver', dd);
+        } else if (typeof w.rx === 'number'){
+          var ex = (p.x - w.x) / Math.max(1, w.rx),
+              ez = (p.z - w.z) / Math.max(1, w.rz);
           var eq = Math.sqrt(ex * ex + ez * ez);
-          upd(eq < 1 ? 0 : (eq - 1) * Math.min(w.rx, w.rz));
+          upd('dLake', eq < 1 ? 0 : (eq - 1) * Math.min(w.rx, w.rz));
         }
       }
     }
   }catch(e){}
-  return best;
+  function fall(d, R){ return d === null ? 0 : Math.max(0, 1 - d / R); }
+  out.creekF = Math.max(fall(out.dCreek, 45), 0.5 * fall(out.dLake, 45));
+  out.riverF = fall(out.dRiver, 70);
+  out.fallsF = fall(out.dFalls, 38);
+  return out;
+}
+
+/* computeLevels(p, gm, running) — THE target gains for the water,
+   insect and duck values, in one place: retarget() applies exactly
+   these numbers and __AMB.levels() reports exactly these numbers. */
+function computeLevels(p, gm, running){
+  var prox = waterProximity(p);
+  var creek = running ? 0.085 * Math.pow(prox.creekF, 1.6) : 0;
+  var river = running ? 0.110 * Math.pow(prox.riverF, 1.6) : 0;
+  var falls = running ? 0.075 * Math.pow(prox.fallsF, 1.8) : 0;
+  /* Insects: along any stream (shore distance), daytime-weighted —
+     grasshoppers sing by day (the video is a summer day); a low
+     night floor near water keeps a cricket character after dark,
+     under the v1.0 night-cricket layer. */
+  var dayF = isDay(gm) ? 1 : 0.3;
+  var insF = prox.dStream === null ? 0
+    : Math.max(0, 1 - Math.max(0, prox.dStream - 2) / 38);
+  var insects = running ? 0.0060 * insF * dayF : 0;
+  var presence = Math.max(prox.creekF, prox.riverF, prox.fallsF);
+  return { creek: creek, river: river, falls: falls, insects: insects,
+           duck: 1 - 0.45 * presence, prox: prox };
+}
+
+/* ------------------------------------------------------------------ */
+/* B4 — wading / swimming sound engine. Runs on the render tick (not
+   the 2 s retarget): reads the player's water state from the game's
+   own model (waterDepthAt + player.swimming, i.e. the three states:
+   wade / swim-moving / tread) and his speed from position deltas.
+   Every splash is a short shaped burst of the water-noise buffer —
+   generated in-code, no assets. splashCount is the instrumentation
+   the harness reads to prove the voices fire. */
+function splashBurst(kind, depthFrac){
+  if (!ctx || ctx.state !== 'running' || !master || isMuted() || !enabled)
+    return;
+  try{
+    var t = ctx.currentTime;
+    var dur  = kind === 'stroke' ? 0.30 : kind === 'enter' ? 0.42 :
+               kind === 'tread' ? 0.22 : 0.17;
+    var freq = kind === 'stroke' ? 470 : kind === 'enter' ? 540 :
+               kind === 'tread' ? 620 : 760;
+    var peak = kind === 'stroke' ? 0.105 : kind === 'enter' ? 0.12 :
+               kind === 'tread' ? 0.020 :
+               0.045 + 0.05 * Math.max(0, Math.min(1, depthFrac || 0));
+    var s = ctx.createBufferSource();
+    s.buffer = waterBuf; s.loop = true;
+    s.playbackRate.value = 0.85 + Math.random() * 0.3;
+    var bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = freq * (0.92 + Math.random() * 0.16);
+    bp.Q.value = 0.8;
+    var g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(peak, t + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    s.connect(bp); bp.connect(g); g.connect(master);
+    s.start(t); s.stop(t + dur + 0.05);
+    splashCount++;
+  }catch(e){}
+}
+function tickWading(dt){
+  var p = playerPos();
+  if (!p) return;
+  var now = performance.now() / 1000;
+  /* Wall-clock dt for the splash countdown (NOT the Sim tick's dt):
+     the cadence must track the player's real movement — on a slow
+     device the render-step dt runs behind wall time and would space
+     the splashes far apart while he is plainly striding. Speed is
+     likewise measured on wall time, with the per-sample contribution
+     clamped so a teleport (or a hitch) cannot poison the EMA. */
+  var wallDt = wadeState.lt > 0 ? Math.min(0.25, now - wadeState.lt) : 0;
+  if (wadeState.lx !== null && wadeState.lt > 0){
+    var dtt = Math.max(0.001, now - wadeState.lt);
+    var dsp = Math.hypot(p.x - wadeState.lx, p.z - wadeState.lz);
+    var inst = Math.min(40, dsp / dtt);
+    wadeState.speed = 0.6 * wadeState.speed + 0.4 * inst;
+  }
+  wadeState.lx = p.x; wadeState.lz = p.z; wadeState.lt = now;
+  var depth = 0, swimming = false;
+  try{
+    if (typeof waterDepthAt === 'function'){
+      var wd = waterDepthAt(p.x, p.z);
+      if (typeof wd === 'number' && isFinite(wd)) depth = Math.max(0, wd);
+    }
+  }catch(e){}
+  try{
+    swimming = (typeof player !== 'undefined' && player && !!player.swimming);
+  }catch(e){}
+  var inWater = depth > 0.03 || swimming;
+  wadeState.inWater = inWater;
+  wadeState.swimming = swimming;
+  wadeState.depth = depth;
+  if (inWater && !wadeState.wasInWater) splashBurst('enter', 1);
+  wadeState.wasInWater = inWater;
+  if (!inWater || !ctx || ctx.state !== 'running') return;
+  wadeState.nextSplash -= wallDt;
+  if (wadeState.nextSplash > 0) return;
+  var moving = wadeState.speed > 0.6;
+  var SWIMD = 1.216;   /* index.html SWIM_DEPTH (runtime units) */
+  if (swimming && moving){
+    splashBurst('stroke', 1);
+    wadeState.nextSplash = 0.55;          /* stroke rhythm */
+  } else if (swimming && !moving){
+    splashBurst('tread', 1);
+    wadeState.nextSplash = 1.7;           /* faint, occasional */
+  } else if (moving){
+    splashBurst('step', Math.min(1, depth / SWIMD));
+    /* stride cadence: a step every ~2.4 u of travel, clamped */
+    wadeState.nextSplash =
+      Math.min(0.85, Math.max(0.30, 2.4 / Math.max(1, wadeState.speed)));
+  } else {
+    wadeState.nextSplash = 0.3;  /* standing in shallows: silent */
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -400,6 +680,9 @@ function scheduleSiren(){
 /* Render-tick: accumulate time, retarget every RETARGET_S. */
 function tick(dt){
   if (!ctx) return;
+  /* B4 wading engine runs every frame (splashes are events, not
+     levels, so they cannot ride the 2 s retarget). */
+  try{ tickWading(dt); }catch(e){}
   retargetT += dt;
   if (retargetT >= RETARGET_S){
     retargetT = 0;
@@ -424,12 +707,46 @@ function boot(){
   scheduleBird();
   scheduleSiren();
   try{ retarget(); }catch(e){}
-  /* Debug / tuning handle. */
+  /* Debug / tuning handle (v1.1: instrumented verification surface —
+     levels() returns the exact targets retarget() applies, gains()
+     reads the live node values, and the splash counter + wading
+     snapshot prove the B4 voices fire in each water state). */
   window.__AMB = {
+    version: '1.1',
     retarget: retarget, chirp: chirp, siren: siren,
+    splash: splashBurst,
     setEnabled: function(v){ enabled = !!v; try{ retarget(); }catch(e){} },
+    levels: function(){
+      var L = computeLevels(playerPos(), gameMin(),
+                            !!(ctx && ctx.state === 'running'));
+      return { creek: +L.creek.toFixed(4), river: +L.river.toFixed(4),
+               falls: +L.falls.toFixed(4), insects: +L.insects.toFixed(4),
+               duck: +L.duck.toFixed(3),
+               dCreekM: L.prox.dCreek, dRiverM: L.prox.dRiver,
+               dFallsM: L.prox.dFalls, dStreamM: L.prox.dStream,
+               fallsPt: fallsPt };
+    },
+    gains: function(){
+      function gv(g){ return g ? +g.gain.value.toFixed(4) : null; }
+      return { creek: gv(gCreek), river: gv(gRiver), falls: gv(gFalls),
+               insects: gv(gInsects), crickets: gv(gCrickets),
+               traffic: gv(gTraffic), wind: gv(gWind),
+               master: gv(master),
+               ctxState: ctx ? ctx.state : null,
+               musicDuck: window.__musicDuck || 1,
+               musicVol: (typeof musicAudio !== 'undefined' && musicAudio)
+                         ? musicAudio.volume : null,
+               musicPlaying: (typeof musicAudio !== 'undefined' &&
+                              musicAudio) ? !musicAudio.paused : null,
+               splashes: splashCount,
+               wading: { inWater: wadeState.inWater,
+                         swimming: wadeState.swimming,
+                         depth: +wadeState.depth.toFixed(3),
+                         speed: +wadeState.speed.toFixed(2) } };
+    },
     get state(){
       return {
+        version: '1.1',
         running: !!(ctx && ctx.state === 'running'),
         muted: isMuted(), gameMin: gameMin(), enabled: enabled
       };

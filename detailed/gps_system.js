@@ -129,6 +129,32 @@
    dedupe); and turn instructions sliding to the sharpest bend of a
    cluster instead of firing where the maneuver starts.
 
+   v1.66 PLAYER-STATE NAVIGATION (Joshua 2026-11-01, fixes batch item E):
+   "the navigation system currently works with the car; I was ON FOOT."
+   Navigation now keys off the PLAYER'S STATE — the same principle as
+   his camera ruling (the car is a state, not the assumption):
+
+     - ON FOOT (car.driving is false): the destination is ANY point on
+       the board. No road snap, no street graph, no zone fetches — a
+       walking route is the straight line across open terrain, quality
+       'foot', with the HUD arrow + remaining-distance guidance updating
+       as he walks. A walker detouring around a lake or a fence is
+       silently re-aimed (no "Rerouting" toast spam).
+     - IN A VEHICLE: street routing exactly as v1.64/v1.65 built it
+       (A* over the street graph, turn-by-turn with street names). When
+       the loaded world has NO street network yet — the package worlds
+       ship roads:[] today — the vehicle branch falls back to a direct
+       route and SAYS SO ("direct — no street route in the map data");
+       it never blocks, and it never degrades the on-foot path.
+
+   DESIGN NOTE for when roads ship in the package: the vehicle branch
+   consumes them through the existing graph build (buildOwnGraph reads
+   roadDrawData; the package adapter fills roadDrawData from the
+   package's roads the day they exist). NOTHING in the on-foot branch
+   changes — travelMode() is the single switch, read fresh at every
+   route computation, and an active destination re-routes itself when
+   the player gets into or out of a car (see gpsTick).
+
    Documentation comments are required on all game code — Joshua's rule.
    ============================================================================ */
 (function(){
@@ -641,7 +667,7 @@ function buildOwnGraph(){
       var edgeCount=0, ks=Object.keys(G.adj);
       for (var i=0;i<ks.length;i++) edgeCount+=G.adj[ks[i]].length;
       if (typeof Report!=='undefined') Report.setSys('gps',{status:'ok',
-        version:'1.65.2', nodes:G.nNodes, edges:Math.round(edgeCount/2),
+        version:'1.66', nodes:G.nNodes, edges:Math.round(edgeCount/2),
         isolatedRoads:G.nIsolated, source:'own', zones:graphZones.slice(),
         junctionBuildMs:jx.buildMs, crossings:jx.nCross,
         gapBridges:jx.nGap||0,
@@ -1436,6 +1462,17 @@ function playerPos(){
   }catch(e){ return {x:0, z:0}; }
 }
 
+/* travelMode() — v1.66 (Joshua 2026-11-01): THE switch for player-state
+   navigation. 'vehicle' only while actually driving; 'foot' otherwise
+   (on foot, standing by the car, car absent/null in a package world).
+   Read fresh at every route computation — never cached at boot. */
+function travelMode(){
+  try{
+    if (typeof car!=='undefined' && car && car.driving) return 'vehicle';
+  }catch(e){}
+  return 'foot';
+}
+
 /* ---------------------------------------------------------------------------
    computeRoute(x, z, name, from) — the routing core (v1.64).
    Returns {route, quality}; never strands the player:
@@ -1453,11 +1490,24 @@ function directRoute(x, z, name, from){
   var d=Math.hypot(x-from.x, z-from.z);
   return {pts:[{x:from.x,z:from.z},{x:x,z:z}], destX:x, destZ:z,
           destName:name||'Destination', dist:d, quality:'direct',
+          mode:'vehicle',
           /* v1.65: even a direct route declares its one off-road leg,
              so guidance can say "no street route" instead of implying
              the line is a road. */
           ptRoad:[-1,-1],
           legs:[{kind:'gap', fromIdx:0, toIdx:1, len:d, street:null}]};
+}
+
+/* footRoute(x, z, name, from) — v1.66 on-foot route: a walker can go
+   ANYWHERE on the board, so the route is the straight line and its one
+   leg is honestly labelled 'walk' (the HUD band speaks walking
+   language for it, not the driver's "no street route" warning). */
+function footRoute(x, z, name, from){
+  var d=Math.hypot(x-from.x, z-from.z);
+  return {pts:[{x:from.x,z:from.z},{x:x,z:z}], destX:x, destZ:z,
+          destName:name||'Destination', dist:d, quality:'foot',
+          mode:'foot', ptRoad:[-1,-1],
+          legs:[{kind:'walk', fromIdx:0, toIdx:1, len:d, street:null}]};
 }
 
 /* pointRoadSnapG(x, z, maxD) — the closest point on any road in the
@@ -1545,7 +1595,23 @@ function bfsComponent(seeds){
   }
   return reach;
 }
+/* computeRoute(x, z, name, from) — v1.66 dispatch: the player's state
+   chooses the router. On foot -> footRoute (any board point, straight
+   line, no graph involved at all). In a vehicle ->
+   computeRouteStreets below (the v1.64/v1.65 street router, unchanged;
+   with no street network loaded it returns the graceful 'direct'
+   fallback). Every route is stamped with the mode that produced it so
+   gpsTick can re-route when the player gets in/out of a car. */
 function computeRoute(x, z, name, from){
+  name=name||'Destination';
+  if (travelMode()==='foot')
+    return {route:footRoute(x, z, name, from), quality:'foot'};
+  var res=computeRouteStreets(x, z, name, from);
+  if (res && res.route) res.route.mode='vehicle';
+  return res;
+}
+
+function computeRouteStreets(x, z, name, from){
   name=name||'Destination';
   if (!G) return {route:directRoute(x, z, name, from), quality:'direct'};
   var roads=G.roadsRef;
@@ -2030,10 +2096,15 @@ function updateGuidance(p){
   guideMs=now;
 }
 
-/* rerouteNow() — automatic rerouting (v1.64): recompute from wherever
-   the player is to the SAME destination. Keeps the old route if the
-   recompute somehow fails — a stale route beats no route. */
-function rerouteNow(){
+/* rerouteNow(silent) — automatic rerouting (v1.64): recompute from
+   wherever the player is to the SAME destination. Keeps the old route
+   if the recompute somehow fails — a stale route beats no route.
+   v1.66: `silent` suppresses the toast — used for on-foot re-aims and
+   travel-mode switches, where the line simply follows the player and
+   a "Rerouting" announcement would be noise. computeRoute dispatches
+   on the CURRENT travel mode, so a silent reroute is also how a route
+   changes character when the player gets in/out of a car. */
+function rerouteNow(silent){
   if (!route) return;
   var res=computeRoute(route.destX, route.destZ, route.destName, playerPos());
   if (!res || !res.route) return;
@@ -2041,22 +2112,28 @@ function rerouteNow(){
   annotateRoute(route);
   guideIdx=0; guideProg=0; lastRouteSetAt=Date.now();
   rebuildRouteMesh();
-  try{ showToast('\uD83D\uDD04 Rerouting — new route '+
-    fmtDist(route.dist), 2200); }catch(e){}
+  if (!silent){
+    try{ showToast('\uD83D\uDD04 Rerouting — new route '+
+      fmtDist(route.dist), 2200); }catch(e){}
+  }
   try{ if(typeof Report!=='undefined') Report.note('gps',
     'auto-reroute: '+Math.round(route.dist)+'u, quality '+res.quality); }catch(e){}
   /* v1.65: a reroute can also discover the destination needs zones
-     the graph doesn't have (e.g. the pin predates the extension). */
-  maybeExtendForRoute();
-  maybeGapRetry();
+     the graph doesn't have (e.g. the pin predates the extension).
+     v1.66: street concern only. */
+  if (route.quality!=='foot'){ maybeExtendForRoute(); maybeGapRetry(); }
 }
 
 /* setDestination(x, z, name) — route from the player, draw, announce. */
 function setDestination(x, z, name){
-  /* v1.64: if no graph has landed yet, try to build the street graph on
-     the spot — a deliberate pin tap should never settle for a straight
-     line just because the deferred background build hasn't run. */
-  if (!G){
+  /* v1.66: ON FOOT there is nothing to bootstrap — a walking route
+     needs no street graph, so skip the graph builds/fetches entirely
+     (in a package world they can only fail anyway). The vehicle path
+     below is the v1.64 behaviour, unchanged. */
+  if (travelMode()!=='foot' && !G){
+    /* v1.64: if no graph has landed yet, try to build the street graph on
+       the spot — a deliberate pin tap should never settle for a straight
+       line just because the deferred background build hasn't run. */
     try{ buildOwnGraph(); }catch(e){}
     if (!G){
       try{
@@ -2081,11 +2158,18 @@ function setDestination(x, z, name){
      route is being found instead of presenting the interim answer
      (streets-to-the-edge plus a straight leg) as final. */
   var extStarted=false;
-  try{ extStarted=ensureGraphForRoute(from, {x:x, z:z, name:name}); }catch(e){}
+  /* v1.66: zone-graph extension is a street-routing concern only. */
+  if (travelMode()!=='foot'){
+    try{ extStarted=ensureGraphForRoute(from, {x:x, z:z, name:name}); }catch(e){}
+  }
   /* Player-facing toast distances via fmtDist — feet under a
      mile, miles over (Joshua 2026-10-24) — the Report.note below stays in raw units (internal). */
   try{
-    if (extStarted && res.quality!=='streets'){
+    if (res.quality==='foot'){
+      showToast('\uD83D\uDEB6 On foot to '+(route.destName)+
+        ' \u2014 '+fmtDist(route.dist)+
+        ' (straight line \u2014 anywhere on the board)', 3000);
+    } else if (extStarted && res.quality!=='streets'){
       showToast('\uD83E\uDDED Navigating to '+(route.destName)+
         ' \u2014 '+fmtDist(route.dist)+
         ' (finding the street route\u2026)', 3000);
@@ -2119,8 +2203,9 @@ function setDestination(x, z, name){
     route.pts.length+' pts, quality '+res.quality); }catch(e){}
   /* v1.65.2: a gap route to a same-zone pocket (nothing for the
      line-based extension to fetch) still gets its one neighbour
-     retry — the pocket may connect around the back. */
-  maybeGapRetry();
+     retry — the pocket may connect around the back. (v1.66: street
+     concern only — never for a walking route.) */
+  if (res.quality!=='foot'){ try{ maybeGapRetry(); }catch(e){} }
   return true;
 }
 
@@ -2244,6 +2329,25 @@ function gpsTick(){
         clearDestination();
         try{ showToast('🎯 Arrived at '+nm, 3000); }catch(e){}
       }
+      /* v1.66 PLAYER-STATE SWITCH: the destination stays, but the
+         route's character follows the player's state — set the pin on
+         foot, get in a car, and the walking line becomes a street
+         route (or the graceful direct fallback where no streets are
+         loaded); get out, and it becomes a walking line again. Silent:
+         the guidance simply changes under the same destination. */
+      if (route && route.mode && route.mode!==travelMode()){
+        try{ if(typeof Report!=='undefined') Report.note('gps',
+          'travel mode switch: '+route.mode+' -> '+travelMode()+
+          ' — re-routing to '+(route.destName||'destination')); }catch(e){}
+        rerouteNow(true);
+      }
+      /* v1.66 ON-FOOT RE-AIM: a walker's straight line is anchored at
+         the pin-drop point; if he detours around an obstacle (a lake,
+         a fence) the line would point across it forever. >60u off the
+         line, silently re-aim from where he stands. */
+      if (route && route.quality==='foot' && guideOff>60){
+        rerouteNow(true);
+      }
       /* v1.64 AUTOMATIC REROUTING: the player is >40u off the route
          line on 3 consecutive checks (~1.5s — a parking-lot stop or a
          gas-station pull-in hugs the line closer than that) and the
@@ -2362,7 +2466,8 @@ function debugState(){
     for (var i=0;i<ks.length;i++) ec+=G.adj[ks[i]].length;
   }
   return {
-    version:'1.65.2',
+    version:'1.66',
+    travelMode:travelMode(),
     graph:G?{source:graphSource, nodes:G.nNodes,
              edges:Math.round(ec/2), isolated:G.nIsolated,
              zones:graphZones.slice(), extending:graphExtending}:null,
@@ -2423,7 +2528,7 @@ window.GPS={
   drawFullMapRoute:drawFullMapRoute,
   drawFullMapGasStations:drawFullMapGasStations,
   _debug:debugState,
-  version:'1.65.2'
+  version:'1.66'
 };
 // per-frame ticks on the central registry (expert #14); interval fallback
 // when Sim isn't available yet — independent of the graph boot poll.
@@ -2477,7 +2582,7 @@ function initGPS(){
   try{
     var edgeCount=0, ks=Object.keys(G.adj);
     for (var i=0;i<ks.length;i++) edgeCount+=G.adj[ks[i]].length;
-    if (typeof Report!=='undefined') Report.setSys('gps',{status:'ok',version:'1.65.2',
+    if (typeof Report!=='undefined') Report.setSys('gps',{status:'ok',version:'1.66',
       nodes:G.nNodes, edges:Math.round(edgeCount/2), isolatedRoads:G.nIsolated,
       source:'traffic (interim)',
       note:'A* over #7 junction graph; route follows real roads only'});
@@ -2578,7 +2683,11 @@ function hudArrowTick(){
     var turnD2=guideNextTurn? (guideNextTurn.d-guideProg) : Infinity;
     if (guideLeg && legD2<turnD2 && legD2<=500){
       var legLeft=Math.max(0, guideLeg.dTo-guideProg);
-      if (guideLeg.kind==='gap'){
+      if (guideLeg.kind==='walk'){
+        featTxt='\uD83D\uDEB6 On foot \u2014 straight to '+
+          (route.destName||'destination')+
+          (legLeft>15? ' \u00B7 '+fmtDist(legLeft) : '');
+      } else if (guideLeg.kind==='gap'){
         featTxt='\u26A0 No street route \u2014 direct '+fmtDist(legLeft);
       } else if (guideLeg.kind==='start'){
         featTxt='\uD83E\uDDED Head to '+(guideLeg.street||'the street')+

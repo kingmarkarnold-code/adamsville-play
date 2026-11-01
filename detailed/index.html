@@ -2020,6 +2020,14 @@ function __scriptSkippedByOption(key){
    Gates, not deletions: when a later build step publishes the full
    package (partial flag off), every one of these loads and runs as
    before with no further changes here. */
+/* GPS EXCEPTION (2026-11-01, fixes batch item E — Joshua: "the
+   navigation system currently works with the car; I was ON FOOT"):
+   gps_system.js is NO LONGER in the disable list. Its v1.66
+   player-state navigation runs graph-free on foot (any board point,
+   straight-line guidance), and its vehicle branch falls back
+   gracefully where no street network is loaded — so a partial
+   package is exactly where it must run. It was removed from the
+   list below; every other entry stands. */
 var __PARTIAL_DISABLED_SRC={
   'npc_system.js':1,'refnpc_system.js':1,'face_platform.js':1,
   'dialogue_director_npc.js':1,
@@ -2030,7 +2038,7 @@ var __PARTIAL_DISABLED_SRC={
   'airport.js':1,'schools3.js':1,'school_plaza.js':1,'marriott.js':1,
   'clubs_diners.js':1,'mlk_fairburn.js':1,'residential_detail.js':1,
   'dress535.js':1,'basketball_court.js':1,'interior_system.js':1,
-  'poi_map.js':1,'goto.js':1,'gps_system.js':1,'water_render.js':1,
+  'poi_map.js':1,'goto.js':1,'water_render.js':1,
   'zoneunlockflow.js':1
 };
 function __partialDisabledSrc(src){
@@ -2376,7 +2384,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
    stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.11.01.5';
+window.__DOC_UIVER = '2026.11.01.6';
 function __checkDocVersionHeal(){
   var live = window.__UIVER || '';
   if (!live || live === window.__DOC_UIVER){
@@ -12477,6 +12485,13 @@ var musicAudioB = new Audio();
 var musicAudio = musicAudioA;  /* active element — always the audible one */
 var _musicInactive = musicAudioB;  /* the other one, used for fade-in */
 var MUSIC_VOL = 0.35;  /* modest — sits under the game */
+/* MIX BALANCE (2026-11-01, fixes batch item B5): ambient_audio.js
+   publishes window.__musicDuck (1.0 away from water/nature, easing to
+   ~0.55 at a creek bank or the falls) so the music never drowns the
+   water and nature ambience Joshua asked to hear. Every music volume
+   write below multiplies by musicDuck() — the crossfade targets and
+   the between-fade level ambient_audio applies directly. */
+function musicDuck(){ var d = window.__musicDuck; return (typeof d === 'number' && d > 0 && d <= 1) ? d : 1; }
 var XFADE_MS = 2500;   /* crossfade duration: 2.5 seconds */
 /* var musicAudio=new Audio(); — REPLACED by dual-element crossfade above */
 /* v1.20 PERFORMANCE (Joshua 2026-10-10): Browser autoplay policy blocks audio
@@ -12556,21 +12571,49 @@ function playSrc(src){
     }catch(e){}
   }
   /* Crossfade: incoming fades 0→MUSIC_VOL, outgoing fades →0 then pauses. */
+  window.__musicFading = true;   /* B5: the mix applier below stands off during a fade */
   var steps = 25;  /* 25 steps × 100ms = 2.5s */
   var step = 0;
   var fadeTimer = setInterval(function(){
     step++;
     var k = step / steps;  /* 0→1 */
-    try{ incoming.volume = Math.min(MUSIC_VOL, MUSIC_VOL * k); }catch(e){}
-    try{ outgoing.volume = Math.max(0, MUSIC_VOL * (1 - k)); }catch(e){}
+    try{ incoming.volume = Math.min(MUSIC_VOL, MUSIC_VOL * k * musicDuck()); }catch(e){}
+    try{ outgoing.volume = Math.max(0, MUSIC_VOL * (1 - k) * musicDuck()); }catch(e){}
     if (step >= steps){
       clearInterval(fadeTimer);
+      window.__musicFading = false;
       try{ outgoing.pause(); }catch(e){}
       try{ outgoing.volume = 0; }catch(e){}
-      try{ incoming.volume = musicMuted ? 0 : MUSIC_VOL; }catch(e){}
+      try{ incoming.volume = musicMuted ? 0 : MUSIC_VOL * musicDuck(); }catch(e){}
     }
   }, 100);
 }
+/* MIX APPLIER + TELEMETRY (2026-11-01, fixes batch item B5): the music
+   elements are private to this part of the page — no other file can
+   reach them (harness-probe verified: typeof musicAudio is
+   'undefined' from any other script) — so the duck that
+   ambient_audio.js publishes (window.__musicDuck: 1.0 away from
+   nature, ~0.55 at a creek bank or the falls) is APPLIED here. The
+   crossfade above already lands fades at the ducked level; this
+   1.5 s applier holds the playing element at MUSIC_VOL * duck during
+   the long stretches between track changes, standing off while a
+   fade is running. The same tick publishes window.__musicState — the
+   read-only mirror ambient_audio.js reads for the game's mute state
+   and the verification harness reads to prove the mix levels. */
+setInterval(function(){
+  try{
+    var duck = musicDuck();
+    if (!window.__musicFading && !musicMuted && musicStarted &&
+        musicAudio && !musicAudio.paused)
+      musicAudio.volume = MUSIC_VOL * duck;
+    window.__musicState = {
+      playing: !!(musicAudio && !musicAudio.paused),
+      vol: (musicAudio && typeof musicAudio.volume === 'number')
+           ? musicAudio.volume : null,
+      muted: !!musicMuted, started: !!musicStarted, duck: duck
+    };
+  }catch(e){}
+}, 1500);
 /* OLD playSrc (hard cut) — REPLACED by crossfade above:
 function playSrc(src){
   musicAudio.src=src;
@@ -13953,10 +13996,14 @@ function drawFullMap(){
   /* ZONE UNLOCK (Joshua 2026-10-17): the full map shows downloaded
      unlocked zones' roads too — same collection as the minimap. */
   try{ if (window.__mmExtraRoads) window.__mmExtraRoads.forEach(drawFmRoad); }catch(e){}
-  // border
-  g.strokeStyle='#e11d48'; g.lineWidth=3; g.beginPath();
-  BORDER.forEach(function(p,i){ var m=M(p.x,p.z); i?g.lineTo(m[0],m[1]):g.moveTo(m[0],m[1]); });
-  g.closePath(); g.stroke();
+  /* RED LINE REMOVED (Joshua, 2026-11-01, fixes batch item D): the
+     crimson BORDER polyline used to be stroked here — a creation-era
+     guide from when the map was first laid out. Joshua: "we don't need
+     this anymore." The DRAWING is gone from the full map (the minimap
+     never drew it; the 3D border posts already skip package mode).
+     The BORDER / BORDER_LL DATA stays — it is his long-term world
+     border record and other systems read it (npc_system.js) — his
+     standing rule: border kept as data, never drawn. */
   // landmarks
   g.fillStyle='#ffd75e'; g.font='bold 15px Arial'; g.textAlign='center';
   LANDMARKS.forEach(function(L){ var m=M(L.x,L.z);
