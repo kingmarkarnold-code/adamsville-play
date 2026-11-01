@@ -27,6 +27,24 @@
    gate: player, NPC walkers (their private grid is deleted), traffic,
    buses, semis, school buses. Interiors register their boxes here as
    material solids; there is no second solver left.
+
+   MESH-FIRST AMENDMENT (2026-11-01, Joshua): mesh collision is the
+   standing DEFAULT for all basic concrete objects — NPCs, tree
+   trunks, vehicles, the terrain, water interaction ("all the
+   different parts of the game") — because it is the FASTER system:
+   contact resolves against the geometry already resident for
+   drawing, never against a registry scan, and the body meets the
+   actual surface (no border, no collision bubble). The registries
+   this module still reads (propGrid / bldgGrid / solid boxes /
+   wall segments) are kept in reserve ONLY for things not easily
+   identified by a mesh — exceptions, not a parallel default.
+   First conversion under this amendment: package-mode tree trunks
+   (step (6) in pushOut below) resolve against the streamed trunk
+   frustums themselves via window.__PKG_TREE_MESH; the registry
+   circles they briefly carried in ui 2026.11.01.4 are removed.
+   Vehicles and NPCs returning to package mode come back ON MESH
+   collision through this same solver — their bodies must not be
+   re-registered as registry colliders.
    ============================================================================ */
 
 /* Material types. The numbers are identifiers — lookup priority comes from
@@ -1020,7 +1038,10 @@ try {
 /* ---------------- pushOut(p, radius) — THE solver ----------------
    Contact resolution over the SAME registries the gate reads:
    propGrid circles (floor-banded), bldgGrid rects/circles, package
-   building rings, material solid boxes, wall segments (floor-banded).
+   building rings, material solid boxes, wall segments (floor-banded)
+   — plus, per the MESH-FIRST AMENDMENT in the header, the package
+   tree trunks resolved against their own drawn mesh geometry
+   (step 6; no registry entry exists for them).
    Mutates p in place; two iterations so stacked overlaps settle. */
 function pushOut(p, radius){
   if (!p) return;
@@ -1144,6 +1165,19 @@ function pushOut(p, radius){
         var nl = Math.sqrt(len2);
         p.x += (-vz / nl) * radius; p.z += (vx / nl) * radius;
       }
+    }
+    /* (6) package tree trunks — MESH collision (Joshua 2026-11-01,
+       mesh-first amendment in the header): the streamed near-field
+       trees resolve against their own drawn frustum geometry via
+       the hook buildPkgTrees registers (window.__PKG_TREE_MESH).
+       Inert whenever the hook is absent (legacy mode, or before
+       the tree system loads) — no registry fallback is substituted:
+       under the mesh-first rule a mesh object collides as mesh or
+       not at all. Every mover routes through this solver, so
+       vehicles and NPCs returning to package mode meet the same
+       bark through this same step. */
+    if (typeof window !== 'undefined' && window.__PKG_TREE_MESH && window.__PKG_TREE_MESH.pushOut){
+      try { window.__PKG_TREE_MESH.pushOut(p, radius, py); } catch(e){}
     }
   }
 }

@@ -55,10 +55,10 @@
     },
     {
       "name": "collision_material.js",
-      "sha256": "9755ca664b9b42da64fd7868cfe02e9ba8b905b787703b2124a258fd51378c74",
-      "size": 53238,
+      "sha256": "0284bc9f28ff75609d52e071a0bfb959b1e5f396b30f41670293283788e7aff9",
+      "size": 55321,
       "url": "https://kingmarkarnold-code.github.io/adamsville-play/detailed/collision_material.js",
-      "hash": "9755ca664b9b42da64fd7868cfe02e9ba8b905b787703b2124a258fd51378c74"
+      "hash": "0284bc9f28ff75609d52e071a0bfb959b1e5f396b30f41670293283788e7aff9"
     },
     {
       "name": "crashlog.js",
@@ -147,9 +147,9 @@
     },
     {
       "name": "index.html",
-      "size": 1172393,
-      "sha256": "51b14974a4e5a67664c5d6eaa045f8206c23af1ffadd782c2f71103f73d4e930",
-      "hash": "51b14974a4e5a67664c5d6eaa045f8206c23af1ffadd782c2f71103f73d4e930"
+      "size": 1181167,
+      "sha256": "8705ce8d44932b10000e4f7c1242517e7480302619263bf85244a750d906e57b",
+      "hash": "8705ce8d44932b10000e4f7c1242517e7480302619263bf85244a750d906e57b"
     },
     {
       "name": "input_diag.js",
@@ -648,6 +648,6 @@
       "hash": "99e3a8f264f836ba86b79c497fa2be946b3b469eafa442d0f70eabab239abeec"
     }
   ],
-  "ui_version": "2026.11.01.4",
+  "ui_version": "2026.11.01.5",
   "version": "2026.10.17.9"
 }
