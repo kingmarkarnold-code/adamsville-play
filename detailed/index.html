@@ -2458,7 +2458,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
    stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.11.01.9';
+window.__DOC_UIVER = '2026.11.05.1';
 function __checkDocVersionHeal(){
   var live = window.__UIVER || '';
   if (!live || live === window.__DOC_UIVER){
@@ -8301,6 +8301,31 @@ try{ __wbStage('water'); }catch(e){}
                         stream. Null for constant-width streams. */
                      widths: s.widths || null,
                      profYs: (s.ys && s.ys.length === s.pts.length) ? s.ys : null });
+        /* STREAM NAME LABELS (2026-11-05 — beta tester via Joshua:
+           "the lake is labelled, the Chattahoochee River is not").
+           The bodies branch above labels every named lake, but this
+           streams branch never called labelAt at all, so a named river
+           carried its name in the data yet drew nothing. A river is
+           long, so repeat its name along the course: labels evenly
+           spaced (~one per 1500 m of arc length, at least one), each
+           pinned on a station point so it sits on the water. labelAt
+           also registers the minimap landmark, same as lake labels. */
+        if (s.name){
+          try {
+            var sTotal = 0;
+            for (var li = 1; li < s.pts.length; li++)
+              sTotal += Math.hypot(s.pts[li][0]-s.pts[li-1][0], s.pts[li][1]-s.pts[li-1][1]);
+            var sCount = Math.max(1, Math.round(sTotal / 1500));
+            for (var lk = 0; lk < sCount; lk++){
+              var sTarget = sTotal * (lk + 0.5) / sCount, sAcc = 0, sPt = s.pts[s.pts.length-1];
+              for (var lj = 1; lj < s.pts.length; lj++){
+                sAcc += Math.hypot(s.pts[lj][0]-s.pts[lj-1][0], s.pts[lj][1]-s.pts[lj-1][1]);
+                if (sAcc >= sTarget){ sPt = s.pts[lj]; break; }
+              }
+              labelAt(s.name, sPt[0], sPt[1], 14, 34, '#7fd4ff');
+            }
+          } catch(e){}
+        }
       } catch(e){}
     });
     try { Report.setSys('water', { features: WATER.length, source: 'package' }); } catch(e){}
