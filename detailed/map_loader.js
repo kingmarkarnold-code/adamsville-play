@@ -427,6 +427,7 @@ function buildPackage(raw){
      polygon + deck/under elevations; level crossings are at-grade polys;
      airport pavement kinds are ground surfaces (converted, no level). --- */
   pkg.decks = []; pkg.levelCrossings = []; pkg.groundStructures = [];
+  pkg.boulders = [];   /* 2026-11-07: boulder records (kind 'boulder') */
   raw.structures.records.forEach(function(s){
     if (s.kind === 'level_crossing'){
       pkg.levelCrossings.push({ id: s.id, name: s.name, poly: ring(s.span_poly),
@@ -437,6 +438,23 @@ function buildPackage(raw){
                        deckY: Y(s.deck_elev_m), underY: Y(s.under_elev_m),
                        surfaceMat: s.surface_material, underMat: s.under_material,
                        material: s.material });
+    } else if (s.kind === 'boulder'){
+      /* 2026-11-07 falls/boulders batch: a boulder is a POINT
+         structure — the falls lip rows, the falls flanks/plunge
+         scatter, and the Chattahoochee shoal boulders. It carries
+         its own drawn profile (r_m / sy / rot + the two harmonic
+         pairs buildPkgBoulders draws AND the mesh solver reads —
+         one profile, two readers) and its seating: base_m is the
+         ASL ground at the anchor from the zone build, converted
+         here to the runtime base Y. Without this branch the
+         record would fall through the dispatch below and vanish
+         (it has neither span_poly nor pts). */
+      pkg.boulders.push({ id: s.id, kind: 'boulder', name: s.name || 'boulder',
+                          at: P(s.at), r_m: s.r_m, sy: s.sy, rot: s.rot,
+                          a1: s.a1, p1: s.p1, a2: s.a2, p2: s.p2,
+                          variant: s.variant, baseY: Y(s.base_m),
+                          lift: s.lift, zone: s.zone, patch: s.patch || null,
+                          material: s.material });
     } else if (s.span_poly){
       pkg.groundStructures.push({ id: s.id, kind: s.kind, name: s.name,
                                   poly: ring(s.span_poly), material: s.material });
@@ -1096,6 +1114,9 @@ function bootWorld(){
       window.__PKG_BUILDINGS = g.buildings;
       window.__PKG_BLDG_COUNT = g.buildings.length;
       window.__PKG_WATER = g.water;
+      /* 2026-11-07: boulder records for buildPkgBoulders (falls +
+         shoals) — staged beside the water, same seam. */
+      window.__PKG_BOULDERS = pkg.boulders || [];
       window.__PKG_HEIGHT_AT = pkg.terrain.heightYAtRuntime;
       window.__PKG_WORLD = true;
       /* Zone identity for the systems that read __ZONE_META (report

@@ -2458,7 +2458,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
    stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.11.07.2';
+window.__DOC_UIVER = '2026.11.07.3';
 function __checkDocVersionHeal(){
   var live = window.__UIVER || '';
   if (!live || live === window.__DOC_UIVER){
@@ -6049,6 +6049,252 @@ try{ __wbStage('terrain'); }catch(e){}
   window.__PKG_TREES = { tiles: tiles,
     stats: function(){ return { tiles: tilesBuilt, trees: treesTotal, trunks: trunksLive }; },
     auditRegistry: auditRegistry };
+  /* NAMED BUMPS (2026-11-07, Joshua: "instead of me running into
+     a tree and it says you ran into an object it says you hit a
+     tree. When you run into a boulder says you hit a boulder.
+     Something like you must go around."): the trunks NAME
+     THEMSELVES to crashlog's identify() through the shared
+     provider list (window.__NAMED_SOLID_PROVIDERS) — the name
+     and the bump sentence live with the object system that owns
+     the geometry, never as an if-chain in the bump code; future
+     mesh objects register a sibling provider the same way (the
+     boulders, directly below, are the second). The scan mirrors
+     trunkPushOut's broad phase (live tiles, their own 8u
+     buckets) and measures to the frustum surface over its
+     height — identification only; the SOLVER stays trunkPushOut. */
+  (window.__NAMED_SOLID_PROVIDERS = window.__NAMED_SOLID_PROVIDERS || []).push({
+    kind: 'tree',
+    identify: function(x, z, radius){
+      var bestD = 1e18, best = null, s, cx, cz, d, i;
+      var cix = Math.floor((x - TERR_OX) / TILE), ciz = Math.floor((z - TERR_OZ) / TILE);
+      for (var iz = ciz - 1; iz <= ciz + 1; iz++)
+      for (var ix = cix - 1; ix <= cix + 1; ix++){
+        var rec = tiles[ix + ',' + iz];
+        if (!rec || !rec.bk) continue;
+        var lx = x - (TERR_OX + ix * TILE), lz = z - (TERR_OZ + iz * TILE);
+        var reach = radius + 1.0;
+        var bx0 = Math.max(0, Math.floor((lx - reach) / 8)), bx1 = Math.min(7, Math.floor((lx + reach) / 8));
+        var bz0 = Math.max(0, Math.floor((lz - reach) / 8)), bz1 = Math.min(7, Math.floor((lz + reach) / 8));
+        for (var bz = bz0; bz <= bz1; bz++)
+        for (var bx = bx0; bx <= bx1; bx++){
+          var list = rec.bk[bx + ',' + bz];
+          if (!list) continue;
+          for (i = 0; i < list.length; i++){
+            var t = list[i];
+            for (s = 0.05; s <= 1.001; s += 0.095){
+              cx = t.x + t.lx * s; cz = t.z + t.lz * s;
+              d = Math.sqrt((x - cx) * (x - cx) + (z - cz) * (z - cz))
+                  - (t.rB + (t.rT - t.rB) * s);
+              if (d < bestD){ bestD = d; best = t; }
+            }
+          }
+        }
+      }
+      if (!best || bestD >= radius + 0.75) return null;
+      return { dist: bestD, x: best.x, z: best.z, label: 'a tree',
+               phrase: 'You hit a tree. You must go around.' };
+    }
+  });
+})();
+
+/* ================= PACKAGE BOULDERS — the falls + the shoals
+   (2026-11-07, Joshua) =================
+   "we had a perfect waterfall where the water flowed out of
+   Tatum Lake over some rocks and into the creek" — the falls
+   are back (the water itself is re-stepped in the package data;
+   see zone-build/fixes-2026-11-07-falls/), and the plain patches
+   of ground sitting inside the Chattahoochee's water become
+   boulders, as Joshua directed ("an algorithm that searches
+   the water for patches of land completely surrounded by water
+   within a waterway and change it from just a patch of ground
+   to inserting a boulder"). The rock he picked, from the
+   six-choice picture: a COMBINATION of #1 (classic rounded
+   granite, light moss) and #4 (mossy forest boulder); the
+   waterfall itself is built from #4. The records are zone-build
+   data (structures.json kind 'boulder' -> map_loader.js ->
+   window.__PKG_BOULDERS): rows of mossy boulders at the three
+   falls lips, the falls flank/plunge scatter, and granite+mossy
+   boulders seated on the eight exempted Chattahoochee shoal
+   patches. (The pond island is NOT among them — Joshua's ruling
+   on it is still pending, so the zone build left it out.)
+
+   One profile, two readers: every boulder is drawn from
+   boulderRadiusAt() — a squashed sphere (radii r, r*sy) whose
+   horizontal radius is modulated by two seeded harmonics, which
+   is what makes each rock lumpy instead of a ball — and the
+   mesh collision resolves against the SAME function, so the
+   body meets the drawn rock exactly (Joshua's mesh-first
+   doctrine, the tree trunks' treatment). The solver hook is
+   window.__PKG_BOULDER_MESH, called by CollisionMaterial
+   .pushOut step (7): "the player cannot go through a boulder
+   so it needs to have the same mesh collision as the trees"
+   (Joshua, 2026-11-07). No registry entry is made for any
+   boulder — under the mesh-first rule a mesh object collides
+   as mesh or not at all.
+
+   The boulders also NAME THEMSELVES for bump messages through
+   window.__NAMED_SOLID_PROVIDERS (the trees' provider is
+   registered directly above): "You hit a boulder. You must go
+   around." The name lives on the object system, so crashlog
+   needs no boulder-specific code. */
+(function buildPkgBoulders(){
+  if (!window.__PKG_PARTIAL || !window.__PKG_BOULDERS) return;
+  var recs = window.__PKG_BOULDERS;
+  if (!recs.length) return;
+  var OS = 1.88 / 1.8;          /* world units per metre (the trees' scale) */
+  var BODY_H = 1.88;            /* mover body height — the trunk solver's */
+  var solids = [];              /* collision records (the drawn profile) */
+
+  /* THE drawn profile: horizontal radius of boulder b's surface
+     at world height y in world direction theta. Zero outside the
+     rock's vertical span. The geometry builder below and the
+     solver both read this — they cannot drift apart. */
+  function boulderRadiusAt(b, y, theta){
+    var v = (y - b.cy) / b.rv;
+    if (v <= -1 || v >= 1) return 0;
+    var th = theta + b.rot;
+    return b.rh * Math.sqrt(1 - v * v)
+      * (1 + b.a1 * Math.cos(2 * th + b.p1) + b.a2 * Math.cos(3 * th + b.p2));
+  }
+  function hash2(a, b){
+    var x = Math.sin(a * 127.1 + b * 311.7) * 43758.5453;
+    return x - Math.floor(x);
+  }
+
+  /* --- build the merged mesh + the collision records --- */
+  var NS = 9, NK = 6;           /* segments around, latitude steps */
+  var P = { pos: [], col: [], idx: [], nv: 0 };
+  var ROCK = { granite: [0.55, 0.54, 0.57], mossy: [0.50, 0.50, 0.52] };
+  var MOSS = [0.20, 0.34, 0.13];
+  recs.forEach(function(rec, bi){
+    var x = rec.at[0], z = rec.at[1];
+    /* seated like the trees are: on the higher of the sampler
+       ground (the record's base_m, from the zone build) and the
+       visible mesh, so the rock never sinks into a mesh bulge
+       and never floats over a post top */
+    var gy = rec.baseY;
+    try { var my = terrainMeshY(x, z); if (my > gy) gy = my; } catch(e){}
+    var b = { x: x, z: z,
+              rh: rec.r_m * OS, rv: rec.r_m * rec.sy * OS,
+              rot: rec.rot || 0, a1: rec.a1 || 0, p1: rec.p1 || 0,
+              a2: rec.a2 || 0, p2: rec.p2 || 0,
+              variant: rec.variant || 'granite' };
+    b.cy = gy + rec.r_m * rec.lift * OS;   /* scene seating: centre
+                                              = ground + r * lift */
+    b.yBot = b.cy - b.rv; b.yTop = b.cy + b.rv;
+    solids.push(b);
+    var rock = ROCK[b.variant] || ROCK.granite;
+    var mossBase = (b.variant === 'mossy') ? 0.85 : 0.30;
+    var base = P.nv, k, s;
+    for (k = 0; k <= NK; k++){
+      var phi = -Math.PI / 2 + Math.PI * k / NK;
+      var yOff = Math.sin(phi) * b.rv;
+      for (s = 0; s < NS; s++){
+        var theta = s / NS * Math.PI * 2;
+        var R = boulderRadiusAt(b, b.cy + yOff, theta);
+        var jit = hash2(bi * 31 + k * 7, s * 13 + bi);
+        var upness = Math.sin(phi) * 0.5 + 0.5;
+        var mossAmt = mossBase * (0.35 + 0.65 * upness) + (jit - 0.5) * 0.30;
+        mossAmt = Math.max(0, Math.min(1, mossAmt));
+        var shade = 0.82 + 0.36 * hash2(bi * 17 + s * 3, k * 29);
+        P.pos.push(x + R * Math.cos(theta), b.cy + yOff, z + R * Math.sin(theta));
+        P.col.push((rock[0] + (MOSS[0] - rock[0]) * mossAmt) * shade,
+                   (rock[1] + (MOSS[1] - rock[1]) * mossAmt) * shade,
+                   (rock[2] + (MOSS[2] - rock[2]) * mossAmt) * shade);
+        P.nv++;
+      }
+    }
+    for (k = 0; k < NK; k++) for (s = 0; s < NS; s++){
+      var s2 = (s + 1) % NS;
+      var v00 = base + k * NS + s, v01 = base + k * NS + s2;
+      var v10 = base + (k + 1) * NS + s, v11 = base + (k + 1) * NS + s2;
+      P.idx.push(v00, v10, v01, v01, v10, v11);
+    }
+  });
+  var geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(P.pos), 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(P.col), 3));
+  geo.setIndex(P.idx);
+  geo.computeVertexNormals();
+  var mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true }));
+  mesh.name = 'pkgBoulders';
+  scene.add(mesh);
+
+  /* --- MESH COLLISION (Joshua 2026-11-07 — the trunks'
+     treatment, step (7) of the one solver): contact resolves
+     against the drawn profile above. gap(y) is convex over the
+     body span (the profile radius is concave in y), so the same
+     14-step ternary search the trunk solver uses finds the
+     height of closest approach; the mover is then pushed out
+     along that height's radial direction to surface + body
+     radius — the body stops AT the rock. The whole set is a few
+     dozen records, so the broad phase is a plain distance check
+     per boulder — lighter than one tree tile's bucket walk. */
+  function boulderGap(b, px, pz, y){
+    var dx = px - b.x, dz = pz - b.z;
+    return Math.sqrt(dx * dx + dz * dz)
+      - boulderRadiusAt(b, y, Math.atan2(dz, dx));
+  }
+  function resolveBoulder(p, radius, py, b){
+    var yLo = Math.max(py, b.yBot), yHi = Math.min(py + BODY_H, b.yTop);
+    if (!(yHi > yLo)) return;   /* the body span misses the rock vertically */
+    var dx = p.x - b.x, dz = p.z - b.z;
+    var a = yLo, bb = yHi, i;
+    for (i = 0; i < 14; i++){
+      var m1 = a + (bb - a) / 3, m2 = bb - (bb - a) / 3;
+      if (boulderGap(b, p.x, p.z, m1) < boulderGap(b, p.x, p.z, m2)) bb = m2; else a = m1;
+    }
+    var ys = (a + bb) / 2;
+    var R = boulderRadiusAt(b, ys, Math.atan2(dz, dx));
+    var d = Math.sqrt(dx * dx + dz * dz), min = R + radius;
+    if (d >= min) return;       /* not touching the rock */
+    if (d > 0.0005){
+      var push = (min - d) / d;
+      p.x += dx * push; p.z += dz * push;
+    } else {
+      p.x = b.x + min;          /* centre exactly on the axis: step off +x */
+      p.z = b.z;
+    }
+  }
+  function boulderPushOut(p, radius, py){
+    if (!p) return;
+    radius = radius || 0.5;
+    if (typeof py !== 'number' || !isFinite(py)) py = (p.y !== undefined) ? p.y : 0;
+    for (var i = 0; i < solids.length; i++){
+      var b = solids[i];
+      var dx = p.x - b.x, dz = p.z - b.z;
+      /* broad phase: the harmonics can swell the drawn radius to
+         ~1.27x rh; 1.30 covers it, plus the body radius */
+      var rr = b.rh * 1.30 + radius;
+      if (dx * dx + dz * dz > rr * rr) continue;
+      resolveBoulder(p, radius, py, b);
+    }
+  }
+  window.__PKG_BOULDER_MESH = { pushOut: boulderPushOut };
+  window.__PKG_BOULDERS_SYS = { solids: solids,
+    radiusAt: boulderRadiusAt,
+    stats: function(){ return { boulders: solids.length }; } };
+
+  /* NAMED BUMP provider (see the trees' registration above):
+     the boulder names itself — "You hit a boulder. You must go
+     around." Identification measures to the profile at the
+     rock's widest height; the solving stays in pushOut. */
+  (window.__NAMED_SOLID_PROVIDERS = window.__NAMED_SOLID_PROVIDERS || []).push({
+    kind: 'boulder',
+    identify: function(x, z, radius){
+      var bestD = 1e18, best = null;
+      for (var i = 0; i < solids.length; i++){
+        var b = solids[i];
+        var dx = x - b.x, dz = z - b.z;
+        var d = Math.sqrt(dx * dx + dz * dz)
+          - boulderRadiusAt(b, b.cy, Math.atan2(dz, dx));
+        if (d < radius + 0.75 && d < bestD){ bestD = d; best = b; }
+      }
+      if (!best) return null;
+      return { dist: bestD, x: best.x, z: best.z, label: 'a boulder',
+               phrase: 'You hit a boulder. You must go around.' };
+    }
+  });
 })();
 
 /* v1.16 GREEN PHASE: terrain built (15%) — browser still frozen, label queued.

@@ -573,11 +573,41 @@ window.CrashLog = (function(){
 
   function identify(x, z, radius){
     var out = { kind:'unknown', label:'something solid (unidentified)',
-                bx:x, bz:z, road:'', suspicious:false };
+                phrase:'', bx:x, bz:z, road:'', suspicious:false };
     try{
       if (typeof window==='undefined') return out;
       radius = (typeof radius==='number') ? radius : 0.5;
       var best = null, bestD = 1e18, kind = null, i, gx, gz;
+
+      /* (0) named mesh solids (2026-11-07, Joshua: "instead of
+         me running into a tree and it says you ran into an
+         object it says you hit a tree. When you run into a
+         boulder says you hit a boulder. Something like you must
+         go around."): objects that carry their own name register
+         a provider on window.__NAMED_SOLID_PROVIDERS (package
+         tree trunks and boulders do; future mesh objects the
+         same way — the name lives on the object, never as an
+         if-chain here). Consulted FIRST: in package mode the
+         mesh objects are in no registry (mesh-first doctrine),
+         so the registry probes below can only call them
+         "unidentified". A provider hit supplies the bump
+         sentence verbatim (out.phrase); the registry probes may
+         still win below if a registered solid is nearer. */
+      var provs = window.__NAMED_SOLID_PROVIDERS;
+      if (provs && provs.length){
+        for (i = 0; i < provs.length; i++){
+          try{
+            var hit = provs[i].identify(x, z, radius);
+            if (hit && typeof hit.dist === 'number' && hit.dist < bestD){
+              bestD = hit.dist; kind = provs[i].kind; best = hit;
+            }
+          }catch(e){}
+        }
+        if (kind && best){
+          out.kind = kind; out.label = best.label; out.phrase = best.phrase || '';
+          if (typeof best.x === 'number'){ out.bx = best.x; out.bz = best.z; }
+        }
+      }
 
       /* (1) building colliders (spatial hash, 3x3 cells) */
       var bg = window.bldgGrid;
@@ -594,6 +624,9 @@ window.CrashLog = (function(){
       }
       if (kind === 'building' && best){
         out.kind = 'building'; out.bx = best.x; out.bz = best.z;
+        out.phrase = '';   /* a nearer registered solid outranks a
+                              named provider hit — its own generic
+                              wording applies, not the object's */
         var kept = window.__bldgKept, match = null;
         if (kept && kept.length){
           for (i=0;i<kept.length;i++){
@@ -703,7 +736,13 @@ window.CrashLog = (function(){
       var repeats = seen ? seen.n : 0;
       bumpSeen[sig] = { t: now, n: 0 };
 
-      toast('You bumped into ' + id.label + (id.road ? ' — near '+id.road : ''));
+      /* 2026-11-07 (Joshua): when the object names itself, the
+         toast is the object's own sentence — "You hit a tree.
+         You must go around." — not "You bumped into ...". The
+         generic wording remains the fallback for everything
+         that carries no name (walls, buildings, unidentified). */
+      toast(id.phrase ? id.phrase
+            : 'You bumped into ' + id.label + (id.road ? ' — near '+id.road : ''));
 
       var details = { kind: id.kind, mode: mode, suspicious: !!id.suspicious };
       if (typeof speed==='number') details.speed = Math.round(speed*10)/10;

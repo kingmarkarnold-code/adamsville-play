@@ -1179,6 +1179,20 @@ function pushOut(p, radius){
     if (typeof window !== 'undefined' && window.__PKG_TREE_MESH && window.__PKG_TREE_MESH.pushOut){
       try { window.__PKG_TREE_MESH.pushOut(p, radius, py); } catch(e){}
     }
+    /* (7) package boulders — MESH collision (2026-11-07, Joshua:
+       "the player cannot go through a boulder so it needs to have
+       the same mesh collision as the trees"): the falls and shoal
+       boulders resolve against their own drawn profile (the ring
+       profile buildPkgBoulders drew from) via the hook it
+       registers (window.__PKG_BOULDER_MESH) — the same treatment
+       as the trunks in step (6), in the same solver, so every
+       mover the trunk step stops is stopped by a boulder too.
+       Inert whenever the hook is absent. No registry fallback:
+       under the mesh-first rule a mesh object collides as mesh
+       or not at all. */
+    if (typeof window !== 'undefined' && window.__PKG_BOULDER_MESH && window.__PKG_BOULDER_MESH.pushOut){
+      try { window.__PKG_BOULDER_MESH.pushOut(p, radius, py); } catch(e){}
+    }
   }
 }
 
