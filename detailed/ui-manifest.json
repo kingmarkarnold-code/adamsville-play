@@ -117,9 +117,9 @@
     },
     {
       "name": "gps_system.js",
-      "size": 122227,
-      "sha256": "1bff50371b4c9b2ec5105ef1f357d41f8c7927a700ebddac921726d7be09b86d",
-      "hash": "1bff50371b4c9b2ec5105ef1f357d41f8c7927a700ebddac921726d7be09b86d"
+      "size": 125250,
+      "sha256": "6c217f71c259b3fc787d688dd772cd8e0e70df17e7698ef620cd6b559d739ae5",
+      "hash": "6c217f71c259b3fc787d688dd772cd8e0e70df17e7698ef620cd6b559d739ae5"
     },
     {
       "name": "helicopter_system.js",
@@ -148,8 +148,8 @@
     {
       "name": "index.html",
       "size": 1229967,
-      "sha256": "221a2bf55647064fc01083c926593404a2151c4002167db386912adbfd553d60",
-      "hash": "221a2bf55647064fc01083c926593404a2151c4002167db386912adbfd553d60"
+      "sha256": "a172acdb80402ea2cb7a10b14d49fef0e61ed1113a0fed32f5e795b3e6205de3",
+      "hash": "a172acdb80402ea2cb7a10b14d49fef0e61ed1113a0fed32f5e795b3e6205de3"
     },
     {
       "name": "input_diag.js",
@@ -666,6 +666,6 @@
       "hash": "20b983ae0e2e555817495a65c37519bfcb2231825269db6a57d72c51ed6006e3"
     }
   ],
-  "ui_version": "2026.11.07.5",
+  "ui_version": "2026.11.07.6",
   "version": "2026.10.17.9"
 }

@@ -155,6 +155,33 @@
    route computation, and an active destination re-routes itself when
    the player gets into or out of a car (see gpsTick).
 
+   v1.67 NAVIGATION TRUTH PASS (Joshua 2026-11-07, live play: "the top
+   arrows sent me the wrong direction; the in-world blue guide sent me
+   the right way"):
+     1. HUD ARROW UN-MIRRORED — hudArrowTick applied the world relative
+        bearing (bearing - viewYaw) directly as a CSS rotate(). The
+        world->screen projection flips the sign, so the top arrow was
+        mirror-imaged left<->right: correct dead ahead and dead behind
+        (a mirror is symmetric there — why it looked fine on straights)
+        and wrong at every turn, while the in-world chevron, rotated in
+        world space by the same bearing, was always right. Fix: the
+        relative angle is now viewYaw - bearing. Route data, the
+        guidance lookahead, the turn band (glyphs + street names) and
+        distances were independently verified correct and are NOT
+        touched; the standing regression rule from this pass is that
+        the HUD arrow and the turn band must never disagree.
+     2. U-TURN GLYPH (Joshua 2026-11-07 13:54) — when the player is
+        heading the wrong way (|relative angle| > 150 deg) the top
+        arrow shows a U-turn glyph hooked toward the shorter way
+        around, instead of the plain arrow spun ~180 degrees, which
+        only reads as "backwards".
+     3. WORLD ROUTE LINE REMOVED — rebuildRouteMesh no longer builds
+        the neon ribbon through the world; Joshua's standing rule is
+        arrow-only navigation in the world. The destination beacon and
+        the in-world chevron are unchanged (their fate is a separate,
+        pending ruling), and the route line on the minimap + full map
+        is a separate surface, also untouched.
+
    Documentation comments are required on all game code — Joshua's rule.
    ============================================================================ */
 (function(){
@@ -221,7 +248,7 @@ var pickMode=false;    // full-map tap sets destination instead of closing
 // arrow never appeared (see the note at the old declaration site).
 var hudArrowEl=null, hudArrowIcon=null, hudArrowDist=null, hudArrowVisible=false;
 var hudArrowTurn=null;   // v1.64: the "next turn" line (glyph + distance)
-var routeLine=null;    // THREE.Line (3D route ribbon)
+var hudArrowUTurn=null;  // v1.67: U-turn glyph on the icon now ('\u21A9'/'\u21AA'), else null
 var beacon=null;       // destination beacon mesh
 var arrow=null;        // direction arrow above player
 var arrowT=0;
@@ -2231,33 +2258,26 @@ function setPickMode(v){
 }
 
 /* ---------------------------------------------------------------------------
-   3D visuals: route ribbon (THREE.Line), destination beacon, player arrow.
+   3D visuals: destination beacon, player arrow. (The in-world route
+   ribbon was removed in v1.67 — see the header note. The route line on
+   the minimap + full map is drawn separately by drawMinimapRoute /
+   drawFullMapRoute and is NOT affected.)
    --------------------------------------------------------------------------- */
 function groundY(x,z){
   try{ return (typeof heightAt==='function'?heightAt(x,z):0)+2.5; }
   catch(e){ return 2.5; }
 }
 function rebuildRouteMesh(){
+  /* v1.67: this used to also build the neon route ribbon (THREE.Line)
+     through the world. Joshua's standing rule is arrow-only navigation
+     in the world, so the ribbon is gone; the function now rebuilds
+     only the destination beacon (kept exactly as it was — its fate is
+     a separate, pending ruling). The name stays: the four call sites
+     rebuild "the route's 3D visuals" on every (re)route and clear. */
   try{
-    if (routeLine && routeLine.parent) routeLine.parent.remove(routeLine);
-    routeLine=null;
     if (beacon && beacon.parent) beacon.parent.remove(beacon);
     beacon=null;
     if (!route) return;
-    var geo=new THREE.BufferGeometry();
-    var verts=new Float32Array(route.pts.length*3);
-    for (var i=0;i<route.pts.length;i++){
-      verts[i*3]=route.pts[i].x;
-      verts[i*3+1]=groundY(route.pts[i].x, route.pts[i].z);
-      verts[i*3+2]=route.pts[i].z;
-    }
-    geo.setAttribute('position', new THREE.BufferAttribute(verts,3));
-    var mat=new THREE.LineBasicMaterial({color:0x35e0ff, linewidth:3,
-      transparent:true, opacity:0.9, depthTest:false});
-    routeLine=new THREE.Line(geo, mat);
-    routeLine.renderOrder=5;
-    routeLine.frustumCulled=false;
-    scene.add(routeLine);
     // destination beacon: pulsing cyan cylinder
     var bgeo=new THREE.CylinderGeometry(3,3,30,12,1,true);
     var bmat=new THREE.MeshBasicMaterial({color:0x35e0ff, transparent:true,
@@ -2672,8 +2692,33 @@ function hudArrowTick(){
     if (typeof car!=='undefined' && car && car.driving) viewYaw=car.yaw||0;
     else if (typeof camYaw!=='undefined') viewYaw=camYaw||0;
   }catch(e){}
-  var rel=bearing-viewYaw;
-  if (hudArrowIcon) hudArrowIcon.style.transform='rotate('+(rel*180/Math.PI)+'deg)';
+  /* v1.67 MIRROR FIX: the world->screen projection flips the sign, so
+     the relative bearing must be viewYaw-bearing. The old
+     bearing-viewYaw, applied directly as a CSS rotate(), mirrored the
+     arrow left<->right — dead ahead and dead behind still read
+     correctly (a mirror is symmetric there), which is why it looked
+     fine on straights and lied at every turn, while the in-world
+     chevron (same bearing, rotated in world space) was always right.
+     The angle is wrapped to [-PI, PI]: rotate() is periodic, so the
+     rendered arrow is unchanged by the wrap, but the U-turn band test
+     below needs the true smallest angle. */
+  var rel=Math.atan2(Math.sin(viewYaw-bearing), Math.cos(viewYaw-bearing));
+  if (hudArrowIcon){
+    var relDeg=rel*180/Math.PI;
+    if (Math.abs(relDeg)>150){
+      /* v1.67 U-TURN (Joshua 2026-11-07 13:54): heading the wrong way
+         — show a U-turn glyph hooked toward the shorter way around
+         instead of the plain arrow spun ~180, which just reads as
+         "backwards". relDeg>0 means the target lies toward
+         screen-right, so the shorter way around hooks right. */
+      var ug=relDeg>0?'\u21AA':'\u21A9';
+      if (hudArrowUTurn!==ug){ hudArrowIcon.textContent=ug; hudArrowUTurn=ug; }
+      hudArrowIcon.style.transform='rotate(0deg)';
+    } else {
+      if (hudArrowUTurn){ hudArrowIcon.textContent='\u2B06'; hudArrowUTurn=null; }
+      hudArrowIcon.style.transform='rotate('+relDeg+'deg)';
+    }
+  }
   if (hudArrowTurn){
     /* v1.65: the band speaks for whichever feature comes first — an
        off-road leg (named as what it is) or the next instruction
