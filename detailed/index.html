@@ -2458,7 +2458,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
    stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.11.07.3';
+window.__DOC_UIVER = '2026.11.07.4';
 function __checkDocVersionHeal(){
   var live = window.__UIVER || '';
   if (!live || live === window.__DOC_UIVER){
@@ -6153,8 +6153,16 @@ try{ __wbStage('terrain'); }catch(e){}
     var v = (y - b.cy) / b.rv;
     if (v <= -1 || v >= 1) return 0;
     var th = theta + b.rot;
-    return b.rh * Math.sqrt(1 - v * v)
-      * (1 + b.a1 * Math.cos(2 * th + b.p1) + b.a2 * Math.cos(3 * th + b.p2));
+    /* FALLS-QA (2026-11-07): a third, finer harmonic (a3/p3, seeded
+       per boulder in the builder below) breaks the dome into
+       facets, and the profile exponent 0.85 keeps the shoulders
+       fuller than a sphere's — rocks, not balls. The solver reads
+       this same function, so the collision follows the new shape
+       exactly. */
+    var prof = Math.pow(Math.sqrt(1 - v * v), 0.85);
+    return b.rh * prof
+      * (1 + b.a1 * Math.cos(2 * th + b.p1) + b.a2 * Math.cos(3 * th + b.p2)
+           + (b.a3 || 0) * Math.cos(5 * th + (b.p3 || 0)) * (1 - Math.abs(v)));
   }
   function hash2(a, b){
     var x = Math.sin(a * 127.1 + b * 311.7) * 43758.5453;
@@ -6162,10 +6170,30 @@ try{ __wbStage('terrain'); }catch(e){}
   }
 
   /* --- build the merged mesh + the collision records --- */
-  var NS = 9, NK = 6;           /* segments around, latitude steps */
+  var NS = 14, NK = 9;          /* segments around, latitude steps
+                                   (raised 9x6 -> 14x9 in the falls-QA
+                                   pass: the silhouette needs the
+                                   facets the new profile cuts) */
   var P = { pos: [], col: [], idx: [], nv: 0 };
-  var ROCK = { granite: [0.55, 0.54, 0.57], mossy: [0.50, 0.50, 0.52] };
-  var MOSS = [0.20, 0.34, 0.13];
+  /* FALLS-QA COLOUR FIX (2026-11-07, Joshua's play-test: the
+     boulders rendered as pale mint-white domes). Two causes, both
+     fixed here. (1) WORKFLOW: vertex colours are consumed as
+     LINEAR values by the renderer (outputColorSpace sRGB), but
+     the old constants were picked as if they were display sRGB —
+     a mid-grey 0.55 came back ~0.77 on screen, and the moss green
+     washed to pale sage. The constants below are the sRGB colours
+     of Joshua's chosen references (#1 grey granite, #4 grey rock
+     under green moss) converted to linear working values, exactly
+     as the terrain's sRGB textures are converted. (2) PATTERN:
+     the old moss was a smooth upness gradient over the whole
+     rock — a pale wash. Moss is now PATCHES (seeded noise, below):
+     grey rock shows through everywhere the moss is not. */
+  function srgbLin(r, g, b){
+    function c(v){ return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }
+    return [c(r), c(g), c(b)];
+  }
+  var ROCK = { granite: srgbLin(0.44, 0.435, 0.47), mossy: srgbLin(0.40, 0.40, 0.43) };
+  var MOSS = srgbLin(0.26, 0.44, 0.16);
   recs.forEach(function(rec, bi){
     var x = rec.at[0], z = rec.at[1];
     /* seated like the trees are: on the higher of the sampler
@@ -6179,12 +6207,19 @@ try{ __wbStage('terrain'); }catch(e){}
               rot: rec.rot || 0, a1: rec.a1 || 0, p1: rec.p1 || 0,
               a2: rec.a2 || 0, p2: rec.p2 || 0,
               variant: rec.variant || 'granite' };
+    /* the fine facet harmonic is derived here (not stored) so the
+       record format never changes; the solver's records ARE these
+       same objects, so mesh and collision still cannot drift */
+    b.a3 = 0.05 + 0.06 * hash2(bi * 7 + 3, bi * 13 + 5);
+    b.p3 = hash2(bi * 3 + 11, bi * 19 + 7) * Math.PI * 2;
     b.cy = gy + rec.r_m * rec.lift * OS;   /* scene seating: centre
                                               = ground + r * lift */
     b.yBot = b.cy - b.rv; b.yTop = b.cy + b.rv;
     solids.push(b);
     var rock = ROCK[b.variant] || ROCK.granite;
-    var mossBase = (b.variant === 'mossy') ? 0.85 : 0.30;
+    var mossCover = (b.variant === 'mossy') ? 0.62 : 0.30;  /* share
+      of the surface under moss: #4 is moss-heavy, #1 carries light
+      patches on mostly bare granite */
     var base = P.nv, k, s;
     for (k = 0; k <= NK; k++){
       var phi = -Math.PI / 2 + Math.PI * k / NK;
@@ -6192,11 +6227,16 @@ try{ __wbStage('terrain'); }catch(e){}
       for (s = 0; s < NS; s++){
         var theta = s / NS * Math.PI * 2;
         var R = boulderRadiusAt(b, b.cy + yOff, theta);
-        var jit = hash2(bi * 31 + k * 7, s * 13 + bi);
         var upness = Math.sin(phi) * 0.5 + 0.5;
-        var mossAmt = mossBase * (0.35 + 0.65 * upness) + (jit - 0.5) * 0.30;
-        mossAmt = Math.max(0, Math.min(1, mossAmt));
-        var shade = 0.82 + 0.36 * hash2(bi * 17 + s * 3, k * 29);
+        /* PATCH moss (falls-QA): two seeded sine fields over the
+           surface; moss where the field crosses the cover
+           threshold, bare grey rock elsewhere, soft edge ~0.28.
+           Slight bias to the upper half — moss grows on top. */
+        var nz = Math.sin(theta * 2.0 + b.p1 * 3.1 + Math.sin(phi * 3.0 + b.p2) * 1.2)
+               + 0.7 * Math.sin(theta * 5.0 - b.p2 * 4.0) * Math.sin(phi * 4.0 + b.p1 * 2.0);
+        var field = nz * 0.5 + 0.5 + (upness - 0.5) * 0.30;
+        var mossAmt = Math.max(0, Math.min(1, (field - (1 - mossCover)) / 0.28));
+        var shade = 0.78 + 0.40 * hash2(bi * 17 + s * 3, k * 29);
         P.pos.push(x + R * Math.cos(theta), b.cy + yOff, z + R * Math.sin(theta));
         P.col.push((rock[0] + (MOSS[0] - rock[0]) * mossAmt) * shade,
                    (rock[1] + (MOSS[1] - rock[1]) * mossAmt) * shade,
@@ -6216,7 +6256,10 @@ try{ __wbStage('terrain'); }catch(e){}
   geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(P.col), 3));
   geo.setIndex(P.idx);
   geo.computeVertexNormals();
-  var mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true }));
+  var mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }));
+  /* flatShading (falls-QA): facets must READ as facets — the smooth
+     vertex normals were half of the "dome" look. Ignored harmlessly
+     by the legacy classic fallback, which keeps smooth shading. */
   mesh.name = 'pkgBoulders';
   scene.add(mesh);
 
@@ -6264,8 +6307,8 @@ try{ __wbStage('terrain'); }catch(e){}
       var b = solids[i];
       var dx = p.x - b.x, dz = p.z - b.z;
       /* broad phase: the harmonics can swell the drawn radius to
-         ~1.27x rh; 1.30 covers it, plus the body radius */
-      var rr = b.rh * 1.30 + radius;
+         ~1.37x rh (a1+a2+a3); 1.45 covers it, plus the body radius */
+      var rr = b.rh * 1.45 + radius;
       if (dx * dx + dz * dz > rr * rr) continue;
       resolveBoulder(p, radius, py, b);
     }
@@ -8428,11 +8471,20 @@ try{ __wbStage('water'); }catch(e){}
           ' vec3 col = mix(deep, shal, 0.5 + 0.28 * rip);',
           ' float foam = 0.0;',
           ' if (uKind > 0.5) {',
+          /* FALLS-QA (2026-11-07, Joshua's play-test + his lasso
+             principle): the stream read as separate striped PLANES
+             laid over each other — the flow/streak mixes below swung
+             the colour 0.05..0.65 across moving sine bands along the
+             arc, and the baked-foam wash painted whole reaches
+             white. Amplitudes cut by ~60% so the creek's base tone
+             sits close to the lake's deep tone and the junction
+             reads as ONE waterway; the motion stays (his Oct 30
+             flow ruling), the banding goes. */
           '   float flow = sin(vD.y * 1.4 - t * 3.2 + sin(vD.x * 6.2831) * 1.2);',
-          '   col = mix(col, shal * 1.15, 0.35 + 0.30 * flow);',
+          '   col = mix(col, shal * 1.15, 0.14 + 0.11 * flow);',
           '   float streak = smoothstep(0.75, 1.0, sin(vD.y * 2.6 - t * 5.0 + vD.x * 9.0));',
-          '   col = mix(col, vec3(0.92, 0.97, 1.0), streak * 0.35);',
-          '   col = mix(col, vec3(0.95, 0.98, 1.0), clamp(vD.z, 0.0, 1.0) * (0.55 + 0.25 * sin(t * 7.0 + vD.y * 8.0)));',
+          '   col = mix(col, vec3(0.92, 0.97, 1.0), streak * 0.15);',
+          '   col = mix(col, vec3(0.95, 0.98, 1.0), clamp(vD.z, 0.0, 1.0) * (0.42 + 0.16 * sin(t * 7.0 + vD.y * 8.0)));',
           '   float ef = min(vD.x, 1.0 - vD.x);',
           '   foam = (1.0 - smoothstep(0.0, 0.18, ef)) * step(0.72, hash(floor(vW.xz * 1.5) + floor(t * 2.0)));',
           ' } else {',
@@ -8728,6 +8780,18 @@ function inWater(x,z){
     if (w.creek){ if (distToCreek(x,z)<4.5) return true; }
     else if (w.river){ if (w.widths){ var sp0 = streamSpan(w, x, z); if (sp0.d < sp0.hw) return true; }
                        else if (distToPolyline(w.river,x,z) < (w.width||30)/2) return true; }
+    /* FALLS-QA FIX (2026-11-07, Joshua's play-test: "SWIMMING" while
+       standing on the grass shore at Tatum Lake — he was in fact
+       swimming THROUGH THE GROUND south of the lake): a package body
+       is water only inside its DRAWN ring. The centre+radius ellipse
+       over-covers: the parcel south of Tatum Lake sits inside the
+       ellipse (r2 0.65) and below the lake surface, so the parabolic
+       depth model called it 1.29u deep (swim) while the sheet — and
+       the shoreline — end metres north of it. The ring is the
+       footprint the player sees (the same rule waterClearForTree
+       already used); the ellipse survives only as the fallback for
+       legacy entries that carry no ring. */
+    else if (w.ring && w.ring.length > 2){ if (pointInRing(w.ring, x, z)) return true; }
     else { var dx=(x-w.x)/w.rx, dz=(z-w.z)/w.rz; if (dx*dx+dz*dz<1) return true; }
   }
   return false;
@@ -8965,8 +9029,13 @@ function waterLevelAt(x,z){
        surface (w.surfY, runtime Y) — package terrain at a lake centre
        is the carved bed, so the legacy heightAt+0.35 estimate would
        seat the swim surface under the bed. Legacy entries carry no
-       surfY and take the legacy path unchanged. */
-    else { var dx=(x-w.x)/w.rx, dz=(z-w.z)/w.rz; if (dx*dx+dz*dz<1){ y=(typeof w.surfY==='number')?w.surfY:heightAt(w.x,w.z)+0.35; if(best===null||y<best) best=y; } }
+       surfY and take the legacy path unchanged.
+       FALLS-QA FIX (2026-11-07): the footprint test matches inWater —
+       a package body answers with its surface only inside its drawn
+       ring, never across the ellipse's dry apron. */
+    else { var inB = (w.ring && w.ring.length > 2) ? pointInRing(w.ring, x, z)
+             : (function(){ var dx=(x-w.x)/w.rx, dz=(z-w.z)/w.rz; return dx*dx+dz*dz<1; })();
+           if (inB){ y=(typeof w.surfY==='number')?w.surfY:heightAt(w.x,w.z)+0.35; if(best===null||y<best) best=y; } }
   }
   return best;
 }
@@ -9017,8 +9086,15 @@ function waterDepthAt(x,z){
       }
     }
     else {
+      /* FALLS-QA FIX (2026-11-07): depth is only owed inside the
+         drawn ring (see inWater). The ellipse keeps one job for ring
+         bodies: the parabolic gradient INSIDE the ring (deepest at
+         the centre — Joshua's depth model; the carved beds are
+         shallower than his design depths, so the gradient, not the
+         bed, is what makes a lake swimmable). */
       var dx=(x-w.x)/w.rx, dz=(z-w.z)/w.rz, r2=dx*dx+dz*dz;
-      if (r2<1) d=maxd*(1-r2);  // parabolic: deepest at center
+      if (w.ring && w.ring.length > 2){ if (pointInRing(w.ring, x, z)) d=maxd*(1-Math.min(r2,1)); }
+      else if (r2<1) d=maxd*(1-r2);  // parabolic: deepest at center
     }
     if (d>best) best=d;
   }

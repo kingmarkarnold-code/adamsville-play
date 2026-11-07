@@ -641,6 +641,19 @@ function buildProvider(pkg){
       if (pointInRing(x, z, pkg.waterBodies[i].ring)) return true;
     for (i = 0; i < pkg.waterStreams.length; i++){
       var w = pkg.waterStreams[i];
+      /* FALLS-QA FIX (2026-11-07): a stream carrying its baked
+         surface rings answers by those rings — the DRAWN water, in
+         this function's own runtime frame. The spine fallback below
+         compares halfW, a PACKAGE-METRE number (max widths_m / 2 =
+         10 for the merged creek), against runtime-frame distances,
+         which stretched the creek's material ~3x too wide and called
+         the dry bank south of Tatum Lake WATER. Ring-less streams
+         keep the legacy spine test unchanged. */
+      if (w.surfRings && w.surfRings.length){
+        for (var r = 0; r < w.surfRings.length; r++)
+          if (pointInRing(x, z, w.surfRings[r].pts)) return true;
+        continue;
+      }
       for (var j = 1; j < w.pts.length; j++){
         s = distToSeg(x, z, w.pts[j - 1][0], w.pts[j - 1][1], w.pts[j][0], w.pts[j][1]);
         if (s.d <= w.halfW) return true;
