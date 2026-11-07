@@ -182,6 +182,29 @@
         pending ruling), and the route line on the minimap + full map
         is a separate surface, also untouched.
 
+   v1.68 NAVIGATION MARKERS PASS (Joshua 2026-11-07 15:03-15:05 — the
+   two rulings the v1.67 note left pending):
+     1. THE BEACON PUSHES THROUGH THE FOG — "Let the beacon push
+        through the fog." Its material is fog:false now, so the white
+        pillar stands visible at any range. Size, colour, pulse and
+        depth behaviour are unchanged; a hill still hides it.
+     2. THE CHEVRON IS THE MARKER HE FOLLOWS — his correction: the
+        missing U-turn indication he kept reporting was the in-world
+        CHEVRON's, not only the top arrow's (the v1.67 glyph went on
+        the HUD arrow; that stays exactly as proven). Two fixes:
+        a. VISIBILITY — the chevron floated at ground+16.5u, ~70+
+           degrees above the camera's view axis on foot (~55+
+           driving): geometrically out of frame, so in normal play it
+           did not exist. It now hovers just above the player's head
+           at a size that fits whole inside the standard follow-camera
+           framing (see CHEV_SCALE / CHEV_LIFT below for the math).
+        b. U-TURN STATE — when the guidance target is behind the
+           player (|relative bearing| > 150 deg, the same wrapped
+           viewYaw-bearing math and the same band as the HUD arrow's
+           U-turn glyph), the chevron swaps to a hooked U-turn form
+           that FACES the player and hooks toward the shorter way
+           around — the HUD glyph's ↪/↩ language in the world.
+
    Documentation comments are required on all game code — Joshua's rule.
    ============================================================================ */
 (function(){
@@ -250,7 +273,9 @@ var hudArrowEl=null, hudArrowIcon=null, hudArrowDist=null, hudArrowVisible=false
 var hudArrowTurn=null;   // v1.64: the "next turn" line (glyph + distance)
 var hudArrowUTurn=null;  // v1.67: U-turn glyph on the icon now ('\u21A9'/'\u21AA'), else null
 var beacon=null;       // destination beacon mesh
-var arrow=null;        // direction arrow above player
+var arrow=null;        // direction arrow (chevron) above player
+var arrowU=null;       // v1.68: U-turn form of the chevron (gpsTick swaps
+                       // it in when the target is behind the player)
 var arrowT=0;
 var lastArriveCheck=0;
 /* v1.64 rework state: graph provenance, rerouting, route guidance. */
@@ -2271,37 +2296,118 @@ function rebuildRouteMesh(){
   /* v1.67: this used to also build the neon route ribbon (THREE.Line)
      through the world. Joshua's standing rule is arrow-only navigation
      in the world, so the ribbon is gone; the function now rebuilds
-     only the destination beacon (kept exactly as it was — its fate is
-     a separate, pending ruling). The name stays: the four call sites
+     only the destination beacon (fog-immune since v1.68 — see the
+     beacon note below). The name stays: the four call sites
      rebuild "the route's 3D visuals" on every (re)route and clear. */
   try{
     if (beacon && beacon.parent) beacon.parent.remove(beacon);
     beacon=null;
     if (!route) return;
-    // destination beacon: pulsing cyan cylinder
+    // destination beacon: pulsing cylinder
+    /* v1.68 BEACON PUSHES THROUGH THE FOG (Joshua 2026-11-07 15:05:
+       "Let the beacon push through the fog"). Scene fog (900u on the
+       laptop tier, 1500u medium) used to swallow the pillar whole at
+       cross-map range, so on a long trip the beacon effectively did
+       not exist. fog:false makes the material ignore fog entirely —
+       the pillar now stands at any range. NOTHING else about the
+       beacon changes under his ruling: same size, same colour (he
+       reads it as a white pillar; the value below is exactly what
+       shipped before), same pulse; and it does NOT punch through
+       terrain — depth testing is untouched, a hill still hides it. */
     var bgeo=new THREE.CylinderGeometry(3,3,30,12,1,true);
     var bmat=new THREE.MeshBasicMaterial({color:0x35e0ff, transparent:true,
-      opacity:0.55, side:THREE.DoubleSide, depthWrite:false});
+      opacity:0.55, side:THREE.DoubleSide, depthWrite:false, fog:false});
     beacon=new THREE.Mesh(bgeo, bmat);
     beacon.position.set(route.destX, groundY(route.destX,route.destZ)+15, route.destZ);
     beacon.renderOrder=6;
     scene.add(beacon);
   }catch(e){}
 }
-function ensureArrow(){
-  if (arrow) return;
+/* v1.68 chevron presentation constants. The chevron shape spans local
+   y in [-4, 6] (10u tall, 8u wide) and used to hover at ground+16.5u
+   at full size — ~70+ degrees above the follow camera's view axis on
+   foot (~55+ driving): geometrically out of the 62-degree FOV, so in
+   normal play Joshua could not see the marker he follows. CHEV_SCALE
+   shrinks it to ~1.8u x 2.2u and CHEV_LIFT hovers it just above the
+   player's head. At the top of its pulse (x1.12) the span is
+   feet+[1.8, 4.3]u, inside the view cone of BOTH standard cameras:
+   on foot (4.6u back, +3.0 high, looking at feet+1.2 three units
+   ahead — axis 13.3 deg down, half-FOV 31 deg) the top sits ~29 deg
+   above the axis; driving (9u back, +4.2 high, axis 14 deg down) it
+   sits ~15 deg above the axis. Same marker over the player, same
+   yaw-to-target behaviour — just in the frame where he can see it. */
+var CHEV_SCALE=0.22, CHEV_LIFT=2.8;
+/* v1.68: the wrapped relative bearing — byte-for-byte the HUD arrow's
+   v1.67 formula (hudArrowTick): atan2(sin(viewYaw-bearing),
+   cos(viewYaw-bearing)). The chevron's U-turn band must agree with
+   the top arrow's (the standing v1.67 regression rule), so the
+   chevron uses the same formula rather than a re-derived variant. */
+function gpsRelBearing(viewYaw, bearing){
+  return Math.atan2(Math.sin(viewYaw-bearing), Math.cos(viewYaw-bearing));
+}
+/* v1.68: which form the chevron takes for a wrapped relative bearing.
+   |rel| > 150 deg (the HUD U-turn band) -> the hooked form, hooked
+   toward the shorter way around: rel > 0 means the target lies
+   toward screen-right, so the shorter way hooks right ('uturn-r'),
+   else 'uturn-l'. Inside the band the chevron is its normal self. */
+function chevStateFromRel(rel){
+  var d=rel*180/Math.PI;
+  if (Math.abs(d)>150) return d>0?'uturn-r':'uturn-l';
+  return 'normal';
+}
+/* v1.68: feet height the chevron anchors to — the player's own mesh
+   Y when readable (correct while swimming: the bed can be metres
+   below the swimmer and the camera frames the swimmer, not the bed),
+   else terrain height (while driving the car sits on the terrain). */
+function chevBaseY(p){
   try{
-    // flat chevron floating above the player, points toward next waypoint
-    var shape=new THREE.Shape();
-    shape.moveTo(0,6); shape.lineTo(-4,-4); shape.lineTo(0,-1.5);
-    shape.lineTo(4,-4); shape.closePath();
-    var g=new THREE.ExtrudeGeometry(shape,{depth:1,bevelEnabled:false});
-    var m=new THREE.MeshBasicMaterial({color:0x35e0ff, transparent:true,
-      opacity:0.95, depthTest:false});
-    arrow=new THREE.Mesh(g,m);
-    arrow.renderOrder=7;
-    arrow.frustumCulled=false;
-    scene.add(arrow);
+    if (typeof car!=='undefined' && car && car.driving)
+      return (typeof heightAt==='function')?heightAt(p.x,p.z):0;
+    if (typeof player!=='undefined' && player && player.mesh)
+      return player.mesh.position.y;
+  }catch(e){}
+  return (typeof heightAt==='function')?heightAt(p.x,p.z):0;
+}
+function ensureArrow(){
+  try{
+    if (!arrow){
+      // flat chevron floating above the player, points toward next waypoint
+      var shape=new THREE.Shape();
+      shape.moveTo(0,6); shape.lineTo(-4,-4); shape.lineTo(0,-1.5);
+      shape.lineTo(4,-4); shape.closePath();
+      var g=new THREE.ExtrudeGeometry(shape,{depth:1,bevelEnabled:false});
+      var m=new THREE.MeshBasicMaterial({color:0x35e0ff, transparent:true,
+        opacity:0.95, depthTest:false});
+      arrow=new THREE.Mesh(g,m);
+      arrow.renderOrder=7;
+      arrow.frustumCulled=false;
+      scene.add(arrow);
+    }
+    if (!arrowU){
+      /* v1.68: the chevron's U-turn form — a hooked arrow in the same
+         local box as the chevron: up the left leg, over the top, and
+         the arrowhead coming back down the right side (it reads as
+         "turn around, this way"). gpsTick faces it at the player and
+         mirrors it (scale.x < 0) when the shorter way around is to
+         the left, so the head always lands on the side he should
+         turn toward. DoubleSide because the negative-scale mirror
+         flips face winding. */
+      var us=new THREE.Shape();
+      us.moveTo(-2.6,-4);
+      us.lineTo(-2.6,2.2); us.lineTo(-1.6,3.9); us.lineTo(0,4.4);
+      us.lineTo(1.6,3.9); us.lineTo(2.6,2.2); us.lineTo(2.6,-1.4);
+      us.lineTo(3.6,-1.4); us.lineTo(1.7,-4.6); us.lineTo(-0.2,-1.4);
+      us.lineTo(0.8,-1.4); us.lineTo(0.8,1.6); us.lineTo(0,2.4);
+      us.lineTo(-0.8,1.6); us.lineTo(-0.8,-4); us.closePath();
+      var ug=new THREE.ExtrudeGeometry(us,{depth:1,bevelEnabled:false});
+      var um=new THREE.MeshBasicMaterial({color:0x35e0ff, transparent:true,
+        opacity:0.95, depthTest:false, side:THREE.DoubleSide});
+      arrowU=new THREE.Mesh(ug,um);
+      arrowU.renderOrder=7;
+      arrowU.frustumCulled=false;
+      arrowU.visible=false;
+      scene.add(arrowU);
+    }
   }catch(e){}
 }
 
@@ -2315,6 +2421,8 @@ function gpsTick(){
     if (!route){
       if (arrow && arrow.parent) arrow.parent.remove(arrow);
       arrow=null;
+      if (arrowU && arrowU.parent) arrowU.parent.remove(arrowU);
+      arrowU=null;
       return;
     }
     ensureArrow();
@@ -2325,14 +2433,46 @@ function gpsTick(){
     updateGuidance(p);
     var tx=guideTarget?guideTarget.x:route.destX;
     var tz=guideTarget?guideTarget.z:route.destZ;
-    // arrow above player, yaw toward target
-    var yaw=Math.atan2(tx-p.x, tz-p.z);
-    var py=groundY(p.x,p.z)+14;
-    arrow.position.set(p.x, py, p.z);
-    arrow.rotation.set(0, yaw, 0);
     arrowT+=0.06;
-    var s=1+Math.sin(arrowT*2)*0.12;
-    arrow.scale.set(s,s,s);
+    var pulse=1+Math.sin(arrowT*2)*0.12;
+    var s=CHEV_SCALE*pulse;
+    /* v1.68: the chevron hovers just above the player's head (see
+       CHEV_SCALE / CHEV_LIFT) instead of 16.5u up in the sky where no
+       camera ever framed it. */
+    var py=chevBaseY(p)+CHEV_LIFT;
+    /* v1.68 U-TURN STATE: the same wrapped relative bearing the HUD
+       arrow uses (viewYaw from the car while driving, the orbit
+       camYaw on foot — hudArrowTick's sources, read the same way),
+       and the same |rel| > 150 deg band. */
+    var viewYaw=0;
+    try{
+      if (typeof car!=='undefined' && car && car.driving) viewYaw=car.yaw||0;
+      else if (typeof camYaw!=='undefined') viewYaw=camYaw||0;
+    }catch(e){}
+    var cstate=chevStateFromRel(gpsRelBearing(viewYaw, Math.atan2(tx-p.x, tz-p.z)));
+    if (cstate==='normal'){
+      // chevron above player, yaw toward target (unchanged behaviour)
+      var yaw=Math.atan2(tx-p.x, tz-p.z);
+      arrow.position.set(p.x, py, p.z);
+      arrow.rotation.set(0, yaw, 0);
+      arrow.scale.set(s,s,s);
+      arrow.visible=true;
+      if (arrowU) arrowU.visible=false;
+    } else {
+      /* U-turn form: rotated to FACE the player (rotation.y =
+         viewYaw + PI puts the shape's front toward the camera, its
+         local +X on screen-right — the same orientation the HUD
+         glyph is read in), mirrored when the shorter way around is
+         to the left so the arrowhead lands on the side he should
+         turn toward: 'uturn-r' unmirrored, 'uturn-l' scale.x < 0. */
+      if (arrowU){
+        arrowU.position.set(p.x, py, p.z);
+        arrowU.rotation.set(0, viewYaw+Math.PI, 0);
+        arrowU.scale.set(cstate==='uturn-r'?s:-s, s, s);
+        arrowU.visible=true;
+      }
+      arrow.visible=false;
+    }
     // beacon pulse
     if (beacon){
       var bs=1+Math.sin(arrowT*2.4)*0.18;
