@@ -74,13 +74,38 @@
    consumed — the flow reports "already the newest" instead of
    stashing and reloading a second time.
 
+   AUTO SPOT SAVE (2026-11-07, Joshua's play-test: he left the
+   browser to check a message, the browser reloaded the page, and he
+   "lost my current position and I had to complete the load options
+   menu again"): the stash used to be written ONLY by game-initiated
+   reloads (this flow, zone transitions, Go To), so a BROWSER-forced
+   reload — Android evicting the backgrounded tab — wrote nothing and
+   booted cold: options menu, home spawn. (Day and time survived only
+   because daycycle.js keeps its own separate stash.) Now, while a
+   game is running, this module refreshes an AUTO stash of the
+   player's exact spot every ~10 s and again the moment the page is
+   hidden or unloading (visibilitychange / pagehide — the
+   leave-the-browser moment itself). The boot gate in index.html
+   already treats any fresh stash boot as a resume (options skipped,
+   progress bar, one Start tap — Joshua's Launch Flow Rule), so a
+   browser reload now lands him back where he stood, with a
+   "Welcome back" toast. Auto stashes are marked auto:true and NEVER
+   overwrite a non-auto stash (a pending UI update / Go To / zone
+   trip owns the slot until consumed); a stale or foreign auto stash
+   is discarded silently — the "trip set aside" wording belongs to
+   trips only. The freshness window is the same 10 minutes as every
+   stash; a longer absence still boots fresh by design.
+
    STATE KEYS (localStorage):
-     sa_ui_update_resume   JSON  the resume stash (consumed on boot)
+     sa_ui_update_resume   JSON  the resume stash (consumed on boot);
+                           an AUTO spot stash reuses this key, marked
+                           auto:true (see AUTO SPOT SAVE above)
      sa_ui_update_applied  JSON  {ver, t} of the last consumed stash
 
    Public API: window.UIUpdateFlow = { start, maybeRestore, diffManifests,
-     writeStash, stashAndReload }  (the last two added 2026-10-17: the
-     generic stash API the zone transition + post-unlock refresh reuse)
+     writeStash, stashAndReload, autoSaveSpot }  (writeStash /
+     stashAndReload added 2026-10-17: the generic stash API the zone
+     transition + post-unlock refresh reuse; autoSaveSpot 2026-11-07)
    ============================================================================ */
 (function(){
 'use strict';
@@ -560,7 +585,10 @@ function maybeRestore(){
        zone crossings, unlock refreshes) must never vanish silently
        (2026-10-18: a stale Go To stash read to Joshua as "dumped at
        the launch options with no word"). Say so in plain words. */
-    var tripNote=(s && typeof s.toast==='string' && s.toast) ? s.toast : '';
+    /* auto spot stashes (2026-11-07) carry a welcome-back toast, not
+       a trip — a stale one is discarded silently, never with the
+       trip wording below */
+    var tripNote=(s && !s.auto && typeof s.toast==='string' && s.toast) ? s.toast : '';
     lsDel(LS_STASH);
     if (tripNote){
       logLine('Resume stash too old to use — trip set aside, started fresh.');
@@ -571,7 +599,7 @@ function maybeRestore(){
   var curZone=null;
   try{ if (typeof ZONELOADER!=='undefined') curZone=ZONELOADER.currentZone; }catch(e){}
   if (s.zone && curZone && s.zone!==curZone){
-    var tripNote2=(typeof s.toast==='string' && s.toast) ? s.toast : '';
+    var tripNote2=(!s.auto && typeof s.toast==='string' && s.toast) ? s.toast : '';
     lsDel(LS_STASH);   /* other-context stash — discard, but a trip says why */
     if (tripNote2){
       logLine('Resume stash was for zone '+(s.zone||'?')+', this page booted '+(curZone||'?')+' — trip set aside.');
@@ -786,16 +814,59 @@ if (typeof document!=='undefined'){
   else if (document.addEventListener) document.addEventListener('DOMContentLoaded', function(){ setTimeout(wireButton, 1500); });
 }
 
+/* ---------- AUTO SPOT SAVE (2026-11-07) ----------
+   autoSaveSpot(): refresh the AUTO resume stash from the live game —
+   the same snapshot() the flow's own reload path writes, marked
+   auto:true with a welcome-back toast. Guards: never while the update
+   flow itself is running (its stash owns the slot), never before the
+   game has started (no live player), and never over a NON-auto stash
+   (a UI-update / Go To / zone stash is consumed by its own boot
+   first). Triggers: a ~10 s interval (the same cadence daycycle
+   persists the clock at), visibilitychange to hidden, and pagehide —
+   the last two are the exact moment the player leaves the browser,
+   which is when Android is likeliest to evict the tab. All guarded:
+   this writer must never break the game it protects. */
+var AUTO_TOAST='Welcome back \u2014 you\u2019re where you left off.';
+function autoSaveSpot(){
+  try{
+    if (running) return;
+    if (typeof window==='undefined' || !window.__gameStarted) return;
+    var raw=lsGet(LS_STASH);
+    if (raw){
+      var ex=null;
+      try{ ex=JSON.parse(raw); }catch(e){}
+      if (ex && !ex.auto) return;   /* a flow / Go To / zone stash owns the slot */
+    }
+    var s=snapshot('', { toast: AUTO_TOAST });
+    if (!s) return;
+    s.auto=true;
+    lsSet(LS_STASH, JSON.stringify(s));
+  }catch(e){}
+}
+try{
+  setInterval(autoSaveSpot, 10000);
+  if (typeof document!=='undefined' && document.addEventListener){
+    document.addEventListener('visibilitychange', function(){
+      if (document.visibilityState==='hidden') autoSaveSpot();
+    });
+  }
+  if (typeof window!=='undefined' && window.addEventListener){
+    window.addEventListener('pagehide', autoSaveSpot);
+  }
+}catch(e){}
+
 /* Public API — start is the button (and any future caller);
    maybeRestore is __tryStartGame's boot hook; diffManifests is the
    pure core the harness drives; writeStash/stashAndReload are the
-   generic stash API zoneloader + zoneunlockflow reuse (2026-10-17). */
+   generic stash API zoneloader + zoneunlockflow reuse (2026-10-17);
+   autoSaveSpot is the browser-reload spot keeper (2026-11-07). */
 window.UIUpdateFlow={
   start:start,
   maybeRestore:maybeRestore,
   diffManifests:diffManifests,
   writeStash:writeStash,
-  stashAndReload:stashAndReload
+  stashAndReload:stashAndReload,
+  autoSaveSpot:autoSaveSpot
 };
 
 /* Self-report so Joshua can verify the module loaded (Report panel). */

@@ -2458,7 +2458,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
    stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.11.05.1';
+window.__DOC_UIVER = '2026.11.07.1';
 function __checkDocVersionHeal(){
   var live = window.__UIVER || '';
   if (!live || live === window.__DOC_UIVER){
@@ -5915,7 +5915,11 @@ try{ __wbStage('terrain'); }catch(e){}
         var gy;
         try { gy = heightAt(rt.x, rt.z); } catch(e){ continue; }
         try { var my = terrainMeshY(rt.x, rt.z); if (my > gy) gy = my; } catch(e){}
-        try { if (typeof inWater === 'function' && inWater(rt.x, rt.z)) continue; } catch(e){}
+        /* water exclusion against the DRAWN footprints, with a bank
+           margin (2026-11-07 trees-in-creek fix — see waterClearForTree
+           in the water section for the three leaks in the bare
+           inWater() anchor test this replaces) */
+        try { if (typeof waterClearForTree === 'function' && !waterClearForTree(rt.x, rt.z, 3)) continue; } catch(e){}
         var tg = emitTree(P, rt.x, rt.z, gy, f,
           [th(cc, rr, 30 + k), th(cc, rr, 40 + k), th(cc, rr, 50 + k), th(cc, rr, 60 + k)]);
         /* TRUNK MESH COLLISION (see the system header): the tile
@@ -8105,7 +8109,11 @@ try{ __wbStage('water'); }catch(e){}
     var pwWaterMats = [];
     function pwWaterMat(kind){
       var m = new THREE.ShaderMaterial({
-        uniforms: { uTime: { value: 0 }, uKind: { value: kind } },
+        /* uLight (2026-11-07): day/night multiplier for this UNLIT
+           shader — fed from daycycle's published light level by the
+           tick below, so the water follows the same curve as the sky
+           (see the tick's note). */
+        uniforms: { uTime: { value: 0 }, uKind: { value: kind }, uLight: { value: 1 } },
         vertexShader: [
           'attribute vec3 aData;',
           'varying vec3 vW; varying vec3 vD;',
@@ -8114,7 +8122,7 @@ try{ __wbStage('water'); }catch(e){}
           ' gl_Position = projectionMatrix * viewMatrix * wp; }'
         ].join('\n'),
         fragmentShader: [
-          'uniform float uTime; uniform float uKind;',
+          'uniform float uTime; uniform float uKind; uniform float uLight;',
           'varying vec3 vW; varying vec3 vD;',
           'float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }',
           'void main(){',
@@ -8139,6 +8147,7 @@ try{ __wbStage('water'); }catch(e){}
           ' col = mix(col, vec3(0.93, 0.97, 0.99), clamp(foam, 0.0, 1.0) * 0.8);',
           ' float sparkle = step(0.985, hash(floor(vW.xz * 3.0) + floor(t * 3.0)));',
           ' col += vec3(0.25) * sparkle;',
+          ' col *= uLight;',
           ' gl_FragColor = vec4(col, 1.0);',
           '}'
         ].join('\n')
@@ -8152,8 +8161,20 @@ try{ __wbStage('water'); }catch(e){}
         window.__pkgWaterTick = true;
         Sim.onTick('render', 45, function(dt){
           window.__pkgWaterT = (window.__pkgWaterT || 0) + (dt || 0.016);
-          for (var mi = 0; mi < pwWaterMats.length; mi++)
+          /* DAY/NIGHT (2026-11-07, Joshua: "The sky did get darker,
+             but the world didn't"): this shader takes no scene
+             lights, so without help the water drew the same bright
+             blue at midnight as at noon. daycycle.js publishes the
+             world's light level on the SAME keyframe curve as the
+             sky (window.__dayLightLevel: noon 1, deep night ~0.11);
+             feed it to uLight so every package water surface darkens
+             with the world. Defaults to 1 (full day) until daycycle's
+             first tick publishes. */
+          var pwLv = (typeof window.__dayLightLevel === 'number') ? window.__dayLightLevel : 1;
+          for (var mi = 0; mi < pwWaterMats.length; mi++){
             pwWaterMats[mi].uniforms.uTime.value = window.__pkgWaterT;
+            pwWaterMats[mi].uniforms.uLight.value = pwLv;
+          }
         });
       }
     } catch(e){}
@@ -8255,7 +8276,12 @@ try{ __wbStage('water'); }catch(e){}
         mesh.position.y = surfY;
         scene.add(mesh);
         WATER.push({ x: b.x, z: b.z, rx: b.rx, rz: b.rz, name: b.name || '',
-                     depthFt: b.depthFt, surfY: surfY });
+                     depthFt: b.depthFt, surfY: surfY,
+                     /* the true outline, kept for tests that must match
+                        the DRAWN water (tree placement exclusion —
+                        waterClearForTree below): the x/z/rx/rz ellipse
+                        under-covers this ring near its corners */
+                     ring: b.ring });
         if (b.name){ try { labelAt(b.name, b.x, b.z, 14, 34, '#7fd4ff'); } catch(e){} }
       } catch(e){}
     });
@@ -8411,6 +8437,66 @@ function inWater(x,z){
     else { var dx=(x-w.x)/w.rx, dz=(z-w.z)/w.rz; if (dx*dx+dz*dz<1) return true; }
   }
   return false;
+}
+/* pointInRing(ring, x, z): even-odd point-in-polygon over a package
+   body ring ([x,z] pairs, runtime frame — the same coords the water
+   sheet is drawn from). */
+function pointInRing(ring, x, z){
+  var inside=false;
+  for (var i=0, j=ring.length-1; i<ring.length; j=i++){
+    var xi=ring[i][0], zi=ring[i][1], xj=ring[j][0], zj=ring[j][1];
+    if (((zi>z)!==(zj>z)) && (x < (xj-xi)*(z-zi)/(zj-zi)+xi)) inside=!inside;
+  }
+  return inside;
+}
+/* distToRing(ring, x, z): shortest distance to a body ring's outline —
+   distToPolyline over the ring's open chain plus its closing segment. */
+function distToRing(ring, x, z){
+  var best=distToPolyline(ring, x, z);
+  var a=ring[ring.length-1], b=ring[0];
+  var vx=b[0]-a[0], vz=b[1]-a[1], len2=vx*vx+vz*vz;
+  var t=len2>0 ? ((x-a[0])*vx+(z-a[1])*vz)/len2 : 0;
+  t=Math.max(0,Math.min(1,t));
+  var dx=x-(a[0]+vx*t), dz=z-(a[1]+vz*t), d=Math.sqrt(dx*dx+dz*dz);
+  return Math.min(best, d);
+}
+/* waterClearForTree(x, z, margin) — TREES-IN-CREEK FIX (2026-11-07,
+   Joshua's play-test: "Trees in Creek"). True when a tree may stand
+   at (x,z): outside every DRAWN water footprint AND at least `margin`
+   units back from its edge. The test tree placement used before was
+   inWater() at the anchor point alone, which leaked three ways:
+     1. bodies were tested against their bounding ELLIPSE, which
+        under-covers the drawn ring polygon near its corners — an
+        anchor could pass while standing inside drawn water;
+     2. streams were tested as spine distance < half-width, but the
+        baked surf-ring outline overshoots that by up to ~2.1 m at
+        bends (measured on the shipped Tatum ring, 2026-11-07);
+     3. there was no bank margin at all — a trunk (radius ~0.45 u,
+        lean ~0.35 u) planted flush at the water's edge stands in it.
+   This test uses the same numbers the renderer draws from — the true
+   ring polygon for bodies (inside, or within margin of the outline,
+   is water-side), spine distance against half-width + margin for
+   streams — widened by the margin. Placement gating only: no water
+   geometry is added, moved, or layered by this fix. */
+function waterClearForTree(x, z, margin){
+  for (var i=0;i<WATER.length;i++){
+    var w=WATER[i];
+    if (w.river){
+      var sp = w.widths ? streamSpan(w, x, z)
+                        : { d: distToPolyline(w.river, x, z), hw: (w.width||30)/2 };
+      if (sp.d < sp.hw + margin) return false;
+    }
+    else if (w.creek){ if (distToCreek(x, z) < 4.5 + margin) return false; }
+    else if (w.ring && w.ring.length > 2){
+      if (pointInRing(w.ring, x, z)) return false;
+      if (distToRing(w.ring, x, z) < margin) return false;
+    }
+    else {
+      var dx=(x-w.x)/(w.rx+margin), dz=(z-w.z)/(w.rz+margin);
+      if (dx*dx+dz*dz<1) return false;
+    }
+  }
+  return true;
 }
 /* waterLevelAt(x,z): Y of the water surface at (x,z), or null on dry
    land. Lakes/ponds sit 0.35u above the analytic terrain at their center;
@@ -12492,7 +12578,26 @@ function exitCar(fromWater){
   camera.position.set(player.x+Math.sin(cb)*4.6, gy+3.0, player.z+Math.cos(cb)*4.6);
   camera.lookAt(player.x, gy+1.4, player.z);
 }
-actionBtn.addEventListener('click', function(){
+/* runActionBtn(): the action button's one behaviour — ENTER/EXIT,
+   PICK UP, talk, board, everything the contextual button offers.
+   A named function (not an anonymous click handler) because of the
+   TOUCH FIX at its bindings below (2026-11-07, Joshua: "Can't pick
+   up items from phone"): this button was the game's only
+   touch-critical control bound SOLELY to the synthetic 'click'
+   event. Every other touch control fires on pointer events (the
+   driving pedals via bindHold), or carries an explicit touch
+   binding (the loader's START button — v1.13.3 wired it directly
+   after "click did nothing" reports; v1.15 hardened the same class
+   of failure). On phone browsers a tap's synthetic click can be
+   swallowed between the game's document-level touch handlers and
+   the button; when that happens the button looks alive (it
+   re-labels itself every proximity tick) but tapping it does
+   nothing. Touch/pen taps now run the action on 'pointerdown' —
+   the pedal pattern — while mouse taps and the keyboard/gamepad
+   path (which calls .click()) keep the click binding; a short
+   stamp keeps the synthetic click that trails a touch pointerdown
+   from firing the action a second time. */
+function runActionBtn(){
   var a=actionBtn.dataset.act;
   if (a==='enter-car'){
     if (pendingCar) car=pendingCar;   // nearest usable vehicle becomes the driven car
@@ -12602,6 +12707,21 @@ actionBtn.addEventListener('click', function(){
   } else if (a && a.indexOf('mq-')===0){
     if (typeof mqDoAction==='function') mqDoAction(a);
   }
+}
+/* Action-button bindings (2026-11-07 touch fix — see runActionBtn):
+   touch/pen fire on pointerdown; mouse and programmatic .click()
+   (keyboard Enter, gamepad) fire on click; the stamp suppresses the
+   synthetic click that follows a touch pointerdown, so one tap is
+   always exactly one action. */
+var _abTouchStamp=0;
+actionBtn.addEventListener('pointerdown', function(e){
+  if (e.pointerType==='mouse') return;   /* mouse keeps the click path */
+  _abTouchStamp=Date.now();
+  runActionBtn();
+});
+actionBtn.addEventListener('click', function(){
+  if (Date.now()-_abTouchStamp<700) return;   /* the tap already ran on pointerdown */
+  runActionBtn();
 });
 
 // settings menu (v0.8: gear replaces the ? button; help is a menu item)

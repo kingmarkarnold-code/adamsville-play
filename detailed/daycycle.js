@@ -48,20 +48,34 @@ var SEASON_ORDER = ['summer','fall','winter','spring'];
 var SUNRISE_MIN = 6*60, SUNSET_MIN = 20*60;   // summer hours
 var LS_KEY = 'sa_daycycle_v1';
 
-/* Sky / light keyframes: [gameMin, skyHex, fogHex, sunHex, sunInt, hemiInt].
-   Night is dim blue moonlight; dawn/dusk burn orange. */
+/* Sky / light keyframes: [gameMin, skyHex, fogHex, sunHex, sunInt, hemiInt,
+   hemiSkyHex, hemiGroundHex]. Night is dim blue moonlight; dawn/dusk burn
+   orange. The last two columns are the hemisphere light's OWN colours —
+   added 2026-11-07 (Joshua's play-test: "The sky did get darker, but the
+   world didn't"). Before this fix the table drove only the sky/fog
+   colours and the two light INTENSITIES; hemi.color / hemi.groundColor
+   stayed at their creation values (pale day blue 0xcfe8ff over grass
+   green 0x4a7c3a) all night, and the night intensity floor (0.22) was
+   authored before the SAtex texture gains (up to ~2.4x diffuse) shipped,
+   so lit surfaces kept roughly half their daytime brightness under a
+   black sky. Now the hemisphere colours ride the SAME keyframe curve
+   as the sky — deep blue over near-black at night, the original day
+   colours restored by morning — and the deep-night floor is 0.10, so
+   world illumination follows the sky down between 18:00 and 06:00.
+   Day rows keep their exact pre-fix values: the daytime look is
+   unchanged. */
 var KEYS=[
- [0,    0x0a0f1e, 0x0a0f1e, 0x2a3a5a, 0.12, 0.22],
- [300,  0x0a0f1e, 0x0a0f1e, 0x2a3a5a, 0.12, 0.22],
- [345,  0x3a3a5a, 0x3a3a5a, 0x6a4a6a, 0.18, 0.30],
- [390,  0xff9a5a, 0xff9a5a, 0xff8844, 0.50, 0.50],  // sunrise
- [480,  0x9fc7e8, 0x9fc7e8, 0xfff2d8, 0.75, 0.85],  // morning
- [720,  0x9fc7e8, 0x9fc7e8, 0xfff2d8, 0.85, 0.95],  // noon
- [1020, 0x9fc7e8, 0x9fc7e8, 0xfff2d8, 0.80, 0.90],  // afternoon
- [1170, 0xff8a4a, 0xff8a4a, 0xff7744, 0.45, 0.50],  // sunset
- [1230, 0x2a2a4a, 0x2a2a4a, 0x334466, 0.15, 0.30],  // dusk
- [1320, 0x0a0f1e, 0x0a0f1e, 0x2a3a5a, 0.12, 0.22],
- [1440, 0x0a0f1e, 0x0a0f1e, 0x2a3a5a, 0.12, 0.22]
+ [0,    0x0a0f1e, 0x0a0f1e, 0x2a3a5a, 0.10, 0.10, 0x16233f, 0x05070c],
+ [300,  0x0a0f1e, 0x0a0f1e, 0x2a3a5a, 0.10, 0.10, 0x16233f, 0x05070c],
+ [345,  0x3a3a5a, 0x3a3a5a, 0x6a4a6a, 0.18, 0.26, 0x3a4666, 0x11131c],
+ [390,  0xff9a5a, 0xff9a5a, 0xff8844, 0.50, 0.50, 0x9a7f8a, 0x2c2118],  // sunrise
+ [480,  0x9fc7e8, 0x9fc7e8, 0xfff2d8, 0.75, 0.85, 0xcfe8ff, 0x4a7c3a],  // morning
+ [720,  0x9fc7e8, 0x9fc7e8, 0xfff2d8, 0.85, 0.95, 0xcfe8ff, 0x4a7c3a],  // noon
+ [1020, 0x9fc7e8, 0x9fc7e8, 0xfff2d8, 0.80, 0.90, 0xcfe8ff, 0x4a7c3a],  // afternoon
+ [1170, 0xff8a4a, 0xff8a4a, 0xff7744, 0.45, 0.50, 0x9a6f7a, 0x2c2118],  // sunset
+ [1230, 0x2a2a4a, 0x2a2a4a, 0x334466, 0.15, 0.16, 0x2c3a5e, 0x0a0d14],  // dusk
+ [1320, 0x0a0f1e, 0x0a0f1e, 0x2a3a5a, 0.10, 0.10, 0x16233f, 0x05070c],
+ [1440, 0x0a0f1e, 0x0a0f1e, 0x2a3a5a, 0.10, 0.10, 0x16233f, 0x05070c]
 ];
 // Weather dimming of the sun + sky gray factor.
 var WX_DIM={sunny:1.0, cloudy:0.65, rainy:0.38};
@@ -103,10 +117,13 @@ function savePersist(){
   try{ localStorage.setItem(LS_KEY, JSON.stringify({gameMin:DC.gameMin, dayNum:DC.dayNum})); }catch(e){}
 }
 
-/* lerp the keyframe table at gameMin; writes into out {sky,fog,sunC,sunI,hemiI} */
+/* lerp the keyframe table at gameMin; writes into out
+   {sky,fog,sunC,sunI,hemiI,hemiSky,hemiGround} */
 var _kSky=new (typeof THREE!=='undefined'?THREE.Color:function(){})();
 var _kFog=new (typeof THREE!=='undefined'?THREE.Color:function(){})();
 var _kSun=new (typeof THREE!=='undefined'?THREE.Color:function(){})();
+var _kHemiS=new (typeof THREE!=='undefined'?THREE.Color:function(){})();
+var _kHemiG=new (typeof THREE!=='undefined'?THREE.Color:function(){})();
 function sampleKeys(gameMin, out){
   var a=KEYS[0], b=KEYS[KEYS.length-1];
   for(var i=0;i<KEYS.length-1;i++){
@@ -122,6 +139,11 @@ function sampleKeys(gameMin, out){
   _kSun.copy(_cA).lerp(_cB,t); out.sunC.copy(_kSun);
   out.sunI=a[4]+(b[4]-a[4])*t;
   out.hemiI=a[5]+(b[5]-a[5])*t;
+  /* hemisphere colours ride the same curve (2026-11-07 fix — see KEYS) */
+  _cA.setHex(a[6]); _cB.setHex(b[6]);
+  _kHemiS.copy(_cA).lerp(_cB,t); out.hemiSky.copy(_kHemiS);
+  _cA.setHex(a[7]); _cB.setHex(b[7]);
+  _kHemiG.copy(_cA).lerp(_cB,t); out.hemiGround.copy(_kHemiG);
   return out;
 }
 
@@ -138,7 +160,8 @@ function init(){
     windMph: 7, windTarget: 7, windTimer: 5, // wind random walk (mph)
     cloudCover: 0.15,                         // 0..1 eased toward target
     t:0, lastSave:0,
-    keys:{sky:new THREE.Color(), fog:new THREE.Color(), sunC:new THREE.Color(), sunI:0.85, hemiI:0.95}
+    keys:{sky:new THREE.Color(), fog:new THREE.Color(), sunC:new THREE.Color(), sunI:0.85, hemiI:0.95,
+          hemiSky:new THREE.Color(0xcfe8ff), hemiGround:new THREE.Color(0x4a7c3a)}
   };
 
   /* --- clouds: one InstancedMesh of soft puffs, drifting on the wind --- */
@@ -343,6 +366,20 @@ function updateDayCycle(){
   var _lightScale = window.__threeModern ? Math.PI : 1;
   sun.intensity=k.sunI*(isDay?dim:1.0)*_lightScale;
   try{ hemi.intensity=k.hemiI*(DC.weather==='rainy'?0.8:1.0)*_lightScale; }catch(e){}
+  /* 2026-11-07 (Joshua: "The sky did get darker, but the world didn't"):
+     the hemisphere light's COLOURS now follow the same keyframe curve
+     as the sky (columns 7-8 of KEYS) — deep blue over near-black at
+     night instead of the fixed pale day blue / grass green it was
+     created with, which kept every lit surface washed in daylight
+     colours after dark. */
+  try{ hemi.color.copy(k.hemiSky); hemi.groundColor.copy(k.hemiGround); }catch(e){}
+  /* Publish the world's overall light level (0..1, noon = 1) for the
+     surfaces that take no scene lights at all: the package water
+     shader (index.html) multiplies its colour by this each tick, so
+     the creek and lakes darken on the same curve instead of glowing
+     day-blue at midnight. Effective intensities, weather included. */
+  window.__dayLightLevel=Math.max(0.05, Math.min(1,
+    (k.sunI*(isDay?dim:1.0) + k.hemiI*(DC.weather==='rainy'?0.8:1.0)) / 1.8));
   // gray the sky a touch when overcast
   if(DC.weather!=='sunny' && isDay){
     _cA.setHex(WX_SKY[DC.weather]);
@@ -382,12 +419,17 @@ function updateDayCycle(){
     DC.rain.geometry.attributes.position.needsUpdate=true;
   }
 
-  /* --- HUD clock --- */
-  var hh=Math.floor(gm/60), mm=Math.floor(gm%60);
+  /* --- HUD clock ---
+     12-HOUR FORMAT (2026-11-07, Joshua's play-test: "Time isn't in 12
+     hour format"). Was zero-padded 24-hour ("07:08"); now 12-hour with
+     AM/PM ("7:08 AM") — minutes stay two digits, the hour does not pad. */
+  var hh24=Math.floor(gm/60), mm=Math.floor(gm%60);
+  var ampm=(hh24>=12)?'PM':'AM';
+  var hh12=hh24%12; if (hh12===0) hh12=12;
   var wday=DAYS[(DC.dayNum-1)%7];
   var wicon=DC.weather==='sunny'?'☀️':(DC.weather==='cloudy'?'☁️':'🌧️');
   DC.hud.textContent='DAY '+DC.dayNum+' '+wday+' '+
-    (hh<10?'0':'')+hh+':'+(mm<10?'0':'')+mm+' '+wicon+' '+DC.season.toUpperCase();
+    hh12+':'+(mm<10?'0':'')+mm+' '+ampm+' '+wicon+' '+DC.season.toUpperCase();
 }
 
 /* ---------------- boot poll ---------------- */
