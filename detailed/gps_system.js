@@ -205,6 +205,13 @@
            that FACES the player and hooks toward the shorter way
            around — the HUD glyph's ↪/↩ language in the world.
 
+   v1.69 BEACON RECOLOUR (Joshua 2026-11-07 15:28): "Let's change
+   the beacon from blue to neon green." The destination beacon's
+   material colour is 0x39FF14 now, replacing the shipped blue
+   0x35e0ff. Colour ONLY — the v1.68 fog immunity, size, pulse and
+   depth behaviour are untouched, and the chevron is NOT recoloured
+   (it keeps the blue), nor is the cyan route line on the maps.
+
    Documentation comments are required on all game code — Joshua's rule.
    ============================================================================ */
 (function(){
@@ -2309,13 +2316,15 @@ function rebuildRouteMesh(){
        laptop tier, 1500u medium) used to swallow the pillar whole at
        cross-map range, so on a long trip the beacon effectively did
        not exist. fog:false makes the material ignore fog entirely —
-       the pillar now stands at any range. NOTHING else about the
-       beacon changes under his ruling: same size, same colour (he
-       reads it as a white pillar; the value below is exactly what
-       shipped before), same pulse; and it does NOT punch through
-       terrain — depth testing is untouched, a hill still hides it. */
+       the pillar now stands at any range; and it does NOT punch
+       through terrain — depth testing is untouched, a hill still
+       hides it.
+       v1.69 (Joshua 2026-11-07 15:28): the colour below is NEON
+       GREEN 0x39FF14, replacing the shipped blue — colour only;
+       size, pulse, opacity and the fog immunity above are exactly
+       as v1.68 left them. */
     var bgeo=new THREE.CylinderGeometry(3,3,30,12,1,true);
-    var bmat=new THREE.MeshBasicMaterial({color:0x35e0ff, transparent:true,
+    var bmat=new THREE.MeshBasicMaterial({color:0x39FF14, transparent:true,
       opacity:0.55, side:THREE.DoubleSide, depthWrite:false, fog:false});
     beacon=new THREE.Mesh(bgeo, bmat);
     beacon.position.set(route.destX, groundY(route.destX,route.destZ)+15, route.destZ);

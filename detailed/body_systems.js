@@ -58,8 +58,30 @@
    the same bands (<= 10 green, < 50 yellow, else red; low = green). The
    word changes to RESTING only while the player is at a FULL STOP with
    tree/boulder damage draining — that includes the whole damage-100
-   forced rest — and returns to FATIGUE the moment he moves again or the
-   damage reaches 0. No other label is ever a default.
+   forced rest — and returns to the default word the moment he moves
+   again or the damage reaches 0. No other label is ever a default.
+
+   BAR RESTRUCTURE (Joshua 2026-11-07, 15:31 + 15:36 — supersedes the
+   DMG / FATIGUE row labels above):
+   - Row 2's default word is ENERGY now, not FATIGUE (15:31: "change
+     the name from fatigue ... to energy"). The system underneath is
+     still the fatigue reserve; only the word the player reads
+     changed. The row stays on screen ALWAYS, on foot and in a
+     vehicle, so he always knows his body's energy (15:36).
+   - Row 1 is ONE SHARED BAR whose word follows the mode (15:36):
+     on foot it reads HEALTH and shows the BODY's bump damage (the
+     staged progression of section 1 — it is his body, so the bar
+     says health); in a vehicle the same bar element reads DAMAGE
+     and shows the VEHICLE's damage instead — car.damage, the value
+     index.html's car system already maintains (the same value its
+     own #dmg-wrap renders). This module only DISPLAYS the car's
+     value while driving; it never writes it. The body's own health
+     is not shown while driving — it keeps existing underneath and
+     reappears unchanged when he gets out and the word flips back
+     to HEALTH.
+   - The RESTING mechanism is untouched: the word still appears
+     only on row 2, only while fully stopped (not driving/swimming)
+     with body damage draining, forced rest included.
 
    FORCED-REST VISUAL: index.html's animation paths read
    window.__BODY.forcedRest(). The GLB path plays an authored 'Exhausted'
@@ -164,7 +186,7 @@ function createBodyCore(){
     lockElapsed: 0,     // game-minutes spent in the current lockout
     lockTotal: C.LOCK_MINUTES, // game-minutes this lockout lasts (10 + debt)
     debtMin: 0,         // extra lockout minutes owed from pushing
-    restingShow: false  // HUD state word: true -> RESTING, false -> FATIGUE
+    restingShow: false  // HUD state word: true -> RESTING, false -> ENERGY
   };
 
   /* One accepted tree/boulder bump = +1 damage. At 100 the forced rest
@@ -237,7 +259,7 @@ function createBodyCore(){
     /* --- HUD state word: RESTING only at a FULL STOP while tree/boulder
        damage is draining (the forced rest included — he is stopped by
        the lock and the meter is draining). Evaluated AFTER the drain, so
-       the tick the damage reaches 0 the word is already FATIGUE again. --- */
+       the tick the damage reaches 0 the word is already ENERGY again. --- */
     S.restingShow = !!(S.forcedRest || (env.resting && S.damage > 0));
   }
 
@@ -263,7 +285,7 @@ function createBodyCore(){
     tick: tick,
     capSpeed: capSpeed,
     fatigue: function(){ return 100 - S.reserve; },  // badness readout 0..100
-    label: function(){ return S.restingShow ? 'RESTING' : 'FATIGUE'; }
+    label: function(){ return S.restingShow ? 'RESTING' : 'ENERGY'; }
   };
 }
 
@@ -301,8 +323,10 @@ window.__BODY = {
 /* --- HUD: two compact rows above the minimap, styled like the car's
    #dmg-wrap (same pill, same 10px bars, same palette). Built here (the
    daycycle/crashlog pattern) so index.html needs no markup edits.
-   Row 1: DMG — the staged green/yellow/red progression segments.
-   Row 2: FATIGUE/RESTING — one fill of fatigue, band-coloured. --- */
+   Row 1: HEALTH (on foot) / DAMAGE (in a vehicle) — the staged
+   green/yellow/red progression segments over whichever value the
+   mode shows (body damage on foot, car.damage while driving).
+   Row 2: ENERGY/RESTING — one fill of fatigue, band-coloured. --- */
 var hud = null;
 function buildHud(){
   if (hud || !document.body) return;
@@ -323,16 +347,17 @@ function buildHud(){
   var el = document.createElement('div');
   el.id = 'body-wrap';
   el.innerHTML =
-    '<div class="brow"><span class="btag">DMG</span>' +
+    '<div class="brow"><span class="btag" id="bd-tag">HEALTH</span>' +
       '<div class="bbar"><div class="bseg" id="bd-g"></div>' +
       '<div class="bseg" id="bd-y"></div><div class="bseg" id="bd-r"></div></div>' +
       '<span class="bnum" id="bd-num">0</span></div>' +
-    '<div class="brow"><span class="btag" id="bf-tag">FATIGUE</span>' +
+    '<div class="brow"><span class="btag" id="bf-tag">ENERGY</span>' +
       '<div class="bbar"><div class="bseg" id="bf-fill"></div></div>' +
       '<span class="bnum" id="bf-num">0</span></div>';
   document.body.appendChild(el);
   hud = {
     wrap: el,
+    dTag: document.getElementById('bd-tag'),
     g: document.getElementById('bd-g'), y: document.getElementById('bd-y'),
     r: document.getElementById('bd-r'), dNum: document.getElementById('bd-num'),
     fFill: document.getElementById('bf-fill'),
@@ -344,20 +369,29 @@ function buildHud(){
   hud.r.style.background = C.RED;
 }
 
-/* HUD refresh: writes only when a displayed value actually changed. */
+/* HUD refresh: writes only when a displayed value actually changed.
+   Row 1 follows the mode (Joshua 2026-11-07 15:36): on foot it shows
+   the BODY's damage under the word HEALTH; in a vehicle it shows the
+   CAR's damage (car.damage, sampled fresh each tick by bodyTick into
+   dispVehDmg) under the word DAMAGE. One bar, two sources — both run
+   through the same staged segments and band colours. Row 2 (ENERGY)
+   is the body's own in both modes and never leaves the screen. */
 function paintHud(){
   if (!hud) return;
   var S = core.state;
-  var dRound = Math.round(S.damage), fRound = Math.round(core.fatigue());
-  var key = dRound + '|' + fRound + '|' + core.label();
+  var shown = dispDriving ? dispVehDmg : S.damage;
+  var shownRound = Math.round(shown), fRound = Math.round(core.fatigue());
+  var word = dispDriving ? 'DAMAGE' : 'HEALTH';
+  var key = word + '|' + shownRound + '|' + fRound + '|' + core.label();
   if (key === hud.last) return;
   hud.last = key;
-  var seg = dmgSegments(S.damage);
+  var seg = dmgSegments(shown);
   hud.g.style.width = seg.g + '%';
   hud.y.style.width = seg.y + '%';
   hud.r.style.width = seg.r + '%';
-  hud.dNum.textContent = dRound;
-  hud.dNum.style.color = bandColor(S.damage);
+  hud.dTag.textContent = word;
+  hud.dNum.textContent = shownRound;
+  hud.dNum.style.color = bandColor(shown);
   hud.fFill.style.width = fRound + '%';
   hud.fFill.style.background = bandColor(core.fatigue());
   hud.fNum.textContent = fRound;
@@ -371,6 +405,11 @@ function paintHud(){
    exactly; if the clock is unreachable this tick, fall back to the
    documented rate (1440 game-min per 7440 real seconds). --- */
 var lastClockTotal = null;
+/* Row-1 display context for paintHud (Joshua 2026-11-07 15:36): while
+   driving, row 1 shows the CAR's damage under the word DAMAGE. The
+   value is index.html's car.damage — the same one its #dmg-wrap HUD
+   renders — read defensively each tick; this module never writes it. */
+var dispDriving = false, dispVehDmg = 0;
 function bodyTick(dt){
   try{
     if (typeof player === 'undefined' || !player) return;
@@ -396,6 +435,15 @@ function bodyTick(dt){
     /* environment snapshot */
     var driving = false;
     try{ driving = (typeof car !== 'undefined' && !!car && !!car.driving); }catch(e){}
+    /* row 1's display source (see dispVehDmg above): the car's damage
+       while driving, the body's the rest of the time */
+    dispDriving = driving;
+    dispVehDmg = 0;
+    if (driving){
+      try{ if (typeof car !== 'undefined' && car &&
+                typeof car.damage === 'number') dispVehDmg = car.damage; }
+      catch(e){}
+    }
     var swimming = !!player.swimming;
     var mode = driving ? 'drive' : (swimming ? 'swim' : 'foot');
     var speed = driving ? 0 : (player.speed || 0);

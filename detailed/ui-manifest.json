@@ -43,9 +43,9 @@
     },
     {
       "name": "body_systems.js",
-      "size": 21192,
-      "sha256": "8621e5cc6f6882e2bd7198205bf2f424bef768527d55542f5c7bdc72e9f0da5c",
-      "hash": "8621e5cc6f6882e2bd7198205bf2f424bef768527d55542f5c7bdc72e9f0da5c"
+      "size": 23920,
+      "sha256": "049916c8dfec94dfe9f11b8f64f2e874d8498b99273bf53519fa8b30ca3a3e16",
+      "hash": "049916c8dfec94dfe9f11b8f64f2e874d8498b99273bf53519fa8b30ca3a3e16"
     },
     {
       "name": "clothing_system.js",
@@ -123,9 +123,9 @@
     },
     {
       "name": "gps_system.js",
-      "size": 132931,
-      "sha256": "0df5a78349dd68710e8216cc67d692db6389c9101caa8c9542f3678901c982a4",
-      "hash": "0df5a78349dd68710e8216cc67d692db6389c9101caa8c9542f3678901c982a4"
+      "size": 133367,
+      "sha256": "7b29ca0493a4003cf730379870092597ae7fc0a85911e0fb22749f9abf2998df",
+      "hash": "7b29ca0493a4003cf730379870092597ae7fc0a85911e0fb22749f9abf2998df"
     },
     {
       "name": "helicopter_system.js",
@@ -154,8 +154,8 @@
     {
       "name": "index.html",
       "size": 1256572,
-      "sha256": "4184f27c3ee7eedd1f4ec46cfd5da2b95710bd4a109c524b054f3419da2330c0",
-      "hash": "4184f27c3ee7eedd1f4ec46cfd5da2b95710bd4a109c524b054f3419da2330c0"
+      "sha256": "5b265f762e03cb835e3150df97331a9b36f72e8a58f012687da56afc09152c8a",
+      "hash": "5b265f762e03cb835e3150df97331a9b36f72e8a58f012687da56afc09152c8a"
     },
     {
       "name": "input_diag.js",
@@ -672,6 +672,6 @@
       "hash": "20b983ae0e2e555817495a65c37519bfcb2231825269db6a57d72c51ed6006e3"
     }
   ],
-  "ui_version": "2026.11.07.13",
+  "ui_version": "2026.11.07.14",
   "version": "2026.10.17.9"
 }
