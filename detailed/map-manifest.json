@@ -1,11 +1,11 @@
 {
   "version": "2.0.0",
-  "map_version": "2026.11.07.2",
+  "map_version": "2026.11.07.3",
   "files": [
     {
       "name": "maps/adamsville/zone.json",
-      "size": 11819,
-      "sha256": "d433a9e1fdae71cd0aa75013fee6830a3e5afbe4eeb10cf11cfb3851091b0fc6",
+      "size": 13480,
+      "sha256": "ac075f4aa6f067b3c065ba1274ed6526bf21eef034f82b99c73b7c42a6ed04ca",
       "hash": ""
     },
     {
@@ -28,8 +28,8 @@
     },
     {
       "name": "maps/adamsville/structures.json",
-      "size": 14607,
-      "sha256": "f217ab81d296f89110ae9c339e2ccc1592c47e605a4c58ce76c685d09c3052bb",
+      "size": 14846,
+      "sha256": "17455148c4b0828f02bfa1ec0e87cde1dd031dade88ccae74abe67285a8c644c",
       "hash": ""
     },
     {
@@ -52,8 +52,8 @@
     },
     {
       "name": "maps/adamsville/water.json",
-      "size": 915819,
-      "sha256": "e826df965c18b999605da30f8f122d8b3920cdeb297d311ecef61a651a984967",
+      "size": 925944,
+      "sha256": "0b8937d0d15adbe8070af6cfff23b656897c44b85b971bdb7d815e33b8a05c9f",
       "hash": ""
     },
     {
@@ -119,7 +119,7 @@
     {
       "name": "maps/adamsville/canopy_cover_10m.bin",
       "size": 1185211,
-      "sha256": "1e181445a674ac4791ff2775aea3846bf147e95aebdd6da042bde1d3a0ec9713",
+      "sha256": "b419266b9a70b4a4a272883736ae221a09dfc0bd038c3ca676df23b1b7f9f171",
       "hash": ""
     }
   ]

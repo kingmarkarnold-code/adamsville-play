@@ -2481,7 +2481,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
    stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.11.07.21';
+window.__DOC_UIVER = '2026.11.07.22';
 function __checkDocVersionHeal(){
   var live = window.__UIVER || '';
   if (!live || live === window.__DOC_UIVER){
@@ -6545,8 +6545,10 @@ try{ __wbStage('terrain'); }catch(e){}
    window.__PKG_BOULDERS): rows of mossy boulders at the three
    falls lips, the falls flank/plunge scatter, and granite+mossy
    boulders seated on the eight exempted Chattahoochee shoal
-   patches. (The pond island is NOT among them — Joshua's ruling
-   on it is still pending, so the zone build left it out.)
+   patches. (The pond island joined them on Joshua's ruling of
+   2026-11-07 (16:04): boulder-066, seated on the island patch in
+   the unnamed pond lake-013-c2 — see the map-fixes batch in
+   zone.json's phase history.)
 
    One profile, two readers: every boulder is drawn from
    boulderRadiusAt() — a squashed sphere (radii r, r*sy) whose
