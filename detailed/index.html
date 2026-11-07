@@ -420,6 +420,25 @@ if (location.protocol === 'file:'){ setTimeout(function(){ if (!window.__threeMo
   #radio-name { max-width:40vw; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   #music-btn { position:fixed; top:160px; left:12px; z-index:30; width:44px; height:44px;
     border-radius:22px; border:2px solid #fff; background:rgba(0,0,0,.5); color:#fff; font-size:20px; }
+  /* SOUND PASS (2026-11-07): #music-btn is the SPEAKER now — the
+     master sound ON/OFF (full off or full on; it never skips a
+     song). #radio-btn under it opens the mini radio. */
+  #radio-btn { position:fixed; top:212px; left:12px; z-index:30; width:44px; height:44px;
+    border-radius:22px; border:2px solid #fff; background:rgba(0,0,0,.5); color:#fff; font-size:20px; }
+  /* MINI RADIO (2026-11-07, Joshua's spec): opened by #radio-btn.
+     Shows the CURRENT song name; the left button goes to the
+     BEGINNING of the current song, the right button skips to the
+     next song. Distinct from the driving-only #radio panel above,
+     which keeps its own prev/next-track behaviour. */
+  #mini-radio { position:fixed; z-index:30; top:264px; left:12px;
+    display:none; align-items:center; gap:8px; background:rgba(0,0,0,.55); color:#fff;
+    border:2px solid #ffd75e; border-radius:12px; padding:6px 10px;
+    font-size:14px; font-weight:bold; }
+  #mini-radio.show { display:flex; }
+  #mini-radio button { background:#222836; color:#ffd75e; border:1px solid #ffd75e;
+    border-radius:8px; font-size:16px; padding:6px 12px; font-weight:bold; }
+  #mini-radio button:active { background:#2d3547; }
+  #mr-name { max-width:40vw; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   /* PAUSE (Joshua 2026-10-17): the pause button sits top-right, just left of
      the settings gear, in the same HUD button family as #music-btn. Its
      position is also registered in ui_layout.json (both faces), so the
@@ -843,8 +862,12 @@ window.SAView = (function(){
      the UPDATE BADGE: red = an update is available, yellow = downloaded and
      waiting on a restart. Driven by ASSETVER.updateGearBadge(). -->
 <button id="help-btn">&#9881;<span id="gear-dot"></span></button>
-<!-- Music toggle + radio station stepper (two-context music: on-foot vs driving tracks). -->
+<!-- SOUND PASS (2026-11-07): #music-btn is the SPEAKER — MASTER
+     sound ON/OFF only (Joshua: "full off or full on"; it never
+     changes the song). #radio-btn opens the mini radio (current
+     song name, restart, next). Wiring lives in the music block. -->
 <button id="music-btn">&#128266;</button>
+<button id="radio-btn" aria-label="Radio">&#128251;</button>
 <!-- PAUSE (Joshua 2026-10-17): on-screen pause for touch/web (Escape does it
      on keyboard). Behaviour lives in pause_system.js: one tap freezes the
      simulation and the music; the overlay's Resume (or Escape, or the
@@ -868,6 +891,9 @@ window.SAView = (function(){
 <div id="hud-move-bar"><span>&#9998; Drag any outlined control to its spot.</span><button id="hud-move-reset">Reset this screen</button><button id="hud-move-done">&#10003; Done</button></div>
 <div id="hud-move-tag"></div>
 <div id="radio"><button id="radio-prev">&#9664;</button><span id="radio-name"></span><button id="radio-next">&#9654;</button></div>
+<!-- MINI RADIO (2026-11-07): toggled by #radio-btn. Left button =
+     beginning of the current song; right button = next song. -->
+<div id="mini-radio"><button id="mr-restart" aria-label="Back to start of song">&#9198;</button><span id="mr-name"></span><button id="mr-next" aria-label="Next song">&#9197;</button></div>
 <!-- ===== SETTINGS PANEL (opens from the gear button) =====
      SHORT top page (Joshua 2026-10-24 submenu restructure): How to play,
      Record, and one entry row per section — Player Controls, Sound,
@@ -935,7 +961,13 @@ window.SAView = (function(){
      here unchanged (ids/handlers/keys preserved). -->
 <div id="soundmenu"><div class="card">
   <h3>Sound</h3>
+  <!-- SOUND PASS (2026-11-07): the master row mirrors the speaker
+       button; the Nature row is ambient_audio.js's own toggle.
+       Each source answers to its own row + the master only — the
+       Music row no longer silences anything but music. -->
+  <button class="row" id="set-master">Sound (all): ON</button>
   <button class="row" id="set-music">Music: ON</button>
+  <button class="row" id="set-ambient">Nature sounds: ON</button>
   <button class="row" id="set-engine">Engine sounds: ON</button>
   <!-- EXPERT #39 (2026-10-11): UI sounds toggle. -->
   <button class="row" id="set-uisounds">UI sounds: ON</button>
@@ -2446,7 +2478,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
    stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.11.07.8';
+window.__DOC_UIVER = '2026.11.07.9';
 function __checkDocVersionHeal(){
   var live = window.__UIVER || '';
   if (!live || live === window.__DOC_UIVER){
@@ -13593,32 +13625,46 @@ var XFADE_MS = 2500;   /* crossfade duration: 2.5 seconds */
 /* var musicAudio=new Audio(); — REPLACED by dual-element crossfade above */
 /* v1.20 PERFORMANCE (Joshua 2026-10-10): Browser autoplay policy blocks audio
    until user interacts. Unlock on first click/keydown/touch so music starts. */
+/* SOUND PASS REWRITE (2026-11-07): the unlock is PERSISTENT, not
+   once-only. The old version set unlocked=true on the FIRST gesture
+   and removed its listeners — a tap that landed during load, before
+   window.__audioCtx existed, burned the session's only unlock and
+   the game stayed silent (Joshua's DuckDuckGo / Chrome-laptop
+   silence). Now every gesture retries, and tab returns re-resume.
+   The listeners are never removed; once audio runs, each call is
+   a cheap state check. */
 (function unlockAudio(){
-  var unlocked=false;
   function doUnlock(){
-    if(unlocked) return; unlocked=true;
     try{
-      // Resume any suspended AudioContext
-      if(typeof window.__audioCtx!=='undefined' && window.__audioCtx && window.__audioCtx.state==='suspended'){
-        window.__audioCtx.resume();
+      /* Resume the shared AudioContext if it exists and is parked. */
+      if(window.__audioCtx && window.__audioCtx.state==='suspended'){
+        var rp=window.__audioCtx.resume();
+        if(rp&&rp.catch) rp.catch(function(){});
       }
-      // Prime the music element with a silent play to unlock it
-      var p=musicAudio.play();
-      if(p&&p.catch) p.catch(function(){});
-      // If music should be playing, restart it properly
-      if(!musicMuted && musicStarted){
-        setTimeout(function(){ try{ musicAudio.play(); }catch(e){} }, 100);
+      /* (Re)start the music element whenever it should be audible:
+         covers the first prime AND later browser pauses of the
+         element (the old code primed exactly once, ever). */
+      if(musicAudible() && musicStarted && musicAudio && musicAudio.paused){
+        var p=musicAudio.play();
+        if(p&&p.catch) p.catch(function(){});
       }
     }catch(e){}
-    ['click','keydown','touchstart'].forEach(function(ev){
-      try{ document.removeEventListener(ev, doUnlock); }catch(e){}
-    });
+    try{ updateSpeakerBtn(); }catch(e){}
   }
-  ['click','keydown','touchstart'].forEach(function(ev){
-    try{ document.addEventListener(ev, doUnlock, {once:false, passive:true}); }catch(e){
+  ['click','keydown','touchstart','pointerdown'].forEach(function(ev){
+    try{ document.addEventListener(ev, doUnlock, {passive:true}); }catch(e){
       try{ document.addEventListener(ev, doUnlock); }catch(e2){}
     }
   });
+  /* Returning to the tab is a re-unlock moment: browsers suspend
+     contexts in hidden tabs, so resume on visibility return. */
+  try{
+    document.addEventListener('visibilitychange', function(){
+      if(!document.hidden) doUnlock();
+    });
+  }catch(e){}
+  /* Other modules (and the harness) can ask for the same retry. */
+  window.__resumeAudio = doUnlock;
 })();
 /* EXPERT #39: Apply volume + preload to both crossfade elements. */
 try{ __wbStage('music-setup'); }catch(e){}
@@ -13630,6 +13676,16 @@ musicAudioB.preload='auto';
 /* musicAudio.preload='auto'; — REPLACED by dual-element setup above */
 var musicMode='walk', radioIdx=0, musicStarted=false, musicMuted=false;
 try{ musicMuted=localStorage.getItem('sa_music_muted')==='1'; }catch(e){}
+/* SOUND PASS (2026-11-07): the MASTER sound toggle — the speaker
+   button's state (sa_sound_muted). soundMuted silences EVERY
+   source (music, nature, engine, UI); musicMuted now silences
+   MUSIC ONLY. The flags are deliberately separate: Joshua keeps
+   Music OFF by choice and still expects to hear the world. */
+var soundMuted=false;
+try{ soundMuted=localStorage.getItem('sa_sound_muted')==='1'; }catch(e){}
+/* musicAudible() — the single gate every music play() call uses:
+   music sounds only when BOTH its own toggle and the master are on. */
+function musicAudible(){ return !musicMuted && !soundMuted; }
 try{ radioIdx=parseInt(localStorage.getItem('sa_radio_idx')||'0',10)||0; }catch(e){}
 if(radioIdx<0||radioIdx>=RADIO_TRACKS.length) radioIdx=0;
 /* ============================================================================
@@ -13661,7 +13717,7 @@ function playSrc(src){
   incoming.src = oggSrc;
   /* Attach ended/error to the incoming element (each element needs its own). */
   /* (Listeners are attached once at setup below — both elements covered.) */
-  if(!musicMuted){
+  if(musicAudible()){
     try{
       var p = incoming.play();
       if(p && p.catch) p.catch(function(){});
@@ -13700,14 +13756,17 @@ function playSrc(src){
 setInterval(function(){
   try{
     var duck = musicDuck();
-    if (!window.__musicFading && !musicMuted && musicStarted &&
+    /* SOUND PASS: keep the speaker icon honest about the live
+       context state on this tick (see updateSpeakerBtn). */
+    try{ updateSpeakerBtn(); }catch(e){}
+    if (!window.__musicFading && musicAudible() && musicStarted &&
         musicAudio && !musicAudio.paused)
       musicAudio.volume = MUSIC_VOL * duck;
     window.__musicState = {
       playing: !!(musicAudio && !musicAudio.paused),
       vol: (musicAudio && typeof musicAudio.volume === 'number')
            ? musicAudio.volume : null,
-      muted: !!musicMuted, started: !!musicStarted, duck: duck
+      muted: !!musicMuted, masterMuted: !!soundMuted, started: !!musicStarted, duck: duck
     };
   }catch(e){}
 }, 1500);
@@ -13724,6 +13783,8 @@ function updateRadioUI(){
   r.classList.toggle('show', driving);
   if(driving) document.getElementById('radio-name').textContent=
     '\u266A '+RADIO_TRACKS[radioIdx].name;
+  /* SOUND PASS: the mini radio shows the same current song. */
+  try{ updateMiniRadio(); }catch(e){}
 }
 function musicToWalk(){
   if(musicMode==='walk'&&musicStarted) return;   // already walking — no restart churn
@@ -13767,7 +13828,7 @@ el.addEventListener('error', function(){
       var mp3Src = failedSrc.replace(/\.ogg/i, '.mp3');
       try{Report.noteError('music','ogg failed, falling back to mp3',mp3Src);}catch(e){}
       el.src = mp3Src;
-      if(!musicMuted){ try{ var p=el.play(); if(p&&p.catch) p.catch(function(){}); }catch(e){} }
+      if(musicAudible()){ try{ var p=el.play(); if(p&&p.catch) p.catch(function(){}); }catch(e){} }
       return;
     }
   }catch(e){}
@@ -13794,10 +13855,27 @@ function musicStartOnce(){
   window.addEventListener(ev, musicStartOnce, { once:true, passive:true });
 });
 function updateMusicBtn(){
-  var b=document.getElementById('music-btn');
-  if(b) b.innerHTML=musicMuted?'&#128263;':'&#128266;';
+  /* The speaker icon is NOT set here any more (SOUND PASS,
+     2026-11-07): it belongs to the MASTER toggle, and
+     updateSpeakerBtn() owns it. This keeps the Music row label. */
   var sm=document.getElementById('set-music');
   if(sm) sm.textContent='Music: '+(musicMuted?'OFF':'ON');
+}
+/* updateSpeakerBtn() — the speaker icon tells the truth about
+   SOUND itself, not about a stored flag (SOUND PASS, 2026-11-07):
+     master OFF             -> \u{1F507} (speaker, crossed out)
+     master ON, ctx parked  -> \u{1F508} (on, waiting for a tap)
+     master ON, ctx running -> \u{1F50A} (on and live)
+   Refreshed on every toggle, every unlock attempt, and the 1.5 s
+   mix tick, so it follows the real AudioContext state. Also keeps
+   the Sound submenu's master row label in step with the button. */
+function updateSpeakerBtn(){
+  var b=document.getElementById('music-btn');
+  if(b) b.innerHTML = soundMuted ? '&#128263;'
+    : (window.__audioCtx && window.__audioCtx.state==='suspended')
+      ? '&#128264;' : '&#128266;';
+  var sm=document.getElementById('set-master');
+  if(sm) sm.textContent='Sound (all): '+(soundMuted?'OFF':'ON');
 }
 function setMusicMuted(m){
   musicMuted=m;
@@ -13807,18 +13885,62 @@ function setMusicMuted(m){
     try{ musicAudioA.pause(); }catch(e){}
     try{ musicAudioB.pause(); }catch(e){}
   }
-  else if(musicStarted){
-    // resume whichever context is live
+  else if(musicStarted && !soundMuted){
+    // resume whichever context is live (unless the MASTER is off)
     try{ var p=musicAudio.play(); if(p&&p.catch) p.catch(function(){}); }catch(e){}
   }
   updateMusicBtn();
   try{ Report.note('music-toggle',{muted:m}); }catch(e){}
 }
-/* v1.11: radio button — tap cycles all 10 tracks, shows the name briefly.
-   Mute moved to Settings (set-music row). */
+/* ============================================================================
+   SOUND PASS (2026-11-07, Joshua's specs) — speaker + mini radio.
+
+   SPEAKER (#music-btn) = MASTER SOUND ON/OFF. Joshua's words: the
+   tap is "full off or full on" — it NEVER changes the song. (The
+   v1.11 wiring sent the speaker tap to cycleTrack(), so a mute
+   tap skipped the track instead; and the icon showed the MUSIC
+   flag, so it lied about the world's sound. Both are fixed here:
+   cycleTrack() is GONE, and updateSpeakerBtn() owns the icon.)
+   setMasterMuted() is the one switch every source obeys: the
+   music elements pause/resume here; nature, engine and UI read
+   the same flag inside their own modules.
+
+   RADIO (#radio-btn) opens the MINI RADIO (#mini-radio): the
+   current song's name; the left button goes to the BEGINNING of
+   the current song; the right button skips to the next song. The
+   stepping logic is the old cycleTrack() body, moved to the
+   radio where it belongs. (The driving-only #radio panel keeps
+   its own prev/next-TRACK behaviour, unchanged.)
+   ============================================================================ */
+function setMasterMuted(m){
+  soundMuted=!!m;
+  try{ localStorage.setItem('sa_sound_muted', soundMuted?'1':'0'); }catch(e){}
+  if(soundMuted){
+    try{ musicAudioA.pause(); }catch(e){}
+    try{ musicAudioB.pause(); }catch(e){}
+  }
+  else if(musicStarted && !musicMuted){
+    try{ var p=musicAudio.play(); if(p&&p.catch) p.catch(function(){}); }catch(e){}
+  }
+  /* Engine gain follows the master at once (nature + UI read the
+     flag on their own gates/ticks). */
+  try{ if(window.EngineSound && window.EngineSound.refresh) window.EngineSound.refresh(); }catch(e){}
+  updateSpeakerBtn();
+  try{ Report.note('sound-toggle',{muted:soundMuted}); }catch(e){}
+}
 var ALL_TRACKS=[{src:WALK_TRACK,name:WALK_NAME}].concat(RADIO_TRACKS);
 var allIdx=0;
-function cycleTrack(){
+function currentTrackName(){
+  return (musicMode==='walk') ? WALK_NAME : RADIO_TRACKS[radioIdx].name;
+}
+function updateMiniRadio(){
+  var n=document.getElementById('mr-name');
+  if(n) n.textContent='\u266A '+currentTrackName();
+}
+/* NEXT button — skip to the next song. This is the old
+   cycleTrack() body (advance through all 10 tracks, walk track
+   first), rehoused on the radio where Joshua expects it. */
+function radioAdvance(){
   allIdx=(allIdx+1)%ALL_TRACKS.length;
   musicStarted=true;
   if(allIdx===0){ musicMode='walk'; }
@@ -13826,14 +13948,37 @@ function cycleTrack(){
     try{ localStorage.setItem('sa_radio_idx',String(radioIdx)); }catch(e){} }
   playSrc(ALL_TRACKS[allIdx].src);
   updateRadioUI();
+  updateMiniRadio();
   showToast('\u266A '+ALL_TRACKS[allIdx].name);
   try{ Report.note('music',{mode:'cycle',track:allIdx}); }catch(e){}
 }
-document.getElementById('music-btn').addEventListener('click', cycleTrack);
+/* BACK button — to the BEGINNING of the current song (Joshua's
+   spec: restart, NOT the previous track). Seeking the audible
+   element to 0 is the whole mechanism — playSrc() deliberately
+   no-ops on a same-src request, so it cannot do this. */
+function radioRestart(){
+  try{
+    if(musicAudio){
+      musicAudio.currentTime=0;
+      if(musicStarted && musicAudible() && musicAudio.paused){
+        var p=musicAudio.play(); if(p&&p.catch) p.catch(function(){}); }
+    }
+  }catch(e){}
+  updateMiniRadio();
+}
+document.getElementById('music-btn').addEventListener('click', function(){ setMasterMuted(!soundMuted); });
+document.getElementById('set-master').addEventListener('click', function(){ setMasterMuted(!soundMuted); });
 document.getElementById('set-music').addEventListener('click', function(){ setMusicMuted(!musicMuted); });
+document.getElementById('radio-btn').addEventListener('click', function(){
+  var mr=document.getElementById('mini-radio');
+  if(mr){ mr.classList.toggle('show'); updateMiniRadio(); }
+});
+document.getElementById('mr-next').addEventListener('click', radioAdvance);
+document.getElementById('mr-restart').addEventListener('click', radioRestart);
 document.getElementById('radio-prev').addEventListener('click', function(){ radioNext(-1); });
 document.getElementById('radio-next').addEventListener('click', function(){ radioNext(1); });
 updateMusicBtn();
+updateSpeakerBtn();
 
 /* ============ v0.9 GAMEPLAY submenu: new / restart / save / load ============ */
 document.getElementById('set-gameplay').addEventListener('click', function(){

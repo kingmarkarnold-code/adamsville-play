@@ -15,9 +15,12 @@
        Created on first user gesture (browser autoplay policy).
      - All sounds are short synthesized blips: oscillator + gain envelope.
        Total CPU per sound: ~50ms of one oscillator. Negligible.
-     - Respects the game's mute: if music is muted (sa_music_muted), UI
-       sounds stay silent too. Separate toggle in Settings
-       (UI sounds: ON/OFF, persisted as sa_ui_sounds).
+     - Respects the MASTER sound toggle (the speaker button,
+       sa_sound_muted) and its own Settings toggle (UI sounds:
+       ON/OFF, persisted as sa_ui_muted). Since the 2026-11-07
+       sound pass it does NOT follow the music mute — Music OFF
+       used to silence the whole game; each source now answers
+       only to its own switch + master.
 
    SOUNDS:
      tap()      — button press: short 800Hz square blip, 60ms
@@ -57,6 +60,11 @@ function ensureCtx(){
     if (!AC) return false;
     if (window.__audioCtx && window.__audioCtx.state !== 'closed'){
       ctx = window.__audioCtx;
+      /* v1.3: an adopted context may be SUSPENDED (created before
+         the first gesture, then parked by the browser). Resume it
+         here — ensureCtx() is called from this module's gesture
+         handlers and from blip(), so the resume is gesture-backed. */
+      try{ if (ctx.state === 'suspended') ctx.resume(); }catch(e){}
     } else {
       ctx = new AC();
       window.__audioCtx = ctx;
@@ -82,13 +90,16 @@ function hookGestures(){
 }
 
 /* ---------------- mute ---------------- */
-/* isMuted() — UI sounds are muted if EITHER the UI toggle is off OR the
-   master music mute is on. Joshua's rule: mute means mute. */
+/* isMuted() — UI sounds are muted if EITHER their own toggle is off
+   OR the MASTER sound toggle (speaker button) is off. v1.3
+   (2026-11-07 sound pass): the MUSIC mute no longer silences UI
+   sounds — that coupling was the Nov 7 "total silence" defect. */
 function isMuted(){
   if (uiMuted) return true;
-  try{ if (localStorage.getItem('sa_music_muted') === '1') return true; }catch(e){}
-  /* Also respect the in-memory musicMuted flag if it exists (index.html). */
-  try{ if (typeof musicMuted !== 'undefined' && musicMuted) return true; }catch(e){}
+  /* The master toggle lives in index.html as the `soundMuted`
+     global; typeof-guard + persisted-key fallback, as elsewhere. */
+  try{ if (typeof soundMuted !== 'undefined' && soundMuted) return true; }catch(e){}
+  try{ if (localStorage.getItem('sa_sound_muted') === '1') return true; }catch(e){}
   return false;
 }
 

@@ -119,7 +119,7 @@ function resumeAudio(){
   } catch(e){}
   ctxSuspendedByUs = false;
   try {
-    if (musicWasPlaying && window.musicStarted && !window.musicMuted){
+    if (musicWasPlaying && window.musicStarted && !window.musicMuted && !window.soundMuted){
       var act = window.musicAudio;
       if (act){ var p2 = act.play(); if (p2 && p2.catch) p2.catch(function(){}); }
     }

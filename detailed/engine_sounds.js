@@ -107,6 +107,11 @@ function ensureCtx(){
        all share the same context. One context for all game audio. */
     if (window.__audioCtx && window.__audioCtx.state !== 'closed'){
       ctx = window.__audioCtx;
+      /* v1.3: an adopted context may be SUSPENDED (created before
+         the first gesture, then parked by the browser). Resume it
+         here — ensureCtx() runs inside this module's gesture
+         handlers, so the resume is gesture-backed and lands. */
+      try{ if (ctx.state === 'suspended') ctx.resume(); }catch(e){}
     } else {
       ctx = new AC();
       window.__audioCtx = ctx;
@@ -139,15 +144,21 @@ function hookGestures(){
 }
 
 /* ==================================================================
-   Mute handling. Engine sounds obey BOTH their own toggle and the
-   existing music mute — "mute when game is muted", per the task. */
+   Mute handling (v1.3, 2026-11-07 sound pass). Engine sounds obey
+   BOTH their own toggle (sa_engine_muted) and the MASTER sound
+   toggle (the speaker button: `soundMuted` global / sa_sound_muted).
+   They NO LONGER obey the music mute — that coupling was the Nov 7
+   defect: Music OFF silently killed engines, nature and UI too.
+   Each source now answers only to its own switch + master. */
 function isMuted(){
   if (engineMuted) return true;
   try{
-    /* The music system exposes musicMuted as a global var in index.html.
-       typeof-guard: if the music block hasn't run, treat as unmuted. */
-    if (typeof musicMuted !== 'undefined' && musicMuted) return true;
+    /* The master toggle lives in index.html as the `soundMuted`
+       global. typeof-guard: if the music/sound block hasn't run,
+       fall back to the persisted key below. */
+    if (typeof soundMuted !== 'undefined' && soundMuted) return true;
   }catch(e){}
+  try{ if (localStorage.getItem('sa_sound_muted') === '1') return true; }catch(e){}
   return false;
 }
 function applyMute(){

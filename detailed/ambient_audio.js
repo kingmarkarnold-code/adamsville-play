@@ -29,12 +29,19 @@
    stepping.
 
    AUDIO POLICY — browsers block audio before a user gesture. We create
-   window.__audioCtx early (suspended); the game's existing unlockAudio()
-   handler in index.html resumes it on first click/keydown/touch. We share
-   that context with the #37 engine-sound module if it created it first.
+   window.__audioCtx early (suspended); the game's unlockAudio()
+   handler in index.html resumes it on user gestures (persistently —
+   v1.3: it keeps retrying on every gesture and on tab return, never
+   a once-only burn). We share that context with the #37 engine-sound
+   module if it created it first.
 
-   MUTE — follows the game's single mute toggle (musicMuted /
-   sa_music_muted). No separate ambience switch; Joshua can ask for one.
+   MUTE (v1.3, 2026-11-07 sound pass) — ambient is silenced by the
+   MASTER sound toggle (the speaker button, sa_sound_muted) or by
+   its OWN Nature toggle (Settings -> Sound -> "Nature sounds",
+   sa_ambient_muted). It NO LONGER follows the music toggle: the old
+   coupling (isMuted() reading the music state) was the Nov 7 defect
+   — Joshua turned Music OFF and lost nature, engine and UI sound
+   with it. Each source now answers only to its own switch + master.
 
    TICK — registers on the central Sim registry ('render', priority 80,
    after GPS's 75) per expert #14's rule. No animate() patching.
@@ -116,6 +123,32 @@
    on a phone speaker. 0.013 puts the shimmer just under the water
    it lives beside.
    ============================================================================ */
+/* ============================================================================
+   v1.3 SOUND PASS (2026-11-07, Joshua's specs — the decoupling):
+
+   S1 MUTES DECOUPLED (see MUTE note in the v1.0 header): isMuted()
+   here now means "master sound OFF, or Nature OFF" — the music
+   toggle is never consulted. Ambient also gains its own Settings
+   row (#set-ambient in the Sound submenu) and storage key
+   (sa_ambient_muted), wired in boot() below like the engine and
+   UI rows are wired by their own modules.
+   S2 RAIN VOICE (new layer). Joshua: "when it's raining there
+   must be a rain sound effect." There was NO rain audio anywhere
+   in the game (daycycle draws the shower; nothing sounded it).
+   The layer is one looped white-noise source (the v1.2 raw
+   buffer) through a 500 Hz high-pass (kills rumble) and a
+   1300 Hz low-pass (patter body) into gRain on THIS master — so
+   it obeys the Nature toggle and the master mute by construction.
+   Its target comes from computeLevels() off the daycycle weather
+   state: dry => exactly 0; rainy => 0.030 + 0.040 * intensity,
+   where intensity rides the storm wind (daycycle pushes wind up
+   when rainy — a blowing storm rains louder than a calm shower).
+   retarget() glides it over ~1.5 s, so rain fades in and out the
+   way weather actually arrives instead of switching.
+   S3 ADOPT-RESUME: ensureCtx() now tries to resume a suspended
+   context it adopts (and on repeat calls), matching engine/ui —
+   part of the session-wide persistent-unlock fix in index.html.
+   ============================================================================ */
 (function ambientAudio(){
 'use strict';
 
@@ -137,6 +170,13 @@ var whiteBuf = null;   /* v1.2: RAW white noise — the splash recipe's
                           transient grain the smoother removes) */
 var gTraffic = null, gWind = null, gCrickets = null;
 var gCreek = null, gRiver = null, gFalls = null, gInsects = null;
+var gRain = null;          /* v1.3: rain patter voice (S2) */
+/* v1.3 (S1): ambient's OWN mute toggle — Settings -> Sound ->
+   "Nature sounds", persisted as sa_ambient_muted. Separate from
+   the module's `enabled` switch (an internal/system gate). */
+var ambientMuted = false;
+try{ ambientMuted = localStorage.getItem('sa_ambient_muted') === '1'; }catch(e){}
+var ambRowWired = false;   /* #set-ambient click wiring happens once */
 var fallsFlutter = null;                   /* falls gain LFO depth */
 var wLFOdepth = null, crLFOdepth = null;   /* LFO depth gains (see buildLayers) */
 var fallsPt = null;        /* {x,z} Tatum Lake outlet, resolved lazily */
@@ -162,11 +202,34 @@ function gameMin(){
   return 720; /* noon fallback */
 }
 function isDay(gm){ return gm >= DAY_START && gm <= DAY_END; }
-function isMuted(){
-  try{ if (window.__musicState) return !!window.__musicState.muted; }catch(e){}
-  try{ return (typeof musicMuted !== 'undefined' && musicMuted); }catch(e){}
-  try{ return localStorage.getItem('sa_music_muted') === '1'; }catch(e){}
+/* masterMuted() — the speaker button's state (index.html owns it:
+   the `soundMuted` global + the sa_sound_muted key). The master
+   toggle is the ONE switch allowed to silence every source. */
+function masterMuted(){
+  try{ if (typeof soundMuted !== 'undefined' && soundMuted) return true; }catch(e){}
+  try{ return localStorage.getItem('sa_sound_muted') === '1'; }catch(e){}
   return false;
+}
+/* isMuted() — v1.3 DECOUPLED: ambient answers to the MASTER toggle
+   and to its OWN Nature toggle (ambientMuted), never to the music
+   toggle. (Pre-v1.3 this read window.__musicState / musicMuted /
+   sa_music_muted — Music OFF therefore muted the whole world,
+   the Nov 7 "total silence" defect.) */
+function isMuted(){
+  return masterMuted() || ambientMuted;
+}
+/* setAmbientMuted(m) — the Nature row's behaviour: persist, relabel
+   the row, and retarget so the change is heard immediately. */
+function setAmbientMuted(m){
+  ambientMuted = !!m;
+  try{ localStorage.setItem('sa_ambient_muted', ambientMuted ? '1' : '0'); }catch(e){}
+  var b = document.getElementById('set-ambient');
+  if (b) b.textContent = 'Nature sounds: ' + (ambientMuted ? 'OFF' : 'ON');
+  try{ retarget(); }catch(e){}
+  try{
+    if (typeof Report !== 'undefined' && Report.note)
+      Report.note('ambient-mute', { muted: ambientMuted });
+  }catch(e){}
 }
 function playerPos(){
   try{
@@ -212,12 +275,20 @@ function downtownXZ(){
    window.__audioCtx on the first user gesture. Returns true when the
    graph is live. */
 function ensureCtx(){
-  if (ctx) return ctx.state !== 'closed';
+  if (ctx){
+    /* v1.3 (S3): never just ADOPT a suspended context and leave it
+       parked — try to resume it. Without a user gesture this is a
+       harmless no-op; inside one it is the difference between a
+       live context and a silent session. */
+    try{ if (ctx.state === 'suspended') ctx.resume(); }catch(e){}
+    return ctx.state !== 'closed';
+  }
   try{
     var AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return false;
     if (window.__audioCtx && window.__audioCtx.state !== 'closed'){
       ctx = window.__audioCtx;   /* #37 engine sounds may have made it */
+      try{ if (ctx.state === 'suspended') ctx.resume(); }catch(e){}
     } else {
       ctx = new AC();
       window.__audioCtx = ctx;   /* unlockAudio() will resume this */
@@ -364,6 +435,23 @@ function buildLayers(){
   crLFO.connect(crLFOdepth); crLFOdepth.connect(gCrickets.gain);
   cr.connect(gCrickets); gCrickets.connect(master);
   cr.start(t); crLFO.start(t);
+
+  /* --- rain (v1.3, S2): RAW white noise -> 500 Hz high-pass
+     (rumble out) -> 1300 Hz low-pass (patter body) -> gRain.
+     One steady loop: at phone-speaker scale, filtered noise IS
+     rain patter — no per-drop scheduling needed. The level is
+     weather-driven in retarget() (exactly 0 when it isn't
+     raining), gliding so showers arrive and leave gradually. --- */
+  var rn = ctx.createBufferSource();
+  rn.buffer = whiteBuf; rn.loop = true; rn.playbackRate.value = 0.85;
+  var rHP = ctx.createBiquadFilter();
+  rHP.type = 'highpass'; rHP.frequency.value = 500;
+  var rLP = ctx.createBiquadFilter();
+  rLP.type = 'lowpass'; rLP.frequency.value = 1300;
+  gRain = ctx.createGain(); gRain.gain.value = 0;
+  rn.connect(rHP); rHP.connect(rLP); rLP.connect(gRain);
+  gRain.connect(master);
+  rn.start(t);
 }
 
 /* ------------------------------------------------------------------ */
@@ -374,7 +462,8 @@ function retarget(){
   var running = (ctx.state === 'running');
   var gm = gameMin(), day = isDay(gm);
 
-  /* Master follows gesture state + the game's mute toggle. */
+  /* Master follows gesture state + the v1.3 mute rule (master
+     sound toggle or Nature toggle — never the music toggle). */
   var mT = (running && enabled && !isMuted()) ? 1 : 0;
   master.gain.setTargetAtTime(mT, t, 0.4);
 
@@ -409,6 +498,9 @@ function retarget(){
   if (gFalls) gFalls.gain.setTargetAtTime(L.falls, t, 0.9);
   if (fallsFlutter) fallsFlutter.gain.setTargetAtTime(L.falls * 0.3, t, 0.9);
   if (gInsects) gInsects.gain.setTargetAtTime(L.insects, t, 1.2);
+  /* Rain (v1.3): target from computeLevels (0 dry, >0 rainy) with
+     a slow 1.5 s glide — weather eases in and out, never switches. */
+  if (gRain) gRain.gain.setTargetAtTime(L.rain, t, 1.5);
   /* B5 mix balance: publish the duck. The music elements are private
      to index.html's music block (no other file can reach them — the
      harness probe verified this), so the APPLYING lives there: the
@@ -528,11 +620,38 @@ function waterProximity(p){
 /* computeLevels(p, gm, running) — THE target gains for the water,
    insect and duck values, in one place: retarget() applies exactly
    these numbers and __AMB.levels() reports exactly these numbers. */
+/* weatherRain() — v1.3 (S2): the daycycle weather state, read the
+   same lazy way gameMin() reads it. Rain is a state, not a place:
+   { raining, intensity 0..1 }. Intensity rides the storm wind —
+   daycycle pushes its wind target up when rainy, so a blowing
+   storm (high mph) reads heavier than a calm shower. Without a
+   wind read, a steady mid-storm 0.65. */
+function weatherRain(){
+  var out = { raining: false, intensity: 0 };
+  try{
+    if (window.__daycycle && window.__daycycle.weather === 'rainy'){
+      out.raining = true;
+      var mph = null;
+      try{
+        if (typeof window.__windMphNow === 'function')
+          mph = window.__windMphNow();
+      }catch(e){}
+      out.intensity = (typeof mph === 'number' && isFinite(mph))
+        ? Math.min(1, Math.max(0.35, mph / 30)) : 0.65;
+    }
+  }catch(e){}
+  return out;
+}
+
 function computeLevels(p, gm, running){
   var prox = waterProximity(p);
   var creek = running ? 0.085 * Math.pow(prox.creekF, 1.6) : 0;
   var river = running ? 0.110 * Math.pow(prox.riverF, 1.6) : 0;
   var falls = running ? 0.075 * Math.pow(prox.fallsF, 1.8) : 0;
+  /* Rain (v1.3): exactly 0 unless the weather is rainy; then a
+     patter level that grows with storm intensity. */
+  var wr = weatherRain();
+  var rain = (running && wr.raining) ? 0.030 + 0.040 * wr.intensity : 0;
   /* Insects: along any stream (shore distance), daytime-weighted —
      grasshoppers sing by day (the video is a summer day); a low
      night floor near water keeps a cricket character after dark,
@@ -546,6 +665,7 @@ function computeLevels(p, gm, running){
   var insects = running ? 0.0130 * insF * dayF : 0;
   var presence = Math.max(prox.creekF, prox.riverF, prox.fallsF);
   return { creek: creek, river: river, falls: falls, insects: insects,
+           rain: rain, raining: wr.raining, rainI: wr.intensity,
            duck: 1 - 0.45 * presence, prox: prox };
 }
 
@@ -826,22 +946,38 @@ function boot(){
     }
   }catch(e){ return false; }
   scheduleSiren();
+  /* v1.3 (S1): wire the Nature row in the Sound submenu — this
+     module owns its row, the same pattern engine_sounds.js uses
+     for #set-engine and ui_sounds.js for #set-uisounds. Guarded
+     so a re-boot never double-wires. */
+  if (!ambRowWired){
+    ambRowWired = true;
+    try{
+      var ab = document.getElementById('set-ambient');
+      if (ab){
+        ab.textContent = 'Nature sounds: ' + (ambientMuted ? 'OFF' : 'ON');
+        ab.addEventListener('click', function(){ setAmbientMuted(!ambientMuted); });
+      }
+    }catch(e){}
+  }
   try{ retarget(); }catch(e){}
   /* Debug / tuning handle (v1.1: instrumented verification surface —
      levels() returns the exact targets retarget() applies, gains()
      reads the live node values, and the splash counter + wading
      snapshot prove the B4 voices fire in each water state). */
   window.__AMB = {
-    version: '1.2',
+    version: '1.3',
     retarget: retarget, siren: siren,
     splash: splashBurst,
     voice: ambVoice,
     setEnabled: function(v){ enabled = !!v; try{ retarget(); }catch(e){} },
+    setNatureMuted: setAmbientMuted,
     levels: function(){
       var L = computeLevels(playerPos(), gameMin(),
                             !!(ctx && ctx.state === 'running'));
       return { creek: +L.creek.toFixed(4), river: +L.river.toFixed(4),
                falls: +L.falls.toFixed(4), insects: +L.insects.toFixed(4),
+               rain: +L.rain.toFixed(4), raining: L.raining,
                duck: +L.duck.toFixed(3),
                dCreekM: L.prox.dCreek, dRiverM: L.prox.dRiver,
                dFallsM: L.prox.dFalls, dStreamM: L.prox.dStream,
@@ -851,6 +987,7 @@ function boot(){
       function gv(g){ return g ? +g.gain.value.toFixed(4) : null; }
       return { creek: gv(gCreek), river: gv(gRiver), falls: gv(gFalls),
                insects: gv(gInsects), crickets: gv(gCrickets),
+               rain: gv(gRain),
                traffic: gv(gTraffic), wind: gv(gWind),
                master: gv(master),
                ctxState: ctx ? ctx.state : null,
@@ -869,9 +1006,11 @@ function boot(){
     },
     get state(){
       return {
-        version: '1.2',
+        version: '1.3',
         running: !!(ctx && ctx.state === 'running'),
-        muted: isMuted(), gameMin: gameMin(), enabled: enabled
+        muted: isMuted(), masterMuted: masterMuted(),
+        natureMuted: ambientMuted,
+        gameMin: gameMin(), enabled: enabled
       };
     }
   };

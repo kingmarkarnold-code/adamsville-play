@@ -14,9 +14,9 @@
     },
     {
       "name": "ambient_audio.js",
-      "size": 40089,
-      "sha256": "c6fe98fca50dc08c775fd1a8daa2afe9ffa78ae13d3209f75cf7d5b8da84dd4b",
-      "hash": "c6fe98fca50dc08c775fd1a8daa2afe9ffa78ae13d3209f75cf7d5b8da84dd4b"
+      "size": 46990,
+      "sha256": "5ac4ee9daa560d68f82178240fd71e8cd10b08d397221c948bfa7923f5172ef4",
+      "hash": "5ac4ee9daa560d68f82178240fd71e8cd10b08d397221c948bfa7923f5172ef4"
     },
     {
       "name": "basketball.html",
@@ -80,9 +80,9 @@
     },
     {
       "name": "engine_sounds.js",
-      "size": 22821,
-      "sha256": "8058d96d5ed000d73f16fe03f53bee161f5fec1765bbea4dedd5e85ec990e7e8",
-      "hash": "8058d96d5ed000d73f16fe03f53bee161f5fec1765bbea4dedd5e85ec990e7e8"
+      "size": 23529,
+      "sha256": "a47779963f789ff2a57e28e1dca539a5c4c14a8c7e23302b8387e1fb3bc52e40",
+      "hash": "a47779963f789ff2a57e28e1dca539a5c4c14a8c7e23302b8387e1fb3bc52e40"
     },
     {
       "name": "face_platform.js",
@@ -135,9 +135,9 @@
     },
     {
       "name": "hud_move.js",
-      "size": 55250,
-      "sha256": "88835ab71096eab678bf8918e264be8851ab527c617c27217d25296f7fe9eb55",
-      "hash": "88835ab71096eab678bf8918e264be8851ab527c617c27217d25296f7fe9eb55"
+      "size": 55281,
+      "sha256": "4b2ff51e02e0b0ba748d4a284e456aa92563db944807457b433fe16c50123164",
+      "hash": "4b2ff51e02e0b0ba748d4a284e456aa92563db944807457b433fe16c50123164"
     },
     {
       "name": "icon.png",
@@ -147,9 +147,9 @@
     },
     {
       "name": "index.html",
-      "size": 1240275,
-      "sha256": "d13133cfa35885fc1a9c028d46c817458207a2a9ac38702fe75811c6f69b64f4",
-      "hash": "d13133cfa35885fc1a9c028d46c817458207a2a9ac38702fe75811c6f69b64f4"
+      "size": 1248362,
+      "sha256": "c10dd4393701a1749e3db5272e49f189df2bc2ed0d6e258215bfba53ba3d7788",
+      "hash": "c10dd4393701a1749e3db5272e49f189df2bc2ed0d6e258215bfba53ba3d7788"
     },
     {
       "name": "input_diag.js",
@@ -232,8 +232,8 @@
     },
     {
       "name": "pause_system.js",
-      "size": 10784,
-      "sha256": "92818ccc8ae26280665a087a8560c8bcdfb21b556ea1a7920412de530f2ae0e9"
+      "size": 10806,
+      "sha256": "9c888144e7b9807a0fb164951a8b2183f21e1a3bfa8d15e55b55fd82c871721a"
     },
     {
       "name": "perf_budget.js",
@@ -406,9 +406,9 @@
     },
     {
       "name": "ui_sounds.js",
-      "size": 8332,
-      "sha256": "898fd4b082314cf1670fd8980a33dbd44064fcbae3a6123c002329b8ca49eb08",
-      "hash": "898fd4b082314cf1670fd8980a33dbd44064fcbae3a6123c002329b8ca49eb08"
+      "size": 9023,
+      "sha256": "c6e81cd727117c415507a9d6de6ac5f4decbe9fdbff27d3ca6de43d8f7f7dbaf",
+      "hash": "c6e81cd727117c415507a9d6de6ac5f4decbe9fdbff27d3ca6de43d8f7f7dbaf"
     },
     {
       "name": "ui_update_flow.js",
@@ -666,6 +666,6 @@
       "hash": "20b983ae0e2e555817495a65c37519bfcb2231825269db6a57d72c51ed6006e3"
     }
   ],
-  "ui_version": "2026.11.07.8",
+  "ui_version": "2026.11.07.9",
   "version": "2026.10.17.9"
 }
