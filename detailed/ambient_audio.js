@@ -298,8 +298,13 @@ function ensureCtx(){
     /* v1.3 (S3): never just ADOPT a suspended context and leave it
        parked — try to resume it. Without a user gesture this is a
        harmless no-op; inside one it is the difference between a
-       live context and a silent session. */
-    try{ if (ctx.state === 'suspended') ctx.resume(); }catch(e){}
+       live context and a silent session.
+       PAUSE GATE (2026-11-07): the resume is skipped while the game
+       is paused (window.__audioPaused, owned by pause_system.js) —
+       pause suspends this context, and nothing may resurrect it
+       behind the frozen world. Same gate at every resume site in
+       the audio modules. */
+    try{ if (ctx.state === 'suspended' && !window.__audioPaused) ctx.resume(); }catch(e){}
     return ctx.state !== 'closed';
   }
   try{
@@ -307,7 +312,7 @@ function ensureCtx(){
     if (!AC) return false;
     if (window.__audioCtx && window.__audioCtx.state !== 'closed'){
       ctx = window.__audioCtx;   /* #37 engine sounds may have made it */
-      try{ if (ctx.state === 'suspended') ctx.resume(); }catch(e){}
+      try{ if (ctx.state === 'suspended' && !window.__audioPaused) ctx.resume(); }catch(e){}
     } else {
       ctx = new AC();
       window.__audioCtx = ctx;   /* unlockAudio() will resume this */

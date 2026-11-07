@@ -52,7 +52,9 @@ try{ uiMuted = localStorage.getItem('sa_ui_muted') === '1'; }catch(e){}
    closed, otherwise create it and publish it for others. */
 function ensureCtx(){
   if (ctx){
-    try{ if (ctx.state === 'suspended') ctx.resume(); }catch(e){}
+    /* PAUSE GATE (2026-11-07): never resume while the game is paused
+       (window.__audioPaused, owned by pause_system.js). */
+    try{ if (ctx.state === 'suspended' && !window.__audioPaused) ctx.resume(); }catch(e){}
     return true;
   }
   try{
@@ -63,8 +65,9 @@ function ensureCtx(){
       /* v1.3: an adopted context may be SUSPENDED (created before
          the first gesture, then parked by the browser). Resume it
          here — ensureCtx() is called from this module's gesture
-         handlers and from blip(), so the resume is gesture-backed. */
-      try{ if (ctx.state === 'suspended') ctx.resume(); }catch(e){}
+         handlers and from blip(), so the resume is gesture-backed.
+         (Skipped while paused — see the PAUSE GATE above.) */
+      try{ if (ctx.state === 'suspended' && !window.__audioPaused) ctx.resume(); }catch(e){}
     } else {
       ctx = new AC();
       window.__audioCtx = ctx;
@@ -80,7 +83,7 @@ function hookGestures(){
   if (_gestureHooked) return;
   _gestureHooked = true;
   var resume = function(){
-    try{ if (ctx && ctx.state === 'suspended') ctx.resume(); }catch(e){}
+    try{ if (ctx && ctx.state === 'suspended' && !window.__audioPaused) ctx.resume(); }catch(e){}
   };
   try{
     document.addEventListener('pointerdown', function(){ ensureCtx(); resume(); }, {passive:true});
@@ -108,6 +111,11 @@ function isMuted(){
    exponential decay envelope. slideTo: optional end frequency for sweeps. */
 function blip(freq, dur, type, vol, slideTo){
   if (isMuted()) return;
+  /* PAUSE SILENCE (2026-11-07): UI sounds are sound effects — while
+     the game is paused they are not even scheduled (a blip queued
+     on the suspended context would otherwise chirp out stale the
+     moment the game unpauses). */
+  if (window.__audioPaused) return;
   if (!ensureCtx()) return;
   try{
     var t = ctx.currentTime;

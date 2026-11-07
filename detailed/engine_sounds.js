@@ -95,7 +95,11 @@ try{ engineMuted = localStorage.getItem('sa_engine_muted') === '1'; }catch(e){}
    events. Safe to call repeatedly — no-ops after the first build. */
 function ensureCtx(){
   if (ctx) {
-    try{ if (ctx.state === 'suspended') ctx.resume(); }catch(e){}
+    /* PAUSE GATE (2026-11-07): never resume while the game is paused
+       (window.__audioPaused, owned by pause_system.js) — pause
+       suspends this shared context, and a gesture must not bring
+       engine/ambient sound back behind the frozen world. */
+    try{ if (ctx.state === 'suspended' && !window.__audioPaused) ctx.resume(); }catch(e){}
     return true;
   }
   try{
@@ -110,8 +114,9 @@ function ensureCtx(){
       /* v1.3: an adopted context may be SUSPENDED (created before
          the first gesture, then parked by the browser). Resume it
          here — ensureCtx() runs inside this module's gesture
-         handlers, so the resume is gesture-backed and lands. */
-      try{ if (ctx.state === 'suspended') ctx.resume(); }catch(e){}
+         handlers, so the resume is gesture-backed and lands.
+         (Skipped while paused — see the PAUSE GATE above.) */
+      try{ if (ctx.state === 'suspended' && !window.__audioPaused) ctx.resume(); }catch(e){}
     } else {
       ctx = new AC();
       window.__audioCtx = ctx;
@@ -135,7 +140,7 @@ function ensureCtx(){
 function hookGestures(){
   if (_gestureHooked) return;
   _gestureHooked = true;
-  var resume = function(){ try{ if (ctx && ctx.state === 'suspended') ctx.resume(); }catch(e){} };
+  var resume = function(){ try{ if (ctx && ctx.state === 'suspended' && !window.__audioPaused) ctx.resume(); }catch(e){} };
   try{
     document.addEventListener('pointerdown', function(){ ensureCtx(); resume(); }, {passive:true});
     document.addEventListener('keydown',     function(){ ensureCtx(); resume(); });

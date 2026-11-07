@@ -116,6 +116,17 @@
    bar, downloads, straight in (the launcher + queue + __tryStartGame
    in index.html carry that half).
 
+   NAVIGATION RESUME (2026-11-07, Joshua's ruling, later the same
+   day): the stash also carries the NAVIGATION STATE — snapshot()
+   records the active GPS destination (coords + name, read through
+   window.GPS.getDestination) as stash.nav, and maybeRestore(),
+   after a successful placement, re-engages it through
+   window.GPS.setDestination, which recomputes the route fresh from
+   the restored position (no stale route is ever resurrected). No
+   active navigation at stash time → nav is null and the boot is
+   exactly as before. The nav state lives and dies WITH the stash:
+   a stale or foreign stash discards both together.
+
    STATE KEYS (localStorage):
      sa_ui_update_resume   JSON  the resume stash (consumed on boot);
                            an AUTO spot stash reuses this key, marked
@@ -490,11 +501,24 @@ function snapshot(targetVer, opts){
         try{ if (typeof cars!=='undefined' && cars) carIdx=cars.indexOf(car); }catch(e){}
       }
     }catch(e){}
+    /* NAVIGATION STATE (2026-11-07): the active GPS destination, if
+       navigation is open — destination identity only (coords +
+       name). maybeRestore re-engages it via GPS.setDestination,
+       which recomputes the route from the restored position. */
+    var navSnap=null;
+    try{
+      if (typeof window!=='undefined' && window.GPS && typeof window.GPS.getDestination==='function'){
+        var nd=window.GPS.getDestination();
+        if (nd && typeof nd.x==='number' && typeof nd.z==='number')
+          navSnap={ x:+nd.x.toFixed(2), z:+nd.z.toFixed(2), name:(typeof nd.name==='string' ? nd.name : '') };
+      }
+    }catch(e){}
     return {
       kind:'ui-update', v:1, t:Date.now(), forVer:targetVer||'', zone:zone,
       player:{ x:+player.x.toFixed(2), z:+player.z.toFixed(2), yaw:+((player.yaw||0)).toFixed(3),
                inside:!!player.inside, swimming:!!player.swimming, locIdx:(player.locIdx|0) },
       driving:driving, carIdx:carIdx, car:carSnap,
+      nav:navSnap,
       camYaw:(typeof camYaw!=='undefined') ? +camYaw.toFixed(3) : null,
       lookYawOff:(typeof look!=='undefined' && look) ? +((look.yawOff||0)).toFixed(3) : 0,
       /* opts.toast (2026-10-17): a caller-supplied restore message
@@ -650,6 +674,22 @@ function maybeRestore(){
     }catch(e){}
     reportEvent('restored', {event:'ui-update-restored', ver:s.forVer||''});
     logLine('Resume stash applied — player restored to ('+Math.round(s.player.x)+', '+Math.round(s.player.z)+').');
+    /* NAVIGATION RESUME (2026-11-07): if navigation was open when
+       the stash was written, re-engage the SAME destination now —
+       setDestination recomputes the route from the restored
+       position (playerPos() reads the just-placed player/car), so
+       guidance resumes from where he stands, never from a stale
+       route. If he is already at the destination, GPS's own
+       arrival behaviour handles it from here. */
+    if (s.nav && typeof s.nav.x==='number' && typeof s.nav.z==='number'){
+      try{
+        if (typeof window!=='undefined' && window.GPS && typeof window.GPS.setDestination==='function'){
+          window.GPS.setDestination(s.nav.x, s.nav.z, s.nav.name || '');
+          logLine('Navigation resumed — destination '+(s.nav.name ? ('"'+s.nav.name+'" ') : '')+
+                  '('+Math.round(s.nav.x)+', '+Math.round(s.nav.z)+') re-engaged from the restored spot.');
+        }
+      }catch(e){}
+    }
   }else{
     logLine('Resume stash found but could not be applied — started fresh.');
   }

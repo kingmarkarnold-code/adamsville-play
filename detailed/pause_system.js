@@ -24,6 +24,24 @@
        window.__audioCtx) is suspended so no engine hum hangs frozen
        mid-note, and resumed on unpause. Only when this module
        suspended it does it resume it.
+     * PAUSE SILENCES THE GAME (Joshua 2026-11-07: "When a game is
+       paused, all sound effects should go off."): suspending the
+       context alone was NOT enough — the game's gesture/focus
+       audio-unlock paths (index.html's doUnlock, the engine/UI
+       gesture hooks, the ambient ensureCtx) kept RESUMING the
+       context on any tap, and the unlock restarted the music
+       element too, so a paused game came back to life sonically
+       while the world stayed frozen; interior_system.js also ran
+       a PRIVATE context pause could not reach at all. Now pause
+       owns a layer flag, window.__audioPaused: set before anything
+       is suspended, cleared only by resumeAudio(). Every context
+       resume site in the audio modules checks it, the unlock path
+       stands down while it is set, UI blips are not even scheduled,
+       and interior audio rides the shared context like everything
+       else. The flag is a STATE LAYER over the sound settings —
+       it never writes them: master mute, the Nature toggle and
+       the Music toggle are exactly as the player left them when
+       the game unpauses.
 
    CONTROLS:
      * ESCAPE key toggles pause on keyboard platforms. Wired with the
@@ -89,6 +107,11 @@ var ctxSuspendedByUs = false;
    active one, and only under the same conditions the game's own
    unmute path uses (started + not muted). */
 function pauseAudio(){
+  /* The pause-silence layer goes on FIRST: from this moment every
+     audio module's resume path stands down, so a tap that lands
+     while the suspend below is still in flight cannot resurrect
+     the context mid-pause. */
+  try { window.__audioPaused = true; } catch(e){}
   musicWasPlaying = false;
   try {
     var a = window.musicAudioA, b = window.musicAudioB;
@@ -110,6 +133,12 @@ function pauseAudio(){
 }
 
 function resumeAudio(){
+  /* The layer lifts FIRST: this function's own resumes below (and
+     the gesture unlocks that follow the player's next tap) are
+     legitimate again from here on. The sound SETTINGS were never
+     touched — whatever was muted before the pause is still muted;
+     whatever was playing resumes under the same gates as always. */
+  try { window.__audioPaused = false; } catch(e){}
   try {
     var ctx = window.__audioCtx;
     if (ctxSuspendedByUs && ctx && ctx.state === 'suspended'){
@@ -243,8 +272,8 @@ else if (document.addEventListener)
 /* Self-report so Joshua can verify the module loaded (Report panel). */
 try {
   if (typeof Report !== 'undefined' && Report.setSys){
-    Report.setSys('pause', {status:'ok', version:'1.0',
-      note:'Esc / pause button freezes sim + music (Joshua 2026-10-17)'});
+    Report.setSys('pause', {status:'ok', version:'1.1',
+      note:'Esc / pause button freezes sim + music; pause silences ALL audio via the __audioPaused layer over the shared context (Joshua 2026-10-17, 2026-11-07)'});
   }
 } catch(e){}
 

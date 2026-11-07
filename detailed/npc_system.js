@@ -1083,8 +1083,10 @@ function initNPCs(){
            thighL:im(limbGeo), thighR:im(limbGeo), shinL:im(limbGeo), shinR:im(limbGeo),
            shoeL:im(), shoeR:im(),                    // shoe: heel/midfoot box
            toeL:im(unitSphere), toeR:im(unitSphere) };// ROUNDED TOE: squashed-sphere toe tip
-  /* v1.21 NPC KILL SWITCH: register meshes globally so __setNpcPaused can
-     hide/show them instantly without touching the NPC data. */
+  /* Mesh registry (v1.21 origin): the NPC InstancedMeshes, exposed
+     globally. The kill switch that used to hide them from here was
+     retired 2026-11-07 (content always loads); __npcPaused is a
+     permanent false now, so the hide check below never fires. */
   try {
     window.__npcMeshes=[_mesh.torso,_mesh.head,_mesh.hair,
       _mesh.uArmL,_mesh.uArmR,_mesh.fArmL,_mesh.fArmR,

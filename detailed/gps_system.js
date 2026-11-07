@@ -2298,6 +2298,16 @@ function clearDestination(){
 }
 
 function hasDestination(){ return !!route; }
+/* getDestination() — NAVIGATION RESUME (2026-11-07, Joshua): the
+   resume stash (ui_update_flow.js snapshot()) reads the ACTIVE
+   destination through here so a restart can re-engage it. Returns
+   the destination's identity only — coords + name — never the
+   route itself: on restore, setDestination() recomputes a fresh
+   route from wherever the player actually stands. */
+function getDestination(){
+  if (!route) return null;
+  return { x:route.destX, z:route.destZ, name:route.destName||'' };
+}
 function getPickMode(){ return pickMode; }
 function setPickMode(v){
   pickMode=!!v;
@@ -2579,6 +2589,7 @@ window.GPS={
   setDestination:setDestination,
   clearDestination:clearDestination,
   hasDestination:hasDestination,
+  getDestination:getDestination,
   getPickMode:getPickMode,
   setPickMode:setPickMode,
   drawMinimapRoute:drawMinimapRoute,

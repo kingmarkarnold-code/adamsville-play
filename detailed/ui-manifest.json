@@ -14,9 +14,9 @@
     },
     {
       "name": "ambient_audio.js",
-      "size": 47919,
-      "sha256": "7af01733e0fa14df30dc654e644ffa0fa1e64b3b765f2df95ecc8d28f41333bb",
-      "hash": "7af01733e0fa14df30dc654e644ffa0fa1e64b3b765f2df95ecc8d28f41333bb"
+      "size": 48265,
+      "sha256": "743747b3b0595721aba04940e1dceff59fc7cd53caaed156de1504f88b4be066",
+      "hash": "743747b3b0595721aba04940e1dceff59fc7cd53caaed156de1504f88b4be066"
     },
     {
       "name": "basketball.html",
@@ -92,9 +92,9 @@
     },
     {
       "name": "engine_sounds.js",
-      "size": 23529,
-      "sha256": "a47779963f789ff2a57e28e1dca539a5c4c14a8c7e23302b8387e1fb3bc52e40",
-      "hash": "a47779963f789ff2a57e28e1dca539a5c4c14a8c7e23302b8387e1fb3bc52e40"
+      "size": 23929,
+      "sha256": "438266fffb6337d13685d7f361c05644891f0264834a0f1e2e2fa9e2bbae6a92",
+      "hash": "438266fffb6337d13685d7f361c05644891f0264834a0f1e2e2fa9e2bbae6a92"
     },
     {
       "name": "face_platform.js",
@@ -129,9 +129,9 @@
     },
     {
       "name": "gps_system.js",
-      "size": 128313,
-      "sha256": "83351f8f4f0ab18e000e6d8d1184d4809cf37fb70eb8798769ba02875744b811",
-      "hash": "83351f8f4f0ab18e000e6d8d1184d4809cf37fb70eb8798769ba02875744b811"
+      "size": 128855,
+      "sha256": "50a71da7652564785d70d524502b7e2a9bd61da174b808e52005310832a881b2",
+      "hash": "50a71da7652564785d70d524502b7e2a9bd61da174b808e52005310832a881b2"
     },
     {
       "name": "helicopter_system.js",
@@ -159,9 +159,9 @@
     },
     {
       "name": "index.html",
-      "size": 1262373,
-      "sha256": "0118e7f10502001b34a7ec728eff45127d522bb37cd5c96d493046d974f47fe2",
-      "hash": "0118e7f10502001b34a7ec728eff45127d522bb37cd5c96d493046d974f47fe2"
+      "size": 1266798,
+      "sha256": "dfecca80eaebc67555c3eda167003a771c9a23b9dfd2852a7282d84143b989da",
+      "hash": "dfecca80eaebc67555c3eda167003a771c9a23b9dfd2852a7282d84143b989da"
     },
     {
       "name": "input_diag.js",
@@ -171,9 +171,9 @@
     },
     {
       "name": "interior_system.js",
-      "size": 42021,
-      "sha256": "51009550192f1d64aff4582f61f16cfd50990b05c67e4e47c0414d61693f51e5",
-      "hash": "51009550192f1d64aff4582f61f16cfd50990b05c67e4e47c0414d61693f51e5"
+      "size": 42725,
+      "sha256": "8b5895a54dc67f45a19265ecd873314e6876ce0191f0a487409e6dd0c814f38f",
+      "hash": "8b5895a54dc67f45a19265ecd873314e6876ce0191f0a487409e6dd0c814f38f"
     },
     {
       "name": "keyboard_remap.js",
@@ -238,14 +238,14 @@
     },
     {
       "name": "npc_system.js",
-      "size": 98763,
-      "sha256": "a3f09b3f38b4b57269c9bc725e2a7d8e8d34602b97fa2a12954b0d111b080edb",
-      "hash": "a3f09b3f38b4b57269c9bc725e2a7d8e8d34602b97fa2a12954b0d111b080edb"
+      "size": 98891,
+      "sha256": "a43a7a6a6062eb49823c7f34cbc513cfb700dd78874d52b2aa55f8bb4b9dae80",
+      "hash": "a43a7a6a6062eb49823c7f34cbc513cfb700dd78874d52b2aa55f8bb4b9dae80"
     },
     {
       "name": "pause_system.js",
-      "size": 10806,
-      "sha256": "9c888144e7b9807a0fb164951a8b2183f21e1a3bfa8d15e55b55fd82c871721a"
+      "size": 12702,
+      "sha256": "fd9034b1c5548d0185bdc7bd0938129271ea48dc0d920d6196583510d432a343"
     },
     {
       "name": "perf_budget.js",
@@ -418,14 +418,14 @@
     },
     {
       "name": "ui_sounds.js",
-      "size": 9023,
-      "sha256": "c6e81cd727117c415507a9d6de6ac5f4decbe9fdbff27d3ca6de43d8f7f7dbaf",
-      "hash": "c6e81cd727117c415507a9d6de6ac5f4decbe9fdbff27d3ca6de43d8f7f7dbaf"
+      "size": 9565,
+      "sha256": "a69e77f00d964bec6ea04903d8a948e7dca4113d711879c1bf758b93881394bd",
+      "hash": "a69e77f00d964bec6ea04903d8a948e7dca4113d711879c1bf758b93881394bd"
     },
     {
       "name": "ui_update_flow.js",
-      "size": 40911,
-      "sha256": "3a60f67ed72020ea8d0cf2ad03492d82a4f8a5255a174a7eaafc504205c03961"
+      "size": 43161,
+      "sha256": "6646f2eb7a00132062ce5c23e5e3c058a9616bc65e41978e5b7b92e181989541"
     },
     {
       "name": "vehicle_avoid.js",
@@ -678,6 +678,6 @@
       "hash": "20b983ae0e2e555817495a65c37519bfcb2231825269db6a57d72c51ed6006e3"
     }
   ],
-  "ui_version": "2026.11.07.17",
+  "ui_version": "2026.11.07.18",
   "version": "2026.10.17.9"
 }

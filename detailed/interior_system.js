@@ -513,14 +513,27 @@ function nearestAppliance(){
 var _ac = null;
 function ensureAudio(){
   if (_ac) {
-    try{ if (_ac.state === 'suspended') _ac.resume(); }catch(e){}
+    try{ if (_ac.state === 'suspended' && !window.__audioPaused) _ac.resume(); }catch(e){}
     return _ac;
   }
   try{
     var AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return null;
-    _ac = new AC();
-    if (_ac.state === 'suspended'){ try{ _ac.resume(); }catch(e){} }
+    /* SHARED CONTEXT (2026-11-07): adopt window.__audioCtx like the
+       engine / UI / ambient modules — this module used to keep a
+       PRIVATE context, which the pause system could not suspend, so
+       interior sounds kept playing over a paused game (Joshua:
+       "when a game is paused, all sound effects should go off").
+       One context for all game audio; pause suspends it for
+       everyone, and the __audioPaused gate above keeps this
+       module from resuming it mid-pause. */
+    if (window.__audioCtx && window.__audioCtx.state !== 'closed'){
+      _ac = window.__audioCtx;
+    } else {
+      _ac = new AC();
+      window.__audioCtx = _ac;
+    }
+    if (_ac.state === 'suspended' && !window.__audioPaused){ try{ _ac.resume(); }catch(e){} }
   }catch(e){ _ac = null; }
   return _ac;
 }

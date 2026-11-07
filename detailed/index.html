@@ -32,7 +32,7 @@
                               roads, buildings, water, hero house, player,
                               vehicles, input, recorder, music, gameplay
                               menu, minimap, game loop, street names,
-                              inventory, __tryStartGame/__autoStart
+                              inventory, __tryStartGame
        6. <script src=...> .. late systems (NPCs, traffic, semis, road crew,
                               MARTA rail/bus, gas, schools, plaza, Marriott,
                               clubs/diners, POIs, stuck recovery,
@@ -53,9 +53,11 @@
          (ASSETVER.updateGearBadge / refreshAdmTags)
        - "Clean slate": re-downloads wipe the old files of that type FIRST,
          then download fresh. (forceRedownload - map + assets)
-       - No-skip loader: the game auto-starts ~3s after assets are ready
-         (__autoStart); click-anywhere-to-start remains as backup. No manual
-         gate blocks the game from launching.
+       - No-skip loader, fully automatic (2026-11-07): NOW LOADING
+         alone → progress bar → a ten-second settle at 100% → straight
+         into the game. There is no click-to-start anywhere and no
+         manual gate of any kind; failure paths offer RETRY (reload)
+         only, never a start.
 
      DEVELOPER NOTE: bump APP_VERSION (one line, top of block 2) per release -
      the HUD title/subtitle/version/help tags are stamped from it so they can
@@ -685,12 +687,9 @@ if (location.protocol === 'file:'){ setTimeout(function(){ if (!window.__threeMo
   @keyframes loaddot{0%,100%{opacity:.2;}50%{opacity:1;}}
   #load-detail{margin-top:4px;color:#39ff6a;font-size:12px;opacity:.85;text-align:center;
     min-height:16px;max-width:92vw;padding:0 8px;box-sizing:border-box;}
-  #load-start{display:none;margin-top:12px;color:#39ff6a;font-size:clamp(17px,5vw,22px);font-weight:bold;
-    letter-spacing:2px;animation:loadpulse 1.2s infinite;text-align:center;cursor:pointer;
-    pointer-events:auto;border:2px solid #39ff6a;border-radius:12px;
-    padding:12px 24px;background:rgba(0,40,0,.55);
-    box-shadow:0 0 16px rgba(57,255,106,.45);user-select:none;-webkit-tap-highlight-color:transparent;
-    max-width:92vw;box-sizing:border-box;}
+  /* CONTENT + LAUNCH SEQUENCE (2026-11-07, Joshua): the #load-start
+     CLICK-TO-START button is REMOVED — starting is automatic only, on
+     every path. Its CSS died with the element. */
   @keyframes loadpulse{0%,100%{opacity:1;}50%{opacity:.35;}}
   /* LAUNCH REDESIGN (2026-11-07, Joshua): NOW LOADING — the first
      thing every boot shows: flashing, centered on screen, zero
@@ -704,6 +703,13 @@ if (location.protocol === 'file:'){ setTimeout(function(){ if (!window.__threeMo
     pointer-events:none;z-index:5;text-align:center;padding:0 12px;box-sizing:border-box;
     transition:opacity .4s ease,visibility .4s;}
   #now-loading.done{opacity:0;visibility:hidden;}
+  /* CONTENT + LAUNCH SEQUENCE (2026-11-07, Joshua): while NOW LOADING
+     is on screen it is the ONLY thing on screen — the loader carries
+     the prebar class from first paint and everything else in it
+     (title, icon, progress face, critical panel) stays hidden until
+     __nowLoadingDone removes the class as NOW LOADING fades: Now
+     Loading alone → it leaves → the bar pops up. */
+  #loader.prebar #load-title,#loader.prebar #load-icon,#loader.prebar #load-bottom{display:none;}
   /* v1.52 #28: critical-failure panel on the loader. Red/amber so a failed
      population system reads as a problem, not a normal state. */
   #load-critwarn{display:none;margin-top:14px;text-align:center;max-width:92vw;box-sizing:border-box;}
@@ -716,8 +722,9 @@ if (location.protocol === 'file:'){ setTimeout(function(){ if (!window.__threeMo
   #load-critprog{color:#ffd28a;font-size:13px;margin:-2px 0 10px;line-height:1.4;min-height:1em;}
   #load-retry{padding:12px 22px;font-size:16px;font-weight:bold;border-radius:12px;border:none;
     background:#39ff6a;color:#062b0f;cursor:pointer;}
-  #load-continue{padding:12px 22px;font-size:14px;font-weight:bold;border-radius:12px;
-    border:2px solid #777;background:#222836;color:#bbb;cursor:pointer;}
+  /* #load-continue (CONTINUE ANYWAY) CSS removed 2026-11-07 with the
+     element: the critical-failure panel offers RETRY only — there is
+     no start/skip-start control on any path any more. */
   /* Standard breakpoint refinements for the loader */
   @media (min-width:375px){
     #loader{gap:3vh;}
@@ -730,7 +737,6 @@ if (location.protocol === 'file:'){ setTimeout(function(){ if (!window.__threeMo
   @media (min-width:600px){
     #loader{padding:6vh 24px;}
     #load-title{font-size:32px;}
-    #load-start{padding:14px 32px;}
   }
   @media (min-width:1024px){
     #loader{gap:3.5vh;}
@@ -742,7 +748,6 @@ if (location.protocol === 'file:'){ setTimeout(function(){ if (!window.__threeMo
     #loader{gap:1.5vh;padding:2vh 12px;}
     #load-icon{width:56px;height:56px;}
     #load-title{font-size:20px;}
-    #load-start{font-size:16px;padding:8px 20px;margin-top:8px;}
     #load-status{font-size:12px;margin-top:4px;}
   }
   /* v1.11 toast (track names, error messages) */
@@ -1238,12 +1243,18 @@ window.SAView = (function(){
      quality automatically, and goes straight in. The boot code is
      the LAUNCH REDESIGN section of script block 1. -->
 <!-- ===== LOADER OVERLAY (covers the screen while assets load) =====
-     Title, game icon, progress bar (#load-fill - driven by __loadStep()),
-     current-step line (#load-status), and the CLICK-ANYWHERE-TO-START button
-     (#load-start, revealed when all load steps complete). Dismissed by
-     __tryStartGame(). Joshua's no-skip rule: the game ALSO auto-starts ~3s
-     after Ready via __autoStart() - no manual gate blocks launch. -->
-<div id="loader">
+     Boot face, in Joshua's order (2026-11-07): NOW LOADING alone
+     (the loader starts with class "prebar", which hides everything
+     else in it) → NOW LOADING leaves → the progress face (title,
+     game icon, bar #load-fill - driven by __loadStep(), current-step
+     line #load-status) pops up for the download phase → when every
+     step is done the completed face stays up for a TEN-SECOND settle
+     → the game starts by itself and __tryStartGame() dismisses the
+     loader. There is NO click-to-start control anywhere: starting
+     is automatic only, on the happy path and on every failure path
+     (the critical-failure panel below offers RETRY = reload, never
+     a start). -->
+<div id="loader" class="prebar">
   <!-- LAUNCH REDESIGN (2026-11-07): NOW LOADING — flashing, centered,
        shown from first paint. Hands off to the bar below when real
        downloads begin; hidden with the loader at game start. -->
@@ -1255,13 +1266,15 @@ window.SAView = (function(){
     <div id="load-pct" class="phase-download">0%</div>
     <div id="load-status" class="phase-download">Loading...</div>
     <div id="load-detail"></div>
-    <div id="load-start">CLICK ANYWHERE TO START</div>
     <!-- v1.52 #28: critical-failure panel (hidden unless a population system
-         failed to download). Shown by __showCriticalWarning(). -->
+         failed to download). Shown by __showCriticalWarning(). RETRY is
+         the only control (2026-11-07): it reloads for a fresh download
+         attempt — the old CONTINUE ANYWAY start control is gone, and
+         nothing on this panel (or anywhere) starts the game by hand. -->
     <div id="load-critwarn" style="display:none">
       <div id="load-critmsg"></div>
       <div id="load-critprog"></div>
-      <div id="load-critbtns"><button id="load-retry">&#8635; RETRY</button><button id="load-continue">CONTINUE ANYWAY</button></div>
+      <div id="load-critbtns"><button id="load-retry">&#8635; RETRY</button></div>
     </div>
   </div>
 </div>
@@ -1273,15 +1286,17 @@ window.SAView = (function(){
        window.__loadOrder - the 19 load steps in display order
        window.__loadNames - human-readable label per step
        __loadStep(key, failed) - marks one step done, advances #load-fill and
-         rewrites #load-status ("Loading roads..."); reveals #load-start when
-         every step is done.
+         rewrites #load-status ("Loading roads..."); when every step is
+         done it stamps the boot COMPLETE (__beginEntryDelay), which
+         starts the ten-second settle before entry.
        v1.15 REAL PROGRESS (Joshua 2026-10-10): the bar is now weighted by
          ACTUAL file sizes (roads.js=2.8MB counts 600x more than elev.js=4.4K),
          not just file count. The old 20s fake-complete watchdog is GONE —
          failures show a real warning instead of pretending 100%. The bar only
          hits 100% when every step has genuinely reported in.
-     It does NOT start the game - that is __tryStartGame/__autoStart at the
-     end of script block 2. -->
+     It does NOT start the game - that is __tryStartGame at the end of
+     script block 2, invoked automatically (queue end, the settle
+     timer, the failsafes) — never by a click. -->
 <script>
 /* v1.51 TICK REGISTRY (expert report #14, James Park, Joshua approved):
    Central game-loop registry. REPLACES the old pattern where ~20 modules each
@@ -1436,12 +1451,38 @@ function __parseSet(label, detail, pct){
   var fill=document.getElementById('load-fill');
   if(fill) fill.style.width=pct+'%';
 }
+/* ===== TEN-SECOND ENTRY SETTLE (2026-11-07, Joshua) =====
+   When every load step has genuinely reported in, the boot is
+   COMPLETE — but the player does not enter the game yet. The
+   completed progress face (bar full, "Ready") stays on screen for
+   a full TEN SECONDS of wall clock, then the game starts by itself.
+   This is a boot-sequence beat, not a body timer: real seconds,
+   measured with Date.now(). __beginEntryDelay() is idempotent —
+   the first genuine completion stamps __loadCompletedAt and arms
+   the entry timer; later calls change nothing. __tryStartGame
+   enforces the same gate for every other start trigger (the
+   queue-end attempt, the buildings-gate retry, the failsafes), so
+   nothing can enter early. FAILSAFE force-completions deliberately
+   never call this: a stalled boot the watchdog rescues has already
+   waited minutes and is not held for ten more seconds. */
+window.__ENTRY_DELAY_MS = 10000;
+window.__loadCompletedAt = 0;
+window.__entryReadyAt = 0;
+window.__beginEntryDelay = function(){
+  try{
+    if (window.__loadCompletedAt) return;
+    window.__loadCompletedAt = Date.now();
+    window.__entryReadyAt = window.__loadCompletedAt + window.__ENTRY_DELAY_MS;
+    setTimeout(function(){
+      try{ if (typeof __tryStartGame === 'function') __tryStartGame(); }catch(e){}
+    }, window.__ENTRY_DELAY_MS);
+  }catch(e){}
+};
 function __loadStep(key,failed){
   /* LAUNCH REDESIGN (2026-11-07): the first real load step means
      downloads are genuinely under way — NOW LOADING hands off to
      the progress bar here. (A backstop timer in __loadDeferredQueue
-     covers a slow first file; on a fully cached boot the game
-     starts so fast the bar never becomes the face of the boot.) */
+     covers a slow first file.) */
   try{ if (typeof window.__nowLoadingDone==='function') window.__nowLoadingDone(); }catch(e){}
   if(window.__loadDone[key]) return;
   window.__loadDone[key]=failed?'warn':'ok';
@@ -1480,9 +1521,14 @@ function __loadStep(key,failed){
     }
   }
   if(!next){
-    /* v1.15: only reveal START when progress is genuinely 100% */
+    /* Every step has genuinely reported in (v1.15: the bar only
+       reaches 100% here). Stamp the completion and start the
+       ten-second entry settle — the completed face stays up, no
+       prompt appears, and entry is automatic when the settle ends
+       (see __beginEntryDelay above). There is no START control to
+       reveal: the old #load-start button was removed 2026-11-07. */
     var pct=__paintProgress();
-    var s=document.getElementById('load-start'); if(s) s.style.display='block';
+    try{ window.__beginEntryDelay(); }catch(e){}
   }
 }
 /* v1.63 CRASH LOG — EARLY BUFFER (Joshua 2026-10-17 failure philosophy):
@@ -1555,15 +1601,19 @@ function __criticalBlockedList(){
 }
 /* v1.52 #28 __showCriticalWarning(): renders the critical-failure panel on
    the loader when a population system (NPCs/traffic) failed to download.
-   RETRY reloads the page for a clean download attempt; CONTINUE ANYWAY
-   records the player's explicit choice and re-runs the start gate. Wired
-   once here (block 1) so the buttons work even if deferred blocks failed. */
+   RETRY reloads the page for a clean download attempt — and since
+   2026-11-07 it is the ONLY control: the CONTINUE ANYWAY start button
+   was removed with every other click-to-start (starting is automatic
+   only; a failed critical system is fixed by re-downloading, never
+   by starting anyway into a broken world). Wired once here (block 1)
+   so the button works even if deferred blocks failed. The panel also
+   drops the loader's prebar class defensively: the failure face must
+   never hide behind the NOW LOADING sequencing. */
 function __showCriticalWarning(){
   try{
     var w=document.getElementById('load-critwarn');
     var msg=document.getElementById('load-critmsg');
-    var startBtn=document.getElementById('load-start');
-    if(startBtn) startBtn.style.display='none';
+    try{ var _ld=document.getElementById('loader'); if(_ld) _ld.classList.remove('prebar'); }catch(e){}
     var names=[];
     var fails=window.__criticalFailed||[];
     /* NO-MAP STATE (Phase F, 2026-10-28): plain words, and NO Continue
@@ -1585,7 +1635,6 @@ function __showCriticalWarning(){
         'The game itself is here, but there is no world to load.'+nmDetails+'<br>'+
         '<span style="font-weight:normal;font-size:0.9em;">Tap RETRY to check again.</span>';
       var nmProg=document.getElementById('load-critprog'); if(nmProg) nmProg.textContent='';
-      var nmCb=document.getElementById('load-continue'); if(nmCb) nmCb.style.display='none';
       if(w) w.style.display='block';
       var nmRb=document.getElementById('load-retry');
       if(nmRb && !nmRb.__wired){ nmRb.__wired=true; nmRb.addEventListener('click',function(){
@@ -1623,15 +1672,10 @@ function __showCriticalWarning(){
     if(rb && !rb.__wired){ rb.__wired=true; rb.addEventListener('click',function(){
       try{ window.location.reload(); }catch(e){}
     }); }
-    var cb=document.getElementById('load-continue');
-    if(cb && !cb.__wired){ cb.__wired=true; cb.addEventListener('click',function(){
-      try{
-        window.__criticalAcked=true;
-        var w2=document.getElementById('load-critwarn');
-        if(w2) w2.style.display='none';
-        if(typeof __tryStartGame==='function') __tryStartGame();
-      }catch(e){}
-    }); }
+    /* The CONTINUE ANYWAY wiring that used to sit here set
+       __criticalAcked and re-ran the start gate on the player's tap.
+       Removed 2026-11-07 with the button itself: no control anywhere
+       starts the game by hand now. */
   }catch(e){}
 }
 /* __zoneFileProgress(key, received, total) — LIVE DOWNLOAD PROGRESS
@@ -1689,7 +1733,9 @@ function __zoneFileProgress(key, received, total){
    on every visible advance, and the chunked placement pass stamps it
    per slice. A slow-but-moving boot (a weak laptop legitimately needs
    minutes) never trips them; a boot that has made NO progress for 45s
-   gets the SKIP escape, and one with no progress for 180s gets the
+   gets the automatic escape (skip stuck OPTIONAL steps, start with
+   what loaded — it was a "SKIP AND START" tap until 2026-11-07 took
+   the button away), and one with no progress for 180s gets the
    absolute failsafe. The clock starts when deferred loading begins
    (__loadBeganAt), not from page open.
    A stall also REPORTS ITSELF (see __recordBootStall): the report rides
@@ -1773,23 +1819,25 @@ function __recordBootStall(kind, idleSec){
 function __loaderEscapeAbsolute(){
   /* The absolute failsafe body (shared by the watchdog's 180s tier):
      force-complete OPTIONAL steps; if critical steps are blocked, the
-     loud critical-failure panel owns the screen; otherwise offer the
-     deliberate start tap (Launch Flow Rule preserved). */
+     loud critical-failure panel owns the screen; otherwise start
+     DIRECTLY with what loaded. (Pre-2026-11-07 this offered a
+     deliberate "TAP TO START" on the old #load-start button — that
+     button is gone; starting is automatic on this path too. A
+     failsafe completion never stamps __loadCompletedAt, so the
+     ten-second entry settle does not hold this start.) */
   try{ console.warn('[loader] ABSOLUTE FAILSAFE: no progress for 180s, force-completing OPTIONAL pending steps'); }catch(e){}
   window.__forceCompletePendingSteps();
   var blocked=__criticalBlockedList();
   var st=document.getElementById('load-status');
-  var sb=document.getElementById('load-start');
   if(blocked.length){
     for(var bi=0;bi<blocked.length;bi++){
       if(window.__criticalFailed.indexOf(blocked[bi])===-1) window.__criticalFailed.push(blocked[bi]);
     }
     if(typeof __showCriticalWarning==='function') __showCriticalWarning();
     if(st){ st.textContent='\u26A0 Critical systems missing \u2014 see warning above'; st.style.opacity='1'; }
-    if(sb){ sb.style.display='none'; }
   }else{
     if(st){ st.textContent='\u26A0 Some optional assets timed out \u2014 starting with what loaded'; st.style.opacity='1'; }
-    if(sb){ sb.style.display='block'; sb.textContent='TAP TO START'; sb.onclick=null; }
+    if(typeof __tryStartGame==='function') __tryStartGame();
   }
 }
 setInterval(function(){
@@ -1808,7 +1856,7 @@ setInterval(function(){
        Joshua 2026-11-07) — stand down, and never record a stall for a
        finished load. (A REFUSED start is the one exception: it is also
        finished, and it is handled by the finished-but-not-started check
-       inside the stand-down below — the tier-1 tap-anywhere escape sits
+       inside the stand-down below — the tier-1 automatic escape sits
        AFTER that return and could never see it.) */
     if (!pending.length && (!window.__bldgGatePromise || window.__bldgGateDone)){
       /* FINISHED-BUT-NOT-STARTED (2026-11-07, Joshua's incognito report):
@@ -1823,8 +1871,9 @@ setInterval(function(){
          check at the top), so: exactly ONCE, file the boot-stall report
          and re-invoke the start gate — it re-renders the critical panel
          loudly, or starts the game if the refusal has cleared. The flag
-         keeps later ticks quiet; the panel's RETRY / CONTINUE ANYWAY
-         buttons remain the player's own decision. */
+         keeps later ticks quiet; the panel's RETRY button (a reload —
+         the only control left on any failure path, 2026-11-07) remains
+         the player's own decision. */
       if (!window.__refusedStartRewarned){
         window.__refusedStartRewarned = true;
         __recordBootStall('watchdog-refused-start', idle);
@@ -1841,35 +1890,32 @@ setInterval(function(){
         if(pending.length){
           st.textContent='\u26A0 Stuck waiting for: '+pending.slice(0,3).join(', ')+(pending.length>3?'\u2026':'');
         }else{
-          st.textContent='\u26A0 Ready but not starting \u2014 tap anywhere';
+          st.textContent='\u26A0 Ready but not starting \u2014 retrying automatically';
         }
         st.style.opacity='1';
       }
-      var sb=document.getElementById('load-start');
-      if(sb){
-        sb.style.display='block';
-        if(pending.length){
-          /* Same escape semantics as the Oct-11 design: skip stuck
-             OPTIONAL steps; critical steps go to the loud panel. */
-          sb.textContent='SKIP AND START';
-          sb.onclick=function(){
-            try{
-              window.__forceCompletePendingSteps();
-              var blocked=__criticalBlockedList();
-              if(blocked.length){
-                for(var bi=0;bi<blocked.length;bi++){
-                  if(window.__criticalFailed.indexOf(blocked[bi])===-1) window.__criticalFailed.push(blocked[bi]);
-                }
-                if(typeof __showCriticalWarning==='function') __showCriticalWarning();
-                var st0=document.getElementById('load-status');
-                if(st0){ st0.textContent='\u26A0 Critical systems still missing \u2014 see warning above'; st0.style.opacity='1'; }
-              }
-              else if(typeof __tryStartGame==='function') __tryStartGame();
-            }catch(e){}
-          };
-        }else{
-          sb.textContent='TAP TO START';
-        }
+      /* AUTOMATIC ESCAPE (2026-11-07): the Oct-11 design put this
+         behind a "SKIP AND START" tap on #load-start. That button is
+         gone — no click-to-start anywhere — so the watchdog runs the
+         escape ITSELF: skip stuck OPTIONAL steps; critical steps go
+         to the loud panel; otherwise start with what loaded. A
+         failsafe completion never stamps __loadCompletedAt, so the
+         ten-second entry settle does not hold this start. */
+      if(pending.length){
+        try{
+          window.__forceCompletePendingSteps();
+          var blocked=__criticalBlockedList();
+          if(blocked.length){
+            for(var bi=0;bi<blocked.length;bi++){
+              if(window.__criticalFailed.indexOf(blocked[bi])===-1) window.__criticalFailed.push(blocked[bi]);
+            }
+            if(typeof __showCriticalWarning==='function') __showCriticalWarning();
+            if(st){ st.textContent='\u26A0 Critical systems still missing \u2014 see warning above'; st.style.opacity='1'; }
+          }
+          else if(typeof __tryStartGame==='function') __tryStartGame();
+        }catch(e){}
+      }else{
+        try{ if(typeof __tryStartGame==='function') __tryStartGame(); }catch(e){}
       }
     }
     if (idle >= 180 && window.__stallTier === 1){
@@ -1884,24 +1930,15 @@ setInterval(function(){
    as done even when their bytes never arrived — that is exactly the "fake"
    behavior Joshua flagged. If a step genuinely fails, its onerror fires
    __loadStep(key,true) and the status line shows the warning. */
-/* v1.13.4 CLICK-ANYWHERE-TO-START fix (Joshua: click was not starting the game).
-   Capture-phase start-intent handler, attached HERE in block 1 so clicks count
-   even while block 2 (~5500 lines) is still initializing. If __tryStartGame is
-   already defined it is invoked at once; otherwise __startRequested is picked
-   up at the end of block 2 and the game starts immediately instead of making
-   the user wait out the 3s auto-start. Capture phase runs before any
-   stopPropagation() on inner elements. Idempotent and passive-safe. */
-window.__startRequested=false;
+/* CLICK-TO-START REMOVED (2026-11-07, Joshua): the v1.13.4
+   capture-phase start-intent handler (__earlyStartRequest +
+   window.__startRequested + three document listeners) is gone.
+   Clicks and taps no longer start the game — nothing does, by hand:
+   the boot is fully automatic (queue end → ten-second settle →
+   entry; the failsafes cover the failure paths). Clicking during
+   the boot is simply ignored, which is safe because audio unlock
+   rides the game's own first-gesture handling once it is running. */
 window.__gameStarted=false;
-function __earlyStartRequest(){
-  window.__startRequested=true;
-  if(typeof __tryStartGame==='function'){ try{ __tryStartGame(); }catch(e){} }
-}
-try{
-  document.addEventListener('mousedown',__earlyStartRequest,{capture:true,passive:true});
-  document.addEventListener('touchend',__earlyStartRequest,{capture:true,passive:true});
-  document.addEventListener('click',__earlyStartRequest,{capture:true});
-}catch(e){}
 /* ===== RESUME BOOT — NO START GATE (Joshua 2026-11-07, supersedes
    the 2026-10-18/19 resume start gate) =====
    Joshua's ruling after his 2026-11-07 resume test: an ACTIVE game
@@ -1931,20 +1968,24 @@ try{
        and again at restore time, minutes later). */
 window.__resumeBoot = false;
 window.__resumeStashT = 0;
-/* ===== LAUNCH OPTIONS STATE (v1.22 origin; screen REMOVED 2026-11-07) =====
+/* ===== LAUNCH OPTIONS STATE (v1.22 origin; screen REMOVED 2026-11-07;
+   CONTENT SELECTION REMOVED later the same day) =====
    window.__launchOpts remains the single options record every system
-   reads (`window.__launchOpts.<key>!==false`), but there is no longer
-   a screen that edits it: Joshua's launch redesign removed the
-   pre-game options screen entirely. What writes it now:
-     - the defaults below (content systems: the platform default set);
-     - saved prefs in localStorage['sa_launch_opts_v1'] (loaded by
-       __loadLaunchOpts below — a player's past choices for the
-       CONTENT systems: NPCs, MARTA, drones, traffic);
-     - the automatic spec gathering (LAUNCH REDESIGN section, below)
-       owns the GRAPHICS flags — antialias, shadows, hiDetail,
-       drawDist — measured fresh every boot; __loadLaunchOpts may
-       still load a saved value for one of them, but the measurement
-       overwrites all four before any consumer can read them.
+   reads (`window.__launchOpts.<key>!==false`), but there is nothing
+   left that edits it. Joshua removed the pre-game options screen in
+   the launch redesign, and then removed CONTENT SELECTION itself:
+   the content toggles were a beta-testing tool for freeing up
+   resources on weak devices, and the funnel (ui .8) is now the only
+   streaming governor — so ALL CONTENT ALWAYS LOADS, for everyone.
+   The content keys below are literal true, __loadLaunchOpts refuses
+   to load a saved value for them, and no code path may turn a
+   content system off from a preference again. What still varies:
+     - the GRAPHICS flags — antialias, shadows, hiDetail, drawDist —
+       owned by the automatic spec gathering (LAUNCH REDESIGN
+       section, below), measured fresh every boot. Quality is not
+       content; __loadLaunchOpts may still load a saved value for
+       one of them, but the measurement overwrites all four before
+       any consumer can read them.
    v1.26 ordering law (unchanged): this init lives in block 1, BEFORE
    the boot code that reads it — when it lived in block 2 the reads
    hit undefined and died silently. Init must precede the boot.
@@ -1956,14 +1997,17 @@ window.__resumeStashT = 0;
   // Detect APK WebView vs plain web browser (same pattern as report badge v1.21)
   var isAPK=false;
   try{isAPK=/SurvivingAdamsville|wv/i.test(navigator.userAgent||'');}catch(e){}
-  var dflt=isAPK;  // web: false (everything off), APK: true (everything on)
+  var dflt=isAPK;  // GRAPHICS platform default only (the measurement overwrites it in step (1) of the automatic boot)
   window.__launchOpts={
-    npcs:dflt,
-    martaBuses:dflt,martaTrains:dflt,drones:dflt,traffic:dflt,
+    /* CONTENT — always ON (Joshua 2026-11-07). Literal true, on web
+       and APK alike; the old platform split (web default OFF) is
+       exactly what this ruling retired. */
+    npcs:true,
+    martaBuses:true,martaTrains:true,drones:true,traffic:true,
     shadows:dflt,antialias:dflt,hiDetail:dflt,
     drawDist:'medium'  // v1.25: draw distance preset ('short'|'medium'|'long') — a string, not a boolean; the auto spec gathering sets the live value every boot
   };
-  window.__isAPKLaunch=isAPK;  // informational: which default set was applied
+  window.__isAPKLaunch=isAPK;  // informational: which platform this boot is on
 })();
 /* v1.52 #28 START-ANYWAY EMPTY CITY (Maya Patel, UI/UX — Joshua approved fix).
    CRITICAL vs OPTIONAL launch systems. Critical = the population systems that
@@ -1991,7 +2035,7 @@ window.__criticalLoadKeys={
   vehmeshes:'Vehicle models', world:'Game world', music:'Game world',
   npc:'NPC system', refnpc:'Photo NPCs', traffic:'Traffic system'};
 window.__criticalFailed=[];   // load keys of critical steps that reported failure
-window.__criticalAcked=false; // player saw the failure warning and chose to continue anyway
+window.__criticalAcked=false; // legacy flag: the CONTINUE ANYWAY control that was its only setter was removed 2026-11-07 (no start-anyway path exists); nothing sets this now, and the start gate's check stays as a guard so an old saved state can never matter
 window.__launcherConfirmed = false;  // set true by the AUTOMATIC boot confirm (launch redesign 2026-11-07)
 /* v1.28 NO-DOWNLOAD-BEFORE-CONFIRM (Joshua 2026-10-10; mechanism kept,
    trigger changed 2026-11-07): downloads wait for the boot confirm so
@@ -2437,7 +2481,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
    stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.11.07.17';
+window.__DOC_UIVER = '2026.11.07.18';
 function __checkDocVersionHeal(){
   var live = window.__UIVER || '';
   if (!live || live === window.__DOC_UIVER){
@@ -2935,11 +2979,19 @@ window.__whenConfirmed(function(){
   setTimeout(__loadDeferredQueue, 100);
 });
 (function __loadLaunchOpts(){
+  /* CONTENT SELECTION REMOVED (2026-11-07, Joshua): saved prefs may
+     still carry the GRAPHICS values (the measurement overwrites them
+     a moment later anyway), but the CONTENT keys are never loaded —
+     a saved npcs:false from the beta-testing era must not turn NPCs
+     off ever again. Content resolves to ON regardless of what is
+     saved; the funnel governs streaming, preferences govern nothing. */
+  var CONTENT_KEYS = { npcs:1, martaBuses:1, martaTrains:1, drones:1, traffic:1 };
   try {
     var saved = null;
     try { saved = JSON.parse(localStorage.getItem('sa_launch_opts_v1') || 'null'); } catch(e){}
     if (saved && typeof saved === 'object') {
       for (var k in window.__launchOpts) {
+        if (CONTENT_KEYS[k]) continue;
         if (typeof saved[k] === 'boolean') window.__launchOpts[k] = saved[k];
         // v1.25: drawDist is a string preset, not a boolean
         else if (k === 'drawDist' && typeof saved[k] === 'string' &&
@@ -2948,11 +3000,13 @@ window.__whenConfirmed(function(){
         }
       }
     }
-    // Backward compat: ?nonpc=1 URL param (v1.21 kill switch) maps to npcs:false
-    try {
-      var q = new URLSearchParams(window.location.search);
-      if (q.get('nonpc') === '1') window.__launchOpts.npcs = false;
-    } catch(e){}
+    /* Belt and braces: whatever any older code path may have written
+       into the record before this loader ran, content is ON. */
+    for (var ck in CONTENT_KEYS) window.__launchOpts[ck] = true;
+    /* The v1.21 ?nonpc=1 URL kill switch is RETIRED (2026-11-07):
+       it existed to shed NPC load while testing; with content
+       selection gone it would be a back door around this ruling, so
+       the parameter is deliberately ignored now. */
   } catch(e){}
 })();
 window.__saveLaunchOpts = function(){
@@ -2976,13 +3030,14 @@ window.__saveLaunchOpts = function(){
          __launchOpts BEFORE the confirm releases any download,
          because block 2 reads antialias/drawDist exactly once, at
          renderer/scene creation.
-     (2) FRESH-DEVICE CONTENT DEFAULTS: a device with NO saved prefs
-         gets the old "Start Anyway" rule — platform defaults with
-         the CRITICAL population systems (NPCs + traffic) forced ON,
-         so a first-ever boot is never the empty ghost town v1.52 #28
-         guards against. A device WITH saved prefs keeps them exactly
-         (they are the player's own past choices for the content
-         systems); the graphics flags are the measurement's either way.
+     (2) CONTENT: ALWAYS ON (2026-11-07 — this step used to apply
+         fresh-device defaults; there is nothing left to apply).
+         Content selection was removed the same day: the content
+         flags are literal true in the defaults, __loadLaunchOpts
+         never loads a saved value for them, and no fresh-device
+         forcing is needed because there is no state in which
+         content is off. The graphics flags are the measurement's,
+         exactly as before — quality is not content.
      (3) RESUME DETECTION: the v1.33/.7 rule, unchanged — a fresh
          resume stash marks this boot as the same session continuing
          (__resumeBoot + __resumeStashT, the acceptance stamp
@@ -3013,9 +3068,13 @@ window.__saveLaunchOpts = function(){
    own key, in step 4). */
 /* NOW LOADING handoff: called by the first __loadStep, by the
    queue-start backstop timer, and safe to call any number of times.
-   When it fires, downloads are genuinely under way and the progress
-   bar becomes the face of the boot. If it never fires (a boot so fast
-   the game starts first), NOW LOADING dies with the loader itself. */
+   The sequence is Joshua's (2026-11-07): NOW LOADING is the ONLY
+   thing on screen while it shows (the loader's prebar class hides
+   the title, icon and progress face); when this fires, NOW LOADING
+   fades out — and as it leaves, the prebar class comes off (~400 ms
+   into the fade) so the progress face POPS UP as its own beat and
+   covers the download phase. If it never fires (a boot so fast the
+   game starts first), NOW LOADING dies with the loader itself. */
 window.__nowLoadingDone = function(){
   try{
     if (window.__nowLoadingDoneAt) return;
@@ -3025,6 +3084,9 @@ window.__nowLoadingDone = function(){
       el.classList.add('done');
       setTimeout(function(){ try{ el.style.display = 'none'; }catch(e){} }, 500);
     }
+    setTimeout(function(){
+      try{ var L = document.getElementById('loader'); if (L) L.classList.remove('prebar'); }catch(e){}
+    }, 400);
   }catch(e){}
 };
 /* The tier table: perf_budget.js levels 0..3 (FULL/HIGH/MEDIUM/LOW)
@@ -3247,30 +3309,13 @@ function __autoBenchmark(settle){
     window.__autoQuality.source = persisted >= 0 ? 'persisted' : 'probe';
     __autoApplyTier(startTier);
   }catch(e){}
-  /* (2) FRESH-DEVICE CONTENT DEFAULTS (the old Start Anyway rule):
-     no saved prefs on this device → platform defaults + the critical
-     population systems ON. With saved prefs, this block does nothing:
-     the player's own content choices stand. */
-  try{
-    var hasSaved = false;
-    try{ hasSaved = !!localStorage.getItem('sa_launch_opts_v1'); }catch(e){}
-    if (!hasSaved && window.__launchOpts){
-      var isAPKBoot = false;
-      try{ isAPKBoot = /SurvivingAdamsville|wv/i.test(navigator.userAgent || ''); }catch(e){}
-      var o = window.__launchOpts;
-      /* CONTENT keys only. The graphics booleans (shadows, antialias,
-         hiDetail) are the measurement's — step (1) set them from the
-         tier a moment ago, and resetting them here would stomp a
-         strong device's measured FULL back to the platform default
-         (the exact bug this list exists to prevent). */
-      var contentKeys = ['npcs', 'martaBuses', 'martaTrains', 'drones', 'traffic'];
-      for (var ck = 0; ck < contentKeys.length; ck++){ o[contentKeys[ck]] = isAPKBoot; }
-      var crit = window.__criticalSystems || ['npcs', 'traffic'];
-      for (var ci = 0; ci < crit.length; ci++){
-        if (typeof o[crit[ci]] === 'boolean') o[crit[ci]] = true;
-      }
-    }
-  }catch(e){}
+  /* (2) CONTENT — REMOVED (2026-11-07): this step used to apply the
+     fresh-device content defaults (platform defaults + critical
+     systems forced ON). Content selection no longer exists: the
+     content flags are literal true in __setLaunchDefaults and
+     __loadLaunchOpts never loads a saved value for them, so there
+     is nothing for a step here to decide — every boot, fresh device
+     or not, loads all content. The funnel governs streaming. */
   /* (3) RESUME DETECTION — the rule and numbers are the old
      launcher's, verbatim (they MUST match ui_update_flow.js's
      STALE_MS / AUTO_STALE_MS): flow/trip stashes are trusted for
@@ -3309,18 +3354,11 @@ function __autoBenchmark(settle){
       }catch(e){}
     });
   }catch(e){}
-  /* (5) CONFIRM — unconditional. The NPC kill switch mirrors the old
-     confirm's (guarded: __setNpcPaused is block-2 code and does not
-     exist yet at this point in any boot, old or new — the real
-     enforcement is the option-skip in the deferred queue plus the
-     per-frame flag checks, exactly as before). Nothing here waits
-     for a person; that is the redesign. */
-  try{
-    if (window.__launchOpts && window.__launchOpts.npcs === false &&
-        typeof window.__setNpcPaused === 'function') {
-      window.__setNpcPaused(true);
-    }
-  }catch(e){}
+  /* (5) CONFIRM — unconditional. (The NPC kill switch that used to
+     mirror the old confirm here is gone with content selection
+     itself, 2026-11-07: npcs can no longer be false, so there is
+     nothing to pause.) Nothing here waits for a person; that is
+     the redesign. */
   window.__launcherConfirmed = true;
   /* Options confirmed — release any deferred network fetches. */
   try{ if (typeof window.__flushConfirmQueue === 'function') window.__flushConfirmQueue(); }catch(e){}
@@ -3446,12 +3484,13 @@ try{
                         MINIMAP + full map, GAME LOOP, street-name HUD,
                         inventory, dispatch-log hooks
        End of block: elevation self-test probe, __loadStep('world'/'music'),
-                        __tryStartGame() / __autoStart() (auto-start loader,
-                        no-skip), start-button + document-level click wiring
+                        __tryStartGame() (automatic start only — the old
+                        __autoStart timer, start button and document-level
+                        click wiring were removed 2026-11-07)
      Function-level docs live on: MAPVER.checkPending/applyOnNewGame,
      ASSETVER.checkPending/updateGearBadge/refreshAdmTags/confirmRedownload/
      forceRedownload/autoApplyBootUpdates, removeCollider, resolveCollision,
-     __tryStartGame, __autoStart. -->
+     __tryStartGame. -->
 <script type="text/x-deferred">
 /* ============================================================================
    BOOT / VERSION / REPORT BRIDGE (deferred block).
@@ -4920,28 +4959,14 @@ function clampVehY(x, z, y){
    gracefully. Antialiasing is the #1 killer on CPU-only rendering. */
 window.__weakHardware = false;
 window.__perfMode = 'full';
-/* v1.21 NPC KILL SWITCH (Joshua 2026-10-10): Diagnostic flag to completely
-   pause all NPCs (AI, rendering, physics, crews). Toggle via ?nonpc=1 URL
-   param or Shift+N keyboard shortcut. When true, updateNPCs() is skipped,
-   NPC meshes are hidden, and crew system ticks are gated. Player, vehicles,
-   and world continue normally. For diagnosing movement issues on APK. */
+/* v1.21 NPC KILL SWITCH — RETIRED 2026-11-07 (Joshua's content
+   ruling): the ?nonpc=1 URL param and the Shift+N toggle that could
+   pause/hide all NPCs are gone, and __setNpcPaused with them.
+   Content selection no longer exists anywhere — all content always
+   loads and runs. The flag itself stays as a permanent false
+   constant because the NPC systems' per-frame gates still read it;
+   with no setter left in the game, those gates always pass. */
 window.__npcPaused = false;
-try {
-  var _npcQ = new URLSearchParams(window.location.search);
-  if (_npcQ.get('nonpc') === '1') window.__npcPaused = true;
-} catch(e){}
-window.__setNpcPaused = function(paused){
-  window.__npcPaused = !!paused;
-  try {
-    // Hide/show the 1000-NPC InstancedMeshes immediately
-    if (window.__npcMeshes) {
-      for (var i = 0; i < window.__npcMeshes.length; i++) {
-        window.__npcMeshes[i].visible = !window.__npcPaused;
-      }
-    }
-  } catch(e){}
-  try { if (typeof showToast === 'function') showToast(window.__npcPaused ? 'NPCs PAUSED' : 'NPCs RESUMED', 2000); } catch(e){}
-};
 
 (function detectWeakHardware(){
   try {
@@ -13838,6 +13863,14 @@ var XFADE_MS = 2500;   /* crossfade duration: 2.5 seconds */
    a cheap state check. */
 (function unlockAudio(){
   function doUnlock(){
+    /* PAUSE SILENCE (2026-11-07): while the game is paused, gestures
+       and tab returns must NOT resurrect audio — pause_system owns
+       window.__audioPaused, and its resume path is the only way
+       back. (Before this gate, any tap on the pause overlay or in
+       Settings resumed the context AND restarted the music element
+       behind the frozen world.) The speaker icon still refreshes,
+       so a mute toggle made while paused shows correctly. */
+    if (window.__audioPaused){ try{ updateSpeakerBtn(); }catch(e){} return; }
     try{
       /* Resume the shared AudioContext if it exists and is parked. */
       if(window.__audioCtx && window.__audioCtx.state==='suspended'){
@@ -13899,8 +13932,13 @@ try{ musicMuted=localStorage.getItem('sa_music_muted')==='1'; }catch(e){}
 var soundMuted=false;
 try{ soundMuted=localStorage.getItem('sa_sound_muted')==='1'; }catch(e){}
 /* musicAudible() — the single gate every music play() call uses:
-   music sounds only when BOTH its own toggle and the master are on. */
-function musicAudible(){ return !musicMuted && !soundMuted; }
+   music sounds only when BOTH its own toggle and the master are on.
+   PAUSE LAYER (2026-11-07): the pause system's silence flag is a
+   third term — while paused, no music play() call from any path
+   (unlock, radio advance, crossfade) can sound. The flag is a
+   state layer, not a setting: unpausing restores exactly the
+   toggle/master verdict the player had before. */
+function musicAudible(){ return !musicMuted && !soundMuted && !window.__audioPaused; }
 try{ radioIdx=parseInt(localStorage.getItem('sa_radio_idx')||'0',10)||0; }catch(e){}
 if(radioIdx<0||radioIdx>=RADIO_TRACKS.length) radioIdx=0;
 /* ============================================================================
@@ -14063,6 +14101,12 @@ musicAudio.addEventListener('error', function(){
 */
 function musicStartOnce(){
   if(musicStarted) return;
+  /* PAUSE SILENCE (2026-11-07): never START music while paused —
+     this function's once-only gesture listeners can fire on the
+     very Escape/tap that engages the pause. The attempt is not
+     burned: musicStarted stays unset and the unlock path retries
+     on the first gesture after unpause. */
+  if(window.__audioPaused) return;
   /* The mode switch runs BEFORE the flag is set (SOUND PASS
      FOLLOW-UP, 2026-11-07): musicToWalk()/musicToRadio() guard on
      (mode already current && musicStarted) to skip restart churn —
@@ -17058,7 +17102,9 @@ function simTick(dt){
   /* v1.20 PERFORMANCE: Throttle NPC AI on weak hardware to 10Hz.
      1000 NPCs at 60Hz crushes weak CPUs. Visual positions still update
      smoothly via the render slots; only the AI decisions are throttled.
-     v1.21 NPC KILL SWITCH: skip entirely when __npcPaused (diagnostic). */
+     __npcPaused is the retired v1.21 kill-switch flag — permanently
+     false since 2026-11-07 (no setter exists), so this gate always
+     passes; content always runs. */
   try{
     /* v1.22 LAUNCHER: skip when NPCs are disabled in launch options. */
     if(typeof updateNPCs!=='undefined' && !window.__npcPaused &&
@@ -17074,7 +17120,7 @@ function simTick(dt){
   /* v1.20 PERFORMANCE: The O(n²) vehicle collision resolver is expensive.
      On weak hardware, run it at 15Hz instead of every frame. */
   try{
-    if(window.__npcPaused){ /* v1.21 NPC KILL SWITCH: skip when paused */ }
+    if(window.__npcPaused){ /* retired kill-switch flag (permanently false since 2026-11-07) — never taken */ }
     else if(window.__weakHardware){
       window.__collTick=(window.__collTick||0)+1;
       if(window.__collTick%4===0) resolveNPCVehicleCollisions();
@@ -17364,10 +17410,8 @@ window.addEventListener('keydown', function(e){
     else if (k==='d'){ drive.right=true; e.preventDefault(); }
     else if (k===' '){ drive.hb=true; e.preventDefault(); }
   }
-  /* v1.21 NPC KILL SWITCH: Shift+N toggles all NPCs paused/resumed (diagnostic). */
-  else if (k==='n' && e.shiftKey){
-    try{ window.__setNpcPaused(!window.__npcPaused); }catch(x){}
-  }
+  /* The v1.21 Shift+N NPC kill-switch binding stood here until
+     2026-11-07 — removed with the rest of content selection. */
 });
 window.addEventListener('keyup', function(e){
   var k=e.key.toLowerCase(); keys[k]=false;
@@ -17589,17 +17633,17 @@ try{
 /* v1.11: loading screen — the game only starts on tap (also unlocks mobile audio) */
 __loadStep('world');
 __loadStep('music');
-/* v1.13.1: old loader click handler removed — document-level __tryStartGame handles all clicks/taps */
-/* v1.13: CLICK ANYWHERE TO START — entire page is clickable once assets are ready.
-   Handles clicks on body/document for maximum compatibility (mouse, touch, trackpad). */
 /* __tryStartGame() - dismisses the loader and STARTS the game (first call to
-   animate()). Joshua's NO-SKIP rule: this is NOT gated on any manual
-   "press start" - it is invoked by __autoStart() ~3s after assets are ready,
-   by clicking/tapping ANYWHERE on the page, by the #load-start button, and
-   on touchend. It is idempotent (returns false once the loader is gone), so
-   all of those triggers can race safely. Also unlocks mobile audio on the
-   first user gesture (musicStartOnce()). On failure it renders the error
-   on-screen instead of dying to a silent black screen. */
+   animate()). It is invoked ONLY by automatic triggers: the queue-end
+   attempt when the deferred downloads finish, the ten-second entry
+   settle's timer (__beginEntryDelay), the buildings gate's resolution,
+   the block-1 failsafes, and the refused-start re-invoke. There is NO
+   click/tap trigger anywhere (2026-11-07: click-to-start removed
+   entirely — the v1.13 document handlers and the #load-start button
+   are gone). It is idempotent (returns false once the loader is
+   gone), so the automatic triggers can race safely. On failure it
+   renders the error on-screen and retries itself on a timer instead
+   of dying to a silent black screen. */
 function __tryStartGame(){
   try{
     /* LAUNCH REDESIGN (2026-11-07): there is NO confirmation gate here
@@ -17631,8 +17675,10 @@ function __tryStartGame(){
     }
     /* v1.52 #28 CRITICAL-FAILURE GATE (Maya Patel): if a population system
        failed to download (npc/refnpc/traffic step), do NOT silently start an
-       empty city. Show the failure with RETRY / CONTINUE ANYWAY choices.
-       The player decides — the game never pretends a broken city is fine. */
+       empty city. Show the failure panel — its only control is RETRY
+       (a reload for a fresh download; the CONTINUE ANYWAY start-anyway
+       choice was removed 2026-11-07). The game never pretends a broken
+       city is fine, and no path starts it in that state by hand. */
     if(window.__criticalFailed && window.__criticalFailed.length && !window.__criticalAcked){
       try{ if(typeof __showCriticalWarning==='function') __showCriticalWarning(); }catch(e){}
       /* 2026-11-07: say the refusal on the STATUS LINE too, at the moment
@@ -17643,11 +17689,30 @@ function __tryStartGame(){
       if(_cfSt){ _cfSt.textContent='⚠ Loading finished with failures — see the warning below'; _cfSt.style.opacity='1'; }
       return false;
     }
+    /* TEN-SECOND ENTRY SETTLE GATE (2026-11-07, Joshua): a genuine
+       load completion starts a 10 s wall-clock settle before entry
+       (__beginEntryDelay, block 1). Attempts inside the window say
+       "Ready" and arm ONE retry timer for the moment it ends, so
+       entry lands on time without polling. Boots the failsafes
+       force-completed never stamped __loadCompletedAt and pass
+       straight through — they have already waited long enough. */
+    if (window.__loadCompletedAt && Date.now() < window.__entryReadyAt){
+      var _edSt=document.getElementById('load-status');
+      if(_edSt){ _edSt.textContent='Ready'; _edSt.style.opacity='1'; }
+      if (!window.__entryRetryArmed){
+        window.__entryRetryArmed = true;
+        var _waitMs = Math.max(50, window.__entryReadyAt - Date.now());
+        setTimeout(function(){
+          window.__entryRetryArmed = false;
+          try{ __tryStartGame(); }catch(e){}
+        }, _waitMs);
+      }
+      return false;
+    }
     /* LAPTOP-HANG FIX (2026-10-25): building placement is sliced on slow
        machines and may still be running when every load step completes.
        The game must not start over a not-yet-placed city: say so and
-       wait — the gate's resolution retries the start (and the player's
-       own tap retries it too). */
+       wait — the gate's resolution retries the start. */
     if (window.__bldgGatePromise && !window.__bldgGateDone){
       var _bgSt=document.getElementById('load-status');
       if(_bgSt){ _bgSt.textContent='Placing buildings \u2014 almost there'; _bgSt.style.opacity='1'; }
@@ -17694,12 +17759,20 @@ function __tryStartGame(){
     }catch(e){
       console.error('animate failed:', e);
       window.__gameStarted=false; /* allow a retry */
-      /* v1.15: show the loader again with the error instead of a dead page */
+      /* v1.15: show the loader again with the error instead of a dead page.
+         2026-11-07: the retry is AUTOMATIC now (the TAP TO RETRY button
+         died with #load-start) — one 3 s retry timer, re-armed per
+         failure, and the status line says so honestly. */
       l.style.display='flex';
       var st2=document.getElementById('load-status');
-      if(st2){ st2.textContent='⚠ Start failed: '+String(e&&e.message||e)+' — tap to retry'; st2.style.opacity='1'; }
-      var s2=document.getElementById('load-start');
-      if(s2){ s2.style.display='block'; s2.textContent='TAP TO RETRY'; }
+      if(st2){ st2.textContent='⚠ Start failed: '+String(e&&e.message||e)+' — retrying automatically'; st2.style.opacity='1'; }
+      if(!window.__startFailRetryArmed){
+        window.__startFailRetryArmed=true;
+        setTimeout(function(){
+          window.__startFailRetryArmed=false;
+          try{ __tryStartGame(); }catch(e){}
+        }, 3000);
+      }
     }
     return true;
   }catch(e){
@@ -17715,36 +17788,18 @@ function __tryStartGame(){
    evaluation they did not exist yet, and no timer could interrupt the
    running task anyway. The block-1 versions are progress-based and are
    verified by triggering them, not just by reading them. */
-/* LAUNCH REDESIGN (2026-11-07): the v1.33 law this comment once
-   recorded — the launcher waits for an explicit START GAME / Start
-   Anyway choice, no timers, no auto-proceed — is superseded. There
-   is no launcher and no choice: the automatic boot confirms in
-   block 1, the downloads run, and __autoStart's attempt below is a
-   backup to the queue-end start, racing the same gates (pending
-   steps, critical failures, buildings) — never a person's tap. */
-/* __autoStart() - Joshua's NO-SKIP rule: the game starts ITSELF ~3s after the
-   loader reports Ready - no manual "press start" step, no update-download
-   gate. The document-level click handler, the #load-start button, and the
-   touchend handler below remain as backup triggers (__tryStartGame is
-   idempotent). */
-function __autoStart(){
-  try{ __tryStartGame(); }catch(e){}
-}
-setTimeout(__autoStart, 3000);
-/* v1.13.4: the user already clicked during load (block-1 capture handler set
-   __startRequested) — start RIGHT NOW instead of making them wait 3s.
-   __tryStartGame is idempotent, so the 3s auto-start above stays as backup. */
-if(window.__startRequested){ try{ __tryStartGame(); }catch(e){} }
-document.addEventListener('click', function(e){ __tryStartGame(); });
-/* v1.13.3: wire the START button itself directly (not just document-level). */
-(function(){
-  var b=document.getElementById('load-start');
-  if(b){
-    b.addEventListener('click', function(e){ e.stopPropagation(); __tryStartGame(); });
-    b.addEventListener('touchend', function(e){ e.stopPropagation(); e.preventDefault(); __tryStartGame(); });
-  }
-})();
-document.addEventListener('touchend', function(e){ __tryStartGame(); });
+/* LAUNCH SEQUENCE (2026-11-07, Joshua): everything that used to
+   stand here is REMOVED — __autoStart (the ~3 s timer), the
+   __startRequested fast-path, the document click handler, the
+   #load-start button wiring, and the document touchend handler.
+   There is no launcher, no choice, and no click-to-start anywhere:
+   the automatic boot confirms in block 1, the downloads run, the
+   queue-end attempt fires __tryStartGame, the ten-second entry
+   settle (__beginEntryDelay) holds it, and entry is automatic when
+   the settle ends. The remaining start triggers are all automatic
+   too: the buildings gate's resolution, the block-1 failsafes, and
+   the refused-start re-invoke — each racing the same gates (pending
+   steps, critical failures, the settle, buildings). */
 </script>
 <!-- ===== LATE SYSTEMS (loaded AFTER script block 2, so they see the full
      world) ===== NPCs, face platform, reference NPCs, gas stations, traffic,
