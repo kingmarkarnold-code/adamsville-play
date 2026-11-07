@@ -736,6 +736,16 @@ window.CrashLog = (function(){
       var repeats = seen ? seen.n : 0;
       bumpSeen[sig] = { t: now, n: 0 };
 
+      /* BODY SYSTEMS (Joshua 2026-11-07): an accepted tree/boulder bump
+         hurts the BODY — one point on the player's own damage meter,
+         walking only (driving impacts feed the CAR's damage, not the
+         body). body_systems.js owns the meter; absent module = no-op. */
+      try{
+        if ((id.kind === 'tree' || id.kind === 'boulder') &&
+            window.__BODY && window.__BODY.addBump)
+          window.__BODY.addBump(id.kind, mode);
+      }catch(e){}
+
       /* 2026-11-07 (Joshua): when the object names itself, the
          toast is the object's own sentence — "You hit a tree.
          You must go around." — not "You bumped into ...". The
