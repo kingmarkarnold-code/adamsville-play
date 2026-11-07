@@ -147,9 +147,9 @@
     },
     {
       "name": "index.html",
-      "size": 1229967,
-      "sha256": "a172acdb80402ea2cb7a10b14d49fef0e61ed1113a0fed32f5e795b3e6205de3",
-      "hash": "a172acdb80402ea2cb7a10b14d49fef0e61ed1113a0fed32f5e795b3e6205de3"
+      "size": 1228471,
+      "sha256": "ce77e44e1b0a68490e26216e79a822947bf840b6855d1ba64a7b94125cbf7e31",
+      "hash": "ce77e44e1b0a68490e26216e79a822947bf840b6855d1ba64a7b94125cbf7e31"
     },
     {
       "name": "input_diag.js",
@@ -171,9 +171,9 @@
     },
     {
       "name": "map_loader.js",
-      "size": 68245,
-      "sha256": "132e20d216eef978ccfc0a45050c8692e5021940a5782ce12079c838796ccff0",
-      "hash": "132e20d216eef978ccfc0a45050c8692e5021940a5782ce12079c838796ccff0"
+      "size": 72443,
+      "sha256": "e1b0558ff5e078188d9fcfda5a4f8d754f2bb51b90d6ba50936b37b9208176e8",
+      "hash": "e1b0558ff5e078188d9fcfda5a4f8d754f2bb51b90d6ba50936b37b9208176e8"
     },
     {
       "name": "map_registry.js",
@@ -412,8 +412,8 @@
     },
     {
       "name": "ui_update_flow.js",
-      "size": 38981,
-      "sha256": "49156fd9be463e53091b399d98d91ce1fd09e798895e085d392f54fb900116f3"
+      "size": 40911,
+      "sha256": "3a60f67ed72020ea8d0cf2ad03492d82a4f8a5255a174a7eaafc504205c03961"
     },
     {
       "name": "vehicle_avoid.js",
@@ -666,6 +666,6 @@
       "hash": "20b983ae0e2e555817495a65c37519bfcb2231825269db6a57d72c51ed6006e3"
     }
   ],
-  "ui_version": "2026.11.07.6",
+  "ui_version": "2026.11.07.7",
   "version": "2026.10.17.9"
 }

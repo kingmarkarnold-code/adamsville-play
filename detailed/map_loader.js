@@ -226,17 +226,109 @@ var _uidSeq = 1;
    gate-verified package bytes. Do not "fix" a shell load failure by
    changing the urls here; the transport lives in index.html +
    MainActivity, and this file stays transport-agnostic. */
+/* FETCH TIMEOUTS (2026-11-07, fresh-boot audit): these helpers used to
+   be bare fetch() — the ONLY loaders in the game with no cap at all.
+   A stalled-but-open connection (TCP up, no bytes: weak link, wedged
+   CDN edge) left the promise pending FOREVER: bootWorld() never
+   settled, the seam's callback never fired, and a fresh boot (an
+   incognito window above all — every byte must cross the network,
+   nothing is cached) sat on a frozen bar until the 180 s failsafe,
+   which cannot force-complete these critical steps. Now the fetch
+   follows the codebase's own discipline (mapdelivery's download
+   watchdog; index.html's __fetchTextWithProgress): an INACTIVITY
+   watchdog of 20 s — a download dies only after 20 s with NO bytes
+   arriving, so a slow-but-alive download always finishes — plus ONE
+   retry on a fresh connection. A failure after the retry rejects,
+   and bootWorld's catch turns it into the honest NO MAP DATA state
+   instead of an eternal bar. */
+var FETCH_IDLE_MS=20000;   /* silence longer than this = a dead download */
+var FETCH_TOTAL_MS=600000; /* absolute cap for the non-streaming fallback
+                              path only (index.html's __loadCapMs ceiling) */
+function fetchBytesOnce(url){
+  return new Promise(function(resolve, reject){
+    var settled=false, timer=null, ctl=null;
+    try{ if (typeof AbortController!=='undefined') ctl=new AbortController(); }catch(e){}
+    function fail(err){
+      if (settled) return; settled=true;
+      if (timer){ clearTimeout(timer); timer=null; }
+      reject(err);
+    }
+    function done(buf){
+      if (settled) return; settled=true;
+      if (timer){ clearTimeout(timer); timer=null; }
+      resolve(buf);
+    }
+    function arm(ms){
+      if (timer) clearTimeout(timer);
+      timer=setTimeout(function(){
+        try{ if (ctl) ctl.abort(); }catch(e){}
+        fail(new Error('download stalled - no data for '+Math.round(ms/1000)+'s: '+url));
+      }, ms);
+    }
+    arm(FETCH_IDLE_MS);
+    var opts={ cache:'no-store' };
+    if (ctl) opts.signal=ctl.signal;
+    fetch(url, opts).then(function(r){
+      if (!r.ok){ fail(new Error('HTTP '+r.status+' for '+url)); return; }
+      if (r.body && typeof r.body.getReader==='function'){
+        var reader=r.body.getReader();
+        var chunks=[], total=0;
+        (function step(){
+          reader.read().then(function(res){
+            if (settled) return;
+            if (res.done){
+              var out=new Uint8Array(total), off=0, i;
+              for (i=0;i<chunks.length;i++){ out.set(chunks[i], off); off+=chunks[i].length; }
+              done(out.buffer);
+              return;
+            }
+            if (res.value && res.value.length){
+              chunks.push(res.value); total+=res.value.length;
+              arm(FETCH_IDLE_MS);   /* bytes arrived — the watchdog resets */
+            }
+            step();
+          }, fail);
+        })();
+        return;
+      }
+      /* No streaming reads in this engine: whole-body read under the
+         long absolute cap instead of the idle watchdog (there are no
+         progress events to re-arm it with). */
+      arm(FETCH_TOTAL_MS);
+      if (typeof r.arrayBuffer==='function'){
+        r.arrayBuffer().then(done, fail);
+      } else if (typeof r.text==='function' && typeof TextEncoder!=='undefined'){
+        r.text().then(function(t){ done(new TextEncoder().encode(t).buffer); }, fail);
+      } else {
+        fail(new Error('unreadable response for '+url));
+      }
+    }, fail);
+  });
+}
+/* fetchBytes(url) — one attempt + ONE retry on a fresh connection
+   (the deferred script loader's rule). The second failure propagates:
+   bootWorld's catch owns what happens next. */
+function fetchBytes(url){
+  return fetchBytesOnce(url).catch(function(err){
+    note('fetch failed ('+((err && err.message) || err)+') — retrying once: '+url);
+    return fetchBytesOnce(url);
+  });
+}
 function fetchJSON(url){
-  return fetch(url, { cache: 'no-store' }).then(function(r){
-    if (!r.ok) throw new Error('HTTP ' + r.status + ' for ' + url);
-    return r.json();
+  return fetchBytes(url).then(function(buf){
+    var text;
+    if (typeof TextDecoder!=='undefined') text=new TextDecoder('utf-8').decode(buf);
+    else { /* ancient-engine fallback: a latin-1 read still parses the
+              ASCII structure of the package JSON honestly */
+      var bytes=new Uint8Array(buf), s='';
+      for (var i=0;i<bytes.length;i++) s+=String.fromCharCode(bytes[i]);
+      text=s;
+    }
+    return JSON.parse(text);
   });
 }
 function fetchBin(url){
-  return fetch(url, { cache: 'no-store' }).then(function(r){
-    if (!r.ok) throw new Error('HTTP ' + r.status + ' for ' + url);
-    return r.arrayBuffer();
-  });
+  return fetchBytes(url);
 }
 /* fetchBinParts(base, desc) — chunked big-file fetch. desc =
    { parts: [fileName, ...], bytes: totalBytes, sha256: hex }, as
@@ -1395,8 +1487,10 @@ window.MapLoader = {
   activatePackage: activatePackage,
   bootWorld: bootWorld,
   buildLegacyGlobals: buildLegacyGlobals,
-  /* exposed for the Phase C/D harnesses + debugging */
+  /* exposed for the Phase C/D harnesses + debugging (the fetch helpers
+     joined them 2026-11-07, for the boot-resume harness's timeout tests) */
   _distToSeg: distToSeg, _pointInRing: pointInRing,
-  _ringInteriorPoint: ringInteriorPoint, _minAreaRect: minAreaRect
+  _ringInteriorPoint: ringInteriorPoint, _minAreaRect: minAreaRect,
+  _fetchJSON: fetchJSON, _fetchBin: fetchBin
 };
 })();

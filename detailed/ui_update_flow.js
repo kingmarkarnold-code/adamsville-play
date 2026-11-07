@@ -28,9 +28,11 @@
         every script with the live ui_version, so a reload genuinely
         parses the new files).
      6. On boot, __tryStartGame() calls maybeRestore() right after the
-        hot-reload restore: a FRESH stash (< 10 minutes, same zone) puts
-        the player — and the car — exactly where they left off, clears
-        the stash, and toasts "UI updated — you're where you left off."
+        hot-reload restore: a FRESH stash (same zone; < 10 minutes for
+        a flow stash, < 12 hours for an AUTO spot stash — see AUTO
+        SPOT SAVE below) puts the player — and the car — exactly where
+        they left off, clears the stash, and toasts "UI updated —
+        you're where you left off."
 
    FAILURE PHILOSOPHY (Joshua, 2026-10-17 — logged, plain language,
    never silent, never a half-apply):
@@ -86,15 +88,33 @@
    player's exact spot every ~10 s and again the moment the page is
    hidden or unloading (visibilitychange / pagehide — the
    leave-the-browser moment itself). The boot gate in index.html
-   already treats any fresh stash boot as a resume (options skipped,
-   progress bar, one Start tap — Joshua's Launch Flow Rule), so a
-   browser reload now lands him back where he stood, with a
-   "Welcome back" toast. Auto stashes are marked auto:true and NEVER
-   overwrite a non-auto stash (a pending UI update / Go To / zone
-   trip owns the slot until consumed); a stale or foreign auto stash
-   is discarded silently — the "trip set aside" wording belongs to
-   trips only. The freshness window is the same 10 minutes as every
-   stash; a longer absence still boots fresh by design.
+   treats any fresh stash boot as a resume, so a browser reload lands
+   him back where he stood, with a "Welcome back" toast. Auto stashes
+   are marked auto:true and NEVER overwrite a non-auto stash (a
+   pending UI update / Go To / zone trip owns the slot until
+   consumed); a stale or foreign auto stash is discarded silently —
+   the "trip set aside" wording belongs to trips only.
+
+   FRESHNESS — THE 12-HOUR AUTO WINDOW (2026-11-07, Joshua's ruling,
+   superseding the original 10-minutes-for-everything rule): his
+   resume test that day stepped away from a live game for LONGER than
+   10 minutes (talking to Mollie); the stash was judged stale, his
+   Tatum Lake spot was thrown away, and he restarted at 535. An
+   active game is an active game: AUTO stashes are now trusted for
+   12 HOURS (AUTO_STALE_MS) — any same-day return resumes at the
+   saved coordinates — while flow/trip stashes keep the 10-minute
+   window (STALE_MS), since their reloads follow within seconds. And
+   the window can no longer be lost mid-boot: the launcher stamps the
+   stash it accepted (window.__resumeStashT), and maybeRestore()
+   honours that stamp instead of re-applying the window at restore
+   time — the old code checked the same 10 minutes twice, once at
+   the launcher and again after the downloads, so a slow cold load
+   (or the old tap gate's wait) could age an accepted stash out. The
+   index.html launcher applies the identical rule and numbers; the
+   two MUST stay in step. Joshua's companion ruling the same day: a
+   resume boot shows NO Start button and asks for NO tap — progress
+   bar, downloads, straight in (the launcher + queue + __tryStartGame
+   in index.html carry that half).
 
    STATE KEYS (localStorage):
      sa_ui_update_resume   JSON  the resume stash (consumed on boot);
@@ -118,7 +138,8 @@ var MANIFEST_NAME='ui-manifest.json';
 var LS_BOOT='sa_ui_manifest_boot';      /* hotreload.js's boot stash (read-only here) */
 var LS_STASH='sa_ui_update_resume';     /* this flow's resume stash */
 var LS_APPLIED='sa_ui_update_applied';  /* {ver, t} — the loop guard */
-var STALE_MS=10*60*1000;                /* a stash older than 10 min is not a resume */
+var STALE_MS=10*60*1000;                /* flow/trip stash: older than 10 min is not a resume */
+var AUTO_STALE_MS=12*60*60*1000;        /* AUTO spot stash: trusted 12 h (Joshua 2026-11-07 — see header). MUST match the launcher's window in index.html */
 var DOWNLOAD_IDLE_MS=20000;             /* progress-based watchdog (mapdelivery's rule) */
 
 /* ---------- tiny localStorage helpers (house pattern) ---------- */
@@ -579,8 +600,19 @@ function maybeRestore(){
   if (!raw) return false;
   var s=null;
   try{ s=JSON.parse(raw); }catch(e){}
-  if (!s || s.kind!=='ui-update' || typeof s.t!=='number' || !s.player ||
-      (Date.now()-s.t)>STALE_MS){
+  /* Freshness (2026-11-07): AUTO spot stashes get the 12-hour window,
+     flow/trip stashes 10 minutes (see the header). A stash THIS boot's
+     launcher already accepted (window.__resumeStashT === s.t) is
+     restored on the launcher's judgement alone — the window is never
+     re-applied at restore time, so a slow load cannot age it out. */
+  var _fresh=false;
+  if (s && s.kind==='ui-update' && typeof s.t==='number' && s.player){
+    _fresh=(Date.now()-s.t)<=(s.auto ? AUTO_STALE_MS : STALE_MS);
+    if (!_fresh){
+      try{ if (typeof window!=='undefined' && window.__resumeStashT===s.t) _fresh=true; }catch(e){}
+    }
+  }
+  if (!_fresh){
     /* A discarded TRIP stash (it carries a caller toast — Go To jumps,
        zone crossings, unlock refreshes) must never vanish silently
        (2026-10-18: a stale Go To stash read to Joshua as "dumped at
