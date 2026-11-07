@@ -384,6 +384,18 @@ window.PerfBudget = {
   },
   setManual: window.__setPerfQuality,
   getManual: window.__getPerfQuality,
+  /* LAUNCH REDESIGN (2026-11-07): the automatic spec gathering's
+     entry point. seedAutoLevel(lv) sets the STARTING level from the
+     boot's device measurement (index.html block 1) — including when
+     its benchmark settles after this module has already booted. It
+     is a seed, not a lock: manual mode (a deliberate override) is
+     never touched, and in auto mode the stepper keeps adapting
+     from the seeded level exactly as it does from its boot level. */
+  seedAutoLevel: function(lv){
+    if (manualOverride !== null) return;
+    if (typeof lv !== 'number' || isNaN(lv)) return;
+    applyLevel(Math.max(0, Math.min(MAX_LEVEL, Math.round(lv))), true);
+  },
   /* Test/DI hook: force a level without touching the timers. */
   _forceLevel: function(lv){ applyLevel(Math.max(0, Math.min(MAX_LEVEL, lv)), true); },
   /* Test hook (2026-11-07): feed a synthetic frame gap into the
@@ -393,6 +405,27 @@ window.PerfBudget = {
 };
 
 /* ---------------- boot ---------------- */
+/* LAUNCH REDESIGN (2026-11-07): the manual quality select lived on
+   the launch options screen, which no longer exists — quality is
+   measured automatically at boot (index.html block 1 publishes
+   window.__autoQualitySeed, refines it when its benchmark settles,
+   and persists the result under its own key). A manual value the
+   old screen persisted would otherwise fossilize: nothing left in
+   the game can change it, and manual mode would pin the level
+   forever. When the auto boot is present, a stored manual value is
+   by construction a leftover of the removed screen: clear it and
+   run AUTO from the measured seed. (No auto boot = an older cached
+   page paired with this file: leave the player's saved choice
+   exactly as it was.) */
+try {
+  if (typeof window.__autoQualitySeed === 'number') {
+    var _staleQ = localStorage.getItem('sa_perf_q');
+    if (_staleQ !== null && _staleQ !== 'auto') {
+      localStorage.setItem('sa_perf_q', 'auto');
+      log('cleared stale manual quality override from the removed launch screen — auto quality now');
+    }
+  }
+} catch(e){}
 loadOverride();
 if (manualOverride !== null) {
   /* Manual mode from a previous session: apply immediately. */
@@ -404,6 +437,16 @@ if (manualOverride !== null) {
      one step down on weak hardware avoids the initial stutter. */
   var startLv = 0;
   try { if (window.__weakHardware) startLv = 1; } catch(e){}
+  /* LAUNCH REDESIGN (2026-11-07): the boot measurement's seed wins
+     over the weak-hardware guess — it already accounts for weak
+     hardware (its probe floors software renderers and low-memory /
+     low-core devices at the gentlest tiers). */
+  try {
+    var _autoSeed = window.__autoQualitySeed;
+    if (typeof _autoSeed === 'number' && _autoSeed >= 0 && _autoSeed <= MAX_LEVEL) {
+      startLv = Math.round(_autoSeed);
+    }
+  } catch(e){}
   applyLevel(startLv, true);
   log('boot auto mode, start level ' + LEVELS[startLv].label);
 }

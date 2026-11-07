@@ -692,6 +692,18 @@ if (location.protocol === 'file:'){ setTimeout(function(){ if (!window.__threeMo
     box-shadow:0 0 16px rgba(57,255,106,.45);user-select:none;-webkit-tap-highlight-color:transparent;
     max-width:92vw;box-sizing:border-box;}
   @keyframes loadpulse{0%,100%{opacity:1;}50%{opacity:.35;}}
+  /* LAUNCH REDESIGN (2026-11-07, Joshua): NOW LOADING — the first
+     thing every boot shows: flashing, centered on screen, zero
+     input. It hands off to the progress bar when downloads actually
+     begin (window.__nowLoadingDone, block 1) and dies with the
+     loader when the game starts. pointer-events:none so it can
+     never block the loader's failsafe taps underneath it. */
+  #now-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    color:#ffd75e;font-size:clamp(28px,8vw,46px);font-weight:bold;letter-spacing:4px;
+    text-shadow:0 0 22px rgba(255,215,94,.55);animation:loadpulse 1.1s infinite;
+    pointer-events:none;z-index:5;text-align:center;padding:0 12px;box-sizing:border-box;
+    transition:opacity .4s ease,visibility .4s;}
+  #now-loading.done{opacity:0;visibility:hidden;}
   /* v1.52 #28: critical-failure panel on the loader. Red/amber so a failed
      population system reads as a problem, not a normal state. */
   #load-critwarn{display:none;margin-top:14px;text-align:center;max-width:92vw;box-sizing:border-box;}
@@ -1155,51 +1167,11 @@ window.SAView = (function(){
   #inv-close{margin-top:12px;padding:10px 18px;font-size:15px;border-radius:10px;border:none;
     background:#ffd75e;color:#111;font-weight:bold;width:100%;}
 
-/* ===== v1.22 LAUNCHER OPTIONS SCREEN (Joshua 2026-10-10) =====
-   Pre-game options screen: checkbox column for heavy systems (NPCs,
-   MARTA, drones) + graphics (shadows, antialiasing, building detail).
-   Shown BEFORE the loader; game does not start until user picks options. */
-#launcher{position:fixed;inset:0;z-index:200;background:rgba(10,12,20,.97);
-  display:flex;flex-direction:column;align-items:center;overflow-y:auto;
-  padding:20px 16px 32px;color:#fff;font-family:Arial,sans-serif;}
-#launcher.hidden{display:none;}
-#launch-title{font-size:26px;font-weight:bold;letter-spacing:3px;color:#ffd75e;
-  margin:8px 0 2px;text-shadow:0 0 12px rgba(255,215,94,.4);}
-#launch-sub{font-size:14px;color:#aaa;margin-bottom:14px;}
-.launch-section{width:100%;max-width:440px;background:#1a1e2c;border:1px solid #333;
-  border-radius:12px;padding:12px 14px;margin-bottom:12px;}
-.launch-section h3{margin:0 0 8px;font-size:15px;color:#7ec8ff;letter-spacing:1px;}
-.launch-opt{display:flex;align-items:center;padding:9px 6px;border-bottom:1px solid #2a2e3e;
-  cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent;}
-.launch-opt:last-child{border-bottom:none;}
-.launch-opt input{width:22px;height:22px;margin-right:12px;flex-shrink:0;accent-color:#39ff6a;cursor:pointer;}
-.launch-opt .opt-label{flex:1;font-size:15px;}
-.launch-opt .opt-impact{font-size:11px;font-weight:bold;padding:3px 8px;border-radius:8px;margin-left:8px;}
-.opt-impact.heavy{background:#5a1e1e;color:#ff8a8a;}
-.opt-impact.medium{background:#5a4a1e;color:#ffd75e;}
-.opt-impact.light{background:#1e5a2e;color:#8aff8a;}
-.launch-opt.sub{padding-left:34px;}
-.launch-opt.sub .opt-label{font-size:14px;color:#ccc;}
-.launch-presets{display:flex;gap:8px;width:100%;max-width:440px;margin-bottom:12px;}
-.launch-presets button{flex:1;padding:10px 6px;font-size:13px;font-weight:bold;border-radius:10px;
-  border:2px solid #444;background:#222836;color:#fff;cursor:pointer;}
-.launch-presets button:active{background:#333a4e;}
-#launch-start{width:100%;max-width:440px;padding:16px;font-size:19px;font-weight:bold;
-  letter-spacing:2px;border-radius:14px;border:none;background:#39ff6a;color:#062b0f;cursor:pointer;
-  box-shadow:0 0 20px rgba(57,255,106,.4);}
-#launch-start:active{background:#2bd95a;}
-/* v1.33 START ANYWAY (Joshua 2026-10-11): secondary button beside START GAME.
-   Ghost style so the primary action stays visually dominant. */
-#launch-actions{display:flex;gap:10px;width:100%;max-width:440px;align-items:stretch;}
-#launch-actions #launch-start{width:auto;max-width:none;flex:1;}
-#launch-anyway{padding:16px 14px;font-size:14px;font-weight:bold;border-radius:14px;
-  border:2px solid #555;background:#222836;color:#bbb;cursor:pointer;white-space:nowrap;}
-#launch-anyway:active{background:#333a4e;color:#fff;}
-#launch-note{font-size:12px;color:#777;margin-top:10px;text-align:center;max-width:440px;line-height:1.5;}
-@media (max-width:480px){
-  #launch-title{font-size:21px;}
-  .launch-opt .opt-label{font-size:14px;}
-}
+/* ===== LAUNCHER OPTIONS SCREEN CSS — REMOVED (2026-11-07) =====
+   The pre-game options screen is gone (Joshua's launch redesign:
+   no choices before play; the device is measured and quality is
+   set automatically). Its styles lived here; the NOW LOADING
+   styles live with the loader CSS above. */
 </style>
 <button id="inv-btn" title="Inventory (I)">&#127890;</button>
 <div id="inv-panel"><div class="card">
@@ -1259,68 +1231,12 @@ window.SAView = (function(){
   <div id="satview-hint">Drag to pan • Pinch or scroll to zoom</div>
 </div>
 
-<!-- ===== v1.22 LAUNCHER OPTIONS SCREEN (Joshua 2026-10-10) =====
-     Pre-game options: checkbox column for heavy systems + graphics.
-     Shown before the loader; __tryStartGame() is gated until the user
-     picks options and hits START GAME. Settings persist in localStorage. -->
-<div id="launcher">
-  <div id="launch-title">SURVIVING ADAMSVILLE</div>
-  <div id="launch-sub">Launch Options — pick what runs in your game</div>
-
-  <div class="launch-section">
-    <h3>⚙️ PERFORMANCE</h3>
-    <label class="launch-opt"><input type="checkbox" data-opt="npcs" checked>
-      <span class="opt-label">NPCs (1,000 citizens)</span><span class="opt-impact heavy">HEAVY</span></label>
-    <label class="launch-opt"><input type="checkbox" data-opt="martaBuses" checked>
-      <span class="opt-label">MARTA buses</span><span class="opt-impact medium">MEDIUM</span></label>
-    <label class="launch-opt"><input type="checkbox" data-opt="martaTrains" checked>
-      <span class="opt-label">MARTA trains</span><span class="opt-impact medium">MEDIUM</span></label>
-    <label class="launch-opt"><input type="checkbox" data-opt="drones" checked>
-      <span class="opt-label">Airplane drones (50)</span><span class="opt-impact light">LIGHT</span></label>
-    <label class="launch-opt"><input type="checkbox" data-opt="traffic" checked>
-      <span class="opt-label">Ambient traffic</span><span class="opt-impact medium">MEDIUM</span></label>
-  </div>
-
-  <div class="launch-section">
-    <h3>🎨 GRAPHICS</h3>
-    <label class="launch-opt"><input type="checkbox" data-opt="shadows" checked>
-      <span class="opt-label">Shadows</span><span class="opt-impact light">LIGHT</span></label>
-    <label class="launch-opt"><input type="checkbox" data-opt="antialias" checked>
-      <span class="opt-label">Antialiasing</span><span class="opt-impact heavy">HEAVY</span></label>
-    <label class="launch-opt"><input type="checkbox" data-opt="hiDetail" checked>
-      <span class="opt-label">High-detail buildings</span><span class="opt-impact medium">MEDIUM</span></label>
-    <label class="launch-opt"><span class="opt-label">Draw distance</span>
-      <select id="launch-drawdist" data-opt="drawDist" style="margin-left:8px;background:#1a2030;color:#fff;border:1px solid #444;padding:4px 8px;border-radius:4px;">
-        <option value="short">Short (fastest)</option>
-        <option value="medium" selected>Medium</option>
-        <option value="long">Long (original)</option>
-      </select><span class="opt-impact heavy">HEAVY</span></label>
-    <!-- EXPERT #42 (Dr. Elena Vasquez — Joshua approved "Fix 42"): manual
-         quality override. Auto = the perf budget steps quality up/down based
-         on measured FPS (30 target on the TCL). Manual levels lock it. -->
-    <label class="launch-opt"><span class="opt-label">Quality</span>
-      <select id="launch-quality" style="margin-left:8px;background:#1a2030;color:#fff;border:1px solid #444;padding:4px 8px;border-radius:4px;">
-        <option value="auto" selected>Auto (recommended)</option>
-        <option value="0">Full</option>
-        <option value="1">High</option>
-        <option value="2">Medium</option>
-        <option value="3">Low</option>
-      </select><span class="opt-impact medium">MEDIUM</span></label>
-  </div>
-
-  <div class="launch-presets">
-    <button id="launch-all">SELECT ALL</button>
-    <button id="launch-none">SELECT NONE</button>
-    <button id="launch-weak">WEAK HARDWARE</button>
-  </div>
-
-  <div id="launch-actions">
-    <button id="launch-start">▶ START GAME</button>
-    <button id="launch-anyway" title="Skip the options and start — NPCs and traffic always on">Start Anyway</button>
-  </div>
-  <div id="launch-note">Your choices are saved on this device.<br>
-  Graphics changes (antialiasing) need a reload to take effect.</div>
-</div>
+<!-- ===== LAUNCHER OPTIONS SCREEN — REMOVED (2026-11-07) =====
+     Joshua's launch redesign: there is no pre-game options screen
+     any more, for new or returning players. The game opens on NOW
+     LOADING (inside the loader below), measures the device, sets
+     quality automatically, and goes straight in. The boot code is
+     the LAUNCH REDESIGN section of script block 1. -->
 <!-- ===== LOADER OVERLAY (covers the screen while assets load) =====
      Title, game icon, progress bar (#load-fill - driven by __loadStep()),
      current-step line (#load-status), and the CLICK-ANYWHERE-TO-START button
@@ -1328,6 +1244,10 @@ window.SAView = (function(){
      __tryStartGame(). Joshua's no-skip rule: the game ALSO auto-starts ~3s
      after Ready via __autoStart() - no manual gate blocks launch. -->
 <div id="loader">
+  <!-- LAUNCH REDESIGN (2026-11-07): NOW LOADING — flashing, centered,
+       shown from first paint. Hands off to the bar below when real
+       downloads begin; hidden with the loader at game start. -->
+  <div id="now-loading">NOW LOADING</div>
   <div id="load-title">SURVIVING ADAMSVILLE</div>
   <img id="load-icon" src="icon.png" alt="Surviving Adamsville">
   <div id="load-bottom">
@@ -1517,6 +1437,12 @@ function __parseSet(label, detail, pct){
   if(fill) fill.style.width=pct+'%';
 }
 function __loadStep(key,failed){
+  /* LAUNCH REDESIGN (2026-11-07): the first real load step means
+     downloads are genuinely under way — NOW LOADING hands off to
+     the progress bar here. (A backstop timer in __loadDeferredQueue
+     covers a slow first file; on a fully cached boot the game
+     starts so fast the bar never becomes the face of the boot.) */
+  try{ if (typeof window.__nowLoadingDone==='function') window.__nowLoadingDone(); }catch(e){}
   if(window.__loadDone[key]) return;
   window.__loadDone[key]=failed?'warn':'ok';
   try{ window.__wbProgressAt=Date.now(); }catch(e){}
@@ -1765,7 +1691,7 @@ function __zoneFileProgress(key, received, total){
    minutes) never trips them; a boot that has made NO progress for 45s
    gets the SKIP escape, and one with no progress for 180s gets the
    absolute failsafe. The clock starts when deferred loading begins
-   (__loadBeganAt), never while the launcher is merely sitting open.
+   (__loadBeganAt), not from page open.
    A stall also REPORTS ITSELF (see __recordBootStall): the report rides
    the existing GitHubReports queue, or — when that module has not even
    loaded yet — a localStorage holding queue that github_reports.js
@@ -1869,7 +1795,7 @@ function __loaderEscapeAbsolute(){
 setInterval(function(){
   try{
     if (window.__gameStarted) return;
-    if (!window.__loadBeganAt) return;      /* launcher up; loading hasn't begun */
+    if (!window.__loadBeganAt) return;      /* loading hasn't begun yet */
     var l=document.getElementById('loader');
     if (!l || l.style.display==='none') return;
     var last = Math.max(window.__wbProgressAt||0, window.__loadBeganAt);
@@ -1983,14 +1909,17 @@ try{
    the game's own resume stash (UI update, map update, zone jump /
    Go To, unlock refresh, or the AUTO spot stash ui_update_flow.js
    refreshes while he plays) is the same session continuing: the
-   launcher skips the options, the progress bar shows the downloads,
-   and when they finish the game rolls STRAIGHT IN at the saved
-   coordinates — no 'Ready — tap START to continue' wait (that wait
-   was also the diagnosed Firefox 'stall at 100%': downloads done,
-   loader parked, the stall watchdog standing down by design). The
-   START button / options flow belongs to NEW games only.
+   progress bar shows the downloads, and when they finish the game
+   rolls STRAIGHT IN at the saved coordinates — no 'Ready — tap
+   START to continue' wait (that wait was also the diagnosed Firefox
+   'stall at 100%': downloads done, loader parked, the stall
+   watchdog standing down by design). (The START button / options
+   flow this once contrasted with was removed entirely by the
+   launch redesign later the same day: NO boot shows options now;
+   a resume boot is simply a boot whose landing is stashed.)
    State (all on window, all inert on cold starts):
-     __resumeBoot — set by the resume detection in __wireLauncher
+     __resumeBoot — set by the resume detection in the automatic
+       boot (block 1)
        when it accepts a stash and confirms the launch as a resume.
      __resumeStashT — the accepted stash's own timestamp.
        UIUpdateFlow.maybeRestore() honours it: a stash THIS boot
@@ -1998,25 +1927,31 @@ try{
        freshness window, so the minutes a slow cold load takes can
        never re-judge it stale and strand the player at the spawn
        (the other half of the 2026-11-07 lost-coordinates defect:
-       the window used to be checked twice — once at the launcher
+       the window used to be checked twice — once at the boot
        and again at restore time, minutes later). */
 window.__resumeBoot = false;
 window.__resumeStashT = 0;
-/* ===== v1.22 LAUNCHER OPTIONS (Joshua 2026-10-10) =====
-   v1.26 FIX (2026-10-10): MOVED to block 1, BEFORE __wireLauncher.
-   __wireLauncher (block 1) does `key in window.__launchOpts` — when this
-   init lived in block 2, __launchOpts was undefined at wiring time, the
-   TypeError was swallowed by try/catch, and NO launcher listeners ever
-   attached (dead buttons/checkboxes). Init must precede wiring.
-   Pre-game options screen: lets Joshua pick which heavy systems run
-   (NPCs, MARTA, drones, traffic) and graphics (shadows, AA,
-   building detail). Persisted in localStorage['sa_launch_opts_v1'].
-   v1.23: defaults are all-OFF for web browsers (fresh visits start with
-   nothing checked; user opts in). APK keeps the old all-on defaults.
-   Saved prefs (loaded below) always override these defaults.
-   System update wrappers check their flag: `window.__launchOpts.<key>!==false`.
-   Graphics flags are read at init (renderer creation); changing AA
-   needs a page reload, which the launcher handles automatically. */
+/* ===== LAUNCH OPTIONS STATE (v1.22 origin; screen REMOVED 2026-11-07) =====
+   window.__launchOpts remains the single options record every system
+   reads (`window.__launchOpts.<key>!==false`), but there is no longer
+   a screen that edits it: Joshua's launch redesign removed the
+   pre-game options screen entirely. What writes it now:
+     - the defaults below (content systems: the platform default set);
+     - saved prefs in localStorage['sa_launch_opts_v1'] (loaded by
+       __loadLaunchOpts below — a player's past choices for the
+       CONTENT systems: NPCs, MARTA, drones, traffic);
+     - the automatic spec gathering (LAUNCH REDESIGN section, below)
+       owns the GRAPHICS flags — antialias, shadows, hiDetail,
+       drawDist — measured fresh every boot; __loadLaunchOpts may
+       still load a saved value for one of them, but the measurement
+       overwrites all four before any consumer can read them.
+   v1.26 ordering law (unchanged): this init lives in block 1, BEFORE
+   the boot code that reads it — when it lived in block 2 the reads
+   hit undefined and died silently. Init must precede the boot.
+   Graphics flags are read once at renderer/scene creation (block 2),
+   which is why the measurement has to finish its instant half
+   (hardware probe + last boot's persisted tier) before the confirm
+   releases the deferred queue. */
 (function __setLaunchDefaults(){
   // Detect APK WebView vs plain web browser (same pattern as report badge v1.21)
   var isAPK=false;
@@ -2026,7 +1961,7 @@ window.__resumeStashT = 0;
     npcs:dflt,
     martaBuses:dflt,martaTrains:dflt,drones:dflt,traffic:dflt,
     shadows:dflt,antialias:dflt,hiDetail:dflt,
-    drawDist:'medium'  // v1.25: draw distance preset ('short'|'medium'|'long') — not a boolean, excluded from SELECT ALL/NONE presets
+    drawDist:'medium'  // v1.25: draw distance preset ('short'|'medium'|'long') — a string, not a boolean; the auto spec gathering sets the live value every boot
   };
   window.__isAPKLaunch=isAPK;  // informational: which default set was applied
 })();
@@ -2057,18 +1992,18 @@ window.__criticalLoadKeys={
   npc:'NPC system', refnpc:'Photo NPCs', traffic:'Traffic system'};
 window.__criticalFailed=[];   // load keys of critical steps that reported failure
 window.__criticalAcked=false; // player saw the failure warning and chose to continue anyway
-window.__launcherConfirmed = false;  // set true when user hits START GAME
-/* v1.28 NO-DOWNLOAD-BEFORE-OPTIONS (Joshua 2026-10-10: "nothing downloads
-   until after the player has selected the options"). Any network fetch that
-   is not required to render the options screen itself must wait for the
-   player to confirm. __whenConfirmed(fn) runs fn immediately if the player
-   already confirmed, otherwise queues it. __flushConfirmQueue() runs the
-   queue — called from the confirm path (START GAME or Start Anyway click).
-   v1.33: the 30s auto-confirm fallback was removed per Joshua — the launcher
-   waits for an explicit choice.
-   v1.29 (Joshua 2026-10-11): <script src> tags are NO LONGER exempt. All
-   game/data scripts use data-dsrc and load via __loadDeferredQueue() only
-   after confirmation. The options screen needs only this inline block. */
+window.__launcherConfirmed = false;  // set true by the AUTOMATIC boot confirm (launch redesign 2026-11-07)
+/* v1.28 NO-DOWNLOAD-BEFORE-CONFIRM (Joshua 2026-10-10; mechanism kept,
+   trigger changed 2026-11-07): downloads wait for the boot confirm so
+   nothing fetches before the boot has measured the device and applied
+   the automatic quality. __whenConfirmed(fn) runs fn immediately if
+   the boot already confirmed, otherwise queues it;
+   __flushConfirmQueue() runs the queue — called by the automatic boot
+   confirm at the end of block 1. (v1.28's original trigger was the
+   player's START GAME tap on the options screen; the launch redesign
+   removed the screen, and with it the v1.33 explicit-choice law and
+   the 30 s auto-confirm debate — confirmation is now simply what the
+   boot does, every boot, with zero input.) */
 window.__confirmQueue = [];
 window.__whenConfirmed = function(fn){
   try{
@@ -2084,8 +2019,9 @@ window.__flushConfirmQueue = function(){
   }catch(e){}
 };
 
-/* v1.29 DEFERRED SCRIPT LOADING (Joshua 2026-10-11: "nothing downloads until
-   after the player has selected the options").
+/* v1.29 DEFERRED SCRIPT LOADING (Joshua 2026-10-11: "nothing downloads
+   until after the options" — since the 2026-11-07 launch redesign:
+   nothing downloads until the automatic boot confirm).
    The v129 fix gated fetch() manifest checks but MISSED <script src> tags,
    which downloaded ~5MB during HTML parsing before confirmation (the 18%
    stuck was scripts downloading). Now ALL game/data scripts use data-dsrc
@@ -2501,7 +2437,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
    stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.11.07.12';
+window.__DOC_UIVER = '2026.11.07.13';
 function __checkDocVersionHeal(){
   var live = window.__UIVER || '';
   if (!live || live === window.__DOC_UIVER){
@@ -2605,8 +2541,13 @@ window.__webgl2OK = function(){
 function __loadDeferredQueue(){
   if (window.__deferredLoading || window.__deferredDone) return;
   window.__deferredLoading = true;
+  /* LAUNCH REDESIGN (2026-11-07): backstop NOW LOADING handoff —
+     loading has begun, so even if the first file is slow, the
+     flashing hands off to the progress bar promptly (the first
+     __loadStep usually beats this timer). */
+  try{ setTimeout(function(){ try{ if (typeof window.__nowLoadingDone==='function') window.__nowLoadingDone(); }catch(e){} }, 700); }catch(e){}
   /* LAPTOP-HANG FIX (2026-10-25): the failsafe clock starts when loading
-     actually begins (not at page open — the launcher may sit open). */
+     actually begins (not at page open). */
   if(!window.__loadBeganAt) window.__loadBeganAt=Date.now();
   /* v1.35 #35: prefetch manifests (versions + SRI hashes) before any game
      script downloads, then run the queue. */
@@ -2622,7 +2563,7 @@ function __loadDeferredQueueInner(){
       window.__deferredLoading = false;
       /* All scripts loaded — start the game if confirmation requested it.
          RESUME BOOT (Joshua 2026-11-07): a resume boot
-         (window.__resumeBoot — the launcher accepted a resume stash)
+         (window.__resumeBoot — the boot accepted a resume stash)
          starts exactly like a confirmed cold start: the downloads
          finishing IS the start, and __tryStartGame rolls straight
          into the world, where UIUpdateFlow.maybeRestore() puts the
@@ -3017,216 +2958,375 @@ window.__whenConfirmed(function(){
 window.__saveLaunchOpts = function(){
   try { localStorage.setItem('sa_launch_opts_v1', JSON.stringify(window.__launchOpts)); } catch(e){}
 };
-/* ===== v1.22 LAUNCHER UI WIRING (runs in block 1 so the launcher is
-   interactive during the download phase, before block 2's sync init) ===== */
-(function __wireLauncher(){
-  try {
-    var launcher = document.getElementById('launcher');
-    if (!launcher) return;
-    var boxes = launcher.querySelectorAll('input[data-opt]');
-    // Sync checkboxes to current __launchOpts (from localStorage/defaults)
-    function syncBoxes(){
-      for (var i = 0; i < boxes.length; i++) {
-        var key = boxes[i].getAttribute('data-opt');
-        if (key in window.__launchOpts) {
-          boxes[i].checked = !!window.__launchOpts[key];
-        }
-      }
-      // v1.25: sync the draw distance dropdown (a <select>, not a checkbox)
-      var dd = document.getElementById('launch-drawdist');
-      if (dd && window.__launchOpts.drawDist) dd.value = window.__launchOpts.drawDist;
-      /* EXPERT #42: sync the quality override dropdown from saved pref. */
-      try {
-        var qd = document.getElementById('launch-quality');
-        if (qd && typeof window.__getPerfQuality === 'function') qd.value = window.__getPerfQuality();
-        else if (qd) {
-          var _sq = null;
-          try { _sq = localStorage.getItem('sa_perf_q'); } catch(e){}
-          qd.value = (_sq === null) ? 'auto' : _sq;
-        }
-      } catch(e){}
+/* ===== LAUNCH REDESIGN — AUTOMATIC BOOT + SPEC GATHERING (Joshua 2026-11-07) =====
+   Joshua's words: "change the boot options to remove the option screen,
+   the launch option screen, and do all automatic spec gathering."
+   The flow he confirmed: open → NOW LOADING (flashing, center screen)
+   → progress bar ONLY when there is actually something to download →
+   into the game; if nothing is in the download, NOW LOADING goes
+   straight in. No screen ever asks the player for a selection again —
+   not on a cold start, not on a resume.
+
+   WHAT REPLACED THE SCREEN, in boot order:
+     (1) MEASURE (instant half): a hardware probe (CPU cores, device
+         memory, DPR, WebGL renderer string — the same signals block
+         2's weak-hardware detector uses) + the quality tier persisted
+         by the LAST boot's benchmark. The weaker signal wins. The
+         resulting tier's graphics flags are written into
+         __launchOpts BEFORE the confirm releases any download,
+         because block 2 reads antialias/drawDist exactly once, at
+         renderer/scene creation.
+     (2) FRESH-DEVICE CONTENT DEFAULTS: a device with NO saved prefs
+         gets the old "Start Anyway" rule — platform defaults with
+         the CRITICAL population systems (NPCs + traffic) forced ON,
+         so a first-ever boot is never the empty ghost town v1.52 #28
+         guards against. A device WITH saved prefs keeps them exactly
+         (they are the player's own past choices for the content
+         systems); the graphics flags are the measurement's either way.
+     (3) RESUME DETECTION: the v1.33/.7 rule, unchanged — a fresh
+         resume stash marks this boot as the same session continuing
+         (__resumeBoot + __resumeStashT, the acceptance stamp
+         UIUpdateFlow.maybeRestore honours), so the coordinates restore
+         happens exactly as before. It no longer decides WHETHER the
+         game boots (every boot boots); it only decides WHERE the
+         player lands.
+     (4) BENCHMARK (live half): a small WebGL micro-benchmark — a
+         fragment-heavy shader under heavy overdraw on a 224x224
+         offscreen canvas, timed with gl.finish() so the number is
+         real GPU cost, not compositor cadence. It starts BEFORE the
+         confirm so its window runs inside the download time, and it
+         never adds a wait: it settles on ~44 good frames or ~1.6 s,
+         with a 2.3 s hard deadline if rAF stalls. On settle it
+         refines the tier (weaker of benchmark vs probe), persists it
+         for the next boot, and applies what is still safe to apply
+         (see __autoApplyTier).
+     (5) CONFIRM: unconditional, last, and isolated in its own code
+         path so a measurement failure can never strand the boot —
+         sets __launcherConfirmed, flushes the confirm queue (which
+         starts the deferred downloads), and arms the queue-end start.
+   What the old screen's confirm also did, and why it is NOT here:
+   the AA-mismatch reload (the pref can no longer change between the
+   renderer's creation and the confirm — the measurement writes it
+   before either exists; block 2's weak-hardware sync remains as the
+   safety net) and saving prefs on START GAME (nothing the player
+   picked exists to save; the measurement persists ITSELF, under its
+   own key, in step 4). */
+/* NOW LOADING handoff: called by the first __loadStep, by the
+   queue-start backstop timer, and safe to call any number of times.
+   When it fires, downloads are genuinely under way and the progress
+   bar becomes the face of the boot. If it never fires (a boot so fast
+   the game starts first), NOW LOADING dies with the loader itself. */
+window.__nowLoadingDone = function(){
+  try{
+    if (window.__nowLoadingDoneAt) return;
+    window.__nowLoadingDoneAt = Date.now();
+    var el = document.getElementById('now-loading');
+    if (el){
+      el.classList.add('done');
+      setTimeout(function(){ try{ el.style.display = 'none'; }catch(e){} }, 500);
     }
-    syncBoxes();
-    // Checkbox changes update __launchOpts live
-    launcher.addEventListener('change', function(e){
-      var t = e.target;
-      /* EXPERT #42: quality dropdown has no data-opt — handle by id first. */
-      if (t && t.id === 'launch-quality') {
-        try { if (typeof window.__setPerfQuality === 'function') window.__setPerfQuality(t.value); } catch(e){}
-        return;
+  }catch(e){}
+};
+/* The tier table: perf_budget.js levels 0..3 (FULL/HIGH/MEDIUM/LOW)
+   expressed as the graphics flags block 2 + the late systems read.
+   drawDist stays 'medium' at the top two tiers — that is the look the
+   game has shipped with as its default; only the weak tiers shorten
+   it, exactly like the old WEAK HARDWARE preset did. */
+var __AUTO_TIER_FLAGS = [
+  { antialias:true,  shadows:true,  hiDetail:true,  drawDist:'medium' },  /* 0 FULL   */
+  { antialias:true,  shadows:true,  hiDetail:true,  drawDist:'medium' },  /* 1 HIGH   */
+  { antialias:false, shadows:false, hiDetail:false, drawDist:'short'  },  /* 2 MEDIUM */
+  { antialias:false, shadows:false, hiDetail:false, drawDist:'short'  }   /* 3 LOW    */
+];
+/* The probe's verdict is a FLOOR on weakness: hardware signals can
+   only prove a device needs AT LEAST this much quality reduction.
+   No WebGL at all, or a software renderer (SwiftShader/llvmpipe —
+   the same strings block 2's detector treats as weak), is a 3: the
+   gentlest tier is the only honest start there. */
+function __autoTierFromProbe(p){
+  if (!p) return 0;
+  if (p.noGL || p.software) return 3;
+  var floor = 0;
+  if (p.weakGPU || p.weakUA) floor = Math.max(floor, 1);
+  if (p.mem && p.mem <= 2) floor = Math.max(floor, 2);
+  else if (p.mem && p.mem <= 4) floor = Math.max(floor, 1);
+  if (p.cores && p.cores <= 2) floor = Math.max(floor, 2);
+  else if (p.cores && p.cores <= 4) floor = Math.max(floor, 1);
+  return floor;
+}
+/* FPS → tier for the benchmark. The governor's own thresholds
+   (perf_budget: 30 target, 28/32 hysteresis) inspired the cuts: a
+   device whose GPU sustains ~50+ under benchmark load starts FULL;
+   ~34+ HIGH; ~24+ MEDIUM (it can hold the 30 target with the
+   governor's help); below that LOW. fps<=0 means "no data" (-1), NOT
+   tier 3 — an abstaining benchmark must not damn a device. */
+function __autoTierFromFps(fps){
+  if (!(fps > 0)) return -1;
+  if (fps >= 50) return 0;
+  if (fps >= 34) return 1;
+  if (fps >= 24) return 2;
+  return 3;
+}
+/* Weakest signal wins: tiers combine by taking the LARGER number
+   (the more conservative quality). Used for probe-vs-persisted and
+   probe-vs-benchmark alike. */
+function __autoTierMax(a, b){ return Math.max(a, b); }
+/* Write a tier into the live boot: the graphics flags, the perf
+   governor's seed, and the __autoQuality record. shadows/hiDetail
+   are read live (blob shadows) or at late-system init
+   (residential_detail), so they may be refined at any moment.
+   antialias/drawDist are read ONCE at renderer/scene creation in
+   block 2 (window.__initAA is the snapshot it leaves): before that
+   moment the measured values go in; after it, writing them would
+   lie about the running renderer — and the old screen's answer to
+   that, a reload, is exactly what this redesign abolished — so
+   they wait for the next boot, which the persisted tier covers. */
+function __autoApplyTier(tier){
+  try{
+    tier = Math.max(0, Math.min(3, Math.round(tier)));
+    var f = __AUTO_TIER_FLAGS[tier];
+    var o = window.__launchOpts;
+    if (o){
+      o.shadows = f.shadows;
+      o.hiDetail = f.hiDetail;
+      if (typeof window.__initAA === 'undefined'){
+        o.antialias = f.antialias;
+        o.drawDist = f.drawDist;
       }
-      if (!t || !t.getAttribute('data-opt')) return;
-      var key = t.getAttribute('data-opt');
-      if (key === 'drawDist' && t.tagName === 'SELECT') {
-        // v1.25: draw distance dropdown — string preset, not boolean
-        if (t.value === 'short' || t.value === 'medium' || t.value === 'long') {
-          window.__launchOpts.drawDist = t.value;
-        }
-      } else if (t.tagName === 'INPUT' && key in window.__launchOpts) {
-        window.__launchOpts[key] = t.checked;
-      }
-      syncBoxes(); // reflect any linked state
-    });
-    // Presets
-    function setAll(on){
-      for (var k in window.__launchOpts) {
-        if (typeof window.__launchOpts[k] === 'boolean') window.__launchOpts[k] = on;  // v1.25: skip drawDist (string)
-      }
-      syncBoxes();
     }
-    var bAll = document.getElementById('launch-all');
-    if (bAll) bAll.addEventListener('click', function(){ setAll(true); });
-    var bNone = document.getElementById('launch-none');
-    if (bNone) bNone.addEventListener('click', function(){ setAll(false); });
-    var bWeak = document.getElementById('launch-weak');
-    if (bWeak) bWeak.addEventListener('click', function(){
-      /* v1.22 WEAK HARDWARE preset: keep the world, drop the expensive stuff */
-      setAll(true);
-      window.__launchOpts.npcs = false;
-      window.__launchOpts.martaBuses = false;
-      window.__launchOpts.martaTrains = false;
-      window.__launchOpts.traffic = false;
-      window.__launchOpts.drones = false;
-      window.__launchOpts.antialias = false;
-      window.__launchOpts.hiDetail = false;
-      window.__launchOpts.shadows = false;
-      window.__launchOpts.drawDist = 'short';  // v1.25: shortest view = least to render
-      syncBoxes();
-    });
-    /* v1.33 CONFIRM PATH (Joshua 2026-10-11): extracted the START GAME body
-       into __confirmLaunch so the Start Anyway button shares one path.
-       saveOpts=false (Start Anyway) applies defaults for THIS SESSION ONLY
-       and does not overwrite the player's saved prefs. */
-    function __confirmLaunch(saveOpts){
-      var doSave = (saveOpts !== false);
-      // v1.22: if NPCs are unchecked, engage the v1.21 kill switch too so
-      // the NPC meshes are hidden (not just frozen).
-      try {
-        if (window.__launchOpts.npcs === false && typeof window.__setNpcPaused === 'function') {
-          window.__setNpcPaused(true);
-        }
-      } catch(e){}
-      // Snapshot graphics flags at init time to detect a change needing reload
-      /* v1.24 FIX (Joshua 2026-10-10: START GAME did nothing for Shannon):
-         __initAA is set in block 2 (~5500 lines of sync JS). If the user
-         clicks START GAME before block 2 finishes, __initAA is undefined
-         and (antialias !== undefined) is always true -> infinite reload
-         loop. Only reload when __initAA is actually defined.
-         v1.27 (Joshua 2026-10-10: weak-hardware reload loop): even with
-         __initAA defined, weak hardware forces AA off at renderer creation
-         while the pref may say on (user re-checked the box after v1.27
-         FIX 1 unchecked it). Reloading can never satisfy that mismatch,
-         so never reload for AA on weak hardware — just force the pref
-         off and continue without a reload. */
-      var _aaWantsReload = (typeof window.__initAA !== 'undefined') && (window.__launchOpts.antialias !== window.__initAA);
-      var needReload = _aaWantsReload && !window.__weakHardware;
-      if (window.__weakHardware && window.__launchOpts.antialias !== false) {
-        window.__launchOpts.antialias = false;  // match the forced-off renderer; no reload needed
-      }
-      if (doSave) window.__saveLaunchOpts();
-      window.__launcherConfirmed = true;
-      /* v1.28: options confirmed — release any deferred network fetches. */
-      try{ if(typeof window.__flushConfirmQueue==='function') window.__flushConfirmQueue(); }catch(e){}
-      launcher.classList.add('hidden');
-      if (needReload) {
-        try { window.location.reload(); } catch(e){}
-        return;
-      }
-      // Let any pending start request through now
-      /* v1.29: __tryStartGame is deferred — game scripts load after confirmation.
-         __loadDeferredQueue() calls it when all scripts are ready. */
-      window.__startGameAfterLoad = true;
+    window.__autoQualitySeed = tier;
+    /* A benchmark settling after perf_budget.js booted seeds the
+       governor directly; the governor keeps auto-adapting from the
+       seeded level (it is a STARTING level, not a lock). */
+    try{ if (window.PerfBudget && typeof PerfBudget.seedAutoLevel === 'function') PerfBudget.seedAutoLevel(tier); }catch(e){}
+    if (window.__autoQuality) window.__autoQuality.tier = tier;
+  }catch(e){}
+}
+/* Hardware probe (the instant half of the measurement). Read-only:
+   a throwaway canvas, context released immediately. The renderer
+   string tells the truth deviceMemory hides on some browsers. */
+function __autoProbe(){
+  var p = { cores:0, mem:0, dpr:1, renderer:'', software:false,
+            weakGPU:false, weakUA:false, noGL:false };
+  try{ p.cores = navigator.hardwareConcurrency || 0; }catch(e){}
+  try{ p.mem = navigator.deviceMemory || 0; }catch(e){}
+  try{ p.dpr = window.devicePixelRatio || 1; }catch(e){}
+  try{
+    var cv = document.createElement('canvas');
+    var gl = cv.getContext('webgl') || cv.getContext('experimental-webgl');
+    if (!gl){ p.noGL = true; }
+    else {
+      var dbg = gl.getExtension('WEBGL_debug_renderer_info');
+      if (dbg) p.renderer = String(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) || '');
+      var r = p.renderer.toLowerCase();
+      /* Software renderers — the same strings block 2's detector uses. */
+      if (r.indexOf('swiftshader') >= 0 || r.indexOf('llvmpipe') >= 0 ||
+          r.indexOf('softpipe') >= 0 || r.indexOf('basic render') >= 0 ||
+          r.indexOf('software') >= 0) p.software = true;
+      /* Known-old GPU families (pre-2016 mobile parts): Adreno 3xx/4xx,
+         Mali-T and Mali-4xx, PowerVR SGX, Apple A7–A10. Conservative on
+         purpose — a miss costs nothing (the benchmark still runs); a
+         false positive costs one tier for one boot. */
+      if (/adreno \(tm\) [34]|adreno [34]\d\d|mali-t\d|mali-4\d\d|powervr sgx|apple a([7-9]|10)\b/.test(r)) p.weakGPU = true;
+      try{ var lose = gl.getExtension('WEBGL_lose_context'); if (lose) lose.loseContext(); }catch(e){}
     }
-    // START GAME: save prefs, hide launcher, reveal loader
-    var bStart = document.getElementById('launch-start');
-    if (bStart) bStart.addEventListener('click', function(){ __confirmLaunch(true); });
-    /* RESUME BOOT — OPTIONS SKIPPED, NO START TAP (2026-10-18 Go To
-       fix; the tap gate was REMOVED 2026-11-07 by Joshua's ruling).
-       A page load that carries the game's OWN resume stash
-       (sa_ui_update_resume — ui_update_flow.js's documented shape:
-       written seconds ago by a zone crossing, a Go To jump, an unlock
-       refresh, or a UI-update reload — or refreshed every ~10 s while
-       he plays by the AUTO spot save, which is what a browser-forced
-       reload carries) is the SAME session continuing, not a new
-       launch: the landing is already computed and stashed, and parking
-       the player at the options screen strands it. So the OPTIONS
-       screen is never shown on such a boot: confirm with the saved
-       options (already applied to __launchOpts by __loadLaunchOpts
-       above; saveOpts=false — the saved prefs are NOT rewritten, they
-       are simply the options in force) and go to the loader, whose
-       progress bar shows the downloads — and when they finish, the
-       game starts ITSELF and restores him to exactly where he was.
-       No START tap is asked for, ever (Joshua, 2026-11-07: an active
-       game has no Start button; START belongs to new games only).
-       A cold start (no stash, or one outside the trust window below)
-       is untouched: the launcher still waits for an explicit choice
-       (v1.33 law), and its START GAME tap remains the start.
-       TRUST WINDOW: flow/trip stashes (written for an immediate
-       reload) are trusted for 10 minutes; AUTO spot stashes for
-       12 HOURS — Joshua's 2026-11-07 test stepped away from a live
-       game for longer than 10 minutes and the old single window
-       threw his Tatum Lake spot away (he restarted at 535). These
-       two numbers MUST match ui_update_flow.js (STALE_MS /
-       AUTO_STALE_MS), whose maybeRestore() applies the same rule —
-       and it also honours window.__resumeStashT below, so a stash
-       accepted here can never be re-judged stale while this boot's
-       downloads run. */
-    try {
-      var _rsRaw = null;
-      try { _rsRaw = localStorage.getItem('sa_ui_update_resume'); } catch(e){}
-      var _rs = null;
-      try { _rs = _rsRaw ? JSON.parse(_rsRaw) : null; } catch(e){}
-      var _rsZone = null;
-      try { _rsZone = new URLSearchParams(window.location.search).get('zone'); } catch(e){}
-      var _rsLimit = (_rs && _rs.auto) ? 12 * 60 * 60 * 1000 : 10 * 60 * 1000;
-      if (_rs && _rs.kind === 'ui-update' && typeof _rs.t === 'number' &&
-          (Date.now() - _rs.t) < _rsLimit && _rs.player &&
-          (!_rs.zone || !_rsZone || _rs.zone === _rsZone)) {
-        /* Mark the resume BEFORE confirming: __confirmLaunch starts
-           the download queue, whose completion starts the game, and
-           the restore in __tryStartGame reads __resumeStashT. */
-        window.__resumeBoot = true;
-        window.__resumeStashT = _rs.t;
-        __confirmLaunch(false);
-      }
-    } catch(e){}
-    /* v1.33 START ANYWAY (Joshua 2026-10-11): secondary button, off to the
-       side, for players who don't want to bother with options. Resets to
-       defaults for this session (web: everything off, APK: everything on —
-       the same rule as __setLaunchDefaults) WITHOUT overwriting saved prefs,
-       then runs the normal confirm path. No timers, no auto-confirm: the
-       launcher waits for an explicit choice. (Also covers the old v1.27
-       single-point-of-failure worry: if START GAME ever broke, this is the
-       backup way in.)
-       v1.52 #28: "Start Anyway" now forces the CRITICAL population systems
-       (NPCs + traffic, see window.__criticalSystems) ON even on web, so the
-       button can never strand the player in an empty ghost town. */
-    var bAnyway = document.getElementById('launch-anyway');
-    if (bAnyway) bAnyway.addEventListener('click', function(){
+  }catch(e){ p.noGL = true; }
+  try{
+    /* Known weak devices by UA — mirrors block 2's detector list. */
+    var ua = (navigator.userAgent || '').toLowerCase();
+    if (ua.indexOf('tcl') >= 0 || ua.indexOf('moto e') >= 0 ||
+        ua.indexOf('sm-a0') >= 0 || ua.indexOf('sm-a1') >= 0) p.weakUA = true;
+  }catch(e){}
+  return p;
+}
+/* The persisted tier: the last boot's benchmark result, under its
+   own key (NOT sa_perf_q — that key is perf_budget's manual override,
+   a mechanism the removed screen owned; see perf_budget.js). */
+function __autoReadPersistedTier(){
+  try{
+    var raw = localStorage.getItem('sa_auto_quality_v1');
+    if (!raw) return -1;
+    var o = JSON.parse(raw);
+    if (o && typeof o.tier === 'number' && o.tier >= 0 && o.tier <= 3) return Math.round(o.tier);
+  }catch(e){}
+  return -1;
+}
+function __autoPersistTier(tier, fps){
+  try{
+    localStorage.setItem('sa_auto_quality_v1', JSON.stringify(
+      { tier:tier, fps:fps, ts:Date.now() }));
+  }catch(e){}
+}
+/* The live benchmark (the measured half). Fragment-heavy: a 24-step
+   trig loop per pixel, 20 overdraw passes per frame on a 224x224
+   offscreen canvas, gl.finish() each frame so the frame time is the
+   GPU's real cost. Settles with the MEDIAN frame rate once ~44
+   post-warmup deltas exist or ~1.6 s elapse; a 2.3 s timer settles
+   with whatever exists if rAF stalls. settle(0) = abstain. */
+function __autoBenchmark(settle){
+  var done = false;
+  function finish(fps){
+    if (done) return; done = true;
+    try{ settle(fps); }catch(e){}
+  }
+  try{
+    var cv = document.createElement('canvas');
+    cv.width = 224; cv.height = 224;
+    var gl = cv.getContext('webgl', { antialias:false, depth:false, stencil:false, alpha:false }) ||
+             cv.getContext('experimental-webgl');
+    if (!gl){ finish(0); return; }
+    var vs = 'attribute vec2 p;void main(){gl_Position=vec4(p,0.0,1.0);}';
+    var fs = 'precision mediump float;uniform float t;' +
+      'void main(){vec2 u=gl_FragCoord.xy/224.0;float v=0.0;' +
+      'for(int i=0;i<24;i++){float fi=float(i);' +
+      'v+=sin(u.x*12.0+t+fi)*cos(u.y*11.0-t*1.3+fi*0.7);}' +
+      'gl_FragColor=vec4(vec3(v*0.05+0.5),1.0);}';
+    function mkShader(type, text){
+      var s = gl.createShader(type);
+      gl.shaderSource(s, text); gl.compileShader(s);
+      return gl.getShaderParameter(s, gl.COMPILE_STATUS) ? s : null;
+    }
+    var vsh = mkShader(gl.VERTEX_SHADER, vs);
+    var fsh = mkShader(gl.FRAGMENT_SHADER, fs);
+    if (!vsh || !fsh){ finish(0); return; }
+    var prog = gl.createProgram();
+    gl.attachShader(prog, vsh); gl.attachShader(prog, fsh); gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)){ finish(0); return; }
+    gl.useProgram(prog);
+    var buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+    var loc = gl.getAttribLocation(prog, 'p');
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    var tLoc = gl.getUniformLocation(prog, 't');
+    var deltas = [], frames = 0, last = 0, t0 = 0;
+    function cleanup(){
+      try{ var e = gl.getExtension('WEBGL_lose_context'); if (e) e.loseContext(); }catch(e){}
+    }
+    function settleFromSamples(){
+      deltas.sort(function(a, b){ return a - b; });
+      var med = deltas.length ? deltas[Math.floor(deltas.length / 2)] : 0;
+      cleanup();
+      finish(med > 0 ? 1000 / med : 0);
+    }
+    function frame(ts){
+      if (done) return;
+      if (!t0) t0 = ts;
       try{
-        var isAPK=false;
-        try{isAPK=/SurvivingAdamsville|wv/i.test(navigator.userAgent||'');}catch(e){}
-        var dflt=isAPK;
-        for (var k in window.__launchOpts){
-          if (typeof window.__launchOpts[k]==='boolean') window.__launchOpts[k]=dflt;
-        }
-        /* v1.52 #28 (expert report, Joshua approved): "Start Anyway" must
-           never produce an empty ghost town. NPCs + traffic are the
-           population systems — force them ON for this session even on web
-           (where the platform default is everything-off). Everything else
-           keeps the platform default. Session-only: saved prefs untouched. */
-        try{
-          var _crit=window.__criticalSystems||['npcs','traffic'];
-          for (var _ci=0; _ci<_crit.length; _ci++){
-            if (typeof window.__launchOpts[_crit[_ci]]==='boolean') window.__launchOpts[_crit[_ci]]=true;
-          }
-        }catch(e){}
-        window.__launchOpts.drawDist='medium';
-        syncBoxes();
-      }catch(e){}
-      __confirmLaunch(false);
-    });
+        gl.uniform1f(tLoc, ts * 0.001);
+        for (var i = 0; i < 20; i++) gl.drawArrays(gl.TRIANGLES, 0, 3);
+        gl.finish();
+      }catch(e){ cleanup(); finish(0); return; }
+      frames++;
+      /* The first frames carry shader-compile and context warm-up —
+         they are not the device's sustained rate; skip them. */
+      if (last && frames > 5) deltas.push(ts - last);
+      last = ts;
+      if (deltas.length >= 44 || ts - t0 > 1600){ settleFromSamples(); return; }
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+    setTimeout(function(){ if (!done) settleFromSamples(); }, 2300);
+  }catch(e){ finish(0); }
+}
+(function __autoBoot(){
+  /* The inspection record: which tier this boot runs, and from which
+     evidence. (Read by anyone debugging a boot; nothing sends it.) */
+  window.__autoQuality = { tier:-1, source:'none', fps:0, probe:null, ts:Date.now() };
+  var probe = null, probeFloor = 0;
+  /* (1) MEASURE — instant half: probe + last boot's persisted tier.
+     Runs before anything downloads, because block 2 will read the
+     graphics flags the moment the deferred queue reaches it. */
+  try{
+    probe = __autoProbe();
+    probeFloor = __autoTierFromProbe(probe);
+    var persisted = __autoReadPersistedTier();
+    var startTier = __autoTierMax(persisted >= 0 ? persisted : probeFloor, probeFloor);
+    window.__autoQuality.probe = probe;
+    window.__autoQuality.source = persisted >= 0 ? 'persisted' : 'probe';
+    __autoApplyTier(startTier);
+  }catch(e){}
+  /* (2) FRESH-DEVICE CONTENT DEFAULTS (the old Start Anyway rule):
+     no saved prefs on this device → platform defaults + the critical
+     population systems ON. With saved prefs, this block does nothing:
+     the player's own content choices stand. */
+  try{
+    var hasSaved = false;
+    try{ hasSaved = !!localStorage.getItem('sa_launch_opts_v1'); }catch(e){}
+    if (!hasSaved && window.__launchOpts){
+      var isAPKBoot = false;
+      try{ isAPKBoot = /SurvivingAdamsville|wv/i.test(navigator.userAgent || ''); }catch(e){}
+      var o = window.__launchOpts;
+      /* CONTENT keys only. The graphics booleans (shadows, antialias,
+         hiDetail) are the measurement's — step (1) set them from the
+         tier a moment ago, and resetting them here would stomp a
+         strong device's measured FULL back to the platform default
+         (the exact bug this list exists to prevent). */
+      var contentKeys = ['npcs', 'martaBuses', 'martaTrains', 'drones', 'traffic'];
+      for (var ck = 0; ck < contentKeys.length; ck++){ o[contentKeys[ck]] = isAPKBoot; }
+      var crit = window.__criticalSystems || ['npcs', 'traffic'];
+      for (var ci = 0; ci < crit.length; ci++){
+        if (typeof o[crit[ci]] === 'boolean') o[crit[ci]] = true;
+      }
+    }
+  }catch(e){}
+  /* (3) RESUME DETECTION — the rule and numbers are the old
+     launcher's, verbatim (they MUST match ui_update_flow.js's
+     STALE_MS / AUTO_STALE_MS): flow/trip stashes are trusted for
+     10 minutes, AUTO spot stashes for 12 HOURS. Accepting a stash
+     stamps __resumeStashT so the restore can never re-judge it
+     stale mid-boot (the 2026-11-07 lost-coordinates fix). */
+  try {
+    var _rsRaw = null;
+    try { _rsRaw = localStorage.getItem('sa_ui_update_resume'); } catch(e){}
+    var _rs = null;
+    try { _rs = _rsRaw ? JSON.parse(_rsRaw) : null; } catch(e){}
+    var _rsZone = null;
+    try { _rsZone = new URLSearchParams(window.location.search).get('zone'); } catch(e){}
+    var _rsLimit = (_rs && _rs.auto) ? 12 * 60 * 60 * 1000 : 10 * 60 * 1000;
+    if (_rs && _rs.kind === 'ui-update' && typeof _rs.t === 'number' &&
+        (Date.now() - _rs.t) < _rsLimit && _rs.player &&
+        (!_rs.zone || !_rsZone || _rs.zone === _rsZone)) {
+      window.__resumeBoot = true;
+      window.__resumeStashT = _rs.t;
+    }
   } catch(e){}
+  /* (4) BENCHMARK — started BEFORE the confirm so its window runs
+     inside the downloads that follow. Its settle refines the tier,
+     persists it for the next boot, and applies what is still safe.
+     An abstention (no WebGL, no samples) changes nothing. */
+  try{
+    __autoBenchmark(function(fps){
+      try{
+        var bt = __autoTierFromFps(fps);
+        if (bt < 0) return;
+        var finalTier = __autoTierMax(bt, probeFloor);
+        window.__autoQuality.fps = Math.round(fps);
+        window.__autoQuality.source = 'benchmark';
+        __autoPersistTier(finalTier, Math.round(fps));
+        __autoApplyTier(finalTier);
+      }catch(e){}
+    });
+  }catch(e){}
+  /* (5) CONFIRM — unconditional. The NPC kill switch mirrors the old
+     confirm's (guarded: __setNpcPaused is block-2 code and does not
+     exist yet at this point in any boot, old or new — the real
+     enforcement is the option-skip in the deferred queue plus the
+     per-frame flag checks, exactly as before). Nothing here waits
+     for a person; that is the redesign. */
+  try{
+    if (window.__launchOpts && window.__launchOpts.npcs === false &&
+        typeof window.__setNpcPaused === 'function') {
+      window.__setNpcPaused(true);
+    }
+  }catch(e){}
+  window.__launcherConfirmed = true;
+  /* Options confirmed — release any deferred network fetches. */
+  try{ if (typeof window.__flushConfirmQueue === 'function') window.__flushConfirmQueue(); }catch(e){}
+  /* __tryStartGame is deferred — game scripts load after confirmation.
+     __loadDeferredQueue() calls it when all scripts are ready. */
+  window.__startGameAfterLoad = true;
 })();
 </script>
 <!-- ===== ENGINE + DATA SCRIPTS ===== Each fires __loadStep() on load/error
@@ -3513,7 +3613,7 @@ var MAPVER=(function(){
     var cached=lsGet(LS_ACTIVE);
     active=cached||'unknown';
     if (!b){
-      /* v1.28: no downloads before the player confirms launch options. */
+      /* v1.28: no downloads before the automatic boot confirm. */
       try{
         window.__whenConfirmed(function(){
           fetch('map-manifest.json',{cache:'no-store'}).then(function(r){ return r.ok?r.json():null; })
@@ -3540,7 +3640,7 @@ var MAPVER=(function(){
      (red dot + admin tag). Cheap (~2KB), read-only, never disturbs play. */
   // Is a newer map staged/available? (never touches the running session)
   function checkPending(){
-    /* v1.28: no downloads before the player confirms launch options. */
+    /* v1.28: no downloads before the automatic boot confirm. */
     if (!window.__launcherConfirmed) return;
     var b=bridge();
     if (b && b.hasPendingMapUpdate){
@@ -3851,7 +3951,7 @@ var ASSETVER=(function(){
      Cheap (~1-2KB per manifest), read-only, never disrupts play. The MAPVER
      pending state is also folded in so the gear dot covers the map too. */
   function checkPending(){
-    /* v1.28: no downloads before the player confirms launch options. */
+    /* v1.28: no downloads before the automatic boot confirm. */
     if (!window.__launcherConfirmed) return;
     var b=bridge();
     var anyNew=false;
@@ -4907,23 +5007,24 @@ var container = document.getElementById('game');
    Also cap pixel ratio at 1.0 for software rendering.
    v1.22 LAUNCHER: the antialias checkbox overrides (user's explicit choice wins
    over auto-detect, unless weak hardware forces it off). __initAA snapshots
-   the value used at renderer creation so the launcher knows if a change
+   the value used at renderer creation so the boot knows if a change
    needs a page reload to take effect. */
 var _useAA = (window.__launchOpts && window.__launchOpts.antialias===false) ? false : !window.__weakHardware;
 window.__initAA = _useAA;
 /* v1.27 FIX 1 (Joshua 2026-10-10: infinite reload loop on weak hardware):
-   Weak hardware forces AA off at renderer creation. If the saved pref still
-   says antialias=true, the launcher's START GAME computes
-   needReload = (true !== false) = true and calls location.reload() — forever,
-   because the pref never changes across reloads. Sync the pref (and the
-   checkbox UI) to reality right here so START GAME sees no mismatch and
-   does NOT reload. */
+   Weak hardware forces AA off at renderer creation. If the pref still
+   says antialias=true, the old launcher's START GAME computed
+   needReload = (true !== false) = true and called location.reload() —
+   forever, because the pref never changed across reloads. Syncing the
+   pref to reality right here removed the mismatch.
+   LAUNCH REDESIGN (2026-11-07): the reload path and the checkbox this
+   fix also used to sync are gone with the options screen. The sync
+   itself stays: it keeps __launchOpts honest about the renderer that
+   actually exists (the automatic spec gathering reads the same flag
+   next boot, and block 2's detector is the one probe that runs on
+   the real engine path). */
 if (window.__weakHardware && window.__launchOpts && window.__launchOpts.antialias !== false) {
   window.__launchOpts.antialias = false;
-  try {
-    var _aaBox = document.querySelector('#launcher input[data-opt="antialias"]');
-    if (_aaBox) _aaBox.checked = false;
-  } catch(e){}
   try { if (typeof window.__saveLaunchOpts === 'function') window.__saveLaunchOpts(); } catch(e){}
 }
 var _pixelRatio = window.__weakHardware ? 1.0 : Math.min(window.devicePixelRatio || 1, 1.5);
@@ -16654,7 +16755,7 @@ function updateActionButton(){
         }
         /* #32 (Joshua): dwelling school bus at a stop — sbCheckBoard does the
            proximity scan and returns act/label. typeof-guarded: the schoolbus
-           module may be disabled in the launcher. */
+           module may be disabled by the launch options. */
         if (!act && typeof sbCheckBoard==='function'){
           var _sb=sbCheckBoard();
           if (_sb){ act=_sb.act; label=_sb.label; }
@@ -17404,18 +17505,16 @@ __loadStep('music');
    on-screen instead of dying to a silent black screen. */
 function __tryStartGame(){
   try{
-    /* v1.22 LAUNCHER GATE: do not start until the user has picked options
-       and hit START GAME. The launcher covers the loader, so the game
-       waits here instead of auto-starting behind it.
-       v1.27 FIX 3 (Joshua 2026-10-10: "freezes at click to start" with no
-       explanation): surface WHY the start is blocked on the status line
-       instead of silently returning false. A dead button with no message
-       is indistinguishable from a freeze. */
-    if (!window.__launcherConfirmed){
-      var _ls=document.getElementById('load-status');
-      if(_ls){ _ls.textContent='Pick your options above, then tap START GAME (or Start Anyway)'; _ls.style.opacity='1'; }
-      return false;
-    }
+    /* LAUNCH REDESIGN (2026-11-07): there is NO confirmation gate here
+       any more. The v1.22 launcher gate ("do not start until the user
+       has picked options and hit START GAME") died with the options
+       screen: the automatic boot confirms the launch in block 1,
+       before the deferred queue even starts, so by the time any start
+       is attempted the boot is confirmed by construction. What still
+       gates this function is real readiness — pending load steps, the
+       critical-failure gate, the buildings gate — and each of those
+       still says WHY on the status line (the v1.27 FIX 3 lesson: a
+       silent refusal reads as a freeze). */
     var l=document.getElementById('loader');
     if(!l || l.style.display==='none') return false;
     /* v1.15 CLICK-BUG HARDENING (Joshua 2026-10-10: click did nothing on APK
@@ -17458,7 +17557,7 @@ function __tryStartGame(){
       return false;
     }
     /* RESUME BOOT (Joshua 2026-11-07): there is deliberately NO gate
-       here. On a resume boot the launcher already confirmed the launch
+       here. On a resume boot the boot already confirmed the launch
        (options skipped), so this start proceeds like any confirmed
        start, and the restores below (HR, then UIUpdateFlow) place the
        player at the stashed coordinates. The 2026-10-18 resume tap
@@ -17519,11 +17618,13 @@ function __tryStartGame(){
    evaluation they did not exist yet, and no timer could interrupt the
    running task anyway. The block-1 versions are progress-based and are
    verified by triggering them, not just by reading them. */
-/* v1.33 REMOVED (Joshua 2026-10-11): the 30s auto-confirm fallback is gone.
-   The launcher now waits for an explicit choice — START GAME or the new
-   "Start Anyway" button. No timers, no auto-proceed. (__autoStart below only
-   *attempts* a start via __tryStartGame, which still gates on
-   __launcherConfirmed and just shows the "pick your options" prompt.) */
+/* LAUNCH REDESIGN (2026-11-07): the v1.33 law this comment once
+   recorded — the launcher waits for an explicit START GAME / Start
+   Anyway choice, no timers, no auto-proceed — is superseded. There
+   is no launcher and no choice: the automatic boot confirms in
+   block 1, the downloads run, and __autoStart's attempt below is a
+   backup to the queue-end start, racing the same gates (pending
+   steps, critical failures, buildings) — never a person's tap. */
 /* __autoStart() - Joshua's NO-SKIP rule: the game starts ITSELF ~3s after the
    loader reports Ready - no manual "press start" step, no update-download
    gate. The document-level click handler, the #load-start button, and the

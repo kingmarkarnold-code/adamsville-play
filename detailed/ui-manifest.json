@@ -153,9 +153,9 @@
     },
     {
       "name": "index.html",
-      "size": 1252802,
-      "sha256": "5ad8ed9951f2376a066231bb16816342d6e88f7515b5644e0ba7555be898f6c0",
-      "hash": "5ad8ed9951f2376a066231bb16816342d6e88f7515b5644e0ba7555be898f6c0"
+      "size": 1256572,
+      "sha256": "4184f27c3ee7eedd1f4ec46cfd5da2b95710bd4a109c524b054f3419da2330c0",
+      "hash": "4184f27c3ee7eedd1f4ec46cfd5da2b95710bd4a109c524b054f3419da2330c0"
     },
     {
       "name": "input_diag.js",
@@ -243,9 +243,9 @@
     },
     {
       "name": "perf_budget.js",
-      "sha256": "35c904ce8b80a97d3e62371e66b5703ab53da70ed7860201d416f2c6862600e3",
-      "hash": "35c904ce8b80a97d3e62371e66b5703ab53da70ed7860201d416f2c6862600e3",
-      "size": 19959
+      "sha256": "3244c657e26d55f6c087de955facd38e0ce636a6b3d0dbec6bd7570d10aa5448",
+      "hash": "3244c657e26d55f6c087de955facd38e0ce636a6b3d0dbec6bd7570d10aa5448",
+      "size": 22181
     },
     {
       "name": "player.gif",
@@ -672,6 +672,6 @@
       "hash": "20b983ae0e2e555817495a65c37519bfcb2231825269db6a57d72c51ed6006e3"
     }
   ],
-  "ui_version": "2026.11.07.12",
+  "ui_version": "2026.11.07.13",
   "version": "2026.10.17.9"
 }
