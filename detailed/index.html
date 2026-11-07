@@ -1880,9 +1880,32 @@ setInterval(function(){
        buildings gate has resolved, the start fires by itself (a
        confirmed cold start, or a resume boot rolling straight in —
        Joshua 2026-11-07) — stand down, and never record a stall for a
-       finished load. (If some other gate refused the start, the
-       tap-anywhere escape in the tier-1 branch remains the way in.) */
-    if (!pending.length && (!window.__bldgGatePromise || window.__bldgGateDone)) return;
+       finished load. (A REFUSED start is the one exception: it is also
+       finished, and it is handled by the finished-but-not-started check
+       inside the stand-down below — the tier-1 tap-anywhere escape sits
+       AFTER that return and could never see it.) */
+    if (!pending.length && (!window.__bldgGatePromise || window.__bldgGateDone)){
+      /* FINISHED-BUT-NOT-STARTED (2026-11-07, Joshua's incognito report):
+         a failed load step signs off as done-with-warning, so the bar can
+         honestly reach 100% WITH a critical failure inside it — and the
+         single queue-end start attempt then refuses at the critical gate
+         in __tryStartGame. This watchdog used to stand down on the line
+         above without ever consulting __criticalFailed, so a refused
+         start froze at 100% forever: no retry, no report (worst in
+         private windows, where every fetch is cold). The interval only
+         reaches here with the game NOT started (see the __gameStarted
+         check at the top), so: exactly ONCE, file the boot-stall report
+         and re-invoke the start gate — it re-renders the critical panel
+         loudly, or starts the game if the refusal has cleared. The flag
+         keeps later ticks quiet; the panel's RETRY / CONTINUE ANYWAY
+         buttons remain the player's own decision. */
+      if (!window.__refusedStartRewarned){
+        window.__refusedStartRewarned = true;
+        __recordBootStall('watchdog-refused-start', idle);
+        try{ if (typeof __tryStartGame==='function') __tryStartGame(); }catch(e){}
+      }
+      return;
+    }
     if (window.__stallTier === 0){
       window.__stallTier = 1;
       try{ console.warn('[loader] STUCK WATCHDOG: no progress for '+Math.round(idle)+'s'); }catch(e){}
@@ -2478,7 +2501,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
    stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.11.07.9';
+window.__DOC_UIVER = '2026.11.07.10';
 function __checkDocVersionHeal(){
   var live = window.__UIVER || '';
   if (!live || live === window.__DOC_UIVER){
@@ -17383,6 +17406,12 @@ function __tryStartGame(){
        The player decides — the game never pretends a broken city is fine. */
     if(window.__criticalFailed && window.__criticalFailed.length && !window.__criticalAcked){
       try{ if(typeof __showCriticalWarning==='function') __showCriticalWarning(); }catch(e){}
+      /* 2026-11-07: say the refusal on the STATUS LINE too, at the moment
+         it happens — the warning panel sits further down the loader, and
+         a player watching the bar otherwise sees only "100% and it
+         stopped" with no words anywhere. */
+      var _cfSt=document.getElementById('load-status');
+      if(_cfSt){ _cfSt.textContent='⚠ Loading finished with failures — see the warning below'; _cfSt.style.opacity='1'; }
       return false;
     }
     /* LAPTOP-HANG FIX (2026-10-25): building placement is sliced on slow
