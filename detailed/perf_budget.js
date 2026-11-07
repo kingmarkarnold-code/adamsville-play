@@ -112,6 +112,30 @@ var emaFps = 60;               /* smoothed FPS */
 var levelChanges = 0;          /* post-boot quality level changes */
 var minEmaFps = null;          /* lowest smoothed FPS after warmup */
 var maxEmaFps = null;          /* highest smoothed FPS after warmup */
+
+/* ---------------- frame-hitch histogram (2026-11-07) ----------------
+   The EMA above SMOOTHS a hitch away: a single 350 ms main-thread
+   block (Joshua's laptop report — "movement stops, then recovers",
+   FPS dipping to 19) moves the smoothed FPS only briefly, so the
+   telemetry the player reports carried no trace of the stops. This
+   histogram counts RAW frame gaps into buckets — how many frames
+   this session ran longer than 50 / 100 / 250 ms — so a report can
+   say "17 frames over 100 ms" instead of a smooth average that
+   hides them. Gaps over HITCH_MAX_GAP_MS are not counted: a
+   multi-second gap is the tab sleeping or switching away, not the
+   game blocking a frame. Counted HERE, in the module that sees
+   every frame; github_reports.js only reads the counts through
+   getTelemetry() (the Google Form is unchanged). */
+var HITCH_MAX_GAP_MS = 2000;
+var hitchFrames = 0;           /* frames timed (0 < dt <= HITCH_MAX_GAP_MS) */
+var hitchGt50 = 0, hitchGt100 = 0, hitchGt250 = 0;
+function countHitch(dtMs){
+  if (!(dtMs > 0) || dtMs > HITCH_MAX_GAP_MS) return;
+  hitchFrames++;
+  if (dtMs > 50) hitchGt50++;
+  if (dtMs > 100) hitchGt100++;
+  if (dtMs > 250) hitchGt250++;
+}
 var FPS_WARMUP_SECS = 5;       /* ignore the first seconds of FPS */
 var belowSince = 0;            /* timestamp when FPS first dropped below 28 */
 var aboveSince = 0;            /* timestamp when FPS first rose above 32 */
@@ -231,6 +255,8 @@ function tick(){
   try { now = performance.now(); } catch(e){ return; }
   if (lastFrameT > 0) {
     var dtMs = now - lastFrameT;
+    countHitch(dtMs);   /* raw-gap histogram (2026-11-07): sees the
+                           hitches the EMA below smooths over */
     if (dtMs > 0 && dtMs < 1000) {   /* ignore huge gaps (tab switch, hitch) */
       var instFps = 1000 / dtMs;
       emaFps += (instFps - emaFps) * FPS_EMA_ALPHA;
@@ -349,13 +375,21 @@ window.PerfBudget = {
       manualOverride: (manualOverride === null ? 'auto' : LEVELS[manualOverride].label),
       trafficCap: (typeof window.__perfTrafficCap === 'number' ? window.__perfTrafficCap : null),
       npcDist: (typeof window.__perfNpcDist === 'number' ? window.__perfNpcDist : null),
-      shadowDist: (typeof window.__perfShadowDist === 'number' ? window.__perfShadowDist : null)
+      shadowDist: (typeof window.__perfShadowDist === 'number' ? window.__perfShadowDist : null),
+      /* Frame-hitch histogram (2026-11-07): raw frame-gap counts the
+         FPS band above cannot express — see countHitch. Folded into
+         the reports' existing telemetry JSON by github_reports.js. */
+      hitch: { frames: hitchFrames, gt50: hitchGt50, gt100: hitchGt100, gt250: hitchGt250 }
     };
   },
   setManual: window.__setPerfQuality,
   getManual: window.__getPerfQuality,
   /* Test/DI hook: force a level without touching the timers. */
-  _forceLevel: function(lv){ applyLevel(Math.max(0, Math.min(MAX_LEVEL, lv)), true); }
+  _forceLevel: function(lv){ applyLevel(Math.max(0, Math.min(MAX_LEVEL, lv)), true); },
+  /* Test hook (2026-11-07): feed a synthetic frame gap into the
+     hitch histogram, so the verify harness can prove the buckets
+     without a live frame loop. */
+  _countHitch: countHitch
 };
 
 /* ---------------- boot ---------------- */

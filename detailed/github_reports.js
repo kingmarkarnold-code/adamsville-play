@@ -650,6 +650,13 @@ window.GitHubReports = (function(){
           s += ' after '+p.levelChanges+' change'+
                (p.levelChanges===1?'':'s');
         bits.push(s);
+        /* Frame-hitch histogram (2026-11-07): the raw frame-gap
+           counts behind the smoothed band above — a session whose
+           movement "stopped, then recovered" shows up here even
+           when the band looks healthy. */
+        if(p.hitch && typeof p.hitch.gt100==='number' && p.hitch.frames)
+          bits.push('hitches: '+p.hitch.gt100+' frames >100ms ('+
+                    (p.hitch.gt250||0)+' >250ms) of '+p.hitch.frames);
         var gov = [];
         if(p.trafficCap!=null) gov.push('trafficCap '+p.trafficCap);
         if(p.npcDist!=null) gov.push('npcDist '+p.npcDist);

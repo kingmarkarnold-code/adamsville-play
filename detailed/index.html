@@ -2446,7 +2446,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
    stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.11.07.7';
+window.__DOC_UIVER = '2026.11.07.8';
 function __checkDocVersionHeal(){
   var live = window.__UIVER || '';
   if (!live || live === window.__DOC_UIVER){
@@ -5591,6 +5591,108 @@ try{ __wbStage('terrain'); }catch(e){}
   try{ if (typeof Report !== 'undefined' && Report.setSys) Report.setSys('canopy', window.__PKG_CANOPY_BUILT); }catch(e){}
 })();
 
+/* ================= THE FUNNEL — one rate-limited queue for ALL
+   background world-building work (Joshua's design, 2026-11-07:
+   "create a funnel situation where it can knock it's not able to
+   do burst where everything has to either wait its turn or only
+   certain amount of information can be processed at a time this
+   will prevent the burst — it's kind of like upload download
+   speeds: no matter how much I want to upload a gigabyte of file
+   space I can, but I'm only allowed to go a certain number of
+   megabytes per second").
+
+   THE PROBLEM IT KILLS: background builders used to run in bursts
+   inside timer ticks — the tree streamer built up to 3 WHOLE tiles
+   (8 during warmup) inside one 400 ms tick, each tile running the
+   water scan (~64 bodies) and an uncached material lookup per
+   anchor. A burst landing mid-frame on the laptop froze movement
+   outright (his play report: FPS falls to 19, movement stops,
+   then it recovers). The work itself is necessary; the BURST is
+   the bug.
+
+   THE RULE FROM NOW ON: bulk background building work is submitted
+   to this one queue as a SLICEABLE job, and nowhere else:
+     job = { label: string,
+             step: function(yieldNow) -> true when DONE,
+             cancelled: bool — set by the job's owner; honoured at
+               the next slice boundary }
+   step() advances the job unit by unit (for the tree builder: one
+   anchor per unit) and MUST consult yieldNow() between units,
+   returning false ("more later") once it reports true. The pump
+   below runs once per animation frame and spends at most
+   FUNNEL_BUDGET_MS inside job steps, then hands the frame back to
+   the game. A slice can overrun the budget only by the cost of ONE
+   indivisible unit of work — never by a whole job — so no frame
+   can be ambushed, at any queue length: the gigabyte still
+   uploads, at the capped rate. Jobs run strictly FIFO; resort()
+   re-orders the PENDING queue between frames (the tree streamer
+   uses it to keep the nearest tiles first as the player moves —
+   a job's cursor lives on the job, so re-ordering loses nothing).
+   A job whose step throws is dropped, never allowed to jam the
+   queue behind it. The funnel changes WHEN work runs — never WHAT
+   any job decides: every placement/collision verdict a job reaches
+   is the verdict the old burst code reached, reached in the same
+   order. Exposed as window.__FUNNEL for diagnostics. */
+(function(){
+  if (window.__FUNNEL) return;
+  var FUNNEL_BUDGET_MS = 2.5;   /* the cap: milliseconds of job work
+                                   per animation frame. At 60 fps the
+                                   funnel still drains ~150 ms of
+                                   building per second — more
+                                   throughput than the old 3-tiles-
+                                   per-400 ms tick — but spread so
+                                   thin no single frame feels it. */
+  var queue = [];
+  var pumpArmed = false;
+  var stats = { submitted: 0, completed: 0, cancelled: 0, dropped: 0,
+                slices: 0, maxSliceMs: 0, spentMs: 0 };
+  function nowMs(){
+    try { return performance.now(); } catch(e){ return Date.now(); }
+  }
+  function arm(){
+    if (pumpArmed) return;
+    pumpArmed = true;
+    if (typeof requestAnimationFrame === 'function')
+      requestAnimationFrame(pump);
+    else setTimeout(pump, 16);
+  }
+  function pump(){
+    pumpArmed = false;
+    var t0 = nowMs();
+    while (queue.length){
+      var job = queue[0];
+      if (job.cancelled){ queue.shift(); stats.cancelled++; continue; }
+      var s0 = nowMs(), done = false;
+      try { done = (job.step(function(){ return nowMs() - t0 >= FUNNEL_BUDGET_MS; }) === true); }
+      catch(e){ done = true; stats.dropped++; }
+      var sMs = nowMs() - s0;
+      stats.slices++; stats.spentMs += sMs;
+      if (sMs > stats.maxSliceMs) stats.maxSliceMs = sMs;
+      if (done){ queue.shift(); stats.completed++; }
+      if (nowMs() - t0 >= FUNNEL_BUDGET_MS) break;
+    }
+    if (queue.length) arm();
+  }
+  window.__FUNNEL = {
+    BUDGET_MS: FUNNEL_BUDGET_MS,
+    submit: function(job){
+      if (!job || typeof job.step !== 'function') return null;
+      queue.push(job); stats.submitted++;
+      arm();
+      return job;
+    },
+    resort: function(cmp){ if (queue.length > 1) queue.sort(cmp); },
+    pending: function(){ return queue.length; },
+    stats: function(){
+      return { submitted: stats.submitted, completed: stats.completed,
+               cancelled: stats.cancelled, dropped: stats.dropped,
+               slices: stats.slices,
+               maxSliceMs: Math.round(stats.maxSliceMs * 100) / 100,
+               spentMs: Math.round(stats.spentMs), pending: queue.length };
+    }
+  };
+})();
+
 /* ================= PHASE G TREES — the near field reads as TREES
    (Joshua, 2026-11-01 hands-on of ui .2: "that trees don't look like
    trees"). The package canopy (buildPkgCanopy, above) draws the whole
@@ -5618,9 +5720,11 @@ try{ __wbStage('terrain'); }catch(e){}
      - anchors respect the water (inWater): no trees inside a drawn
        lake or a stream ribbon, matching the canopy data's own
        open-water exclusion;
-     - trees live in 64-unit tiles streamed around the player (built
-       lazily a few per tick, nearest first; dropped beyond the kill
-       radius), the pattern the fish/NPC systems already use;
+     - trees live in 64-unit tiles streamed around the player (builds
+       enqueued nearest first and metered out through THE FUNNEL —
+       see the funnel section above — a few anchors per frame, never
+       a whole tile in one burst; dropped beyond the kill radius),
+       the pattern the fish/NPC systems already use;
      - crowns sway through the same wind shader injection and the
        same shared uniforms as the canopy; trunks carry aSway 0 and
        never move. Legacy mode never runs any of this.
@@ -5654,7 +5758,7 @@ try{ __wbStage('terrain'); }catch(e){}
        "Use mesh bonding for the trees they should only be able
        to be on grass"): past the water exclusion, every anchor
        must stand on the GRASS material itself — treeGroundIsGrass
-       in buildTile below, reading the game's one material lookup
+       in the tile builder below (anchorGate), reading the game's one material lookup
        (CollisionMaterial.getMaterialAt). The far canopy mass
        takes the same rule in broad-phase form (buildTreeBond-
        Raster). No tree bonds to water, road surface, a building
@@ -5773,7 +5877,7 @@ try{ __wbStage('terrain'); }catch(e){}
     /* TRUNK MESH COLLISION (Joshua 2026-11-01 — see the system
        header): hand the caller the trunk's exact drawn geometry —
        the axis runs from (ax, az) at y0 to (ax+leanX, az+leanZ) at
-       y1, its radius from rB at y0 to rT at y1. buildTile keeps the
+       y1, its radius from rB at y0 to rT at y1. The tile builder keeps the
        record as the tile's collision truth; nothing is registered
        in any collision registry. */
     return { x: ax, z: az, y0: y0, y1: y1, rB: rB, rT: rT, lx: leanX, lz: leanZ };
@@ -5908,9 +6012,79 @@ try{ __wbStage('terrain'); }catch(e){}
     return hits;
   }
 
-  function buildTile(ix, iz){
+  /* ---------- ANCHOR VERDICT CACHE (2026-11-07) ----------
+     Every candidate anchor must pass two gates before a tree is
+     emitted: waterClearForTree (outside every drawn water footprint
+     plus the 3u bank margin) and treeGroundIsGrass (the anchor bonds
+     to the GRASS material — the game's one material lookup). Both
+     are scans over static package data (the WATER rings, the baked
+     material claims) and both were re-run from scratch every time a
+     tile streamed back in — the per-anchor cost behind the build
+     bursts. anchorGate memoises the pair's verdict per exact anchor
+     point: the same point earns the same verdict, so a rebuilt tile
+     replays its decisions instead of recomputing them. Strictness
+     is UNCHANGED — the first evaluation of any anchor runs the very
+     same two checks with the same fail-open shape as the inline
+     code it replaces (an absent or throwing check passes); only
+     the ANSWER is remembered. Two bounds keep the memory honest:
+     an entry lives ANCHOR_VERDICT_TTL_MS — the material lookup can
+     also see transient claims (a person standing on the spot), and
+     a verdict earned under somebody's feet must not outlive them
+     by more than the TTL — and the table resets if it ever passes
+     200,000 anchors (a verdict is then simply recomputed, never
+     wrong). */
+  var ANCHOR_VERDICT_TTL_MS = 60000;
+  var anchorVerdicts = {};   /* "x,z" -> { v: bool, t: ms } */
+  var anchorVerdictsN = 0;
+  function anchorGate(x, z){
+    var key = x + ',' + z;
+    var hit = anchorVerdicts[key];
+    if (hit && (Date.now() - hit.t) < ANCHOR_VERDICT_TTL_MS) return hit.v;
+    var ok = true;
+    /* water exclusion against the DRAWN footprints, with a bank
+       margin (2026-11-07 trees-in-creek fix — see waterClearForTree
+       in the water section for the three leaks in the bare
+       inWater() anchor test this replaces) */
+    try { if (typeof waterClearForTree === 'function' && !waterClearForTree(x, z, 3)) ok = false; } catch(e){}
+    /* MESH BONDING (2026-11-07, Joshua: "Use mesh bonding for the
+       trees they should only be able to be on grass"): outside the
+       water is not enough — the anchor must stand on the GRASS
+       material itself, read from the game's one material lookup
+       (see treeGroundIsGrass in the water section). No tree bonds
+       to road surface, a building ring, a rail corridor or any
+       other claimed material. */
+    if (ok){ try { if (typeof treeGroundIsGrass === 'function' && !treeGroundIsGrass(x, z)) ok = false; } catch(e){} }
+    if (anchorVerdictsN >= 200000){ anchorVerdicts = {}; anchorVerdictsN = 0; }
+    if (!hit) anchorVerdictsN++;
+    anchorVerdicts[key] = { v: ok, t: Date.now() };
+    return ok;
+  }
+
+  /* ---------- TILE BUILDS RUN THROUGH THE FUNNEL (2026-11-07) ----
+     buildTile used to run WHOLE tiles synchronously inside the
+     400 ms tick — up to 3 per tick, 8 during warmup — the burst
+     the hitch diagnosis convicted (one tick could take ~100 ms+
+     of the main thread while the player was moving). A tile build
+     is now a FUNNEL job: beginTileJob() prepares the same
+     deterministic scan buildTile ran (package-frame span from the
+     tile's corners; cover rows top to bottom, cells left to
+     right, anchors k in order — the placement hash is pure, so
+     scan order IS tree order), stepTileJob() advances it ONE
+     ANCHOR per unit of work, consulting the funnel's yieldNow()
+     between anchors, and finishTileJob() does exactly what
+     buildTile did at the end: bucket the trunks, claim the tile,
+     build the mesh. The funnel (THE FUNNEL, above this system)
+     caps each frame's spend at FUNNEL_BUDGET_MS, so the same
+     trees arrive spread over a few frames instead of in one
+     frame-breaking lump, and nothing else about them changes:
+     same anchors accepted, same anchors refused, same geometry.
+     A job the player walks away from mid-build is cancelled by
+     the tick and claims nothing — exactly as if never started.
+     tileWork tracks the in-flight jobs so the tick never enqueues
+     a tile twice and can cancel the stale ones. */
+  var tileWork = {};   /* "ix,iz" -> funnel job (build in flight) */
+  function beginTileJob(ix, iz){
     var key = ix + ',' + iz;
-    if (key in tiles) return;
     var x0 = TERR_OX + ix * TILE, z0 = TERR_OZ + iz * TILE;
     /* cells are package data: find the package-frame span this tile
        covers by converting its world corners back */
@@ -5921,56 +6095,84 @@ try{ __wbStage('terrain'); }catch(e){}
       px0 = Math.min(px0, corners[ci].x); px1 = Math.max(px1, corners[ci].x);
       pz0 = Math.min(pz0, corners[ci].z); pz1 = Math.max(pz1, corners[ci].z);
     }
-    var cc0 = Math.max(0, Math.floor((px0 - C.x0) / C.cellM)),
-        cc1 = Math.min(C.cols - 1, Math.floor((px1 - C.x0) / C.cellM));
-    var rr0 = Math.max(0, Math.floor((pz0 - C.z0) / C.cellM)),
-        rr1 = Math.min(C.rows - 1, Math.floor((pz1 - C.z0) / C.cellM));
-    var P = { pos: [], col: [], swy: [], idx: [], nv: 0 };
-    var trunks = [];   /* this tile's trunk GEOMETRY records (mesh collision —
-                          they live and die with the tile's mesh record) */
-    var rr, cc, k;
-    for (rr = rr0; rr <= rr1; rr++) for (cc = cc0; cc <= cc1; cc++){
-      var cov = C.cover[rr * C.cols + cc];
-      if (cov < THR) continue;
-      var f = cov / 100;
-      var expect = f * 3.2;
-      var n = Math.floor(expect) + ((th(cc, rr, 5) < expect - Math.floor(expect)) ? 1 : 0);
-      if (n > 4) n = 4;
-      for (k = 0; k < n; k++){
-        var pkx = C.x0 + (cc + 0.5) * C.cellM + (th(cc, rr, 10 + k) - 0.5) * 8;
-        var pkz = C.z0 + (rr + 0.5) * C.cellM + (th(cc, rr, 20 + k) - 0.5) * 8;
-        var rt = MF.pkgToRuntime(pkx, pkz);
-        /* the tile that owns the anchor builds it (an anchor near a
-           tile edge can jitter across it — no tree is built twice) */
-        if (Math.floor((rt.x - TERR_OX) / TILE) !== ix ||
-            Math.floor((rt.z - TERR_OZ) / TILE) !== iz) continue;
-        var gy;
-        try { gy = heightAt(rt.x, rt.z); } catch(e){ continue; }
-        try { var my = terrainMeshY(rt.x, rt.z); if (my > gy) gy = my; } catch(e){}
-        /* water exclusion against the DRAWN footprints, with a bank
-           margin (2026-11-07 trees-in-creek fix — see waterClearForTree
-           in the water section for the three leaks in the bare
-           inWater() anchor test this replaces) */
-        try { if (typeof waterClearForTree === 'function' && !waterClearForTree(rt.x, rt.z, 3)) continue; } catch(e){}
-        /* MESH BONDING (2026-11-07, Joshua: "Use mesh bonding for
-           the trees they should only be able to be on grass"):
-           outside the water is not enough — the anchor must stand
-           on the GRASS material itself, read from the game's one
-           material lookup (see treeGroundIsGrass in the water
-           section). No tree bonds to road surface, a building
-           ring, a rail corridor or any other claimed material. */
-        try { if (typeof treeGroundIsGrass === 'function' && !treeGroundIsGrass(rt.x, rt.z)) continue; } catch(e){}
-        var tg = emitTree(P, rt.x, rt.z, gy, f,
-          [th(cc, rr, 30 + k), th(cc, rr, 40 + k), th(cc, rr, 50 + k), th(cc, rr, 60 + k)]);
-        /* TRUNK MESH COLLISION (see the system header): the tile
-           keeps the trunk's own geometry record — the same numbers
-           emitTree just drew with. NO registry entry is made:
-           under Joshua's mesh-first rule the material is the
-           collision. */
-        trunks.push(tg); trunksLive++;
-        treesTotal++;
+    var job = {
+      label: 'treeTile ' + key,
+      ix: ix, iz: iz, key: key, x0: x0, z0: z0, dist: 0,
+      cc0: Math.max(0, Math.floor((px0 - C.x0) / C.cellM)),
+      cc1: Math.min(C.cols - 1, Math.floor((px1 - C.x0) / C.cellM)),
+      rr0: Math.max(0, Math.floor((pz0 - C.z0) / C.cellM)),
+      rr1: Math.min(C.rows - 1, Math.floor((pz1 - C.z0) / C.cellM)),
+      P: { pos: [], col: [], swy: [], idx: [], nv: 0 },
+      trunks: [],   /* this tile's trunk GEOMETRY records (mesh
+                       collision — they live and die with the tile's
+                       mesh record) */
+      rr: 0, cc: 0, k: -1, cellN: 0, cellF: 0,
+      cancelled: false, step: null
+    };
+    job.rr = job.rr0; job.cc = job.cc0;
+    job.step = function(yieldNow){ return stepTileJob(job, yieldNow); };
+    return job;
+  }
+  function advanceTileCell(job){
+    job.cc++;
+    if (job.cc > job.cc1){ job.cc = job.cc0; job.rr++; }
+  }
+  function stepTileJob(job, yieldNow){
+    var P = job.P;
+    while (true){
+      if (job.cancelled){ delete tileWork[job.key]; return true; }
+      if (job.rr > job.rr1){ finishTileJob(job); return true; }
+      if (job.k < 0){
+        /* enter cell (rr, cc): cover decides how many anchors it holds */
+        var cov = C.cover[job.rr * C.cols + job.cc];
+        job.cellN = 0; job.cellF = 0;
+        if (cov >= THR){
+          var f = cov / 100;
+          var expect = f * 3.2;
+          var n = Math.floor(expect) + ((th(job.cc, job.rr, 5) < expect - Math.floor(expect)) ? 1 : 0);
+          if (n > 4) n = 4;
+          job.cellN = n; job.cellF = f;
+        }
+        if (!job.cellN){ advanceTileCell(job); continue; }
+        job.k = 0;
       }
+      /* --- one anchor: the unit of work the funnel meters --- */
+      var cc = job.cc, rr = job.rr, k = job.k, f = job.cellF;
+      job.k++;
+      if (job.k >= job.cellN){ job.k = -1; advanceTileCell(job); }
+      var pkx = C.x0 + (cc + 0.5) * C.cellM + (th(cc, rr, 10 + k) - 0.5) * 8;
+      var pkz = C.z0 + (rr + 0.5) * C.cellM + (th(cc, rr, 20 + k) - 0.5) * 8;
+      var rt = MF.pkgToRuntime(pkx, pkz);
+      /* the tile that owns the anchor builds it (an anchor near a
+         tile edge can jitter across it — no tree is built twice) */
+      if (Math.floor((rt.x - TERR_OX) / TILE) === job.ix &&
+          Math.floor((rt.z - TERR_OZ) / TILE) === job.iz){
+        var gy, hok = true;
+        try { gy = heightAt(rt.x, rt.z); } catch(e){ hok = false; }
+        if (hok){
+          try { var my = terrainMeshY(rt.x, rt.z); if (my > gy) gy = my; } catch(e){}
+          /* the two placement gates (drawn-water exclusion + grass
+             bonding), verdict-cached per anchor — anchorGate above */
+          if (anchorGate(rt.x, rt.z)){
+            var tg = emitTree(P, rt.x, rt.z, gy, f,
+              [th(cc, rr, 30 + k), th(cc, rr, 40 + k), th(cc, rr, 50 + k), th(cc, rr, 60 + k)]);
+            /* TRUNK MESH COLLISION (see the system header): the tile
+               keeps the trunk's own geometry record — the same numbers
+               emitTree just drew with. NO registry entry is made:
+               under Joshua's mesh-first rule the material is the
+               collision. */
+            job.trunks.push(tg); trunksLive++;
+            treesTotal++;
+          }
+        }
+      }
+      if (yieldNow()) return false;   /* the funnel's budget is spent —
+                                          resume at this cursor next slice */
     }
+  }
+  function finishTileJob(job){
+    delete tileWork[job.key];
+    var P = job.P, trunks = job.trunks, key = job.key;
     /* bucket the tile's trunk records into 8u cells (the tile's
        own index over its own drawing data): the mesh solver's
        broad phase reads only the buckets a mover can reach, which
@@ -5979,7 +6181,7 @@ try{ __wbStage('terrain'); }catch(e){}
     var bk = {};
     for (var bi = 0; bi < trunks.length; bi++){
       var bt = trunks[bi];
-      var bKey = Math.floor((bt.x - x0) / 8) + ',' + Math.floor((bt.z - z0) / 8);
+      var bKey = Math.floor((bt.x - job.x0) / 8) + ',' + Math.floor((bt.z - job.z0) / 8);
       (bk[bKey] = bk[bKey] || []).push(bt);
     }
     tiles[key] = { mesh: null, trunks: trunks, bk: bk };   /* claim the tile even when empty */
@@ -6010,12 +6212,52 @@ try{ __wbStage('terrain'); }catch(e){}
         for (ix = cix - span; ix <= cix + span; ix++){
           var cx = TERR_OX + (ix + 0.5) * TILE, cz = TERR_OZ + (iz + 0.5) * TILE;
           var d = Math.hypot(cx - px, cz - pz);
-          if (d <= BUILD_R && !((ix + ',' + iz) in tiles)) missing.push([d, ix, iz]);
+          if (d <= BUILD_R && !((ix + ',' + iz) in tiles) && !tileWork[ix + ',' + iz]) missing.push([d, ix, iz]);
         }
       missing.sort(function(a, b){ return a[0] - b[0]; });
-      var budget = (tilesBuilt < 10) ? 8 : 3, m;
-      for (m = 0; m < Math.min(budget, missing.length); m++)
-        buildTile(missing[m][1], missing[m][2]);
+      /* ENQUEUE, don't build (THE FUNNEL, 2026-11-07): this tick used
+         to build up to 3 whole tiles right here — 8 during warmup —
+         which is the burst that froze movement. Now every missing
+         tile becomes a funnel job, nearest first, and the funnel
+         meters the building out in slices of at most
+         FUNNEL_BUDGET_MS per frame. */
+      var m;
+      for (m = 0; m < missing.length; m++){
+        var job = beginTileJob(missing[m][1], missing[m][2]);
+        job.dist = missing[m][0];
+        tileWork[job.key] = job;
+        if (window.__FUNNEL) window.__FUNNEL.submit(job);
+        else { /* funnel absent (defensive): build synchronously, as before */
+          try { while (job.step(function(){ return false; }) !== true){} } catch(e){}
+        }
+      }
+      /* keep the pending queue nearest-first as the player moves:
+         refresh each in-flight job's distance and re-sort the
+         funnel's pending queue (a job's cursor lives on the job,
+         so re-ordering mid-build loses nothing) */
+      if (window.__FUNNEL && window.__FUNNEL.resort){
+        for (var jk in tileWork){
+          var jj = tileWork[jk];
+          jj.dist = Math.hypot(TERR_OX + (jj.ix + 0.5) * TILE - px,
+                               TERR_OZ + (jj.iz + 0.5) * TILE - pz);
+        }
+        window.__FUNNEL.resort(function(a, b){
+          var da = (typeof a.dist === 'number') ? a.dist : 1e18;
+          var db = (typeof b.dist === 'number') ? b.dist : 1e18;
+          return da - db;
+        });
+      }
+      /* cancel in-flight builds the player has left behind: their
+         partial arrays are discarded and the tile is never claimed —
+         the funnel honours `cancelled` at the next slice boundary */
+      for (var ck in tileWork){
+        var cj = tileWork[ck];
+        if (Math.hypot(TERR_OX + (cj.ix + 0.5) * TILE - px,
+                       TERR_OZ + (cj.iz + 0.5) * TILE - pz) > KILL_R){
+          cj.cancelled = true;
+          delete tileWork[ck];
+        }
+      }
       for (var key in tiles){
         var pr = key.split(',');
         var tcx = TERR_OX + (+pr[0] + 0.5) * TILE, tcz = TERR_OZ + (+pr[1] + 0.5) * TILE;
@@ -6033,13 +6275,16 @@ try{ __wbStage('terrain'); }catch(e){}
       }
     } catch(e){}
   }
+
   setInterval(tick, 400);
   /* The solver's door to the bark: CollisionMaterial.pushOut calls
      this every iteration (inert when absent — legacy mode never
      registers it, and no registry fallback replaces it). */
   window.__PKG_TREE_MESH = { pushOut: trunkPushOut };
   window.__PKG_TREES = { tiles: tiles,
-    stats: function(){ return { tiles: tilesBuilt, trees: treesTotal, trunks: trunksLive }; },
+    stats: function(){ return { tiles: tilesBuilt, trees: treesTotal, trunks: trunksLive,
+      tilesInFlight: Object.keys(tileWork).length, anchorVerdicts: anchorVerdictsN,
+      funnel: (window.__FUNNEL ? window.__FUNNEL.stats() : null) }; },
     auditRegistry: auditRegistry };
   /* NAMED BUMPS (2026-11-07, Joshua: "instead of me running into
      a tree and it says you ran into an object it says you hit a
