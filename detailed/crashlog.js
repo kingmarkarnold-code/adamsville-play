@@ -698,28 +698,16 @@ window.CrashLog = (function(){
     }catch(e){ return out; }
   }
 
-  /* --- bump toast (small on-screen notice) --- */
-  var toastEl = null, toastTimer = null;
-
-  function toast(msg){
-    try{
-      if (typeof document==='undefined' || !document.body) return;
-      if (!toastEl){
-        toastEl = document.createElement('div');
-        toastEl.id = 'crash-bump-toast';
-        toastEl.style.cssText = 'position:fixed;left:50%;bottom:19%;'+
-          'transform:translateX(-50%);z-index:99990;pointer-events:none;'+
-          'background:rgba(20,22,26,0.88);color:#ffe1a1;border:1px solid #e8a33d;'+
-          'border-radius:9px;padding:8px 14px;font:600 14px system-ui,sans-serif;'+
-          'opacity:0;transition:opacity 0.25s;max-width:88vw;text-align:center';
-        document.body.appendChild(toastEl);
-      }
-      toastEl.textContent = msg;
-      toastEl.style.opacity = '1';
-      if (toastTimer) clearTimeout(toastTimer);
-      toastTimer = setTimeout(function(){ try{ toastEl.style.opacity='0'; }catch(e){} }, 2600);
-    }catch(e){}
-  }
+  /* --- bump pop-ups REMOVED (Joshua 2026-11-07 16:14, UI CHECK
+     PASS) --- the "You hit X" toast that used to be built here is
+     gone by his ruling: the HEALTH / DAMAGE bars now show the
+     harm, and the pop-up only duplicated them. PRESENTATION ONLY
+     was removed — identification (identify() + the phrases it
+     carries), the body-damage feed below, the bump records and
+     the cooldown accounting are all exactly as before. The
+     strings that no longer display are listed in the pass's
+     build report, so the "go around" guidance can return in
+     another form if he asks for it. --- */
 
   /* --- bump handling with cooldowns (bumping a wall 60x a second
      must not flood the log; repeats are counted, not lost) --- */
@@ -746,13 +734,12 @@ window.CrashLog = (function(){
           window.__BODY.addBump(id.kind, mode);
       }catch(e){}
 
-      /* 2026-11-07 (Joshua): when the object names itself, the
-         toast is the object's own sentence — "You hit a tree.
-         You must go around." — not "You bumped into ...". The
-         generic wording remains the fallback for everything
-         that carries no name (walls, buildings, unidentified). */
-      toast(id.phrase ? id.phrase
-            : 'You bumped into ' + id.label + (id.road ? ' — near '+id.road : ''));
+      /* (The bump pop-up that was shown here — the object's own
+         "You hit a tree. You must go around." sentence, or the
+         "You bumped into ..." fallback — was removed by Joshua's
+         2026-11-07 16:14 ruling; see the note above. The bump is
+         still identified, still hurts the body above, and is
+         still logged below.) */
 
       var details = { kind: id.kind, mode: mode, suspicious: !!id.suspicious };
       if (typeof speed==='number') details.speed = Math.round(speed*10)/10;
@@ -765,7 +752,7 @@ window.CrashLog = (function(){
             (id.suspicious ? '. WARNING: no placed building matches this collider — it may be invisible.' : ''),
           where: 'collision solver (resolveCollision)',
           x: id.bx, z: id.bz, near: id.road, details: details,
-          action: 'logged; on-screen notice shown; game continued'
+          action: 'logged; game continued (bump pop-ups removed 2026-11-07 — the bars show the harm)'
         }));
       try{ setTimeout(flush, 4000); }catch(e){}
     }catch(e){}

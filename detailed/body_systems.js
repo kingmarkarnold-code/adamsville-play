@@ -526,6 +526,18 @@ function buildHud(){
       '<div class="bbar"><div class="bseg" id="bf-fill"></div></div>' +
       '<span class="bnum" id="bf-num">100</span></div>';
   document.body.appendChild(el);
+  /* UI CHECK PASS (2026-11-07): these bars are a HUD control and
+     must be in the move/layout system the moment they exist —
+     Joshua could NOT move the HEALTH bar because nothing ever
+     registered it. hud_move v2.2 also DISCOVERS body-level
+     controls on its own; this register() call (the v2.1 extension
+     point, built for exactly this) is the belt to that net, and
+     it carries the friendly name + resizable flag. Guarded: no
+     HudMove module, no change at all. */
+  try {
+    if (window.HudMove && HudMove.register)
+      HudMove.register('body-wrap', { name: 'Health + energy bars', resizable: true });
+  } catch (e) { /* the layout system is an enhancement, never a dependency */ }
   hud = {
     wrap: el,
     dTag: document.getElementById('bd-tag'),

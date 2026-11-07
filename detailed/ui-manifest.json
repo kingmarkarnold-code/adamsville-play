@@ -43,9 +43,9 @@
     },
     {
       "name": "body_systems.js",
-      "size": 35173,
-      "sha256": "1ddf4249903acae3b51616fe16fd76d2f73feaa598fc6db9d18e0b497a270fa2",
-      "hash": "1ddf4249903acae3b51616fe16fd76d2f73feaa598fc6db9d18e0b497a270fa2"
+      "size": 35885,
+      "sha256": "e1d2ca23e3aa8221410911833e5260748a6202ad9d1c9b10adc37db6561d9a7f",
+      "hash": "e1d2ca23e3aa8221410911833e5260748a6202ad9d1c9b10adc37db6561d9a7f"
     },
     {
       "name": "clothing_system.js",
@@ -68,21 +68,21 @@
     },
     {
       "name": "crashlog.js",
-      "size": 42233,
-      "sha256": "7c4f2519201c420b124aaff08b3676483baeb7d18d804238bac833a491ab96fe",
-      "hash": "7c4f2519201c420b124aaff08b3676483baeb7d18d804238bac833a491ab96fe"
+      "size": 41821,
+      "sha256": "7f9269120ef62ec198bbd27939cda1e673d6f11731c8bedd9608c34c4a0bfff4",
+      "hash": "7f9269120ef62ec198bbd27939cda1e673d6f11731c8bedd9608c34c4a0bfff4"
     },
     {
       "name": "crash_model.js",
-      "size": 14030,
-      "sha256": "e8d0399f97c32e519cccf5f6fb5685cea1669d69fc6170c0d640ca1258065099",
-      "hash": "e8d0399f97c32e519cccf5f6fb5685cea1669d69fc6170c0d640ca1258065099"
+      "size": 14309,
+      "sha256": "0bc50284e2ff8a2558ed84d8d09389cfd7aa8d7416864a9c0c3635e4b785a238",
+      "hash": "0bc50284e2ff8a2558ed84d8d09389cfd7aa8d7416864a9c0c3635e4b785a238"
     },
     {
       "name": "daycycle.js",
-      "sha256": "0751e1060eff0a44d22da07853a192741bdd8e4fbc365472651068b7a22ac918",
-      "size": 21011,
-      "hash": "0751e1060eff0a44d22da07853a192741bdd8e4fbc365472651068b7a22ac918"
+      "sha256": "172bb9afde64a2818c29385b33dc30c0b27ad4211da60824618a7f90a55ee2cd",
+      "size": 21675,
+      "hash": "172bb9afde64a2818c29385b33dc30c0b27ad4211da60824618a7f90a55ee2cd"
     },
     {
       "name": "dialogue_director_npc.js",
@@ -147,9 +147,9 @@
     },
     {
       "name": "hud_move.js",
-      "size": 55281,
-      "sha256": "4b2ff51e02e0b0ba748d4a284e456aa92563db944807457b433fe16c50123164",
-      "hash": "4b2ff51e02e0b0ba748d4a284e456aa92563db944807457b433fe16c50123164"
+      "size": 76975,
+      "sha256": "0bf1c404a22dbe21dc80935b4a038c74d75d52b597dcd6422a3293a7b9aa0d39",
+      "hash": "0bf1c404a22dbe21dc80935b4a038c74d75d52b597dcd6422a3293a7b9aa0d39"
     },
     {
       "name": "icon.png",
@@ -159,9 +159,9 @@
     },
     {
       "name": "index.html",
-      "size": 1269653,
-      "sha256": "ca39a641a11e4716b65ee76298444ba2e9edd4db80426f127bb77f214f418331",
-      "hash": "ca39a641a11e4716b65ee76298444ba2e9edd4db80426f127bb77f214f418331"
+      "size": 1269717,
+      "sha256": "fdc0c51880900fd21ead1325bd07fee60a3ad0edca9cc76f399abdb5fd17bff0",
+      "hash": "fdc0c51880900fd21ead1325bd07fee60a3ad0edca9cc76f399abdb5fd17bff0"
     },
     {
       "name": "input_diag.js",
@@ -678,6 +678,6 @@
       "hash": "20b983ae0e2e555817495a65c37519bfcb2231825269db6a57d72c51ed6006e3"
     }
   ],
-  "ui_version": "2026.11.07.22",
+  "ui_version": "2026.11.07.23",
   "version": "2026.10.17.9"
 }

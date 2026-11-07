@@ -218,6 +218,17 @@ function init(){
       'background:rgba(20,24,32,0.72);color:#fff;font:600 15px system-ui,sans-serif;'+
       'padding:6px 16px;border-radius:14px;z-index:50;pointer-events:none;'+
       'letter-spacing:1px;white-space:nowrap;';
+    /* UI CHECK PASS (2026-11-07): the clock is a movable HUD
+       control now (hud_move v2.2 discovery). The cssText above
+       re-asserts the AUTHORED spot and would wipe the player's
+       own — so whenever the player has placed / sized / hidden
+       this clock, hud_move re-applies their layout on top, in
+       the same synchronous pass (no flicker, no fight on
+       resize). reapply() uses hud_move's own face judgement. */
+    try{
+      if(window.HudMove && HudMove.hasOverride && HudMove.hasOverride('daycycle-hud')
+         && HudMove.reapply) HudMove.reapply();
+    }catch(e){ /* the layout system is an enhancement, never a dependency */ }
   }
   placeDayHud();
   try{

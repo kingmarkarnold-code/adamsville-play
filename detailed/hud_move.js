@@ -29,6 +29,47 @@
         tap) reopens the bar for Done / Reset / Select. Expanded,
         the bar parks against the top edge as before.
 
+   v2.2 (UI CHECK PASS, Joshua 2026-11-07 16:14, from failures in
+   HIS HANDS — he could not move the HEALTH bar, could not resize
+   the street name or the title, and could not hide the version
+   number or the title):
+     1. REGISTRATION IS AUTOMATIC — the movable set no longer
+        depends on anyone remembering to register a control.
+        computeIds() now also DISCOVERS controls from the DOM
+        itself: any element that sits directly on <body>, carries
+        an id, and is positioned fixed/absolute IS a HUD control
+        unless it is named in the FIXED opt-out table (which now
+        carries a written reason per element — opting out is a
+        deliberate act in code, never an omission). The bars
+        (#body-wrap, built by body_systems.js), the clock
+        (#daycycle-hud) and the nav arrow (#gps-hud-arrow) all
+        join this way; body_systems also calls register() the
+        moment the bars exist, as a belt to discovery's braces.
+        The set is re-derived when move mode is ENTERED and once
+        more at window load, so a control created late in boot
+        (the bars appear on the first body tick) is in the list
+        before the player can ever open it.
+     2. EVERY CONTROL RESIZES — the resize grip used to exist
+        only for the minimap, which is exactly why the street
+        name and the title "were not sizable" in his hands. Now
+        every draggable control is resizable through the same
+        grip + the same {fw, fh} override. Text-bearing controls
+        also scale their FONT with the box (from natural metrics
+        captured before the first size lands), so a label grows
+        — it does not just gain empty box.
+     3. EVERY CONTROL CAN BE HIDDEN — each row of the Select
+        panel carries a Hide / Show toggle, stored per face in
+        the same override ({hidden: true}) and applied at every
+        layout pass with !important display, so the game cannot
+        re-show what the player hid. Un-hiding restores the
+        inline display the element had before (the game's own
+        show/hide state is never eaten). The boot loader and the
+        critical-failure panel are NOT layout elements and can
+        never be hidden — they are in FIXED with that reason.
+     4. THE SELECT PANEL ITSELF MOVES — drag it by its header;
+        the spot it was covering can then be placed like any
+        other. (The move bar already yielded via its tab.)
+
    v2.1 (Joshua 2026-10-24, hands-on): three changes.
      1. THE LIST DERIVES ITSELF — v2's allow-list was typed by hand,
         so when the Go To button was added to the game it never
@@ -116,15 +157,13 @@
      * Escape exits move mode (capture phase, so the pause system
        never sees it and doesn't unpause by accident).
 
-   NOT DRAGGABLE, AND WHY:
-     gas-bar (rides inside #dmg-wrap — the cluster moves as one),
-     satview-btn / gps-nav-btn (full-map overlay controls, not the
-     gameplay HUD), radio (hidden-by-design panel), toast and
-     npc-dialog (transient sheets), rec-ind (status indicator),
-     adm-sendreports (a settings row, not a HUD control), and the
-     look area — on touch it is the right side of the game canvas
-     itself, not an element, so there is nothing to grab; the
-     camera button (cam-btn) IS draggable.
+   NOT DRAGGABLE, AND WHY: the FIXED table below carries the
+     per-element reasons (v2.2) — sub-parts of clusters, overlay
+     and menu screens, transient sheets, warning surfaces, and
+     this module's own chrome. And the look area — on touch it is
+     the right side of the game canvas itself, not an element, so
+     there is nothing to grab; the camera button (cam-btn) IS
+     draggable.
 
    DEPENDENCIES: none at load beyond the DOM. GamePause,
    UILayoutApply and Report are all typeof/try guarded in the
@@ -176,6 +215,7 @@ var NAMES = {
   'help-btn': 'Settings gear', 'pause-btn': 'Pause button',
   'goto-btn': 'Go To button',
   'music-btn': 'Sound button', 'radio-btn': 'Radio button',
+  'mini-radio': 'Mini radio',
   'street-name': 'Street name',
   'ver-tag': 'Version tag', 'inv-btn': 'Inventory button',
   'action-btn': 'Action button', 'minimap': 'Minimap',
@@ -184,31 +224,98 @@ var NAMES = {
   'joy-knob': 'Walk stick knob',
   'steer-left': 'Steer left', 'steer-right': 'Steer right',
   'gas-btn': 'Gas pedal', 'brake-btn': 'Brake pedal',
-  'handbrake-btn': 'Handbrake', 'cam-btn': 'Camera button'
+  'handbrake-btn': 'Handbrake', 'cam-btn': 'Camera button',
+  /* v2.2: controls other systems build at runtime — named here so
+     they read properly in the Select list the moment discovery
+     (or their own register() call) brings them into the set. */
+  'body-wrap': 'Health + energy bars',
+  'daycycle-hud': 'Clock + date',
+  'gps-hud-arrow': 'Navigation arrow'
 };
-/* NOT movable, even when the designed layout places them (the v2
-   exclusions, with their reasons): gas-bar rides inside #dmg-wrap
-   (the cluster moves as one); satview-btn / gps-nav-btn belong to
-   the full-map overlay, not the gameplay HUD; radio is a
-   hidden-by-design panel; toast and npc-dialog are transient
-   sheets; rec-ind is a status indicator; adm-sendreports is a
-   settings row, not a HUD control. */
-var EXCLUDE = {
-  'gas-bar': 1, 'satview-btn': 1, 'gps-nav-btn': 1, 'radio': 1,
-  'toast': 1, 'npc-dialog': 1, 'rec-ind': 1, 'adm-sendreports': 1
+/* FIXED (v2.2) — the explicit opt-OUT table, with a written reason
+   per element. Discovery (computeIds) treats every positioned
+   body-level element as a movable HUD control UNLESS it is named
+   here, so an element is fixed only because someone wrote down
+   why — never because it was forgotten. (This replaces the v2
+   EXCLUDE list; EXCLUDE below is derived from these keys so the
+   older checks keep working.) Screens and menu panels are fixed
+   because they are whole surfaces, not controls; transient sheets
+   would be gone before they could be dragged; warning surfaces
+   must stay exactly where the player expects them. */
+var FIXED = {
+  /* sub-parts and overlay-owned controls */
+  'gas-bar': 'rides inside #dmg-wrap — the cluster moves as one',
+  'satview-btn': 'belongs to the full-map overlay, not the gameplay HUD',
+  'gps-nav-btn': 'belongs to the full-map overlay, not the gameplay HUD',
+  'adm-sendreports': 'a settings row, not a HUD control',
+  /* the world itself */
+  'game': 'the 3D world canvas container — it IS the screen, not a control on it',
+  /* hidden-by-design panels (their BUTTONS are the controls) */
+  'radio': 'hidden-by-design panel — the radio button is the control',
+  'inv-panel': 'inventory panel — the inventory button is the control',
+  'goto-panel': 'Go To panel — the Go To button is the control',
+  'mq-panel': 'hotel desk panel, shown only during that interaction',
+  'bball-prompt': 'basketball prompt panel, shown only during that interaction',
+  'bball-panel': 'basketball panel, shown only during that interaction',
+  'bball-overlay': 'the basketball mini-game screen',
+  /* menu screens — whole surfaces, not gameplay controls */
+  'settings': 'the Settings screen', 'playercontrols': 'a settings screen',
+  'soundmenu': 'a settings screen', 'adminmenu': 'a settings screen',
+  'adm-confirm': 'a confirmation dialog', 'gameplay': 'a settings screen',
+  'advprops': 'a settings screen', 'advpass': 'a passcode dialog',
+  'zonepick': 'the zone picker screen', 'saveexit': 'the save/exit screen',
+  'slotpick': 'the slot picker screen', 'exitdone': 'a menu screen',
+  'help': 'the Help screen', 'pause-overlay': 'the pause screen',
+  'fullmap': 'the full-map screen', 'satview-ui': 'the satellite-view screen',
+  /* boot + zone loading — critical surfaces, NEVER layout elements */
+  'loader': 'the boot loader — a critical surface, always available',
+  'zone-load-overlay': 'the zone download screen — a critical flow surface',
+  'zone-transition-overlay': 'the zone transition screen',
+  /* transient sheets and status/warning surfaces */
+  'toast': 'transient notice sheet — gone before it could be dragged',
+  'npc-dialog': 'transient dialog sheet',
+  'rec-ind': 'recording status indicator',
+  'crash-stuck': 'the badly-hurt warning banner — must stay where the player expects it',
+  'crash-bump-toast': 'transient bump notice (its pop-ups were removed in this pass — the element is never created now)',
+  'crash-crit': 'the critical-failure panel — always available, never a layout element',
+  'interior-sleep-overlay': 'full-screen sleep overlay',
+  /* the Agent Reports dock and the buttons it collects — the
+     dock re-parents those buttons and owns their placement */
+  'agent-dock': 'the Agent Reports dock — a reports surface revealed from the Administrator menu',
+  'sf-btn': 'collected into the Agent Reports dock, which owns its placement',
+  'ce-btn': 'collected into the Agent Reports dock, which owns its placement',
+  'heli-btn': 'collected into the Agent Reports dock, which owns its placement',
+  'heli-panel': 'the helicopter survey panel screen',
+  'uiflow-chip': 'update-flow progress narration — pointer-events:none by design, never a control',
+  /* diagnostics and tooling surfaces */
+  'stayawake-badge': 'wake-lock helper badge',
+  'perf-budget-ind': 'performance diagnostics indicator',
+  'diag-fab': 'input-diagnostics tool button', 'diag-overlay': 'input-diagnostics overlay',
+  'gp-remap-fab': 'gamepad remap tool', 'gp-remap-overlay': 'the gamepad remap screen',
+  'kb-remap-fab': 'keyboard remap tool', 'kb-remap-overlay': 'the keyboard remap screen',
+  /* this module's own chrome — the tool, not a control */
+  'hud-move-bar': 'the Move controls bar itself', 'hud-move-tag': 'the drag name tag',
+  'hud-move-panel': 'the Select panel — it has its own header drag (v2.2)',
+  'hud-move-tab': 'the collapsed Move controls tab',
+  'hud-move-resize': 'the resize grip itself'
 };
-
-/* Controls the player may RESIZE as well as move (v2.1, Item 4):
-   the minimap is the first; HudMove.register() can flag more. */
-var RESIZABLE = { 'minimap': 1 };
+var EXCLUDE = {};
+Object.keys(FIXED).forEach(function (k) { EXCLUDE[k] = 1; });
 
 /* Runtime registrations (v2.1): a future system that adds an
    on-screen control calls HudMove.register(id, {name, resizable})
    and the control joins the movable set with no edit here. */
 var registered = {};
 
+/* RESIZABLE (v2.2): EVERY draggable control resizes through the
+   same grip + {fw, fh} override — v2.1 had the grip only on the
+   minimap, which is precisely why the street name and the title
+   could not be sized in Joshua's hands. Apply-only elements
+   (joy-knob — it follows its base) are not targets and so are
+   not resizable; a register() resizable flag still counts for a
+   control that has not been derived yet. */
 function isResizable(id){
-  if (RESIZABLE[id]) return true;
+  if (TARGET_IDS.indexOf(id) !== -1) return true;
   var r = registered[id];
   return !!(r && r.resizable);
 }
@@ -236,9 +343,51 @@ function nameFor(id){
    plus runtime registrations — minus EXCLUDE. Recomputed by
    refreshIds() at init, on every layout pass, and on register(),
    so a control added to the game joins the list by itself.
-   joy-knob stays apply-only (it follows joy-base, never a target). */
+   joy-knob stays apply-only (it follows joy-base, never a target).
+
+   v2.2 adds the fourth source — DOM DISCOVERY: every element
+   that sits directly on <body>, carries an id, and is positioned
+   fixed/absolute is a HUD control by default (see the header).
+   That is what finally brings in the controls other systems
+   build for themselves at runtime — the body bars, the clock,
+   the nav arrow — with no registration step to forget. The two
+   guards keep discovery honest: FIXED names the deliberate
+   exceptions, and an element covering (nearly) the whole screen
+   is a SCREEN, not a control, even if nobody listed it. */
 var APPLY_IDS = [];
 var TARGET_IDS = [];
+
+/* Is this element positioned like a HUD control (fixed/absolute)?
+   Judged by computed style when the browser offers it, else by
+   its inline style. In-flow content is never a HUD control. */
+function isHudPositioned(el){
+  try {
+    var pos = '';
+    if (window.getComputedStyle){
+      var cs = window.getComputedStyle(el);
+      if (cs) pos = cs.position || '';
+    }
+    if (!pos && el.style) pos = el.style.position || '';
+    return pos === 'fixed' || pos === 'absolute';
+  } catch (e) { return false; }
+}
+
+/* Does this element's box cover (nearly) the whole visible
+   screen? Then it is a screen/overlay, not a control — the
+   generic net behind the FIXED table for future full-screen
+   surfaces. Unmeasurable (hidden) elements are NOT judged by
+   this rule: a hidden screen measures zero, and it is the FIXED
+   table — not size — that keeps it out. */
+function isScreenSized(el){
+  try {
+    var vw = visW(), vh = visH();
+    if (!vw || !vh) return false;
+    var r = el.getBoundingClientRect();
+    if (!r || !r.width || !r.height) return false;
+    return r.width >= vw * 0.92 && r.height >= vh * 0.92;
+  } catch (e) { return false; }
+}
+
 function computeIds(){
   var seen = {}, out = [];
   function add(id){
@@ -258,6 +407,24 @@ function computeIds(){
   for (var j = 0; j < nk.length; j++) add(nk[j]);
   var rk = Object.keys(registered);
   for (var k = 0; k < rk.length; k++) add(rk[k]);
+  /* DOM DISCOVERY (v2.2): direct children of <body> only — the
+     game's HUD lives flat on the body, and panel/screen children
+     (a settings row, a dialog's buttons) are never controls in
+     their own right. */
+  try {
+    var kids = (document && document.body && document.body.children) || [];
+    for (var m = 0; m < kids.length; m++){
+      var el = kids[m];
+      var id = el && el.id;
+      if (!id || EXCLUDE[id] || seen[id]) continue;
+      var tag = (el.tagName || '').toUpperCase();
+      if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'LINK') continue;
+      if (!isHudPositioned(el)) continue;
+      if (isScreenSized(el)) continue;
+      seen[id] = 1;
+      out.push(id);
+    }
+  } catch (e) { /* discovery is an enhancement — the named sources above still stand */ }
   return out;
 }
 function refreshIds(){
@@ -359,26 +526,156 @@ function needsRescue(el, vw, vh){
    so they beat the designed size and the mobile media-query pins,
    the same way positions do. Elements without fw/fh keep the
    designed size — the v1/v2 rule ("sizes are NOT overridden")
-   still holds for every non-resizable control. */
+   still holds for every non-resizable control. (v2.2: every
+   draggable control is resizable now — see isResizable.) */
+
+/* Natural metrics for FONT SCALING (v2.2): a text control resized
+   by box alone just gains empty box — the words stay the same
+   size, which reads as "not sizable" (Joshua's street-name
+   report). So the first time a control is measurable with NO
+   size of ours applied yet, its natural height and font size are
+   cached on the element (the ui_layout_apply saNatW pattern);
+   a size override then scales the font by the same height ratio
+   the box grew. sizedApplied tracks whose size WE have landed —
+   natural metrics are only honest before that moment. Composite
+   controls (the bars, the nav arrow) scale the text they inherit;
+   children with their own fixed px fonts keep them — noted in
+   the build report, not hidden. */
+var sizedApplied = {};
+function noteNatural(el, id){
+  try {
+    if (!el || !id || sizedApplied[id]) return;
+    if (el.dataset && el.dataset.saHudNatH) return;
+    var h = 0;
+    try { h = el.offsetHeight || 0; } catch (e) {}
+    if (!h) return; /* hidden right now — a later pass will catch it */
+    var fs = 0;
+    try {
+      var cs = window.getComputedStyle ? window.getComputedStyle(el) : null;
+      if (cs) fs = parseFloat(cs.fontSize) || 0;
+    } catch (e) {}
+    if (el.dataset){
+      el.dataset.saHudNatH = String(h);
+      if (fs > 0) el.dataset.saHudNatFont = String(fs);
+    }
+  } catch (e) { /* metrics are an enhancement; the box resize stands alone */ }
+}
+function scaleFont(el, id, appliedH){
+  try {
+    if (!el || !el.dataset) return;
+    if ((el.tagName || '').toUpperCase() === 'CANVAS') return; /* the minimap has no text */
+    var natH = parseFloat(el.dataset.saHudNatH || '0');
+    var natF = parseFloat(el.dataset.saHudNatFont || '0');
+    if (!(natH > 0) || !(natF > 0) || !(appliedH > 0)) return;
+    var px = Math.max(8, Math.round(natF * (appliedH / natH) * 10) / 10);
+    el.style.setProperty('font-size', px + 'px', 'important');
+    if (id) importantSet[id] = true;
+  } catch (e) {}
+}
+
 function applySizeOverride(el, id, ov, vw, vh){
   if (!el || !ov) return;
   if (typeof ov.fw === 'number' && ov.fw > 0)
     el.style.setProperty('width', Math.round(ov.fw * vw) + 'px', 'important');
   if (typeof ov.fh === 'number' && ov.fh > 0)
     el.style.setProperty('height', Math.round(ov.fh * vh) + 'px', 'important');
-  if (typeof ov.fw === 'number' || typeof ov.fh === 'number')
+  if (typeof ov.fw === 'number' || typeof ov.fh === 'number'){
     if (id) importantSet[id] = true;
+    if (id) sizedApplied[id] = true;
+    /* The font rides the box (v2.2) — scaled off the height the
+       player actually gets on THIS screen. */
+    if (typeof ov.fh === 'number' && ov.fh > 0)
+      scaleFont(el, id, ov.fh * vh);
+  }
 }
 
 /* Save a position for a control, PRESERVING any size it carries
    (and vice versa in the resize path): position and size are two
-   halves of one override, and neither save may erase the other. */
+   halves of one override, and neither save may erase the other.
+   v2.2: the hidden flag is a third half — same rule. */
 function savePos(id, face, fx, fy){
   var prev = store[face][id] || {};
   var ov = { fx: fx, fy: fy };
   if (typeof prev.fw === 'number') ov.fw = prev.fw;
   if (typeof prev.fh === 'number') ov.fh = prev.fh;
+  if (prev.hidden) ov.hidden = true;
   store[face][id] = ov;
+}
+
+/* ---------------------------------------------------------------------------
+   Hiding (v2.2) — the player may hide ANY movable control (his
+   ruling: the version number and the title first of all). The
+   wish lives in the same per-face override as {hidden: true} and
+   is applied at every layout pass as an !important display:none,
+   so a game system that re-shows its element on a plain inline
+   style cannot defeat it. Un-hiding restores the inline display
+   the element had BEFORE we hid it (captured in appliedHidden):
+   the game's own show/hide state — the nav arrow's route-driven
+   display, the bars' first-tick display — is never eaten by the
+   hide/show round trip. The boot loader and the critical panel
+   are in FIXED, so they can never enter this path at all.
+   --------------------------------------------------------------------------- */
+var appliedHidden = {};   /* id -> {value, priority} we replaced */
+function isHidden(id, face){
+  var ov = store[face || currentFace()] && store[face || currentFace()][id];
+  return !!(ov && ov.hidden);
+}
+function applyHidden(el, id, face){
+  if (!el || !id) return false;
+  var ov = store[face] && store[face][id];
+  if (ov && ov.hidden){
+    if (!appliedHidden[id]){
+      var cur = { value: '', priority: '' };
+      try {
+        cur.value = el.style.getPropertyValue('display') || '';
+        cur.priority = el.style.getPropertyPriority
+          ? (el.style.getPropertyPriority('display') || '') : '';
+      } catch (e) {}
+      appliedHidden[id] = cur;
+    }
+    el.style.setProperty('display', 'none', 'important');
+    importantSet[id] = true;
+    return true;
+  }
+  if (appliedHidden[id]){
+    var prev = appliedHidden[id];
+    appliedHidden[id] = null;
+    try {
+      if (prev.value) el.style.setProperty('display', prev.value, prev.priority || '');
+      else el.style.removeProperty('display');
+    } catch (e) {}
+  }
+  return false;
+}
+/* Flip a control's hidden wish and re-apply at once. In move mode
+   the element stays force-shown for arranging (enterMoveMode's
+   job); the wish lands for real when arranging ends and the
+   settle pass runs — and immediately, outside move mode. */
+function toggleHidden(id){
+  if (APPLY_IDS.indexOf(id) === -1) return false;
+  var face = currentFace();
+  var ov = store[face][id] || {};
+  if (ov.hidden) delete ov.hidden; else ov.hidden = true;
+  store[face][id] = ov;
+  saveStore();
+  onLayoutApplied(face === 'mobile');
+  try {
+    if (window.Report && Report.note)
+      Report.note('hudmove', {event: ov.hidden ? 'hide' : 'show', id: id, face: face});
+  } catch (e) {}
+  return !!ov.hidden;
+}
+/* Does the player have ANY override (position, size or hidden)
+   for this control, on either face? Other systems ask before
+   re-asserting their own placement (daycycle's clock does). */
+function hasOverride(id){
+  var faces = ['mobile', 'desktop'];
+  for (var i = 0; i < faces.length; i++){
+    var ov = store[faces[i]] && store[faces[i]][id];
+    if (ov && (typeof ov.fx === 'number' || typeof ov.fw === 'number' || ov.hidden))
+      return true;
+  }
+  return false;
 }
 
 /* ---------------------------------------------------------------------------
@@ -462,6 +759,12 @@ function onLayoutApplied(mobile){
   for (var i = 0; i < APPLY_IDS.length; i++){
     var el = document.getElementById(APPLY_IDS[i]);
     if (!el) continue;
+    /* Natural metrics first (v2.2): the font-scaling baseline must
+       be captured BEFORE this pass lands any size of ours. */
+    noteNatural(el, APPLY_IDS[i]);
+    /* A hidden control stays hidden — position is moot until the
+       player shows it again (v2.2). */
+    if (applyHidden(el, APPLY_IDS[i], face)) continue;
     /* The player's own spot wins; everything else answers to the
        edge law so no designed position can strand a control. */
     if (!applyOverride(el, APPLY_IDS[i], face, vw, vh)){
@@ -485,6 +788,10 @@ var drag = null;        /* the live drag, or null */
 function naturalDisplay(el){
   var tag = (el.tagName || '').toUpperCase();
   if (tag === 'BUTTON') return 'inline-block';
+  /* The mini radio's shown state is a flex row (its .show class);
+     force-showing it as a block in move mode would stack its
+     buttons while the player is trying to place it (v2.2). */
+  if (el.id === 'mini-radio') return 'flex';
   return 'block'; /* divs + the minimap canvas */
 }
 
@@ -631,20 +938,25 @@ function centreControl(id){
 }
 
 /* The Select list's data: every movable control, by friendly
-   name, with a live hint about the ones in trouble. */
+   name, with a live hint about the ones in trouble. v2.2: a
+   control the player hid says so ('hidden by you' — distinct
+   from a control the GAME is hiding, which just reads 'hidden')
+   and carries the flag its row's Hide/Show button renders from. */
 function selectList(){
   var vw = visW(), vh = visH();
   var out = [];
   for (var i = 0; i < TARGET_IDS.length; i++){
     var id = TARGET_IDS[i];
     var el = document.getElementById(id);
+    var hid = isHidden(id);
     var hint = '';
     if (!el) hint = 'not in this build';
+    else if (hid) hint = 'hidden by you';
     else if (needsRescue(el, vw, vh)){
       var r = rectOf(el);
       hint = (!r || (!r.width && !r.height)) ? 'hidden' : 'off screen';
     }
-    out.push({ id: id, name: nameFor(id), hint: hint });
+    out.push({ id: id, name: nameFor(id), hint: hint, hidden: hid });
   }
   return out;
 }
@@ -681,6 +993,12 @@ var MOVE_CSS =
   '#hud-move-panel .hm-pick .hm-hint{color:#ffd75e;font-size:12px;}' +
   '#hud-move-panel .hm-centre{padding:9px 10px;font-size:13px;border-radius:9px;' +
   'border:none;background:#333a4e;color:#fff;white-space:nowrap;cursor:pointer;}' +
+  /* v2.2: the per-row Hide / Show toggle, and the panel header as
+     a drag handle — the panel itself is movable now, so it can be
+     parked (e.g. top centre) while the spot it covered is placed. */
+  '#hud-move-panel .hm-vis{padding:9px 10px;font-size:13px;border-radius:9px;' +
+  'border:none;background:#333a4e;color:#ffd75e;white-space:nowrap;cursor:pointer;}' +
+  '#hud-move-panel .hm-head{cursor:move;touch-action:none;}' +
   '#hud-move-panel .hm-close{padding:4px 10px;font-size:14px;border-radius:8px;' +
   'border:none;background:#333a4e;color:#fff;cursor:pointer;}' +
   '#hud-move-select{background:#232b3d;color:#fff;}' +
@@ -836,14 +1154,18 @@ function buildPanel(){
   }
   var head = document.createElement('div');
   head.className = 'hm-head';
+  /* The header is the panel's drag handle (v2.2) — the whole
+     header except the ✕ button; see startPanelDrag below. */
+  head.title = 'Drag to move this panel';
   var title = document.createElement('span');
-  title.textContent = 'Select a control to move';
+  title.textContent = '⠿ Select a control to move';
   head.appendChild(title);
   var close = document.createElement('button');
   close.className = 'hm-close';
   close.textContent = '✕';
   close.addEventListener('click', function(){ closePanel(); });
   head.appendChild(close);
+  head.addEventListener('pointerdown', function(e){ startPanelDrag(e); });
   panelEl.appendChild(head);
   var items = selectList();
   for (var i = 0; i < items.length; i++){
@@ -866,10 +1188,59 @@ function buildPanel(){
       centre.textContent = 'Centre it';
       centre.addEventListener('click', function(){ centreFromList(item.id); });
       row.appendChild(centre);
+      /* Hide / Show (v2.2): the visibility toggle lives on the
+         same row as the control it governs. Toggling rebuilds
+         the panel (labels + hints describe the new state) and
+         the panel STAYS OPEN — managing visibility is the job
+         the player is in the middle of. */
+      var vis = document.createElement('button');
+      vis.className = 'hm-vis';
+      vis.textContent = item.hidden ? 'Show' : 'Hide';
+      vis.addEventListener('click', function(){
+        toggleHidden(item.id);
+        buildPanel();
+      });
+      row.appendChild(vis);
       panelEl.appendChild(row);
-      panelRows.push({ id: item.id, row: row, pick: pick, centre: centre });
+      panelRows.push({ id: item.id, row: row, pick: pick, centre: centre, vis: vis });
     })(items[i]);
   }
+}
+
+/* ---------------------------------------------------------------------------
+   Panel drag (v2.2) — the Select panel parks where the player
+   puts it. Dragging starts on the header (never the ✕), moves
+   the panel by plain left/top (its centring transform is dropped
+   on the first move), and is session-only: the panel is tool
+   chrome, not a game control, so nothing is saved. While parked
+   elsewhere, the spot it used to cover receives drags like any
+   other part of the screen — the panel is the only thing that
+   ever stood there.
+   --------------------------------------------------------------------------- */
+var pdrag = null;
+function startPanelDrag(e){
+  if (!panelEl || !e) return;
+  if (e.target && e.target.classList && e.target.classList.contains('hm-close')) return;
+  var r = panelEl.getBoundingClientRect();
+  if (!r) return;
+  pdrag = { pid: e.pointerId, sx: e.clientX, sy: e.clientY, left: r.left, top: r.top };
+  try { if (panelEl.setPointerCapture) panelEl.setPointerCapture(e.pointerId); } catch (err) {}
+  if (e.preventDefault) e.preventDefault();
+}
+function onPanelPointerMove(e){
+  if (!pdrag || !panelEl || e.pointerId !== pdrag.pid) return;
+  var vw = visW(), vh = visH();
+  var w = 0, h = 0;
+  try { var r = panelEl.getBoundingClientRect(); if (r){ w = r.width; h = r.height; } } catch (err) {}
+  var p = clampPos(pdrag.left + (e.clientX - pdrag.sx),
+                   pdrag.top + (e.clientY - pdrag.sy), w, h, vw, vh);
+  panelEl.style.transform = 'none';
+  panelEl.style.left = p.left + 'px';
+  panelEl.style.top = p.top + 'px';
+  if (e.preventDefault) e.preventDefault();
+}
+function onPanelPointerUp(e){
+  if (pdrag && (!e || e.pointerId === pdrag.pid)) pdrag = null;
 }
 function openPanel(){
   if (!inMove || !panelEl) return;
@@ -907,6 +1278,11 @@ function centreFromList(id){
 function enterMoveMode(){
   if (inMove) return;
   inMove = true;
+  /* Re-derive the set on entry (v2.2): controls created after
+     boot — the body bars appear on the first body tick — must be
+     in the list the moment the player opens it, not one layout
+     pass later. */
+  refreshIds();
   /* Auto-pause: arranging must never drive the car. Remember the
      state we came from so Done can restore it exactly. */
   wasPausedOnEntry = false;
@@ -1028,7 +1404,21 @@ function resetFace(){
       el.style.removeProperty('bottom');
       el.style.removeProperty('width');
       el.style.removeProperty('height');
+      /* v2.2: the scaled font and the hidden display are ours
+         too — a reset that left them behind would only be half
+         a reset. The hidden display goes back to whatever the
+         element had before we hid it (applyHidden's capture). */
+      el.style.removeProperty('font-size');
+      if (appliedHidden[id]){
+        var prev = appliedHidden[id];
+        appliedHidden[id] = null;
+        try {
+          if (prev.value) el.style.setProperty('display', prev.value, prev.priority || '');
+          else el.style.removeProperty('display');
+        } catch (e) {}
+      }
     }
+    sizedApplied[id] = false;
     importantSet[id] = false;
   }
   /* ...then re-run the layout pass to put the designed positions
@@ -1131,6 +1521,9 @@ function onPointerMove(e){
     rdrag.el.style.setProperty('width', Math.round(nw) + 'px', 'important');
     rdrag.el.style.setProperty('height', Math.round(nh) + 'px', 'important');
     if (rdrag.id) importantSet[rdrag.id] = true;
+    /* The font grows WITH the drag, not one layout pass later
+       (v2.2) — the player sees the label's real new size live. */
+    if (rdrag.id) scaleFont(rdrag.el, rdrag.id, nh);
     positionResizeHandle();
     positionTagAt(rdrag.el);
     return;
@@ -1233,6 +1626,11 @@ try {
   document.addEventListener('pointercancel', endDrag, true);
   document.addEventListener('click', onClickCapture, true);
   window.addEventListener('keydown', onKeyDown, true);
+  /* The Select panel's own drag (v2.2) — plain listeners; the
+     pdrag state is null whenever the panel is not being dragged. */
+  document.addEventListener('pointermove', onPanelPointerMove, false);
+  document.addEventListener('pointerup', onPanelPointerUp, false);
+  document.addEventListener('pointercancel', onPanelPointerUp, false);
 } catch (e) { /* extremely old engine — move mode simply stays off */ }
 
 /* ---------------------------------------------------------------------------
@@ -1261,10 +1659,21 @@ function init(){
   try {
     if (window.UILayoutApply && UILayoutApply.apply) UILayoutApply.apply();
   } catch (e) {}
+  /* One more derivation at window load (v2.2): runtime-built
+     controls (the bars, the clock, the nav arrow) may be created
+     after this module's init — when the whole page has loaded,
+     derive again and re-apply, so a saved position/size/hidden
+     for a late control lands at boot like any other. */
+  try {
+    window.addEventListener('load', function(){
+      refreshIds();
+      onLayoutApplied(currentFace() === 'mobile');
+    });
+  } catch (e) {}
   try {
     if (typeof Report !== 'undefined' && Report.setSys){
-      Report.setSys('hudmove', { status: 'ok', version: '2.1',
-        note: 'Player-movable HUD controls: drag, select-by-list with bring-back, edge law, menus yield; per-face overrides in localStorage (Joshua 2026-10-17). v2.1 (2026-10-24): the movable list DERIVES from the designed layout + registrations (Go To joins automatically), the minimap resizes (size saves with position), and all measuring uses the visualViewport-visible area via SAView.' });
+      Report.setSys('hudmove', { status: 'ok', version: '2.2',
+        note: 'Player-movable HUD controls: drag, select-by-list with bring-back, edge law, menus yield; per-face overrides in localStorage (Joshua 2026-10-17). v2.1 (2026-10-24): the movable list DERIVES from the designed layout + registrations (Go To joins automatically), the minimap resizes (size saves with position), and all measuring uses the visualViewport-visible area via SAView. v2.2 (UI CHECK PASS, 2026-11-07): registration is AUTOMATIC — DOM discovery brings in every positioned body-level control not named in the FIXED opt-out table (the body bars, clock and nav arrow join); EVERY control resizes (font scales with the box); every control can be HIDDEN per face from the Select panel; the Select panel itself drags by its header.' });
     }
   } catch (e) {}
 }
@@ -1310,7 +1719,21 @@ window.HudMove = {
   isResizable: isResizable,
   nameFor: nameFor,
   get TARGET_IDS(){ return TARGET_IDS.slice(); },
-  get APPLY_IDS(){ return APPLY_IDS.slice(); }
+  get APPLY_IDS(){ return APPLY_IDS.slice(); },
+  /* v2.2 — hiding, the opt-out table, and the queries other
+     systems need. reapply() re-runs the layout hook with THIS
+     module's own face judgement (callers must not guess the
+     face — daycycle uses it after re-asserting its clock). */
+  toggleHidden: toggleHidden,
+  isHidden: function(id){ return isHidden(id); },
+  hasOverride: hasOverride,
+  reapply: function(){ onLayoutApplied(currentFace() === 'mobile'); },
+  fixedList: function(){
+    return Object.keys(FIXED).map(function (id) {
+      return { id: id, reason: FIXED[id] };
+    });
+  },
+  panelDragState: function(){ return pdrag ? { left: pdrag.left, top: pdrag.top } : null; }
 };
 
 })();

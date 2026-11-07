@@ -2481,7 +2481,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
    stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.11.07.22';
+window.__DOC_UIVER = '2026.11.07.23';
 function __checkDocVersionHeal(){
   var live = window.__UIVER || '';
   if (!live || live === window.__DOC_UIVER){
@@ -13318,13 +13318,13 @@ function crashImpact(c, spdUs, kind, legacyAmt){
 function addDamage(c, amt){
   if (c.dead||c.sunk||c.sinking) return;
   c.damage=Math.min(100, c.damage+amt);
-  /* v1.31 CRASH NOTIFY (Joshua): tell the player when the van takes a hit.
-     addDamage is only ever called for the player's van, so these toasts are
-     always about the player's crash. Severity scales with impact force. */
-  try{
-    if (amt>=18) showToast('CRASH! The van is damaged', 2400);
-    else if (amt>=7) showToast('You hit something!', 1800);
-  }catch(e){}
+  /* v1.31 CRASH NOTIFY — REMOVED (Joshua 2026-11-07 16:14, UI CHECK
+     PASS): the hit pop-ups that fired here ("CRASH! The van is
+     damaged" / "You hit something!") are gone by his ruling — the
+     DAMAGE bar shows the harm now. The damage, dents, smoke and
+     engine-death logic below are unchanged; the ENGINE DEAD notice
+     further down STAYS — it is a state warning (the van will not
+     run), not a hit pop-up. */
   if (c.damage>=35 && !c.dented){ c.dented=true; applyDents(c); }
   if (c.damage>=100 && !c.dead){ c.dead=true; c.speed=0; try{ showToast('ENGINE DEAD - the van will not run', 3200); }catch(e){} }
   updateDamageHUD();

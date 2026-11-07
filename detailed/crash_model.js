@@ -212,14 +212,17 @@ window.__CRASH = {
         if (window.__BODY && window.__BODY.addCrashDamage)
           bodyAfter = window.__BODY.addCrashDamage(d.body);
       }catch(e){}
-      if (d.body >= 10 && !(bodyAfter !== null && bodyAfter >= 100)){
-        try{ showToast('That one hurt YOU, not just the car', 2000); }catch(e){}
-      }
+      /* UI CHECK PASS (Joshua 2026-11-07 16:14): the harm pop-up
+         that fired here ("That one hurt YOU, not just the car")
+         is removed by his ruling — the HEALTH bar shows the body
+         damage (on exit, per the 15:55 design), and the pop-up
+         only duplicated it. The damage itself is unchanged. */
     }
     core.noteCrash(mph, kind, bodyAfter);
-    if (core.exitBlocked()){
-      try{ showToast("CRASH! You're badly hurt — you can't get out yet", 3200); }catch(e){}
-    }
+    /* The badly-hurt pop-up that fired here on exit-block is also
+       removed (same ruling) — the #crash-stuck banner below
+       carries that state persistently, with its countdown, for
+       exactly as long as the block lasts. */
     return d;
   },
   exitBlocked: function(){ return core.exitBlocked(); },
