@@ -2437,7 +2437,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
    stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.11.07.16';
+window.__DOC_UIVER = '2026.11.07.17';
 function __checkDocVersionHeal(){
   var live = window.__UIVER || '';
   if (!live || live === window.__DOC_UIVER){
@@ -13844,12 +13844,24 @@ var XFADE_MS = 2500;   /* crossfade duration: 2.5 seconds */
         var rp=window.__audioCtx.resume();
         if(rp&&rp.catch) rp.catch(function(){});
       }
-      /* (Re)start the music element whenever it should be audible:
-         covers the first prime AND later browser pauses of the
-         element (the old code primed exactly once, ever). */
-      if(musicAudible() && musicStarted && musicAudio && musicAudio.paused){
-        var p=musicAudio.play();
-        if(p&&p.catch) p.catch(function(){});
+      /* (Re)start the music whenever it should be audible — START
+         it if it never started, RESUME it if it did (SOUND PASS
+         FOLLOW-UP, 2026-11-07: Joshua's Music was ON but silent
+         until he toggled it OFF and back ON — "there we go". The
+         old branch only resumed an element that musicStarted
+         already claimed, and the one-shot start path could leave
+         that flag set over a silent, src-less element, so no
+         gesture ever reached a play() call the element could
+         honour; the toggle's own play() was the only one left.
+         The unlock owns the start now: Music ON + a gesture =
+         music, no toggle required. Music OFF or master OFF =
+         musicAudible() is false and nothing starts.) */
+      if(musicAudible()){
+        if(!musicStarted){ try{ musicStartOnce(); }catch(e){} }
+        if(musicStarted && musicAudio && musicAudio.paused){
+          var p=musicAudio.play();
+          if(p&&p.catch) p.catch(function(){});
+        }
       }
     }catch(e){}
     try{ updateSpeakerBtn(); }catch(e){}
@@ -14050,8 +14062,17 @@ musicAudio.addEventListener('error', function(){
 });
 */
 function musicStartOnce(){
-  if(musicStarted) return; musicStarted=true;
+  if(musicStarted) return;
+  /* The mode switch runs BEFORE the flag is set (SOUND PASS
+     FOLLOW-UP, 2026-11-07): musicToWalk()/musicToRadio() guard on
+     (mode already current && musicStarted) to skip restart churn —
+     with the flag set first, the very first start read as "already
+     walking" and returned without ever loading a track, leaving
+     musicStarted=true over a silent, src-less element. That —
+     plus an unlock that only resumed, never started — is why
+     Joshua's Music ON played nothing until he toggled it. */
   if(car&&car.driving) musicToRadio(); else musicToWalk();
+  musicStarted=true;
 }
 // autoplay policy: start on the first user gesture anywhere
 ['touchstart','mousedown','keydown'].forEach(function(ev){

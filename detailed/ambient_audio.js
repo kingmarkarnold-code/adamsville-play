@@ -149,6 +149,25 @@
    context it adopts (and on repeat calls), matching engine/ui —
    part of the session-wide persistent-unlock fix in index.html.
    ============================================================================ */
+/* ============================================================================
+   v1.4 SPLASH RECIPE — ONE CONTINUOUS WASH (2026-11-07, Joshua live
+   play, 16:19: "the splashing sound still sounds like tapping"):
+
+   The v1.2/W2 recipe (impact ping + tonal bloop + 3–6 separated
+   droplet micro-bursts of 8–25 ms each) still read as tapping —
+   because separated short envelopes ARE taps, however they are
+   dressed. v1.4's splashBurst() is a single unbroken noise source
+   under ONE swell-and-decay envelope a few hundred ms long
+   (0.30–0.70 s by kind), its low-pass settling 3.2 kHz -> 650 Hz
+   across the event. The droplet character survives as TEXTURE
+   INSIDE the wash: an irregular value-curve ripple on a parallel
+   high-passed sheet of the same noise, whose level dips but never
+   cuts to silence mid-event — sparkle, not hits. The tonal bloop
+   is deleted (a tone is a knock; water has no pitch). Peak staging
+   (2026-11-01), the mute/enabled gate and every trigger point are
+   unchanged. Whether it now reads as water is for Joshua's ears,
+   not the harness, to say.
+   ============================================================================ */
 (function ambientAudio(){
 'use strict';
 
@@ -164,10 +183,10 @@ var DOWNTOWN_LATLNG = [33.7586, -84.38908];
 
 /* ---- module state ---- */
 var ctx = null, master = null, noiseBuf = null, waterBuf = null;
-var whiteBuf = null;   /* v1.2: RAW white noise — the splash recipe's
-                          impact/droplet source (waterBuf is pre-smoothed
-                          for the continuous voices; a splash needs the
-                          transient grain the smoother removes) */
+var whiteBuf = null;   /* v1.2: RAW white noise — the splash wash's
+                          source (waterBuf is pre-smoothed for the
+                          continuous voices; a splash needs the raw
+                          grain the smoother removes) */
 var gTraffic = null, gWind = null, gCrickets = null;
 var gCreek = null, gRiver = null, gFalls = null, gInsects = null;
 var gRain = null;          /* v1.3: rain patter voice (S2) */
@@ -674,9 +693,10 @@ function computeLevels(p, gm, running){
    the 2 s retarget): reads the player's water state from the game's
    own model (waterDepthAt + player.swimming, i.e. the three states:
    wade / swim-moving / tread) and his speed from position deltas.
-   Every splash is a short shaped burst of the water-noise buffer —
-   generated in-code, no assets. splashCount is the instrumentation
-   the harness reads to prove the voices fire.
+   Every splash is one continuous shaped wash of the raw-noise
+   buffer (v1.4 recipe — see splashBurst) — generated in-code, no
+   assets. splashCount is the instrumentation the harness reads to
+   prove the voices fire.
 
    GAIN STAGING FIX (2026-11-01 fix batch v2, item 4): Joshua ran
    the Tatum creek's length on build .6 and heard NO splashing,
@@ -701,73 +721,68 @@ function splashBurst(kind, opt){
     var speedF = Math.max(0, Math.min(1, opt.speed || 0));
     /* Peak staging UNCHANGED from the 2026-11-01 fix (a splash is a
        stride sound, scaled by speed — see the header above). Only
-       the RECIPE changed (v1.2, W2 in the changelog): the old
-       single band-passed ping of pre-smoothed noise read as a TAP;
-       a real splash is broadband impact + falling cavity + spray. */
+       the RECIPE changed (v1.4 — see the changelog): one continuous
+       wash under one envelope, texture inside it, no separated
+       bursts and no tone. */
     var peak = kind === 'stroke' ? 0.20 : kind === 'enter' ? 0.22 :
                kind === 'tread' ? 0.045 :
                0.15 + 0.11 * speedF;
+    var dur = kind === 'enter' ? 0.70 : kind === 'stroke' ? 0.55 :
+              kind === 'tread' ? 0.30 : 0.45;
+    var attack = kind === 'tread' ? 0.030 : 0.045;
     var srcBuf = whiteBuf || waterBuf;
-    /* --- 1. IMPACT: raw white noise, low-pass sweeping 3 kHz down
-       to 600 Hz over ~0.12 s — the foot/body displacing water. A
-       random buffer offset per burst: no two steps share a
-       waveform onset (the old loop replayed the same grain every
-       step, one more reason it read as the same object tapped). */
+    /* --- THE WASH: one unbroken raw-noise source, low-pass
+       settling 3.2 kHz -> 650 Hz across the whole event (bright at
+       the strike, dark as the water settles), under ONE
+       swell-and-decay envelope: ~45 ms swell to peak (no click —
+       a click is a tap), a shoulder at ~42% of the event, then
+       the long decay to silence. Random buffer offset + rate per
+       burst: no two steps share a waveform. */
     var s = ctx.createBufferSource();
     s.buffer = srcBuf; s.loop = true;
     s.playbackRate.value = 0.9 + Math.random() * 0.25;
     var lp = ctx.createBiquadFilter();
     lp.type = 'lowpass'; lp.Q.value = 0.4;
-    lp.frequency.setValueAtTime(3000, t);
-    lp.frequency.exponentialRampToValueAtTime(600, t + 0.12);
+    lp.frequency.setValueAtTime(3200, t);
+    lp.frequency.exponentialRampToValueAtTime(650, t + dur);
     var g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(peak, t + 0.015);
-    g.gain.exponentialRampToValueAtTime(0.0001,
-      t + (kind === 'tread' ? 0.16 : 0.20));
+    g.gain.exponentialRampToValueAtTime(peak, t + attack);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0012, peak * 0.32),
+                                        t + dur * 0.42);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     s.connect(lp); lp.connect(g); g.connect(master);
-    s.start(t, Math.random() * 1.5); s.stop(t + 0.30);
-    /* --- 2. BLOOP: a sine glissando ~420 -> ~140 Hz under the
-       impact — the falling resonance of displaced water, the part
-       that makes ears say "liquid". Low gain; skipped for the
-       faint 'tread' voice, where it would only muddy. */
+    s.start(t, Math.random() * 1.5); s.stop(t + dur + 0.05);
+    /* --- SPRAY TEXTURE: the same noise on a high-passed sheet,
+       its gain driven by an irregular value curve across the
+       event — droplets landing read as sparkle riding the wash.
+       The curve ripples between ~25% and 100% of the spray level
+       and NEVER returns to silence mid-event, so there are no
+       separate hits to hear (the v1.2 recipe gated each droplet
+       from silence, which is precisely what tapped). Skipped for
+       the faint 'tread' voice, where it would only muddy. */
     if (kind !== 'tread'){
-      var o = ctx.createOscillator(); o.type = 'sine';
-      o.frequency.setValueAtTime(420 * (0.94 + Math.random() * 0.12), t);
-      o.frequency.exponentialRampToValueAtTime(140,
-        t + 0.10 + Math.random() * 0.05);
-      var og = ctx.createGain();
-      var bpk = Math.min(0.08, peak * 0.35);
-      og.gain.setValueAtTime(0.0001, t);
-      og.gain.exponentialRampToValueAtTime(bpk, t + 0.02);
-      og.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
-      o.connect(og); og.connect(master);
-      o.start(t); o.stop(t + 0.20);
-    }
-    /* --- 3. DROPLET PATTER: 3–6 micro-bursts of high-passed noise
-       (≥ 4 kHz), 8–25 ms each, scattered 40–350 ms behind the
-       impact at decaying gains — the spray landing back on the
-       surface. A step is an event PLUS its spray; the old recipe
-       had the event only. */
-    var nD = 3 + Math.floor(Math.random() * 4);
-    var span = kind === 'tread' ? 0.18 : 0.35;
-    for (var di = 0; di < nD; di++){
-      var dAt = 0.04 + Math.random() * span;
-      var dDur = 0.008 + Math.random() * 0.017;
-      var ds = ctx.createBufferSource();
-      ds.buffer = srcBuf; ds.loop = true;
-      ds.playbackRate.value = 1.1 + Math.random() * 0.5;
+      var sprayPeak = peak * 0.30;
+      var ts = ctx.createBufferSource();
+      ts.buffer = srcBuf; ts.loop = true;
+      ts.playbackRate.value = 1.15 + Math.random() * 0.45;
       var hp = ctx.createBiquadFilter();
-      hp.type = 'highpass';
-      hp.frequency.value = 4000 + Math.random() * 1500;
-      var dg = ctx.createGain();
-      var dpk = Math.max(0.004,
-        peak * (0.10 + Math.random() * 0.12) * (1 - (dAt / (span + 0.1)) * 0.5));
-      dg.gain.setValueAtTime(0.0001, t + dAt);
-      dg.gain.exponentialRampToValueAtTime(dpk, t + dAt + 0.004);
-      dg.gain.exponentialRampToValueAtTime(0.0001, t + dAt + dDur + 0.01);
-      ds.connect(hp); hp.connect(dg); dg.connect(master);
-      ds.start(t + dAt, Math.random() * 1.5); ds.stop(t + dAt + dDur + 0.05);
+      hp.type = 'highpass'; hp.frequency.value = 3600;
+      var tg = ctx.createGain();
+      var NPT = 26, curve = new Float32Array(NPT);
+      for (var ci = 0; ci < NPT; ci++){
+        var cf = ci / (NPT - 1);
+        var ripple = 0.25 + Math.random() * 0.75;
+        var taper = 1 - cf * 0.55;
+        var rise = Math.min(1, cf / 0.12);
+        curve[ci] = Math.max(0.0004,
+          sprayPeak * ripple * taper * rise);
+      }
+      tg.gain.setValueAtTime(0.0001, t);
+      tg.gain.setValueCurveAtTime(curve, t + 0.02, dur - 0.06);
+      tg.gain.setTargetAtTime(0.0001, t + dur - 0.04, 0.03);
+      ts.connect(hp); hp.connect(tg); tg.connect(master);
+      ts.start(t, Math.random() * 1.5); ts.stop(t + dur + 0.05);
     }
     splashCount++;
     lastSplash = { kind: kind, peak: +peak.toFixed(3), at: Date.now() };
@@ -775,6 +790,7 @@ function splashBurst(kind, opt){
     if (splashLog.length > 16) splashLog.shift();
   }catch(e){}
 }
+
 function tickWading(dt){
   var p = playerPos();
   if (!p) return;
@@ -966,7 +982,7 @@ function boot(){
      reads the live node values, and the splash counter + wading
      snapshot prove the B4 voices fire in each water state). */
   window.__AMB = {
-    version: '1.3',
+    version: '1.4',
     retarget: retarget, siren: siren,
     splash: splashBurst,
     voice: ambVoice,
@@ -1006,7 +1022,7 @@ function boot(){
     },
     get state(){
       return {
-        version: '1.3',
+        version: '1.4',
         running: !!(ctx && ctx.state === 'running'),
         muted: isMuted(), masterMuted: masterMuted(),
         natureMuted: ambientMuted,

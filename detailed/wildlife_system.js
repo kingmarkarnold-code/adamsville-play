@@ -73,6 +73,14 @@ var CAPS = { bird: 10, squirrel: 6, chipmunk: 6, deer: 4, butterfly: 8 };
 var CAP_BIRDS = CAPS.bird, CAP_SQUIRRELS = CAPS.squirrel,
     CAP_CHIPMUNKS = CAPS.chipmunk, CAP_BFLY = CAPS.butterfly;
 var SONG_R = 40;            /* bird song is a near phenomenon (design) */
+var SONG_GAIN = 0.6;        /* v1.1 (Joshua 2026-11-07, live play: "turn
+   the volume of the birds down some"): one master trim on bird SONG —
+   40% off every species' peak, applied inside the distance law at
+   both sites that use it, so the falloff SHAPE (songPeak *
+   (1-d/SONG_R)^1.6) is unchanged. A bird at your shoulder is still
+   clearly there; it just no longer rides over everything else.
+   Song only — the dove's flush whistle, squirrel chatter and every
+   ambient_audio level (insects, water, wind) are untouched. */
 /* Deer tuning (Joshua's rulings, 2026-11-07): deep habitat only,
    far from houses, no road near the anchor; head-up alert inside
    ~25u, gallop flight inside ~12u. */
@@ -85,7 +93,8 @@ var DEER_WALK_SPEED = 1.1, DEER_FLEE_SPEED = 7.5;
 /* The player's live position object (re-read every tick from the
    game's own player); a plain placeholder until the first tick. */
 var playerPos = { x: 0, y: 0, z: 0 };
-var VERSION = '1.0';        /* wildlife system version (__WILDLIFE) */
+var VERSION = '1.1';        /* wildlife system version (__WILDLIFE);
+   1.1 = the SONG_GAIN trim (Joshua 2026-11-07, birds down some) */
 /* The game's player is a global OBJECT ({ x, z, yaw, ... }); some
    rigs also carry a .position Vector3. Either way playerPos ends
    up as an { x, z }-shaped reference the thinks can read. */
@@ -2017,7 +2026,7 @@ function sweep(){
       } else if (c.voice.running && c.voice.running()){
         var dd = distToPlayer(c.x, c.z);
         var g = dd >= SONG_R ? 0 :
-          c.sp.songPeak * Math.pow(1 - dd / SONG_R, 1.6);
+          SONG_GAIN * c.sp.songPeak * Math.pow(1 - dd / SONG_R, 1.6);
         c.voice.setGain(g, c.voice.now());
       }
       if (c.songUntil && c.voice.ctx &&
@@ -2164,7 +2173,7 @@ window.__WILDLIFE = {
     }
     if (!best) return null;
     var g = bd >= SONG_R ? 0 :
-      best.sp.songPeak * Math.pow(1 - bd / SONG_R, 1.6);
+      SONG_GAIN * best.sp.songPeak * Math.pow(1 - bd / SONG_R, 1.6);
     return { species: best.key, dist: bd, songGain: g,
              state: best.state };
   },
