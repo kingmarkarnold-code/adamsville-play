@@ -58,9 +58,11 @@
    (WorldClock game-minutes — the same basis as every body-systems
    timer; stated plainly so Joshua can correct it if he meant real
    minutes: 2 game-minutes ≈ 10 real seconds at the game's clock rate).
-   While he is seated the body meter HOLDS at 100 (body_systems' crash
-   hold); the moment he gets out, the .11 consequences of damage 100
-   apply on foot (forced rest, meter drains over 5 game-minutes).
+   While he is seated the body meter HOLDS at 100 (healing requires
+   standing still, and he is not standing); the moment he gets out, the
+   damage-100 rule applies on foot (Joshua 16:00, replacing the old
+   forced rest): ENERGY spent, top speed cut to a slow walk, and
+   standing still for five game-minutes heals him back to 0.
 
    SCOPE: vehicle crashes only. On-foot bumps are untouched (.11).
    The bars (.14) only DISPLAY these stores; nothing here paints.

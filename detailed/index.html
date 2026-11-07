@@ -2437,7 +2437,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
    stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.11.07.15';
+window.__DOC_UIVER = '2026.11.07.16';
 function __checkDocVersionHeal(){
   var live = window.__UIVER || '';
   if (!live || live === window.__DOC_UIVER){
@@ -12677,8 +12677,8 @@ function animateHeroGLB(dt){
     R.swimBlend += (mv - R.swimBlend) * Math.min(1, 5 * dt);
   }
   var want, ts = 1;
-  /* BODY SYSTEMS (Joshua 2026-11-07): the damage-100 FORCED REST shows
-     the exhaustion posture. An authored 'Exhausted' clip is NOT in
+  /* BODY SYSTEMS (Joshua 2026-11-07): the damage-100 MAXED-OUT state
+     (16:00: spent energy + slow shuffle) shows the exhaustion posture. An authored 'Exhausted' clip is NOT in
      hero.glb yet — when one ships, R.actions.Exhausted exists and is
      played as-is. Until then the fallback is the same trick the swim
      branch uses: Idle clip + a bent-over pitch and hip drop on the
@@ -12945,10 +12945,10 @@ function animateHero(dt){
        bob:-Math.abs(Math.cos(p))*0.045*amp, lean:0.07*amp,
        sway:s1*0.035*amp, head:Math.sin(p*2)*0.03*amp};
   }
-  /* BODY SYSTEMS (Joshua 2026-11-07): the damage-100 FORCED REST on the
-     primitive rig — a hands-on-knees bent-over pose (deep torso lean,
+  /* BODY SYSTEMS (Joshua 2026-11-07): the damage-100 MAXED-OUT state on
+     the primitive rig — a hands-on-knees bent-over pose (deep torso lean,
      hips dropped, knees bent, head hung, arms reaching down to the
-     knees) forced over the idle blend for as long as the lock holds.
+     knees) forced over the idle blend for as long as damage is 100.
      Replaced by the authored 'Exhausted' clip when one ships; the GLB
      path above already prefers R.actions.Exhausted. */
   if (window.__BODY && window.__BODY.forcedRest && window.__BODY.forcedRest() && !player.swimming){
@@ -15562,11 +15562,11 @@ function updatePlayer(dt){
   var _ik=(window.Input && Input.sampled) ? Input.keys : keys;
   if (_ik['w']) mvz-=1; if (_ik['s']) mvz+=1;
   if (_ik['a']) mvx-=1; if (_ik['d']) mvx+=1;
-  /* BODY SYSTEMS (Joshua 2026-11-07): the damage-100 FORCED REST locks
-     movement — the input is zeroed here so the player stays exactly
-     where he slumped until the meter drains (body_systems.js owns the
-     state; absent module = no lock). */
-  if (window.__BODY && window.__BODY.forcedRest && window.__BODY.forcedRest()){ mvx=0; mvz=0; }
+  /* BODY SYSTEMS (Joshua 2026-11-07, amended 16:00): damage 100 used to
+     ZERO the input here (the forced rest). Joshua replaced it the same
+     day: at 100 he CAN move — the body governor below (capSpeed) holds
+     him to a slow shuffle while his energy is spent, and standing still
+     is what heals him. No input lock remains; do not re-add one. */
   var mag=Math.hypot(mvx,mvz);
   if (mag>0.08){
     /* v0.8 INDUSTRY-STANDARD third-person movement (orbit camera owns the yaw).
@@ -15598,7 +15598,7 @@ function updatePlayer(dt){
     // u/s (x1.5 — he rated the old 4.5 "a little slow"), and the result
     // passes through the body governor: damage >= 50 slows him, the
     // fatigue lockout caps him at walk pace (gentle-swim pace in water),
-    // and the damage-100 forced rest zeroes him (input already zeroed).
+    // and damage 100 caps him at the slow shuffle (16:00 rule).
     var spd=(player.swimming?6.75:(player.inside?5.0:13.8))*curve;
     if (window.__BODY && window.__BODY.capSpeed)
       spd=window.__BODY.capSpeed(spd, player.swimming?'swim':'foot');
@@ -17832,7 +17832,7 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <script data-dsrc="collision_material.js" data-dkey=""></script>
 <script data-dsrc="water_interaction.js" data-dkey=""></script> <!-- WATER INTERACTION (Joshua 2026-10-11) — sinking/shore-respawn helpers + fish system. Defensive: no-op if water data is missing. -->
 <script data-dsrc="wildlife_system.js" data-dkey=""></script> <!-- WILDLIFE (Joshua 2026-11-07) — Georgia birds/mammals/deer/butterflies on the fish streaming pattern; positional song through the ambient master. Defensive: no-op if package data is missing. -->
-<script data-dsrc="body_systems.js" data-dkey=""></script> <!-- BODY SYSTEMS (Joshua 2026-11-07) — the player's own damage meter (tree/boulder bumps: staged green/yellow/red bar, slow at 50, forced rest at 100) + the fatigue reserve (land run + swim arms, one shared reserve). Feeds on crashlog's accepted bumps; updatePlayer consults it for the forced-rest lock and speed caps. Defensive: no-op if game globals are missing. -->
+<script data-dsrc="body_systems.js" data-dkey=""></script> <!-- BODY SYSTEMS (Joshua 2026-11-07) — the player's own damage meter (tree/boulder bumps + vehicle crashes: staged green/yellow/red bar, slow at 50, at 100 energy spent + slow-walk cap with standing-still healing — 16:00 rule) + the fatigue reserve (land run + swim arms, one shared reserve). Feeds on crashlog's accepted bumps and crash_model's impact feed; updatePlayer consults it for the speed caps. Defensive: no-op if game globals are missing. -->
 <script data-dsrc="crash_model.js" data-dkey=""></script> <!-- CRASH MODEL (Joshua 2026-11-07) — vehicle crashes damage the CAR and the PLAYER by impact speed x what was hit (identified by the game's own collision diagnostics): 35 mph into a building damages the car; 125 mph into a building totals it, maxes the player's HEALTH and leaves him stuck in the car for two game-minutes. Feeds the existing stores only (addDamage / __BODY.addCrashDamage). Defensive: no-op if game globals are missing. -->
 <!-- ===== INLINE SCRIPT BLOCK 3: final placement audit (v2.0 - Joshua's
      automatic check) ===== Runs ONCE, after EVERY building system has loaded

@@ -17,11 +17,22 @@
         drains damage back down through the same stages in reverse — red
         falls, yellow falls, the green returns to its 10.
       - 50+: the player SLOWS (foot speed capped) until rested.
-      - 100: FORCED REST — movement is locked for 5 minutes of GAME time
-        while the meter drains 100 -> 0, then he can move again.
-      - REST = standing still. ANY rest drains the damage visibly and
-        proportionally (DMG_DRAIN_PER_GMIN below): a partial rest gives
-        partial recovery — he SEES himself getting better as he rests.
+      - 100: MAXED OUT (Joshua 2026-11-07 16:00 — REPLACES the original
+        damage-100 forced rest): his ENERGY is SPENT (the fatigue
+        reserve is emptied and held at 0 while damage is 100) and his
+        top speed drops to a SLOW WALK (DMG_CRITICAL_CAP 2.5 u/s — half
+        the ordinary walk pace, a third of the 50-tier cap). He CAN
+        move — he is never locked in place — but only at that shuffle,
+        on foot and in the water alike.
+      - HEALING (for now; richer healing is Joshua's to rule later):
+        REST = standing still, and ONLY standing still drains the
+        damage — 20 points per game-minute (DMG_DRAIN_PER_GMIN), so
+        five game-minutes standing takes 100 -> 0. Moving, even at the
+        slow maxed-out shuffle, does not heal. The drain is visible and
+        proportional: a partial rest gives partial recovery — he SEES
+        himself getting better as he rests. The moment damage drops
+        below 100 the spent-energy hold lifts and the reserve recovers
+        by the ordinary fatigue rules below.
       - The meter lives on screen ALWAYS (on foot and in a vehicle) and is
         SEPARATE from the car's damage/gas HUD (#dmg-wrap).
 
@@ -42,8 +53,10 @@
       - PUSHING: demanding run (full stick / WASD) DURING the lockout
         accrues debt — each game-minute of pushing adds half a game-minute
         to the lockout (capped at +5). Simple, legible, shown in state.
-      - Fatigue NEVER locks movement — it caps speed at walk. (Damage-100
-        is the only full lock.) Where both apply, the stricter cap wins.
+      - Fatigue NEVER locks movement — it caps speed at walk. (Nothing
+        locks movement at all since the 16:00 amendment: damage-100
+        caps at the slow shuffle instead.) Where caps apply together,
+        the stricter (smaller) cap wins.
       - SWIM ARM: top swim speed was raised 4.5 -> 6.75 u/s (x1.5) in
         updatePlayer (index.html) per Joshua ("a little slow"). Swimming
         at top speed (> 5.4 u/s) drains the SAME reserve by TIME: ~7
@@ -57,9 +70,9 @@
    like DAMAGE — it RISES with exertion and DRAINS with rest, coloured by
    the same bands (<= 10 green, < 50 yellow, else red; low = green). The
    word changes to RESTING only while the player is at a FULL STOP with
-   tree/boulder damage draining — that includes the whole damage-100
-   forced rest — and returns to the default word the moment he moves
-   again or the damage reaches 0. No other label is ever a default.
+   damage draining (standing-still healing, the damage-100 case
+   included) and returns to the default word the moment he moves again
+   or the damage reaches 0. No other label is ever a default.
 
    BAR RESTRUCTURE (Joshua 2026-11-07, 15:31 + 15:36 — supersedes the
    DMG / FATIGUE row labels above):
@@ -81,27 +94,31 @@
      to HEALTH.
    - The RESTING mechanism is untouched: the word still appears
      only on row 2, only while fully stopped (not driving/swimming)
-     with body damage draining, forced rest included.
+     with body damage draining, the damage-100 heal included.
 
    CRASH FEED (2026-11-07, crash model pass — Joshua 15:39): vehicle
    crashes hurt the BODY too, scaled by speed and by what was hit. The
    crash model (crash_model.js) computes the points; this module's
    meter RECEIVES them via addCrashDamage() — the store, the staged
    bar and every consequence stay here, nothing is duplicated there.
-   One interaction matters: crash damage can set the meter to 100
-   while he is still SEATED in the wreck. The forced rest is an
-   on-foot state, so while driving the meter HOLDS at 100 (no rest
-   drain — he is not resting, he is stuck; the crash model's own
-   two-game-minute exit block runs meanwhile). The first tick out of
-   the car engages the forced rest (see tick()) and the usual
-   5-game-minute drain runs on foot, exactly as a bump-earned 100 does.
+   Crash damage lands at the MOMENT OF IMPACT, while he is still
+   seated (Joshua 15:55: "It's just that you can't see it until you
+   step out the car" — the .14 bar shows the car's DAMAGE meanwhile).
+   A meter maxed in the wreck follows the same 16:00 rule as any 100:
+   energy spent, slow-walk cap — and no healing in the seat, because
+   healing is standing-still and the wiring's resting condition is
+   never true while driving (the crash model's own two-game-minute
+   exit block also runs meanwhile).
 
-   FORCED-REST VISUAL: index.html's animation paths read
-   window.__BODY.forcedRest(). The GLB path plays an authored 'Exhausted'
+   MAXED-OUT VISUAL: index.html's animation paths read
+   window.__BODY.forcedRest() — the name is historical (it gated the
+   pre-16:00 forced rest); it now simply reports "damage is 100" for
+   the exhaustion posture. The GLB path plays an authored 'Exhausted'
    clip IF one ever ships in hero.glb (R.actions.Exhausted); none exists
    yet, so both rigs fall back to a hands-on-knees bent-over pose (the
    same inner-wrapper pitch trick the swim pose uses, plus a hip drop).
-   The authored clip replaces the pose later — see the build notes.
+   Movement at 100 is governed by capSpeed (the slow shuffle), never
+   by this flag. The authored clip replaces the pose later.
 
    Time is GAME time: deltas come from WorldClock (dayNum/gameMin), the
    same clock daycycle renders. Pausing the sim pauses the body.
@@ -121,12 +138,19 @@
 var C = {
   /* damage */
   DMG_SLOW_AT:        50,     // damage >= 50 -> slowed (his threshold)
-  DMG_FORCE_AT:       100,    // damage 100 -> forced rest (his threshold)
-  DMG_DRAIN_PER_GMIN: 20,     // rest drain: 100 pts over 5 game-min (the
-                              // forced rest), 50 pts over 2.5 game-min —
-                              // resting out the 50-tier's 2 game-minutes at
-                              // 50 damage lands him at 10 (green, unslowed)
+  DMG_FORCE_AT:       100,    // damage 100 -> MAXED OUT (his threshold;
+                              // the state the 16:00 rule below governs)
+  DMG_DRAIN_PER_GMIN: 20,     // standing-still healing: 100 pts over
+                              // exactly 5 game-minutes, 50 pts over 2.5 —
+                              // resting out the 50-tier at 50 damage for
+                              // 2 game-minutes lands him at 10 (green,
+                              // unslowed). Standing still ONLY (16:00).
   DMG_SLOW_CAP:       7.6,    // u/s foot cap while hurt (below run, above walk)
+  DMG_CRITICAL_CAP:   2.5,    // u/s cap at damage 100 (Joshua 16:00:
+                              // "you can only walk at a slow pace") —
+                              // half the ordinary walk cap (5.0), a third
+                              // of the 50-tier cap: a hurt shuffle, on
+                              // foot and in the water alike
   /* fatigue — land */
   WALK_CAP:           5.0,    // u/s = the game's own walk pace (indoor speed)
   RUN_SPEED_MIN:      8.0,    // u/s: faster than this on foot = running
@@ -192,8 +216,7 @@ function dmgSegments(d){
    --------------------------------------------------------------------------- */
 function createBodyCore(){
   var S = {
-    damage: 0,          // 0..100 body damage from tree/boulder bumps
-    forcedRest: false,  // damage-100 movement lock
+    damage: 0,          // 0..100 body damage (bumps + vehicle crashes)
     reserve: 100,       // fatigue reserve 100..0 (100 = fresh)
     lockout: false,     // fatigue walk-only period active
     lockElapsed: 0,     // game-minutes spent in the current lockout
@@ -202,22 +225,23 @@ function createBodyCore(){
     restingShow: false  // HUD state word: true -> RESTING, false -> ENERGY
   };
 
-  /* One accepted tree/boulder bump = +1 damage. At 100 the forced rest
-     begins. Bumps during the forced rest change nothing (already maxed). */
+  /* One accepted tree/boulder bump = +1 damage. At 100 he is MAXED OUT
+     (16:00 rule: energy spent, slow-walk cap, heal by standing still) —
+     there is no lock for bumps to check against any more. */
   function addBump(kind){
     if (kind !== 'tree' && kind !== 'boulder') return false;
-    if (S.forcedRest) return false;
     S.damage = Math.min(C.DMG_FORCE_AT, S.damage + 1);
-    if (S.damage >= C.DMG_FORCE_AT) S.forcedRest = true;
     return true;
   }
 
   /* Vehicle-crash damage (crash_model.js): points land on the same
-     meter bumps feed. Deliberately does NOT engage the forced rest by
-     itself — a maxed meter earned in a car seat takes effect on foot
-     (tick() below engages it the first tick he is out of the car), so
-     the meter can HOLD at 100 for the whole stuck-in-car wait instead
-     of draining away inside it. Returns the meter's new value. */
+     meter bumps feed, AT THE MOMENT OF IMPACT (Joshua 15:55). A maxed
+     meter earned in a car seat then behaves exactly like any other
+     100 under the 16:00 rule — and it cannot drain in the seat,
+     because healing requires standing still and he is not standing
+     (the wiring's resting condition is never true while driving), so
+     the meter holds at 100 for the whole stuck-in-car wait on its
+     own. Returns the meter's new value. */
   function addCrashDamage(n){
     n = Math.max(0, n || 0);
     if (n <= 0) return S.damage;
@@ -228,26 +252,26 @@ function createBodyCore(){
   function tick(g, env){
     if (!(g > 0)) g = 0;
 
-    /* --- CRASH HOLD: a meter at 100 that is not already in the forced
-       rest got there in a car seat (bumps engage the rest themselves).
-       Out of the car, the forced rest engages now — and its drain
-       below runs the .11 five game-minutes on foot. In the car the
-       meter simply holds: not resting, not draining. --- */
-    if (!S.forcedRest && S.damage >= C.DMG_FORCE_AT && env.mode !== 'drive')
-      S.forcedRest = true;
-
-    /* --- DAMAGE: rest drains it, visibly and proportionally. During the
-       forced rest he is resting by construction (movement is locked), so
-       the drain runs and the meter empties over exactly 5 game-minutes —
-       that drain IS the forced rest's 5 minutes, after which the lock
-       releases with the meter at 0. --- */
-    if ((env.resting || S.forcedRest) && S.damage > 0){
+    /* --- DAMAGE: standing still — and ONLY standing still — drains
+       it, visibly and proportionally (Joshua 16:00: "increase health
+       by standing still for five game minutes"; the 20-per-game-minute
+       rate spans exactly 100 -> 0 in those five). Moving never heals,
+       not even the maxed-out slow shuffle: env.resting is a full stop.
+       Seated in a car the wiring never reports resting, so a meter
+       maxed in a wreck holds at 100 through the stuck wait unaided. --- */
+    if (env.resting && S.damage > 0){
       S.damage = Math.max(0, S.damage - C.DMG_DRAIN_PER_GMIN * g);
-      if (S.forcedRest && S.damage <= 0){ S.damage = 0; S.forcedRest = false; }
     }
 
     /* --- FATIGUE --- */
-    if (S.lockout){
+    if (S.damage >= C.DMG_FORCE_AT){
+      /* MAXED OUT (Joshua 16:00): "your energy is spent" — the reserve
+         is emptied and HELD at 0 for as long as damage is 100. No
+         lockout bookkeeping runs underneath (the fatigue lockout is a
+         different state with its own timers); the tick damage drops
+         below 100, the ordinary rules below resume from empty. */
+      S.reserve = 0;
+    } else if (S.lockout){
       /* Walk-only period: the reserve refills on schedule, linearly, so
          the readout drains back toward green as the minutes pass. */
       S.lockElapsed += g;
@@ -290,25 +314,30 @@ function createBodyCore(){
       }
     }
 
-    /* --- HUD state word: RESTING only at a FULL STOP while tree/boulder
-       damage is draining (the forced rest included — he is stopped by
-       the lock and the meter is draining). Evaluated AFTER the drain, so
-       the tick the damage reaches 0 the word is already ENERGY again. --- */
-    S.restingShow = !!(S.forcedRest || (env.resting && S.damage > 0));
+    /* --- HUD state word: RESTING only at a FULL STOP while damage is
+       draining (standing-still healing — the damage-100 case included).
+       Evaluated AFTER the drain, so the tick the damage reaches 0 the
+       word is already ENERGY again. --- */
+    S.restingShow = !!(env.resting && S.damage > 0);
   }
 
   /* Speed governor — updatePlayer calls this on its computed speed.
-     Forced rest = 0 (no movement at all). Damage >= 50 caps foot speed.
-     Fatigue lockout caps foot speed at walk, swim speed at gentle.
-     Where both apply the stricter (smaller) cap wins. */
+     Damage 100 = the slow shuffle (DMG_CRITICAL_CAP), foot and swim
+     alike: he CAN move (Joshua 16:00 replaced the zero-input lock).
+     Damage 50-99 caps foot speed at the hurt tier. Fatigue lockout
+     caps foot speed at walk, swim speed at gentle. Where caps apply
+     together the stricter (smaller) cap wins. */
   function capSpeed(spd, mode){
-    if (S.forcedRest) return 0;
     var cap = spd;
     if (mode === 'foot'){
-      if (S.lockout) cap = Math.min(cap, C.WALK_CAP);
-      if (S.damage >= C.DMG_SLOW_AT) cap = Math.min(cap, C.DMG_SLOW_CAP);
+      if (S.damage >= C.DMG_FORCE_AT) cap = Math.min(cap, C.DMG_CRITICAL_CAP);
+      else {
+        if (S.lockout) cap = Math.min(cap, C.WALK_CAP);
+        if (S.damage >= C.DMG_SLOW_AT) cap = Math.min(cap, C.DMG_SLOW_CAP);
+      }
     } else if (mode === 'swim'){
-      if (S.lockout) cap = Math.min(cap, C.GENTLE_SWIM_CAP);
+      if (S.damage >= C.DMG_FORCE_AT) cap = Math.min(cap, C.DMG_CRITICAL_CAP);
+      else if (S.lockout) cap = Math.min(cap, C.GENTLE_SWIM_CAP);
     }
     return cap;
   }
@@ -343,7 +372,10 @@ var core = createBodyCore();
 
 /* The facade index.html and crashlog.js call:
    - __BODY.addBump(kind, mode): crashlog hook — WALKING bumps only.
-   - __BODY.forcedRest(): updatePlayer input lock + animation poses.
+   - __BODY.addCrashDamage(n): crash_model.js's feed (points at impact).
+   - __BODY.forcedRest(): the ANIMATION paths' exhaustion-posture
+     condition — since the 16:00 amendment it reports "damage is 100"
+     (maxed out) and gates NO movement; the name is historical.
    - __BODY.capSpeed(spd, mode): updatePlayer speed governor. */
 window.__BODY = {
   core: core,
@@ -355,7 +387,7 @@ window.__BODY = {
      Returns the meter's new value so the crash model can spot the
      maxed-out (incapacitation) case. */
   addCrashDamage: function(n){ return core.addCrashDamage(n); },
-  forcedRest: function(){ return core.state.forcedRest; },
+  forcedRest: function(){ return core.state.damage >= C.DMG_FORCE_AT; },
   capSpeed: function(spd, mode){ return core.capSpeed(spd, mode); }
 };
 
