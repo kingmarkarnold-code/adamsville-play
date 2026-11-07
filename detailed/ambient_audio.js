@@ -14,9 +14,12 @@
      2. WIND        — looped noise through a band-pass with a slow LFO on
         the gain. Always present, subtle, drifts.
      3. CRICKETS    — 4.3 kHz sine with amplitude pulsing. Night only.
-     4. BIRDS       — scheduled chirp events (short sine sweeps), daytime
-        only. More frequent in quiet/low-traffic areas (parks, side
-        streets); sparse near busy roads.
+     4. BIRDS       — RETIRED in v1.2 (2026-11-07, wildlife package):
+        the old scheduled chirp events (short sine sweeps fired into
+        the air with no bird attached) are GONE. Birdsong now comes
+        from actual birds — wildlife_system.js sings per-bird phrases
+        through __AMB.voice(), positional like the water. See the
+        v1.2 changelog block below.
      5. CITY EVENTS — rare distant sirens (two-tone triangle sweep, very
         quiet). More likely downtown.
 
@@ -80,6 +83,39 @@
    the measured numbers ARE the shipped behaviour — and __AMB.gains()
    reads the live node gains + wading state + splash counter.
    ============================================================================ */
+/* ============================================================================
+   v1.2 WILDLIFE PACKAGE (2026-11-07, Joshua's design — built on the
+   two Nov 7 research passes):
+
+   W1 LEGACY TIMER BIRDS RETIRED. scheduleBird()/chirp() are deleted
+   outright: birdsong that fires on a timer with no bird making it
+   was the thing Joshua objected to ("it's like the water when I got
+   closer to the water the water got louder — when I get closer to a
+   bird the bird should get louder"). Real birds (wildlife_system.js)
+   own their voices now, through the door in W3.
+   W2 SPLASH RECIPE REBUILT. Joshua wading Tatum Outlet Creek on
+   ui 2026.11.07.3: "instead of sounding like splashing it sounded
+   like tapping." The old burst was ONE band-passed ping of
+   pre-smoothed noise at a fixed pitch — a knock, not liquid. The
+   new splashBurst() is three components: a raw-noise IMPACT whose
+   low-pass sweeps 3 kHz -> 600 Hz, a falling sine BLOOP
+   (420 -> 140 Hz, the displaced-water cavity), and 3–6 high-passed
+   DROPLET micro-bursts scattered 40–350 ms behind the impact, each
+   burst starting at a random offset in the noise buffer so no two
+   steps share a waveform. Peaks/cadence are unchanged (the
+   2026-11-01 gain staging stands — a splash is a stride sound).
+   W3 __AMB.voice() — a per-creature voice door into THIS master:
+   the caller gets {ctx, out, now(), running(), setGain(), destroy()}
+   and schedules its own oscillators into `out`. Wildlife song
+   therefore rides the same mute/enabled/gesture path as every
+   other ambient voice — it cannot sound while the game is muted,
+   and it dies with the context like everything else.
+   W4 RIPARIAN INSECTS REBALANCED 0.0060 -> 0.0130. The layer was
+   firing at Joshua's creek position (research-verified) but sat
+   ~24 dB under the creek's own voice — present and imperceptible
+   on a phone speaker. 0.013 puts the shimmer just under the water
+   it lives beside.
+   ============================================================================ */
 (function ambientAudio(){
 'use strict';
 
@@ -95,6 +131,10 @@ var DOWNTOWN_LATLNG = [33.7586, -84.38908];
 
 /* ---- module state ---- */
 var ctx = null, master = null, noiseBuf = null, waterBuf = null;
+var whiteBuf = null;   /* v1.2: RAW white noise — the splash recipe's
+                          impact/droplet source (waterBuf is pre-smoothed
+                          for the continuous voices; a splash needs the
+                          transient grain the smoother removes) */
 var gTraffic = null, gWind = null, gCrickets = null;
 var gCreek = null, gRiver = null, gFalls = null, gInsects = null;
 var fallsFlutter = null;                   /* falls gain LFO depth */
@@ -108,7 +148,7 @@ var wadeState = { inWater: false, swimming: false, depth: 0, speed: 0,
                   nextSplash: 0, wasInWater: false, lx: null, lz: null, lt: 0 };
 var retargetT = 0, enabled = true;
 var downtown = null;                        /* {x,z} once resolved */
-var birdTO = null, sirenTO = null;
+var sirenTO = null;
 var bootTries = 0, bootTimer = null;
 
 /* ------------------------------------------------------------------ */
@@ -187,6 +227,7 @@ function ensureCtx(){
     master.connect(ctx.destination);
     noiseBuf = makeNoise(ctx);
     waterBuf = makeWaterNoise(ctx);
+    whiteBuf = makeWhiteNoise(ctx);
     buildLayers();
     return true;
   }catch(e){ ctx = null; return false; }
@@ -216,6 +257,15 @@ function makeWaterNoise(c){
     last += 0.32 * (w - last);
     d[i] = last * 1.9;
   }
+  return buf;
+}
+/* 2 s of RAW white noise (v1.2) — splash impacts and droplets. No
+   smoothing: the crackle IS the content. */
+function makeWhiteNoise(c){
+  var len = Math.floor(c.sampleRate * 2);
+  var buf = c.createBuffer(1, len, c.sampleRate);
+  var d = buf.getChannelData(0);
+  for (var i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
   return buf;
 }
 function loopNoise(rate){
@@ -490,7 +540,10 @@ function computeLevels(p, gm, running){
   var dayF = isDay(gm) ? 1 : 0.3;
   var insF = prox.dStream === null ? 0
     : Math.max(0, 1 - Math.max(0, prox.dStream - 2) / 38);
-  var insects = running ? 0.0060 * insF * dayF : 0;
+  /* v1.2 (W4): 0.0060 -> 0.0130 — the layer fired at the creek but
+     sat ~24 dB under the creek voice, imperceptible on a phone
+     speaker (Joshua heard no insects on ui 2026.11.07.3). */
+  var insects = running ? 0.0130 * insF * dayF : 0;
   var presence = Math.max(prox.creekF, prox.riverF, prox.fallsF);
   return { creek: creek, river: river, falls: falls, insects: insects,
            duck: 1 - 0.45 * presence, prox: prox };
@@ -526,26 +579,76 @@ function splashBurst(kind, opt){
   try{
     var t = ctx.currentTime;
     var speedF = Math.max(0, Math.min(1, opt.speed || 0));
-    var dur  = kind === 'stroke' ? 0.32 : kind === 'enter' ? 0.42 :
-               kind === 'tread' ? 0.24 : 0.22;
-    var freq = kind === 'stroke' ? 620 : kind === 'enter' ? 880 :
-               kind === 'tread' ? 700 : 1280;
+    /* Peak staging UNCHANGED from the 2026-11-01 fix (a splash is a
+       stride sound, scaled by speed — see the header above). Only
+       the RECIPE changed (v1.2, W2 in the changelog): the old
+       single band-passed ping of pre-smoothed noise read as a TAP;
+       a real splash is broadband impact + falling cavity + spray. */
     var peak = kind === 'stroke' ? 0.20 : kind === 'enter' ? 0.22 :
                kind === 'tread' ? 0.045 :
                0.15 + 0.11 * speedF;
+    var srcBuf = whiteBuf || waterBuf;
+    /* --- 1. IMPACT: raw white noise, low-pass sweeping 3 kHz down
+       to 600 Hz over ~0.12 s — the foot/body displacing water. A
+       random buffer offset per burst: no two steps share a
+       waveform onset (the old loop replayed the same grain every
+       step, one more reason it read as the same object tapped). */
     var s = ctx.createBufferSource();
-    s.buffer = waterBuf; s.loop = true;
-    s.playbackRate.value = 0.85 + Math.random() * 0.3;
-    var bp = ctx.createBiquadFilter();
-    bp.type = 'bandpass';
-    bp.frequency.value = freq * (0.92 + Math.random() * 0.16);
-    bp.Q.value = 0.8;
+    s.buffer = srcBuf; s.loop = true;
+    s.playbackRate.value = 0.9 + Math.random() * 0.25;
+    var lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.Q.value = 0.4;
+    lp.frequency.setValueAtTime(3000, t);
+    lp.frequency.exponentialRampToValueAtTime(600, t + 0.12);
     var g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(peak, t + 0.03);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    s.connect(bp); bp.connect(g); g.connect(master);
-    s.start(t); s.stop(t + dur + 0.05);
+    g.gain.exponentialRampToValueAtTime(peak, t + 0.015);
+    g.gain.exponentialRampToValueAtTime(0.0001,
+      t + (kind === 'tread' ? 0.16 : 0.20));
+    s.connect(lp); lp.connect(g); g.connect(master);
+    s.start(t, Math.random() * 1.5); s.stop(t + 0.30);
+    /* --- 2. BLOOP: a sine glissando ~420 -> ~140 Hz under the
+       impact — the falling resonance of displaced water, the part
+       that makes ears say "liquid". Low gain; skipped for the
+       faint 'tread' voice, where it would only muddy. */
+    if (kind !== 'tread'){
+      var o = ctx.createOscillator(); o.type = 'sine';
+      o.frequency.setValueAtTime(420 * (0.94 + Math.random() * 0.12), t);
+      o.frequency.exponentialRampToValueAtTime(140,
+        t + 0.10 + Math.random() * 0.05);
+      var og = ctx.createGain();
+      var bpk = Math.min(0.08, peak * 0.35);
+      og.gain.setValueAtTime(0.0001, t);
+      og.gain.exponentialRampToValueAtTime(bpk, t + 0.02);
+      og.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+      o.connect(og); og.connect(master);
+      o.start(t); o.stop(t + 0.20);
+    }
+    /* --- 3. DROPLET PATTER: 3–6 micro-bursts of high-passed noise
+       (≥ 4 kHz), 8–25 ms each, scattered 40–350 ms behind the
+       impact at decaying gains — the spray landing back on the
+       surface. A step is an event PLUS its spray; the old recipe
+       had the event only. */
+    var nD = 3 + Math.floor(Math.random() * 4);
+    var span = kind === 'tread' ? 0.18 : 0.35;
+    for (var di = 0; di < nD; di++){
+      var dAt = 0.04 + Math.random() * span;
+      var dDur = 0.008 + Math.random() * 0.017;
+      var ds = ctx.createBufferSource();
+      ds.buffer = srcBuf; ds.loop = true;
+      ds.playbackRate.value = 1.1 + Math.random() * 0.5;
+      var hp = ctx.createBiquadFilter();
+      hp.type = 'highpass';
+      hp.frequency.value = 4000 + Math.random() * 1500;
+      var dg = ctx.createGain();
+      var dpk = Math.max(0.004,
+        peak * (0.10 + Math.random() * 0.12) * (1 - (dAt / (span + 0.1)) * 0.5));
+      dg.gain.setValueAtTime(0.0001, t + dAt);
+      dg.gain.exponentialRampToValueAtTime(dpk, t + dAt + 0.004);
+      dg.gain.exponentialRampToValueAtTime(0.0001, t + dAt + dDur + 0.01);
+      ds.connect(hp); hp.connect(dg); dg.connect(master);
+      ds.start(t + dAt, Math.random() * 1.5); ds.stop(t + dAt + dDur + 0.05);
+    }
     splashCount++;
     lastSplash = { kind: kind, peak: +peak.toFixed(3), at: Date.now() };
     splashLog.push(lastSplash);
@@ -608,48 +711,44 @@ function tickWading(dt){
 }
 
 /* ------------------------------------------------------------------ */
-/* Birds — scheduled chirp events, daytime only. A chirp is 1–3 short
-   sine sweeps; each is its own throwaway node so nothing accumulates. */
-function chirp(){
-  if (!ctx || ctx.state !== 'running' || !master) return;
+/* BIRDS — RETIRED (v1.2, W1). The scheduled chirp events that used
+   to live here (chirp()/scheduleBird(): 1–3 random sine sweeps every
+   2.5–7.5 s, straight into the master — no bird, no position, no
+   distance) are DELETED, not disabled. Birdsong is wildlife now:
+   wildlife_system.js keeps one voice per bird through ambVoice()
+   below, gained by the bird's distance exactly the way the water
+   voices are gained by shore distance. Nothing in this module
+   makes a bird sound any more. */
+
+/* ambVoice() — the wildlife voice door (v1.2, W3). Creates a gain
+   node INTO the ambient master and hands it to the caller with the
+   shared context, so a creature's song rides the same
+   gesture/mute/enabled path as every ambient layer (master gain is
+   retarget()'s — a muted or suspended game silences wildlife too,
+   by construction, not by the caller remembering to check).
+   Returns null when audio is unavailable; callers must cope.
+   Handle: { ctx, out, now(), running(), setGain(v, tc), destroy() } */
+function ambVoice(){
+  if (!ensureCtx() || !master || !ctx) return null;
   try{
-    var t = ctx.currentTime + 0.05;
-    var n = 1 + Math.floor(Math.random() * 3);
-    for (var i = 0; i < n; i++){
-      (function(i){
-        var o = ctx.createOscillator(), g = ctx.createGain();
-        o.type = 'sine';
-        var f0 = 2400 + Math.random() * 1200;
-        var st = t + i * 0.22;
-        o.frequency.setValueAtTime(f0, st);
-        o.frequency.exponentialRampToValueAtTime(Math.max(800, f0 * 1.35), st + 0.09);
-        o.frequency.exponentialRampToValueAtTime(Math.max(800, f0 * 0.9), st + 0.16);
-        g.gain.setValueAtTime(0.0001, st);
-        g.gain.exponentialRampToValueAtTime(0.045, st + 0.03);
-        g.gain.exponentialRampToValueAtTime(0.0001, st + 0.18);
-        o.connect(g); g.connect(master);
-        o.start(st); o.stop(st + 0.25);
-      })(i);
-    }
-  }catch(e){}
-}
-function scheduleBird(){
-  if (birdTO){ clearTimeout(birdTO); birdTO = null; }
-  birdTO = setTimeout(function(){
-    birdTO = null;
-    try{
-      var gm = gameMin();
-      if (isDay(gm) && ctx && ctx.state === 'running' &&
-          enabled && !isMuted()){
-        var p = playerPos();
-        var dens = p ? trafficDensity(p.x, p.z) : 0.5;
-        /* Quiet/green areas chirp more often than busy roadsides. */
-        var prob = dens < 0.35 ? 0.8 : 0.35;
-        if (Math.random() < prob) chirp();
-      }
-    }catch(e){}
-    scheduleBird();
-  }, 2500 + Math.random() * 5000);
+    var g = ctx.createGain();
+    g.gain.value = 1;
+    g.connect(master);
+    return {
+      ctx: ctx, out: g,
+      now: function(){ return ctx ? ctx.currentTime : 0; },
+      running: function(){
+        return !!(ctx && ctx.state === 'running' && enabled && !isMuted());
+      },
+      setGain: function(v, tc){
+        try{
+          g.gain.setTargetAtTime(Math.max(0, v), ctx.currentTime,
+                                 (typeof tc === 'number') ? tc : 0.25);
+        }catch(e){}
+      },
+      destroy: function(){ try{ g.disconnect(); }catch(e){} }
+    };
+  }catch(e){ return null; }
 }
 
 /* ------------------------------------------------------------------ */
@@ -726,7 +825,6 @@ function boot(){
       return false;
     }
   }catch(e){ return false; }
-  scheduleBird();
   scheduleSiren();
   try{ retarget(); }catch(e){}
   /* Debug / tuning handle (v1.1: instrumented verification surface —
@@ -734,9 +832,10 @@ function boot(){
      reads the live node values, and the splash counter + wading
      snapshot prove the B4 voices fire in each water state). */
   window.__AMB = {
-    version: '1.1',
-    retarget: retarget, chirp: chirp, siren: siren,
+    version: '1.2',
+    retarget: retarget, siren: siren,
     splash: splashBurst,
+    voice: ambVoice,
     setEnabled: function(v){ enabled = !!v; try{ retarget(); }catch(e){} },
     levels: function(){
       var L = computeLevels(playerPos(), gameMin(),
@@ -770,7 +869,7 @@ function boot(){
     },
     get state(){
       return {
-        version: '1.1',
+        version: '1.2',
         running: !!(ctx && ctx.state === 'running'),
         muted: isMuted(), gameMin: gameMin(), enabled: enabled
       };
