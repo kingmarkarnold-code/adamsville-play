@@ -2481,25 +2481,86 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
    stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.11.07.24';
-/* VER-TAG (ui 2026.11.07.24) >>>
-   The on-screen version tag (#ver-tag) must show the CURRENT LIVE UI
-   VERSION. It used to stamp APP_VERSION ('1.18.0' — the app
-   generation, static since the Oct 17 merge), so the tag could not
-   move when live UI updates applied: Joshua's proof was today's new
-   birds and squirrels on screen while the tag still read v1.18.0.
-   APP_VERSION stays in charge of hud-sub / help-ver (the app
-   generation, where it belongs); the TAG reads the live UI version —
-   the fetched manifest's __UIVER first, then this document's own
-   stamp __DOC_UIVER (which release.py keeps in step with the
-   manifest at every release), and only then APP_VERSION. The stamp
-   runs at boot (in the APP_VERSION block below) and again the moment
-   __UIVER lands (see __fetchLoadManifests), so after any update
-   reload/self-heal the tag shows the new version with no manual
-   cache clearing. */
+window.__DOC_UIVER = '2026.11.07.25';
+/* VER-TAG (ui 2026.11.07.25) >>>
+   The on-screen version tag (#ver-tag) shows the version OF THE
+   DEPLOYMENT ACTUALLY RUNNING, environment first (Joshua 2026-11-07
+   18:28: the tag must "determine whether I am playing from the dev,
+   the web or the APK and show the current version based on that").
+
+   History: the tag used to stamp APP_VERSION ('1.18.0' — the app
+   generation, static since the Oct 17 merge), so it could not move
+   when live UI updates applied (Joshua's proof: today's new birds
+   and squirrels on screen while the tag still read v1.18.0); ui .24
+   made it read the live UI version. APP_VERSION still stamps
+   hud-sub / help-ver (the app generation, where it belongs).
+
+   ENVIRONMENT LADDER (__saEnv — the game's own signals only):
+     APK — a native bridge is present (window.MapDownloadBridge ||
+           window.Capacitor): the EXACT test crashlog.js who() uses
+           for face='APK' (and the same idea as the nativeBridge()
+           helpers in mapdelivery.js / stockdelivery.js), so the tag
+           and the crash reports can never disagree about where the
+           game is running.
+     DEV — no bridge, and the page came from file: or a loopback
+           host (localhost / 127.0.0.1 / ::1): the dev deployment,
+           the locally served / file-opened generated copy.
+     WEB — everything else (the hosted build, e.g. GitHub Pages).
+   The result is published as window.__SA_ENV for later report use.
+   It is re-derived at every stamp, so a late-injected bridge is
+   honoured and __SA_ENV can never drift from what the tag shows.
+   crashlog.js keeps its own independent face logic, untouched.
+
+   TAG TEXT (shell version != running-layer version — the Oct 19
+   stale downloaded layer inside the APK caused a long confusion
+   precisely because those two were conflated, so they stay
+   separate, visible facts):
+     WEB — 'WEB v' + the live UI version (__UIVER first, then this
+           document's own stamp __DOC_UIVER, which release.py keeps
+           in step with the manifest at every release).
+     DEV — 'DEV v' + this copy's OWN document stamp FIRST
+           (__DOC_UIVER, then __UIVER): a dev copy may run ahead of
+           or behind the live site, and its own stamp is its current
+           version.
+     APK — 'APK v' + APP_VERSION (the shell's version) + ' · UI v'
+           + the UI layer version running inside the shell
+           (__UIVER, then __DOC_UIVER). Two numbers, two facts.
+   The stamp runs at boot (in the APP_VERSION block below) and again
+   the moment __UIVER lands (see __fetchLoadManifests), so after any
+   update reload/self-heal the tag shows the new values with no
+   manual cache clearing. */
+function __saEnv(){
+  var env = 'WEB';
+  try{
+    if (window.MapDownloadBridge || window.Capacitor){
+      env = 'APK';
+    }else{
+      var loc = window.location || {};
+      var host = String(loc.hostname || '').replace(/^\[|\]$/g, '');
+      if (loc.protocol === 'file:' || host === 'localhost' ||
+          host === '127.0.0.1' || host === '::1'){
+        env = 'DEV';
+      }
+    }
+  }catch(e){}
+  window.__SA_ENV = env;
+  return env;
+}
 function __liveVerText(){
-  return 'v' + (window.__UIVER || window.__DOC_UIVER ||
-                (typeof APP_VERSION !== 'undefined' ? APP_VERSION : ''));
+  var env = __saEnv();
+  var shell = (typeof APP_VERSION !== 'undefined' && APP_VERSION) ?
+              String(APP_VERSION) : '';
+  var live = window.__UIVER || '';
+  var doc = window.__DOC_UIVER || '';
+  if (env === 'APK'){
+    var ui = live || doc;
+    if (shell && ui) return 'APK v' + shell + ' · UI v' + ui;
+    if (ui) return 'APK · UI v' + ui;
+    if (shell) return 'APK v' + shell;
+    return 'APK';
+  }
+  if (env === 'DEV') return 'DEV v' + (doc || live || shell);
+  return 'WEB v' + (live || doc || shell);
 }
 function __stampVerTag(){
   try{
@@ -2507,6 +2568,7 @@ function __stampVerTag(){
     if (el) el.textContent = __liveVerText();
   }catch(e){}
 }
+try{ __saEnv(); }catch(e){}  /* publish __SA_ENV from the first moment */
 /* <<< VER-TAG */
 function __checkDocVersionHeal(){
   var live = window.__UIVER || '';
@@ -3536,8 +3598,10 @@ try{
 var APP_VERSION='1.18.0';  /* 2026-10-17 MERGE: aligned to the shipped APK version (play copy said 1.15.0, www copy said 1.12.3) */
 try{
   document.getElementById('hud-sub').textContent='demo v'+APP_VERSION;
-  /* VER-TAG (ui 2026.11.07.24): the tag shows the LIVE UI VERSION, not
-     APP_VERSION — see __liveVerText/__stampVerTag at the loader. */
+  /* VER-TAG (ui 2026.11.07.25): the tag shows the RUNNING DEPLOYMENT's
+     version (env-aware: WEB / DEV / APK shell + UI layer), not
+     APP_VERSION alone — see __saEnv/__liveVerText/__stampVerTag at
+     the loader. */
   __stampVerTag();
   document.getElementById('help-ver').textContent='How to play (demo v'+APP_VERSION+')';
 }catch(e){}
