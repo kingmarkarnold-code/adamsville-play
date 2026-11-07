@@ -2674,22 +2674,133 @@ function initGPS(){
    NEVER appeared (the element sat in the DOM at display:none). The
    declarations now live with the other state at the top of this file.
    --------------------------------------------------------------------------- */
+/* ---------------------------------------------------------------------------
+   NAV STRIP FIT (ui 2026.11.07.24, from Joshua's 17:33 video; reframed
+   by his 18:18 clarification): in portrait the status strip ("On
+   foot — straight to Wildwood Lake · 2.87") ran off the right edge
+   of the screen at DEFAULT size. Joshua's framing: this is the
+   STANDING MEASURED-VIEWPORT RULE (ui 2026.10.24.5) — controls fit
+   within the display area MEASURED from the browser (SAView /
+   visualViewport), portrait or landscape — and the strip violated
+   it: the bands were white-space:nowrap inside an uncapped centred
+   box, and hud_move's font scaling only touches the container's
+   font, never the bands' own sizes.
+   So the strip is brought under that rule:
+     - The box is capped at 92% of the MEASURED visible width
+       (SAView.width(), published as --app-width) — never a CSS
+       viewport-unit assumption — unless hud_move has given it an
+       explicit player-chosen width (then the player's box rules and
+       the same fitting runs against that width).
+     - Inside the box, the text fits by BOTH of Joshua's options:
+       A) AUTO-SHRINK — the font steps down from base until the text
+          fits one line (floors: turn band 11px, dist band 9px);
+       B) WRAP — the bands may wrap, at most ~3 rows in practice;
+          if even the floor font cannot fit one line, wrapping
+          carries the rest. NOTHING IS EVER CLIPPED.
+     - The fit RECOMPUTES whenever the measured area changes:
+       hudArrowTick re-runs it when the text or the box width
+       changes, and resize / orientationchange listeners drop the
+       fit cache so a rotation (or a browser bar showing/hiding,
+       which SAView re-fires as a resize) refits against the new
+       measured box — portrait AND landscape.
+   (hud_move's own layout-apply already measures via SAView —
+   visW()/visH() — so placed controls live in measured fractions;
+   what escaped the rule was this CONTENT-sized box. A generic
+   content-width clamp inside hud_move's apply is NOT added here:
+   it would second-guess every control's natural size on the .23
+   system's word alone. Recorded as remaining work in this pass's
+   BUILD-NOTES.)
+   --------------------------------------------------------------------------- */
+/* NAV STRIP FIT (pure) >>> */
+/* Greedy word-wrap row count for a measure function m(text, px)->width. */
+function stripWrapRows(text, fontPx, availPx, measure){
+  var words = String(text || '').split(/\s+/).filter(Boolean);
+  if (!words.length) return 0;
+  var rows = 1, cur = '';
+  for (var i = 0; i < words.length; i++){
+    var next = cur ? cur + ' ' + words[i] : words[i];
+    if (cur && measure(next, fontPx) > availPx){ rows++; cur = words[i]; }
+    else cur = next;
+  }
+  return rows;
+}
+/* The largest font <= basePx (1px steps, floor minPx) whose single
+   line fits availPx; minPx when even that cannot fit one line (the
+   wrap then carries the overflow — see B above). */
+function stripFitFont(text, availPx, basePx, minPx, measure){
+  var px = basePx;
+  while (px > minPx && measure(text, px) > availPx) px -= 1;
+  return px;
+}
+/* <<< NAV STRIP FIT (pure) */
+try{ window.__GPS_STRIP_FIT = { fitFont: stripFitFont, wrapRows: stripWrapRows }; }catch(e){}
+
+/* Text measurement for the fit: a shared canvas 2d context in the
+   bands' own weight; a per-character estimate if canvas is missing. */
+var _stripCtx = null;
+function stripMeasure(text, fontPx){
+  try{
+    if (!_stripCtx){
+      var cv = document.createElement('canvas');
+      _stripCtx = cv.getContext('2d');
+    }
+    if (_stripCtx){
+      _stripCtx.font = 'bold ' + fontPx + 'px sans-serif';
+      return _stripCtx.measureText(String(text || '')).width;
+    }
+  }catch(e){}
+  return String(text || '').length * fontPx * 0.58;
+}
+/* Fit one band: shrink-to-one-line (A) with wrap as the net (B).
+   Cached on text + available width + base size. The available width
+   is the box's live width; when the box cannot be measured, the
+   fallback is the MEASURED visible width via SAView (the standing
+   measured-viewport rule), never a bare CSS-unit guess. */
+function fitStripBand(el, basePx, minPx){
+  if (!el || el.style.display === 'none') return;
+  var txt = el.textContent || '';
+  if (!txt) return;
+  var avail = 0;
+  try{
+    var w = (hudArrowEl && hudArrowEl.clientWidth) || 0;
+    if (!w){
+      var mw = 0;
+      try{ mw = (window.SAView && SAView.width()) || window.innerWidth || 360; }catch(e){ mw = 360; }
+      w = Math.floor(mw * 0.92);
+    }
+    avail = Math.max(60, w - 20);   /* the bands' 10px side padding */
+  }catch(e){ avail = 300; }
+  var key = txt + '|' + avail + '|' + basePx;
+  if (el.__fitKey === key) return;
+  el.__fitKey = key;
+  el.style.fontSize = stripFitFont(txt, avail, basePx, minPx, stripMeasure) + 'px';
+}
+
 function buildHudArrow(){
   if (hudArrowEl) return;
   if (typeof document==='undefined' || !document.body) return;
   var el=document.createElement('div');
   el.id='gps-hud-arrow';
   el.style.cssText='position:fixed;top:70px;left:50%;transform:translateX(-50%);'+
+    /* NAV STRIP FIT (ui 2026.11.07.24): first-paint cap under the
+       MEASURED visible width — SAView publishes it as --app-width
+       (visualViewport); hudArrowTick re-sets the cap in px from
+       SAView.width() on every change, and lifts it entirely when
+       hud_move has given the box a player-chosen width. */
+    'max-width:calc(var(--app-width, 100vw) * 0.92);'+
     'z-index:40;display:none;text-align:center;pointer-events:auto;cursor:pointer;'+
     'user-select:none;-webkit-user-select:none;';
   el.innerHTML='<div id="gps-hud-arrow-icon" style="font-size:46px;line-height:1;'+
     'color:#35e0ff;text-shadow:0 0 10px rgba(0,0,0,.85),0 2px 4px #000;">&#11014;</div>'+
     '<div id="gps-hud-arrow-turn" style="display:none;font-size:20px;font-weight:bold;'+
     'color:#ffd75e;text-shadow:0 1px 3px #000;background:rgba(0,0,0,.5);'+
-    'border-radius:9px;padding:1px 10px;margin-top:3px;white-space:nowrap;"></div>'+
+    /* NAV STRIP FIT (ui 2026.11.07.24): wrapping allowed (was nowrap —
+       the portrait overflow) — the fit shrinks the font first and the
+       wrap is the net, so the text is never clipped. */
+    'border-radius:9px;padding:1px 10px;margin-top:3px;white-space:normal;text-align:center;"></div>'+
     '<div id="gps-hud-arrow-dist" style="font-size:13px;font-weight:bold;color:#fff;'+
     'text-shadow:0 1px 3px #000;background:rgba(0,0,0,.5);border-radius:9px;'+
-    'padding:2px 10px;margin-top:3px;white-space:nowrap;"></div>'+
+    'padding:2px 10px;margin-top:3px;white-space:normal;text-align:center;"></div>'+
     '<div style="font-size:10px;color:#9fd8ff;text-shadow:0 1px 2px #000;margin-top:1px;">tap to clear</div>';
   el.title='Tap to clear navigation';
   function doClear(e){
@@ -2706,6 +2817,19 @@ function buildHudArrow(){
   hudArrowIcon=el.querySelector('#gps-hud-arrow-icon');
   hudArrowDist=el.querySelector('#gps-hud-arrow-dist');
   hudArrowTurn=el.querySelector('#gps-hud-arrow-turn');
+  /* NAV STRIP FIT (ui 2026.11.07.24, the measured-viewport rule): a
+     rotation — or a browser bar showing/hiding, which SAView re-fires
+     as a resize — changes the measured visible area. Drop the bands'
+     fit caches so the next hudArrowTick refits the strip against the
+     NEW measured box, portrait or landscape. */
+  function invalidateStripFit(){
+    try{
+      if (hudArrowTurn) hudArrowTurn.__fitKey = null;
+      if (hudArrowDist) hudArrowDist.__fitKey = null;
+    }catch(e){}
+  }
+  try{ window.addEventListener('resize', invalidateStripFit); }catch(e){}
+  try{ window.addEventListener('orientationchange', invalidateStripFit); }catch(e){}
 }
 function hudArrowTick(){
   // Self-heal (v1.63): if the load-time build could not run (e.g. the
@@ -2801,6 +2925,26 @@ function hudArrowTick(){
   }
   if (hudArrowDist) hudArrowDist.textContent=(route.destName||'Destination')+
     ' \u2022 '+fmtDist(guideRemaining||Math.hypot(route.destX-p.x, route.destZ-p.z));
+  /* NAV STRIP FIT (ui 2026.11.07.24): after the texts are set, fit
+     both bands to the box — auto-shrink first, wrap as the net (see
+     the NAV STRIP FIT block above buildHudArrow). The box cap is the
+     MEASURED visible width (SAView.width(), the standing rule) in
+     px, lifted while hud_move has an explicit player width on the
+     box. Runs every tick but is cached on text+width, so it costs
+     nothing until something actually changes (a counting-down
+     distance, a layout apply, a rotation, a resize). */
+  try{
+    if (hudArrowEl.style){
+      if (hudArrowEl.style.width) hudArrowEl.style.maxWidth = 'none';
+      else {
+        var mw3 = 0;
+        try{ mw3 = (window.SAView && SAView.width()) || window.innerWidth || 0; }catch(e){}
+        hudArrowEl.style.maxWidth = mw3 ? Math.floor(mw3 * 0.92) + 'px' : '92vw';
+      }
+    }
+    fitStripBand(hudArrowTurn, 20, 11);
+    fitStripBand(hudArrowDist, 13, 9);
+  }catch(e){}
 }
 
 })();

@@ -2481,7 +2481,33 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
    stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.11.07.23';
+window.__DOC_UIVER = '2026.11.07.24';
+/* VER-TAG (ui 2026.11.07.24) >>>
+   The on-screen version tag (#ver-tag) must show the CURRENT LIVE UI
+   VERSION. It used to stamp APP_VERSION ('1.18.0' — the app
+   generation, static since the Oct 17 merge), so the tag could not
+   move when live UI updates applied: Joshua's proof was today's new
+   birds and squirrels on screen while the tag still read v1.18.0.
+   APP_VERSION stays in charge of hud-sub / help-ver (the app
+   generation, where it belongs); the TAG reads the live UI version —
+   the fetched manifest's __UIVER first, then this document's own
+   stamp __DOC_UIVER (which release.py keeps in step with the
+   manifest at every release), and only then APP_VERSION. The stamp
+   runs at boot (in the APP_VERSION block below) and again the moment
+   __UIVER lands (see __fetchLoadManifests), so after any update
+   reload/self-heal the tag shows the new version with no manual
+   cache clearing. */
+function __liveVerText(){
+  return 'v' + (window.__UIVER || window.__DOC_UIVER ||
+                (typeof APP_VERSION !== 'undefined' ? APP_VERSION : ''));
+}
+function __stampVerTag(){
+  try{
+    var el = document.getElementById('ver-tag');
+    if (el) el.textContent = __liveVerText();
+  }catch(e){}
+}
+/* <<< VER-TAG */
 function __checkDocVersionHeal(){
   var live = window.__UIVER || '';
   if (!live || live === window.__DOC_UIVER){
@@ -2513,6 +2539,9 @@ function __fetchLoadManifests(cb){
       try{
         if (m){
           window.__UIVER = m.ui_version || m.version || '';
+          /* VER-TAG (ui 2026.11.07.24): the live version just landed —
+             re-stamp the on-screen tag from it right away. */
+          try{ __stampVerTag(); }catch(e){}
           try{ __checkDocVersionHeal(); }catch(e){}
           window.__UIHASH = {};
           window.__UISIZE = {};
@@ -3507,7 +3536,9 @@ try{
 var APP_VERSION='1.18.0';  /* 2026-10-17 MERGE: aligned to the shipped APK version (play copy said 1.15.0, www copy said 1.12.3) */
 try{
   document.getElementById('hud-sub').textContent='demo v'+APP_VERSION;
-  document.getElementById('ver-tag').textContent='v'+APP_VERSION;
+  /* VER-TAG (ui 2026.11.07.24): the tag shows the LIVE UI VERSION, not
+     APP_VERSION — see __liveVerText/__stampVerTag at the loader. */
+  __stampVerTag();
   document.getElementById('help-ver').textContent='How to play (demo v'+APP_VERSION+')';
 }catch(e){}
 /* v1.11: mobile-UI detection — the HUD redesign applies ONLY on small/touch screens.
@@ -8882,7 +8913,21 @@ try{ __wbStage('water'); }catch(e){}
            shader — fed from daycycle's published light level by the
            tick below, so the water follows the same curve as the sky
            (see the tick's note). */
-        uniforms: { uTime: { value: 0 }, uKind: { value: kind }, uLight: { value: 1 } },
+        /* SEE-IN WATER (ui 2026.11.07.24, Joshua's full-dive build,
+           piece 1): the sheets are now TRANSPARENT with a per-kind
+           opacity (uOpacity: bodies 0.60, streams 0.78 — streams are
+           shallow and busy, so they keep more body) and DOUBLE-SIDED,
+           so from above you see INTO the water — the bed, the banks
+           sloping down, the fish — while the animated colour, foam and
+           sparkle keep the surface reading as water; and from BELOW
+           (piece 2) the same sheet is the bright ceiling over the
+           murk. This is a material change to the existing sheets
+           only: no new planes, no outline or bed changes. depthWrite
+           is off so the bed and fish blend through cleanly instead of
+           z-fighting the surface. */
+        uniforms: { uTime: { value: 0 }, uKind: { value: kind }, uLight: { value: 1 },
+                    uOpacity: { value: kind > 0.5 ? 0.78 : 0.60 } },
+        transparent: true, depthWrite: false, side: THREE.DoubleSide,
         vertexShader: [
           'attribute vec3 aData;',
           'varying vec3 vW; varying vec3 vD;',
@@ -8891,7 +8936,7 @@ try{ __wbStage('water'); }catch(e){}
           ' gl_Position = projectionMatrix * viewMatrix * wp; }'
         ].join('\n'),
         fragmentShader: [
-          'uniform float uTime; uniform float uKind; uniform float uLight;',
+          'uniform float uTime; uniform float uKind; uniform float uLight; uniform float uOpacity;',
           'varying vec3 vW; varying vec3 vD;',
           'float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }',
           'void main(){',
@@ -8926,7 +8971,10 @@ try{ __wbStage('water'); }catch(e){}
           ' float sparkle = step(0.985, hash(floor(vW.xz * 3.0) + floor(t * 3.0)));',
           ' col += vec3(0.25) * sparkle;',
           ' col *= uLight;',
-          ' gl_FragColor = vec4(col, 1.0);',
+          /* SEE-IN WATER (ui 2026.11.07.24): alpha is the kind's tuned
+             opacity (see pwWaterMat) — the surface stays visibly water
+             while the bed and fish show through it. */
+          ' gl_FragColor = vec4(col, uOpacity);',
           '}'
         ].join('\n')
       });
@@ -15788,6 +15836,12 @@ function updatePlayer(dt){
     var _sb=(player.rig&&typeof player.rig.swimBlend==='number')?player.rig.swimBlend:1;
     var _sub=1.25-0.15*_sb;
     gy=(wl===null?heightAt(player.x,player.z):wl)-_sub+Math.sin(swimT*2.4)*0.1; // bob
+    /* FULL DIVE (ui 2026.11.07.24): the dive system ticks on this call
+       and returns the mesh Y with the dive depth taken out of it. The
+       surface-trim formula above is untouched — with no dive the
+       module hands gy straight back. See dive_system.js for the
+       inverted axis, the depth gate, breath and the forced resurface. */
+    if (window.__DIVE && window.__DIVE.swimY) gy=window.__DIVE.swimY(dt, gy, wl, _sub);
     player.mesh.position.set(player.x, gy, player.z);
   } else {
     // v3.0 535 PORCH: outside on the raised front porch/entry stairs, use the
@@ -16339,6 +16393,17 @@ function updateCamera(dt){
   // v0.7 PINNED: rigid follow — camera.position set directly every frame so
   // camera + player/car move in unison, zero drift. (look.yawOff still orbits
   // the view when he drags; this only kills the positional lag.)
+  /* FULL DIVE (ui 2026.11.07.24): while a dive is live the camera sinks
+     toward (and under) the surface and its look target pitches with
+     the swim — down as he descends, levelling as he cruises, up as he
+     rises. __DIVE.view() returns null unless the player is actually
+     diving, so every other camera mode is untouched. Applied AFTER
+     the hill clamp above on purpose: in open water that clamp seats
+     the camera over the bed, and the dive sink is what takes the eye
+     under the surface for the underwater look (dive_system.js). */
+  var _dvw=null;
+  try{ _dvw=(window.__DIVE && window.__DIVE.view)?window.__DIVE.view():null; }catch(e){ _dvw=null; }
+  if (_dvw){ camY-=_dvw.sink; ly+=_dvw.lookY; }
   camera.position.set(camX, camY, camZ);
   if (car && car.driving && !look.dragging && car.speed>3 && camSnapT<=0){   // null-car safe (2026-11-01 fix above)
     look.yawOff*=Math.pow(0.35,dt);  // v0.6: ease back behind while driving
@@ -17958,6 +18023,7 @@ function __tryStartGame(){
 <script data-dsrc="water_interaction.js" data-dkey=""></script> <!-- WATER INTERACTION (Joshua 2026-10-11) — sinking/shore-respawn helpers + fish system. Defensive: no-op if water data is missing. -->
 <script data-dsrc="wildlife_system.js" data-dkey=""></script> <!-- WILDLIFE (Joshua 2026-11-07) — Georgia birds/mammals/deer/butterflies on the fish streaming pattern; positional song through the ambient master. Defensive: no-op if package data is missing. -->
 <script data-dsrc="body_systems.js" data-dkey=""></script> <!-- BODY SYSTEMS (Joshua 2026-11-07) — the player's own damage meter (tree/boulder bumps + vehicle crashes: staged green/yellow/red bar, slow at 50, at 100 energy spent + slow-walk cap with standing-still healing — 16:00 rule) + the fatigue reserve (land run + swim arms, one shared reserve). Feeds on crashlog's accepted bumps and crash_model's impact feed; updatePlayer consults it for the speed caps. Defensive: no-op if game globals are missing. -->
+<script data-dsrc="dive_system.js" data-dkey=""></script> <!-- DIVE SYSTEM (Joshua 2026-11-07, ui 2026.11.07.24) — the full dive: inverted swim axis (push up = dive down, no dive button), depth gated by the game's own depth data, camera pitch + sink hooks in updatePlayer/updateCamera, the breath meter (2 game-minutes, forced resurface + float rest through __BODY), the breath bar (a .23-law HUD control), and the underwater fog/colour grade. Defensive: no-op if game globals are missing. -->
 <script data-dsrc="crash_model.js" data-dkey=""></script> <!-- CRASH MODEL (Joshua 2026-11-07) — vehicle crashes damage the CAR and the PLAYER by impact speed x what was hit (identified by the game's own collision diagnostics): 35 mph into a building damages the car; 125 mph into a building totals it, maxes the player's HEALTH and leaves him stuck in the car for two game-minutes. Feeds the existing stores only (addDamage / __BODY.addCrashDamage). Defensive: no-op if game globals are missing. -->
 <!-- ===== INLINE SCRIPT BLOCK 3: final placement audit (v2.0 - Joshua's
      automatic check) ===== Runs ONCE, after EVERY building system has loaded

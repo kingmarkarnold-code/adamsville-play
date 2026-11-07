@@ -43,9 +43,15 @@
     },
     {
       "name": "body_systems.js",
-      "size": 35885,
-      "sha256": "e1d2ca23e3aa8221410911833e5260748a6202ad9d1c9b10adc37db6561d9a7f",
-      "hash": "e1d2ca23e3aa8221410911833e5260748a6202ad9d1c9b10adc37db6561d9a7f"
+      "size": 37094,
+      "sha256": "3b10006d3588f31aab41b24415758f2ab870953db7bf7062f79f1b9c239ae5bd",
+      "hash": "3b10006d3588f31aab41b24415758f2ab870953db7bf7062f79f1b9c239ae5bd"
+    },
+    {
+      "name": "dive_system.js",
+      "size": 22853,
+      "sha256": "5940187504b9774aac5a8ec39ebde2879a8b5509d5fc44dc77d22bf4866e4d5d",
+      "hash": "5940187504b9774aac5a8ec39ebde2879a8b5509d5fc44dc77d22bf4866e4d5d"
     },
     {
       "name": "clothing_system.js",
@@ -129,9 +135,9 @@
     },
     {
       "name": "gps_system.js",
-      "size": 128855,
-      "sha256": "50a71da7652564785d70d524502b7e2a9bd61da174b808e52005310832a881b2",
-      "hash": "50a71da7652564785d70d524502b7e2a9bd61da174b808e52005310832a881b2"
+      "size": 135935,
+      "sha256": "10336dcf52b5996e18fe19a6a2889da94ef901099b76cf21ab95fa78cc7b3d4f",
+      "hash": "10336dcf52b5996e18fe19a6a2889da94ef901099b76cf21ab95fa78cc7b3d4f"
     },
     {
       "name": "helicopter_system.js",
@@ -159,9 +165,9 @@
     },
     {
       "name": "index.html",
-      "size": 1269717,
-      "sha256": "fdc0c51880900fd21ead1325bd07fee60a3ad0edca9cc76f399abdb5fd17bff0",
-      "hash": "fdc0c51880900fd21ead1325bd07fee60a3ad0edca9cc76f399abdb5fd17bff0"
+      "size": 1274070,
+      "sha256": "a22ca14e8a6d79239a267b86784cd9a93b450e82c931f5c9624e1964591d69d2",
+      "hash": "a22ca14e8a6d79239a267b86784cd9a93b450e82c931f5c9624e1964591d69d2"
     },
     {
       "name": "input_diag.js",
@@ -440,9 +446,9 @@
     },
     {
       "name": "water_interaction.js",
-      "size": 22369,
-      "sha256": "12b50636745520be6881da392b4a1b60415f23d065c80f215fcc6505757e84d9",
-      "hash": "12b50636745520be6881da392b4a1b60415f23d065c80f215fcc6505757e84d9"
+      "size": 27345,
+      "sha256": "517612ce66cecc7bedf45f9c4c4df9887e9c1e72b4255049d92d30b6caf6c7d2",
+      "hash": "517612ce66cecc7bedf45f9c4c4df9887e9c1e72b4255049d92d30b6caf6c7d2"
     },
     {
       "name": "water_render.js",
@@ -678,6 +684,6 @@
       "hash": "20b983ae0e2e555817495a65c37519bfcb2231825269db6a57d72c51ed6006e3"
     }
   ],
-  "ui_version": "2026.11.07.23",
+  "ui_version": "2026.11.07.24",
   "version": "2026.10.17.9"
 }

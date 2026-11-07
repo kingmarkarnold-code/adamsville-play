@@ -9,10 +9,25 @@
         River (Joshua's spec).
         - Tatum Lake + the adjacent pond: bream (bluegill) and crappie
           (Joshua's ground truth — that's what's in there).
-        - Every other lake/pond: largemouth bass + bluegill.
+        - Every other lake/pond: largemouth bass + bluegill, with
+          redbreast sunfish and channel catfish mixed in (ui .24).
         - Chattahoochee River: largemouth bass, shoal bass, channel
           catfish, bluegill, redbreast sunfish. River fish swim ALONG the
           channel (upstream/downstream) instead of wandering.
+        - CREEK TROUT (ui 2026.11.07.24, Joshua's 15:47 variety ruling):
+          a non-Chattahoochee stream whose DATA depth can hold fish
+          (adapter depthFt >= 4 — the depth map_loader computed from
+          the surveyed surface minus the bed; Tatum Outlet Creek reads
+          7) is stocked with creek trout. Shallow creeks (depthFt 2)
+          stay fishless, as before.
+        - FISH VARIETY (ui 2026.11.07.24): every species has its OWN
+          two-tone colours (body + a distinct tail) and its own riding
+          depth, so a mixed school reads as various species from above
+          (through the see-in water) and underwater. NOTE: fish are
+          NOT instanced here — meshes share per-species materials via
+          _geoCache — so the variety is delivered by the palette, the
+          two-tone split and the mixes, not by a per-instance colour
+          attribute (that path belongs to the instanced butterflies).
         - Behavior: small schools that wander inside their water body and
           dart away when the player gets close.
         - PERFORMANCE (Joshua's NPC rule — matches npc_system.js exactly):
@@ -58,15 +73,26 @@ function findShore(x, z){
    --------------------------------------------------------------------------- */
 
 /* Species table. size = body length in world units (stylized, slightly
-   larger than life so they're visible). speed = cruise u/s. */
+   larger than life so they're visible). speed = cruise u/s.
+   FISH VARIETY (ui 2026.11.07.24, Joshua 15:47 — "various species AND
+   colors"): color = body, tail = the tail fin's own colour (two-tone,
+   so a school reads mixed at a glance), depth = the species' preferred
+   riding depth below the surface in units (sunfish high, catfish low).
+   The old table failed the ruling on palette alone: bream, bluegill
+   and bass were all the same murky green. The new spread is the
+   Georgia set he named: largemouth bass (green), bluegill (blue/
+   olive), channel catfish (grey-blue), crappie (silvery speckled —
+   the dark tail carries the speckle read at this scale), sunfish
+   (orange-breasted redbreast), and creek trout. */
 var SPECIES = {
-  bream:     { color: 0x6b8f3e, size: 0.55, speed: 2.0, label: 'bream' },
-  crappie:   { color: 0xb9c6cb, size: 0.60, speed: 1.8, label: 'crappie' },
-  bass:      { color: 0x2e5b2e, size: 0.85, speed: 2.6, label: 'largemouth bass' },
-  bluegill:  { color: 0x5f7f3f, size: 0.50, speed: 2.0, label: 'bluegill' },
-  shoalbass: { color: 0x4a5d3a, size: 0.80, speed: 2.8, label: 'shoal bass' },
-  catfish:   { color: 0x3a3a42, size: 1.00, speed: 1.6, label: 'channel catfish' },
-  redbreast: { color: 0x8a6a3a, size: 0.55, speed: 2.0, label: 'redbreast sunfish' }
+  bream:     { color: 0x5f8291, tail: 0x2e4a56, size: 0.55, speed: 2.0, depth: 0.55, label: 'bream' },
+  crappie:   { color: 0xd3dde2, tail: 0x707d74, size: 0.60, speed: 1.8, depth: 0.80, label: 'crappie' },
+  bass:      { color: 0x4e7a35, tail: 0x39543f, size: 0.85, speed: 2.6, depth: 0.90, label: 'largemouth bass' },
+  bluegill:  { color: 0x5b7d8c, tail: 0x2f4a55, size: 0.50, speed: 2.0, depth: 0.50, label: 'bluegill' },
+  shoalbass: { color: 0x6b7a3a, tail: 0x44512e, size: 0.80, speed: 2.8, depth: 0.90, label: 'shoal bass' },
+  catfish:   { color: 0x64798c, tail: 0x49586a, size: 1.00, speed: 1.6, depth: 1.80, label: 'channel catfish' },
+  redbreast: { color: 0x7d6a35, tail: 0xc4671f, size: 0.55, speed: 2.0, depth: 0.60, label: 'redbreast sunfish' },
+  trout:     { color: 0x8f8552, tail: 0x745f36, size: 0.55, speed: 2.2, depth: 0.70, label: 'creek trout' }
 };
 
 /* STREAMING — the NPC performance pattern, applied to fish (Joshua's rule).
@@ -110,15 +136,32 @@ function _makeFishMesh(sp){
     tailGeo.scale(0.35, 1, 1);     // thin side-to-side: vertical tail fin
     tailGeo.translate(0, 0, -0.62*s);
     var mat = new THREE.MeshLambertMaterial({ color: sp.color });
-    _geoCache[key] = { body: bodyGeo, tail: tailGeo, mat: mat };
+    /* FISH VARIETY (ui 2026.11.07.24): the tail fin gets the species'
+       SECOND colour — two-tone fish read as mixed species from above
+       and underwater, where one flat colour read as one generic fish. */
+    var matTail = new THREE.MeshLambertMaterial({ color: (typeof sp.tail === 'number') ? sp.tail : sp.color });
+    _geoCache[key] = { body: bodyGeo, tail: tailGeo, mat: mat, matTail: matTail };
   }
   var c = _geoCache[key];
   var g = new THREE.Group();
   g.add(new THREE.Mesh(c.body, c.mat));
-  g.add(new THREE.Mesh(c.tail, c.mat));
+  g.add(new THREE.Mesh(c.tail, c.matTail));
   // Meshes are only created when the school streams in (NPC pattern), so
   // no visibility toggling is needed — presence in the scene means active.
   return g;
+}
+
+/* _lakeSpecies() — the generic lake/pond mix (ui 2026.11.07.24):
+   bass and bluegill stay the backbone (Joshua's original spec), with
+   redbreast sunfish regulars and channel catfish mixed in, so a lake
+   school is visibly various. Tatum water does NOT use this — it keeps
+   its bream+crappie ground truth (see _stockWater). */
+function _lakeSpecies(){
+  var r = Math.random();
+  if (r < 0.38) return SPECIES.bass;
+  if (r < 0.68) return SPECIES.bluegill;
+  if (r < 0.85) return SPECIES.redbreast;
+  return SPECIES.catfish;
 }
 
 /* _stockWater(w) — stock one lake/pond's fish, in schools of 4-6.
@@ -149,7 +192,7 @@ function _stockWater(w){
       // Species mix per water body.
       var sp;
       if (tatum) sp = (Math.random() < 0.5) ? SPECIES.bream : SPECIES.crappie;
-      else       sp = (Math.random() < 0.5) ? SPECIES.bass  : SPECIES.bluegill;
+      else       sp = _lakeSpecies();
       var fa = Math.random()*Math.PI*2, fr = 2 + Math.random()*6;
       fishes.push({
         mesh: null,  // streamed in when the player comes in range
@@ -157,6 +200,7 @@ function _stockWater(w){
         heading: Math.random()*Math.PI*2,
         speed: sp.speed, species: sp, school: school,
         dartT: 0, phase: Math.random()*Math.PI*2,
+        dOff: (Math.random()-0.5)*0.3,  // ui .24: personal depth jitter
         ox: Math.cos(fa)*fr, oz: Math.sin(fa)*fr  // personal offset from anchor
       });
     }
@@ -176,6 +220,24 @@ function _stockWater(w){
    Flint River stays fishless for now. */
 function _isChattahoochee(name){
   return !!name && /chattahoochee/i.test(name);
+}
+
+/* _isTroutCreek(w) — CREEK TROUT gate (ui 2026.11.07.24, Joshua's
+   15:47 ruling: "creek trout where creeks are deep enough to hold
+   fish at all"). The gate reads the entry's DATA depth: depthFt is
+   the figure map_loader's adapter computed from the surveyed surface
+   profile minus the terrain bed (max over stations, feet). A creek
+   whose deepest water is under 4 ft holds no fish; Tatum Outlet
+   Creek reads 7 (its falls plunge runs 2.03 m) and qualifies, the
+   legacy home creek reads 2 and does not. The Chattahoochee is
+   excluded — it has its own mix. */
+function _isTroutCreek(w){
+  if (!w || !w.river || _isChattahoochee(w.name)) return false;
+  return (typeof w.depthFt === 'number' && w.depthFt >= 4);
+}
+/* _troutSpecies() — a qualifying creek holds creek trout. */
+function _troutSpecies(){
+  return SPECIES.trout;
 }
 
 /* _polyCum(pts) — cumulative segment lengths of a polyline.
@@ -235,13 +297,17 @@ function _chattahoocheeSpecies(){
   return SPECIES.catfish;
 }
 
-/* _stockRiver(w) — stock the Chattahoochee. w: {river: pts, width, name}.
+/* _stockRiver(w, picker) — stock a river/creek along its channel.
+   w: {river: pts, width, name}. picker: the species function —
+   _chattahoocheeSpecies for the river, _troutSpecies for a trout
+   creek; defaults to the Chattahoochee mix.
    Schools anchor at arc-length positions along the channel; each fish holds
    a personal arc offset (ot) and lateral offset (olat) inside the ribbon.
    PURE DATA — no meshes (NPC pattern). */
-function _stockRiver(w){
+function _stockRiver(w, picker){
   if (_spawnedOn.indexOf(w) >= 0) return;
   _spawnedOn.push(w);
+  var pick = (typeof picker === 'function') ? picker : _chattahoocheeSpecies;
   var pts = w.river, width = w.width || 40;
   if (!pts || pts.length < 2) return;
   var cum = _polyCum(pts), total = cum[cum.length-1];
@@ -268,7 +334,7 @@ function _stockRiver(w){
     schools.push(school);
     var per = Math.ceil(n / schoolCount);
     for (var f = 0; f < per; f++){
-      var sp = _chattahoocheeSpecies();
+      var sp = pick();
       var ot = (Math.random()-0.5)*60;        // personal arc offset (u)
       var olat = (Math.random()-0.5)*2*halfW; // personal lateral offset (u)
       var pos = _pointAtArc(pts, cum, t0+ot);
@@ -278,6 +344,7 @@ function _stockRiver(w){
         heading: school.heading,
         speed: sp.speed, species: sp, school: school,
         dartT: 0, phase: Math.random()*Math.PI*2,
+        dOff: (Math.random()-0.5)*0.3,  // ui .24: personal depth jitter
         ot: ot, olat: olat
       });
     }
@@ -297,8 +364,11 @@ function _scanWater(){
       var w = WATER[i];
       if (!w) continue;
       if (w.river){
-        // Chattahoochee gets channel fish; other rivers/streams stay fishless.
+        // Chattahoochee gets channel fish; a creek deep enough in the
+        // data gets creek trout (ui .24); other rivers/streams stay
+        // fishless.
         if (_isChattahoochee(w.name)) _stockRiver(w);
+        else if (_isTroutCreek(w)) _stockRiver(w, _troutSpecies);
         continue;
       }
       if (typeof w.rx !== 'number' || typeof w.rz !== 'number') continue;
@@ -450,7 +520,7 @@ function _updateFish(dt){
       }
     }
 
-    // Place the mesh just under the surface, wiggling.
+    // Place the mesh in the water column, wiggling.
     var mdx = px - f.x, mdz = pz - f.z;
     var nearAnim = (mdx*mdx + mdz*mdz) < AR2;  // NPC ANIM_R pattern
     var wl = 0;
@@ -458,7 +528,22 @@ function _updateFish(dt){
     if (wl === null || wl === undefined){
       try { wl = heightAt(f.x, f.z) + 0.35; } catch(e2){ wl = 0; }
     }
-    f.mesh.position.set(f.x, wl - 0.55, f.z);
+    /* FISH VARIETY (ui 2026.11.07.24): each species rides at its OWN
+       depth (catfish low over the bed, sunfish near the surface) plus
+       a per-fish jitter — the old code pinned every fish at wl-0.55,
+       one flat layer. The bed clamp keeps a fish out of the bed in
+       shallow water (a creek trout in 0.6 m of water rides low but
+       never underground), and the surface cap keeps it submerged. */
+    var fDepth = (f.species && typeof f.species.depth === 'number') ? f.species.depth : 0.55;
+    var fy = wl - fDepth + (f.dOff || 0);
+    try {
+      var bedY = heightAt(f.x, f.z);
+      if (typeof bedY === 'number'){
+        if (fy < bedY + 0.22) fy = bedY + 0.22;
+        if (fy > wl - 0.18) fy = wl - 0.18;
+      }
+    } catch(e){}
+    f.mesh.position.set(f.x, fy, f.z);
     f.mesh.rotation.y = f.heading;
     // Tail wiggle only near the camera (NPC ANIM_R pattern); static pose beyond.
     f.mesh.rotation.z = nearAnim ? Math.sin(_t*9 + f.phase) * 0.18 : 0;

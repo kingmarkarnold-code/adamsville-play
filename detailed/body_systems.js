@@ -428,12 +428,31 @@ function createBodyCore(){
     return cap;
   }
 
+  /* ---- FULL DIVE HOOKS (ui 2026.11.07.24) --------------------------
+     Two small doors for dive_system.js, so the dive EXTENDS this
+     system instead of reaching into its state:
+     touchBottom() — the player touched the bed while diving: the same
+       reset this tick's wading arm applies (swim pool full, any float
+       rest cleared), because bed contact is bed contact.
+     beginFloatRest() — a FORCED stop starts now (the dive calls it
+       when a breath-out forced resurface reaches the surface): the
+       float rest runs its full ruled length from this moment. */
+  function touchBottom(){
+    S.swimEnergy = 100;
+    S.floatRest = 0;
+  }
+  function beginFloatRest(){
+    if (S.floatRest < C.FLOAT_REST_GMIN) S.floatRest = C.FLOAT_REST_GMIN;
+  }
+
   return {
     state: S,
     addBump: addBump,
     addCrashDamage: addCrashDamage,
     tick: tick,
     capSpeed: capSpeed,
+    touchBottom: touchBottom,
+    beginFloatRest: beginFloatRest,
     health: health,
     /* fatigue(): the pre-.20 badness readout of the LAND pool, kept
        for any reader still speaking that language — 100 - energy,
@@ -483,7 +502,13 @@ window.__BODY = {
   addCrashDamage: function(n){ return core.addCrashDamage(n); },
   forcedRest: function(){ return core.state.damage >= C.DMG_FORCE_AT; },
   capSpeed: function(spd, mode){ return core.capSpeed(spd, mode); },
-  sprintTick: function(dtSec, demand){ return sprint.tick(dtSec, demand); }
+  sprintTick: function(dtSec, demand){ return sprint.tick(dtSec, demand); },
+  /* FULL DIVE (ui 2026.11.07.24): dive_system.js's two doors into the
+     body — bed contact while diving resets the swim pool (the wading
+     rule), and a breath-out forced resurface starts the float rest
+     when it reaches the surface. */
+  touchBottom: function(){ return core.touchBottom(); },
+  beginFloatRest: function(){ return core.beginFloatRest(); }
 };
 
 /* --- HUD: two compact rows above the minimap, styled like the car's
