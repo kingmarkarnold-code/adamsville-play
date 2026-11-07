@@ -2481,7 +2481,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
    stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.11.07.19';
+window.__DOC_UIVER = '2026.11.07.20';
 function __checkDocVersionHeal(){
   var live = window.__UIVER || '';
   if (!live || live === window.__DOC_UIVER){
@@ -12517,7 +12517,10 @@ try{ __wbStage('trees'); }catch(e){}
 /* ================= PLAYER (full-body, 6'1" = 1.85u) ================= */
 var player = {
   x: HOME.x-14, z: HOME.z+8, yaw: Math.PI/2, speed: 0,
-  inside: false, swimming: false, mesh: null
+  inside: false, swimming: false, mesh: null,
+  /* ui .20 (locomotion): the PRE-governor speed updatePlayer computed
+     this frame — body_systems reads it as the exertion demand */
+  demandSpeed: 0
 };
 var swimT=0;
 /* v1.4: the player portrait embedded as base64 data URL — the file:// <img>
@@ -15645,6 +15648,30 @@ function updatePlayer(dt){
      him to a slow shuffle while his energy is spent, and standing still
      is what heals him. No input lock remains; do not re-add one. */
   var mag=Math.hypot(mvx,mvz);
+  /* LOCOMOTION — SPRINT ENGAGEMENT (Joshua 2026-11-07 16:29, ui .20):
+     outdoors on foot the base gear is WALK; the SPRINT gear must be
+     engaged (state machine in body_systems.js, fed here every frame —
+     moving or not, so a release always disengages). The demand sample:
+       touchFwd  — the stick is pushed mostly UP (forward) with a
+                   committed push: the hold-to-sprint gesture.
+       touchHeld — the stick is still pushed at all: once engaged, the
+                   sprint survives steering (one unbroken motion).
+       shiftFwd  — keyboard: SHIFT + W.
+     No sprint gear in the water or indoors (the demand is zeroed
+     there): swimming has its own tiers, and indoors is walk pace by
+     Joshua's v1.12.2 rule. */
+  var _sprDemand = {
+    touchFwd: !!(joy.active && mag >= 0.6 && (-mvz) >= 0.7 * mag),
+    touchHeld: !!(joy.active && mag >= 0.6),
+    shiftFwd: !!(_ik['shift'] && _ik['w'])
+  };
+  if (player.swimming || player.inside){
+    _sprDemand.touchFwd = false; _sprDemand.touchHeld = false;
+    _sprDemand.shiftFwd = false;
+  }
+  var sprintOn = false;
+  if (window.__BODY && window.__BODY.sprintTick)
+    sprintOn = window.__BODY.sprintTick(dt, _sprDemand);
   if (mag>0.08){
     /* v0.8 INDUSTRY-STANDARD third-person movement (orbit camera owns the yaw).
        Pattern (Unity ThirdPersonMovement / three.js orbit-explorer / GDC talks):
@@ -15666,17 +15693,25 @@ function updatePlayer(dt){
     while (dyaw>Math.PI) dyaw-=2*Math.PI;
     while (dyaw<-Math.PI) dyaw+=2*Math.PI;
     player.yaw+=dyaw*Math.min(1,10*dt);                // ~10/s damped turn
-    // v0.5 ANALOG stick: speed follows push distance (gentle = walk, full = run).
-    // Full-stick run stays 13.8u/s so home base -> MLK still takes ~90s.
+    // v0.5 ANALOG stick: WITHIN the engaged gear, speed follows push
+    // distance (this curve). The GEAR is Joshua's 2026-11-07 locomotion
+    // model (ui .20): outdoors on foot the base gear is WALK (5.0 u/s —
+    // the game's own walk pace); SPRINT (13.8 u/s, so home base -> MLK
+    // still takes ~90s) applies only while the sprint gear is engaged
+    // (hold the stick UP on touch, SHIFT+forward on keys).
     var curve=Math.pow(Math.min(1,mag),1.5);
     // v1.12.2 indoor speed (Joshua): 5.0 u/s inside buildings — no more
-    // sprinting into the back wall. Outdoor run stays 13.8.
+    // sprinting into the back wall (and no sprint gear indoors at all).
     // BODY SYSTEMS (Joshua 2026-11-07): swim top speed raised 4.5 -> 6.75
     // u/s (x1.5 — he rated the old 4.5 "a little slow"), and the result
-    // passes through the body governor: damage >= 50 slows him, the
-    // fatigue lockout caps him at walk pace (gentle-swim pace in water),
-    // and damage 100 caps him at the slow shuffle (16:00 rule).
-    var spd=(player.swimming?6.75:(player.inside?5.0:13.8))*curve;
+    // passes through the body governor: damage >= 50 slows him, a spent
+    // energy pool caps him at walk pace (gentle-swim pace in water),
+    // and health <= 0 caps him at the slow shuffle (16:00 rule).
+    var spd=(player.swimming?6.75:(player.inside?5.0:(sprintOn?13.8:5.0)))*curve;
+    /* the PRE-governor demand, recorded for body_systems: its exertion
+       drain reads what he is ASKING for, so pushing against a spent
+       pool's cap still digs the pool deeper (ui .20, ruling C) */
+    player.demandSpeed=spd;
     if (window.__BODY && window.__BODY.capSpeed)
       spd=window.__BODY.capSpeed(spd, player.swimming?'swim':'foot');
     /* COLLISION MATERIAL (Joshua 2026-10-11): check the material at the
@@ -15703,7 +15738,7 @@ function updatePlayer(dt){
       player.x = _nx; player.z = _nz;
     }
     player.speed=spd;
-  } else player.speed=0;
+  } else { player.speed=0; player.demandSpeed=0; }
   // STEP2: outer wall = stage edge via clampToStage (was the old core
   // rect 60..WX-60). Locked-zone walls are zoneunlock's per-frame job.
   clampToStage(player);
