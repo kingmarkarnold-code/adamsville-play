@@ -168,6 +168,29 @@
    unchanged. Whether it now reads as water is for Joshua's ears,
    not the harness, to say.
    ============================================================================ */
+/* ============================================================================
+   v1.5 SPLASH RECIPE — DE-CRINKLED WASH (2026-11-07, Joshua's ears
+   on v1.4, running through water, 16:36: the wash read as CRUSHING
+   PLASTIC — "getting closer but it's not quite there"):
+
+   His verdict said the SHAPE was right (one continuous event, no
+   taps left) but the TEXTURE was wrong: dry, crackly, brittle on
+   top — plastic crinkle, not water. The crinkle had three sources,
+   all addressed inside the same one-wash architecture (nothing
+   about the envelope, the peaks, the triggers or the gates moved):
+     1. The wash's low-pass settled 3.2 kHz -> 650 Hz — too much
+        top at the strike. Now 2.1 kHz -> 430 Hz: the noise is
+        weighted toward the low-mid, where water's body lives.
+     2. The spray sheet sat at 30% of peak through a 3.6 kHz
+        high-pass at a fast playback rate — a crisp sheet. Now 16%
+        of peak, 2.6 kHz, slower rate: texture, not crinkle.
+     3. The spray curve drew each of its 26 points independently
+        (0.25..1.0 of level between neighbours ~12 ms apart) —
+        step-to-step jumps ARE crinkle. Now a bounded random walk
+        (each point a small step from its neighbour, drifting
+        50%..100% in swells): the irregularity reads as slosh.
+   Whether v1.5 reads as water is again for Joshua's ears to say.
+   ============================================================================ */
 (function ambientAudio(){
 'use strict';
 
@@ -699,7 +722,7 @@ function computeLevels(p, gm, running){
    own model (waterDepthAt + player.swimming, i.e. the three states:
    wade / swim-moving / tread) and his speed from position deltas.
    Every splash is one continuous shaped wash of the raw-noise
-   buffer (v1.4 recipe — see splashBurst) — generated in-code, no
+   buffer (v1.5 recipe — see splashBurst) — generated in-code, no
    assets. splashCount is the instrumentation the harness reads to
    prove the voices fire.
 
@@ -726,7 +749,7 @@ function splashBurst(kind, opt){
     var speedF = Math.max(0, Math.min(1, opt.speed || 0));
     /* Peak staging UNCHANGED from the 2026-11-01 fix (a splash is a
        stride sound, scaled by speed — see the header above). Only
-       the RECIPE changed (v1.4 — see the changelog): one continuous
+       the RECIPE changed (v1.5 — see the changelog): one continuous
        wash under one envelope, texture inside it, no separated
        bursts and no tone. */
     var peak = kind === 'stroke' ? 0.20 : kind === 'enter' ? 0.22 :
@@ -737,8 +760,9 @@ function splashBurst(kind, opt){
     var attack = kind === 'tread' ? 0.030 : 0.045;
     var srcBuf = whiteBuf || waterBuf;
     /* --- THE WASH: one unbroken raw-noise source, low-pass
-       settling 3.2 kHz -> 650 Hz across the whole event (bright at
-       the strike, dark as the water settles), under ONE
+       settling 2.1 kHz -> 430 Hz across the whole event (v1.5:
+       weighted toward the low-mid — v1.4's 3.2 kHz -> 650 Hz top
+       was dry and crackly at the strike), under ONE
        swell-and-decay envelope: ~45 ms swell to peak (no click —
        a click is a tap), a shoulder at ~42% of the event, then
        the long decay to silence. Random buffer offset + rate per
@@ -748,8 +772,8 @@ function splashBurst(kind, opt){
     s.playbackRate.value = 0.9 + Math.random() * 0.25;
     var lp = ctx.createBiquadFilter();
     lp.type = 'lowpass'; lp.Q.value = 0.4;
-    lp.frequency.setValueAtTime(3200, t);
-    lp.frequency.exponentialRampToValueAtTime(650, t + dur);
+    lp.frequency.setValueAtTime(2100, t);
+    lp.frequency.exponentialRampToValueAtTime(430, t + dur);
     var g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(peak, t + attack);
@@ -761,27 +785,39 @@ function splashBurst(kind, opt){
     /* --- SPRAY TEXTURE: the same noise on a high-passed sheet,
        its gain driven by an irregular value curve across the
        event — droplets landing read as sparkle riding the wash.
-       The curve ripples between ~25% and 100% of the spray level
-       and NEVER returns to silence mid-event, so there are no
-       separate hits to hear (the v1.2 recipe gated each droplet
-       from silence, which is precisely what tapped). Skipped for
-       the faint 'tread' voice, where it would only muddy. */
+       The curve NEVER returns to silence mid-event, so there are
+       no separate hits to hear (the v1.2 recipe gated each droplet
+       from silence, which is precisely what tapped).
+       v1.5 (Joshua's ears on v1.4, running through water: the wash
+       read as CRUSHING PLASTIC — "getting closer but not quite
+       there"): the crinkle lived HERE — a 3.6 kHz sheet at 30% of
+       peak whose curve jumped independently point to point
+       (0.25..1.0 between neighbours ~12 ms apart). The sheet is
+       now quieter (16% of peak), duller (2.6 kHz, slower rate)
+       and its curve is a SMOOTHED random walk: each point sits at
+       most a small step from its neighbour, drifting in swells
+       between 50% and 100% of the spray level — slosh, not
+       crinkle. Skipped for the faint 'tread' voice, where it
+       would only muddy. */
     if (kind !== 'tread'){
-      var sprayPeak = peak * 0.30;
+      var sprayPeak = peak * 0.16;
       var ts = ctx.createBufferSource();
       ts.buffer = srcBuf; ts.loop = true;
-      ts.playbackRate.value = 1.15 + Math.random() * 0.45;
+      ts.playbackRate.value = 0.95 + Math.random() * 0.30;
       var hp = ctx.createBiquadFilter();
-      hp.type = 'highpass'; hp.frequency.value = 3600;
+      hp.type = 'highpass'; hp.frequency.value = 2600;
       var tg = ctx.createGain();
       var NPT = 26, curve = new Float32Array(NPT);
+      var walk = 0.85;   /* bounded random walk — see header above */
       for (var ci = 0; ci < NPT; ci++){
         var cf = ci / (NPT - 1);
-        var ripple = 0.25 + Math.random() * 0.75;
+        walk += (Math.random() - 0.5) * 0.36;
+        if (walk > 1.0) walk = 1.0;
+        if (walk < 0.5) walk = 0.5;
         var taper = 1 - cf * 0.55;
         var rise = Math.min(1, cf / 0.12);
         curve[ci] = Math.max(0.0004,
-          sprayPeak * ripple * taper * rise);
+          sprayPeak * walk * taper * rise);
       }
       tg.gain.setValueAtTime(0.0001, t);
       tg.gain.setValueCurveAtTime(curve, t + 0.02, dur - 0.06);
@@ -987,7 +1023,7 @@ function boot(){
      reads the live node values, and the splash counter + wading
      snapshot prove the B4 voices fire in each water state). */
   window.__AMB = {
-    version: '1.4',
+    version: '1.5',
     retarget: retarget, siren: siren,
     splash: splashBurst,
     voice: ambVoice,
@@ -1027,7 +1063,7 @@ function boot(){
     },
     get state(){
       return {
-        version: '1.4',
+        version: '1.5',
         running: !!(ctx && ctx.state === 'running'),
         muted: isMuted(), masterMuted: masterMuted(),
         natureMuted: ambientMuted,

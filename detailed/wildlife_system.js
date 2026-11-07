@@ -73,14 +73,19 @@ var CAPS = { bird: 10, squirrel: 6, chipmunk: 6, deer: 4, butterfly: 8 };
 var CAP_BIRDS = CAPS.bird, CAP_SQUIRRELS = CAPS.squirrel,
     CAP_CHIPMUNKS = CAPS.chipmunk, CAP_BFLY = CAPS.butterfly;
 var SONG_R = 40;            /* bird song is a near phenomenon (design) */
-var SONG_GAIN = 0.6;        /* v1.1 (Joshua 2026-11-07, live play: "turn
-   the volume of the birds down some"): one master trim on bird SONG —
-   40% off every species' peak, applied inside the distance law at
-   both sites that use it, so the falloff SHAPE (songPeak *
+var SONG_GAIN = 0.32;       /* v1.2 (Joshua 2026-11-07, live play:
+   v1.1's 0.6 was not enough — "they're pretty loud because of their
+   pitch", so he first asked another 20% off, then ruled the value
+   outright: "instead of the birds being at point 48, let's put them
+   at point 32"). One master trim on bird SONG — 68% off every
+   species' original peak, applied inside the distance law at both
+   sites that use it, so the falloff SHAPE (songPeak *
    (1-d/SONG_R)^1.6) is unchanged. A bird at your shoulder is still
    clearly there; it just no longer rides over everything else.
-   Song only — the dove's flush whistle, squirrel chatter and every
-   ambient_audio level (insects, water, wind) are untouched. */
+   The value is his chosen cut for the perceived loudness — the
+   PITCH itself is deliberately NOT shifted. Song only — the dove's
+   flush whistle, squirrel chatter and every ambient_audio level
+   (insects, water, wind) are untouched. */
 /* Deer tuning (Joshua's rulings, 2026-11-07): deep habitat only,
    far from houses, no road near the anchor; head-up alert inside
    ~25u, gallop flight inside ~12u. */
@@ -93,8 +98,10 @@ var DEER_WALK_SPEED = 1.1, DEER_FLEE_SPEED = 7.5;
 /* The player's live position object (re-read every tick from the
    game's own player); a plain placeholder until the first tick. */
 var playerPos = { x: 0, y: 0, z: 0 };
-var VERSION = '1.1';        /* wildlife system version (__WILDLIFE);
-   1.1 = the SONG_GAIN trim (Joshua 2026-11-07, birds down some) */
+var VERSION = '1.2';        /* wildlife system version (__WILDLIFE);
+   1.1 = the SONG_GAIN trim (Joshua 2026-11-07, birds down some);
+   1.2 = SONG_GAIN 0.6 -> 0.32 (Joshua 2026-11-07: "put them at
+   point 32") */
 /* The game's player is a global OBJECT ({ x, z, yaw, ... }); some
    rigs also carry a .position Vector3. Either way playerPos ends
    up as an { x, z }-shaped reference the thinks can read. */

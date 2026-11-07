@@ -2481,7 +2481,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
    stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.11.07.18';
+window.__DOC_UIVER = '2026.11.07.19';
 function __checkDocVersionHeal(){
   var live = window.__UIVER || '';
   if (!live || live === window.__DOC_UIVER){
@@ -5816,13 +5816,25 @@ try{ __wbStage('terrain'); }catch(e){}
    order. Exposed as window.__FUNNEL for diagnostics. */
 (function(){
   if (window.__FUNNEL) return;
-  var FUNNEL_BUDGET_MS = 2.5;   /* the cap: milliseconds of job work
+  var FUNNEL_BUDGET_MS = 4.0;   /* the cap: milliseconds of job work
                                    per animation frame. At 60 fps the
-                                   funnel still drains ~150 ms of
-                                   building per second — more
-                                   throughput than the old 3-tiles-
-                                   per-400 ms tick — but spread so
-                                   thin no single frame feels it. */
+                                   funnel drains ~240 ms of building
+                                   per second — but spread so thin no
+                                   single frame feels it.
+                                   RAISED 2.5 -> 4.0 (ui 2026.11.07.19,
+                                   Joshua 2026-11-07 16:25, live play):
+                                   at 2.5 the tree tiles finished too
+                                   slowly at travel speed and trees
+                                   POPPED IN in front of him — breaking
+                                   his standing law that nothing may
+                                   appear or draw partially inside his
+                                   view; a thing must be COMPLETE
+                                   before it enters view. 4.0 is "a
+                                   little bit" more, as he ruled — the
+                                   hitch histogram in perf_budget.js
+                                   is the guardrail that proves the
+                                   wider funnel does not hand the cost
+                                   back as stutter. */
   var queue = [];
   var pumpArmed = false;
   var stats = { submitted: 0, completed: 0, cancelled: 0, dropped: 0,
