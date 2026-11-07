@@ -95,13 +95,39 @@ var DEER_ROAD_MIN = 25;     /* anchor distance from any road */
 var DEER_WOODS_MIN = 45;    /* woods score (mean cover) at anchor */
 var DEER_ALERT_R = 25, DEER_FLEE_R = 12;
 var DEER_WALK_SPEED = 1.1, DEER_FLEE_SPEED = 7.5;
+/* WILDNESS (Joshua's amendment, 2026-11-07 16:36, from his own
+   play: "Because there are no houses or streets, I should be
+   seeing deer more frequently."): deer presence scales with how
+   WILD the ground is. Wildness is read off the two development
+   axes the ruling names — distance to the nearest BUILDING and
+   distance to the nearest ROAD. Each axis runs from tame (0) at
+   the existing spawn minima (DEER_BUILD_MIN / DEER_ROAD_MIN) to
+   fully wild (1) DEER_WILD_R units beyond it, and the LESS wild
+   axis governs: a meadow far from houses but beside a highway is
+   not wild country. Wildness drives how many deer form a group,
+   how close they let the player come before alerting/fleeing,
+   and how wide they graze — the state machine and the road rule
+   are untouched. Evaluated at spawn time only (memoised on a
+   coarse cell grid), never per frame. */
+var DEER_WILD_R = 120;      /* units past the spawn minima for an
+                               axis to count as fully wild */
+var DEER_WILD_BOLD = 0.3;   /* at full wildness the alert/flee
+                               radii shrink to 70% — deep-country
+                               deer hold their ground longer, so
+                               they stay a visible sight instead of
+                               vanishing at first sight of you */
 /* The player's live position object (re-read every tick from the
    game's own player); a plain placeholder until the first tick. */
 var playerPos = { x: 0, y: 0, z: 0 };
-var VERSION = '1.2';        /* wildlife system version (__WILDLIFE);
+var VERSION = '1.3';        /* wildlife system version (__WILDLIFE);
    1.1 = the SONG_GAIN trim (Joshua 2026-11-07, birds down some);
    1.2 = SONG_GAIN 0.6 -> 0.32 (Joshua 2026-11-07: "put them at
-   point 32") */
+   point 32");
+   1.3 = WILDLIFE PASS (Joshua 2026-11-07, from his hands on .20):
+   squirrels BROWN not gray (16:25 ruling); butterflies get real
+   per-instance colour variety — six Georgia species through a
+   dedicated iColor attribute (16:25); deer density follows
+   WILDNESS (16:36) — see the DEER_WILD block below. */
 /* The game's player is a global OBJECT ({ x, z, yaw, ... }); some
    rigs also carry a .position Vector3. Either way playerPos ends
    up as an { x, z }-shaped reference the thinks can read. */
@@ -305,6 +331,56 @@ function buildingDist(x, z){
     }
   }catch(e){}
   return best;
+}
+/* roadDistAt(x, z) — approximate distance to the nearest ROAD
+   material: probe rings of 8 points at growing radii against the
+   ONE material lookup and report the first ring that touches a
+   road. -1 when no ring out to 150 u touches one (open country
+   as far as deer care). The radii step by 10 u — deliberately
+   finer than a road is wide, so a thin street cannot hide
+   between two rings (the first probe draft stepped 30–40 u at
+   the far end and jumped clean over a 10 u band in harness).
+   The answer is the road's distance rounded up to a ring —
+   plenty for a wildness judgement. Spawn-time only, memoised
+   through wildnessAt; reuses matAt like everything else here,
+   no new world scan. */
+var ROAD_PROBE_R = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100,
+                    110, 120, 130, 140, 150];
+function roadDistAt(x, z){
+  if (typeof COLLISION_MATERIALS === 'undefined') return -1;
+  var ROAD = COLLISION_MATERIALS.ROAD;
+  for (var ri = 0; ri < ROAD_PROBE_R.length; ri++){
+    var r = ROAD_PROBE_R[ri];
+    for (var a = 0; a < 8; a++){
+      if (matAt(x + Math.cos(a * Math.PI / 4) * r,
+                z + Math.sin(a * Math.PI / 4) * r) === ROAD)
+        return r;
+    }
+  }
+  return -1;
+}
+/* wildnessAt(x, z) — Joshua's 16:36 measure (see DEER_WILD_R):
+   0 = tame, 1 = deep wild country. The building axis runs off
+   buildingDist (Infinity when the package carries no buildings —
+   that axis is then fully wild and the road axis alone decides);
+   the road axis runs off roadDistAt. The LESS wild axis governs.
+   Memoised on a 25 u cell grid for 60 s of module time (the
+   anchorGate pattern from the funnel build): deer spawn asks
+   about clusters of neighbouring candidates, and a wildness
+   verdict is a property of the GROUND, not the moment — it does
+   not need re-proving per candidate. */
+var _wildCache = {};
+function wildnessAt(x, z){
+  var key = Math.round(x / 25) + ',' + Math.round(z / 25);
+  var hit = _wildCache[key];
+  if (hit && _t - hit.t < 60) return hit.w;
+  var bd = buildingDist(x, z);
+  var rd = roadDistAt(x, z);
+  var wb = clamp((bd - DEER_BUILD_MIN) / DEER_WILD_R, 0, 1);
+  var wr = rd < 0 ? 1 : clamp((rd - DEER_ROAD_MIN) / DEER_WILD_R, 0, 1);
+  var w = Math.min(wb, wr);
+  _wildCache[key] = { w: w, t: _t };
+  return w;
 }
 /* roadCrossing(x0, z0, x1, z1) — sample the segment every ~2 u
    against the ONE material lookup; returns where road material
@@ -554,7 +630,17 @@ function makeBirdMaterial(){
    the whole creature: closed-form wander around iAnchor, heading
    from the wander's analytic derivative, flap from the clock.
    iSeed = (phase01, wanderRadius, sizeScale, flapSpeed01). The
-   instance matrix stays identity — the CPU never touches these. */
+   instance matrix stays identity — the CPU never touches these.
+   COLOUR (v1.3, Joshua's 16:25 ruling — in his hands every
+   butterfly read as ONE colour): each instance carries its
+   species tint in a dedicated instanced attribute, iColor,
+   written once at spawn and multiplied into the fragment
+   diffuse through the vTint varying. This rides the same custom
+   instanced-attribute path as iAnchor/iSeed (proven in the game)
+   instead of THREE's instanceColor, which is what v1.0 used —
+   and which is the path that failed to reach his screen with
+   any variety. The geometry's own vertex colours still do the
+   body-vs-wing split (dark body, white wings) under the tint. */
 function makeButterflyMaterial(){
   var mat = new THREE.MeshLambertMaterial({
     vertexColors: true, side: THREE.DoubleSide
@@ -566,7 +652,10 @@ function makeButterflyMaterial(){
       'attribute float aWing;\n' +
       'attribute vec3 iAnchor;\n' +
       'attribute vec4 iSeed;\n' +
+      'attribute vec3 iColor;\n' +
+      'varying vec3 vTint;\n' +
       sh.vertexShader.replace('#include <begin_vertex>', [
+        'vTint = iColor;',
         'vec3 transformed = vec3(position) * iSeed.z;',
         'float bfPh = iSeed.x * 6.28318;',
         /* flap: both wing tips rise together, graded to the tip */
@@ -588,8 +677,17 @@ function makeButterflyMaterial(){
         '                   -transformed.x * bfS + transformed.z * bfC)',
         '              + iAnchor + bfOff;'
       ].join('\n'));
+    /* fragment: fold the per-instance species tint into the
+       diffuse — after three's own colour_fragment step, so the
+       vertex colours (dark body / white wings) multiply in too */
+    sh.fragmentShader =
+      'varying vec3 vTint;\n' +
+      sh.fragmentShader.replace('#include <color_fragment>', [
+        '#include <color_fragment>',
+        'diffuseColor.rgb *= vTint;'
+      ].join('\n'));
   };
-  mat.customProgramCacheKey = function(){ return 'wildlife-butterfly-v1'; };
+  mat.customProgramCacheKey = function(){ return 'wildlife-butterfly-v2'; };
   return mat;
 }
 
@@ -736,17 +834,21 @@ function getCritterMat(){
   return critterMat;
 }
 function buildSquirrelGeometry(){
-  /* Grey squirrel: the tail is 80% of the read at this size — two
-     flattened cones curved up the back. Forward +Z. */
-  var grey = 0x8a8378, dark = 0x6e675c, cream = 0xd8d2c4;
+  /* Fox squirrel colourway (Joshua's ruling, 2026-11-07 16:25:
+     in his hands the v1.0 squirrels read GRAY — "they should be
+     BROWN"). Warm reddish-brown back/head/tail, deep-brown ears
+     and tail base, cream belly (the body's two-tone split below).
+     Shape is unchanged from v1.0: the tail is 80% of the read at
+     this size — two flattened cones curved up the back. +Z fwd. */
+  var brown = 0x9c6630, dark = 0x6e4520, cream = 0xe2d4b8;
   var parts = [];
   var body = new THREE.OctahedronGeometry(0.5);
   body.scale(0.15, 0.16, 0.34);
-  var bc = colArr(grey), cc = colArr(cream);
+  var bc = colArr(brown), cc = colArr(cream);
   parts.push({ geo: body,
     colorFn: function(x, y, z){ return y < -0.03 ? cc : bc; } });
   parts.push({ geo: new THREE.SphereGeometry(0.085, 6, 5),
-    mtx: M4(0, 0.075, 0.30), color: grey });
+    mtx: M4(0, 0.075, 0.30), color: brown });
   parts.push({ geo: new THREE.ConeGeometry(0.028, 0.07, 4),
     mtx: M4(0.05, 0.17, 0.28), color: dark });
   parts.push({ geo: new THREE.ConeGeometry(0.028, 0.07, 4),
@@ -755,7 +857,7 @@ function buildSquirrelGeometry(){
   parts.push({ geo: new THREE.ConeGeometry(0.075, 0.34, 5),
     mtx: M4(0, 0.10, -0.38, -2.25, 0, 0, 1, 1, 0.55), color: dark });
   parts.push({ geo: new THREE.ConeGeometry(0.065, 0.30, 5),
-    mtx: M4(0, 0.30, -0.47, -2.95, 0, 0, 1, 1, 0.5), color: grey });
+    mtx: M4(0, 0.30, -0.47, -2.95, 0, 0, 1, 1, 0.5), color: brown });
   return mergeParts(parts);
 }
 function buildChipmunkGeometry(){
@@ -777,8 +879,9 @@ function buildChipmunkGeometry(){
 function buildButterflyGeometry(){
   /* Two wing quads + a thin body; aWing = normalised span (-1..1)
      so the shader's flap grades from body to tip. Wing colour comes
-     from the instance colour; the body stays dark through its own
-     near-black vertex colour multiplied in. */
+     from the per-instance iColor tint (see makeButterflyMaterial);
+     the body stays dark through its own near-black vertex colour
+     multiplied in. */
   var parts = [];
   var body = new THREE.OctahedronGeometry(0.5);
   body.scale(0.018, 0.018, 0.11);
@@ -792,10 +895,22 @@ function buildButterflyGeometry(){
   });
   return mergeParts(parts);
 }
+/* BUTTERFLY_KINDS — six real Georgia species, one flat colourway
+   each (v1.3: variety was Joshua's 16:25 ruling — "they're all
+   one color, they need varied colors"). Flat colour only, no
+   texture work: the Buckeye's eyespots and the Monarch's black
+   veining are approximated by their ground colour, per the pass
+   brief. The palette is chosen so neighbours in a meadow differ
+   at a glance: orange / bright yellow / pale lemon / brown /
+   white / blue. Spawn deals these out round-robin from a shuffled
+   order (see spawnButterflies), so a set always shows as many
+   different species as it has members, up to all six. */
 var BUTTERFLY_KINDS = [
-  { label: 'Eastern Tiger Swallowtail', color: 0xf2d13c, size: 1.15 },
   { label: 'Monarch', color: 0xe07b24, size: 1.0 },
+  { label: 'Eastern Tiger Swallowtail', color: 0xf2d13c, size: 1.15 },
+  { label: 'Cloudless Sulphur', color: 0xf0e08c, size: 0.9 },
   { label: 'Common Buckeye', color: 0x8a6844, size: 0.85 },
+  { label: 'Cabbage White', color: 0xf6f2e8, size: 0.7 },
   { label: 'Eastern Tailed-Blue', color: 0x7fa8d8, size: 0.6 }
 ];
 
@@ -1698,15 +1813,34 @@ function deerSetClip(d, name, fade){
   d.action = action;
   d.clipName = name;
 }
+/* deerGroupSize(wild) — how many deer a territory holds, from
+   its wildness (Joshua 16:36: density follows wildness): a tame
+   edge territory holds a pair; deep country holds a full group
+   (the CAPS.deer ceiling stands — never more than 4). */
+function deerGroupSize(wild){
+  return clamp(2 + Math.round((wild || 0) * 2), 2, CAPS.deer);
+}
+/* Effective alert/flee radii for one deer: the base radii scaled
+   by the deer's territory wildness (DEER_WILD_BOLD). Tame deer
+   keep the full .5 nerve (25 / 12); wild-country deer are bolder
+   (down to 17.5 / 8.4) — they hold, graze and stay visible. */
+function deerAlertR(d){ return DEER_ALERT_R * (1 - DEER_WILD_BOLD * (d.wild || 0)); }
+function deerFleeR(d){ return DEER_FLEE_R * (1 - DEER_WILD_BOLD * (d.wild || 0)); }
 function spawnDeerGroup(){
   if (deerAnchor) return false;
-  /* TERRITORY GATE — Joshua's ruling: only deep habitat, far from
+  /* TERRITORY GATE — Joshua's rulings: only deep habitat, far from
      houses, no road nearby. Sampled on a ring around the player
      (the group lives where the player can WANDER into it, not on
-     the road past it). */
+     the road past it). WILDLIFE PASS (16:36): among the spots
+     that pass the gates, the group now forms at the WILDEST one
+     (up to 8 gate-passing candidates are scored) — so near
+     development the only territories are tame ones (a shy pair),
+     and in undeveloped country the group forms deep, at full
+     strength. First-match became best-match; the gates are the
+     .5 gates, with one repair noted inline. */
   var trees = deriveTreesNear(playerPos.x, playerPos.z, 190);
-  var anchor = null;
-  for (var i = 0; i < trees.length; i++){
+  var anchor = null, passed = 0;
+  for (var i = 0; i < trees.length && passed < 8; i++){
     var tr = trees[i];
     var d = distToPlayer(tr.x, tr.z);
     if (d < 80 || d > 185) continue;
@@ -1723,15 +1857,24 @@ function spawnDeerGroup(){
       if (matAt(sx, sz) === ROAD_M) roadNear = true;
     }
     if (roadNear) continue;
-    if (woodsScore(tr.x, tr.z, 30) < DEER_WOODS_MIN) continue;
-    anchor = { x: tr.x, z: tr.z };
-    break;
+    /* woods gate — REPAIR (wildlife pass): the .5 line compared
+       the woodsScore OBJECT to DEER_WOODS_MIN, which is never
+       true in JS, so this gate silently never bit; deerRouteOk
+       has always compared .mean. Compare .mean here too, as the
+       .5 design intended (DEER_WOODS_MIN = mean cover). */
+    if (woodsScore(tr.x, tr.z, 30).mean < DEER_WOODS_MIN) continue;
+    passed++;
+    var w = wildnessAt(tr.x, tr.z);
+    if (!anchor || w > anchor.wild)
+      anchor = { x: tr.x, z: tr.z, wild: w };
   }
   if (!anchor) return false;
   deerAnchor = anchor;
   loadDeerProto(function(proto){
     try {
-      var n = 2 + (Math.random() * 3 | 0);   /* a small group: 2–4 */
+      /* group size rides the territory's wildness (16:36):
+         tame pair -> deep-country full group */
+      var n = deerGroupSize(anchor.wild);
       for (var i = 0; i < n; i++){
         var clone;
         if (THREE.SkeletonUtils && THREE.SkeletonUtils.clone)
@@ -1743,6 +1886,9 @@ function spawnDeerGroup(){
         var gz = anchor.z + (Math.random() - 0.5) * 10;
         var d = {
           kind: 'deer', obj: clone, anchor: anchor,
+          /* territory wildness, fixed at spawn: drives this
+             deer's nerve (alert/flee radii) and graze range */
+          wild: anchor.wild || 0,
           state: 'GRAZE',
           x: gx, y: groundY(gx, gz), z: gz,
           heading: Math.random() * 6.28, pitch: 0,
@@ -1772,10 +1918,14 @@ function writeDeerMatrix(d){
 }
 function deerPickGraze(d){
   /* a new graze point near the anchor whose leg from HERE passes
-     the road rule; blocked legs become a PEEK at the tree line */
+     the road rule; blocked legs become a PEEK at the tree line.
+     WILDLIFE PASS (16:36): the circuit WIDENS with wildness —
+     tame deer hug the anchor's tree line (the .5 circuit, up to
+     ~20 u out); deep-country deer range up to ~50 u out, grazing
+     in the open where he can see them. */
   for (var i = 0; i < 6; i++){
     var a = Math.random() * Math.PI * 2;
-    var r = 4 + Math.random() * 16;
+    var r = 4 + Math.random() * (16 + 30 * (d.wild || 0));
     var gx = d.anchor.x + Math.cos(a) * r;
     var gz = d.anchor.z + Math.sin(a) * r;
     if (!isGrass(gx, gz)) continue;
@@ -1805,7 +1955,7 @@ function deerThink(d){
     }
     return;
   }
-  if (dist < DEER_FLEE_R){
+  if (dist < deerFleeR(d)){
     /* FLEE — away from the player, deeper into the habitat; every
        flee leg is route-checked too (a deer does not flee ACROSS a
        road into a yard — it runs along the woods) */
@@ -1822,7 +1972,7 @@ function deerThink(d){
     deerSetClip(d, 'Gallop');
     return;
   }
-  if (dist < DEER_ALERT_R){
+  if (dist < deerAlertR(d)){
     if (d.state !== 'ALERT'){
       d.state = 'ALERT'; d.moving = false;
       deerSetClip(d, 'Idle');
@@ -1974,10 +2124,27 @@ function spawnButterflies(){
   var d = dummy();
   d.position.set(0, 0, 0); d.rotation.set(0, 0, 0); d.scale.set(1, 1, 1);
   d.updateMatrix();
+  /* species deal (v1.3): shuffle the kind order, then deal
+     round-robin — every species shows before any repeats, so two
+     butterflies side by side in one meadow are two different
+     species whenever the set is smaller than the palette. The
+     tint rides the iColor instanced attribute (LINEAR values via
+     THREE.Color, the colArr lesson), NOT instanceColor. */
+  var deal = [];
+  for (var di = 0; di < BUTTERFLY_KINDS.length; di++) deal.push(di);
+  for (var dj = deal.length - 1; dj > 0; dj--){
+    var dk = (Math.random() * (dj + 1)) | 0;
+    var dtmp = deal[dj]; deal[dj] = deal[dk]; deal[dk] = dtmp;
+  }
+  var tintArr = new Float32Array(placed * 3);
+  var kindIdx = [];
   for (var j = 0; j < placed; j++){
     mesh.setMatrixAt(j, d.matrix);
-    var kind = BUTTERFLY_KINDS[(Math.random() * BUTTERFLY_KINDS.length) | 0];
-    mesh.setColorAt(j, new THREE.Color(kind.color));
+    var kind = BUTTERFLY_KINDS[deal[j % deal.length]];
+    kindIdx.push(deal[j % deal.length]);
+    var tc = new THREE.Color(kind.color);
+    tintArr[j * 3] = tc.r; tintArr[j * 3 + 1] = tc.g;
+    tintArr[j * 3 + 2] = tc.b;
     seeds[j * 4 + 2] *= kind.size;
   }
   mesh.count = placed;
@@ -1985,8 +2152,10 @@ function spawnButterflies(){
     new THREE.InstancedBufferAttribute(anchors, 3));
   geo.setAttribute('iSeed',
     new THREE.InstancedBufferAttribute(seeds, 4));
+  geo.setAttribute('iColor',
+    new THREE.InstancedBufferAttribute(tintArr, 3));
   scene.add(mesh);
-  butterflySet = { mesh: mesh, count: placed,
+  butterflySet = { mesh: mesh, count: placed, kinds: kindIdx,
                    cx: playerPos.x, cz: playerPos.z };
   return true;
 }
@@ -2217,7 +2386,19 @@ window.__WILDLIFE = {
       else if (c.kind === 'deer') deerTick(c, dt);
     },
     now: function(){ return _t; },
-    advance: function(dt){ tick(dt); }
+    advance: function(dt){ tick(dt); },
+    /* wildlife-pass hooks (v1.3): the wildness measure and the
+       deer density machinery, exposed so the acceptance harness
+       can prove suburb-vs-deep-woods behaviour headlessly */
+    wildnessAt: wildnessAt,
+    roadDistAt: roadDistAt,
+    deerGroupSize: deerGroupSize,
+    deerAlertR: deerAlertR,
+    deerFleeR: deerFleeR,
+    deerPickGraze: deerPickGraze,
+    spawnDeerGroup: spawnDeerGroup,
+    butterflyKinds: BUTTERFLY_KINDS,
+    butterflySet: function(){ return butterflySet; }
   }
 };
 
