@@ -2437,7 +2437,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
    stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.11.07.14';
+window.__DOC_UIVER = '2026.11.07.15';
 function __checkDocVersionHeal(){
   var live = window.__UIVER || '';
   if (!live || live === window.__DOC_UIVER){
@@ -13223,6 +13223,55 @@ spawnParkedCars();  // first attempt — may fail if vehicle_meshes.js isn't her
     }
   }, 100);
 })();
+/* ================= CRASH MODEL SEAMS (Joshua 2026-11-07, 15:39) =====
+   "Driving into something should damage the car and the vehicle and the
+   player depending on speed... make the vehicle know what it hit so it
+   knows how much damage to take off." The model itself (the speed x
+   object curves, the incapacitation timer) lives in crash_model.js;
+   these are the two helpers its call sites here share.
+
+   crashKindAt(x, z): WHAT is at the impact point, from the game's own
+   collision identification — the same crashlog identify() the bump
+   messages use (package trees/boulders name themselves; bldgGrid names
+   buildings; segments walls; the legacy propGrid lumps its props as
+   'prop', honestly mid-table). When no registry can name it, the
+   MATERIAL at the point speaks (a person is a dynamic material, never
+   a registry entry; SOLID / a closed DOOR is a structure). Anything
+   still unnamed is 'unknown' — priced, never guessed into a name.
+
+   crashImpact(c, spdUs, kind, legacyAmt): register ONE crash at this
+   seam. With crash_model.js loaded it feeds BOTH stores through the
+   proper owners (addDamage for the car, __BODY.addCrashDamage for the
+   player); without it, the seam's pre-.15 flat formula applies, so a
+   missing module degrades to the old behaviour instead of none. Every
+   seam keeps its existing speed gate and the shared car.lastHit
+   cooldown — one impact registers once, whichever seam sees it. */
+function crashKindAt(x, z){
+  try{
+    if (window.CrashLog && CrashLog._identify){
+      var id = CrashLog._identify(x, z, 2.2);
+      if (id && id.kind && id.kind !== 'unknown') return id.kind;
+    }
+  }catch(e){}
+  try{
+    var CM = window.CollisionMaterial;
+    if (CM && CM.MATERIALS && typeof getMaterialAt === 'function'){
+      var m = getMaterialAt(x, z, true);
+      if (m === CM.MATERIALS.PERSON) return 'person';
+      if (m === CM.MATERIALS.SOLID || m === CM.MATERIALS.DOOR) return 'building';
+    }
+  }catch(e){}
+  return 'unknown';
+}
+function crashImpact(c, spdUs, kind, legacyAmt){
+  try{
+    if (window.__CRASH && window.__CRASH.apply){
+      window.__CRASH.apply(c, Math.abs(spdUs) * MPH_PER_US, kind, addDamage);
+      return;
+    }
+  }catch(e){}
+  addDamage(c, legacyAmt);
+}
 // ---- damage (GTA style): dents -> hood smoke -> engine dead ----
 function addDamage(c, amt){
   if (c.dead||c.sunk||c.sinking) return;
@@ -13471,6 +13520,15 @@ var pendingCar=null;
 function exitCar(fromWater){
   /* v1.58: null-car guard — exitCar should only run with a valid car. */
   if (!car) return;
+  /* CRASH MODEL (Joshua 2026-11-07): INCAPACITATION — a crash that
+     maxed his HEALTH leaves him STUCK IN THE CAR for two game-minutes
+     (crash_model.js owns the timer); the exit refuses, with the reason
+     and the remaining wait on screen. Water exits are never gated: a
+     sinking car is not a waiting room. */
+  if (!fromWater && window.__CRASH && window.__CRASH.exitBlocked()){
+    try{ showToast(window.__CRASH.stuckText(), 2600); }catch(e){}
+    return;
+  }
   car.driving=false; car.speed=0;
   try{ setCarDoors(car,true); car._doorT=1.6; }catch(e){}
   try{Report.note('exit-car',{x:Math.round(car.x),z:Math.round(car.z),fromWater:!!fromWater});}catch(e){}
@@ -15850,6 +15908,18 @@ function updateCar(dt){
   // resolveCollision() is KEPT as fallback for fine push-out.
   var tmp={x:nx,z:nz};
   if (typeof canMoveTo === 'function' && !canMoveTo(car.x, car.z, nx, nz, 'vehicle', {playerDriven: true, speed: car.speed, key: 'player_car', levelY: (car.mesh?car.mesh.position.y:undefined)})){
+    /* CRASH MODEL (Joshua 2026-11-07): the material gate stopping the
+       car IS the crash when there's speed behind it — a head-on
+       building hit is refused HERE and never reaches the push-out seam
+       below, so the impact registers at this seam, identified at the
+       refused destination (nx, nz still hold it here). The 8 mph floor
+       keeps parking taps free; the shared car.lastHit cooldown means
+       the push-out seam below cannot register the same impact twice. */
+    var _cnow0=performance.now()/1000;
+    if (Math.abs(car.speed)*MPH_PER_US >= 8 && _cnow0-(car.lastHit||0)>0.4){
+      car.lastHit=_cnow0;
+      crashImpact(car, Math.abs(car.speed), crashKindAt(nx, nz), Math.abs(car.speed)*1.7);
+    }
     /* Material says no: don't move into the blocked position.
        Kill forward momentum (like hitting a barrier). */
     nx = car.x; nz = car.z;
@@ -15866,7 +15936,11 @@ function updateCar(dt){
   var now=performance.now()/1000;
   if (blocked>0.03 && spd>6 && now-(car.lastHit||0)>0.4){
     car.lastHit=now;
-    addDamage(car, spd*1.7);   // ~43 dmg at full speed: ~3 hard hits kills the engine
+    /* CRASH MODEL (Joshua 2026-11-07): was the flat spd*1.7 — the crash
+       now knows WHAT the push-out stopped against (identified at the
+       contact position, the same point the bump log names) and prices
+       car + player by speed x object. Legacy fallback keeps spd*1.7. */
+    crashImpact(car, spd, crashKindAt(tmp.x, tmp.z), spd*1.7);
     /* v1.63 CRASH LOG (Joshua's collision diagnostics): the damage seam
        already knows the car hit SOMETHING — now the hit names itself in
        the bump notice + crash log (identified at this position). */
@@ -15898,7 +15972,9 @@ function updateCar(dt){
           var cnow=performance.now()/1000;
           if (spd>6 && cnow-(car.lastHit||0)>0.4){
             car.lastHit=cnow;
-            addDamage(car, spd*1.2);
+            /* CRASH MODEL: the struck object here is known directly —
+               another car from cars[] — no identification needed. */
+            crashImpact(car, spd, 'vehicle', spd*1.2);
             car.speed*=0.4;
           } else if (spd>0.5){ car.speed*=0.85; }
         }
@@ -15919,7 +15995,7 @@ function updateCar(dt){
           else { car.x+=osx*(osid>0?ops:-ops); car.z+=osz*(osid>0?ops:-ops); }
           var cnow2=performance.now()/1000;
           if (spd>6 && cnow2-(car.lastHit||0)>0.4){
-            car.lastHit=cnow2; addDamage(car, spd*1.2); car.speed*=0.4;
+            car.lastHit=cnow2; crashImpact(car, spd, 'vehicle', spd*1.2); car.speed*=0.4;   /* CRASH MODEL: bus/patrol/semi/traffic — a vehicle, known directly */
           } else if (spd>0.5){ car.speed*=0.85; }
         }
       }
@@ -17757,6 +17833,7 @@ document.addEventListener('touchend', function(e){ __tryStartGame(); });
 <script data-dsrc="water_interaction.js" data-dkey=""></script> <!-- WATER INTERACTION (Joshua 2026-10-11) — sinking/shore-respawn helpers + fish system. Defensive: no-op if water data is missing. -->
 <script data-dsrc="wildlife_system.js" data-dkey=""></script> <!-- WILDLIFE (Joshua 2026-11-07) — Georgia birds/mammals/deer/butterflies on the fish streaming pattern; positional song through the ambient master. Defensive: no-op if package data is missing. -->
 <script data-dsrc="body_systems.js" data-dkey=""></script> <!-- BODY SYSTEMS (Joshua 2026-11-07) — the player's own damage meter (tree/boulder bumps: staged green/yellow/red bar, slow at 50, forced rest at 100) + the fatigue reserve (land run + swim arms, one shared reserve). Feeds on crashlog's accepted bumps; updatePlayer consults it for the forced-rest lock and speed caps. Defensive: no-op if game globals are missing. -->
+<script data-dsrc="crash_model.js" data-dkey=""></script> <!-- CRASH MODEL (Joshua 2026-11-07) — vehicle crashes damage the CAR and the PLAYER by impact speed x what was hit (identified by the game's own collision diagnostics): 35 mph into a building damages the car; 125 mph into a building totals it, maxes the player's HEALTH and leaves him stuck in the car for two game-minutes. Feeds the existing stores only (addDamage / __BODY.addCrashDamage). Defensive: no-op if game globals are missing. -->
 <!-- ===== INLINE SCRIPT BLOCK 3: final placement audit (v2.0 - Joshua's
      automatic check) ===== Runs ONCE, after EVERY building system has loaded
      (OSM, churches, schools, plaza, gas, Marriott, clubs, MARTA). Summarizes

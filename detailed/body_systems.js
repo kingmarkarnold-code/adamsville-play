@@ -83,6 +83,19 @@
      only on row 2, only while fully stopped (not driving/swimming)
      with body damage draining, forced rest included.
 
+   CRASH FEED (2026-11-07, crash model pass — Joshua 15:39): vehicle
+   crashes hurt the BODY too, scaled by speed and by what was hit. The
+   crash model (crash_model.js) computes the points; this module's
+   meter RECEIVES them via addCrashDamage() — the store, the staged
+   bar and every consequence stay here, nothing is duplicated there.
+   One interaction matters: crash damage can set the meter to 100
+   while he is still SEATED in the wreck. The forced rest is an
+   on-foot state, so while driving the meter HOLDS at 100 (no rest
+   drain — he is not resting, he is stuck; the crash model's own
+   two-game-minute exit block runs meanwhile). The first tick out of
+   the car engages the forced rest (see tick()) and the usual
+   5-game-minute drain runs on foot, exactly as a bump-earned 100 does.
+
    FORCED-REST VISUAL: index.html's animation paths read
    window.__BODY.forcedRest(). The GLB path plays an authored 'Exhausted'
    clip IF one ever ships in hero.glb (R.actions.Exhausted); none exists
@@ -199,8 +212,29 @@ function createBodyCore(){
     return true;
   }
 
+  /* Vehicle-crash damage (crash_model.js): points land on the same
+     meter bumps feed. Deliberately does NOT engage the forced rest by
+     itself — a maxed meter earned in a car seat takes effect on foot
+     (tick() below engages it the first tick he is out of the car), so
+     the meter can HOLD at 100 for the whole stuck-in-car wait instead
+     of draining away inside it. Returns the meter's new value. */
+  function addCrashDamage(n){
+    n = Math.max(0, n || 0);
+    if (n <= 0) return S.damage;
+    S.damage = Math.min(C.DMG_FORCE_AT, S.damage + n);
+    return S.damage;
+  }
+
   function tick(g, env){
     if (!(g > 0)) g = 0;
+
+    /* --- CRASH HOLD: a meter at 100 that is not already in the forced
+       rest got there in a car seat (bumps engage the rest themselves).
+       Out of the car, the forced rest engages now — and its drain
+       below runs the .11 five game-minutes on foot. In the car the
+       meter simply holds: not resting, not draining. --- */
+    if (!S.forcedRest && S.damage >= C.DMG_FORCE_AT && env.mode !== 'drive')
+      S.forcedRest = true;
 
     /* --- DAMAGE: rest drains it, visibly and proportionally. During the
        forced rest he is resting by construction (movement is locked), so
@@ -282,6 +316,7 @@ function createBodyCore(){
   return {
     state: S,
     addBump: addBump,
+    addCrashDamage: addCrashDamage,
     tick: tick,
     capSpeed: capSpeed,
     fatigue: function(){ return 100 - S.reserve; },  // badness readout 0..100
@@ -316,6 +351,10 @@ window.__BODY = {
     if (mode !== 'walking') return false;
     return core.addBump(kind);
   },
+  /* crash_model.js's feed: vehicle-crash points onto the body meter.
+     Returns the meter's new value so the crash model can spot the
+     maxed-out (incapacitation) case. */
+  addCrashDamage: function(n){ return core.addCrashDamage(n); },
   forcedRest: function(){ return core.state.forcedRest; },
   capSpeed: function(spd, mode){ return core.capSpeed(spd, mode); }
 };

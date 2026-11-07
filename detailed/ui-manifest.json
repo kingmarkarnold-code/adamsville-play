@@ -43,9 +43,9 @@
     },
     {
       "name": "body_systems.js",
-      "size": 23920,
-      "sha256": "049916c8dfec94dfe9f11b8f64f2e874d8498b99273bf53519fa8b30ca3a3e16",
-      "hash": "049916c8dfec94dfe9f11b8f64f2e874d8498b99273bf53519fa8b30ca3a3e16"
+      "size": 26055,
+      "sha256": "5f6abd8cd52af49d7da535695a7dff187785cd5aa8cefbf9e550985f4127e5e5",
+      "hash": "5f6abd8cd52af49d7da535695a7dff187785cd5aa8cefbf9e550985f4127e5e5"
     },
     {
       "name": "clothing_system.js",
@@ -71,6 +71,12 @@
       "size": 42233,
       "sha256": "7c4f2519201c420b124aaff08b3676483baeb7d18d804238bac833a491ab96fe",
       "hash": "7c4f2519201c420b124aaff08b3676483baeb7d18d804238bac833a491ab96fe"
+    },
+    {
+      "name": "crash_model.js",
+      "size": 13902,
+      "sha256": "4474cebf03419b0ecc83c3160d7c7233effa3b3792236dfda2eab10766aca59a",
+      "hash": "4474cebf03419b0ecc83c3160d7c7233effa3b3792236dfda2eab10766aca59a"
     },
     {
       "name": "daycycle.js",
@@ -153,9 +159,9 @@
     },
     {
       "name": "index.html",
-      "size": 1256572,
-      "sha256": "5b265f762e03cb835e3150df97331a9b36f72e8a58f012687da56afc09152c8a",
-      "hash": "5b265f762e03cb835e3150df97331a9b36f72e8a58f012687da56afc09152c8a"
+      "size": 1261057,
+      "sha256": "aa95da02a6314c53e3f27fedc9d87a1fbdbc0474ebd20eb5e5d5f91732d520a5",
+      "hash": "aa95da02a6314c53e3f27fedc9d87a1fbdbc0474ebd20eb5e5d5f91732d520a5"
     },
     {
       "name": "input_diag.js",
@@ -672,6 +678,6 @@
       "hash": "20b983ae0e2e555817495a65c37519bfcb2231825269db6a57d72c51ed6006e3"
     }
   ],
-  "ui_version": "2026.11.07.14",
+  "ui_version": "2026.11.07.15",
   "version": "2026.10.17.9"
 }
