@@ -94,25 +94,44 @@
    own D-grid sampler over the shipped package):
    - Chattahoochee main stem: surface-bed = 3.6 m at the MEDIAN station
      (11.8 ft), max 3.81 m (12.5 ft) — deeper than the ~6 ft estimate.
-   - Tatum Lake bed (the carved terrain): 0.60 m at the centre — the
-     DEM cannot hold lake bathymetry (lidar reads the water surface;
-     the zone build carved a 0.6 m anti-burial floor), so a lake's
-     operative depth is the game's per-feature model (Tatum 12 ft),
-     exactly as index.html's waterDepthAt comment already documents.
-     Local carve pockets in Tatum reach 2.55 m.
+   - Tatum Lake bed: was 0.60 m at the centre in the shipped DEM (it
+     cannot hold lake bathymetry — lidar reads the water surface;
+     the zone build carved a 0.6 m anti-burial floor) while the
+     game's per-feature model promised 12 ft, and the dive gate
+     trusted the model: diving at the centre sank THROUGH the bed
+     and swam under the ground sheet (Joshua's hands, Nov 8), and
+     high bed spots read walkable where the model said swim.
+     FIXED ui 2026.11.08.7 (fixes-2026-11-08-bedcarve): the bed is
+     now CARVED IN THE HEIGHT DATA to the promise — a smooth bowl
+     inside every lake/pond body's own drawn ring (centre = model
+     depth + 0.20 m, easing to zero over a 4 m shore feather; lower
+     only; banks and above-surface shore posts untouched; the
+     boulder-066 pond island exempt). 23,724 posts lowered across
+     56 bodies; promised-vs-real now agrees on every post beyond
+     the feather and on the dense sampler from 5 m inside any ring.
+     AND the envelope below is clamped by the REAL bed (heightAt)
+     as well, so no position can ever dive past the ground that is
+     actually drawn there.
    - Tatum Outlet Creek: median 0.57 m, max 2.03 m at the falls plunge;
      zero stations at swim depth — creeks stay wading-only in practice.
+     (The creek's cross-sections were NOT touched by the bed carve:
+     old-vs-new sampler along its whole line is identical but for a
+     1 mm float rounding at the lake outlet.)
    The bed is solid: the envelope stops the sink BED_CLEAR above the
-   (modelled) bed, and REACHING the bed fires the .20 touch-bottom
-   reset through __BODY.touchBottom() — bed contact is bed contact.
+   REAL bed (the gate takes the smaller of the model envelope and
+   surface - heightAt - BED_CLEAR), and REACHING the bed fires the
+   .20 touch-bottom reset through __BODY.touchBottom() — bed contact
+   is bed contact.
 
-   BREATH — 2 GAME MINUTES submerged maximum (the body's other clocks
-   are game minutes — the .20 float rest, the damage heal; if Joshua
-   meant real minutes this is the one constant to change,
-   BREATH_MAX_GMIN, and it is flagged in the ship report the same way
-   the crash timer was). Breath drains only while the HEAD is under
-   (sink >= HEAD_UNDER_U); it refills at the surface (full from empty
-   in half a game-minute). At zero: FORCED RESURFACE — the player is
+   BREATH — 1 REAL MINUTE submerged maximum (Joshua's ruling,
+   Nov 8, ui 2026.11.08.7 — supersedes the original 2 game minutes
+   ≈ 10 real seconds; the body's OTHER clocks stay on game minutes:
+   the .20 float rest, the damage heal). Breath drains on REAL
+   elapsed time (tick's dtSec), only while the HEAD is under
+   (sink >= HEAD_UNDER_U): a full breath is 60 real seconds from
+   full to empty. It refills at the surface on real time too — full
+   from empty in 10 real seconds (a few real breaths). At zero:
+   FORCED RESURFACE — the player is
    carried up regardless of input; when the surface is reached the
    dive calls __BODY.beginFloatRest() and the FORCED-STOP float rest
    (~2 game-minutes) applies, during which the dive axis stays locked.
@@ -142,10 +161,12 @@
 
 /* --- tunables ------------------------------------------------------------ */
 var DIVE_C = {
-  /* breath budget: 2 GAME minutes with the head under (see header) */
-  BREATH_MAX_GMIN: 2.0,
-  /* surface refill: 200 per game-minute = full from empty in 0.5 */
-  BREATH_REFILL_PER_GMIN: 200,
+  /* breath budget: 1 REAL minute with the head under (Nov 8 ruling,
+     see header) — drained and refilled on real elapsed seconds */
+  BREATH_MAX_SEC: 60,
+  /* surface refill: 10 points per real second = full from empty in
+     10 real seconds */
+  BREATH_REFILL_PER_SEC: 10,
   /* sink (u below surface-swim trim) at which the head goes under and
      breath starts draining — the trim already sits the origin ~1.1u
      under the surface with head + shoulders out; 0.35u more puts the
@@ -157,7 +178,9 @@ var DIVE_C = {
   /* forced-resurface ascent, u per real second — faster than the
      voluntary axis so an empty breath always wins */
   RESURFACE_SPEED: 2.4,
-  /* the envelope stops this far above the modelled bed */
+  /* the envelope stops this far above the REAL bed (the gate clamp
+     in swimY takes the smaller of the model envelope and
+     surface - heightAt - this clearance) */
   BED_CLEAR_U: 0.25,
   /* camera: sink per unit of dive depth, and the cap */
   CAM_SINK_PER_U: 0.9,
@@ -171,7 +194,7 @@ var DIVE_C = {
    dive module actually ran on the device — a stale or missing module
    (the deferred loader skips this file silently: its script tag has
    an empty data-dkey) can never again masquerade as a wiring bug. */
-var DIVE_MODULE_VERSION = '2026.11.08.5';
+var DIVE_MODULE_VERSION = '2026.11.08.7';
 
 /* Breath bar colour staging (Joshua's progression): BLUE = oxygen,
    full and healthy; YELLOW = warning; RED = nearly out. */
@@ -196,7 +219,7 @@ function breathColor(b){
 function createDiveCore(){
   var S = {
     depth: 0,          /* u below the surface-swim trim */
-    breath: 100,       /* 0..100, percent of BREATH_MAX_GMIN */
+    breath: 100,       /* 0..100, percent of BREATH_MAX_SEC (60 real s) */
     forced: false,     /* a breath-out forced resurface is running */
     submerged: false,  /* head under (breath draining) */
     bottom: false,     /* resting on the envelope floor (the bed) */
@@ -212,7 +235,7 @@ function createDiveCore(){
          tops back up, no latches survive */
       S.depth = 0; S.prevDepth = 0; S.forced = false;
       S.submerged = false; S.bottom = false; S.pitch = 0;
-      S.breath = Math.min(100, S.breath + DIVE_C.BREATH_REFILL_PER_GMIN * (gMin || 0));
+      S.breath = Math.min(100, S.breath + DIVE_C.BREATH_REFILL_PER_SEC * (dtSec || 0));
       return ev;
     }
     var maxD = Math.max(0, env.maxDepthU || 0);
@@ -247,16 +270,18 @@ function createDiveCore(){
     S.pitch += (pTgt - S.pitch) * pk;
     if (Math.abs(S.pitch) < 0.001 && pTgt === 0) S.pitch = 0;
 
-    /* breath: drains only with the head under; refills at the surface */
+    /* breath: drains only with the head under, on REAL elapsed time
+       (Nov 8 ruling: a full breath is 1 real minute); refills at the
+       surface on real time too */
     S.submerged = S.depth >= DIVE_C.HEAD_UNDER_U;
     if (S.submerged){
-      S.breath -= (100 / DIVE_C.BREATH_MAX_GMIN) * (gMin || 0);
+      S.breath -= (100 / DIVE_C.BREATH_MAX_SEC) * (dtSec || 0);
       if (S.breath <= 0){
         S.breath = 0;
         if (!S.forced){ S.forced = true; ev.breathOut = true; }
       }
     } else {
-      S.breath = Math.min(100, S.breath + DIVE_C.BREATH_REFILL_PER_GMIN * (gMin || 0));
+      S.breath = Math.min(100, S.breath + DIVE_C.BREATH_REFILL_PER_SEC * (dtSec || 0));
     }
     return ev;
   }
@@ -455,6 +480,27 @@ window.__DIVE = {
       if (typeof player === 'undefined' || !player || !player.swimming) return gy;
       var depthU = (wl === null || wl === undefined) ? 0 : diveDepthUAt(player.x, player.z);
       var maxD = Math.max(0, depthU - sub - DIVE_C.BED_CLEAR_U);
+      /* REAL-BED CLAMP (ui 2026.11.08.7 — the bed-carve pass): the
+         model envelope above is a promise; the ground that is
+         actually drawn is heightAt's surface (the carved D-grid).
+         The dive may never reach past it: cap maxD so the sink stops
+         BED_CLEAR_U above the REAL bed at this position. This is the
+         hard invariant behind the carve — wherever the model and the
+         bed still differ (the shore feather, a bank's bilinear
+         shadow), the bed wins and nobody swims under the ground.
+         heightAt is index.html's published terrain truth; if it is
+         somehow absent the model envelope alone applies (the carve
+         has already reconciled the two at every post). */
+      if (typeof wl === 'number' && isFinite(wl) &&
+          typeof heightAt === 'function'){
+        try{
+          var bedY = heightAt(player.x, player.z);
+          if (typeof bedY === 'number' && isFinite(bedY)){
+            var bedCap = wl - bedY - DIVE_C.BED_CLEAR_U;
+            if (bedCap < maxD) maxD = Math.max(0, bedCap);
+          }
+        }catch(e){}
+      }
       var restLocked = false;
       try{
         restLocked = !!(window.__BODY && window.__BODY.core &&
@@ -532,6 +578,7 @@ function divePublishReport(){
       maxD: +diveTele.maxD.toFixed(3),
       depth: +diveCore.state.depth.toFixed(3),
       breath: +diveCore.state.breath.toFixed(1),
+      breathMaxSec: DIVE_C.BREATH_MAX_SEC,
       restLocked: !!diveTele.restLocked,
       wlNull: !!diveTele.wlNull
     });
