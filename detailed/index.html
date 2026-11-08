@@ -2481,7 +2481,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
    stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.11.08.4';
+window.__DOC_UIVER = '2026.11.08.5';
 /* VER-TAG (ui 2026.11.07.25) >>>
    The on-screen version tag (#ver-tag) shows the version OF THE
    DEPLOYMENT ACTUALLY RUNNING, environment first (Joshua 2026-11-07
@@ -2552,15 +2552,29 @@ function __liveVerText(){
               String(APP_VERSION) : '';
   var live = window.__UIVER || '';
   var doc = window.__DOC_UIVER || '';
+  var t;
   if (env === 'APK'){
     var ui = live || doc;
-    if (shell && ui) return 'APK v' + shell + ' · UI v' + ui;
-    if (ui) return 'APK · UI v' + ui;
-    if (shell) return 'APK v' + shell;
-    return 'APK';
+    if (shell && ui) t = 'APK v' + shell + ' · UI v' + ui;
+    else if (ui) t = 'APK · UI v' + ui;
+    else if (shell) t = 'APK v' + shell;
+    else t = 'APK';
   }
-  if (env === 'DEV') return 'DEV v' + (doc || live || shell);
-  return 'WEB v' + (live || doc || shell);
+  else if (env === 'DEV') t = 'DEV v' + (doc || live || shell);
+  else t = 'WEB v' + (live || doc || shell);
+  /* ELEV A/B (ui 2026.11.08.5): when a non-default ?elev= world is
+     running, the tag carries the mode (' · ELEV 70'), so any
+     screenshot proves which world is being felt. Default mode:
+     no suffix — the tag text is byte-for-byte the shipped one.
+     __SA_ELEV is published by map_registry.js; the stamp re-runs
+     when __UIVER lands, by which time the registry has evaluated,
+     so the suffix cannot be missed on a live page. */
+  try{
+    var se = window.__SA_ELEV;
+    if (se && se.param !== null && se.param !== undefined)
+      t += ' · ELEV ' + se.param;
+  }catch(e){}
+  return t;
 }
 function __stampVerTag(){
   try{

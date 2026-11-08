@@ -140,7 +140,76 @@ var FRAME_S = 2.8327464788732395;   /* 1609/568 split-zones rescale */
 /* Vertical conversion constants — mirror heightAt()/elev.js exactly:
    ELEV.min = 225, ELEV.max = 363, ELEV_SCALE = 60 / (max - min). */
 var PKG_ELEV_MIN = 225, PKG_ELEV_MAX = 363;
-var PKG_ELEV_SCALE = 60 / (PKG_ELEV_MAX - PKG_ELEV_MIN);
+var PKG_ELEV_DEFAULT_SCALE = 60 / (PKG_ELEV_MAX - PKG_ELEV_MIN);
+/* ================================================================
+   ELEV A/B SWITCH (ui 2026.11.08.5, Joshua 2026-11-08)
+   ----------------------------------------------------------------
+   Joshua's ruling: at the shipped scale (60 / (363 - 225) = 0.4348
+   runtime units per metre) the hills read FLAT — the Dollar Mill
+   climb from 535 to the Utoy crest is ~36.4 m of real rise played
+   as ~15.8 units, ~8.5 player-heights instead of ~19. He does not
+   rule on numbers or flat pictures; he rules by PLAYING the same
+   world at different scales. So the scale is now an address
+   parameter, exactly like ?zone= and ?mapsrc=:
+
+     (no param)   -> the shipped default 0.4348, computed as the
+                     IDENTICAL constant 60 / (MAX - MIN) — the
+                     world he already has, byte for byte.
+     ?elev=70     -> 0.70 units per metre.
+     ?elev=100    -> 1.00 units per metre (true scale).
+     ?elev=43 (or anything within half a point of the default),
+     an unparseable value, or a value outside the sane 20..200
+     band         -> the default, exactly.
+
+   WHY THIS FILE: PKG_ELEV_SCALE feeds elevToRuntimeY /
+   runtimeYToElev, the single funnel EVERY package height derives
+   through (both terrain samplers store metres ASL and convert;
+   map_loader's buildPackage converts roads, water surfaces and
+   stream profiles, decks and boulder bases through the same
+   pair), and this module evaluates before anything derives a
+   height, so setting the scale here — at load, from the address —
+   rescales the whole derived world consistently.
+
+   THE ONE BAKED EXCEPTION: maps/adamsville/terrain_heights_pkg.bin
+   stores runtime Y pre-baked at the DEFAULT scale (proven by
+   sampling: its vertices equal heightYAtRuntime at the default,
+   not the metre sampler). elevToRuntimeY is linear in the scale
+   ((elev - MIN) * s — no other offset), so the exact correction
+   is one ratio (active / default) applied to the baked array at
+   load; map_loader's bootWorld applies it, gated on ratio !== 1.
+   Nothing else in the package is stored in runtime units: the
+   D-grid, near-post grid and canopy cover store metres (or
+   unitless cover) and convert through the funnel at sample time.
+
+   The active mode is published as window.__SA_ELEV
+   { param, scale, defaultScale, ratio, active } for the version
+   tag ("· ELEV 70"), telemetry and Player Reports.
+   ================================================================ */
+var PKG_ELEV_SCALE = PKG_ELEV_DEFAULT_SCALE;
+var __SA_ELEV_PARAM = null;
+try {
+  var __elevRaw = (typeof window !== 'undefined' && window.location)
+    ? new URLSearchParams(window.location.search).get('elev') : null;
+  if (__elevRaw !== null && __elevRaw !== ''){
+    var __elevN = Number(__elevRaw);
+    /* Snap-to-default band: ?elev=43 names the default Joshua
+       already has — it must BE the default, not 0.43. */
+    if (isFinite(__elevN) && __elevN >= 20 && __elevN <= 200 &&
+        Math.abs(__elevN - 43.47826086956522) > 0.5){
+      PKG_ELEV_SCALE = __elevN / 100;
+      __SA_ELEV_PARAM = Math.round(__elevN);
+    }
+  }
+} catch (e) { /* any failure parsing the address: the default stands */ }
+try {
+  window.__SA_ELEV = {
+    param: __SA_ELEV_PARAM,
+    scale: PKG_ELEV_SCALE,
+    defaultScale: PKG_ELEV_DEFAULT_SCALE,
+    ratio: PKG_ELEV_SCALE / PKG_ELEV_DEFAULT_SCALE,
+    active: __SA_ELEV_PARAM !== null
+  };
+} catch (e) {}
 
 /* --- package metres -> lat/lon (package frame formulas) --- */
 function pkgToLatLon(x, z){
@@ -374,6 +443,12 @@ window.MapFrame = {
   latLonToRuntime: latLonToRuntime, runtimeToLatLon: runtimeToLatLon,
   pkgToRuntime: pkgToRuntime, runtimeToPkg: runtimeToPkg,
   elevToRuntimeY: elevToRuntimeY, runtimeYToElev: runtimeYToElev,
+  /* ELEV A/B (ui 2026.11.08.5): the active vertical scale + friends,
+     for consumers that hold a value baked at the default scale
+     (map_loader's terrain-bin rescale and stream depthFt pin). */
+  elevScale: PKG_ELEV_SCALE, elevDefaultScale: PKG_ELEV_DEFAULT_SCALE,
+  elevRatio: PKG_ELEV_SCALE / PKG_ELEV_DEFAULT_SCALE,
+  elevParam: __SA_ELEV_PARAM,
   makePkgTerrainSampler: makePkgTerrainSampler,
   makeDGridSampler: makeDGridSampler
 };

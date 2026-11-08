@@ -1148,10 +1148,17 @@ function buildLegacyGlobals(pkg){
     var depthFt = 2;
     if (s.ys && s.ys.length === s.pts.length){
       var mx = 0;
+      /* ELEV A/B (ui 2026.11.08.5): depthFt is a FEET fact — the
+         depth system must read identically at every elevation
+         scale. The surface-minus-bed gap below is in runtime Y,
+         which grows with the active scale, so it is divided back
+         by the elev ratio. At the default scale the ratio is
+         exactly 1 and this is the shipped computation unchanged. */
+      var _eratio = (window.MapFrame && window.MapFrame.elevRatio) || 1;
       for (var di = 0; di < s.pts.length; di++){
         var bd = pkg.terrain.heightYAtRuntime(s.pts[di][0], s.pts[di][1]);
         if (typeof bd === 'number' && typeof s.ys[di] === 'number')
-          mx = Math.max(mx, (s.ys[di] - bd) / 0.304);
+          mx = Math.max(mx, (s.ys[di] - bd) / 0.304 / _eratio);
       }
       if (mx > 0) depthFt = Math.max(2, Math.min(40, mx));
     }
@@ -1245,6 +1252,21 @@ function bootWorld(){
         return fetchBin(pkg.base + 'terrain_heights_pkg.bin')
           .then(function(buf){
             var arr = new Float32Array(buf);
+            /* ELEV A/B (ui 2026.11.08.5, see map_registry.js): this
+               bin is the ONE package input baked in runtime Y — it
+               was generated from the terrain sampler at the DEFAULT
+               elevation scale. elevToRuntimeY is linear in the
+               scale ((elev - 225) * s, no other offset), so under a
+               non-default ?elev= the exact correction is one ratio
+               applied to every baked vertex, here at load, before
+               buildTerrain or the stuck-pick gate can read a stale
+               height. At the default scale the ratio is exactly 1
+               and the array passes through untouched — the shipped
+               world, byte for byte. */
+            var _er = (window.MapFrame && window.MapFrame.elevRatio) || 1;
+            if (_er !== 1 && arr.length){
+              for (var _pi = 0; _pi < arr.length; _pi++) arr[_pi] *= _er;
+            }
             window.__TERR_H_PRE = arr.length ? arr : null;
             return true;
           })
