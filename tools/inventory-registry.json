@@ -103,6 +103,11 @@
   },
   {
    "class": "tooling",
+   "pattern": "tools/asset-viewer/*",
+   "reason": "The Asset Viewer (Joshua's study page, 2026-11-08): a standalone page that boots the published game live in-page to show assets as the game sees them, plus a close-up turntable from the game's own three.js and GLB files, with a notes form into the Player Reports inbox. It loads everything from the published game; it holds no game data of its own."
+  },
+  {
+   "class": "tooling",
    "pattern": "tools/decision-deck/*.py",
    "reason": "Decision Deck queue generators (build-road-review-queue.py): they build deck queues out of the game's own zone data. The deck page itself is referenced code; the generators are the tooling that feeds it."
   },
