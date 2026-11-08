@@ -48,6 +48,48 @@ var SEASON_ORDER = ['summer','fall','winter','spring'];
 var SUNRISE_MIN = 6*60, SUNSET_MIN = 20*60;   // summer hours
 var LS_KEY = 'sa_daycycle_v1';
 
+/* ============================================================================
+   WORLD CALENDAR (2026-11-08, Joshua's ruling) — ONE shared calendar for
+   the whole game. Every player's Day 1 is the SAME calendar date: the day
+   Surviving Adamsville first went live as a published play build.
+
+   ★ GO-LIVE DAY ONE = October 9, 2026 ★
+   Evidence from the project's own history: the public repo
+   kingmarkarnold-code/adamsville-play (today's adamsville-play-archive —
+   the Oct 17 clean rebuild kept the name, not the history) was created
+   2026-10-09T03:20:30Z carrying the first published play build, GitHub
+   Pages was enabled that same day, and the version lineage itself
+   starts at 2026.10.09.x. This is ONE named constant, so if Joshua
+   vetoes the date, the fix is this one line:
+
+   The calendar DATE for game day N is GO-LIVE + (N-1) days. The in-game
+   weekday keeps Joshua's original Mon-start cycle (Day 1 = Monday) —
+   the date is the anchor; the weekday rides the game's own week.
+   Seasons stay Joshua's 2026-10-09 rule (7 game days per season,
+   28-day year, Day 1 in summer): seasonForDay() below IS the calendar's
+   season rule, and every season consumer reads it through this module.
+   ============================================================================ */
+var GO_LIVE_DAY_ONE = { y: 2026, m: 10, d: 9 };   // ★ THE anchor — one line to change
+var MONTH_NAMES = ['January','February','March','April','May','June','July',
+                   'August','September','October','November','December'];
+var WEEKDAY_FULL = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+/* calendarDateForDay(dayNum) -> {y, m, d, text} for a game day number.
+   Pure date math in UTC so month/year rollovers are the real calendar's. */
+function calendarDateForDay(dayNum){
+  var t = new Date(Date.UTC(GO_LIVE_DAY_ONE.y, GO_LIVE_DAY_ONE.m - 1,
+                            GO_LIVE_DAY_ONE.d + (dayNum - 1)));
+  var o = { y: t.getUTCFullYear(), m: t.getUTCMonth() + 1, d: t.getUTCDate() };
+  o.text = MONTH_NAMES[o.m - 1] + ' ' + o.d + ', ' + o.y;
+  return o;
+}
+/* Time Control (Joshua 2026-11-08): the testing panel in Settings ->
+   Advanced Properties sits behind THIS passcode — his ruling: 920
+   ("nine twenty"). The literal lives only here, next to the calendar it
+   unlocks; the panel wiring in index.html only ever asks
+   __WORLD_CALENDAR.checkPasscode(). */
+var TIME_CONTROL_PASSCODE = '920';
+var TC_LS_KEY = 'sa_timecontrol_v1';   // persisted season/weather overrides
+
 /* Sky / light keyframes: [gameMin, skyHex, fogHex, sunHex, sunInt, hemiInt,
    hemiSkyHex, hemiGroundHex]. Night is dim blue moonlight; dawn/dusk burn
    orange. The last two columns are the hemisphere light's OWN colours —
@@ -117,6 +159,34 @@ function savePersist(){
   try{ localStorage.setItem(LS_KEY, JSON.stringify({gameMin:DC.gameMin, dayNum:DC.dayNum})); }catch(e){}
 }
 
+/* The EFFECTIVE season: the Time Control override wins, else the
+   calendar's own season. This is the ONLY season the trees and the HUD
+   ever show — one truth, read from the shared calendar. */
+function seasonEffective(){
+  if(!DC) return 'summer';
+  return DC.seasonOverride || DC.season;
+}
+function applySeason(){
+  if(!DC) return;
+  try{ if(window.__trees) window.__trees.setSeason(seasonEffective()); }catch(e){}
+}
+/* Time Control overrides persist like other settings (own store). */
+function persistTc(){
+  if(!DC) return;
+  try{ localStorage.setItem(TC_LS_KEY, JSON.stringify(
+    {seasonOverride:DC.seasonOverride, weatherOverride:DC.weatherOverride})); }catch(e){}
+}
+/* afterDayChange(): the day number moved OUTSIDE the frame loop (a Time
+   Control skip, or __daycycle.setTime) — re-derive the calendar season
+   for the new day, push the effective season to the trees, mirror
+   WorldClock, and persist, exactly as a natural rollover would. */
+function afterDayChange(){
+  DC.season=seasonForDay(DC.dayNum);
+  applySeason();
+  try{ if(window.WorldClock && WorldClock.setTime) WorldClock.setTime(DC.gameMin, DC.dayNum); }catch(e){}
+  savePersist();
+}
+
 /* lerp the keyframe table at gameMin; writes into out
    {sky,fog,sunC,sunI,hemiI,hemiSky,hemiGround} */
 var _kSky=new (typeof THREE!=='undefined'?THREE.Color:function(){})();
@@ -157,12 +227,26 @@ function init(){
     dayNum: saved?saved.dayNum:START_DAY,
     season: seasonForDay(saved?saved.dayNum:START_DAY),
     weather:'sunny', wxTimer: 25+rng()*40,   // game-minutes until re-roll
+    seasonOverride:null, weatherOverride:null,  // Time Control (null = Auto)
     windMph: 7, windTarget: 7, windTimer: 5, // wind random walk (mph)
     cloudCover: 0.15,                         // 0..1 eased toward target
     t:0, lastSave:0,
     keys:{sky:new THREE.Color(), fog:new THREE.Color(), sunC:new THREE.Color(), sunI:0.85, hemiI:0.95,
           hemiSky:new THREE.Color(0xcfe8ff), hemiGround:new THREE.Color(0x4a7c3a)}
   };
+
+  /* Time Control overrides persist like other settings (Joshua
+     2026-11-08): seasonOverride 'winter'|'fall'|null (null = Auto,
+     calendar-derived), weatherOverride 'rainy'|null (null = Auto).
+     A rainy override takes hold of the weather immediately. */
+  try{
+    var _tc=JSON.parse(localStorage.getItem(TC_LS_KEY)||'null');
+    if(_tc){
+      if(_tc.seasonOverride==='winter'||_tc.seasonOverride==='fall') DC.seasonOverride=_tc.seasonOverride;
+      if(_tc.weatherOverride==='rainy') DC.weatherOverride='rainy';
+    }
+  }catch(e){}
+  if(DC.weatherOverride==='rainy') DC.weather='rainy';
 
   /* --- clouds: one InstancedMesh of soft puffs, drifting on the wind --- */
   var N_CLOUDS=40;
@@ -240,8 +324,9 @@ function init(){
   document.body.appendChild(hud);
   DC.hud=hud;
 
-  // apply the starting season to the trees (summer on fresh boot)
-  try{ if(window.__trees) window.__trees.setSeason(DC.season); }catch(e){}
+  // apply the starting EFFECTIVE season to the trees (a persisted
+  // Time Control override wins over the calendar season)
+  applySeason();
 
   /* v1.47 SIM/RENDER SEPARATION (expert report #15): WorldClock is the
      tick-driven time authority. Sync our persisted load into it — WorldClock
@@ -263,17 +348,55 @@ function init(){
 
   try{
     if(typeof Report!=='undefined') Report.setSys('daycycle',
-      {status:'ok', version:'1.0', dayLenMin:124,
-       note:'124-min day/night, sun orbit, weather, 7-day seasons'});
+      {status:'ok', version:'1.1', dayLenMin:124,
+       calendarEpoch:'2026-10-09',
+       note:'124-min day/night, sun orbit, weather, 7-day seasons; World Calendar anchored at go-live 2026-10-09; Time Control overrides in sa_timecontrol_v1'});
   }catch(e){}
 
   window.__daycycle={
     get gameMin(){return DC.gameMin;}, get dayNum(){return DC.dayNum;},
     get season(){return DC.season;}, get weather(){return DC.weather;},
+    get seasonEffective(){return seasonEffective();},
     get windMph(){return _windEff;},
     setTime:function(min,day){ DC.gameMin=min; DC.dayNum=day||DC.dayNum;
-      /* v1.47: keep the tick-driven WorldClock in sync. */
-      try{ if(window.WorldClock && WorldClock.setTime) WorldClock.setTime(DC.gameMin, DC.dayNum); }catch(e){} }
+      /* v1.47: keep the tick-driven WorldClock in sync — and (World
+         Calendar) re-derive the calendar season for the new day. */
+      afterDayChange(); }
+  };
+
+  /* WORLD CALENDAR API (2026-11-08): the shared calendar every system
+     reads date/season from, plus the Time Control verbs the Settings
+     panel drives. Published on window because index.html's panel
+     wiring runs in the eval scope — it reaches the calendar ONLY
+     through here, never by reading this module's internals. */
+  window.__WORLD_CALENDAR={
+    /* Day One: the go-live date every player's calendar starts from. */
+    epochText: calendarDateForDay(1).text,
+    dateForDay: function(dayNum){ return calendarDateForDay(dayNum); },
+    today: function(){
+      var cd=calendarDateForDay(DC.dayNum);
+      return { dayNum: DC.dayNum, gameMin: DC.gameMin,
+        dateText: cd.text, weekday: WEEKDAY_FULL[(DC.dayNum-1)%7],
+        season: DC.season, seasonEffective: seasonEffective(),
+        seasonOverride: DC.seasonOverride,
+        weather: DC.weather, weatherOverride: DC.weatherOverride };
+    },
+    /* Skip days: the DATE advances; the time of day is left exactly
+       where it was (a +30 from 7:08 AM lands at 7:08 AM, 30 days on). */
+    skipDays: function(n){ if(n>0){ DC.dayNum+=n; afterDayChange(); } },
+    /* Jump to an hour of the CURRENT day (the panel's 2 AM / 3 AM). */
+    jumpToHour: function(h){ DC.gameMin=h*60;
+      try{ if(window.WorldClock && WorldClock.setTime) WorldClock.setTime(DC.gameMin, DC.dayNum); }catch(e){}
+      savePersist(); },
+    setSeasonOverride: function(v){
+      DC.seasonOverride=(v==='winter'||v==='fall')?v:null;
+      persistTc(); applySeason(); },
+    setWeatherOverride: function(v){
+      DC.weatherOverride=(v==='rainy')?'rainy':null;
+      if(DC.weatherOverride) DC.weather='rainy';
+      else DC.wxTimer=Math.min(DC.wxTimer, 5);  // Auto: re-roll soon
+      persistTc(); },
+    checkPasscode: function(v){ return String(v)===TIME_CONTROL_PASSCODE; }
   };
 }
 
@@ -304,21 +427,28 @@ function updateDayCycle(){
     /* v1.47: WorldClock is the canonical clock — mirror day rollover into it. */
     try{ if(window.WorldClock && WorldClock.setTime) WorldClock.setTime(DC.gameMin, DC.dayNum); }catch(e){}
     newSeason=seasonForDay(DC.dayNum);
-    if(newSeason!==DC.season){ DC.season=newSeason;
-      try{ if(window.__trees) window.__trees.setSeason(newSeason); }catch(e){}
-    }
+    if(newSeason!==DC.season){ DC.season=newSeason; applySeason(); }
   }
   // persist every ~10s so the clock survives reloads
   if(DC.t-DC.lastSave>10){ DC.lastSave=DC.t; savePersist(); }
 
-  /* --- weather state machine --- */
-  DC.wxTimer-=dt*GAME_MIN_PER_SEC;
-  if(DC.wxTimer<=0){
-    var r=Math.random(), w=DC.weather;
-    if(w==='sunny'){ DC.weather=(r<0.45)?'cloudy':'sunny'; }
-    else if(w==='cloudy'){ DC.weather=(r<0.30)?'sunny':((r<0.62)?'rainy':'cloudy'); }
-    else { DC.weather=(r<0.70)?'cloudy':'rainy'; }
-    DC.wxTimer=20+Math.random()*50;   // game-minutes until next re-roll
+  /* --- weather state machine ---
+     Time Control (2026-11-08): a weather override HOLDS its weather
+     for as long as it is set — the machine below is skipped entirely,
+     so an override 'rainy' day stays rainy (rain visuals here, rain
+     audio in ambient_audio.js reads __daycycle.weather and follows).
+     Returning to Auto resumes the machine. */
+  if(DC.weatherOverride){
+    DC.weather=DC.weatherOverride;
+  } else {
+    DC.wxTimer-=dt*GAME_MIN_PER_SEC;
+    if(DC.wxTimer<=0){
+      var r=Math.random(), w=DC.weather;
+      if(w==='sunny'){ DC.weather=(r<0.45)?'cloudy':'sunny'; }
+      else if(w==='cloudy'){ DC.weather=(r<0.30)?'sunny':((r<0.62)?'rainy':'cloudy'); }
+      else { DC.weather=(r<0.70)?'cloudy':'rainy'; }
+      DC.wxTimer=20+Math.random()*50;   // game-minutes until next re-roll
+    }
   }
   /* --- wind: random-walk toward a wandering target (mph) --- */
   DC.windTimer-=dt*GAME_MIN_PER_SEC;
@@ -440,7 +570,7 @@ function updateDayCycle(){
   var wday=DAYS[(DC.dayNum-1)%7];
   var wicon=DC.weather==='sunny'?'☀️':(DC.weather==='cloudy'?'☁️':'🌧️');
   DC.hud.textContent='DAY '+DC.dayNum+' '+wday+' '+
-    hh12+':'+(mm<10?'0':'')+mm+' '+ampm+' '+wicon+' '+DC.season.toUpperCase();
+    hh12+':'+(mm<10?'0':'')+mm+' '+ampm+' '+wicon+' '+seasonEffective().toUpperCase();
 }
 
 /* ---------------- boot poll ---------------- */

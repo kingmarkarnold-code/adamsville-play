@@ -320,6 +320,16 @@ if (location.protocol === 'file:'){ setTimeout(function(){ if (!window.__threeMo
   #advprops .row { display:block; width:100%; margin:8px 0; padding:12px 14px; font-size:16px; font-weight:bold;
     border-radius:10px; border:2px solid #444; background:#222836; color:#fff; text-align:left; }
   #advprops .row:active { background:#2d3547; }
+  /* TIME CONTROL (Joshua 2026-11-08): the panel's readout + override
+     toggles, in the same visual family as the rows above. .on marks
+     the ACTIVE choice in gold. The card scrolls (92vh cap above), so
+     these rows stay reachable on short screens (long-pane rule). */
+  #advprops #tc-date { margin:10px 0 4px; font-size:15px; line-height:1.55; color:#ffd75e; }
+  #advprops .tc-label { margin:12px 0 4px; font-size:13px; letter-spacing:1px; color:#9fb4d8; }
+  #advprops .tc-toggles { display:flex; gap:8px; }
+  #advprops .tc-tog { flex:1; padding:10px 6px; font-size:15px; font-weight:bold; border-radius:10px;
+    border:2px solid #444; background:#222836; color:#fff; }
+  #advprops .tc-tog.on { background:#ffd75e; color:#111; border-color:#ffd75e; }
   #adv-zone-list .adv-status { float:right; font-size:13px; font-weight:normal; }
   #advprops #adv-back { margin-top:12px; padding:10px 18px; font-size:15px; border-radius:10px; border:none;
     background:#ffd75e; color:#111; font-weight:bold; width:100%; }
@@ -1100,6 +1110,35 @@ window.SAView = (function(){
   <h3>Advanced Properties</h3>
   <div id="adv-zone-list"></div>
   <button class="row" id="adv-unlock-all">&#128275; Unlock All Zones</button>
+  <!-- TIME CONTROL (Joshua 2026-11-08): his testing panel, inside
+       Advanced Properties behind the 920 passcode. The passcode is
+       checked ONLY by daycycle.js's World Calendar — no passcode text
+       appears in this file. Tapping the row asks through the same
+       #advpass dialog the zones use (target 'TIMECTL', see the wiring
+       below); the controls stay hidden until it opens. The current
+       game DATE lives at the top of the controls (#tc-date) — that
+       is where the calendar date is displayed — and refreshes while
+       the panel is open. Every verb goes through
+       window.__WORLD_CALENDAR (daycycle.js). -->
+  <button class="row" id="tc-open">&#128274; Time Control</button>
+  <div id="tc-body" style="display:none">
+    <div id="tc-date"></div>
+    <button class="row" id="tc-skip30">Skip +30 days</button>
+    <button class="row" id="tc-skip180">Skip +180 days</button>
+    <button class="row" id="tc-jump2">Jump to 2 AM</button>
+    <button class="row" id="tc-jump3">Jump to 3 AM</button>
+    <div class="tc-label">SEASON OVERRIDE</div>
+    <div class="tc-toggles">
+      <button class="tc-tog" id="tc-season-auto">Auto</button>
+      <button class="tc-tog" id="tc-season-winter">Winter</button>
+      <button class="tc-tog" id="tc-season-fall">Fall</button>
+    </div>
+    <div class="tc-label">WEATHER OVERRIDE</div>
+    <div class="tc-toggles">
+      <button class="tc-tog" id="tc-wx-auto">Auto</button>
+      <button class="tc-tog" id="tc-wx-rain">Rainy day</button>
+    </div>
+  </div>
   <button id="adv-back">Back</button>
 </div></div>
 <!-- STEP2 zone password dialog (cloned from #adm-confirm): numeric
@@ -2589,7 +2628,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
    stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.11.08.10';
+window.__DOC_UIVER = '2026.11.08.11';
 /* VER-TAG (ui 2026.11.07.25) >>>
    The on-screen version tag (#ver-tag) shows the version OF THE
    DEPLOYMENT ACTUALLY RUNNING, environment first (Joshua 2026-11-07
@@ -15151,6 +15190,8 @@ function openAdvPass(target){
   var err=document.getElementById('advpass-err');
   if(target==='ALL'){
     if(msg) msg.textContent='Enter the password to unlock ALL zones.';
+  } else if(target==='TIMECTL'){
+    if(msg) msg.textContent='Enter the Time Control passcode.';
   } else {
     var zn=null;
     try{ zn=window.ZoneUnlock?ZoneUnlock.zoneById(target):null; }catch(e){}
@@ -15260,14 +15301,27 @@ document.getElementById('advpass-ok').addEventListener('click', function(){
   var err=document.getElementById('advpass-err');
   var v=input?input.value:'';
   var ok=false;
-  try{
-    if(!window.ZoneUnlock) throw new Error('no zone module');
-    if(advPassTarget==='ALL') ok=ZoneUnlock.tryUnlockAllWithPassword(v);
-    else ok=ZoneUnlock.tryUnlockWithPassword(advPassTarget, v);
-  }catch(e){ ok=false; }
+  if(advPassTarget==='TIMECTL'){
+    // Time Control gate: daycycle.js's World Calendar owns the check
+    // (passcode 920 lives there and nowhere else).
+    try{ ok=!!(window.__WORLD_CALENDAR && window.__WORLD_CALENDAR.checkPasscode(v)); }catch(e){ ok=false; }
+  } else {
+    try{
+      if(!window.ZoneUnlock) throw new Error('no zone module');
+      if(advPassTarget==='ALL') ok=ZoneUnlock.tryUnlockAllWithPassword(v);
+      else ok=ZoneUnlock.tryUnlockWithPassword(advPassTarget, v);
+    }catch(e){ ok=false; }
+  }
   if(ok){
     document.getElementById('advpass').classList.remove('show');
-    renderAdvZones();
+    if(advPassTarget==='TIMECTL'){
+      tcUnlocked=true;
+      var tcb=document.getElementById('tc-body'); if(tcb) tcb.style.display='block';
+      var tco=document.getElementById('tc-open'); if(tco) tco.style.display='none';
+      refreshTimeControl();
+    } else {
+      renderAdvZones();
+    }
   } else {
     if(err) err.textContent='Wrong password.';
     if(input) input.value='';
@@ -15277,6 +15331,70 @@ document.getElementById('advpass-ok').addEventListener('click', function(){
 document.getElementById('advpass-cancel').addEventListener('click', function(){
   document.getElementById('advpass').classList.remove('show');
 });
+
+/* ============ TIME CONTROL (Joshua 2026-11-08) ============
+   His testing panel, inside Advanced Properties. The passcode gate
+   (920) is checked by daycycle.js's World Calendar — this wiring only
+   routes the typed value through the shared #advpass dialog (target
+   'TIMECTL', handled in the advpass-ok listener above) and drives the
+   calendar through window.__WORLD_CALENDAR, which daycycle.js
+   publishes at init. Once the passcode lands, the section stays open
+   for the rest of the session; the overrides themselves persist in
+   the calendar's own store ('sa_timecontrol_v1' in daycycle.js).
+   The current game DATE is displayed at the top of the section
+   (#tc-date) and refreshes while the panel is open. */
+var tcUnlocked=false;
+function refreshTimeControl(){
+  var el=document.getElementById('tc-date');
+  if(!el) return;
+  var cal=window.__WORLD_CALENDAR;
+  if(!cal || !cal.today){
+    el.textContent='Time system is still loading — try again in a moment.';
+    return;
+  }
+  var t=cal.today();
+  function cap(s){ return s.charAt(0).toUpperCase()+s.slice(1); }
+  el.innerHTML='&#128197; '+t.dateText+'<br>Day '+t.dayNum+' &middot; '+t.weekday+
+    '<br>Season: '+cap(t.seasonEffective)+(t.seasonOverride?' (override)':' (auto)')+
+    '<br>Weather: '+cap(t.weather)+(t.weatherOverride?' (override)':' (auto)');
+  function mark(id, on){ var b=document.getElementById(id); if(b) b.classList.toggle('on', !!on); }
+  mark('tc-season-auto', !t.seasonOverride);
+  mark('tc-season-winter', t.seasonOverride==='winter');
+  mark('tc-season-fall', t.seasonOverride==='fall');
+  mark('tc-wx-auto', !t.weatherOverride);
+  mark('tc-wx-rain', t.weatherOverride==='rainy');
+}
+document.getElementById('tc-open').addEventListener('click', function(){
+  if(tcUnlocked){
+    var tcb=document.getElementById('tc-body'); if(tcb) tcb.style.display='block';
+    document.getElementById('tc-open').style.display='none';
+    refreshTimeControl();
+    return;
+  }
+  openAdvPass('TIMECTL');
+});
+function tcWire(id, fn){
+  document.getElementById(id).addEventListener('click', function(){
+    try{ if(window.__WORLD_CALENDAR) fn(window.__WORLD_CALENDAR); }catch(e){}
+    refreshTimeControl();
+  });
+}
+tcWire('tc-skip30', function(cal){ cal.skipDays(30); });
+tcWire('tc-skip180', function(cal){ cal.skipDays(180); });
+tcWire('tc-jump2', function(cal){ cal.jumpToHour(2); });
+tcWire('tc-jump3', function(cal){ cal.jumpToHour(3); });
+tcWire('tc-season-auto', function(cal){ cal.setSeasonOverride(null); });
+tcWire('tc-season-winter', function(cal){ cal.setSeasonOverride('winter'); });
+tcWire('tc-season-fall', function(cal){ cal.setSeasonOverride('fall'); });
+tcWire('tc-wx-auto', function(cal){ cal.setWeatherOverride(null); });
+tcWire('tc-wx-rain', function(cal){ cal.setWeatherOverride('rainy'); });
+// Keep the date/season/weather readout live while the panel is open.
+setInterval(function(){
+  try{
+    var p=document.getElementById('advprops');
+    if(p && p.classList.contains('show') && tcUnlocked) refreshTimeControl();
+  }catch(e){}
+}, 1000);
 /* ============ STEP2 ZONE PICKER (Joshua 2026-10-16) ============
    Called from the New Game button when the player has started a game
    before. Shows a scrollable popup listing EVERY zone from
