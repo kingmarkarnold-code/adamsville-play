@@ -31,10 +31,14 @@
       game's GLB files, a plain dark background. It is NOT the game
       view and never pretends to be.
 
-  HONEST CARDS: the code-built animals (birds, squirrel, chipmunk,
-  butterflies) are built by code inside the game's wildlife module,
-  which only runs inside the full game world and doesn't hand its
-  builders out. They get a truthful card, never a fake render.
+  CODE-BUILT ANIMALS: the birds, squirrel, chipmunk and butterflies
+  are built by code inside the game's wildlife module — there are no
+  model files for them. Since game ui 2026.11.08.10 that module
+  publishes its very own builders as window.__WILDLIFE_BUILDERS, so
+  in "What the game sees" these animals now place FOR REAL, built by
+  the same code that builds the live ones. Only if a game build
+  lacks a builder does an animal fall back to a truthful card —
+  never a fake render.
 
   NOTES: the notes panel posts straight into the Player Reports form —
   the same public form the game itself reports into (addresses copied
@@ -56,6 +60,25 @@
   cards no longer replace the view: their text opens as a pop-up OVER
   the page (this one carries an X to close it), and the game view
   behind it is left exactly as it was.
+
+  PASS 3 (2026-11-08): the nine code-built animals are REAL picks
+  now. Game ui 2026.11.08.10 published window.__WILDLIFE_BUILDERS
+  from wildlife_system.js — per-species bird builders, squirrel,
+  chipmunk, and per-kind butterfly builders, the SAME code that
+  builds the live animals. Picking one places it in the game view
+  with the same recipe the vehicles use. A placed bird FLAPS in
+  place: the builder writes the flight flap (phase 0, amplitude
+  0.7, the species' own flap rate, wings unfolded) and the game's
+  shared shader clock animates it — it flaps like a flying bird
+  rather than perching with folded wings, and the page says so.
+  Butterflies wander around their spot on their own, exactly as
+  they do in the wild (their whole flight is a shader formula).
+  A placed squirrel or chipmunk STANDS STILL: in the live game the
+  creature brain moves them — the model has no motion of its own —
+  and the page says that too, rather than faking a scamper.
+  "Inspect" still can't show these nine: there is no model file
+  to put on the turntable. If a game build ever lacks a builder
+  for one animal, THAT animal alone falls back to the honest card.
   ============================================================================
 -->
 <style>
@@ -257,8 +280,10 @@
     places the asset in its world — when the game updates, this page shows the update.
     "Inspect" is a close-up studio turntable (the game's own three.js and model files,
     plain background) for studying shape — it is not the game view. Code-built animals
-    (birds, squirrel, chipmunk, butterflies) are built by code inside the game, not
-    stored as model files, so they get an honest card instead of a picture.
+    (birds, squirrel, chipmunk, butterflies) have no model files — they are built by
+    code inside the game — so in "What the game sees" the game's own builders place
+    the real animal in front of you, while "Inspect" can't show them; if a game build
+    ever lacks a builder, that one animal falls back to an honest card.
   </footer>
 </div>
 
@@ -355,7 +380,7 @@ const GAME = window.GAME_BASE ||
    hero — index.html installGLBHERO: inner scale 1.88 / 2.008, i.e. the
           hero stands 1.88 units tall. */
 const DEER_H = 1.62, HERO_H = 1.88;
-const VIEWER_VERSION = 'asset-viewer 1.1 (2026-11-08)';
+const VIEWER_VERSION = 'asset-viewer 1.2 (2026-11-08)';
 
 /* Player Reports form — the game's own public form addresses, copied from
    detailed/github-config.js (public by design; the game POSTs there with
@@ -384,38 +409,57 @@ const ROSTER = [
   { id: 'v-van',       name: 'Van',       kind: 'vehicle', vtype: 'van' },
   { id: 'v-boxtruck',  name: 'Box truck', kind: 'vehicle', vtype: 'boxtruck' },
 
-  { group: 'Code-built in the game (honest cards — no model file exists)' },
-  { id: 'c-cardinal', name: 'Bird — Northern Cardinal', kind: 'card',
+  { group: 'Code-built in the game (placed live by the game\u2019s own builders)' },
+  { id: 'c-cardinal', name: 'Bird — Northern Cardinal', kind: 'wildlife',
+    animal: 'bird', species: 'cardinal',
+    note: 'Its wings flap in place — the builder writes a flying bird\u2019s flap, so a placed bird flaps rather than perching with folded wings.',
     facts: ['One of 6 Georgia bird species in wildlife_system.js.',
             'Body length in game: 0.36 units, with a crest.',
             'Birds are drawn as one shared mesh per species; wings flap by a shader formula, not by an animation file.'] },
-  { id: 'c-wren', name: 'Bird — Carolina Wren', kind: 'card',
+  { id: 'c-wren', name: 'Bird — Carolina Wren', kind: 'wildlife',
+    animal: 'bird', species: 'wren',
+    note: 'Its wings flap in place — the builder writes a flying bird\u2019s flap, so a placed bird flaps rather than perching with folded wings.',
     facts: ['One of 6 Georgia bird species in wildlife_system.js.',
             'Body length in game: 0.27 units, tail cocked up.',
             'Its song is synthesised live by the ambient audio system — there is no sound file either.'] },
-  { id: 'c-dove', name: 'Bird — Mourning Dove', kind: 'card',
+  { id: 'c-dove', name: 'Bird — Mourning Dove', kind: 'wildlife',
+    animal: 'bird', species: 'dove',
+    note: 'Its wings flap in place — the builder writes a flying bird\u2019s flap, so a placed bird flaps rather than perching with folded wings.',
     facts: ['One of 6 Georgia bird species in wildlife_system.js.',
             'Body length in game: 0.46 units — the biggest of the six.',
             'Makes its wing-whistle sound when it flushes.'] },
-  { id: 'c-bluebird', name: 'Bird — Eastern Bluebird', kind: 'card',
+  { id: 'c-bluebird', name: 'Bird — Eastern Bluebird', kind: 'wildlife',
+    animal: 'bird', species: 'bluebird',
+    note: 'Its wings flap in place — the builder writes a flying bird\u2019s flap, so a placed bird flaps rather than perching with folded wings.',
     facts: ['One of 6 Georgia bird species in wildlife_system.js.',
             'Body length in game: 0.31 units.'] },
-  { id: 'c-titmouse', name: 'Bird — Tufted Titmouse', kind: 'card',
+  { id: 'c-titmouse', name: 'Bird — Tufted Titmouse', kind: 'wildlife',
+    animal: 'bird', species: 'titmouse',
+    note: 'Its wings flap in place — the builder writes a flying bird\u2019s flap, so a placed bird flaps rather than perching with folded wings.',
     facts: ['One of 6 Georgia bird species in wildlife_system.js.',
             'Body length in game: 0.28 units, with a crest.'] },
-  { id: 'c-thrasher', name: 'Bird — Brown Thrasher', kind: 'card',
+  { id: 'c-thrasher', name: 'Bird — Brown Thrasher', kind: 'wildlife',
+    animal: 'bird', species: 'thrasher',
+    note: 'Its wings flap in place — the builder writes a flying bird\u2019s flap, so a placed bird flaps rather than perching with folded wings.',
     facts: ['Georgia\u2019s state bird. One of 6 bird species in wildlife_system.js.',
             'Body length in game: 0.42 units.',
             'On purpose, it is SEEN but never heard: its song is not synthesised (Joshua\u2019s ruling).'] },
-  { id: 'c-squirrel', name: 'Squirrel', kind: 'card',
+  { id: 'c-squirrel', name: 'Squirrel', kind: 'wildlife',
+    animal: 'squirrel',
+    note: 'A placed squirrel stands still — in the live game the creature brain moves them; the model itself has no walk of its own.',
     facts: ['Built by buildSquirrelGeometry() inside wildlife_system.js.',
             'Brown coat (Joshua\u2019s ruling — the first version was grey).',
             'One merged geometry, cloned for every squirrel in the world.'] },
-  { id: 'c-chipmunk', name: 'Chipmunk', kind: 'card',
+  { id: 'c-chipmunk', name: 'Chipmunk', kind: 'wildlife',
+    animal: 'chipmunk',
+    note: 'A placed chipmunk stands still — in the live game the creature brain moves them; the model itself has no walk of its own.',
     facts: ['Built by buildChipmunkGeometry() inside wildlife_system.js — its own construction, not a shrunk squirrel.',
             'Striped back, built from merged primitives.'] },
-  { id: 'c-butterfly', name: 'Butterflies (6 kinds)', kind: 'card',
+  { id: 'c-butterfly', name: 'Butterflies (6 kinds)', kind: 'wildlife',
+    animal: 'butterfly',
+    note: 'All six kinds at once — they wander around the spot on their own, exactly as they do in the game.',
     facts: ['Monarch · Eastern Tiger Swallowtail · Cloudless Sulphur · Common Buckeye · Cabbage White · Eastern Tailed-Blue.',
+            'In the game view you get all six kinds at once, fluttering around one spot.',
             'Drawn on the GPU as one instanced set; each kind has its own colour and size.',
             'Day-only: they vanish at night, like the real ones.'] },
 ];
@@ -594,10 +638,12 @@ async function setSubject(entry){
   document.getElementById('paint-row').style.display = 'none';
 
   if (entry.kind === 'card'){
-    /* Pass 2 amendment (Joshua): the card's text is a POP-UP over the
-       page. The view behind it — whatever viewEntry is showing, in
-       whichever mode — is not hidden, unloaded or re-placed; closing
-       the pop-up returns to it untouched. */
+    /* Pass 3: no roster entry is a card anymore — the nine code-built
+       animals are real 'wildlife' picks below. This branch survives
+       only as a safety net; the live fallback (a game build without
+       a builder) calls showCardModal directly from GV.place. The
+       pass-2 rule still holds either way: card text is a POP-UP over
+       the page, and the view behind it is never touched. */
     showCardModal(entry);
     return;
   }
@@ -610,23 +656,25 @@ async function setSubject(entry){
   else await GV.place(entry);
 }
 
-/* The honest card, as a pop-up OVER the page (never a view replacement).
-   Same words as the pass-1 card; only the presentation changed. */
+/* The honest card, as a pop-up OVER the page (never a view
+   replacement). Pass 3: this is now the FALLBACK only — it appears
+   when the copy of the game this page booted doesn't expose the
+   builder for the picked animal (an older build, or one still
+   loading). Same pass-2 presentation; the words say what happened. */
 function showCardModal(entry){
   cardBody.innerHTML =
     '<h2>' + entry.name + '</h2>' +
-    '<p class="why">Code-built — no standalone view yet, in either view.</p>' +
+    '<p class="why">Not placeable in the copy of the game this page just booted.</p>' +
     '<p>This animal isn\u2019t a model file. It is built by code inside the ' +
-    'game\u2019s wildlife module (wildlife_system.js) every time the game runs, ' +
-    'and that module only works inside the full game world — it doesn\u2019t ' +
-    'hand its builders out to other pages, so not even the real-game view can ' +
-    'place one on demand. The way to study these is in the game itself, where ' +
-    'they live. Rather than fake a picture with a stand-in model, this card ' +
-    'is the honest answer for now.</p>' +
+    'game\u2019s wildlife module (wildlife_system.js) every time the game runs. ' +
+    'Current game builds hand this page the very builders the game itself uses, ' +
+    'and then this pick places the real animal in the game view. The copy of ' +
+    'the game that just booted doesn\u2019t expose them, so rather than fake a ' +
+    'picture with a stand-in model, this card is the honest answer for this ' +
+    'animal right now.</p>' +
     '<ul>' + entry.facts.map(f => '<li>' + f + '</li>').join('') + '</ul>' +
-    '<p style="margin-top:12px">Want this one viewable on demand? Say so in ' +
-    'the note below — the fix is a small builder handle in the game, a proper ' +
-    'build, not a shortcut.</p>';
+    '<p style="margin-top:12px">Give the game a moment and pick it again — or ' +
+    'say so in the note below if it keeps happening.</p>';
   cardOverlay.hidden = false;
 }
 function closeCardModal(){ cardOverlay.hidden = true; }
@@ -636,6 +684,16 @@ async function setInspectSubject(entry){
   document.getElementById('game-frame').style.display = 'none';
   while (stageGroup.children.length) stageGroup.remove(stageGroup.children[0]);
   subject = null; mixer = null; actions = {}; activeClip = null;
+  if (entry.kind === 'wildlife'){
+    /* Pass 3: these nine exist only as game code — there is no model
+       file to put on the turntable. Say so plainly and leave the
+       stage empty; "What the game sees" is where they live. */
+    deerGroup.visible = false;
+    label.textContent = '🔍 Inspect can\u2019t show ' + entry.name +
+      ' — it exists only as game code, not a model file. Switch to ' +
+      '\u201cWhat the game sees\u201d to meet the real one, placed by the game itself.';
+    return;
+  }
   label.textContent = 'Loading ' + entry.name + ' from the live game…';
   try {
     if (entry.kind === 'vehicle'){
@@ -796,7 +854,7 @@ function avInject(){
     if (window.__avSubject){ try { SC.remove(window.__avSubject); } catch(e){} window.__avSubject = null; }
     if (window.__avMixer){ window.__avMixer = null; window.__avActions = null; }
 
-    var obj = null, clips = null;
+    var obj = null, clips = null, liftY = 0;
     if (cfg.kind === 'vehicle'){
       /* first choice: the game's OWN library assembly */
       var t = 0;
@@ -848,6 +906,67 @@ function avInject(){
         });
         out.via = 'library file assembled in the game (VehicleLibrary not ready yet)';
       }
+    } else if (cfg.kind === 'wildlife'){
+      /* PASS 3: the game's own specimen builders (ui 2026.11.08.10+,
+         window.__WILDLIFE_BUILDERS in wildlife_system.js) — the SAME
+         code that builds the live animals. A bird arrives with its
+         flight flap written (phase 0, amplitude 0.7, the species'
+         flap rate, wings unfolded) and the module's one shared
+         shader clock animates it, so a placed bird flaps in place.
+         Butterflies fly their whole wander in the shader around
+         their anchor. Squirrel/chipmunk are plain meshes — in the
+         live game the creature brain moves them, so a specimen
+         stands still; the page says so, nothing is faked. If this
+         game build doesn't expose the builders (older build), flag
+         it and the page falls back to the honest card for THIS
+         animal only. */
+      var wt = 0;
+      while (!window.__WILDLIFE_BUILDERS && wt < 20){
+        await new Promise(function(r){ setTimeout(r, 500); }); wt++;
+      }
+      var WB = window.__WILDLIFE_BUILDERS;
+      if (!WB){
+        out.error = 'this game build doesn\u2019t expose the wildlife builders';
+        out.wildlifeMissing = true; return out;
+      }
+      if (cfg.animal === 'bird'){
+        var keys = [];
+        try { keys = WB.species(); } catch(e){}
+        if (keys.indexOf(cfg.species) < 0){
+          out.error = 'that bird species is not in this game build';
+          out.wildlifeMissing = true; return out;
+        }
+        obj = WB.bird(cfg.species);
+      } else if (cfg.animal === 'squirrel'){
+        obj = WB.squirrel();
+      } else if (cfg.animal === 'chipmunk'){
+        obj = WB.chipmunk();
+      } else if (cfg.animal === 'butterfly'){
+        /* one pick = all six kinds, fluttering around one spot,
+           each anchored a little apart, as they gather in the game */
+        obj = new THREE.Group();
+        var nk = 6;
+        try { nk = WB.butterflyKinds().length || 6; } catch(e){}
+        for (var bi = 0; bi < nk; bi++){
+          var bf = null;
+          try { bf = WB.butterfly(bi); } catch(e){}
+          if (!bf) continue;
+          var ang = bi / nk * Math.PI * 2;
+          bf.position.set(Math.cos(ang) * 0.8, 0.3 + (bi % 3) * 0.22, Math.sin(ang) * 0.8);
+          obj.add(bf);
+        }
+        if (!obj.children.length){
+          out.error = 'no butterfly kinds in this game build';
+          out.wildlifeMissing = true; return out;
+        }
+        liftY = 0.9;   /* they fly: hover the spot above the ground —
+                          each one wanders ~2 units around its anchor */
+      }
+      if (!obj){
+        out.error = 'the wildlife builder returned nothing';
+        out.wildlifeMissing = true; return out;
+      }
+      out.via = 'the game\u2019s own __WILDLIFE_BUILDERS';
     } else {
       var g2 = await new GLTF.GLTFLoader().loadAsync(cfg.fileUrl);
       obj = SK.clone(g2.scene);
@@ -898,6 +1017,7 @@ function avInject(){
     /* ground-align precisely (vehicle/glb origins sit on their base) */
     var bb = new THREE.Box3().setFromObject(obj);
     obj.position.y -= bb.min.y - sg.h;
+    if (liftY) obj.position.y += liftY;   /* butterflies hover (pass 3) */
     bb = new THREE.Box3().setFromObject(obj);
     var objH = bb.max.y - bb.min.y;
     var tris = 0;
@@ -929,9 +1049,9 @@ function avInject(){
     /* pin the camera at the player's eye, looking at the asset */
     var eyeY = heightAt(px, pz) + 1.7;
     camera.position.set(px, eyeY, pz);
-    camera.lookAt(spot[0], sg.h + objH * 0.52, spot[1]);
+    camera.lookAt(spot[0], sg.h + liftY + objH * 0.52, spot[1]);
     if (camera.updateProjectionMatrix) camera.updateProjectionMatrix();
-    window.__avPlace = { px: px, pz: pz, sx: spot[0], sz: spot[1], gy: sg.h, h: objH, eyeY: eyeY };
+    window.__avPlace = { px: px, pz: pz, sx: spot[0], sz: spot[1], gy: sg.h + liftY, h: objH, eyeY: eyeY };
 
     out.ok = true;
     out.tris = Math.round(tris);
@@ -1011,6 +1131,7 @@ const GV = {
   cfgFor(entry){
     return {
       kind: entry.kind, vtype: entry.vtype || null,
+      animal: entry.animal || null, species: entry.species || null,
       fileUrl: entry.file ? vurl(entry.file) : null,
       libUrl: vurl('vehicle_library.glb'),
       threeUrl: GAME + 'three.module.js',
@@ -1048,7 +1169,15 @@ const GV = {
         label.textContent = '🎮 What the game sees — ' + entry.name +
           ' is in front of you at play distance in the real game (nearest face ~3.1 m) · ' +
           (res.tris ? res.tris.toLocaleString() + ' triangles · ' : '') +
-          (res.height ? res.height.toFixed(2) + ' units tall' : '');
+          (res.height ? res.height.toFixed(2) + ' units tall' : '') +
+          (entry.note ? ' ' + entry.note : '');
+      } else if (res && res.wildlifeMissing){
+        /* Pass 3 fallback: THIS animal alone goes back to its honest
+           card — the game build in the frame has no builder for it. */
+        this.placedSig = null;
+        label.textContent = '🎮 This copy of the game doesn\u2019t expose ' +
+          entry.name + '\u2019s builder — its card is showing instead.';
+        showCardModal(entry);
       } else {
         label.textContent = '🎮 The game view couldn\u2019t place that asset (' +
           (res && res.error ? res.error : 'unknown reason') + ') — Inspect mode still works.';
