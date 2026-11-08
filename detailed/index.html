@@ -1171,7 +1171,14 @@ window.SAView = (function(){
   #inv-panel h3{margin:0 0 12px 0;color:#ffd75e;}
   #inv-list{overflow-y:auto;flex:1;min-height:80px;}
   .inv-row{display:flex;align-items:center;justify-content:space-between;margin:8px 0;padding:12px 14px;
-    font-size:16px;font-weight:bold;border-radius:10px;border:2px solid #444;background:#222836;color:#fff;}
+    font-size:16px;font-weight:bold;border-radius:10px;border:2px solid #444;background:#222836;color:#fff;
+    position:relative;}
+  /* STACKING BADGE (Joshua 2026-11-08): a stacked item shows its count
+     in a badge in the slot's TOP-RIGHT corner. No badge at count 1 —
+     the number appears at 2 and counts up (renderInv enforces). */
+  .inv-badge{position:absolute;top:-8px;right:-8px;min-width:24px;height:24px;border-radius:12px;
+    background:#c9a227;color:#111;font-size:14px;font-weight:bold;display:flex;align-items:center;
+    justify-content:center;padding:0 6px;border:2px solid #161b26;}
   .inv-row button{padding:8px 14px;font-size:14px;font-weight:bold;border-radius:8px;border:2px solid #ff5b5b;
     background:transparent;color:#ff5b5b;}
   .inv-row button:active{background:#3a1e1e;}
@@ -2558,7 +2565,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
    stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.11.08.8';
+window.__DOC_UIVER = '2026.11.08.9';
 /* VER-TAG (ui 2026.11.07.25) >>>
    The on-screen version tag (#ver-tag) shows the version OF THE
    DEPLOYMENT ACTUALLY RUNNING, environment first (Joshua 2026-11-07
@@ -13050,9 +13057,16 @@ function animateHeroGLB(dt){
   if (!R.actions[want]) want = R.actions.Walk ? 'Walk' : 'Idle';
   if (R.actions[want]) setHeroAction(R, want, 0.22);
   if (R.cur) R.cur.setEffectiveTimeScale(ts);
-  var pitchT = _exh ? 0.62 : (player.swimming ? 0.65 * R.swimBlend : 0);
+  /* GOLDEN ROSE BEND-DOWN (2026-11-08): while player.bendT runs, the
+     posture targets become a deep, brief stoop — pitch 1.02 (deeper
+     than the 0.62 exhaustion slump) with a 0.30 hip drop — and ease
+     back out as the timer ends. The code-driven twin of the slump
+     above: no authored 'Pickup' clip exists in hero.glb. Not while
+     swimming (the dive owns the axis there). */
+  var _bendT = (player.bendT>0 && !player.swimming) ? 1 : 0;
+  var pitchT = _bendT ? 1.02 : (_exh ? 0.62 : (player.swimming ? 0.65 * R.swimBlend : 0));
   R.inner.rotation.x += (pitchT - R.inner.rotation.x) * Math.min(1, 6 * dt);
-  var dropT = _exh ? -0.22 : 0;
+  var dropT = _bendT ? -0.30 : (_exh ? -0.22 : 0);
   R.inner.position.y += (dropT - R.inner.position.y) * Math.min(1, 6 * dt);
   R.mixer.update(dt);
 }
@@ -13247,6 +13261,10 @@ function animateHero(dt){
      paths alike, and lapses by itself when he drives (animateHero
      is only called on foot). */
   try{ if (typeof setPersonBlocker==='function') setPersonBlocker('player', player.x, player.z, 0.9); }catch(e){}
+  /* GOLDEN ROSE BEND-DOWN (2026-11-08): player.bendT counts down the
+     seconds of the pickup bend here, once, so both rig paths below
+     simply read it. Set by the rose module's pickup hook. */
+  if (player.bendT>0) player.bendT-=dt;
   var R=player.rig; if(!R) return;
   if (R.kind==='glb'){ heroT+=dt; animateHeroGLB(dt); return; }  /* v2.0: GLB path — the math below drives the primitive fallback rig */
   heroT+=dt;
@@ -13328,6 +13346,15 @@ function animateHero(dt){
       T={ll:0.06,lr:-0.06,kl:0.34,kr:0.34,al:-0.55,ar:-0.55,el:-0.28,er:-0.28,
          bob:-0.10,lean:0.78,sway:0,head:0.40};
     }
+    b=1; ib=0;
+  }
+  /* GOLDEN ROSE BEND-DOWN (2026-11-08, primitive-rig twin of the GLB
+     posture in animateHeroGLB): a deep stoop forced over the cycle
+     while bendT runs — hips dropped, torso leaned far forward, arms
+     reaching down toward the plant, knees soft, head down. */
+  if (player.bendT>0 && !player.swimming){
+    T={ll:0.05,lr:-0.05,kl:0.46,kr:0.46,al:-0.95,ar:-0.95,el:-0.18,er:-0.18,
+       bob:-0.17,lean:1.02,sway:0,head:0.30};
     b=1; ib=0;
   }
   var br=Math.sin(heroT*1.7);
@@ -16923,13 +16950,19 @@ function makePickupMesh(kind){
   }
   return g;
 }
-function spawnPickup(name, kind, x, z){
-  var mesh=makePickupMesh(kind);
+function spawnPickup(name, kind, x, z, meshOverride){
+  /* meshOverride (2026-11-08, golden roses): a caller that builds its
+     own world mesh (the rose module) hands it in; everyone else gets
+     the standard makePickupMesh(kind). */
+  var mesh=meshOverride||makePickupMesh(kind);
   /* v1.35 SNAP-TO-FACE (Joshua 2026-10-11). */
   var _pgy=0; try{ _pgy=(typeof snapToGround==='function'?snapToGround(x,z,1,1,0):heightAt(x,z)); }catch(e){ try{_pgy=heightAt(x,z);}catch(e2){} }
   mesh.position.set(x, _pgy, z);
   scene.add(mesh);
   var p={id:'pk'+Date.now()+Math.floor(Math.random()*99999), name:name, kind:kind, x:x, z:z, mesh:mesh, bob:Math.random()*6.28};
+  /* a planted rose is a PLANT: it does not bob or spin like the loose
+     items do (updatePickups honours noBob). */
+  if (kind==='rose') p.noBob=true;
   pickups.push(p);
   return p;
 }
@@ -16948,15 +16981,36 @@ function doPickup(){
   var p=pendingPickup;
   scene.remove(p.mesh);
   pickups.splice(pickups.indexOf(p),1);
-  inventory.push({id:p.id, name:p.name, kind:p.kind});
+  /* STACKING (Joshua 2026-11-08 — the general rule, golden roses are
+     the case that brought it): items of the same kind stack into ONE
+     inventory slot with a count (n). renderInv draws the count badge
+     in the slot's top-right corner from 2 up; at 1 there is no number.
+     Old saves carry entries without n — read as 1 everywhere. */
+  var _stk=null;
+  for (var _si=0;_si<inventory.length;_si++){
+    if (inventory[_si].kind===p.kind && inventory[_si].name===p.name){ _stk=inventory[_si]; break; }
+  }
+  if (_stk){ _stk.n=(_stk.n||1)+1; }
+  else { inventory.push({id:p.id, name:p.name, kind:p.kind, n:1}); }
   invSave(); renderInv();
+  /* per-kind pickup hook: the golden-rose module runs its bend-down +
+     quest popups off this (published handle, never a bare name). */
+  try{ if (p.kind==='rose' && window.__ROSES && __ROSES.onPicked) __ROSES.onPicked(p); }catch(e){}
   pendingPickup=null;
 }
 function dropItem(idx){
   var it=inventory[idx]; if(!it) return;
-  inventory.splice(idx,1); invSave(); renderInv();
+  /* STACKING: DROP takes ONE unit off the stack; the slot (and its
+     badge) only goes away when the last unit leaves. */
+  if ((it.n||1)>1){ it.n-=1; } else { inventory.splice(idx,1); }
+  invSave(); renderInv();
   var dx=Math.sin(player.yaw)*1.6, dz=Math.cos(player.yaw)*1.6;
-  spawnPickup(it.name, it.kind||'box', player.x+dx, player.z+dz);
+  var _wx=player.x+dx, _wz=player.z+dz;
+  /* golden roses re-plant through their own module: a dropped rose is
+     the intact plant with its shine gone — never the generic box. */
+  var _handled=false;
+  if (it.kind==='rose'){ try{ _handled=!!(window.__ROSES && __ROSES.onDropSpawn && __ROSES.onDropSpawn(_wx,_wz)); }catch(e){} }
+  if (!_handled) spawnPickup(it.name, it.kind||'box', _wx, _wz);
 }
 function renderInv(){
   var list=document.getElementById('inv-list'); if(!list) return;
@@ -16967,6 +17021,9 @@ function renderInv(){
   }
   inventory.forEach(function(it, idx){
     var row=document.createElement('div'); row.className='inv-row';
+    /* STACKING BADGE: count in the slot's top-right corner, only from
+       2 up — at 1 there is NO number (Joshua's rule). */
+    if ((it.n||1)>1){ var bd=document.createElement('span'); bd.className='inv-badge'; bd.textContent=(it.n||1); row.appendChild(bd); }
     var nm=document.createElement('span'); nm.textContent=it.name; row.appendChild(nm);
     var db=document.createElement('button'); db.textContent='DROP';
     db.addEventListener('click', function(ev){ ev.stopPropagation(); dropItem(idx); });
@@ -16990,6 +17047,7 @@ function updatePickups(dt){
      proximity collect here. */
   for (var i=0;i<pickups.length;i++){
     var p=pickups[i];
+    if (p.noBob){ p.mesh.position.y=heightAt(p.x,p.z); continue; }
     p.bob+=dt*2;
     p.mesh.rotation.y+=dt*0.8;
     p.mesh.position.y=heightAt(p.x,p.z)+Math.sin(p.bob)*0.06;
@@ -17884,6 +17942,13 @@ try{
   pub('showToast', function(){ return showToast; }, function(v){ try{ showToast=v; }catch(e){} });
   pub('xz', function(){ return xz; }, function(v){ try{ xz=v; }catch(e){} });
   pub('__tryStartGame', function(){ return __tryStartGame; }, function(v){ try{ __tryStartGame=v; }catch(e){} });
+  /* GOLDEN ROSES (2026-11-08): the quest module lives outside this
+     eval block, so the pickup system it builds on is published like
+     everything else on this surface — spawnPickup (with the new
+     meshOverride), the live pickups list, and the live inventory. */
+  pub('spawnPickup', function(){ return spawnPickup; }, function(v){ try{ spawnPickup=v; }catch(e){} });
+  pub('pickups', function(){ return pickups; }, function(v){ try{ pickups=v; }catch(e){} });
+  pub('inventory', function(){ return inventory; }, function(v){ try{ inventory=v; }catch(e){} });
   pub('mulberry32', function(){ return mulberry32; }, function(v){ try{ mulberry32=v; }catch(e){} });
   pub('box', function(){ return box; }, function(v){ try{ box=v; }catch(e){} });
   pub('addSegCollider', function(){ return addSegCollider; }, function(v){ try{ addSegCollider=v; }catch(e){} });
@@ -17891,7 +17956,7 @@ try{
   pub('addBldgCollider', function(){ return addBldgCollider; }, function(v){ try{ addBldgCollider=v; }catch(e){} });
   pub('placeStruct', function(){ return placeStruct; }, function(v){ try{ placeStruct=v; }catch(e){} });
   pub('resolveCollision', function(){ return resolveCollision; }, function(v){ try{ resolveCollision=v; }catch(e){} });
-  window.__worldPublished = 61;
+  window.__worldPublished = 64;
 })();
 
 /* ===== v1.68 BOOT SELF-REPORT (2026-10-18, Joshua's failure philosophy) =====
@@ -18466,6 +18531,7 @@ function __tryStartGame(){
 <script data-dsrc="wildlife_system.js" data-dkey=""></script> <!-- WILDLIFE (Joshua 2026-11-07) — Georgia birds/mammals/deer/butterflies on the fish streaming pattern; positional song through the ambient master. Defensive: no-op if package data is missing. -->
 <script data-dsrc="body_systems.js" data-dkey=""></script> <!-- BODY SYSTEMS (Joshua 2026-11-07) — the player's own damage meter (tree/boulder bumps + vehicle crashes: staged green/yellow/red bar, slow at 50, at 100 energy spent + slow-walk cap with standing-still healing — 16:00 rule) + the fatigue reserve (land run + swim arms, one shared reserve). Feeds on crashlog's accepted bumps and crash_model's impact feed; updatePlayer consults it for the speed caps. Defensive: no-op if game globals are missing. -->
 <script data-dsrc="dive_system.js" data-dkey=""></script> <!-- DIVE SYSTEM (Joshua 2026-11-07, ui 2026.11.07.24) — the full dive: inverted swim axis (push up = dive down, no dive button), depth gated by the game's own depth data, camera pitch + sink hooks in updatePlayer/updateCamera, the breath meter (2 game-minutes, forced resurface + float rest through __BODY), the breath bar (a .23-law HUD control), and the underwater fog/colour grade. Defensive: no-op if game globals are missing. -->
+<script data-dsrc="golden_roses.js" data-dkey=""></script> <!-- GOLDEN ROSES — THE QUEST (Joshua 2026-11-08) — ten golden roses steer beta testers to the places he wants tested: the v3 golden rose (whole plant gold, per-piece shades, bloom emission shine on the LIVING planted rose only) planted at SEVEN named sites (Dollar Mill first, Chattahoochee, Tatum Lake, Harper-Archer, Hamilton Homes, MLK x Fairburn, MLK x Fulton Industrial; sites 8-10 are Joshua's to name). Walking over a planted rose tramples it; it regrows in ONE GAME HOUR. Pickup = ACTION "Pick up" + a bend-down; first pickup explains the quest (popup closes by world-touch OR its X), later pickups show "N of 10". Builds only on the PUBLISHED world surface (spawnPickup/pickups/inventory). -->
 <script data-dsrc="crash_model.js" data-dkey=""></script> <!-- CRASH MODEL (Joshua 2026-11-07) — vehicle crashes damage the CAR and the PLAYER by impact speed x what was hit (identified by the game's own collision diagnostics): 35 mph into a building damages the car; 125 mph into a building totals it, maxes the player's HEALTH and leaves him stuck in the car for two game-minutes. Feeds the existing stores only (addDamage / __BODY.addCrashDamage). Defensive: no-op if game globals are missing. -->
 <!-- ===== INLINE SCRIPT BLOCK 3: final placement audit (v2.0 - Joshua's
      automatic check) ===== Runs ONCE, after EVERY building system has loaded
