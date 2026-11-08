@@ -21,6 +21,40 @@
    by construction, on every input family. diveSampleFwd() survives
    only as a fallback for a caller that passes no demand.
 
+   ui 2026.11.08.3 FIX (Joshua 2026-11-07 22:25, on ui 2026.11.08.2:
+   "I'm still unable to dive in the water... And swim underwater."):
+   the DEPTH GATE was dead on every real stream. diveDepthUAt()'s
+   units repair — the branch that converts a profiled stream's
+   surveyed surface-minus-bed gap from terrain-Y units to true
+   metres — was guarded on `typeof pkgStreamYAt === 'function'`
+   (plus streamSpan / distToPolyline). Those three helpers live
+   inside index.html's indirect-eval scope and were never on its
+   __publishWorldSurface list, so from THIS module they are
+   'undefined' in production and the branch never ran — silently,
+   because the guard made the skip look intentional. The river's
+   envelope therefore stayed at waterDepthAt()'s raw answer
+   (~1.57 terrain-Y units at the surveyed 3.6 m channel), and
+   maxDive collapsed to ~0.2u: the head never went under
+   (HEAD_UNDER_U is 0.35), breath never drained, and the dive read
+   as "not there" on the Chattahoochee everywhere. The .26 harness
+   could not see it because its composition evaluated the core
+   block in the same context as this module, where the helpers
+   ARE globals. Proven in a real headless boot of the shipped
+   build (fixes-2026-11-07-divelive): the guards read
+   pkgStreamYAt/streamSpan/distToPolyline = 'undefined', the
+   deepest stem station's waterDepthAt = 1.658, and a held W at
+   the Nov-1 station capped depth at 0.175u. THE FIX: this module
+   now carries its own faithful copies of the three tiny geometry
+   helpers, run over the PUBLISHED WATER data (the entries carry
+   river/profYs/widths), so the conversion executes in production
+   exactly as designed — the Chattahoochee's 3.6 m channel now
+   yields maxDive ~2.24u, as the .24/.26 harnesses always
+   measured in their compositions. Lakes were never affected
+   (their branch of waterDepthAt already returns person units).
+   The same pass adds the 'dive' Report readout (module version +
+   live chain values) so any future device-side divergence is
+   visible in Joshua's next Player Report instead of invisible.
+
    THE THREE PIECES:
    1. SEE-IN WATER — lives in index.html's pwWaterMat (the package water
       sheets are now transparent + double-sided with a tuned opacity);
@@ -128,6 +162,13 @@ var DIVE_C = {
   CAM_PITCH_Y: 2.6
 };
 
+/* This module's build stamp (ui 2026.11.08.3): carried on window.__DIVE
+   and in every 'dive' Report readout, so a Player Report shows WHICH
+   dive module actually ran on the device — a stale or missing module
+   (the deferred loader skips this file silently: its script tag has
+   an empty data-dkey) can never again masquerade as a wiring bug. */
+var DIVE_MODULE_VERSION = '2026.11.08.3';
+
 /* Breath bar colour staging (Joshua's progression): BLUE = oxygen,
    full and healthy; YELLOW = warning; RED = nearly out. */
 function breathColor(b){
@@ -222,7 +263,8 @@ function createDiveCore(){
 /* Test seam (the body_systems pattern): the pass harness loads this
    file with stubbed globals and drives the core directly. */
 if (typeof window !== 'undefined'){
-  window.__DIVE_CORE = { create: createDiveCore, C: DIVE_C, breathColor: breathColor };
+  window.__DIVE_CORE = { create: createDiveCore, C: DIVE_C, breathColor: breathColor,
+                         version: DIVE_MODULE_VERSION };
 }
 
 /* ============================================================================
@@ -232,6 +274,13 @@ if (typeof window !== 'undefined'){
 if (typeof document === 'undefined' || typeof window === 'undefined') return;
 
 var diveCore = createDiveCore();
+
+/* Last live chain values swimY computed (ui 2026.11.08.3 telemetry):
+   the report readout below republishes these ~1 Hz while swimming,
+   so a Player Report from a failing device shows exactly where the
+   chain stood — demand (fwd), envelope (maxD), lock (restLocked),
+   and whether the water level read null (wlNull). */
+var diveTele = { fwd: 0, maxD: 0, restLocked: false, wlNull: false };
 
 /* --- game-minute clock (the bodyTick pattern: WorldClock deltas with
    a sane-frame guard, documented fallback rate) ---------------------- */
@@ -275,26 +324,78 @@ function diveSampleFwd(){
   return -raw;   /* forward reads negative in every source above */
 }
 
+/* --- stream geometry helpers (ui 2026.11.08.3): faithful local
+   copies of index.html's distToPolyline / streamSpan / pkgStreamYAt.
+   The originals live inside index.html's indirect-eval scope and
+   are NOT published to window, so this module can never call them
+   in production (that invisibility is what killed the .24 depth
+   conversion — see the header). The math below is the same math,
+   run over the same PUBLISHED WATER entries (river pts, profYs,
+   widths all ride the entries themselves). If index.html's versions
+   ever change semantics, these must change with them. ------------ */
+function diveDistToPolyline(pts, x, z){
+  if (!pts || pts.length < 2) return 1e9;
+  var best = 1e9;
+  for (var i = 0; i < pts.length - 1; i++){
+    var ax = pts[i][0], az = pts[i][1], bx = pts[i + 1][0], bz = pts[i + 1][1];
+    var vx = bx - ax, vz = bz - az, len2 = vx * vx + vz * vz;
+    var t = len2 > 0 ? ((x - ax) * vx + (z - az) * vz) / len2 : 0;
+    t = Math.max(0, Math.min(1, t));
+    var ddx = x - (ax + vx * t), ddz = z - (az + vz * t);
+    var d = Math.sqrt(ddx * ddx + ddz * ddz);
+    if (d < best) best = d;
+  }
+  return best;
+}
+function diveStreamSpan(w, x, z){
+  var pts = w.river, ws = w.widths, best = 1e9, hw = (w.width || 30) / 2;
+  for (var i = 0; i < pts.length - 1; i++){
+    var ax = pts[i][0], az = pts[i][1], bx = pts[i + 1][0], bz = pts[i + 1][1];
+    var vx = bx - ax, vz = bz - az, len2 = vx * vx + vz * vz;
+    var t = len2 > 0 ? ((x - ax) * vx + (z - az) * vz) / len2 : 0;
+    t = t < 0 ? 0 : (t > 1 ? 1 : t);
+    var dx = x - (ax + vx * t), dz = z - (az + vz * t);
+    var d = Math.sqrt(dx * dx + dz * dz);
+    if (d < best){ best = d; if (ws) hw = (ws[i] + (ws[i + 1] - ws[i]) * t) / 2; }
+  }
+  return { d: best, hw: hw };
+}
+function diveStreamSurfaceY(w, x, z){
+  var pts = w.river, ys = w.profYs, best = 1e18, by = null;
+  for (var i = 0; i < pts.length - 1; i++){
+    var ax = pts[i][0], az = pts[i][1], bx = pts[i + 1][0], bz = pts[i + 1][1];
+    var abx = bx - ax, abz = bz - az, l2 = abx * abx + abz * abz || 1;
+    var tt = ((x - ax) * abx + (z - az) * abz) / l2;
+    tt = tt < 0 ? 0 : (tt > 1 ? 1 : tt);
+    var dx = x - (ax + abx * tt), dz = z - (az + abz * tt), d2 = dx * dx + dz * dz;
+    if (d2 < best){ best = d2; by = ys[i] + (ys[i + 1] - ys[i]) * tt; }
+  }
+  return by;
+}
+
 /* --- the depth envelope's depth truth (see the header): waterDepthAt
    with its profiled-stream branch converted from terrain-Y units to
-   true metres. Everything else is waterDepthAt's own answer. -------- */
+   true metres. Everything else is waterDepthAt's own answer.
+   ui 2026.11.08.3: the conversion now runs on the local helpers
+   above (the index.html originals are unreachable from here — see
+   the header). Guards remain only on the PUBLISHED surface this
+   module has always used (waterDepthAt / WATER / heightAt). ------ */
 function diveDepthUAt(x, z){
   try{
     if (typeof waterDepthAt !== 'function') return 0;
     var d = waterDepthAt(x, z);
-    if (typeof WATER !== 'undefined' && typeof pkgStreamYAt === 'function' &&
-        typeof heightAt === 'function'){
+    if (typeof WATER !== 'undefined' && typeof heightAt === 'function'){
       for (var i = 0; i < WATER.length; i++){
         var w = WATER[i];
         if (!w.river || !w.profYs) continue;
         var rd = 1e18, hw = (w.width || 30) / 2;
-        if (w.widths && typeof streamSpan === 'function'){
-          var sp = streamSpan(w, x, z); rd = sp.d; hw = sp.hw;
-        } else if (typeof distToPolyline === 'function'){
-          rd = distToPolyline(w.river, x, z);
+        if (w.widths){
+          var sp = diveStreamSpan(w, x, z); rd = sp.d; hw = sp.hw;
+        } else {
+          rd = diveDistToPolyline(w.river, x, z);
         }
         if (rd < hw){
-          var sy = pkgStreamYAt(w, x, z);
+          var sy = diveStreamSurfaceY(w, x, z);
           if (sy !== null){
             var bedY = heightAt(x, z);
             var dm;
@@ -330,6 +431,7 @@ function diveDepthUAt(x, z){
 window.__DIVE = {
   core: diveCore,
   C: DIVE_C,
+  version: DIVE_MODULE_VERSION,
   swimY: function(dtSec, gy, wl, sub, mvzIn, ikIn){
     try{
       if (typeof player === 'undefined' || !player || !player.swimming) return gy;
@@ -357,6 +459,11 @@ window.__DIVE = {
       } else {
         fwd = diveSampleFwd();
       }
+      /* telemetry stash (ui 2026.11.08.3): the readout below
+         republishes these so a report carries the live chain */
+      diveTele.fwd = fwd; diveTele.maxD = maxD;
+      diveTele.restLocked = restLocked;
+      diveTele.wlNull = (wl === null || wl === undefined);
       var ev = diveCore.tick(diveGMin(dtSec), dtSec, {
         swimming: true, fwd: fwd,
         maxDepthU: maxD, restLocked: restLocked
@@ -385,6 +492,39 @@ window.__DIVE = {
     }catch(e){ return null; }
   }
 };
+
+/* --- report telemetry (ui 2026.11.08.3) --------------------------------
+   Publishes the 'dive' readout into the report system: once at load
+   (so divePresent + the module version ride EVERY report, even one
+   filed on land) and ~1 Hz while swimming (the live chain values
+   swimY last computed). Tiny and guarded throughout: no Report, no
+   player, no cost. If a future device-side failure differs from
+   every harness again, Joshua's next Player Report carries the
+   chain's own testimony instead of another round of guessing. ----- */
+function divePublishReport(){
+  try{
+    if (typeof Report === 'undefined' || !Report.setSys) return;
+    var swimming = false;
+    try{ swimming = !!(typeof player !== 'undefined' && player && player.swimming); }catch(e){}
+    Report.setSys('dive', {
+      v: DIVE_MODULE_VERSION,
+      divePresent: true,
+      swimming: swimming,
+      fwd: +diveTele.fwd.toFixed(3),
+      maxD: +diveTele.maxD.toFixed(3),
+      depth: +diveCore.state.depth.toFixed(3),
+      breath: +diveCore.state.breath.toFixed(1),
+      restLocked: !!diveTele.restLocked,
+      wlNull: !!diveTele.wlNull
+    });
+  }catch(e){}
+}
+divePublishReport();
+setInterval(function(){
+  try{
+    if (typeof player !== 'undefined' && player && player.swimming) divePublishReport();
+  }catch(e){}
+}, 1000);
 
 /* --- breath HUD ---------------------------------------------------------
    One row, styled like the body bars (same pill, same 10px bar). Built

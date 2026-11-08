@@ -49,9 +49,9 @@
     },
     {
       "name": "dive_system.js",
-      "size": 25161,
-      "sha256": "5fd565dc8247af3c7ed45c1066992e396bce00aa5633fc9072b048c77cb06059",
-      "hash": "5fd565dc8247af3c7ed45c1066992e396bce00aa5633fc9072b048c77cb06059"
+      "size": 32214,
+      "sha256": "fd1126f03926dd2f2615227ffbf80198359481bd1e4c8c8d900090bbc3bb283b",
+      "hash": "fd1126f03926dd2f2615227ffbf80198359481bd1e4c8c8d900090bbc3bb283b"
     },
     {
       "name": "clothing_system.js",
@@ -166,8 +166,8 @@
     {
       "name": "index.html",
       "size": 1279825,
-      "sha256": "67ca6d31003dafc6e6381b16c3a061dab2389bde2ed0e3e3573ec6cde6c02f77",
-      "hash": "67ca6d31003dafc6e6381b16c3a061dab2389bde2ed0e3e3573ec6cde6c02f77"
+      "sha256": "e57f7da97e84262867753c2cfa404521721ca96b9721c904dda949cd97d56def",
+      "hash": "e57f7da97e84262867753c2cfa404521721ca96b9721c904dda949cd97d56def"
     },
     {
       "name": "input_diag.js",
@@ -684,6 +684,6 @@
       "hash": "20b983ae0e2e555817495a65c37519bfcb2231825269db6a57d72c51ed6006e3"
     }
   ],
-  "ui_version": "2026.11.08.2",
+  "ui_version": "2026.11.08.3",
   "version": "2026.10.17.9"
 }
