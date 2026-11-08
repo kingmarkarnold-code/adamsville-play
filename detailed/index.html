@@ -663,7 +663,14 @@ if (location.protocol === 'file:'){ setTimeout(function(){ if (!window.__threeMo
     box-shadow:0 0 28px rgba(57,255,106,.55);flex-shrink:0;}
   #load-bottom{width:100%;display:flex;flex-direction:column;align-items:center;padding:0 8px;
     box-sizing:border-box;}
-  #load-bar{width:min(88%,420px);height:14px;border:2px solid #39ff6a;border-radius:8px;overflow:hidden;}
+  #load-bar{width:min(88%,420px);height:14px;border:2px solid #39ff6a;border-radius:8px;overflow:hidden;position:relative;}
+  /* GET READY SWEEP (2026-11-08, Joshua): during the ten-second entry
+     settle, neon green sweeps left-to-right COVERING the full blue
+     bar; entry happens when the cover completes. The sweep is an
+     overlay inside the bar (the bar clips it); the blue fill stays
+     at 100% underneath the whole time. */
+  #load-sweep{position:absolute;left:0;top:0;height:100%;width:0%;background:#39ff14;
+    box-shadow:0 0 12px #39ff14;pointer-events:none;}
   #load-fill{height:100%;width:0%;background:#39ff6a;box-shadow:0 0 12px #39ff6a;transition:width .2s;}
   /* v1.16 TWO-PHASE BAR (Joshua 2026-10-10): blue = downloading, green = parsing.
      The bar color tells the user which phase they're in at a glance. */
@@ -1262,7 +1269,7 @@ window.SAView = (function(){
   <div id="load-title">SURVIVING ADAMSVILLE</div>
   <img id="load-icon" src="icon.png" alt="Surviving Adamsville">
   <div id="load-bottom">
-    <div id="load-bar" class="phase-download"><div id="load-fill"></div></div>
+    <div id="load-bar" class="phase-download"><div id="load-fill"></div><div id="load-sweep"></div></div>
     <div id="load-pct" class="phase-download">0%</div>
     <div id="load-status" class="phase-download">Loading...</div>
     <div id="load-detail"></div>
@@ -1476,8 +1483,78 @@ window.__beginEntryDelay = function(){
     setTimeout(function(){
       try{ if (typeof __tryStartGame === 'function') __tryStartGame(); }catch(e){}
     }, window.__ENTRY_DELAY_MS);
+    /* GET READY FACE (2026-11-08, Joshua): the settle gets its own
+       face — see __startGetReadyFace below. */
+    try{ __startGetReadyFace(); }catch(e){}
   }catch(e){}
 };
+/* ===== GET READY FACE + SETTLE PRE-GROW (2026-11-08, Joshua) =====
+   His design: the moment the real (blue) bar reaches 100%, the
+   information text under the bar DISAPPEARS, the words "Get Ready"
+   appear in its place, the blue bar STAYS at 100%, and neon green
+   sweeps left-to-right covering the blue across exactly the
+   ten-second settle (__ENTRY_DELAY_MS, unchanged); when the green
+   covers the bar, the player enters (the settle timer above does
+   the entering — this face only paints). SUCCESS PATH ONLY: when a
+   critical load failure is on record, the face is left exactly as
+   it was (the critical panel + RETRY own that path, untouched).
+   The same rAF loop is the settle's workhorse for the PRE-GROW
+   (Part 5): about three times a second it asks block 2 to run the
+   funnel's frontier build centred on the landing spot, so the
+   start area is fully built at entry. The loop re-asserts the face
+   every frame because two late writers (the 'Ready' flip in
+   __loadStep, __tryStartGame's settle branch) would otherwise
+   overwrite it during the settle. It stops when the game starts,
+   and in any case 90 s after the settle began. */
+window.__getReady = { active:false };
+function __startGetReadyFace(){
+  try{ if (window.__criticalFailed && window.__criticalFailed.length) return; }catch(e){}
+  var bar=document.getElementById('load-bar'), fill=document.getElementById('load-fill');
+  if (!bar || !fill) return;
+  var dt=document.getElementById('load-detail'), st=document.getElementById('load-status'),
+      pc=document.getElementById('load-pct');
+  var sweep=document.getElementById('load-sweep');
+  if (!sweep){ sweep=document.createElement('div'); sweep.id='load-sweep'; bar.appendChild(sweep); }
+  try{ __setLoadPhase('download'); }catch(e){}   /* the blue bar, full */
+  fill.style.width='100%';
+  if (pc) pc.textContent='100%';
+  if (dt) dt.textContent='';
+  if (st){ st.textContent='Get Ready'; st.style.opacity='1'; }
+  window.__getReady.active=true;
+  /* SETTLE DRIVE (2026-11-08): while the settle runs, drive the
+     funnel on a 50 ms timer at bucket width (30 ms slices). Frame
+     rate no longer gates the start area's build; the sweep (a style
+     write on rAF) still gets the thread between drives. The timer
+     dies with the face — at entry the funnel returns to its ruled
+     4.0 ms frame budget, untouched. */
+  if (!window.__getReady.driveTimer){
+    window.__getReady.driveTimer=setInterval(function(){
+      if (!window.__getReady.active){
+        clearInterval(window.__getReady.driveTimer); window.__getReady.driveTimer=0; return;
+      }
+      try{ if (window.__FUNNEL && window.__FUNNEL.drive) window.__FUNNEL.drive(30); }catch(e){}
+    }, 50);
+  }
+  var t0=window.__loadCompletedAt, lastPre=0;
+  var step=function(){
+    if (!window.__getReady.active) return;
+    var now=Date.now();
+    if (window.__gameStarted || now-t0 > window.__ENTRY_DELAY_MS + 90000){
+      window.__getReady.active=false; return;
+    }
+    var frac=Math.min(1, Math.max(0, (now-t0)/window.__ENTRY_DELAY_MS));
+    sweep.style.width=(frac*100)+'%';
+    if (dt && dt.textContent) dt.textContent='';
+    if (st && st.textContent!=='Get Ready'){ st.textContent='Get Ready'; st.style.opacity='1'; }
+    if (fill.style.width!=='100%') fill.style.width='100%';
+    if (now-lastPre>=330){
+      lastPre=now;
+      try{ if (typeof window.__saPregrowSettle==='function') window.__saPregrowSettle(); }catch(e){}
+    }
+    requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
 function __loadStep(key,failed){
   /* LAUNCH REDESIGN (2026-11-07): the first real load step means
      downloads are genuinely under way — NOW LOADING hands off to
@@ -2481,7 +2558,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
    stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.11.08.6';
+window.__DOC_UIVER = '2026.11.08.8';
 /* VER-TAG (ui 2026.11.07.25) >>>
    The on-screen version tag (#ver-tag) shows the version OF THE
    DEPLOYMENT ACTUALLY RUNNING, environment first (Joshua 2026-11-07
@@ -5960,21 +6037,25 @@ try{ __wbStage('terrain'); }catch(e){}
       requestAnimationFrame(pump);
     else setTimeout(pump, 16);
   }
-  function pump(){
-    pumpArmed = false;
+  function runSlices(budgetMs){
     var t0 = nowMs();
     while (queue.length){
       var job = queue[0];
       if (job.cancelled){ queue.shift(); stats.cancelled++; continue; }
       var s0 = nowMs(), done = false;
-      try { done = (job.step(function(){ return nowMs() - t0 >= FUNNEL_BUDGET_MS; }) === true); }
+      try { done = (job.step(function(){ return nowMs() - t0 >= budgetMs; }) === true); }
       catch(e){ done = true; stats.dropped++; }
       var sMs = nowMs() - s0;
       stats.slices++; stats.spentMs += sMs;
       if (sMs > stats.maxSliceMs) stats.maxSliceMs = sMs;
       if (done){ queue.shift(); stats.completed++; }
-      if (nowMs() - t0 >= FUNNEL_BUDGET_MS) break;
+      if (nowMs() - t0 >= budgetMs) break;
     }
+    return queue.length;
+  }
+  function pump(){
+    pumpArmed = false;
+    runSlices(FUNNEL_BUDGET_MS);
     if (queue.length) arm();
   }
   window.__FUNNEL = {
@@ -5986,6 +6067,22 @@ try{ __wbStage('terrain'); }catch(e){}
       return job;
     },
     resort: function(cmp){ if (queue.length > 1) queue.sort(cmp); },
+    /* SETTLE DRIVE (2026-11-08): run the same slice loop NOW, with a
+       caller-chosen budget, outside the frame pump. The loader's
+       Get Ready loop drives the funnel on a timer during the
+       ten-second settle — the one stretch of the game's life where
+       no gameplay frame exists to protect, so for those seconds the
+       funnel runs at bucket width instead of flask width (Joshua's
+       funnel image, 2026-11-08). Identical queue, identical jobs,
+       identical order and verdicts — only WHEN slices run changes,
+       which is the funnel's own charter. In play, nothing calls
+       this: the 4.0 ms frame budget stands as ruled. */
+    drive: function(ms){
+      if (!(typeof ms === 'number' && ms > 0)) return queue.length;
+      var left = runSlices(ms);
+      if (left) arm();   /* keep the frame pump warm behind the drive */
+      return left;
+    },
     pending: function(){ return queue.length; },
     stats: function(){
       return { submitted: stats.submitted, completed: stats.completed,
@@ -6067,6 +6164,37 @@ try{ __wbStage('terrain'); }catch(e){}
        takes the same rule in broad-phase form (buildTreeBond-
        Raster). No tree bonds to water, road surface, a building
        ring, a rail corridor, or any other claimed material. */
+/* LANDING SPOT (2026-11-08): where the player will actually BE when
+   the game starts — the answer the settle pre-grow (below) centres
+   on. Sources, in the order the game itself honours them at entry:
+   (1) the UI-update resume stash (sa_ui_update_resume), judged with
+   block 1's own trust windows (10 minutes, 12 hours for auto
+   stashes) — UIUpdateFlow.maybeRestore() places the player there;
+   (2) the hot-reload restore slot, when its flag is set —
+   HR.maybeRestore() loads it; (3) the player's current spot, which
+   for a new game is the 535 spawn. Returns null when nothing can
+   be known yet. */
+window.__saLandingSpot = function(){
+  try{
+    var raw=null; try{ raw=localStorage.getItem('sa_ui_update_resume'); }catch(e){}
+    var s=null; try{ s=raw?JSON.parse(raw):null; }catch(e){}
+    if (s && s.kind==='ui-update' && typeof s.t==='number' && s.player &&
+        isFinite(s.player.x) && isFinite(s.player.z)){
+      var lim = s.auto ? 12*60*60*1000 : 10*60*1000;
+      if ((Date.now()-s.t) < lim) return { x:s.player.x, z:s.player.z, src:'ui-update-resume' };
+    }
+  }catch(e){}
+  try{
+    if (localStorage.getItem('sa_hr_restore')==='1'){
+      var slot=null; try{ slot=JSON.parse(localStorage.getItem('sa_save_hr_update')||'null'); }catch(e){}
+      var p = slot && (slot.player || slot);
+      if (p && isFinite(p.x) && isFinite(p.z)) return { x:p.x, z:p.z, src:'hr-slot' };
+    }
+  }catch(e){}
+  try{ if (typeof player!=='undefined' && player && isFinite(player.x) && isFinite(player.z))
+    return { x:player.x, z:player.z, src:'spawn' }; }catch(e){}
+  return null;
+};
 (function buildPkgTrees(){
   if (!window.__PKG_PARTIAL || !window.__PKG_CANOPY) return;
   var C = window.__PKG_CANOPY, MF = window.MapFrame;
@@ -6427,7 +6555,14 @@ try{ __wbStage('terrain'); }catch(e){}
       if (job.cancelled){ delete tileWork[job.key]; return true; }
       if (job.rr > job.rr1){ finishTileJob(job); return true; }
       if (job.k < 0){
-        /* enter cell (rr, cc): cover decides how many anchors it holds */
+        /* enter cell (rr, cc): cover decides how many anchors it holds.
+           YIELD CHECK (2026-11-08): a tile crossing many anchorless
+           cells (water, road, bare ground) used to grind through all
+           of them inside one slice — measured slices of 72 ms against
+           a 4 ms budget, a hitch by the game's own no-hitch law. The
+           cursor state (k = -1, rr/cc) is untouched by yielding here,
+           so the funnel resumes this exact cell next slice. */
+        if (yieldNow()) return false;
         var cov = C.cover[job.rr * C.cols + job.cc];
         job.cellN = 0; job.cellF = 0;
         if (cov >= THR){
@@ -6502,11 +6637,22 @@ try{ __wbStage('terrain'); }catch(e){}
     scene.add(mesh);
     tiles[key].mesh = mesh;
   }
-  function tick(){
+  function tick(pgx, pgz){
     try {
-      if (!window.__gameStarted || typeof player === 'undefined' || !player) return;
-      var px = player.x, pz = player.z, ix, iz;
-      if (window.__PKG_CANOPY_HOLE){
+      /* SETTLE PRE-GROW (2026-11-08, Joshua): with an explicit centre
+         this is the same frontier build, run BEFORE the game starts —
+         the loader's Get Ready loop calls it (via __saPregrowSettle)
+         centred on the landing spot, so the start area is fully
+         built when the player enters. Without a centre it is the
+         shipped post-entry tick, unchanged: gated on __gameStarted,
+         centred on the player. The canopy hole follows the PLAYER,
+         never the pre-grow centre; the kill passes are skipped on a
+         pre-grow pass (nothing may be dropped before entry — the
+         first post-entry tick resumes full duty). */
+      var pregrow = (typeof pgx === 'number' && isFinite(pgx) && typeof pgz === 'number' && isFinite(pgz));
+      if (!pregrow && (!window.__gameStarted || typeof player === 'undefined' || !player)) return;
+      var px = pregrow ? pgx : player.x, pz = pregrow ? pgz : player.z, ix, iz;
+      if (!pregrow && window.__PKG_CANOPY_HOLE){
         window.__PKG_CANOPY_HOLE.c.value.set(px, pz);
         window.__PKG_CANOPY_HOLE.r.value = HOLE_R;
       }
@@ -6553,8 +6699,9 @@ try{ __wbStage('terrain'); }catch(e){}
       }
       /* cancel in-flight builds the player has left behind: their
          partial arrays are discarded and the tile is never claimed —
-         the funnel honours `cancelled` at the next slice boundary */
-      for (var ck in tileWork){
+         the funnel honours `cancelled` at the next slice boundary.
+         Skipped on a pre-grow pass (see the tick header). */
+      if (!pregrow) for (var ck in tileWork){
         var cj = tileWork[ck];
         if (Math.hypot(TERR_OX + (cj.ix + 0.5) * TILE - px,
                        TERR_OZ + (cj.iz + 0.5) * TILE - pz) > KILL_R){
@@ -6562,7 +6709,7 @@ try{ __wbStage('terrain'); }catch(e){}
           delete tileWork[ck];
         }
       }
-      for (var key in tiles){
+      if (!pregrow) for (var key in tiles){
         var pr = key.split(',');
         var tcx = TERR_OX + (+pr[0] + 0.5) * TILE, tcz = TERR_OZ + (+pr[1] + 0.5) * TILE;
         if (Math.hypot(tcx - px, tcz - pz) > KILL_R){
@@ -6580,7 +6727,31 @@ try{ __wbStage('terrain'); }catch(e){}
     } catch(e){}
   }
 
-  setInterval(tick, 400);
+  setInterval(function(){ tick(); }, 400);
+  /* SETTLE PRE-GROW entry point (2026-11-08): the loader's Get Ready
+     loop calls this ~3x a second during the ten-second settle. Each
+     call runs ONE frontier tick centred on the landing spot (the
+     funnel meters the actual building across frames, as always, so
+     the loading screen stays smooth); the post-entry tick then
+     continues from the same state — in-flight jobs keep their
+     cursors, claimed tiles stay claimed. Returns the ring census so
+     reports can state the start area's completion honestly. */
+  window.__saPregrowSettle = function(){
+    var spot = null;
+    try{ spot = window.__saLandingSpot ? window.__saLandingSpot() : null; }catch(e){}
+    if (!spot) return null;
+    tick(spot.x, spot.z);
+    var cix = Math.floor((spot.x - TERR_OX) / TILE), ciz = Math.floor((spot.z - TERR_OZ) / TILE);
+    var span = Math.ceil(BUILD_R / TILE) + 1, tot = 0, done = 0, ix2, iz2;
+    for (iz2 = ciz - span; iz2 <= ciz + span; iz2++)
+      for (ix2 = cix - span; ix2 <= cix + span; ix2++){
+        var cx = TERR_OX + (ix2 + 0.5) * TILE, cz = TERR_OZ + (iz2 + 0.5) * TILE;
+        if (Math.hypot(cx - spot.x, cz - spot.z) <= BUILD_R){
+          tot++; if ((ix2 + ',' + iz2) in tiles) done++;
+        }
+      }
+    return { x: spot.x, z: spot.z, src: spot.src, ringTiles: tot, ringDone: done };
+  };
   /* The solver's door to the bark: CollisionMaterial.pushOut calls
      this every iteration (inert when absent — legacy mode never
      registers it, and no registry fallback replaces it). */
@@ -12854,7 +13025,24 @@ function animateHeroGLB(dt){
      branch uses: Idle clip + a bent-over pitch and hip drop on the
      inner wrapper (hands-on-knees slump), applied below. */
   var _exh = !!(window.__BODY && window.__BODY.forcedRest && window.__BODY.forcedRest());
-  if (_exh){ want = R.actions.Exhausted ? 'Exhausted' : 'Idle'; ts = 0.7; }
+  if (_exh && R.actions.Exhausted){ want = 'Exhausted'; ts = 0.7; }
+  else if (_exh && spd > 0.4){
+    /* SPENT-STATE SHUFFLE (2026-11-08, Joshua's report — ui 2026.11.08.8):
+       at the damage-100 cap the player still MOVES (2.5 u/s shuffle)
+       but the old branch played the standing Idle clip, so the legs
+       froze mid-pose while the body translated — "the back foot kept
+       jutting in place but the player still moved forward." The
+       shuffle now plays the Walk clip at the STANDARD walk cadence
+       mapping (ts = spd/3.4, the same formula as normal walking), so
+       the stride rate is driven by the player's ACTUAL ground speed:
+       feet plant per step at the capped speed — measured 1.77 u/step,
+       identical steps-per-metre to a normal walk, just slower. The
+       slump posture (pitchT/dropT below) still rides on top, so the
+       state still READS as spent. Standing still keeps Idle + slump,
+       exactly as shipped. */
+    want = 'Walk'; ts = Math.min(1.6, Math.max(0.5, spd / 3.4));
+  }
+  else if (_exh){ want = 'Idle'; ts = 0.7; }
   else if (player.swimming){ want = 'Walk'; ts = 0.9; }
   else if (spd > 7.5){ want = 'Run'; ts = Math.min(1.5, Math.max(0.8, spd / 9)); }
   else if (spd > 0.4){ want = 'Walk'; ts = Math.min(1.6, Math.max(0.5, spd / 3.4)); }
@@ -13122,8 +13310,24 @@ function animateHero(dt){
      Replaced by the authored 'Exhausted' clip when one ships; the GLB
      path above already prefers R.actions.Exhausted. */
   if (window.__BODY && window.__BODY.forcedRest && window.__BODY.forcedRest() && !player.swimming){
-    T={ll:0.06,lr:-0.06,kl:0.34,kr:0.34,al:-0.55,ar:-0.55,el:-0.28,er:-0.28,
-       bob:-0.10,lean:0.78,sway:0,head:0.40};
+    if (spd > 0.4){
+      /* SPENT-STATE SHUFFLE (2026-11-08, Joshua — ui 2026.11.08.8):
+         the primitive-rig twin of the GLB fix in animateHeroGLB. The
+         old code REPLACED the pose with the static slump (b=1), so at
+         the 2.5 u/s cap the legs froze (one foot jutting back) while
+         the body slid forward. Now the walk cycle — whose phase is
+         already DISTANCE-driven (phaseAdvance above), so the feet
+         plant per step at the true ground speed — keeps swinging,
+         and the slump rides the TORSO over it: deep lean, dropped
+         bob, bent knees, hung head, arms reaching to the knees. */
+      T={ll:T.ll*0.85, lr:T.lr*0.85,
+         kl:T.kl+0.30, kr:T.kr+0.30,
+         al:-0.55+T.al*0.30, ar:-0.55+T.ar*0.30, el:-0.28, er:-0.28,
+         bob:T.bob-0.08, lean:0.72, sway:T.sway, head:0.40};
+    } else {
+      T={ll:0.06,lr:-0.06,kl:0.34,kr:0.34,al:-0.55,ar:-0.55,el:-0.28,er:-0.28,
+         bob:-0.10,lean:0.78,sway:0,head:0.40};
+    }
     b=1; ib=0;
   }
   var br=Math.sin(heroT*1.7);
@@ -13551,7 +13755,16 @@ window.LookInput = {
         fpLookYaw -= dYaw * 0.5;
         fpPitch = Math.max(-1.1, Math.min(1.1, fpPitch - dPitch));
       }
-      else camYaw -= dYaw;
+      else {
+        camYaw -= dYaw;
+        /* LOOK UP/DOWN (2026-11-08): on foot outdoors, dPitch pitches
+           the follow camera (footPitch, + = up; add()'s convention is
+           + dPitch = pitch down, hence the subtraction — the same
+           convention the first-person branch above uses). Driving and
+           indoors keep their shipped behaviour: neither reads
+           footPitch. */
+        if (dPitch) footPitch = Math.max(FOOT_PITCH_DOWN, Math.min(FOOT_PITCH_UP, footPitch - dPitch));
+      }
     } catch(e){}
   }
 };
@@ -13600,7 +13813,20 @@ renderer.domElement.addEventListener('touchmove', function(e){
         fpPitch=Math.max(-1.1, Math.min(1.1, fpPitch-dPitch));
         look.ly=t.clientY;
       }
-      else camYaw-=dYaw;
+      else {
+        camYaw-=dYaw;
+        /* LOOK UP/DOWN (2026-11-08): the vertical half of the drag
+           pitches the outdoor follow camera — drag up = look up,
+           drag down = look down, the same convention as the indoor
+           first-person branch above (dPitch is + when the finger
+           moves down; footPitch is + = up). Full-width drag = 180
+           deg horizontally; the vertical uses the screen height the
+           same way. look.ly already resets between drags (endTouch),
+           so the first move of a drag contributes no pitch jump. */
+        var dPitchF=(t.clientY-(look.ly||t.clientY))/window.innerHeight*Math.PI;
+        if (dPitchF) footPitch=Math.max(FOOT_PITCH_DOWN, Math.min(FOOT_PITCH_UP, footPitch-dPitchF));
+        look.ly=t.clientY;
+      }
       look.lx=t.clientX;
     }
   }
@@ -15809,6 +16035,18 @@ var clock=new THREE.Clock();
    character's movement. (Replaces the v0.7 scheme where the camera was
    slaved to player.yaw, which caused the 360-spin feedback loop.) */
 var camYaw=0;
+/* LOOK UP/DOWN (2026-11-08, Joshua — ui 2026.11.08.8): on foot and
+   OUTDOORS the player can pitch the view — up at the sky, down at the
+   ground at his feet. footPitch is ADDED pitch in radians over the
+   camera's standard follow framing (positive = up), fed by every
+   existing look path (touch drag, arrow keys, gamepad right stick —
+   all through the same state the yaw uses). Vehicle and indoor
+   cameras never read it, and the swim/dive vertical axis belongs to
+   dive_system.js — this value is not applied while swimming. */
+var footPitch=0;
+var FOOT_PITCH_UP=1.45, FOOT_PITCH_DOWN=-1.30;   /* view pitch lands
+   at roughly +73 deg / -85 deg after the follow framing's own tilt */
+window.__footPitchState=function(){ return footPitch; };
 var grassSlow=1;
 
 function onRoad(x, z){
@@ -16435,6 +16673,9 @@ function camSafeDist(lx,ly,lz, tx,ty,tz, wantDist){
 }
 // v1.13 first-person interior camera state
 var fpLookYaw=0, fpPitch=0, fpBlend=0, wasFP=false;
+/* LOOK UP/DOWN scratch (2026-11-08): reused per frame, never allocated
+   in the camera loop. */
+var _fpDir=new THREE.Vector3(), _fpRight=new THREE.Vector3(), _fpUp=new THREE.Vector3(0,1,0);
 function updateCamera(dt){
   if (window.__satViewActive) return;  // v1.16 SATELLITE VIEW owns the camera
   // ---------- v1.13 FIRST-PERSON interior camera ----------
@@ -16543,6 +16784,27 @@ function updateCamera(dt){
   try{ _dvw=(window.__DIVE && window.__DIVE.view)?window.__DIVE.view():null; }catch(e){ _dvw=null; }
   if (_dvw){ camY-=_dvw.sink; ly+=_dvw.lookY; }
   camera.position.set(camX, camY, camZ);
+  /* LOOK UP/DOWN (2026-11-08, Joshua — ui 2026.11.08.8): on foot and
+     OUTDOORS, footPitch rotates the view direction around the
+     camera's right axis — the camera stays exactly where the follow
+     framing (and its collision ease) put it; only where it LOOKS
+     pitches, from the sky (+1.45 rad added) to the ground at his
+     feet (-1.30 rad). Driving never reaches the rotation (excluded
+     here as well as at the inputs), indoors returned on the
+     first-person branch above, and swimming is dive_system's axis —
+     while player.swimming is set the pitch is stored, not applied. */
+  if (footPitch !== 0 && !(car && car.driving) && !player.swimming){
+    _fpDir.set(lx - camX, ly - camY, lz - camZ);
+    var _fpLen = _fpDir.length();
+    if (_fpLen > 0.001){
+      _fpDir.normalize();
+      _fpRight.crossVectors(_fpDir, _fpUp).normalize();
+      _fpDir.applyAxisAngle(_fpRight, footPitch);
+      lx = camX + _fpDir.x * _fpLen;
+      ly = camY + _fpDir.y * _fpLen;
+      lz = camZ + _fpDir.z * _fpLen;
+    }
+  }
   if (car && car.driving && !look.dragging && car.speed>3 && camSnapT<=0){   // null-car safe (2026-11-01 fix above)
     look.yawOff*=Math.pow(0.35,dt);  // v0.6: ease back behind while driving
   }
@@ -16719,6 +16981,13 @@ function toggleInv(force){
   p.classList.toggle('show', show);
 }
 function updatePickups(dt){
+  /* NO WALK-OVER COLLECTION — EVER (Joshua's ruling, 2026-11-08,
+     reversing the auto-pickup idea of 2026-11-07 before it was ever
+     built): walking over an item collects NOTHING. This tick only
+     animates the bob/spin. Collection happens solely through the
+     ACTION button ("Pick up") when the player deliberately taps it
+     in range — see updateActionButton/doPickup. Do not add a
+     proximity collect here. */
   for (var i=0;i<pickups.length;i++){
     var p=pickups[i];
     p.bob+=dt*2;
@@ -17059,14 +17328,32 @@ function updateActionButton(){
      problem. */
   var act=null, label='';
   pendingPickup=null;   // v1.12: reset each tick; set fresh below when in range
-  if (car.driving){
+  /* NULL-CAR GUARD (2026-11-08, ui 2026.11.08.8): in the package world
+     (Phase G partial mode) vehicles are disabled by design and `car`
+     stays null for the whole session — the unguarded read that stood
+     here threw every tick, simTick's try/catch swallowed it, and the
+     ACTION button NEVER updated in that world (no Pick up, no ENTER
+     HOUSE, nothing — found by the controls build's boot proof, which
+     watched the button stay on its HTML default at every range).
+     This was the FIRST of two such throws; the second is the
+     missing-door read guarded just below. Same guard idiom as the
+     v1.58 fixes in simTick/updateCamera. */
+  if (car && car.driving){
     act='exit-car'; label='EXIT CAR';
   } else {
     // v3.0: front door on the SOUTH wall — trigger SOUTH of it (on the porch);
     // back door on the NORTH wall — trigger NORTH of it.
-    var _fdx=player.x-heroHouse.frontDoor.x, _fdz=player.z-(heroHouse.frontDoor.z+1.5);
+    /* MISSING-DOOR GUARD (2026-11-08, ui 2026.11.08.8): buildHeroHouse
+       is partial-gated — in the package world 535's lot is bare and
+       heroHouse NEVER gets its door records, so the unguarded reads
+       that stood here threw every tick (the second of the two throws
+       that kept the ACTION button dead in that world; see the
+       null-car note above). Absent door = infinitely far, the same
+       idiom the basement door below already used. */
+    var _fd=heroHouse && heroHouse.frontDoor, _bd=heroHouse && heroHouse.backDoor;
+    var _fdx=_fd?player.x-_fd.x:1e9, _fdz=_fd?player.z-(_fd.z+1.5):1e9;
     var df=Math.sqrt(_fdx*_fdx+_fdz*_fdz);
-    var _bdx=player.x-heroHouse.backDoor.x, _bdz=player.z-(heroHouse.backDoor.z-1.5);
+    var _bdx=_bd?player.x-_bd.x:1e9, _bdz=_bd?player.z-(_bd.z-1.5):1e9;
     var db=Math.sqrt(_bdx*_bdx+_bdz*_bdz);
     /* v3.3 HILL: basement walkout door is on the NORTH wall — trigger
        NORTH of it at ground level. Joshua: "there's a door at the bottom"
@@ -17081,9 +17368,9 @@ function updateActionButton(){
         var mqA=mqCheck(); if (mqA){ act=mqA.act; label=mqA.label; }
       }
       if (!act){
-        var _fdx2=player.x-(heroHouse.frontDoor.x+2.2), _fdz2=player.z-heroHouse.frontDoor.z;
+        var _fdx2=_fd?player.x-(_fd.x+2.2):1e9, _fdz2=_fd?player.z-_fd.z:1e9;
         var dfi=Math.sqrt(_fdx2*_fdx2+_fdz2*_fdz2);
-        var _bdx2=player.x-(heroHouse.backDoor.x-2.2), _bdz2=player.z-heroHouse.backDoor.z;
+        var _bdx2=_bd?player.x-(_bd.x-2.2):1e9, _bdz2=_bd?player.z-_bd.z:1e9;
         var dbi=Math.sqrt(_bdx2*_bdx2+_bdz2*_bdz2);
         /* v3.3: also offer EXIT HOUSE near the basement door (inside). */
         var dsbi=heroHouse.bsmtDoor ?
@@ -17092,7 +17379,7 @@ function updateActionButton(){
         else {
           /* v1.29: pickup from the proximity tracker instead of scanning. */
           var _pk=proxPickups?proxPickups.nearest:null;
-          if (_pk){ pendingPickup=_pk; act='pickup'; label='PICK UP'; }
+          if (_pk){ pendingPickup=_pk; act='pickup'; label='Pick up'   /* Joshua's wording (2026-11-08): the button reads "Pick up" */; }
         }
       }
     } else {
@@ -17132,7 +17419,7 @@ function updateActionButton(){
         else if (dbs<5){ act='enter-basement'; label='ENTER HOUSE'; }
         else {
           var _pk2=proxPickups?proxPickups.nearest:null;
-          if (_pk2){ pendingPickup=_pk2; act='pickup'; label='PICK UP'; }
+          if (_pk2){ pendingPickup=_pk2; act='pickup'; label='Pick up'   /* Joshua's wording (2026-11-08): the button reads "Pick up" */; }
         }
         /* v1.29: dwelling train/bus from trackers (30u/25u to the platform
            stop). Labels match the old martaCheckBoard/busCheckBoard text. */
@@ -17189,7 +17476,24 @@ function updateActionButton(){
       }
     }
   }
-  if (act){ actionBtn.style.display='block'; actionBtn.textContent=label; actionBtn.dataset.act=act; }
+  /* PLAYER LAYOUT WINS (.23 control system, reconciled 2026-11-08):
+     the relevance logic above decides WHAT the button would do; the
+     player's saved layout decides whether the button is on their
+     screen at all. If the player hid ACTION in HudMove, that wish
+     vetoes presentation: the inline display stays 'none' — which is
+     also exactly what every activation path checks before firing
+     (the Enter key, the 'e' key and the gamepad Action mapping all
+     click only when style.display !== 'none'), so a hidden button
+     can never trigger an unseen action. Repositioning is untouched:
+     this function never writes position, the layout pass owns it,
+     and HudMove's own !important hide backs this up at every layout
+     pass. In move mode the veto lifts so the player can arrange the
+     button (HudMove force-shows controls while arranging anyway).
+     Label + dataset still update while hidden, so un-hiding lands
+     on the correct current prompt within one tick. */
+  var _layoutHidden=false;
+  try{ _layoutHidden = !!(window.HudMove && HudMove.isHidden && HudMove.isHidden('action-btn') && !(HudMove.isActive && HudMove.isActive())); }catch(e){ _layoutHidden=false; }
+  if (act){ actionBtn.textContent=label; actionBtn.dataset.act=act; actionBtn.style.display=_layoutHidden?'none':'block'; }
   else actionBtn.style.display='none';
 }
 

@@ -165,9 +165,9 @@
     },
     {
       "name": "index.html",
-      "size": 1280541,
-      "sha256": "c92a78cdc129a1b41d4f3bc42dab1721a3c8cb77982a66ed0f852d72f19a0775",
-      "hash": "c92a78cdc129a1b41d4f3bc42dab1721a3c8cb77982a66ed0f852d72f19a0775"
+      "size": 1298124,
+      "sha256": "b85eee0264fbad67242d3645bffbaf36958018aa2e9d114f8b1d5a94d376237e",
+      "hash": "b85eee0264fbad67242d3645bffbaf36958018aa2e9d114f8b1d5a94d376237e"
     },
     {
       "name": "input_diag.js",
@@ -684,6 +684,6 @@
       "hash": "20b983ae0e2e555817495a65c37519bfcb2231825269db6a57d72c51ed6006e3"
     }
   ],
-  "ui_version": "2026.11.08.7",
+  "ui_version": "2026.11.08.8",
   "version": "2026.10.17.9"
 }
