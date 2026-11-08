@@ -49,9 +49,9 @@
     },
     {
       "name": "dive_system.js",
-      "size": 33099,
-      "sha256": "c2ab508bc198bd2405ba2a1faffe9b5a56e05c2ca27a86f27e161cfc872f16d9",
-      "hash": "c2ab508bc198bd2405ba2a1faffe9b5a56e05c2ca27a86f27e161cfc872f16d9"
+      "size": 33363,
+      "sha256": "9b034a9d0e1fc024f8f98156016e09d6109a35f54b227e6d7723fb7fe1d2961b",
+      "hash": "9b034a9d0e1fc024f8f98156016e09d6109a35f54b227e6d7723fb7fe1d2961b"
     },
     {
       "name": "clothing_system.js",
@@ -165,9 +165,9 @@
     },
     {
       "name": "index.html",
-      "size": 1280448,
-      "sha256": "cdbb81b846d76c46aebd4dd5f9b0868874d5f44b5c89b56e2e9f474e3aeafbe7",
-      "hash": "cdbb81b846d76c46aebd4dd5f9b0868874d5f44b5c89b56e2e9f474e3aeafbe7"
+      "size": 1280541,
+      "sha256": "c8b11e459f1bbf7be20a7cd49ccccf25a81faf4a6fb039f32dfcac1dfdc1a27c",
+      "hash": "c8b11e459f1bbf7be20a7cd49ccccf25a81faf4a6fb039f32dfcac1dfdc1a27c"
     },
     {
       "name": "input_diag.js",
@@ -189,15 +189,15 @@
     },
     {
       "name": "map_loader.js",
-      "size": 73845,
-      "sha256": "fa1cff882a3d8d52c5f719fe7fad2c8302db5324c6f505b7439783f80a38e145",
-      "hash": "fa1cff882a3d8d52c5f719fe7fad2c8302db5324c6f505b7439783f80a38e145"
+      "size": 74250,
+      "sha256": "30464e05ad3bafb2fe183ef70a43ba2034ea8f87524b1f281b016efccd07a7e8",
+      "hash": "30464e05ad3bafb2fe183ef70a43ba2034ea8f87524b1f281b016efccd07a7e8"
     },
     {
       "name": "map_registry.js",
-      "size": 23620,
-      "sha256": "1a00d4b5320a9d39d69f02f9cb3322811ea7dcf92cc92d56354e927417ffcc1a",
-      "hash": "1a00d4b5320a9d39d69f02f9cb3322811ea7dcf92cc92d56354e927417ffcc1a"
+      "size": 27117,
+      "sha256": "a71061b90b3ecb8d084a719b7fd473085bc585a1193184c59edf4725c632b5a8",
+      "hash": "a71061b90b3ecb8d084a719b7fd473085bc585a1193184c59edf4725c632b5a8"
     },
     {
       "name": "mapdelivery.js",
@@ -684,6 +684,6 @@
       "hash": "20b983ae0e2e555817495a65c37519bfcb2231825269db6a57d72c51ed6006e3"
     }
   ],
-  "ui_version": "2026.11.08.5",
+  "ui_version": "2026.11.08.6",
   "version": "2026.10.17.9"
 }

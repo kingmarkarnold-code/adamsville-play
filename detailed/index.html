@@ -2481,7 +2481,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
    stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.11.08.5';
+window.__DOC_UIVER = '2026.11.08.6';
 /* VER-TAG (ui 2026.11.07.25) >>>
    The on-screen version tag (#ver-tag) shows the version OF THE
    DEPLOYMENT ACTUALLY RUNNING, environment first (Joshua 2026-11-07
@@ -2562,13 +2562,15 @@ function __liveVerText(){
   }
   else if (env === 'DEV') t = 'DEV v' + (doc || live || shell);
   else t = 'WEB v' + (live || doc || shell);
-  /* ELEV A/B (ui 2026.11.08.5): when a non-default ?elev= world is
-     running, the tag carries the mode (' · ELEV 70'), so any
-     screenshot proves which world is being felt. Default mode:
-     no suffix — the tag text is byte-for-byte the shipped one.
-     __SA_ELEV is published by map_registry.js; the stamp re-runs
-     when __UIVER lands, by which time the registry has evaluated,
-     so the suffix cannot be missed on a live page. */
+  /* ELEV SWITCH (ui 2026.11.08.5; default flipped ui 2026.11.08.6):
+     when a non-default ?elev= TEST world is running, the tag
+     carries the mode (' · ELEV 43', ' · ELEV 70'), so any
+     screenshot proves which world is being felt. The default —
+     true scale, Joshua's 2026-11-08 ruling — carries no suffix:
+     it is simply the world. __SA_ELEV is published by
+     map_registry.js; the stamp re-runs when __UIVER lands, by
+     which time the registry has evaluated, so the suffix cannot
+     be missed on a live page. */
   try{
     var se = window.__SA_ELEV;
     if (se && se.param !== null && se.param !== undefined)

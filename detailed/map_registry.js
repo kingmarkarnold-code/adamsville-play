@@ -137,29 +137,63 @@ var FRAME_WX = 8000, FRAME_WZ = 12000;
 var FRAME_CX = 3772.5, FRAME_CZ = 2009;
 var FRAME_S = 2.8327464788732395;   /* 1609/568 split-zones rescale */
 
-/* Vertical conversion constants — mirror heightAt()/elev.js exactly:
-   ELEV.min = 225, ELEV.max = 363, ELEV_SCALE = 60 / (max - min). */
+/* Vertical conversion constants — the package elevation RANGE mirrors
+   heightAt()/elev.js exactly: ELEV.min = 225, ELEV.max = 363. The
+   SCALE those metres convert at is Joshua's ruling — see below. */
 var PKG_ELEV_MIN = 225, PKG_ELEV_MAX = 363;
-var PKG_ELEV_DEFAULT_SCALE = 60 / (PKG_ELEV_MAX - PKG_ELEV_MIN);
+/* The LEGACY compressed scale (the Oct 16, 2026 frame decision): the
+   whole relief squeezed into 60 runtime units, 60 / (363 - 225) =
+   0.4348 units per metre. Superseded as the default by Joshua's
+   ruling of 2026-11-08 (switch block below). Kept EXACT because
+   ?elev=43 must reproduce that world bit-for-bit, and because the
+   stream depthFt calibration stays anchored to it (MapFrame
+   .elevRatio keeps its .5 definition: active / legacy). */
+var PKG_ELEV_LEGACY_SCALE = 60 / (PKG_ELEV_MAX - PKG_ELEV_MIN);
+/* THE WORLD'S SCALE (Joshua's ruling, 2026-11-08): TRUE scale — 1.00
+   runtime unit per metre. He played all three A/B worlds and picked
+   100: "That's 100 and I like it." */
+var PKG_ELEV_TRUE_SCALE = 1.00;
+/* The default scale = the world's scale (what the no-parameter game
+   loads). Named separately so the switch and MapFrame read plainly. */
+var PKG_ELEV_DEFAULT_SCALE = PKG_ELEV_TRUE_SCALE;
+/* The scale maps/adamsville/terrain_heights_pkg.bin is baked at.
+   Through ui 2026.11.08.5 it was baked at the legacy scale and the
+   loader rescaled it at load; ui 2026.11.08.6 REBAKED it at true
+   scale from the same metre source (regenerating through the game's
+   own D-grid sampler reproduces the old bake bit-exactly at the
+   legacy scale — proven in fixes-2026-11-08-elevdefault/), so the
+   default load now passes the array through untouched (bin ratio
+   exactly 1) and test modes multiply relative to this bake. */
+var PKG_ELEV_BAKED_SCALE = PKG_ELEV_TRUE_SCALE;
 /* ================================================================
-   ELEV A/B SWITCH (ui 2026.11.08.5, Joshua 2026-11-08)
+   ELEV SWITCH (ui 2026.11.08.5; DEFAULT FLIPPED ui 2026.11.08.6)
    ----------------------------------------------------------------
-   Joshua's ruling: at the shipped scale (60 / (363 - 225) = 0.4348
-   runtime units per metre) the hills read FLAT — the Dollar Mill
-   climb from 535 to the Utoy crest is ~36.4 m of real rise played
-   as ~15.8 units, ~8.5 player-heights instead of ~19. He does not
-   rule on numbers or flat pictures; he rules by PLAYING the same
-   world at different scales. So the scale is now an address
-   parameter, exactly like ?zone= and ?mapsrc=:
+   History: at the old shipped scale (60 / (363 - 225) = 0.4348
+   runtime units per metre — the Oct 16 "compressed relief" frame
+   decision) the hills read FLAT: the Dollar Mill climb from 535 to
+   the Utoy crest is ~36.4 m of real rise played as ~15.8 units,
+   ~8.5 player-heights instead of ~19. Joshua does not rule on
+   numbers or flat pictures; he rules by PLAYING the same world at
+   different scales, so ui 2026.11.08.5 made the scale an address
+   parameter, exactly like ?zone= and ?mapsrc=, defaulting to the
+   compressed world.
 
-     (no param)   -> the shipped default 0.4348, computed as the
-                     IDENTICAL constant 60 / (MAX - MIN) — the
-                     world he already has, byte for byte.
-     ?elev=70     -> 0.70 units per metre.
-     ?elev=100    -> 1.00 units per metre (true scale).
-     ?elev=43 (or anything within half a point of the default),
-     an unparseable value, or a value outside the sane 20..200
-     band         -> the default, exactly.
+   THE RULING (Joshua, 2026-11-08, after playing ?elev=100 in the
+   woods by 535): "That's 100 and I like it." TRUE SCALE IS NOW THE
+   WORLD. The Oct 16 compressed-relief decision is superseded. The
+   switch stays as a test / revisit tool:
+
+     (no param)   -> TRUE scale, 1.00 units per metre — the world.
+     ?elev=100    -> names the default itself: scale 1.00 exactly,
+                     param stays null (no tag suffix — it IS the
+                     world, not a test mode).
+     ?elev=70     -> 0.70 units per metre (the middle A/B step).
+     ?elev=43 (or anything within half a point of 43.478...) ->
+                     the LEGACY compressed world, the exact constant
+                     60 / (MAX - MIN) — never the rounded 0.43.
+     any other value in the sane 20..200 band -> that many percent
+                     of true scale; an unparseable value or one
+                     outside the band -> the default stands.
 
    WHY THIS FILE: PKG_ELEV_SCALE feeds elevToRuntimeY /
    runtimeYToElev, the single funnel EVERY package height derives
@@ -171,19 +205,25 @@ var PKG_ELEV_DEFAULT_SCALE = 60 / (PKG_ELEV_MAX - PKG_ELEV_MIN);
    rescales the whole derived world consistently.
 
    THE ONE BAKED EXCEPTION: maps/adamsville/terrain_heights_pkg.bin
-   stores runtime Y pre-baked at the DEFAULT scale (proven by
-   sampling: its vertices equal heightYAtRuntime at the default,
-   not the metre sampler). elevToRuntimeY is linear in the scale
+   stores runtime Y pre-baked — at TRUE scale since ui 2026.11.08.6
+   (rebaked from the identical metre source; see PKG_ELEV_BAKED
+   _SCALE above). elevToRuntimeY is linear in the scale
    ((elev - MIN) * s — no other offset), so the exact correction
-   is one ratio (active / default) applied to the baked array at
-   load; map_loader's bootWorld applies it, gated on ratio !== 1.
-   Nothing else in the package is stored in runtime units: the
-   D-grid, near-post grid and canopy cover store metres (or
-   unitless cover) and convert through the funnel at sample time.
+   under a test mode is one ratio (active / baked) applied to the
+   baked array at load; map_loader's bootWorld applies it, gated on
+   the bin ratio !== 1. At the default the ratio is exactly 1 and
+   the array passes through untouched. Nothing else in the package
+   is stored in runtime units: the D-grid, near-post grid and
+   canopy cover store metres (or unitless cover) and convert
+   through the funnel at sample time.
 
    The active mode is published as window.__SA_ELEV
-   { param, scale, defaultScale, ratio, active } for the version
-   tag ("· ELEV 70"), telemetry and Player Reports.
+   { param, scale, defaultScale, legacyScale, bakedScale, ratio,
+     binRatio, active } for the version tag ("· ELEV 43" / "· ELEV
+   70" in test modes only), telemetry and Player Reports. `ratio`
+   keeps its .5 meaning (active / LEGACY) — the stream depthFt
+   calibration anchor; `binRatio` (active / baked) is the terrain
+   bin rescale.
    ================================================================ */
 var PKG_ELEV_SCALE = PKG_ELEV_DEFAULT_SCALE;
 var __SA_ELEV_PARAM = null;
@@ -192,12 +232,19 @@ try {
     ? new URLSearchParams(window.location.search).get('elev') : null;
   if (__elevRaw !== null && __elevRaw !== ''){
     var __elevN = Number(__elevRaw);
-    /* Snap-to-default band: ?elev=43 names the default Joshua
-       already has — it must BE the default, not 0.43. */
-    if (isFinite(__elevN) && __elevN >= 20 && __elevN <= 200 &&
-        Math.abs(__elevN - 43.47826086956522) > 0.5){
-      PKG_ELEV_SCALE = __elevN / 100;
-      __SA_ELEV_PARAM = Math.round(__elevN);
+    if (isFinite(__elevN) && __elevN >= 20 && __elevN <= 200){
+      if (Math.abs(__elevN - 100) <= 0.5){
+        /* ?elev=100 names the default itself — it must BE the
+           default (scale already 1.00, param stays null). */
+      } else if (Math.abs(__elevN - 43.47826086956522) <= 0.5){
+        /* ?elev=43 names the legacy compressed world — it must BE
+           the legacy scale exactly, not 0.43. */
+        PKG_ELEV_SCALE = PKG_ELEV_LEGACY_SCALE;
+        __SA_ELEV_PARAM = 43;
+      } else {
+        PKG_ELEV_SCALE = __elevN / 100;
+        __SA_ELEV_PARAM = Math.round(__elevN);
+      }
     }
   }
 } catch (e) { /* any failure parsing the address: the default stands */ }
@@ -206,7 +253,10 @@ try {
     param: __SA_ELEV_PARAM,
     scale: PKG_ELEV_SCALE,
     defaultScale: PKG_ELEV_DEFAULT_SCALE,
-    ratio: PKG_ELEV_SCALE / PKG_ELEV_DEFAULT_SCALE,
+    legacyScale: PKG_ELEV_LEGACY_SCALE,
+    bakedScale: PKG_ELEV_BAKED_SCALE,
+    ratio: PKG_ELEV_SCALE / PKG_ELEV_LEGACY_SCALE,
+    binRatio: PKG_ELEV_SCALE / PKG_ELEV_BAKED_SCALE,
     active: __SA_ELEV_PARAM !== null
   };
 } catch (e) {}
@@ -443,11 +493,22 @@ window.MapFrame = {
   latLonToRuntime: latLonToRuntime, runtimeToLatLon: runtimeToLatLon,
   pkgToRuntime: pkgToRuntime, runtimeToPkg: runtimeToPkg,
   elevToRuntimeY: elevToRuntimeY, runtimeYToElev: runtimeYToElev,
-  /* ELEV A/B (ui 2026.11.08.5): the active vertical scale + friends,
-     for consumers that hold a value baked at the default scale
-     (map_loader's terrain-bin rescale and stream depthFt pin). */
+  /* ELEV SWITCH (ui 2026.11.08.5; default flipped to true scale in
+     ui 2026.11.08.6): the active vertical scale + friends, for
+     consumers that hold a value baked or calibrated at a fixed
+     scale (map_loader's terrain-bin rescale and stream depthFt
+     pin). elevRatio keeps its .5 definition — active / LEGACY —
+     because the stream depthFt numbers were calibrated in the
+     legacy world: at the true-scale default it is 2.3, the exact
+     value .5 ran in the ?elev=100 world Joshua approved, so the
+     depth registrations come out identical in every mode.
+     elevBinRatio — active / BAKED — is the terrain bin rescale:
+     exactly 1 at the default since the .6 rebake. */
   elevScale: PKG_ELEV_SCALE, elevDefaultScale: PKG_ELEV_DEFAULT_SCALE,
-  elevRatio: PKG_ELEV_SCALE / PKG_ELEV_DEFAULT_SCALE,
+  elevLegacyScale: PKG_ELEV_LEGACY_SCALE,
+  elevBakedScale: PKG_ELEV_BAKED_SCALE,
+  elevRatio: PKG_ELEV_SCALE / PKG_ELEV_LEGACY_SCALE,
+  elevBinRatio: PKG_ELEV_SCALE / PKG_ELEV_BAKED_SCALE,
   elevParam: __SA_ELEV_PARAM,
   makePkgTerrainSampler: makePkgTerrainSampler,
   makeDGridSampler: makeDGridSampler

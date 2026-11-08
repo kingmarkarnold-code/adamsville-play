@@ -82,14 +82,14 @@
    waterDepthAt() — the same function that already decides swimming vs
    wading — with ONE units repair: its profiled-stream branch returns
    the surveyed surface-minus-bed gap in terrain-Y units (the package
-   elevation scale, 0.4348 units per metre), while its lake branch
-   returns person-scale units (feet x 0.304); diveDepthUAt() converts
-   the stream branch to true metres (person-scale, ~1 unit = 1 metre)
-   so the Chattahoochee's measured 3.6 m channel dives like 3.6 m.
-   (ui 2026.11.08.5: the conversion divides by the ACTIVE elevation
-   scale — the ?elev= A/B switch in map_registry.js — so the dive
-   envelope is identical at every view scale; 0.4348 above is the
-   default scale the measurements were taken at.)
+   elevation scale — 0.4348 units per metre when these measurements
+   were taken; true scale 1.00 since ui 2026.11.08.6), while its lake
+   branch returns person-scale units (feet x 0.304); diveDepthUAt()
+   converts the stream branch to true metres (person-scale, ~1 unit =
+   1 metre) so the Chattahoochee's measured 3.6 m channel dives like
+   3.6 m. (ui 2026.11.08.5: the conversion divides by the ACTIVE
+   elevation scale — the ?elev= switch in map_registry.js — so the
+   dive envelope is identical at every view scale.)
    MEASURED DATA (fixes-2026-11-07-dive/measure_depths.mjs, the game's
    own D-grid sampler over the shipped package):
    - Chattahoochee main stem: surface-bed = 3.6 m at the MEDIAN station
@@ -405,16 +405,21 @@ function diveDepthUAt(x, z){
             var dm;
             if (window.MapFrame && typeof MapFrame.runtimeYToElev === 'function')
               dm = MapFrame.runtimeYToElev(sy) - MapFrame.runtimeYToElev(bedY);
-            /* ELEV A/B (ui 2026.11.08.5): the primary path above is
-               already scale-true at any ?elev= — runtimeYToElev
-               divides by the ACTIVE scale, so the gap comes back in
-               true metres and the dive envelope does not change with
-               the view scale. This fallback (MapFrame somehow absent)
-               must divide by the same active scale, published as
-               __SA_ELEV by map_registry.js — never the baked default
-               constant, which would shrink the envelope exactly when
-               a taller world is being tested. */
-            else dm = (sy - bedY) / ((window.__SA_ELEV && window.__SA_ELEV.scale) || 0.4347826087);
+            /* ELEV SWITCH (ui 2026.11.08.5; default flipped ui
+               2026.11.08.6): the primary path above is already
+               scale-true at any ?elev= — runtimeYToElev divides by
+               the ACTIVE scale, so the gap comes back in true
+               metres and the dive envelope does not change with
+               the view scale. This fallback (MapFrame somehow
+               absent) must divide by the same active scale,
+               published as __SA_ELEV by map_registry.js — never a
+               stale hardcoded constant, which would shrink the
+               envelope exactly when a taller world is being
+               tested. The literal below is only the last resort
+               if even __SA_ELEV is missing, and names the world's
+               default scale: true scale, 1.00 (Joshua's ruling,
+               2026-11-08). */
+            else dm = (sy - bedY) / ((window.__SA_ELEV && window.__SA_ELEV.scale) || 1);
             /* metres -> person-scale units: 1 u = 1 m for the player
                (1.85 u = 6'1"), and feet x U_PER_FT (0.304) x 3.28084
                ft/m = 0.9974 — kept explicit so the units stay honest */

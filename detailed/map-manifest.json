@@ -1,6 +1,6 @@
 {
   "version": "2.0.0",
-  "map_version": "2026.11.07.3",
+  "map_version": "2026.11.08.1",
   "files": [
     {
       "name": "maps/adamsville/zone.json",
@@ -113,7 +113,7 @@
     {
       "name": "maps/adamsville/terrain_heights_pkg.bin",
       "size": 2320164,
-      "sha256": "2dc4eef6fe38339fcb98be5a7ca7d7d4fc030a0520639bfe9c50ead1ae9f126b",
+      "sha256": "03e4890b5ecb2a321788b1357ae2df430451a078749d20240d59494c02b114fc",
       "hash": ""
     },
     {
