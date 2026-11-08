@@ -47,6 +47,15 @@
 
   LOCAL TESTING: open with ?local=1 to use the same server's /detailed/
   folder instead of the published site.
+
+  PASS 2 (2026-11-08, Joshua's rulings from using the page): picking an
+  asset is ONE fixed-width button per field (Characters & Wildlife /
+  Vehicles / Code-built in the game) showing that field's current pick —
+  over-long text truncates with an ellipsis; tapping a button opens a
+  pop-up list whose rows always show the full names. The code-built
+  cards no longer replace the view: their text opens as a pop-up OVER
+  the page (this one carries an X to close it), and the game view
+  behind it is left exactly as it was.
   ============================================================================
 -->
 <style>
@@ -64,14 +73,58 @@
   .sub{ color:var(--dim); font-size:13px; margin:0 0 8px; line-height:1.5; }
   .sub b{ color:var(--text); font-weight:600; }
 
-  .group-title{ font-size:13px; text-transform:uppercase; letter-spacing:1.2px;
-    color:var(--dim); margin:14px 2px 6px; }
-  .chips{ display:flex; flex-wrap:wrap; gap:8px; }
-  .chip{ min-height:48px; padding:10px 14px; border-radius:999px; border:1px solid var(--line);
+  /* PASS 2 field buttons: ONE fixed-width button per field — the buttons
+     never grow or stretch to fit their text; over-long text truncates
+     with an ellipsis. Full names live in the pop-up list a tap opens. */
+  .fields{ display:flex; flex-wrap:wrap; gap:8px; margin-top:4px; }
+  .field-btn{ flex:0 0 auto; width:186px; height:56px; display:flex; align-items:center;
+    gap:8px; padding:0 14px; border-radius:12px; border:1px solid var(--line);
     background:var(--panel2); color:var(--text); font-size:15px; cursor:pointer; }
-  .chip:active{ transform:scale(.97); }
-  .chip.sel{ border-color:var(--accent); color:#dfffd2; box-shadow:0 0 0 1px var(--accent) inset; }
-  .chip.card-chip{ border-style:dashed; }
+  .field-btn:active{ transform:scale(.98); }
+  .field-btn.sel{ border-color:var(--accent); color:#dfffd2; box-shadow:0 0 0 1px var(--accent) inset; }
+  .field-txt{ flex:1 1 auto; min-width:0; white-space:nowrap; overflow:hidden;
+    text-overflow:ellipsis; text-align:left; }
+  .field-caret{ flex:0 0 auto; color:var(--dim); font-size:13px; }
+
+  /* Option-list pop-up: bottom sheet on phones, centred card on wide
+     screens. Rows always show the COMPLETE name (wrapping if needed) —
+     never truncated. Closes on a tap outside the sheet. */
+  .pop-overlay{ position:fixed; inset:0; background:rgba(6,8,10,.55); z-index:40; }
+  .pop-overlay[hidden]{ display:none; }
+  .pop-sheet{ position:absolute; left:0; right:0; bottom:0; max-height:78vh; overflow-y:auto;
+    background:var(--panel); border-top:1px solid var(--line);
+    border-radius:18px 18px 0 0; padding:10px 10px calc(12px + env(safe-area-inset-bottom)); }
+  @media (min-width:640px){
+    .pop-sheet{ left:50%; right:auto; bottom:auto; top:50%; width:480px;
+      max-width:calc(100vw - 32px); transform:translate(-50%,-50%);
+      border:1px solid var(--line); border-radius:18px; padding:12px; }
+  }
+  .pop-title{ font-size:13px; text-transform:uppercase; letter-spacing:1.2px;
+    color:var(--dim); margin:6px 6px 10px; }
+  .pop-row{ display:flex; align-items:center; gap:10px; width:100%; min-height:56px;
+    padding:10px 12px; margin:0 0 6px; border-radius:12px; border:1px solid var(--line);
+    background:var(--panel2); color:var(--text); font-size:16px; text-align:left; cursor:pointer; }
+  .pop-row:active{ transform:scale(.99); }
+  .pop-row.sel{ border-color:var(--accent); box-shadow:0 0 0 1px var(--accent) inset; }
+  .pop-row-name{ flex:1 1 auto; line-height:1.35; }
+  .pop-check{ flex:0 0 auto; color:var(--accent); font-weight:700; }
+
+  /* Code-built card pop-up (pass 2 amendment): the explanatory text
+     floats OVER the page — it never replaces or hides the game view —
+     and this pop-up carries an X button to close it. */
+  .card-overlay{ position:fixed; inset:0; background:rgba(6,8,10,.55); z-index:45; }
+  .card-overlay[hidden]{ display:none; }
+  .card-sheet{ position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+    width:560px; max-width:calc(100vw - 24px); max-height:86vh; overflow-y:auto;
+    background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+    padding:20px 18px 22px; }
+  #card-close{ position:absolute; top:8px; right:8px; width:48px; height:48px;
+    border-radius:50%; border:1px solid var(--line); background:var(--panel2);
+    color:var(--text); font-size:20px; line-height:1; cursor:pointer; z-index:2; }
+  #card-body h2{ margin:0 40px 8px 0; font-size:19px; }
+  #card-body p{ margin:0 0 10px; line-height:1.5; font-size:15px; color:#d7e0e9; }
+  #card-body .why{ color:var(--warn); }
+  #card-body ul{ margin:6px 0 0 18px; padding:0; line-height:1.55; font-size:14.5px; color:#c6d2dd; }
 
   #stage-wrap{ position:relative; margin-top:14px; border-radius:var(--radius);
     overflow:hidden; border:1px solid var(--line); background:#0c0e11; }
@@ -80,11 +133,6 @@
   #stage-label{ position:absolute; left:10px; bottom:8px; font-size:12.5px; color:#dfe9f2;
     background:rgba(10,12,14,.62); padding:5px 9px; border-radius:8px; pointer-events:none;
     max-width:calc(100% - 20px); z-index:3; }
-  #card-view{ display:none; padding:20px 16px 24px; background:var(--panel); }
-  #card-view h2{ margin:0 0 8px; font-size:19px; }
-  #card-view p{ margin:0 0 10px; line-height:1.5; font-size:15px; color:#d7e0e9; }
-  #card-view .why{ color:var(--warn); }
-  #card-view ul{ margin:6px 0 0 18px; padding:0; line-height:1.55; font-size:14.5px; color:#c6d2dd; }
 
   .controls{ display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; align-items:center; }
   .seg{ display:flex; border:1px solid var(--line); border-radius:999px; overflow:hidden; }
@@ -158,7 +206,6 @@
   <div id="stage-wrap">
     <canvas id="stage"></canvas>
     <iframe id="game-frame" title="The real game, live" allow="fullscreen"></iframe>
-    <div id="card-view"></div>
     <div id="stage-label">Loading…</div>
   </div>
 
@@ -213,6 +260,25 @@
     (birds, squirrel, chipmunk, butterflies) are built by code inside the game, not
     stored as model files, so they get an honest card instead of a picture.
   </footer>
+</div>
+
+<!-- PASS 2 option-list pop-up: opened by a field button. Tap a row to
+     pick it; tap anywhere outside the sheet to dismiss. -->
+<div class="pop-overlay" id="pop-overlay" hidden>
+  <div class="pop-sheet" role="dialog" aria-modal="true" aria-labelledby="pop-title">
+    <div class="pop-title" id="pop-title"></div>
+    <div id="pop-list"></div>
+  </div>
+</div>
+
+<!-- Code-built card pop-up: the explanatory text floats OVER the page —
+     the game view behind it is never hidden, unloaded or re-placed.
+     This one carries an X (Joshua's ruling). -->
+<div class="card-overlay" id="card-overlay" hidden>
+  <div class="card-sheet" role="dialog" aria-modal="true">
+    <button id="card-close" type="button" aria-label="Close">✕</button>
+    <div id="card-body"></div>
+  </div>
 </div>
 
 <script>
@@ -289,7 +355,7 @@ const GAME = window.GAME_BASE ||
    hero — index.html installGLBHERO: inner scale 1.88 / 2.008, i.e. the
           hero stands 1.88 units tall. */
 const DEER_H = 1.62, HERO_H = 1.88;
-const VIEWER_VERSION = 'asset-viewer 1.0 (2026-11-08)';
+const VIEWER_VERSION = 'asset-viewer 1.1 (2026-11-08)';
 
 /* Player Reports form — the game's own public form addresses, copied from
    detailed/github-config.js (public by design; the game POSTs there with
@@ -384,7 +450,12 @@ function vurl(path){ return GAME + path + (mapVersion ? '?v=' + encodeURICompone
    ================================================================== */
 const canvas = document.getElementById('stage');
 const label = document.getElementById('stage-label');
-const cardView = document.getElementById('card-view');
+/* Pass 2 pop-ups: the option list (field buttons) and the card text. */
+const popOverlay = document.getElementById('pop-overlay');
+const popTitle = document.getElementById('pop-title');
+const popList = document.getElementById('pop-list');
+const cardOverlay = document.getElementById('card-overlay');
+const cardBody = document.getElementById('card-body');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
 renderer.shadowMap.enabled = true;
@@ -418,7 +489,9 @@ scene.add(deerGroup);
 /* shared state */
 let mode = 'game';              /* 'game' (primary) | 'inspect' */
 let spin = true, deerOn = true;
-let current = null;
+let current = null;             /* the registered selection (may be a card) */
+let viewEntry = null;           /* last NON-card pick — what the view itself
+                                   is showing; a card pop-up never moves it */
 let subject = null;
 let subjectInfo = { tris: 0, height: 0, width: 0 };
 let mixer = null, actions = {}, activeClip = null;
@@ -512,18 +585,23 @@ function groundAlign(obj){
 /* ---------------- subject selection (both modes) ---------------- */
 async function setSubject(entry){
   current = entry;
-  document.querySelectorAll('.chip').forEach(c =>
-    c.classList.toggle('sel', c.dataset.id === entry.id));
+  const f = fieldOf(entry);
+  if (f) f.selected = entry;
+  updateFieldButtons();
   document.getElementById('note-asset').innerHTML =
     'Asset: <b>' + entry.name + '</b>';
   document.getElementById('anim-row').style.display = 'none';
   document.getElementById('paint-row').style.display = 'none';
 
   if (entry.kind === 'card'){
-    showCard(entry);
+    /* Pass 2 amendment (Joshua): the card's text is a POP-UP over the
+       page. The view behind it — whatever viewEntry is showing, in
+       whichever mode — is not hidden, unloaded or re-placed; closing
+       the pop-up returns to it untouched. */
+    showCardModal(entry);
     return;
   }
-  cardView.style.display = 'none';
+  viewEntry = entry;
   if (entry.kind === 'vehicle')
     document.getElementById('paint-row').style.display = 'flex';
   if (entry.clips) buildAnimRow(entry);
@@ -532,13 +610,10 @@ async function setSubject(entry){
   else await GV.place(entry);
 }
 
-function showCard(entry){
-  canvas.style.display = 'none';
-  document.getElementById('game-frame').style.display = 'none';
-  document.getElementById('game-row').style.display = 'none';
-  document.getElementById('game-hint').style.display = 'none';
-  cardView.style.display = 'block';
-  cardView.innerHTML =
+/* The honest card, as a pop-up OVER the page (never a view replacement).
+   Same words as the pass-1 card; only the presentation changed. */
+function showCardModal(entry){
+  cardBody.innerHTML =
     '<h2>' + entry.name + '</h2>' +
     '<p class="why">Code-built — no standalone view yet, in either view.</p>' +
     '<p>This animal isn\u2019t a model file. It is built by code inside the ' +
@@ -552,8 +627,9 @@ function showCard(entry){
     '<p style="margin-top:12px">Want this one viewable on demand? Say so in ' +
     'the note below — the fix is a small builder handle in the game, a proper ' +
     'build, not a shortcut.</p>';
-  label.textContent = entry.name + ' — code-built in the game (no model file)';
+  cardOverlay.hidden = false;
 }
+function closeCardModal(){ cardOverlay.hidden = true; }
 
 async function setInspectSubject(entry){
   canvas.style.display = 'block';
@@ -588,7 +664,7 @@ async function setInspectSubject(entry){
   subjectInfo = { tris: m.tris, height: m.size.y, width: m.size.x };
   layoutDeer();
   frameSubject();
-  label.textContent = '🔍 Inspect — ' + current.name + ' — ' +
+  label.textContent = '🔍 Inspect — ' + entry.name + ' — ' +
     subjectInfo.tris.toLocaleString() + ' triangles · ' +
     subjectInfo.height.toFixed(2) + ' units tall · live from the game files';
 }
@@ -637,7 +713,7 @@ async function ensureDeer(){
   return deerProto;
 }
 async function layoutDeer(){
-  if (mode !== 'inspect' || !deerOn || !subject || (current && current.id === 'deer')){
+  if (mode !== 'inspect' || !deerOn || !subject || (viewEntry && viewEntry.id === 'deer')){
     deerGroup.visible = false; return;
   }
   try { await ensureDeer(); } catch(e){ deerGroup.visible = false; return; }
@@ -921,8 +997,8 @@ const GV = {
       if (snap && snap.pkg && typeof snap.px === 'number' && typeof snap.tick === 'number' && snap.tick > 0){
         if (lastTick >= 0 && snap.tick !== lastTick){
           this.ready = true;
-          label.textContent = '🎮 The game is live — placing ' + (current ? current.name : 'the asset') + ' in front of the player…';
-          if (current && current.kind !== 'card') this.place(current, true);
+          label.textContent = '🎮 The game is live — placing ' + (viewEntry ? viewEntry.name : 'the asset') + ' in front of the player…';
+          if (viewEntry) this.place(viewEntry, true);
           return;
         }
         lastTick = snap.tick;
@@ -1002,26 +1078,88 @@ const GV = {
   }
 };
 
-/* ---------------- picker + controls wiring ---------------- */
+/* ---------------- picker: ONE fixed-width button per field (pass 2) --
+   Each field button reads "<Field> — <that field's current pick> ▾"
+   inside a fixed 186px box; over-long text truncates with an ellipsis
+   (CSS). Tapping a button opens the pop-up list, whose rows always show
+   the FULL names. One asset is active across the whole page (current);
+   each field remembers its own last pick for its button label. */
+const FIELDS = [
+  { label: 'Characters & Wildlife', items: [], selected: null },
+  { label: 'Vehicles',              items: [], selected: null },
+  { label: 'Code-built in the game', items: [], selected: null }
+];
+(function buildFields(){
+  let fi = -1;
+  ROSTER.forEach(a => {
+    if (!a.id){ fi++; return; }
+    a.field = FIELDS[fi];
+    FIELDS[fi].items.push(a);
+    if (!FIELDS[fi].selected) FIELDS[fi].selected = a;
+  });
+})();
+function fieldOf(entry){ return entry.field || null; }
+
 const picker = document.getElementById('picker');
-ROSTER.forEach(a => {
-  if (!a.id){
-    const h = document.createElement('div');
-    h.className = 'group-title'; h.textContent = a.group;
-    picker.appendChild(h);
-    const row = document.createElement('div');
-    row.className = 'chips';
-    picker.appendChild(row);
-    return;
-  }
-  const rows = picker.querySelectorAll('.chips');
-  const row = rows[rows.length - 1];
+const fieldsEl = document.createElement('div');
+fieldsEl.className = 'fields';
+FIELDS.forEach(f => {
   const b = document.createElement('button');
-  b.type = 'button'; b.className = 'chip' + (a.kind === 'card' ? ' card-chip' : '');
-  b.textContent = a.name; b.dataset.id = a.id;
-  b.addEventListener('click', () => setSubject(a));
-  row.appendChild(b);
+  b.type = 'button'; b.className = 'field-btn';
+  b.setAttribute('aria-haspopup', 'dialog');
+  const t = document.createElement('span'); t.className = 'field-txt';
+  const c = document.createElement('span'); c.className = 'field-caret'; c.textContent = '▾';
+  b.appendChild(t); b.appendChild(c);
+  b.addEventListener('click', () => openPop(f));
+  f.btn = b; f.txtEl = t;
+  fieldsEl.appendChild(b);
 });
+picker.appendChild(fieldsEl);
+
+function updateFieldButtons(){
+  FIELDS.forEach(f => {
+    if (!f.txtEl) return;
+    f.txtEl.textContent = f.label + (f.selected ? ' — ' + f.selected.name : '');
+    f.btn.classList.toggle('sel',
+      !!(current && f.selected && f.selected.id === current.id));
+  });
+}
+
+/* The option-list pop-up: tap a row to pick it (same update as the old
+   chip click), tap outside the sheet to dismiss — no X needed here. */
+function openPop(f){
+  popTitle.textContent = f.label;
+  popList.innerHTML = '';
+  f.items.forEach(a => {
+    const isSel = !!(f.selected && f.selected.id === a.id);
+    const r = document.createElement('button');
+    r.type = 'button'; r.className = 'pop-row' + (isSel ? ' sel' : '');
+    const n = document.createElement('span');
+    n.className = 'pop-row-name'; n.textContent = a.name;
+    r.appendChild(n);
+    if (isSel){
+      const k = document.createElement('span');
+      k.className = 'pop-check'; k.textContent = '✓';
+      r.appendChild(k);
+    }
+    r.addEventListener('click', () => { closePop(); setSubject(a); });
+    popList.appendChild(r);
+  });
+  popOverlay.hidden = false;
+}
+function closePop(){ popOverlay.hidden = true; }
+popOverlay.addEventListener('click', e => { if (e.target === popOverlay) closePop(); });
+
+/* Card pop-up close routes: the X button (required on this one), a tap
+   outside the sheet, or Escape. */
+document.getElementById('card-close').addEventListener('click', closeCardModal);
+cardOverlay.addEventListener('click', e => { if (e.target === cardOverlay) closeCardModal(); });
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if (!cardOverlay.hidden) closeCardModal();
+  else if (!popOverlay.hidden) closePop();
+});
+updateFieldButtons();
 
 const sw = document.getElementById('swatches');
 PAINTS.forEach(([name, hex], i) => {
@@ -1033,7 +1171,12 @@ PAINTS.forEach(([name, hex], i) => {
     paintHex = hex;
     sw.querySelectorAll('.sw').forEach(x => x.classList.remove('sel'));
     b.classList.add('sel');
-    if (current && current.kind === 'vehicle') setSubject(current);
+    /* Repaint what the VIEW is showing (viewEntry) — the registered
+       selection (current) may be a card and must not change. */
+    if (viewEntry && viewEntry.kind === 'vehicle'){
+      if (mode === 'inspect') setInspectSubject(viewEntry);
+      else { GV.placedSig = null; GV.place(viewEntry, true); }
+    }
   });
   sw.appendChild(b);
 });
@@ -1046,15 +1189,16 @@ function setMode(m){
   document.getElementById('deer-toggle').disabled = inGame;
   document.getElementById('spin-toggle').disabled = inGame;
   document.getElementById('game-row').style.display =
-    (inGame && current && current.kind !== 'card') ? 'flex' : 'none';
+    (inGame && viewEntry) ? 'flex' : 'none';
   document.getElementById('game-hint').style.display = inGame ? 'block' : 'none';
   deerGroup.visible = false;
-  if (!current) return;
-  if (current.kind === 'card'){ showCard(current); return; }
-  if (inGame){ GV.placedSig = null; GV.place(current, true); }
+  if (!viewEntry) return;
+  /* A card may be the registered selection — the VIEW follows viewEntry.
+     The card's text lives in its pop-up, never in the view. */
+  if (inGame){ GV.placedSig = null; GV.place(viewEntry, true); }
   else {
     GV.frame.style.display = 'none';
-    setInspectSubject(current);
+    setInspectSubject(viewEntry);
   }
 }
 document.getElementById('mode-game').addEventListener('click', () => setMode('game'));
@@ -1077,7 +1221,7 @@ document.getElementById('gv-pin').addEventListener('click', function(){
   GV.setPin(on);
 });
 document.getElementById('gv-replace').addEventListener('click', () => {
-  if (current && current.kind !== 'card'){ GV.placedSig = null; GV.place(current, true); }
+  if (viewEntry){ GV.placedSig = null; GV.place(viewEntry, true); }
 });
 
 /* ---------------- notes ---------------- */
