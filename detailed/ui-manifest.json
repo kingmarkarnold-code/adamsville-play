@@ -166,8 +166,8 @@
     {
       "name": "index.html",
       "size": 1279825,
-      "sha256": "fd283e41f3476497a0cecbf6f0c10dec1006c72ae49c02d93b16dd9c0febf0d8",
-      "hash": "fd283e41f3476497a0cecbf6f0c10dec1006c72ae49c02d93b16dd9c0febf0d8"
+      "sha256": "67ca6d31003dafc6e6381b16c3a061dab2389bde2ed0e3e3573ec6cde6c02f77",
+      "hash": "67ca6d31003dafc6e6381b16c3a061dab2389bde2ed0e3e3573ec6cde6c02f77"
     },
     {
       "name": "input_diag.js",
@@ -667,9 +667,9 @@
     },
     {
       "name": "wildlife_system.js",
-      "size": 98225,
-      "sha256": "9028f191d3fe24c4e702827eda5090f1305d0acec0d7b1b3a18cfaca28214e7b",
-      "hash": "9028f191d3fe24c4e702827eda5090f1305d0acec0d7b1b3a18cfaca28214e7b"
+      "size": 107716,
+      "sha256": "7990b3bd53103e15bc4ed455c39428a327a955ad446f3d5718613cc2dfa46cc3",
+      "hash": "7990b3bd53103e15bc4ed455c39428a327a955ad446f3d5718613cc2dfa46cc3"
     },
     {
       "name": "wildlife/Deer.glb",
@@ -684,6 +684,6 @@
       "hash": "20b983ae0e2e555817495a65c37519bfcb2231825269db6a57d72c51ed6006e3"
     }
   ],
-  "ui_version": "2026.11.08.1",
+  "ui_version": "2026.11.08.2",
   "version": "2026.10.17.9"
 }

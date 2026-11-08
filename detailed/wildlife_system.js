@@ -119,7 +119,7 @@ var DEER_WILD_BOLD = 0.3;   /* at full wildness the alert/flee
 /* The player's live position object (re-read every tick from the
    game's own player); a plain placeholder until the first tick. */
 var playerPos = { x: 0, y: 0, z: 0 };
-var VERSION = '1.3';        /* wildlife system version (__WILDLIFE);
+var VERSION = '1.4';        /* wildlife system version (__WILDLIFE);
    1.1 = the SONG_GAIN trim (Joshua 2026-11-07, birds down some);
    1.2 = SONG_GAIN 0.6 -> 0.32 (Joshua 2026-11-07: "put them at
    point 32");
@@ -127,7 +127,18 @@ var VERSION = '1.3';        /* wildlife system version (__WILDLIFE);
    squirrels BROWN not gray (16:25 ruling); butterflies get real
    per-instance colour variety — six Georgia species through a
    dedicated iColor attribute (16:25); deer density follows
-   WILDNESS (16:36) — see the DEER_WILD block below. */
+   WILDNESS (16:36) — see the DEER_WILD block below.
+   1.4 = WILDLIFE LOOKS PASS (Joshua 2026-11-07 20:01, from his
+   hands on .5–.21): birds and squirrels REMODELLED from blocky
+   primitives (octahedron body, box tail, flat rectangle wings,
+   bent-cone squirrel tail) into shaped, smooth-shaded forms —
+   tapered lathe-like bird bodies, fan tails, tapered swept
+   wings, an ellipsoid squirrel with muzzle/ears/legs and a
+   curved tube tail over its back. MODEL ONLY: behaviour,
+   species, colours, the aWing/iFlap flap-shader contract, the
+   perch derivation and every animation interface are exactly
+   as 1.3 left them. Budgets: bird <= ~600 tris, squirrel
+   <= ~1,500 tris (measured in this pass's harness). */
 /* The game's player is a global OBJECT ({ x, z, yaw, ... }); some
    rigs also carry a .position Vector3. Either way playerPos ends
    up as an { x, z }-shaped reference the thinks can read. */
@@ -776,41 +787,134 @@ function pickBirdSpecies(){
   return 'cardinal';
 }
 
+/* ---------------------------------------------------------------------------
+   LOOKS PASS HELPERS (v1.4) — shaping tools for the bird/squirrel
+   remodel. Both helpers edit an INDEXED geometry's vertices in
+   place and recompute smooth normals, so the merged result shades
+   as one continuous organic surface instead of faceted primitives
+   (Joshua 2026-11-07 20:01: the old octahedron/box/cone builds
+   read as "cubes and octagons and polygons", Minecraft-like; the
+   target is the player characters' register — low-poly but
+   SHAPED and smooth-shaded, in between, not finished-product).
+   --------------------------------------------------------------------------- */
+/* taperAlongZ(geo, halfLen, fn) — scale each vertex's x/y by
+   fn(t), where t is the vertex's position along Z in [-1, 1]
+   (t = z / halfLen). fn returns the radial scale at t. This is
+   what turns a plain ellipsoid into a teardrop body: full chest,
+   narrowing neck, pointed-but-rounded tail end. */
+function taperAlongZ(geo, halfLen, fn){
+  var pa = geo.attributes.position;
+  for (var i = 0; i < pa.count; i++){
+    var z = pa.getZ(i);
+    var t = clamp(z / halfLen, -1, 1);
+    var f = fn(t);
+    pa.setX(i, pa.getX(i) * f);
+    pa.setY(i, pa.getY(i) * f);
+  }
+  pa.needsUpdate = true;
+  geo.computeVertexNormals();
+  return geo;
+}
+/* buildTailFan(s, tailLen) — a flat FAN tail as a shaped outline
+   (root narrow, tip wide with a shallow centre notch), horizontal.
+   Replaces the old box tail, whose rectangular silhouette was the
+   single most "cube" read on the bird. The shape's root sits at
+   the geometry origin so the caller's M4 rotation (level, or the
+   wren's cocked-up -0.75) pivots at the body joint, exactly as
+   the box's did. Bird material is DoubleSide, so the thin fan
+   reads from above and below. */
+function buildTailFan(s, tailLen){
+  var w0 = 0.055 * s, w1 = 0.15 * s;
+  var sh = new THREE.Shape();
+  sh.moveTo(-w0, 0);
+  sh.lineTo(w0, 0);
+  sh.lineTo(w1, tailLen);
+  sh.lineTo(0, tailLen * 0.90);      /* shallow V notch at the tip */
+  sh.lineTo(-w1, tailLen);
+  sh.closePath();
+  var g = new THREE.ShapeGeometry(sh);
+  g.rotateX(-Math.PI / 2);   /* shape +Y (length) -> world -Z (back) */
+  return g;
+}
+
 /* buildBirdGeometry(sp) — one shared geometry per species: merged
    body/head/beak/tail + two wing planes carrying the aWing hinge
    weight (0 at the body, ±1 at the tips). Forward is +Z (the game's
    heading convention). Sizes are stylised slightly large, like the
-   fish, so the bird reads at play distance. */
+   fish, so the bird reads at play distance.
+   LOOKS PASS (v1.4): the body is now a 12x9 sphere TAPERED along
+   its length (teardrop: chest full, neck narrow, tail end drawn
+   to a soft point) with smooth computed normals; the head is a
+   finer sphere with two small dark eyes; the beak/crest cones
+   carry 8/6 sides instead of 4; the tail is a fan outline, not a
+   box; the wings are 4x2-segment planes TAPERED toward the tip
+   and SWEPT back, so the silhouette is a wing, not a rectangle.
+   The aWing contract is preserved EXACTLY: the same wing()
+   weight function over the same span placement, so the flap
+   vertex shader (makeBirdMaterial) displaces the new vertices
+   with the same hinge grading — root 0, tips ±1 — and the fold
+   terms behave as before. Species touches ride the existing
+   data: sp.crest (cardinal/titmouse), sp.tailCock (wren),
+   sp.tail (dove/thrasher long tails read longer AND wider-
+   fanned), sp.size (small species stay small). */
 function buildBirdGeometry(sp){
   var s = sp.size;
   var back = colArr(sp.back), belly = colArr(sp.belly);
   var parts = [];
-  /* body: stretched octahedron, two-tone by local height */
-  var bodyGeo = new THREE.OctahedronGeometry(0.5);
-  bodyGeo.scale(0.36 * s, 0.38 * s, 1.0 * s);
+  /* body: tapered ellipsoid, two-tone by local height */
+  var bodyGeo = new THREE.SphereGeometry(0.5, 12, 9);
+  bodyGeo.scale(0.40 * s, 0.42 * s, 1.05 * s);
+  taperAlongZ(bodyGeo, 0.525 * s, function(t){
+    /* t: -1 tail end .. +1 neck end. Chest (t ~ +0.2) fullest;
+       neck drawn in to 0.66, tail end to 0.38 — a soft point,
+       never a spike (the sphere's own pole rounds it off). */
+    return t >= 0 ? 1 - 0.34 * t * t : 1 - 0.62 * t * t;
+  });
   parts.push({ geo: bodyGeo,
     colorFn: function(x, y, z){ return y >= 0 ? back : belly; } });
-  /* head */
-  parts.push({ geo: new THREE.SphereGeometry(0.17 * s, 6, 5),
-    mtx: M4(0, 0.10 * s, 0.44 * s), color: sp.head });
-  /* crest (cardinal, titmouse) */
+  /* head: finer sphere, seated into the body's neck taper */
+  parts.push({ geo: new THREE.SphereGeometry(0.175 * s, 10, 8),
+    mtx: M4(0, 0.10 * s, 0.42 * s), color: sp.head });
+  /* eyes: two small dark spheres — the cheapest believability
+     win at close range; they sit on the head's front sides */
+  [-1, 1].forEach(function(side){
+    parts.push({ geo: new THREE.SphereGeometry(0.028 * s, 5, 4),
+      mtx: M4(side * 0.105 * s, 0.15 * s, 0.53 * s), color: 0x16120e });
+  });
+  /* crest (cardinal, titmouse): 6-sided cone, slightly flattened */
   if (sp.crest)
-    parts.push({ geo: new THREE.ConeGeometry(0.07 * s, 0.24 * s, 4),
-      mtx: M4(0, 0.27 * s, 0.36 * s, -0.55, 0, 0), color: sp.head });
-  /* beak: cone tipped forward (+Z) */
-  parts.push({ geo: new THREE.ConeGeometry(0.045 * s, 0.17 * s, 4),
-    mtx: M4(0, 0.09 * s, 0.63 * s, Math.PI / 2, 0, 0), color: sp.beak });
-  /* tail: flat box at the back; the wren's cocks up (its silhouette) */
+    parts.push({ geo: new THREE.ConeGeometry(0.07 * s, 0.24 * s, 6),
+      mtx: M4(0, 0.27 * s, 0.36 * s, -0.55, 0, 0, 1, 1, 0.6),
+      color: sp.head });
+  /* beak: cone tipped forward (+Z), 8 sides (was 4 = a pyramid) */
+  parts.push({ geo: new THREE.ConeGeometry(0.048 * s, 0.18 * s, 8),
+    mtx: M4(0, 0.09 * s, 0.62 * s, Math.PI / 2, 0, 0), color: sp.beak });
+  /* tail: FAN outline at the back; the wren's cocks up */
   var tailLen = s * (0.55 + sp.tail);
-  parts.push({ geo: new THREE.BoxGeometry(0.20 * s, 0.035 * s, tailLen),
+  parts.push({ geo: buildTailFan(s, tailLen),
     mtx: M4(0, sp.tailCock ? 0.10 * s : 0.01 * s,
-            -(0.48 * s + tailLen / 2 - 0.04 * s),
+            -0.44 * s,
             sp.tailCock ? -0.75 : 0.12, 0, 0),
     color: sp.wing });
-  /* wings: flat planes either side, hinge weight graded outward */
+  /* wings: tapered, swept planes either side, hinge weight graded
+     outward — the weight FUNCTION and span placement are the
+     pre-pass contract, unchanged; only the outline changed:
+     chord narrows to 55% at the tip and the tip sweeps 0.18*s
+     toward the tail, both graded by span fraction. The 4 span
+     segments give the shader's flap bend three interior stations
+     to curve through instead of one hinge crease. */
   [-1, 1].forEach(function(side){
-    var wg = new THREE.PlaneGeometry(0.68 * s, 0.30 * s, 2, 1);
+    var wg = new THREE.PlaneGeometry(0.68 * s, 0.32 * s, 4, 2);
     wg.rotateX(-Math.PI / 2);
+    var wp = wg.attributes.position;
+    for (var vi = 0; vi < wp.count; vi++){
+      var lx = wp.getX(vi);            /* -0.34s (root) .. +0.34s */
+      var spanT = clamp((lx * side + 0.34 * s) / (0.68 * s), 0, 1);
+      wp.setZ(vi, wp.getZ(vi) * (1 - 0.45 * spanT)
+                  - spanT * spanT * 0.18 * s);
+    }
+    wp.needsUpdate = true;
+    wg.computeVertexNormals();
     wg.translate(side * 0.37 * s, 0.06 * s, 0.02 * s);
     parts.push({ geo: wg, color: sp.wing,
       wing: function(x, y, z){
@@ -833,31 +937,127 @@ function getCritterMat(){
     critterMat = new THREE.MeshLambertMaterial({ vertexColors: true });
   return critterMat;
 }
+/* buildSquirrelTailGeometry() — LOOKS PASS (v1.4): the signature
+   tail as ONE curved, tapered tube following a Catmull-Rom spine:
+   out the rear, dipping, then sweeping UP and curling forward
+   over the back — the squirrel silhouette. Cross-sections taper
+   (narrow base, bushiest past the middle, soft point at the tip)
+   and are flattened side-to-side (x * 0.62) so the tail reads as
+   the broad, flat plume it is from the side, not a round rope.
+   Replaces the two flattened cones of v1.0–1.3, whose hard facets
+   and kinked joint were the "bent box" read Joshua flagged.
+   Colour rides mergeParts' colorFn on the merged positions:
+   dark at the base run, brown over the plume (same split the
+   two cones carried). */
+function buildSquirrelTailGeometry(){
+  var curve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0, 0.03, -0.15),
+    new THREE.Vector3(0, -0.03, -0.30),
+    new THREE.Vector3(0, 0.07, -0.43),
+    new THREE.Vector3(0, 0.25, -0.47),
+    new THREE.Vector3(0, 0.41, -0.39),
+    new THREE.Vector3(0, 0.50, -0.25)
+  ]);
+  var TUB = 14, RAD = 9;
+  var geo = new THREE.TubeGeometry(curve, TUB, 0.075, RAD, false);
+  var pa = geo.attributes.position;
+  var centre = new THREE.Vector3();
+  for (var i = 0; i <= TUB; i++){
+    var t = i / TUB;
+    curve.getPoint(t, centre);
+    /* taper profile: 0.55 at the root, swelling to 1.15 at the
+       plume (t ~ 0.55), easing to a 0.32 soft point at the tip */
+    var prof = t < 0.55
+      ? 0.55 + (1.15 - 0.55) * (t / 0.55)
+      : 1.15 - (1.15 - 0.32) * ((t - 0.55) / 0.45);
+    for (var j = 0; j <= RAD; j++){
+      var idx = i * (RAD + 1) + j;
+      var ox = pa.getX(idx) - centre.x;
+      var oy = pa.getY(idx) - centre.y;
+      var oz = pa.getZ(idx) - centre.z;
+      pa.setXYZ(idx,
+        centre.x + ox * prof * 0.62,   /* flattened side-to-side */
+        centre.y + oy * prof,
+        centre.z + oz * prof);
+    }
+  }
+  pa.needsUpdate = true;
+  geo.computeVertexNormals();
+  return geo;
+}
 function buildSquirrelGeometry(){
   /* Fox squirrel colourway (Joshua's ruling, 2026-11-07 16:25:
      in his hands the v1.0 squirrels read GRAY — "they should be
      BROWN"). Warm reddish-brown back/head/tail, deep-brown ears
      and tail base, cream belly (the body's two-tone split below).
-     Shape is unchanged from v1.0: the tail is 80% of the read at
-     this size — two flattened cones curved up the back. +Z fwd. */
+     The PALETTE is unchanged in the looks pass — only the shapes.
+     LOOKS PASS (v1.4, Joshua 2026-11-07 20:01): body is a tapered
+     ellipsoid (hips full, shoulders drawn in, belly softly
+     flattened) instead of an octahedron; head is a finer sphere
+     with a cream muzzle, dark eyes and 6-sided ear cones; four
+     small legs and flattened feet ground the body; the tail is
+     the curved tube above. The model stays ONE merged mesh with
+     NO articulation, exactly as the animation expects: the tick
+     drives only the whole mesh's position/pitch/heading through
+     writeCritterMatrix (distance-driven hop, trunk-spiral climb
+     via trunkPoint, freeze) — no part names or pivots exist for
+     it to reference, and none were introduced. Bounding volume
+     is the v1.0 volume, so seating (groundY + 0.10) and the
+     climb's trunk offsets are untouched. +Z fwd. */
   var brown = 0x9c6630, dark = 0x6e4520, cream = 0xe2d4b8;
   var parts = [];
-  var body = new THREE.OctahedronGeometry(0.5);
+  /* body: ellipsoid tapered along Z — rear (t=-1) keeps its hip
+     width, front (t=+1) draws in toward the shoulders */
+  var body = new THREE.SphereGeometry(0.5, 14, 11);
   body.scale(0.15, 0.16, 0.34);
+  taperAlongZ(body, 0.17, function(t){
+    return t >= 0 ? 1 - 0.20 * t * t : 1 - 0.08 * t * t;
+  });
+  /* soften the belly flat so it sits, not rolls */
+  var bp = body.attributes.position;
+  for (var bi = 0; bi < bp.count; bi++)
+    if (bp.getY(bi) < -0.045) bp.setY(bi, -0.045 - (bp.getY(bi) + 0.045) * 0.55);
+  bp.needsUpdate = true;
+  body.computeVertexNormals();
   var bc = colArr(brown), cc = colArr(cream);
   parts.push({ geo: body,
     colorFn: function(x, y, z){ return y < -0.03 ? cc : bc; } });
-  parts.push({ geo: new THREE.SphereGeometry(0.085, 6, 5),
+  /* head + muzzle + eyes + ears */
+  parts.push({ geo: new THREE.SphereGeometry(0.085, 11, 9),
     mtx: M4(0, 0.075, 0.30), color: brown });
-  parts.push({ geo: new THREE.ConeGeometry(0.028, 0.07, 4),
-    mtx: M4(0.05, 0.17, 0.28), color: dark });
-  parts.push({ geo: new THREE.ConeGeometry(0.028, 0.07, 4),
-    mtx: M4(-0.05, 0.17, 0.28), color: dark });
-  /* tail: base cone sweeping back-down, tip cone curling up */
-  parts.push({ geo: new THREE.ConeGeometry(0.075, 0.34, 5),
-    mtx: M4(0, 0.10, -0.38, -2.25, 0, 0, 1, 1, 0.55), color: dark });
-  parts.push({ geo: new THREE.ConeGeometry(0.065, 0.30, 5),
-    mtx: M4(0, 0.30, -0.47, -2.95, 0, 0, 1, 1, 0.5), color: brown });
+  var muzzle = new THREE.SphereGeometry(0.045, 8, 6);
+  muzzle.scale(0.82, 0.62, 1.35);
+  parts.push({ geo: muzzle, mtx: M4(0, 0.052, 0.375), color: cream });
+  [-1, 1].forEach(function(side){
+    parts.push({ geo: new THREE.SphereGeometry(0.016, 5, 4),
+      mtx: M4(side * 0.052, 0.098, 0.362), color: 0x1c130c });
+    parts.push({ geo: new THREE.ConeGeometry(0.028, 0.075, 6),
+      mtx: M4(side * 0.05, 0.17, 0.28), color: dark });
+  });
+  /* legs: short cylinders at the four corners; hind thighs as
+     fuller blobs against the hips (the sitting-haunch read) */
+  [[0.055, 0.17], [-0.055, 0.17], [0.06, -0.13], [-0.06, -0.13]]
+    .forEach(function(lp){
+      parts.push({ geo: new THREE.CylinderGeometry(0.020, 0.026, 0.09, 7),
+        mtx: M4(lp[0], -0.055, lp[1]), color: dark });
+      var foot = new THREE.SphereGeometry(0.030, 7, 5);
+      foot.scale(0.9, 0.5, 1.9);
+      parts.push({ geo: foot, mtx: M4(lp[0], -0.095, lp[1] + 0.025),
+        color: dark });
+    });
+  [-1, 1].forEach(function(side){
+    var thigh = new THREE.SphereGeometry(0.052, 8, 6);
+    thigh.scale(0.72, 1.05, 1.35);
+    parts.push({ geo: thigh, mtx: M4(side * 0.078, -0.015, -0.115),
+      color: brown });
+  });
+  /* tail: the curved plume (colour split by merged position:
+     the low rear run is the dark base, the raised plume brown) */
+  var dc = colArr(dark);
+  parts.push({ geo: buildSquirrelTailGeometry(),
+    colorFn: function(x, y, z){
+      return (z > -0.34 && y < 0.10) ? dc : bc;
+    } });
   return mergeParts(parts);
 }
 function buildChipmunkGeometry(){
