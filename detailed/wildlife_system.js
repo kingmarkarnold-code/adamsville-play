@@ -119,7 +119,7 @@ var DEER_WILD_BOLD = 0.3;   /* at full wildness the alert/flee
 /* The player's live position object (re-read every tick from the
    game's own player); a plain placeholder until the first tick. */
 var playerPos = { x: 0, y: 0, z: 0 };
-var VERSION = '1.4';        /* wildlife system version (__WILDLIFE);
+var VERSION = '1.5';        /* wildlife system version (__WILDLIFE);
    1.1 = the SONG_GAIN trim (Joshua 2026-11-07, birds down some);
    1.2 = SONG_GAIN 0.6 -> 0.32 (Joshua 2026-11-07: "put them at
    point 32");
@@ -138,7 +138,26 @@ var VERSION = '1.4';        /* wildlife system version (__WILDLIFE);
    species, colours, the aWing/iFlap flap-shader contract, the
    perch derivation and every animation interface are exactly
    as 1.3 left them. Budgets: bird <= ~600 tris, squirrel
-   <= ~1,500 tris (measured in this pass's harness). */
+   <= ~1,500 tris (measured in this pass's harness).
+   1.5 = WILDLIFE JOINTS PASS (Joshua 2026-11-08, from his
+   hands on 1.4): the remodelled animals still read as
+   SEPARATE PIECES — air at the joints. Every joint is now
+   EMBEDDED: bird and squirrel heads sit in and down with
+   neck blends filling the junction; the squirrel's legs are
+   lengthened and re-seated so their tops bury in the body
+   (the front pair floated entirely); bird wing roots extend
+   inward past the body's centre plane, so the wings start
+   inside and emerge (span stations and the aWing weight
+   function untouched); the chipmunk — which kept its v1.0
+   builder in 1.4 — gets the same treatment (its head,
+   dorsal stripe and tail all floated at exactly 0
+   intersection); butterfly wings are rounded lobed outlines,
+   not rectangles. COSMETICS ONLY: behaviour, animation
+   interfaces, perch parity, flap architecture, palettes and
+   species data are exactly as 1.4 left them. Joint
+   intersections are proven numerically in this pass's
+   harness (voxel/surface measures against the builders' own
+   geometry, before vs after). */
 /* The game's player is a global OBJECT ({ x, z, yaw, ... }); some
    rigs also carry a .position Vector3. Either way playerPos ends
    up as an { x, z }-shaped reference the thinks can read. */
@@ -856,7 +875,12 @@ function buildTailFan(s, tailLen){
    terms behave as before. Species touches ride the existing
    data: sp.crest (cardinal/titmouse), sp.tailCock (wren),
    sp.tail (dove/thrasher long tails read longer AND wider-
-   fanned), sp.size (small species stay small). */
+   fanned), sp.size (small species stay small).
+   JOINTS PASS (v1.5): the head sits IN AND DOWN with a neck
+   blend filling the junction (see the head block below), and
+   the wing roots extend inward past the body's centre plane
+   (see the wing block) — the 1.4 parts met the body at tangent
+   points and read as separate pieces in Joshua's hands. */
 function buildBirdGeometry(sp){
   var s = sp.size;
   var back = colArr(sp.back), belly = colArr(sp.belly);
@@ -872,23 +896,40 @@ function buildBirdGeometry(sp){
   });
   parts.push({ geo: bodyGeo,
     colorFn: function(x, y, z){ return y >= 0 ? back : belly; } });
-  /* head: finer sphere, seated into the body's neck taper */
+  /* head + NECK BLEND — JOINTS PASS (v1.5, Joshua 2026-11-08,
+     from his hands on 1.4): the 1.4 head sat high at the end of
+     the pinched neck taper; its back barely dipped into the
+     body (harness-measured intersection ~1–5e-4 u^3) and the
+     throat silhouette notched, so the head read as a separate
+     ball balanced on the body. The head now sits IN AND DOWN
+     (z 0.42s -> 0.345s, y 0.10s -> 0.075s) and a neck blend —
+     a sphere stretched along the body axis — fills the
+     junction, so head, neck and chest are one continuous
+     volume. Eyes, crest and beak keep their exact offsets
+     from the head centre: the face is unchanged, only seated
+     deeper. Neck wears the head colour (true for all six
+     species: the neck is the head's colour field). */
   parts.push({ geo: new THREE.SphereGeometry(0.175 * s, 10, 8),
-    mtx: M4(0, 0.10 * s, 0.42 * s), color: sp.head });
+    mtx: M4(0, 0.075 * s, 0.345 * s), color: sp.head });
+  var neckGeo = new THREE.SphereGeometry(0.125 * s, 9, 7);
+  neckGeo.scale(0.85, 0.9, 1.5);
+  parts.push({ geo: neckGeo, mtx: M4(0, 0.045 * s, 0.262 * s),
+    color: sp.head });
   /* eyes: two small dark spheres — the cheapest believability
      win at close range; they sit on the head's front sides */
   [-1, 1].forEach(function(side){
     parts.push({ geo: new THREE.SphereGeometry(0.028 * s, 5, 4),
-      mtx: M4(side * 0.105 * s, 0.15 * s, 0.53 * s), color: 0x16120e });
+      mtx: M4(side * 0.105 * s, 0.125 * s, 0.455 * s), color: 0x16120e });
   });
   /* crest (cardinal, titmouse): 6-sided cone, slightly flattened */
   if (sp.crest)
     parts.push({ geo: new THREE.ConeGeometry(0.07 * s, 0.24 * s, 6),
-      mtx: M4(0, 0.27 * s, 0.36 * s, -0.55, 0, 0, 1, 1, 0.6),
+      mtx: M4(0, 0.255 * s, 0.285 * s, -0.55, 0, 0, 1, 1, 0.6),
       color: sp.head });
-  /* beak: cone tipped forward (+Z), 8 sides (was 4 = a pyramid) */
+  /* beak: cone tipped forward (+Z), 8 sides (was 4 = a pyramid);
+     its base now buries in the lowered head */
   parts.push({ geo: new THREE.ConeGeometry(0.048 * s, 0.18 * s, 8),
-    mtx: M4(0, 0.09 * s, 0.62 * s, Math.PI / 2, 0, 0), color: sp.beak });
+    mtx: M4(0, 0.065 * s, 0.535 * s, Math.PI / 2, 0, 0), color: sp.beak });
   /* tail: FAN outline at the back; the wren's cocks up */
   var tailLen = s * (0.55 + sp.tail);
   parts.push({ geo: buildTailFan(s, tailLen),
@@ -902,7 +943,16 @@ function buildBirdGeometry(sp){
      chord narrows to 55% at the tip and the tip sweeps 0.18*s
      toward the tail, both graded by span fraction. The 4 span
      segments give the shader's flap bend three interior stations
-     to curve through instead of one hinge crease. */
+     to curve through instead of one hinge crease.
+     JOINTS PASS (v1.5): the ROOT column of vertices now extends
+     0.12*s further inward, so each wing starts INSIDE the body
+     (past its centre plane) and emerges from it — in 1.4 the
+     root edge stopped at |x| = 0.03*s, a thread of contact on
+     the body's curved shoulder that read as a gap. Only the
+     root column moves: every spanwise station keeps its exact
+     position, and because the wing() weight keys on the final
+     |x|, the buried root takes weight ~0.06 — the flap and
+     fold behaviour at every visible station is unchanged. */
   [-1, 1].forEach(function(side){
     var wg = new THREE.PlaneGeometry(0.68 * s, 0.32 * s, 4, 2);
     wg.rotateX(-Math.PI / 2);
@@ -910,6 +960,8 @@ function buildBirdGeometry(sp){
     for (var vi = 0; vi < wp.count; vi++){
       var lx = wp.getX(vi);            /* -0.34s (root) .. +0.34s */
       var spanT = clamp((lx * side + 0.34 * s) / (0.68 * s), 0, 1);
+      if (spanT < 1e-6)
+        wp.setX(vi, lx - side * 0.12 * s);   /* root buried (above) */
       wp.setZ(vi, wp.getZ(vi) * (1 - 0.45 * spanT)
                   - spanT * spanT * 0.18 * s);
     }
@@ -1003,7 +1055,10 @@ function buildSquirrelGeometry(){
      via trunkPoint, freeze) — no part names or pivots exist for
      it to reference, and none were introduced. Bounding volume
      is the v1.0 volume, so seating (groundY + 0.10) and the
-     climb's trunk offsets are untouched. +Z fwd. */
+     climb's trunk offsets are untouched. JOINTS PASS (v1.5):
+     the head group seats deeper and the front reach shortens
+     by ~0.11 (see the head block below); seating and the climb
+     ride the mesh origin and the feet, both unchanged. +Z fwd. */
   var brown = 0x9c6630, dark = 0x6e4520, cream = 0xe2d4b8;
   var parts = [];
   /* body: ellipsoid tapered along Z — rear (t=-1) keeps its hip
@@ -1022,24 +1077,45 @@ function buildSquirrelGeometry(){
   var bc = colArr(brown), cc = colArr(cream);
   parts.push({ geo: body,
     colorFn: function(x, y, z){ return y < -0.03 ? cc : bc; } });
-  /* head + muzzle + eyes + ears */
+  /* head + NECK BLEND — JOINTS PASS (v1.5, Joshua 2026-11-08,
+     from his hands on 1.4): the 1.4 head FLOATING ahead of the
+     body was the worst joint in the set — harness-measured, the
+     head sphere (centre z 0.30, back edge z 0.215) never reached
+     the body (front edge z 0.17): intersection exactly 0, pure
+     air. The whole head group (head, muzzle, eyes, ears — their
+     relative offsets unchanged) now sits IN AND DOWN by
+     (0, -0.025, -0.115), and a neck blend stretched along the
+     body axis fills the junction, so the head grows out of the
+     shoulders instead of balancing in front of them. */
   parts.push({ geo: new THREE.SphereGeometry(0.085, 11, 9),
-    mtx: M4(0, 0.075, 0.30), color: brown });
+    mtx: M4(0, 0.05, 0.185), color: brown });
+  var neck = new THREE.SphereGeometry(0.060, 10, 7);
+  neck.scale(0.92, 0.95, 1.55);
+  parts.push({ geo: neck, mtx: M4(0, 0.045, 0.148), color: brown });
   var muzzle = new THREE.SphereGeometry(0.045, 8, 6);
   muzzle.scale(0.82, 0.62, 1.35);
-  parts.push({ geo: muzzle, mtx: M4(0, 0.052, 0.375), color: cream });
+  parts.push({ geo: muzzle, mtx: M4(0, 0.027, 0.260), color: cream });
   [-1, 1].forEach(function(side){
     parts.push({ geo: new THREE.SphereGeometry(0.016, 5, 4),
-      mtx: M4(side * 0.052, 0.098, 0.362), color: 0x1c130c });
+      mtx: M4(side * 0.052, 0.073, 0.247), color: 0x1c130c });
     parts.push({ geo: new THREE.ConeGeometry(0.028, 0.075, 6),
-      mtx: M4(side * 0.05, 0.17, 0.28), color: dark });
+      mtx: M4(side * 0.05, 0.145, 0.165), color: dark });
   });
-  /* legs: short cylinders at the four corners; hind thighs as
-     fuller blobs against the hips (the sitting-haunch read) */
-  [[0.055, 0.17], [-0.055, 0.17], [0.06, -0.13], [-0.06, -0.13]]
+  /* legs — JOINTS PASS (v1.5): in 1.4 the FRONT legs floated
+     entirely (at z 0.17 they stood past the body's front pole,
+     x outside its surface — intersection exactly 0) and every
+     leg was a 0.09 peg meeting the belly at a tangent. The legs
+     are now longer (0.14–0.15) and their tops rise INTO the
+     body volume: the front pair also steps in and back
+     (±0.046, z 0.105) to where the body's underside actually
+     is, and the hind pair's tops bury in the thigh blobs. Feet
+     keep their exact 1.4 spots, so the stance and the model's
+     ground line are unchanged. Rows: [x, z, height, centreY]. */
+  [[0.046, 0.105, 0.15, -0.028], [-0.046, 0.105, 0.15, -0.028],
+   [0.06, -0.13, 0.14, -0.032], [-0.06, -0.13, 0.14, -0.032]]
     .forEach(function(lp){
-      parts.push({ geo: new THREE.CylinderGeometry(0.020, 0.026, 0.09, 7),
-        mtx: M4(lp[0], -0.055, lp[1]), color: dark });
+      parts.push({ geo: new THREE.CylinderGeometry(0.021, 0.027, lp[2], 7),
+        mtx: M4(lp[0], lp[3], lp[1]), color: dark });
       var foot = new THREE.SphereGeometry(0.030, 7, 5);
       foot.scale(0.9, 0.5, 1.9);
       parts.push({ geo: foot, mtx: M4(lp[0], -0.095, lp[1] + 0.025),
@@ -1062,35 +1138,102 @@ function buildSquirrelGeometry(){
 }
 function buildChipmunkGeometry(){
   /* Eastern chipmunk: reddish-brown, the dark dorsal stripe carries
-     the species read (a thin dark box laid along the back). */
+     the species read (a thin dark box laid along the back).
+     JOINTS PASS (v1.5, Joshua 2026-11-08): the chipmunk kept its
+     own v1.0 builder through the 1.4 looks pass (it does NOT
+     share the squirrel's construction) — and it had the same
+     disease, worse: harness-measured, its head, stripe and tail
+     ALL floated at exactly 0 intersection with the body. The
+     head is now sunk into the body's front with a neck blend;
+     the stripe is DRAPED — its stations lowered onto the
+     octahedron's back ridge line (surface height
+     0.0525 * (1 - |z| / 0.115) on the centreline), so it lies
+     IN the back along its whole length instead of hovering
+     over the middle; and the tail cone is re-angled and pulled
+     in until its base disc sits inside the body's rear. */
   var brown = 0x9a6238, dark = 0x3d2c1c;
   var parts = [];
   var body = new THREE.OctahedronGeometry(0.5);
   body.scale(0.10, 0.105, 0.23);
   parts.push({ geo: body, color: brown });
-  parts.push({ geo: new THREE.BoxGeometry(0.035, 0.018, 0.30),
-    mtx: M4(0, 0.095, -0.01), color: dark });
+  /* dorsal stripe, draped on the ridge (see header): a thin box
+     whose every z-station is lowered to the ridge height at
+     that z, sunk 0.004 so its flanks grip the slope */
+  var stripe = new THREE.BoxGeometry(0.035, 0.018, 0.16, 1, 1, 8);
+  var sp2 = stripe.attributes.position;
+  for (var si = 0; si < sp2.count; si++){
+    var wz = sp2.getZ(si) - 0.01;         /* stripe centre z = -0.01 */
+    var surf = 0.0525 * (1 - Math.abs(wz) / 0.115);
+    if (surf < 0) surf = 0;
+    sp2.setY(si, surf - 0.004 + sp2.getY(si));
+    sp2.setZ(si, wz);
+  }
+  sp2.needsUpdate = true;
+  stripe.computeVertexNormals();
+  parts.push({ geo: stripe, color: dark });
+  /* head sunk into the front + neck blend (see header) */
   parts.push({ geo: new THREE.SphereGeometry(0.058, 6, 5),
-    mtx: M4(0, 0.045, 0.20), color: brown });
+    mtx: M4(0, 0.032, 0.106), color: brown });
+  var cNeck = new THREE.SphereGeometry(0.038, 8, 6);
+  cNeck.scale(0.9, 0.9, 1.4);
+  parts.push({ geo: cNeck, mtx: M4(0, 0.028, 0.086), color: brown });
+  /* tail: base disc seated in the body's rear, arcing up-back */
   parts.push({ geo: new THREE.ConeGeometry(0.03, 0.20, 4),
-    mtx: M4(0, 0.09, -0.26, -2.5, 0, 0, 1, 1, 0.45), color: dark });
+    mtx: M4(0, 0.052, -0.178, -1.10, 0, 0, 1, 1, 0.45), color: dark });
   return mergeParts(parts);
 }
+/* buildButterflyWingGeometry(side) — JOINTS PASS (v1.5): one
+   wing as a SHAPED outline — a broad rounded forewing lobe
+   sweeping out to a rounded apex, a soft waist, then a smaller
+   rounded hindwing lobe back to the root. Drawn in shape space
+   (x = span outward, y = chord with +y toward the rear —
+   ShapeGeometry's rotateX(-PI/2) maps +Y to world -Z, the
+   rear, exactly as buildTailFan relies on), mirrored by
+   building the points with x * side. The outline is all
+   quadratic curves: no straight edge, no corner, nothing
+   square. Chord (y) is scaled 0.85 so the wing keeps roughly
+   the old ~0.22 u front-to-back reach, and the root starts at
+   the body's centreline — the wing grows out of the body. */
+function buildButterflyWingGeometry(side){
+  var P = [
+    [0.000, -0.055],                    /* root, front */
+    [0.100, -0.115], [0.210, -0.105],   /* forewing leading edge */
+    [0.300, -0.085], [0.315, -0.015],   /* rounded apex */
+    [0.300,  0.035], [0.205,  0.052],   /* outer margin -> waist */
+    [0.255,  0.085], [0.225,  0.115],   /* hindwing lobe */
+    [0.150,  0.145], [0.000,  0.075]    /* hindwing bottom -> root */
+  ];
+  var sh = new THREE.Shape();
+  sh.moveTo(side * P[0][0], P[0][1] * 0.85);
+  for (var i = 1; i + 1 < P.length; i += 2)
+    sh.quadraticCurveTo(side * P[i][0], P[i][1] * 0.85,
+                        side * P[i + 1][0], P[i + 1][1] * 0.85);
+  sh.closePath();
+  var g = new THREE.ShapeGeometry(sh, 5);
+  g.rotateX(-Math.PI / 2);
+  return g;
+}
 function buildButterflyGeometry(){
-  /* Two wing quads + a thin body; aWing = normalised span (-1..1)
-     so the shader's flap grades from body to tip. Wing colour comes
-     from the per-instance iColor tint (see makeButterflyMaterial);
-     the body stays dark through its own near-black vertex colour
-     multiplied in. */
+  /* Two shaped wings + a thin body; aWing = normalised span
+     (-1..1) so the shader's flap grades from body to tip. Wing
+     colour comes from the per-instance iColor tint (see
+     makeButterflyMaterial); the body stays dark through its
+     own near-black vertex colour multiplied in.
+     JOINTS PASS (v1.5, Joshua 2026-11-08 — "their wings are
+     squared; I haven't seen a butterfly with square wings"):
+     the wings are the lobed outlines of
+     buildButterflyWingGeometry, replacing the 1x1-segment
+     rectangles. The v1.3 contract is untouched: same body,
+     same clamp(x / 0.30) span grading the flap shader reads
+     (the outline's vertices carry it by span position), same
+     iColor species-tint path, same GPU flutter. */
   var parts = [];
   var body = new THREE.OctahedronGeometry(0.5);
   body.scale(0.018, 0.018, 0.11);
   parts.push({ geo: body, color: 0x2a2118 });
   [-1, 1].forEach(function(side){
-    var wg = new THREE.PlaneGeometry(0.30, 0.20, 1, 1);
-    wg.rotateX(-Math.PI / 2);
-    wg.translate(side * 0.16, 0, 0);
-    parts.push({ geo: wg, color: 0xffffff,
+    parts.push({ geo: buildButterflyWingGeometry(side),
+      color: 0xffffff,
       wing: function(x, y, z){ return clamp(x / 0.30, -1, 1); } });
   });
   return mergeParts(parts);
