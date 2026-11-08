@@ -3,6 +3,24 @@
    dive, all three pieces"; mechanics rulings 15:46–15:54 + 16:32).
    Shipped in ui 2026.11.07.24. Joshua's rule: all code commented.
 
+   ui 2026.11.07.26 FIX (Joshua + Jess, 2026-11-07 19:59: nobody could
+   dive in live play, touch OR keyboard, on an iPad or the TCL): the
+   .24 wiring RE-SAMPLED its input inside this module via
+   diveSampleFwd() — a parallel read. The touch half could never work:
+   `joy` is declared inside index.html's indirect-eval scope and was
+   never published to window (keys/drive were hand-published;
+   __publishWorldSurface's list never carried joy), so an external
+   script's `typeof joy` is 'undefined' and the joystick demand
+   silently read as zero. The keyboard half depended on this module's
+   own snapshot read instead of the values updatePlayer itself had
+   just used. THE .26 LAW: the dive demand is the SAME mvz
+   updatePlayer computed for surface swimming, passed in as an
+   argument (plus the same frame's key snapshot for the arrow keys,
+   which are look keys for movement but dive keys per Joshua's
+   ruling). Whatever propels him on the surface now dives him —
+   by construction, on every input family. diveSampleFwd() survives
+   only as a fallback for a caller that passes no demand.
+
    THE THREE PIECES:
    1. SEE-IN WATER — lives in index.html's pwWaterMat (the package water
       sheets are now transparent + double-sided with a tuned opacity);
@@ -235,9 +253,12 @@ function diveGMin(dtSec){
 }
 
 /* --- the dive axis demand: +1 = pushing UP/forward (descend), -1 =
-   pushing DOWN/back (rise). Sampled exactly the way updatePlayer
-   samples horizontal movement (Input.sampled analog + keys snapshot,
-   the touch joystick global), so both inputs invert together. ------- */
+   pushing DOWN/back (rise). ui .26: the demand ARRIVES from
+   updatePlayer (swimY's mvzIn/ikIn arguments — the very values that
+   propel surface swimming this frame); this sampler remains ONLY as
+   a fallback for a caller that passes no demand. Its touch read was
+   the .24 live failure: `joy` never escapes index.html's eval scope,
+   so from this file it is always undefined. ------------------------- */
 function diveSampleFwd(){
   var raw = 0;
   try{
@@ -293,18 +314,23 @@ function diveDepthUAt(x, z){
 }
 
 /* --- the facade index.html calls --------------------------------------
-   swimY(dt, gy, wl, sub): updatePlayer's swim branch computes the
-     surface-trim mesh Y (gy) exactly as before, then hands it here;
-     the dive ticks on that call (perfect frame order with the input
-     and the mesh) and returns the Y to actually use — gy minus the
-     dive depth. Any failure returns gy untouched: surface swimming
-     is never at risk from this module.
+   swimY(dt, gy, wl, sub, mvzIn, ikIn): updatePlayer's swim branch
+     computes the surface-trim mesh Y (gy) exactly as before, then
+     hands it here ALONG WITH THIS FRAME'S OWN INPUT (ui .26):
+     mvzIn is the movement vector updatePlayer just computed from the
+     joystick + keys (negative = pushing UP/forward), and ikIn is the
+     same frame's key snapshot (the arrow keys ride it — they are
+     look keys for movement but dive keys per Joshua's ruling). The
+     dive ticks on that call (perfect frame order with the input and
+     the mesh) and returns the Y to actually use — gy minus the dive
+     depth. Any failure returns gy untouched: surface swimming is
+     never at risk from this module.
    view(): updateCamera's on-foot branch asks for the dive's camera
      adjustments; null unless a dive is live. -------------------------- */
 window.__DIVE = {
   core: diveCore,
   C: DIVE_C,
-  swimY: function(dtSec, gy, wl, sub){
+  swimY: function(dtSec, gy, wl, sub, mvzIn, ikIn){
     try{
       if (typeof player === 'undefined' || !player || !player.swimming) return gy;
       var depthU = (wl === null || wl === undefined) ? 0 : diveDepthUAt(player.x, player.z);
@@ -315,8 +341,24 @@ window.__DIVE = {
                         window.__BODY.core.state &&
                         window.__BODY.core.state.floatRest > 0);
       }catch(e){}
+      /* THE DEMAND (ui .26 — see the header): derived from the
+         caller's own live input values, never re-sampled here.
+         mvzIn negative (stick up / W) -> fwd +1 = descend; the
+         arrows add their own demand from the same snapshot. Only a
+         caller that passes NO demand falls back to the old sampler. */
+      var fwd;
+      if (typeof mvzIn === 'number' && isFinite(mvzIn)){
+        fwd = -mvzIn;
+        if (ikIn){
+          if (ikIn['arrowup']) fwd += 1;
+          if (ikIn['arrowdown']) fwd -= 1;
+        }
+        if (fwd > 1) fwd = 1; else if (fwd < -1) fwd = -1;
+      } else {
+        fwd = diveSampleFwd();
+      }
       var ev = diveCore.tick(diveGMin(dtSec), dtSec, {
-        swimming: true, fwd: diveSampleFwd(),
+        swimming: true, fwd: fwd,
         maxDepthU: maxD, restLocked: restLocked
       });
       /* bed contact while diving = the .20 touch-bottom reset */

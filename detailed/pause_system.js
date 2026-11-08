@@ -113,13 +113,32 @@ function pauseAudio(){
      the context mid-pause. */
   try { window.__audioPaused = true; } catch(e){}
   musicWasPlaying = false;
+  /* MUSIC (ui 2026.11.07.26): the elements live inside index.html's
+     page scope — unreachable from this file (its own B5 note says
+     so), which is why the old window.musicAudioA/B reads below were
+     undefined in live play and the song kept playing through pause
+     (Joshua's 2026-11-07 19:59 report). The elements' owner now
+     publishes a bridge — window.__musicPauseForPause — that halts
+     the crossfade timer and pauses BOTH elements from inside that
+     scope, reporting whether the audible element was playing. The
+     direct element reads remain ONLY as a fallback for a page build
+     without the bridge. */
+  var bridged = false;
   try {
-    var a = window.musicAudioA, b = window.musicAudioB;
-    var act = window.musicAudio || a;
-    if (act && !act.paused) musicWasPlaying = true;
-    if (a) a.pause();
-    if (b) b.pause();
+    if (typeof window.__musicPauseForPause === 'function'){
+      musicWasPlaying = !!window.__musicPauseForPause();
+      bridged = true;
+    }
   } catch(e){}
+  if (!bridged){
+    try {
+      var a = window.musicAudioA, b = window.musicAudioB;
+      var act = window.musicAudio || a;
+      if (act && !act.paused) musicWasPlaying = true;
+      if (a) a.pause();
+      if (b) b.pause();
+    } catch(e){}
+  }
   /* Engine + ambient sounds ride the shared WebAudio context;
      suspending it freezes them along with the world. */
   try {
@@ -147,12 +166,25 @@ function resumeAudio(){
     }
   } catch(e){}
   ctxSuspendedByUs = false;
+  /* Resume the music through the same bridge that paused it (ui
+     .26): it restarts ONLY the element that was audible, and only
+     when the real settings flags allow (started + neither mute) —
+     what was muted stays silent. Fallback mirrors the old direct
+     path for a page build without the bridge. */
+  var resumed = false;
   try {
-    if (musicWasPlaying && window.musicStarted && !window.musicMuted && !window.soundMuted){
-      var act = window.musicAudio;
-      if (act){ var p2 = act.play(); if (p2 && p2.catch) p2.catch(function(){}); }
+    if (musicWasPlaying && typeof window.__musicResumeAfterPause === 'function'){
+      resumed = !!window.__musicResumeAfterPause();
     }
   } catch(e){}
+  if (!resumed){
+    try {
+      if (musicWasPlaying && window.musicStarted && !window.musicMuted && !window.soundMuted){
+        var act = window.musicAudio;
+        if (act){ var p2 = act.play(); if (p2 && p2.catch) p2.catch(function(){}); }
+      }
+    } catch(e){}
+  }
   musicWasPlaying = false;
 }
 
@@ -272,8 +304,8 @@ else if (document.addEventListener)
 /* Self-report so Joshua can verify the module loaded (Report panel). */
 try {
   if (typeof Report !== 'undefined' && Report.setSys){
-    Report.setSys('pause', {status:'ok', version:'1.1',
-      note:'Esc / pause button freezes sim + music; pause silences ALL audio via the __audioPaused layer over the shared context (Joshua 2026-10-17, 2026-11-07)'});
+    Report.setSys('pause', {status:'ok', version:'1.2',
+      note:'Esc / pause button freezes sim + music; pause silences ALL audio: the __audioPaused layer over the shared context PLUS the index.html music bridge that pauses the actual elements and halts the crossfade (ui 2026.11.07.26, Joshua 2026-10-17, 2026-11-07)'});
   }
 } catch(e){}
 

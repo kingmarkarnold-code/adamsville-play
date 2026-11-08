@@ -2481,7 +2481,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
    stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.11.07.25';
+window.__DOC_UIVER = '2026.11.08.1';
 /* VER-TAG (ui 2026.11.07.25) >>>
    The on-screen version tag (#ver-tag) shows the version OF THE
    DEPLOYMENT ACTUALLY RUNNING, environment first (Joshua 2026-11-07
@@ -14076,7 +14076,61 @@ if(radioIdx<0||radioIdx>=RADIO_TRACKS.length) radioIdx=0;
    the new track loads into the inactive element, fades in over 2.5s while
    the old track fades out. Same src = no-op (avoids restart churn).
    ============================================================================ */
+/* ================= MUSIC PAUSE BRIDGE (ui 2026.11.07.26) =================
+   PAUSE = SILENCE (Joshua's standing ruling, 2026-11-07 16:33) — and
+   his 19:59 hands report: "when I press pause the music was still in
+   the background." ROOT CAUSE: the music elements are private to this
+   part of the page (the B5 note below says it plainly: no other file
+   can reach them), so pause_system.js's reads of
+   window.musicAudioA / musicAudioB / musicStarted were all undefined
+   and the playing elements were never told to pause; the
+   __audioPaused layer only gated FUTURE starts via musicAudible().
+   THE BRIDGE: two functions defined HERE, where the elements, the
+   settings flags and the crossfade timer actually live, published on
+   window for pause_system.js to call. Pause halts the crossfade
+   timer and pauses BOTH elements, remembering which element was
+   audible; resume restarts ONLY that element, and only when the
+   music settings allow it (started + neither mute set) — what was
+   muted stays silent, and pause still writes NO settings. The
+   mini-radio shares this exact path (radioAdvance/radioRestart both
+   funnel into playSrc on these same elements), so it is covered by
+   the same bridge. ==================================================== */
+var _musicFadeTimer = null;   /* the ONE live crossfade timer (playSrc) */
+var _musicPauseEl = null;     /* the element that was audible at pause */
+function __musicPauseForPause(){
+  _musicPauseEl = null;
+  if (_musicFadeTimer){ clearInterval(_musicFadeTimer); _musicFadeTimer = null; }
+  window.__musicFading = false;
+  var els = [musicAudioA, musicAudioB];
+  for (var i = 0; i < els.length; i++){
+    var el = els[i];
+    if (!el) continue;
+    if (!el.paused && el === musicAudio) _musicPauseEl = el;
+    try{ el.pause(); }catch(e){}
+  }
+  return !!_musicPauseEl;
+}
+function __musicResumeAfterPause(){
+  var el = _musicPauseEl;
+  _musicPauseEl = null;
+  if (!el) return false;
+  /* the settings gate, read from the REAL flags in this scope:
+     not started, music-muted or master-muted -> stays silent */
+  if (!musicStarted || musicMuted || soundMuted) return false;
+  try{
+    var p = el.play();
+    if (p && p.catch) p.catch(function(){});
+  }catch(e){ return false; }
+  return true;
+}
+window.__musicPauseForPause = __musicPauseForPause;
+window.__musicResumeAfterPause = __musicResumeAfterPause;
+/* <<< MUSIC PAUSE BRIDGE */
 function playSrc(src){
+  /* ui .26: a new track supersedes any crossfade still running — kill
+     its timer so a stale fade can never advance over the new track
+     (and so the pause bridge always knows the ONE live timer). */
+  if (_musicFadeTimer){ clearInterval(_musicFadeTimer); _musicFadeTimer = null; window.__musicFading = false; }
   /* v1.56 AUDIO (2026-10-12, Joshua approved "MP3 to OGG"): Try the OGG Vorbis
      version first — it is smaller and more efficient than the MP3. The canonical
      src stays .mp3 (matches music-manifest.json); we map to the .ogg sibling
@@ -14105,17 +14159,21 @@ function playSrc(src){
       if(p && p.catch) p.catch(function(){});
     }catch(e){}
   }
-  /* Crossfade: incoming fades 0→MUSIC_VOL, outgoing fades →0 then pauses. */
+  /* Crossfade: incoming fades 0→MUSIC_VOL, outgoing fades →0 then pauses.
+     ui .26: the timer lives in _musicFadeTimer (module scope) so the
+     pause bridge below can HALT a fade mid-flight — a function-local
+     timer could never be reached from pause. */
   window.__musicFading = true;   /* B5: the mix applier below stands off during a fade */
   var steps = 25;  /* 25 steps × 100ms = 2.5s */
   var step = 0;
-  var fadeTimer = setInterval(function(){
+  _musicFadeTimer = setInterval(function(){
     step++;
     var k = step / steps;  /* 0→1 */
     try{ incoming.volume = Math.min(MUSIC_VOL, MUSIC_VOL * k * musicDuck()); }catch(e){}
     try{ outgoing.volume = Math.max(0, MUSIC_VOL * (1 - k) * musicDuck()); }catch(e){}
     if (step >= steps){
-      clearInterval(fadeTimer);
+      clearInterval(_musicFadeTimer);
+      _musicFadeTimer = null;
       window.__musicFading = false;
       try{ outgoing.pause(); }catch(e){}
       try{ outgoing.volume = 0; }catch(e){}
@@ -15905,7 +15963,7 @@ function updatePlayer(dt){
        surface-trim formula above is untouched — with no dive the
        module hands gy straight back. See dive_system.js for the
        inverted axis, the depth gate, breath and the forced resurface. */
-    if (window.__DIVE && window.__DIVE.swimY) gy=window.__DIVE.swimY(dt, gy, wl, _sub);
+    if (window.__DIVE && window.__DIVE.swimY) gy=window.__DIVE.swimY(dt, gy, wl, _sub, mvz, _ik);
     player.mesh.position.set(player.x, gy, player.z);
   } else {
     // v3.0 535 PORCH: outside on the raised front porch/entry stairs, use the

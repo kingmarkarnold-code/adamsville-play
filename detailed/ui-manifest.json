@@ -49,9 +49,9 @@
     },
     {
       "name": "dive_system.js",
-      "size": 22853,
-      "sha256": "5940187504b9774aac5a8ec39ebde2879a8b5509d5fc44dc77d22bf4866e4d5d",
-      "hash": "5940187504b9774aac5a8ec39ebde2879a8b5509d5fc44dc77d22bf4866e4d5d"
+      "size": 25161,
+      "sha256": "5fd565dc8247af3c7ed45c1066992e396bce00aa5633fc9072b048c77cb06059",
+      "hash": "5fd565dc8247af3c7ed45c1066992e396bce00aa5633fc9072b048c77cb06059"
     },
     {
       "name": "clothing_system.js",
@@ -165,9 +165,9 @@
     },
     {
       "name": "index.html",
-      "size": 1276854,
-      "sha256": "4e201bd1d5dc66914b20c9bf92c7768accb0620f05ed0f95c820a142a2e6fe02",
-      "hash": "4e201bd1d5dc66914b20c9bf92c7768accb0620f05ed0f95c820a142a2e6fe02"
+      "size": 1279825,
+      "sha256": "fd283e41f3476497a0cecbf6f0c10dec1006c72ae49c02d93b16dd9c0febf0d8",
+      "hash": "fd283e41f3476497a0cecbf6f0c10dec1006c72ae49c02d93b16dd9c0febf0d8"
     },
     {
       "name": "input_diag.js",
@@ -250,8 +250,8 @@
     },
     {
       "name": "pause_system.js",
-      "size": 12702,
-      "sha256": "fd9034b1c5548d0185bdc7bd0938129271ea48dc0d920d6196583510d432a343"
+      "size": 14210,
+      "sha256": "069f9a7892d8bbfcac607b599056bf6f4ce48276d72fc1349e4c6d72f1b6772b"
     },
     {
       "name": "perf_budget.js",
@@ -446,9 +446,9 @@
     },
     {
       "name": "water_interaction.js",
-      "size": 27345,
-      "sha256": "517612ce66cecc7bedf45f9c4c4df9887e9c1e72b4255049d92d30b6caf6c7d2",
-      "hash": "517612ce66cecc7bedf45f9c4c4df9887e9c1e72b4255049d92d30b6caf6c7d2"
+      "size": 34960,
+      "sha256": "e059e6479cf30d443b7a6f9db5c1a6396179992ff8c46bb0daa46c919e13619d",
+      "hash": "e059e6479cf30d443b7a6f9db5c1a6396179992ff8c46bb0daa46c919e13619d"
     },
     {
       "name": "water_render.js",
@@ -684,6 +684,6 @@
       "hash": "20b983ae0e2e555817495a65c37519bfcb2231825269db6a57d72c51ed6006e3"
     }
   ],
-  "ui_version": "2026.11.07.25",
+  "ui_version": "2026.11.08.1",
   "version": "2026.10.17.9"
 }

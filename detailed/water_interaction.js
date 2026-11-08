@@ -164,25 +164,112 @@ function _lakeSpecies(){
   return SPECIES.catfish;
 }
 
+/* ---------------------------------------------------------------------------
+   DRAWN-RING CONTAINMENT (ui 2026.11.07.26, Joshua's 20:01 report:
+   "fish are swimming above the ground OUTSIDE the water, between the
+   two pieces of Tatum Lake"). THE OLD LAW WAS AN ELLIPSE: schools
+   wandered an {x, z, rx, rz} ellipse fitted over the lake, and the
+   mesh placer, when waterLevelAt() said "not water", still rendered
+   the fish at heightAt + 0.35 — swimming in the air over dry land.
+   An ellipse over an irregular lake covers the shore indentations
+   and the ground between Tatum's two bodies, so fish legally
+   wandered onto land inside "their" ellipse.
+   THE NEW LAW IS JOSHUA'S MATERIAL DOCTRINE APPLIED TO FISH: the
+   DRAWN water governs — the same outline ring the .4 drawn-ring
+   test uses for the player's own swimming (the WATER entry's ring,
+   carried from the package body; the legacy polygon rides along as
+   w.polygon). Every lake/pond movement step (wander AND dart) tests
+   its candidate position against the school's ring; a step that
+   would leave the water is not taken — the fish turns back toward
+   its anchor instead. Anchors and personal offsets are validated
+   against the ring at stock time. And if a fish somehow finds
+   waterLevelAt() null at its position, it is NOT rendered above the
+   ground: its mesh hides and the fish recovers to a validated
+   in-water point at its school. Rivers keep their channel/arc
+   system (it already contains them) — this section is lakes/ponds
+   only. Cost: one point-in-polygon per meshed fish per frame — the
+   meshed set is the only set that ticks (NPC pattern). The ring is
+   resolved once per school at stock time (sc.ring), never re-looked
+   up per frame.
+   --------------------------------------------------------------------------- */
+function _pointInRing(px, pz, ring){
+  /* Ray-casting point-in-polygon over a [[x,z],...] ring — the same
+     test map_loader.js runs for the drawn water. */
+  var inside = false;
+  for (var i = 0, j = ring.length - 1; i < ring.length; j = i++){
+    var xi = ring[i][0], zi = ring[i][1], xj = ring[j][0], zj = ring[j][1];
+    if (((zi > pz) !== (zj > pz)) &&
+        (px < (xj - xi) * (pz - zi) / (zj - zi) + xi)) inside = !inside;
+  }
+  return inside;
+}
+
+/* _ringSafePoint(ring, cx, cz) — a point PROVEN inside the ring: the
+   centroid when it qualifies, else the first hit of a coarse grid
+   scan over the ring's bounding box, else ring vertex 0 (a vertex is
+   ON the water's edge — never on the far shore). Used as the stock
+   fallback and the out-of-water recovery point. */
+function _ringSafePoint(ring, cx, cz){
+  if (_pointInRing(cx, cz, ring)) return { x: cx, z: cz };
+  var mnx = 1e18, mxx = -1e18, mnz = 1e18, mxz = -1e18, i;
+  for (i = 0; i < ring.length; i++){
+    if (ring[i][0] < mnx) mnx = ring[i][0]; if (ring[i][0] > mxx) mxx = ring[i][0];
+    if (ring[i][1] < mnz) mnz = ring[i][1]; if (ring[i][1] > mxz) mxz = ring[i][1];
+  }
+  var gx, gz, STEPS = 24;
+  for (gx = 0; gx <= STEPS; gx++) for (gz = 0; gz <= STEPS; gz++){
+    var px = mnx + (mxx - mnx) * gx / STEPS, pz = mnz + (mxz - mnz) * gz / STEPS;
+    if (_pointInRing(px, pz, ring)) return { x: px, z: pz };
+  }
+  return { x: ring[0][0], z: ring[0][1] };
+}
+
+/* _pickRingPoint(ring, cx, cz, rx, rz, safe) — sample the old ellipse
+   area until a point lands inside the drawn ring (bounded tries);
+   fall back to the proven safe point. Stock-time only. */
+function _pickRingPoint(ring, cx, cz, rx, rz, safe){
+  for (var t = 0; t < 24; t++){
+    var aa = Math.random()*Math.PI*2, ar = Math.random()*0.85;
+    var px = cx + Math.cos(aa)*ar*rx, pz = cz + Math.sin(aa)*ar*rz;
+    if (_pointInRing(px, pz, ring)) return { x: px, z: pz };
+  }
+  return safe;
+}
+
 /* _stockWater(w) — stock one lake/pond's fish, in schools of 4-6.
-   w: a WATER entry with {x, z, rx, rz, name} (lake/pond ellipse).
+   w: a WATER entry with {x, z, rx, rz, name} (lake/pond ellipse) —
+   and, in the package build, {ring} (the drawn outline; the legacy
+   renderer carries it as {polygon}). When a ring is present it is
+   the containment law (ui .26, above); the ellipse remains the
+   fallback for an entry that carries no outline.
    PURE DATA — no meshes (NPC pattern: meshes stream in when near). */
 function _stockWater(w){
   if (_spawnedOn.indexOf(w) >= 0) return;
   _spawnedOn.push(w);
   var cx = w.x, cz = w.z, rx = w.rx || 30, rz = w.rz || 30;
+  var ring = (w.ring && w.ring.length > 2) ? w.ring
+           : ((w.polygon && w.polygon.length > 2) ? w.polygon : null);
+  var safe = ring ? _ringSafePoint(ring, cx, cz) : { x: cx, z: cz };
   // Headcount scales with water size (stylized — real lakes hold thousands).
   var n = Math.round(Math.sqrt(rx * rz) / 4);
   n = Math.max(MIN_FISH_PER_BODY, Math.min(MAX_FISH_PER_BODY, n));
   var tatum = _isTatumWater(w.name);
   var schoolCount = Math.max(1, Math.round(n / 5));
   for (var s = 0; s < schoolCount; s++){
-    // School anchor starts at a random spot inside the ellipse.
+    /* School anchor: a random spot inside the ellipse — and, when a
+       ring governs, VALIDATED inside the drawn water (re-picked
+       until inside; the safe point is the bounded fallback). */
     var aa = Math.random()*Math.PI*2, ar = Math.random()*0.5;
+    var ax = cx + Math.cos(aa)*ar*rx, az = cz + Math.sin(aa)*ar*rz;
+    if (ring && !_pointInRing(ax, az, ring)){
+      var ap = _pickRingPoint(ring, cx, cz, rx, rz, safe);
+      ax = ap.x; az = ap.z;
+    }
     var school = {
       kind: 'lake',
       cx: cx, cz: cz, rx: rx, rz: rz,
-      ax: cx + Math.cos(aa)*ar*rx, az: cz + Math.sin(aa)*ar*rz,
+      ring: ring, safeX: safe.x, safeZ: safe.z,
+      ax: ax, az: az,
       heading: Math.random()*Math.PI*2,
       _meshed: false   // NPC pattern: meshes stream in only when near
     };
@@ -193,15 +280,27 @@ function _stockWater(w){
       var sp;
       if (tatum) sp = (Math.random() < 0.5) ? SPECIES.bream : SPECIES.crappie;
       else       sp = _lakeSpecies();
+      /* Personal offset: validated the same way — an offset that
+         would put the fish on land is re-picked (bounded), else the
+         fish rides at the anchor itself. */
       var fa = Math.random()*Math.PI*2, fr = 2 + Math.random()*6;
+      var ox = Math.cos(fa)*fr, oz = Math.sin(fa)*fr;
+      if (ring && !_pointInRing(school.ax + ox, school.az + oz, ring)){
+        ox = 0; oz = 0;
+        for (var ot2 = 0; ot2 < 12; ot2++){
+          var fa2 = Math.random()*Math.PI*2, fr2 = 2 + Math.random()*6;
+          var ox2 = Math.cos(fa2)*fr2, oz2 = Math.sin(fa2)*fr2;
+          if (_pointInRing(school.ax + ox2, school.az + oz2, ring)){ ox = ox2; oz = oz2; break; }
+        }
+      }
       fishes.push({
         mesh: null,  // streamed in when the player comes in range
-        x: school.ax + Math.cos(fa)*fr, z: school.az + Math.sin(fa)*fr,
+        x: school.ax + ox, z: school.az + oz,
         heading: Math.random()*Math.PI*2,
         speed: sp.speed, species: sp, school: school,
         dartT: 0, phase: Math.random()*Math.PI*2,
         dOff: (Math.random()-0.5)*0.3,  // ui .24: personal depth jitter
-        ox: Math.cos(fa)*fr, oz: Math.sin(fa)*fr  // personal offset from anchor
+        ox: ox, oz: oz  // personal offset from anchor (ring-validated, ui .26)
       });
     }
   }
@@ -404,6 +503,13 @@ function _refreshMeshes(px, pz){
             f.heading = sc.heading;
           } else {
             f.x = sc.ax + f.ox; f.z = sc.az + f.oz;
+            /* ui .26: the stream-in snap obeys the ring too — an
+               anchor that drifted while data-only plus a personal
+               offset can land outside the drawn water; fall back to
+               the school's validated safe point. */
+            if (sc.ring && !_pointInRing(f.x, f.z, sc.ring)){
+              f.x = sc.safeX; f.z = sc.safeZ;
+            }
           }
         }
       }
@@ -447,13 +553,18 @@ function _updateFish(dt){
       sc.ax = rp.x; sc.az = rp.z;
       sc.heading = Math.atan2(rp.tx*sc.dir, rp.tz*sc.dir);
     } else {
-      // Lake: slow wander of the anchor inside 70% of the ellipse.
+      // Lake: slow wander of the anchor inside 70% of the ellipse —
+      // and, when a drawn ring governs (ui .26), the candidate must
+      // also be inside the ring: an anchor may never drift onto land
+      // the ellipse happens to cover.
       sc.heading += (Math.random()-0.5) * 1.6 * dt;
       var sp = 0.8;  // slow drift u/s
       var nx = sc.ax + Math.cos(sc.heading)*sp*dt;
       var nz = sc.az + Math.sin(sc.heading)*sp*dt;
       var ex = (nx-sc.cx)/(sc.rx*0.7), ez = (nz-sc.cz)/(sc.rz*0.7);
-      if (ex*ex + ez*ez < 1){ sc.ax = nx; sc.az = nz; }
+      var anchorOk = (ex*ex + ez*ez < 1) &&
+                     (!sc.ring || _pointInRing(nx, nz, sc.ring));
+      if (anchorOk){ sc.ax = nx; sc.az = nz; }
       else sc.heading += Math.PI * dt * 2;  // turn back toward center
     }
   }
@@ -476,8 +587,16 @@ function _updateFish(dt){
     if (f.dartT > 0){
       // Burst away, free movement; then rejoin the water body.
       f.dartT -= dt; spd = f.speed * 3.2;
-      f.x += Math.sin(f.heading) * spd * dt;
-      f.z += Math.cos(f.heading) * spd * dt;
+      var dcx = f.x + Math.sin(f.heading) * spd * dt;
+      var dcz = f.z + Math.cos(f.heading) * spd * dt;
+      if (sc2.kind === 'lake' && sc2.ring && !_pointInRing(dcx, dcz, sc2.ring)){
+        /* ui .26: a dart may not carry a lake fish onto land — the
+           step is refused and the fish turns back toward its anchor
+           (turn, don't teleport). */
+        f.heading = Math.atan2(sc2.ax - f.x, sc2.az - f.z);
+      } else {
+        f.x = dcx; f.z = dcz;
+      }
       if (f.dartT <= 0 && sc2.kind === 'river'){
         // Dart over: snap back into the channel (nearest arc position).
         var nt = _nearestArc(sc2.pts, sc2.cum, f.x, f.z);
@@ -511,12 +630,20 @@ function _updateFish(dt){
       f.heading += dh2 * Math.min(1, 3*dt);
       f.heading += (Math.random()-0.5) * 0.8 * dt;  // jitter
       spd = f.speed * (0.75 + 0.25*Math.sin(_t*1.3 + f.phase));
-      f.x += Math.sin(f.heading) * spd * dt;
-      f.z += Math.cos(f.heading) * spd * dt;
-      // Stay inside the water: steer back at 85% of the ellipse edge.
-      var qx = (f.x-sc2.cx)/sc2.rx, qz = (f.z-sc2.cz)/sc2.rz;
-      if (qx*qx + qz*qz > 0.72){
-        f.heading = Math.atan2(sc2.cx - f.x, sc2.cz - f.z);
+      var wcx = f.x + Math.sin(f.heading) * spd * dt;
+      var wcz = f.z + Math.cos(f.heading) * spd * dt;
+      if (sc2.ring && !_pointInRing(wcx, wcz, sc2.ring)){
+        /* ui .26: THE DRAWN RING IS THE LAW — a wander step that
+           would leave the water is not taken; steer back toward the
+           school anchor instead. (Turn, don't teleport.) */
+        f.heading = Math.atan2(sc2.ax - f.x, sc2.az - f.z);
+      } else {
+        f.x = wcx; f.z = wcz;
+        // Stay inside the water: steer back at 85% of the ellipse edge.
+        var qx = (f.x-sc2.cx)/sc2.rx, qz = (f.z-sc2.cz)/sc2.rz;
+        if (qx*qx + qz*qz > 0.72){
+          f.heading = Math.atan2(sc2.cx - f.x, sc2.cz - f.z);
+        }
       }
     }
 
@@ -526,8 +653,25 @@ function _updateFish(dt){
     var wl = 0;
     try { wl = waterLevelAt(f.x, f.z); } catch(e){}
     if (wl === null || wl === undefined){
-      try { wl = heightAt(f.x, f.z) + 0.35; } catch(e2){ wl = 0; }
+      if (sc2.kind === 'lake'){
+        /* ui .26: OUT OF WATER — the old code rendered the fish at
+           heightAt + 0.35 here, which is the "swimming in the air"
+           Joshua saw. A lake fish out of water is NEVER rendered
+           above ground: hide the mesh and recover the fish to its
+           school's validated in-water point. If even that reads dry
+           this frame, stay hidden and unplaced — next frame retries. */
+        try { f.mesh.visible = false; } catch(e){}
+        f.x = (typeof sc2.safeX === 'number') ? sc2.safeX : sc2.ax;
+        f.z = (typeof sc2.safeZ === 'number') ? sc2.safeZ : sc2.az;
+        try { wl = waterLevelAt(f.x, f.z); } catch(e){}
+        if (wl === null || wl === undefined) continue;
+      } else {
+        /* Rivers keep their channel system (and its legacy fallback). */
+        try { wl = heightAt(f.x, f.z) + 0.35; } catch(e2){ wl = 0; }
+      }
     }
+    /* Back in water: a fish hidden by the recovery above shows again. */
+    if (f.mesh.visible === false){ try { f.mesh.visible = true; } catch(e){} }
     /* FISH VARIETY (ui 2026.11.07.24): each species rides at its OWN
        depth (catfish low over the bed, sunfish near the surface) plus
        a per-fish jitter — the old code pinned every fish at wl-0.55,
