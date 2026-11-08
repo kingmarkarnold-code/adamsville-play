@@ -52,12 +52,20 @@
 (function goldenRoses(){
 'use strict';
 
-var VERSION = '2026.11.08.9';
+var VERSION = '2026.11.08.10';
 var LS_KEY = 'sa_roses_v1';
 var KIND = 'rose', RNAME = 'Golden Rose';
 var TOTAL = 10;                 /* the quest is TEN roses (Joshua) */
 var REGROW_GAME_MIN = 60;       /* one game hour (Joshua's ruling) */
 var TRAMPLE_R = 0.45;           /* "walking over the top of it" */
+/* PICKED-DIRT FADE (Part 8b, ui 2026.11.08.10 — Joshua): the bare dirt
+   a pickup leaves HEALS — it fades gradually back to normal ground
+   over this many REAL milliseconds (150,000 = 2.5 minutes, gone well
+   before his 5-minute walk-away-and-return test), driven off the
+   site's persisted pick timestamp so leaving and returning mid-fade
+   shows the right stage. The loose petals do NOT fade: they stay
+   lying on the restored grass. */
+var PICK_FADE_MS = 150000;
 
 /* THE SEVEN NAMED SITES (runtime coords, each one verified against the
    shipped terrain in this build's recon boots: dry grass, not in
@@ -490,6 +498,56 @@ function buildDestroyed(THREE, G, matsDull, seed){
   return plant;
 }
 
+/* PICKED site (ui 2026.11.08.10 — Joshua's ruling from his hands on
+   .9: "the pickup rose animation is correct" but the ground it left
+   showed the DAMAGED rose): a rose that was PICKED leaves the bare
+   dirt spot it grew from — the planting disc — plus a few loose
+   petals. NO crushed stem, NO crushed bloom: the wreck belongs to
+   TRAMPLING only. Dirt from groundDiscs (un-scuffed); petals reuse
+   the destroyed build's loose-petal geometries, dull and unlit. */
+function buildPickedMark(THREE, G, matsDull, seed){
+  var M = matsDull;
+  var rng = mulberry32((seed || 20261108) + 777);
+  var plant = new THREE.Group();
+  plant.rotation.y = -1.565;
+  groundDiscs(THREE, plant, false);
+  var geos = [
+    G.petalGeo({ len: 0.150, wid: 0.066, open: 2.02, roll: 1.05, cup: -0.30, ruffle: 0.55, baseR: 0.013, tint: 0.88 }, G.DD, G.DB),
+    G.petalGeo({ len: 0.122, wid: 0.058, open: 1.52, roll: 0.55, cup: -0.08, ruffle: 0.45, baseR: 0.010, tint: 1.0 }, G.DD, G.DB),
+    G.petalGeo({ len: 0.098, wid: 0.048, open: 1.05, roll: 0.2, cup: 0.25, ruffle: 0.35, baseR: 0.007, tint: 0.95 }, G.DD, G.DB),
+    G.petalGeo({ len: 0.070, wid: 0.035, open: 0.74, cup: 0.5, roll: 0, ruffle: 0.2, baseR: 0.002, tint: 1.06 }, G.DD, G.DB)];
+  for (var i = 0; i < 7; i++){
+    var g = G.jittered(geos[i % 4], 401 + i);
+    var m = new THREE.Mesh(g, M.petal);
+    var ang = rng() * Math.PI * 2;
+    var r = 0.10 + rng() * 0.55;
+    var holder = new THREE.Group();
+    holder.position.set(Math.cos(ang) * r, 0.012 + rng() * 0.005, Math.sin(ang) * r);
+    holder.rotation.y = rng() * Math.PI * 2;
+    m.rotation.x = (rng() < 0.5 ? -1 : 1) * (Math.PI / 2) + (rng() - 0.5) * 0.4;
+    holder.add(m); plant.add(holder);
+  }
+  plant.userData.shine = false;
+  plant.userData.pickedMark = true;
+  /* Part 8b: the two ground discs (soil + shadow blob — the only
+     CircleGeometry meshes in the group) are the DIRT that heals.
+     Collect them with PRIVATE material clones set transparent, so
+     the fade can drive their opacity without ever touching the
+     intact plant's or the wreck's discs. The petals are not in this
+     list: they never fade. */
+  var dirt = [];
+  plant.traverse(function(o){
+    if (o.isMesh && o.geometry && o.geometry.type === 'CircleGeometry'){
+      o.material = o.material.clone();
+      o.material.transparent = true;
+      dirt.push(o);
+    }
+  });
+  plant.userData.dirt = dirt;
+  plant.userData.dirtF = 1;
+  return plant;
+}
+
 /* ============================ popups ================================ */
 /* First-pickup + completion share the big card; later pickups get the
    small count toast. Styled to the game's HUD family (dark card, gold
@@ -604,14 +662,41 @@ function plantSite(site){
   var mesh = buildIntact(W.THREE, W.G, W.matsShine, W.matsDull, true);
   var p = W.spawnPickup(RNAME, KIND, site.x, site.z, mesh);
   p.roseSite = site.id;
-  runtime[site.id] = { pickup: p, wreck: null };
+  runtime[site.id] = { pickup: p, wreck: null, mark: null };
   state.sites[site.id].s = 'planted';
 }
 function wreckSite(site){
   var g = buildDestroyed(W.THREE, W.G, W.matsDull, 20261108 + site.id * 131);
   g.position.set(site.x, W.heightAt(site.x, site.z), site.z);
   W.scene.add(g);
-  runtime[site.id] = { pickup: null, wreck: g };
+  runtime[site.id] = { pickup: null, wreck: g, mark: null };
+}
+/* The picked site's resting face (ui 2026.11.08.10): bare dirt disc +
+   a few loose petals where the plant stood. */
+function markSite(site){
+  var g = buildPickedMark(W.THREE, W.G, W.matsDull, 20261108 + site.id * 131);
+  g.position.set(site.x, W.heightAt(site.x, site.z), site.z);
+  W.scene.add(g);
+  runtime[site.id] = { pickup: null, wreck: null, mark: g };
+  applyMarkFade(site);
+}
+/* Part 8b: set the picked mark's dirt opacity from the site's
+   persisted pick timestamp (state.sites[id].at, real ms). f=1 is
+   fresh dirt, f=0 is fully healed — the discs then hide outright.
+   A site with no timestamp (picked before this build) reads as
+   already healed: petals only. Petals are never touched here. */
+function applyMarkFade(site){
+  var rt = runtime[site.id];
+  if (!rt || !rt.mark) return;
+  var st = state.sites[site.id];
+  var at = (st && typeof st.at === 'number' && st.at > 0) ? st.at : 0;
+  var f = at ? Math.max(0, 1 - (Date.now() - at) / PICK_FADE_MS) : 0;
+  var dirt = rt.mark.userData.dirt || [];
+  for (var i = 0; i < dirt.length; i++){
+    dirt[i].material.opacity = f;
+    dirt[i].visible = f > 0;
+  }
+  rt.mark.userData.dirtF = f;
 }
 function clearSiteObjects(site){
   var rt = runtime[site.id];
@@ -622,7 +707,8 @@ function clearSiteObjects(site){
     if (rt.pickup.mesh) W.scene.remove(rt.pickup.mesh);
   }
   if (rt.wreck) W.scene.remove(rt.wreck);
-  runtime[site.id] = { pickup: null, wreck: null };
+  if (rt.mark) W.scene.remove(rt.mark);
+  runtime[site.id] = { pickup: null, wreck: null, mark: null };
 }
 function crushSite(site){
   clearSiteObjects(site);
@@ -647,7 +733,19 @@ function onPicked(p){
   try { if (W.player) W.player.bendT = 1.15; } catch (e) {}   /* the bend-down */
   if (p && p.roseSite){
     var st = state.sites[p.roseSite];
-    if (st && st.s === 'planted'){ st.s = 'gone'; }
+    if (st && (st.s === 'planted' || st.s === 'crushed')){
+      /* PICKED (ui 2026.11.08.10): the site becomes 'gone' and shows
+         the bare dirt + loose petals (markSite) — never the wreck.
+         The 'crushed' arm covers the raced tap: the player stepped
+         onto the plant and tapped Pick up in the same moment, the
+         trample landed first, and on .9 the wreck then stayed up as
+         if the rose had been destroyed. He picked it — dirt it is. */
+      st.s = 'gone';
+      st.at = Date.now();   /* Part 8b: the dirt fade runs off this */
+      var _site = null;
+      for (var _si = 0; _si < SITES.length; _si++) if (SITES[_si].id === p.roseSite) _site = SITES[_si];
+      if (_site){ clearSiteObjects(_site); markSite(_site); }
+    }
     if (runtime[p.roseSite]) runtime[p.roseSite].pickup = null;
   } else if (p){
     /* a loose (dropped) rose picked back up: forget its resting spot
@@ -724,6 +822,13 @@ function roseTick(dt){
     else if (st.at < 0) due = Date.now() >= -st.at;
     if (due) regrowSite(site);
   }
+  /* Part 8b: picked sites' dirt heals a little more each tick —
+     a pure function of the persisted pick timestamp, so the stage
+     is right whenever the player comes back, near or far. */
+  for (i = 0; i < SITES.length; i++) {
+    site = SITES[i]; st = state.sites[site.id];
+    if (st.s === 'gone') applyMarkFade(site);
+  }
   /* trample: the player, on foot and outdoors, standing where a
      planted rose stands — walking over the top of it. Beside it
      (the pickup distance) never triggers: the radius is the plant's
@@ -784,7 +889,9 @@ function boot(){
         if (due){ plantSite(site); }
         else wreckSite(site);
       }
-      /* 'gone' — collected; nothing stands at the site */
+      else if (st.s === 'gone'){ markSite(site); }
+      /* 'gone' — collected; the bare dirt + petals mark stands there
+         (ui 2026.11.08.10 — a picked site never shows the wreck) */
     } catch (e) {
       try { if (window.Report && Report.note) Report.note('roses', { code: 'plant-failed', site: site.id, err: String(e && e.message || e).slice(0, 160) }); } catch (x) {}
     }
@@ -811,6 +918,8 @@ window.__ROSES = {
         state: state ? state.sites[s.id].s : 'unbooted',
         regrowAt: state ? state.sites[s.id].at : 0,
         hasPickup: !!(rt && rt.pickup), hasWreck: !!(rt && rt.wreck),
+        hasMark: !!(rt && rt.mark),
+        dirtF: (rt && rt.mark && typeof rt.mark.userData.dirtF === 'number') ? Math.round(rt.mark.userData.dirtF * 100) / 100 : null,
         shine: !!(rt && rt.pickup && rt.pickup.mesh && rt.pickup.mesh.userData.shine) };
     });
   },

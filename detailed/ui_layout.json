@@ -152,8 +152,22 @@
       "visible": true,
       "width": 52,
       "x": 9,
-      "y": 17,
-      "description": "Backpack icon that opens the player's inventory"
+      "y": 250,
+      "description": "Backpack icon that opens the player's inventory. Default lifted up the left edge (ui 2026.11.08.10): at the old y=17 spot the button rendered under the joystick / debug strip / browser toolbar zone on phones and was effectively invisible."
+    },
+    {
+      "anchor": "bl",
+      "asset": null,
+      "height": 44,
+      "id": "fs-btn",
+      "label": "\u26f6",
+      "mobile_only": false,
+      "type": "button",
+      "visible": true,
+      "width": 44,
+      "x": 9,
+      "y": 510,
+      "description": "Fullscreen button (ui 2026.11.08.10): tap to enter fullscreen, tap again to exit; fills gold while fullscreen is on."
     },
     {
       "anchor": "tr",
@@ -618,8 +632,22 @@
           "visible": true,
           "width": 52,
           "x": 9,
-          "y": 17,
-          "description": "Backpack icon that opens the player's inventory"
+          "y": 250,
+          "description": "Backpack icon that opens the player's inventory. Default lifted up the left edge (ui 2026.11.08.10): at the old y=17 spot the button rendered under the joystick / debug strip / browser toolbar zone on phones and was effectively invisible."
+        },
+        {
+          "anchor": "bl",
+          "asset": null,
+          "height": 44,
+          "id": "fs-btn",
+          "label": "\u26f6",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 9,
+          "y": 510,
+          "description": "Fullscreen button (ui 2026.11.08.10): tap to enter fullscreen, tap again to exit; fills gold while fullscreen is on."
         },
         {
           "anchor": "tr",
@@ -1056,8 +1084,22 @@
           "visible": true,
           "width": 52,
           "x": 9,
-          "y": 17,
-          "description": "Backpack icon that opens the player's inventory"
+          "y": 250,
+          "description": "Backpack icon that opens the player's inventory. Default lifted up the left edge (ui 2026.11.08.10): at the old y=17 spot the button rendered under the joystick / debug strip / browser toolbar zone on phones and was effectively invisible."
+        },
+        {
+          "anchor": "bl",
+          "asset": null,
+          "height": 44,
+          "id": "fs-btn",
+          "label": "\u26f6",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 9,
+          "y": 510,
+          "description": "Fullscreen button (ui 2026.11.08.10): tap to enter fullscreen, tap again to exit; fills gold while fullscreen is on."
         },
         {
           "anchor": "tr",
@@ -1505,8 +1547,22 @@
           "visible": true,
           "width": 52,
           "x": 9,
-          "y": 17,
-          "description": "Backpack icon that opens the player's inventory"
+          "y": 250,
+          "description": "Backpack icon that opens the player's inventory. Default lifted up the left edge (ui 2026.11.08.10): at the old y=17 spot the button rendered under the joystick / debug strip / browser toolbar zone on phones and was effectively invisible."
+        },
+        {
+          "anchor": "bl",
+          "asset": null,
+          "height": 44,
+          "id": "fs-btn",
+          "label": "\u26f6",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 9,
+          "y": 510,
+          "description": "Fullscreen button (ui 2026.11.08.10): tap to enter fullscreen, tap again to exit; fills gold while fullscreen is on."
         },
         {
           "anchor": "tr",
@@ -1952,8 +2008,22 @@
           "visible": true,
           "width": 52,
           "x": 9,
-          "y": 17,
-          "description": "Backpack icon that opens the player's inventory"
+          "y": 250,
+          "description": "Backpack icon that opens the player's inventory. Default lifted up the left edge (ui 2026.11.08.10): at the old y=17 spot the button rendered under the joystick / debug strip / browser toolbar zone on phones and was effectively invisible."
+        },
+        {
+          "anchor": "bl",
+          "asset": null,
+          "height": 44,
+          "id": "fs-btn",
+          "label": "\u26f6",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 9,
+          "y": 510,
+          "description": "Fullscreen button (ui 2026.11.08.10): tap to enter fullscreen, tap again to exit; fills gold while fullscreen is on."
         },
         {
           "anchor": "tr",
@@ -2399,8 +2469,22 @@
           "visible": true,
           "width": 52,
           "x": 9,
-          "y": 17,
-          "description": "Backpack icon that opens the player's inventory"
+          "y": 250,
+          "description": "Backpack icon that opens the player's inventory. Default lifted up the left edge (ui 2026.11.08.10): at the old y=17 spot the button rendered under the joystick / debug strip / browser toolbar zone on phones and was effectively invisible."
+        },
+        {
+          "anchor": "bl",
+          "asset": null,
+          "height": 44,
+          "id": "fs-btn",
+          "label": "\u26f6",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 9,
+          "y": 510,
+          "description": "Fullscreen button (ui 2026.11.08.10): tap to enter fullscreen, tap again to exit; fills gold while fullscreen is on."
         },
         {
           "anchor": "tr",
@@ -2846,8 +2930,22 @@
           "visible": true,
           "width": 52,
           "x": 9,
-          "y": 17,
-          "description": "Backpack icon that opens the player's inventory"
+          "y": 250,
+          "description": "Backpack icon that opens the player's inventory. Default lifted up the left edge (ui 2026.11.08.10): at the old y=17 spot the button rendered under the joystick / debug strip / browser toolbar zone on phones and was effectively invisible."
+        },
+        {
+          "anchor": "bl",
+          "asset": null,
+          "height": 44,
+          "id": "fs-btn",
+          "label": "\u26f6",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 9,
+          "y": 510,
+          "description": "Fullscreen button (ui 2026.11.08.10): tap to enter fullscreen, tap again to exit; fills gold while fullscreen is on."
         },
         {
           "anchor": "tr",
@@ -3293,8 +3391,22 @@
           "visible": true,
           "width": 52,
           "x": 9,
-          "y": 17,
-          "description": "Backpack icon that opens the player's inventory"
+          "y": 250,
+          "description": "Backpack icon that opens the player's inventory. Default lifted up the left edge (ui 2026.11.08.10): at the old y=17 spot the button rendered under the joystick / debug strip / browser toolbar zone on phones and was effectively invisible."
+        },
+        {
+          "anchor": "bl",
+          "asset": null,
+          "height": 44,
+          "id": "fs-btn",
+          "label": "\u26f6",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 9,
+          "y": 510,
+          "description": "Fullscreen button (ui 2026.11.08.10): tap to enter fullscreen, tap again to exit; fills gold while fullscreen is on."
         },
         {
           "anchor": "tr",
@@ -3740,8 +3852,22 @@
           "visible": true,
           "width": 52,
           "x": 9,
-          "y": 17,
-          "description": "Backpack icon that opens the player's inventory"
+          "y": 250,
+          "description": "Backpack icon that opens the player's inventory. Default lifted up the left edge (ui 2026.11.08.10): at the old y=17 spot the button rendered under the joystick / debug strip / browser toolbar zone on phones and was effectively invisible."
+        },
+        {
+          "anchor": "bl",
+          "asset": null,
+          "height": 44,
+          "id": "fs-btn",
+          "label": "\u26f6",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 9,
+          "y": 510,
+          "description": "Fullscreen button (ui 2026.11.08.10): tap to enter fullscreen, tap again to exit; fills gold while fullscreen is on."
         },
         {
           "anchor": "tr",
@@ -4187,8 +4313,22 @@
           "visible": true,
           "width": 52,
           "x": 9,
-          "y": 17,
-          "description": "Backpack icon that opens the player's inventory"
+          "y": 250,
+          "description": "Backpack icon that opens the player's inventory. Default lifted up the left edge (ui 2026.11.08.10): at the old y=17 spot the button rendered under the joystick / debug strip / browser toolbar zone on phones and was effectively invisible."
+        },
+        {
+          "anchor": "bl",
+          "asset": null,
+          "height": 44,
+          "id": "fs-btn",
+          "label": "\u26f6",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 9,
+          "y": 510,
+          "description": "Fullscreen button (ui 2026.11.08.10): tap to enter fullscreen, tap again to exit; fills gold while fullscreen is on."
         },
         {
           "anchor": "tr",
@@ -4634,8 +4774,22 @@
           "visible": true,
           "width": 52,
           "x": 9,
-          "y": 17,
-          "description": "Backpack icon that opens the player's inventory"
+          "y": 250,
+          "description": "Backpack icon that opens the player's inventory. Default lifted up the left edge (ui 2026.11.08.10): at the old y=17 spot the button rendered under the joystick / debug strip / browser toolbar zone on phones and was effectively invisible."
+        },
+        {
+          "anchor": "bl",
+          "asset": null,
+          "height": 44,
+          "id": "fs-btn",
+          "label": "\u26f6",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 9,
+          "y": 510,
+          "description": "Fullscreen button (ui 2026.11.08.10): tap to enter fullscreen, tap again to exit; fills gold while fullscreen is on."
         },
         {
           "anchor": "tr",
@@ -5081,8 +5235,22 @@
           "visible": true,
           "width": 52,
           "x": 9,
-          "y": 17,
-          "description": "Backpack icon that opens the player's inventory"
+          "y": 250,
+          "description": "Backpack icon that opens the player's inventory. Default lifted up the left edge (ui 2026.11.08.10): at the old y=17 spot the button rendered under the joystick / debug strip / browser toolbar zone on phones and was effectively invisible."
+        },
+        {
+          "anchor": "bl",
+          "asset": null,
+          "height": 44,
+          "id": "fs-btn",
+          "label": "\u26f6",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 9,
+          "y": 510,
+          "description": "Fullscreen button (ui 2026.11.08.10): tap to enter fullscreen, tap again to exit; fills gold while fullscreen is on."
         },
         {
           "anchor": "tr",
@@ -5528,8 +5696,22 @@
           "visible": true,
           "width": 52,
           "x": 9,
-          "y": 17,
-          "description": "Backpack icon that opens the player's inventory"
+          "y": 250,
+          "description": "Backpack icon that opens the player's inventory. Default lifted up the left edge (ui 2026.11.08.10): at the old y=17 spot the button rendered under the joystick / debug strip / browser toolbar zone on phones and was effectively invisible."
+        },
+        {
+          "anchor": "bl",
+          "asset": null,
+          "height": 44,
+          "id": "fs-btn",
+          "label": "\u26f6",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 9,
+          "y": 510,
+          "description": "Fullscreen button (ui 2026.11.08.10): tap to enter fullscreen, tap again to exit; fills gold while fullscreen is on."
         },
         {
           "anchor": "tr",
@@ -5975,8 +6157,22 @@
           "visible": true,
           "width": 52,
           "x": 9,
-          "y": 17,
-          "description": "Backpack icon that opens the player's inventory"
+          "y": 250,
+          "description": "Backpack icon that opens the player's inventory. Default lifted up the left edge (ui 2026.11.08.10): at the old y=17 spot the button rendered under the joystick / debug strip / browser toolbar zone on phones and was effectively invisible."
+        },
+        {
+          "anchor": "bl",
+          "asset": null,
+          "height": 44,
+          "id": "fs-btn",
+          "label": "\u26f6",
+          "mobile_only": false,
+          "type": "button",
+          "visible": true,
+          "width": 44,
+          "x": 9,
+          "y": 510,
+          "description": "Fullscreen button (ui 2026.11.08.10): tap to enter fullscreen, tap again to exit; fills gold while fullscreen is on."
         },
         {
           "anchor": "tr",

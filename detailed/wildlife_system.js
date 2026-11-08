@@ -2627,6 +2627,85 @@ function tick(dt){
 }
 
 /* ---------------------------------------------------------------------------
+   SPECIMEN BUILDERS — window.__WILDLIFE_BUILDERS (ui 2026.11.08.10,
+   for the Asset Viewer): the live builders above are closure-private,
+   so the viewer could only show honest "not placeable" cards for
+   birds / squirrel / chipmunk / butterflies. These handles build a
+   FRESH specimen with the very same code the live systems use —
+   buildBirdGeometry + makeBirdMaterial (with the iFlap instanced
+   attribute the flap shader needs, written exactly as a flying bird
+   writes it: phase 0, amplitude 0.7, the species' own flapHz, fold
+   0), buildSquirrelGeometry / buildChipmunkGeometry + getCritterMat,
+   buildButterflyGeometry + makeButterflyMaterial (with iAnchor at
+   the origin and iSeed / iColor dealt the way the live set deals
+   them). Each returns a THREE.Group the caller may place anywhere.
+   READ-ONLY by construction: nothing here touches spawn state, the
+   creature list, or the live instance sets — zero behaviour change.
+   --------------------------------------------------------------------------- */
+window.__WILDLIFE_BUILDERS = {
+  version: VERSION,
+  species: function(){ return Object.keys(BIRD_SPECIES); },
+  butterflyKinds: function(){
+    return BUTTERFLY_KINDS.map(function(k){ return k.label; });
+  },
+  bird: function(key){
+    var sp = BIRD_SPECIES[key];
+    if (!sp) return null;
+    var geo = buildBirdGeometry(sp);
+    var mesh = new THREE.InstancedMesh(geo, makeBirdMaterial(), 1);
+    geo.setAttribute('iFlap', new THREE.InstancedBufferAttribute(
+      new Float32Array([0, 0.7, sp.flapHz, 0]), 4));
+    var d = new THREE.Object3D(); d.updateMatrix();
+    mesh.setMatrixAt(0, d.matrix);
+    mesh.count = 1;
+    mesh.frustumCulled = false;
+    var g = new THREE.Group();
+    g.add(mesh);
+    g.userData.kind = 'bird';
+    g.userData.species = key;
+    g.userData.label = sp.label;
+    return g;
+  },
+  squirrel: function(){
+    var g = new THREE.Group();
+    var m = new THREE.Mesh(buildSquirrelGeometry(), getCritterMat());
+    m.frustumCulled = false;
+    g.add(m);
+    g.userData.kind = 'squirrel';
+    return g;
+  },
+  chipmunk: function(){
+    var g = new THREE.Group();
+    var m = new THREE.Mesh(buildChipmunkGeometry(), getCritterMat());
+    m.frustumCulled = false;
+    g.add(m);
+    g.userData.kind = 'chipmunk';
+    return g;
+  },
+  butterfly: function(kindIdx){
+    var kind = BUTTERFLY_KINDS[(kindIdx | 0)] || BUTTERFLY_KINDS[0];
+    var geo = buildButterflyGeometry();
+    var mesh = new THREE.InstancedMesh(geo, makeButterflyMaterial(), 1);
+    var col = new THREE.Color(kind.color);
+    geo.setAttribute('iAnchor', new THREE.InstancedBufferAttribute(
+      new Float32Array([0, 0, 0]), 3));
+    geo.setAttribute('iSeed', new THREE.InstancedBufferAttribute(
+      new Float32Array([0.35, 2.0, kind.size, 0.6]), 4));
+    geo.setAttribute('iColor', new THREE.InstancedBufferAttribute(
+      new Float32Array([col.r, col.g, col.b]), 3));
+    var d = new THREE.Object3D(); d.updateMatrix();
+    mesh.setMatrixAt(0, d.matrix);
+    mesh.count = 1;
+    mesh.frustumCulled = false;
+    var g = new THREE.Group();
+    g.add(mesh);
+    g.userData.kind = 'butterfly';
+    g.userData.label = kind.label;
+    return g;
+  }
+};
+
+/* ---------------------------------------------------------------------------
    DEBUG HANDLE — window.__WILDLIFE (fish precedent)
    --------------------------------------------------------------------------- */
 function parityCheck(){

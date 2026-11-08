@@ -218,6 +218,7 @@ var NAMES = {
   'mini-radio': 'Mini radio',
   'street-name': 'Street name',
   'ver-tag': 'Version tag', 'inv-btn': 'Inventory button',
+  'fs-btn': 'Fullscreen button',
   'action-btn': 'Action button', 'minimap': 'Minimap',
   'mode-tag': 'Mode tag', 'speedo': 'Speedometer',
   'dmg-wrap': 'Damage + gas', 'joy-base': 'Walk stick',

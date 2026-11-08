@@ -69,6 +69,21 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<!-- INSTALLABLE (ui 2026.11.08.10, Part 5 — Joshua's rulings): the web
+     app manifest makes the game Add-to-Home-Screen installable; it
+     declares display:fullscreen so an installed launch opens
+     fullscreen on its own, and NO orientation lock of any kind (he
+     dropped auto-rotation explicitly). The service worker registered
+     at the end of this head is PASS-THROUGH ONLY — see sw.js. -->
+<link rel="manifest" href="app.webmanifest">
+<meta name="theme-color" content="#0b0f16">
+<script>
+try{
+  if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)){
+    navigator.serviceWorker.register('sw.js').catch(function(){});
+  }
+}catch(e){}
+</script>
 <title>Surviving Adamsville — Demo v0.8</title>
 <!-- ===== ENGINE (Three.js migration, 2026-10-25) =====
      The game now prefers the MODERN Three.js engine (pinned r186,
@@ -537,6 +552,7 @@ if (location.protocol === 'file:'){ setTimeout(function(){ if (!window.__threeMo
   /* contextual action button */
   #action-btn { position:fixed; z-index:11; right:12px; top:64px; display:none;
     padding:16px 22px; border-radius:14px; border:2px solid #fff; font-size:17px; font-weight:bold;
+    white-space:nowrap;
     background:rgba(46,139,139,.92); color:#fff; }
   /* v1.14 NPC conversation panel (Joshua: non-crew NPCs talk about Atlanta).
      Bottom sheet above the HUD; name tag + line + BYE button. */
@@ -548,7 +564,7 @@ if (location.protocol === 'file:'){ setTimeout(function(){ if (!window.__threeMo
   #npc-dialog-text { margin-bottom:10px; }
   #npc-dialog-bye { padding:10px 22px; border-radius:10px; border:2px solid #fff;
     background:rgba(46,139,139,.92); color:#fff; font-size:15px; font-weight:bold; }
-  #mode-tag { position:fixed; z-index:10; right:18px; bottom:290px; color:#fff;
+  #mode-tag { position:fixed; z-index:10; right:18px; bottom:290px; color:#fff; white-space:nowrap;
     background:rgba(0,0,0,.45); padding:6px 12px; border-radius:8px; font-size:13px; pointer-events:none; }
   /* v1.8 speedometer (mph) — driving only, above the mode tag */
   #speedo { position:fixed; z-index:10; right:18px; bottom:236px; color:#fff;
@@ -1164,6 +1180,13 @@ window.SAView = (function(){
   @media (max-width:820px),(pointer:coarse){
     #inv-btn{left:8px;top:8px;bottom:auto;}
   }
+  /* FULLSCREEN button (ui 2026.11.08.10, Part 4 — Joshua's ask): same
+     family as the backpack; the designed layout (ui_layout.json) owns
+     its spot, HudMove can move/hide it like every other control.
+     .fs-on = the game IS fullscreen right now (filled gold). */
+  #fs-btn{position:fixed;left:12px;top:160px;z-index:20;width:44px;height:44px;border-radius:12px;
+    border:2px solid #ffd75e;background:rgba(20,24,34,.88);color:#ffd75e;font-size:20px;}
+  #fs-btn.fs-on{background:#ffd75e;color:#161b26;}
   #inv-panel{position:fixed;inset:0;z-index:50;display:none;align-items:center;justify-content:center;
     background:rgba(0,0,0,.72);}
   #inv-panel.show{display:flex;}
@@ -1193,6 +1216,7 @@ window.SAView = (function(){
    styles live with the loader CSS above. */
 </style>
 <button id="inv-btn" title="Inventory (I)">&#127890;</button>
+<button id="fs-btn" title="Fullscreen" aria-label="Enter fullscreen">&#9974;</button>
 <div id="inv-panel"><div class="card">
   <h3>&#127890; Inventory</h3>
   <div id="inv-list"></div>
@@ -2565,7 +2589,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
    stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.11.08.9';
+window.__DOC_UIVER = '2026.11.08.10';
 /* VER-TAG (ui 2026.11.07.25) >>>
    The on-screen version tag (#ver-tag) shows the version OF THE
    DEPLOYMENT ACTUALLY RUNNING, environment first (Joshua 2026-11-07
@@ -16955,11 +16979,24 @@ function spawnPickup(name, kind, x, z, meshOverride){
      own world mesh (the rose module) hands it in; everyone else gets
      the standard makePickupMesh(kind). */
   var mesh=meshOverride||makePickupMesh(kind);
+  /* FOOTPRINT (ui 2026.11.08.10, Part 1): measure the built mesh ONCE,
+     before it is positioned — its lowest local point (minY) and the
+     radius of the ground it covers (footR). updatePickups rests the
+     mesh on the highest ground under that footprint, so the bob can
+     never dip any part of it under the terrain (Joshua's law). */
+  var _minY=0, _footR=0;
+  try{
+    var _bb=new THREE.Box3().setFromObject(mesh);
+    if (isFinite(_bb.min.y)){
+      _minY=_bb.min.y;
+      _footR=Math.max(Math.abs(_bb.min.x),Math.abs(_bb.max.x),Math.abs(_bb.min.z),Math.abs(_bb.max.z));
+    }
+  }catch(e){}
   /* v1.35 SNAP-TO-FACE (Joshua 2026-10-11). */
   var _pgy=0; try{ _pgy=(typeof snapToGround==='function'?snapToGround(x,z,1,1,0):heightAt(x,z)); }catch(e){ try{_pgy=heightAt(x,z);}catch(e2){} }
   mesh.position.set(x, _pgy, z);
   scene.add(mesh);
-  var p={id:'pk'+Date.now()+Math.floor(Math.random()*99999), name:name, kind:kind, x:x, z:z, mesh:mesh, bob:Math.random()*6.28};
+  var p={id:'pk'+Date.now()+Math.floor(Math.random()*99999), name:name, kind:kind, x:x, z:z, mesh:mesh, bob:Math.random()*6.28, minY:_minY, footR:_footR};
   /* a planted rose is a PLANT: it does not bob or spin like the loose
      items do (updatePickups honours noBob). */
   if (kind==='rose') p.noBob=true;
@@ -16967,7 +17004,11 @@ function spawnPickup(name, kind, x, z, meshOverride){
   return p;
 }
 function nearestPickup(){
-  var best=null, bd=3.5;
+  /* 1.8u (ui 2026.11.08.10, Part 7): TRUE arm's reach, matching the
+     proxPickups tracker below — at 3.5u the Pick up prompt lit while
+     Joshua was still steps away from the item. Prompt distance and
+     collection distance are this one number, by construction. */
+  var best=null, bd=1.8;
   for (var i=0;i<pickups.length;i++){
     /* v1.28 PERF (FIX 2): sqrt instead of hypot — per-frame via updateActionButton(). */
     var p=pickups[i], _dx=player.x-p.x, _dz=player.z-p.z;
@@ -16980,7 +17021,11 @@ function doPickup(){
   if (!pendingPickup) return;
   var p=pendingPickup;
   scene.remove(p.mesh);
-  pickups.splice(pickups.indexOf(p),1);
+  /* Guarded splice (ui 2026.11.08.10): if a trample already removed
+     this pickup in the same moment the tap landed, indexOf is -1 and
+     an unguarded splice(-1,1) would silently eat the LAST pickup in
+     the array — some other item across the map. Only splice a hit. */
+  var _pix=pickups.indexOf(p); if (_pix>=0) pickups.splice(_pix,1);
   /* STACKING (Joshua 2026-11-08 — the general rule, golden roses are
      the case that brought it): items of the same kind stack into ONE
      inventory slot with a count (n). renderInv draws the count badge
@@ -17050,7 +17095,24 @@ function updatePickups(dt){
     if (p.noBob){ p.mesh.position.y=heightAt(p.x,p.z); continue; }
     p.bob+=dt*2;
     p.mesh.rotation.y+=dt*0.8;
-    p.mesh.position.y=heightAt(p.x,p.z)+Math.sin(p.bob)*0.06;
+    /* GROUND COLLISION (Joshua's law, ui 2026.11.08.10 — the can that
+       dipped in and out of the ground in his hands): the bob rides ON
+       TOP of the surface, never through it. The resting base is the
+       HIGHEST ground under the mesh's footprint (centre + an 8-point
+       ring at footR, turned with the mesh as it spins), the mesh's own
+       lowest point (minY) sits exactly on that base, and the bob lift
+       runs 0.01..0.06 — always >= 0, so no phase of the cycle can
+       carry any part of the prop below the ground at its spot. */
+    var _base=heightAt(p.x,p.z);
+    if (p.footR){
+      var _ca=Math.cos(p.mesh.rotation.y), _sa=Math.sin(p.mesh.rotation.y);
+      for (var _k=0;_k<8;_k++){
+        var _a=_k*Math.PI/4, _lx=Math.cos(_a)*p.footR, _lz=Math.sin(_a)*p.footR;
+        var _gy=heightAt(p.x+_lx*_ca-_lz*_sa, p.z+_lx*_sa+_lz*_ca);
+        if (_gy>_base) _base=_gy;
+      }
+    }
+    p.mesh.position.y=_base-(p.minY||0)+0.01+(Math.sin(p.bob)*0.5+0.5)*0.05;
   }
 }
 // starter items near home base (535 Dollar Mill Rd)
@@ -17316,9 +17378,13 @@ function initProximityTrackers(){
     list:function(){ return (typeof cars!=='undefined')?cars:[]; },
     filter:function(c){ return !(c.dead||c.sunk||c.sinking||c.driving); }
   });
-  /* Pickups: 3.5u radius (matches old nearestPickup threshold). */
+  /* Pickups: 1.8u radius (ui 2026.11.08.10, Part 7 — TRUE arm's reach;
+     was 3.5u, which lit the Pick up prompt while the player was still
+     steps away, including at spawn. updateActionButton reads THIS
+     tracker's nearest and doPickup collects exactly that item, so
+     prompt distance == collection distance by construction). */
   proxPickups=new ProximityTracker({
-    radius:3.5,
+    radius:1.8,
     list:function(){ return (typeof pickups!=='undefined')?pickups:[]; }
   });
   /* NPCs: 4.5u TALK radius over the visible slots (same source as the old
@@ -17557,6 +17623,44 @@ function updateActionButton(){
 
 spawnStarterPickups();
 document.getElementById('inv-btn').addEventListener('click', function(){ toggleInv(); });
+/* FULLSCREEN toggle (ui 2026.11.08.10, Part 4): one tap enters
+   document fullscreen, the next exits. State stays honest — the
+   button fills gold and its label flips with the real fullscreen
+   state (fullscreenchange), never with what the tap hoped for.
+   Where the API does not exist (older browser, embedded webview)
+   the tap says so on the button instead of dying silently. */
+(function(){
+  var fsBtn=document.getElementById('fs-btn'); if (!fsBtn) return;
+  function fsOn(){ return !!(document.fullscreenElement||document.webkitFullscreenElement); }
+  function fsSync(){
+    var on=fsOn();
+    fsBtn.classList.toggle('fs-on', on);
+    fsBtn.setAttribute('aria-label', on?'Exit fullscreen':'Enter fullscreen');
+    fsBtn.title=on?'Exit fullscreen':'Fullscreen';
+  }
+  fsBtn.addEventListener('click', function(){
+    try{
+      if (fsOn()){
+        var ex=document.exitFullscreen||document.webkitExitFullscreen;
+        if (ex) ex.call(document);
+      } else {
+        var el=document.documentElement;
+        var req=el.requestFullscreen||el.webkitRequestFullscreen;
+        if (!req){
+          fsBtn.title='Fullscreen is not available in this browser';
+          fsBtn.setAttribute('aria-label','Fullscreen not available in this browser');
+          return;
+        }
+        var pr=req.call(el);
+        if (pr && pr.catch) pr.catch(function(){});
+      }
+    }catch(e){}
+    setTimeout(fsSync, 60);
+  });
+  document.addEventListener('fullscreenchange', fsSync);
+  document.addEventListener('webkitfullscreenchange', fsSync);
+  fsSync();
+})();
 document.getElementById('inv-close').addEventListener('click', function(){ toggleInv(false); });
 /* ============================================================================
    v1.18 COMPREHENSIVE NPC VEHICLE-VEHICLE COLLISION

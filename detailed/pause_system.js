@@ -294,6 +294,29 @@ try {
   });
 } catch(e){}
 
+/* ---------------------------------------------------------------------------
+   AUTO-PAUSE ON LEAVING (Joshua, ui 2026.11.08.10): when the player
+   leaves the browser — switches app, locks the phone, alt-tabs — the
+   game must be sitting on its pause screen when they come back, and
+   silent while they are gone (setPaused runs pauseAudio: the
+   __audioPaused layer, the shared context AND the music elements).
+   Same setPaused() entry as the button and Escape — no parallel
+   pause system. Rules: only once the game is actually running
+   (__gameReadyFired — never during loading / Get Ready), never when
+   already paused (no double-engage), and NO auto-resume: returning
+   to the page leaves the pause screen up until the player resumes
+   by hand.
+   --------------------------------------------------------------------------- */
+try {
+  var autoPauseOnLeave = function(){
+    try { if (!paused && window.__gameReadyFired) setPaused(true); } catch(e){}
+  };
+  document.addEventListener('visibilitychange', function(){
+    try { if (document.hidden) autoPauseOnLeave(); } catch(e){}
+  });
+  window.addEventListener('blur', autoPauseOnLeave);
+} catch(e){}
+
 /* Wire the button/overlay. The deferred queue runs after the DOM is
    parsed, so the elements normally exist already; if a future load
    order ever beats the DOM, wire on DOMContentLoaded instead. */
@@ -304,8 +327,8 @@ else if (document.addEventListener)
 /* Self-report so Joshua can verify the module loaded (Report panel). */
 try {
   if (typeof Report !== 'undefined' && Report.setSys){
-    Report.setSys('pause', {status:'ok', version:'1.2',
-      note:'Esc / pause button freezes sim + music; pause silences ALL audio: the __audioPaused layer over the shared context PLUS the index.html music bridge that pauses the actual elements and halts the crossfade (ui 2026.11.07.26, Joshua 2026-10-17, 2026-11-07)'});
+    Report.setSys('pause', {status:'ok', version:'1.3',
+      note:'Esc / pause button freezes sim + music; pause silences ALL audio: the __audioPaused layer over the shared context PLUS the index.html music bridge that pauses the actual elements and halts the crossfade (ui 2026.11.07.26, Joshua 2026-10-17, 2026-11-07). v1.3 (ui 2026.11.08.10): leaving the browser (visibility hidden / window blur) auto-pauses through the same setPaused entry once the game is running — no auto-resume (Joshua).'});
   }
 } catch(e){}
 

@@ -134,20 +134,30 @@
       return null;
     }
 
-    // BUTTON SIZE FLOOR (2026-10-18 satellite/nav fix): remember the
-    // element's natural size — its size under the game's own CSS,
-    // before this applier ever sets an inline width/height. Measured
-    // once and cached on the element, because later passes (resize)
-    // would otherwise measure our own shrunk box and call it natural.
-    // Only buttons need this, and only while they are rendered (a
-    // display:none element measures 0 and must not poison the cache).
+    // NATURAL SIZE FLOOR (2026-10-18 satellite/nav fix, GENERALIZED
+    // ui 2026.11.08.10 — the width clamp deferred from .24, folded in
+    // on Joshua's clipped-controls report): remember the element's
+    // natural size — its size under the game's own CSS, before this
+    // applier ever sets an inline width/height — for EVERY placed
+    // element, not just buttons. Measured once and cached on the
+    // element, because later passes (resize) would otherwise measure
+    // our own shrunk box and call it natural. The cache may only GROW
+    // afterwards: scrollWidth/scrollHeight reveal content wider than
+    // the box we wrote (a longer street name, the ACTION button's
+    // current label — it starts display:none, so its natural size
+    // only exists once it first shows). Only while rendered: a
+    // display:none element measures 0 and must not poison the cache.
     var isButton = (def.type === "button") ||
       (el.tagName && el.tagName.toUpperCase() === "BUTTON");
-    if (isButton && el.dataset && !el.dataset.saNatW) {
+    if (el.dataset) {
       try {
         if (el.offsetWidth > 0 && el.offsetHeight > 0) {
-          el.dataset.saNatW = String(el.offsetWidth);
-          el.dataset.saNatH = String(el.offsetHeight);
+          var _nw = Math.max(el.offsetWidth || 0, el.scrollWidth || 0);
+          var _nh = Math.max(el.offsetHeight || 0, el.scrollHeight || 0);
+          var _cw = parseInt(el.dataset.saNatW || "0", 10) || 0;
+          var _ch = parseInt(el.dataset.saNatH || "0", 10) || 0;
+          if (_nw > _cw) el.dataset.saNatW = String(_nw);
+          if (_nh > _ch) el.dataset.saNatH = String(_nh);
         }
       } catch (e) { /* dataset unavailable — floor just won't apply */ }
     }
@@ -173,14 +183,21 @@
     // Floor: a button never renders smaller than its natural size,
     // and never smaller than a 44px tappable box. Full-size viewports
     // (scale >= 1) are untouched — the designed layout applies as-is.
-    if (isButton && pos.scale < 1) {
+    if (pos.scale < 1) {
       var natW = 0, natH = 0;
       try {
         natW = parseInt((el.dataset && el.dataset.saNatW) || "0", 10) || 0;
         natH = parseInt((el.dataset && el.dataset.saNatH) || "0", 10) || 0;
       } catch (e) { /* ignore — absolute floor below still applies */ }
-      if (natW > 0) w = Math.max(w, natW);
-      if (natH > 0) h = Math.max(h, natH);
+      // EVERY control keeps at least its natural size (capped at the
+      // screen — the fit pass has the final say and shrinks anything
+      // still too wide): a text label's box can no longer shrink to a
+      // fraction of its words — the version tag rendered 61x9 and
+      // ON FOOT 30x13 in Joshua's screenshot, their text spilling off
+      // the screen edge. Buttons keep their extra floors below.
+      if (natW > 0) w = Math.max(w, Math.min(natW, vw));
+      if (natH > 0) h = Math.max(h, Math.min(natH, vh));
+      if (isButton) {
       w = Math.max(w, 44);
       h = Math.max(h, 44);
       // CSS MIN-SIZE FLOOR (2026-10-26): a button hidden right now
@@ -197,6 +214,7 @@
         if (minW > 0) w = Math.max(w, minW);
         if (minH > 0) h = Math.max(h, minH);
       } catch (e) { /* ignore — the floors above still apply */ }
+      }
     }
     // Only resize when the layout gives sane dimensions.
     // BOX-SIZING (2026-10-26): the placed box must be the RENDERED
@@ -750,6 +768,27 @@
     if (_rt) clearTimeout(_rt);
     _rt = setTimeout(applyUILayout, 250);
   });
+
+  // DYNAMIC-LABEL REFIT (ui 2026.11.08.10): the ACTION button's label
+  // is its context ("Pick up", "ENTER CAR", "TOW TO GAS STATION"...)
+  // and it starts display:none, so no layout pass can measure the
+  // label it will actually wear — the box stayed at the 44px floor
+  // and the words burst off the screen edge (Joshua's screenshot).
+  // When the label changes, re-run the pass: the natural-size floor
+  // above now measures the live label (scrollWidth) and the fit pass
+  // keeps the widened box on screen. The player's own moved/resized
+  // ACTION still wins — overrides re-assert after every pass.
+  try {
+    var _ab = document.getElementById("action-btn");
+    if (_ab && window.MutationObserver) {
+      var _abT = null;
+      var _abObs = new MutationObserver(function () {
+        if (_abT) clearTimeout(_abT);
+        _abT = setTimeout(applyUILayout, 60);
+      });
+      _abObs.observe(_ab, { childList: true, characterData: true, subtree: true });
+    }
+  } catch (e) { /* refit is an enhancement — the floors still apply */ }
 
   // Expose for debugging / re-apply after hot-reload. pickLayout is
   // exposed so the selection logic itself is testable headlessly

@@ -129,9 +129,9 @@
     },
     {
       "name": "golden_roses.js",
-      "size": 40851,
-      "sha256": "ef7de850f8e6316cdedcad108b0aec88d3d0bfc1a996fc62d8705c8453a66dcd",
-      "hash": "ef7de850f8e6316cdedcad108b0aec88d3d0bfc1a996fc62d8705c8453a66dcd"
+      "size": 46365,
+      "sha256": "2630d09068e4353dc5dfd8a91dcbe778f91e1fe9dafa852b14a86831a6ab6435",
+      "hash": "2630d09068e4353dc5dfd8a91dcbe778f91e1fe9dafa852b14a86831a6ab6435"
     },
     {
       "name": "goto.js",
@@ -159,9 +159,9 @@
     },
     {
       "name": "hud_move.js",
-      "size": 76975,
-      "sha256": "0bf1c404a22dbe21dc80935b4a038c74d75d52b597dcd6422a3293a7b9aa0d39",
-      "hash": "0bf1c404a22dbe21dc80935b4a038c74d75d52b597dcd6422a3293a7b9aa0d39"
+      "size": 77008,
+      "sha256": "8077be8d9e75ed117a8dfc10f2a01985d9b7a52ede43ace02eee9652b3b86c06",
+      "hash": "8077be8d9e75ed117a8dfc10f2a01985d9b7a52ede43ace02eee9652b3b86c06"
     },
     {
       "name": "icon.png",
@@ -171,9 +171,9 @@
     },
     {
       "name": "index.html",
-      "size": 1303160,
-      "sha256": "1f28c1f6bdc9a68e2ad390a3cee17be8183c108ca4276e71f0422b4ccfc4bae1",
-      "hash": "1f28c1f6bdc9a68e2ad390a3cee17be8183c108ca4276e71f0422b4ccfc4bae1"
+      "size": 1308476,
+      "sha256": "f600069602e242c96f93d6b85331604dc7a71a165ff04111bd958390a426b372",
+      "hash": "f600069602e242c96f93d6b85331604dc7a71a165ff04111bd958390a426b372"
     },
     {
       "name": "input_diag.js",
@@ -256,8 +256,8 @@
     },
     {
       "name": "pause_system.js",
-      "size": 14210,
-      "sha256": "069f9a7892d8bbfcac607b599056bf6f4ce48276d72fc1349e4c6d72f1b6772b"
+      "size": 15565,
+      "sha256": "b05f86abba74aadabbad54e94eb9954f1840428ed4b76f05a43b24e530e17e07"
     },
     {
       "name": "perf_budget.js",
@@ -418,15 +418,15 @@
     },
     {
       "name": "ui_layout.json",
-      "size": 172576,
-      "sha256": "fbc1015e5c54e697dbfbf8c29822c88281252f7b6efe10db47bc8fb020f215c2",
-      "hash": "fbc1015e5c54e697dbfbf8c29822c88281252f7b6efe10db47bc8fb020f215c2"
+      "size": 181410,
+      "sha256": "ea464df64003b54a08c4038836468492cef9c7bd14f2c7a323ed0bb1ea313314",
+      "hash": "ea464df64003b54a08c4038836468492cef9c7bd14f2c7a323ed0bb1ea313314"
     },
     {
       "name": "ui_layout_apply.js",
-      "size": 36542,
-      "sha256": "5c597b9573d47509af9e7cfa67fcef6a0454896ad17cc5f0e1284757c09eb784",
-      "hash": "5c597b9573d47509af9e7cfa67fcef6a0454896ad17cc5f0e1284757c09eb784"
+      "size": 38724,
+      "sha256": "fa94f2c83af411ad15a81067b9d99df3846ec4cc995448d16fd283efcd7c74a0",
+      "hash": "fa94f2c83af411ad15a81067b9d99df3846ec4cc995448d16fd283efcd7c74a0"
     },
     {
       "name": "ui_sounds.js",
@@ -673,9 +673,9 @@
     },
     {
       "name": "wildlife_system.js",
-      "size": 115705,
-      "sha256": "d31d0dc9efb60da77a509042744b9f3959fa8c1428321006c2ef0d3e0dc1fdee",
-      "hash": "d31d0dc9efb60da77a509042744b9f3959fa8c1428321006c2ef0d3e0dc1fdee"
+      "size": 118965,
+      "sha256": "9278e31dba2bcd6c8f57af2b0a3a44913226fd21285e7e5036495ec1b0106ad9",
+      "hash": "9278e31dba2bcd6c8f57af2b0a3a44913226fd21285e7e5036495ec1b0106ad9"
     },
     {
       "name": "wildlife/Deer.glb",
@@ -688,8 +688,26 @@
       "size": 352,
       "sha256": "20b983ae0e2e555817495a65c37519bfcb2231825269db6a57d72c51ed6006e3",
       "hash": "20b983ae0e2e555817495a65c37519bfcb2231825269db6a57d72c51ed6006e3"
+    },
+    {
+      "name": "app.webmanifest",
+      "size": 370,
+      "sha256": "17dd3e9f74a89499fbf99fc41999f8839c821f36c0541700917fdf6c5d97c796",
+      "hash": "17dd3e9f74a89499fbf99fc41999f8839c821f36c0541700917fdf6c5d97c796"
+    },
+    {
+      "name": "sw.js",
+      "size": 917,
+      "sha256": "7827d613e40056b29d511b482d2388df3447cd50c2df2d66a05c10ff10323c62",
+      "hash": "7827d613e40056b29d511b482d2388df3447cd50c2df2d66a05c10ff10323c62"
+    },
+    {
+      "name": "icon-512.png",
+      "size": 312617,
+      "sha256": "5bd3ab4ab2c4fe2671d7c7b755c98518de645f5390c3df530be6c0fbaea92a35",
+      "hash": "5bd3ab4ab2c4fe2671d7c7b755c98518de645f5390c3df530be6c0fbaea92a35"
     }
   ],
-  "ui_version": "2026.11.08.9",
+  "ui_version": "2026.11.08.10",
   "version": "2026.10.17.9"
 }
