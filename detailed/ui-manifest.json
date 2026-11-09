@@ -129,9 +129,9 @@
     },
     {
       "name": "golden_roses.js",
-      "size": 46870,
-      "sha256": "740a80c88b5f33ecb76d84fccae6c46172f842c49ad88340f416e79d4d03bc27",
-      "hash": "740a80c88b5f33ecb76d84fccae6c46172f842c49ad88340f416e79d4d03bc27"
+      "size": 46868,
+      "sha256": "6815e5d95f428c83ebca86738fc428f00ba08e3f32d462272a881f51a10fb1ef",
+      "hash": "6815e5d95f428c83ebca86738fc428f00ba08e3f32d462272a881f51a10fb1ef"
     },
     {
       "name": "goto.js",
@@ -172,8 +172,8 @@
     {
       "name": "index.html",
       "size": 1319246,
-      "sha256": "050599e547c60f1d06d8840d4d2e65f94db6aaa1f75c6475b7f9ed072ebe025a",
-      "hash": "050599e547c60f1d06d8840d4d2e65f94db6aaa1f75c6475b7f9ed072ebe025a"
+      "sha256": "80419362a0e9d8008a4ecf9381d7a24b020478d237da5abe5ba00f53bda53a93",
+      "hash": "80419362a0e9d8008a4ecf9381d7a24b020478d237da5abe5ba00f53bda53a93"
     },
     {
       "name": "input_diag.js",
@@ -708,6 +708,6 @@
       "hash": "5bd3ab4ab2c4fe2671d7c7b755c98518de645f5390c3df530be6c0fbaea92a35"
     }
   ],
-  "ui_version": "2026.11.09.1",
+  "ui_version": "2026.11.09.2",
   "version": "2026.10.17.9"
 }

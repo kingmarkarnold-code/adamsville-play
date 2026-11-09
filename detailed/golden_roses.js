@@ -55,7 +55,7 @@
 (function goldenRoses(){
 'use strict';
 
-var VERSION = '2026.11.08.12';
+var VERSION = '2026.11.09.1';
 var LS_KEY = 'sa_roses_v1';
 var KIND = 'rose', RNAME = 'Golden Rose';
 var TOTAL = 10;                 /* the quest is TEN roses (Joshua) */
@@ -510,7 +510,7 @@ function buildDestroyed(THREE, G, matsDull, seed){
    the destroyed build's loose-petal geometries, dull and unlit.
    NOTE 2026-11-08 18:20 — Joshua later reversed ONLY the animation
    part of the .9 remark: the old bend-down "just drops down —
-   unhuman"; the kneel (ui 2026.11.08.12) replaces it. The dirt
+   unhuman"; the kneel (ui 2026.11.09.1) replaces it. The dirt
    ruling above stands. */
 function buildPickedMark(THREE, G, matsDull, seed){
   var M = matsDull;
