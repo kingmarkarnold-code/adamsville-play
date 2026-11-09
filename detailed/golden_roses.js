@@ -27,10 +27,13 @@
    - A trampled rose REGROWS at its site after ONE GAME HOUR
      (day length 7,440 real s = 24 game h, so 1 game h = 60 game min).
      The quest can never be soft-lock.
-   - Picking a rose plays the BEND-DOWN (code-driven posture in
-     index.html's animateHero paths — player.bendT; no authored rig
-     clip exists and Blender is not on the build VM, stated in the
-     build notes).
+   - Picking a rose plays the KNEEL (code-driven posture in
+     index.html's animateHero paths — player.kneelT, started by
+     doPickup() for EVERY pickup, rose or ordinary item; no authored
+     rig clip exists and Blender is not on the build VM, stated in
+     the build notes). Joshua 2026-11-08 18:20, reversing his .9
+     "animation is correct" note: the old bend-down "just drops
+     down — unhuman"; the hero must KNEEL down to pick it up.
    - FIRST pickup ever: a full explanation popup — closes by tapping
      the world behind it OR its X (Joshua's corrected ruling 12:54).
    - Later pickups: a small popup — rose symbol on the LEFT + "N of 10".
@@ -52,7 +55,7 @@
 (function goldenRoses(){
 'use strict';
 
-var VERSION = '2026.11.08.10';
+var VERSION = '2026.11.08.12';
 var LS_KEY = 'sa_roses_v1';
 var KIND = 'rose', RNAME = 'Golden Rose';
 var TOTAL = 10;                 /* the quest is TEN roses (Joshua) */
@@ -504,7 +507,11 @@ function buildDestroyed(THREE, G, matsDull, seed){
    dirt spot it grew from — the planting disc — plus a few loose
    petals. NO crushed stem, NO crushed bloom: the wreck belongs to
    TRAMPLING only. Dirt from groundDiscs (un-scuffed); petals reuse
-   the destroyed build's loose-petal geometries, dull and unlit. */
+   the destroyed build's loose-petal geometries, dull and unlit.
+   NOTE 2026-11-08 18:20 — Joshua later reversed ONLY the animation
+   part of the .9 remark: the old bend-down "just drops down —
+   unhuman"; the kneel (ui 2026.11.08.12) replaces it. The dirt
+   ruling above stands. */
 function buildPickedMark(THREE, G, matsDull, seed){
   var M = matsDull;
   var rng = mulberry32((seed || 20261108) + 777);
@@ -730,7 +737,8 @@ function regrowSite(site){
 /* called by index.html's doPickup() AFTER the rose is in the
    inventory (so roseCount() already includes it). */
 function onPicked(p){
-  try { if (W.player) W.player.bendT = 1.15; } catch (e) {}   /* the bend-down */
+  /* the kneel is started by index.html's doPickup() for EVERY
+     pickup (rose or ordinary item) — nothing to start here. */
   if (p && p.roseSite){
     var st = state.sites[p.roseSite];
     if (st && (st.s === 'planted' || st.s === 'crushed')){

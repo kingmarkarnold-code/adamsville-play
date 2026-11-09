@@ -2628,7 +2628,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
    stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.11.08.11';
+window.__DOC_UIVER = '2026.11.09.1';
 /* VER-TAG (ui 2026.11.07.25) >>>
    The on-screen version tag (#ver-tag) shows the version OF THE
    DEPLOYMENT ACTUALLY RUNNING, environment first (Joshua 2026-11-07
@@ -13049,7 +13049,9 @@ function installGLBHERO(gltf){
   inner.add(root);
   player.mesh.add(inner);
   var mats = {};
+  var _bones = {}, _restQ = {};
   root.traverse(function(o){
+    if (o.isBone){ _bones[o.name] = o; _restQ[o.name] = o.quaternion.clone(); }
     if (o.isMesh || o.isSkinnedMesh){
       o.frustumCulled = false;   // skinned bounds don't follow bones — never cull the hero
       var ms = Array.isArray(o.material) ? o.material : [o.material];
@@ -13067,11 +13069,77 @@ function installGLBHERO(gltf){
   var clips = gltf.animations || [];
   for (var i = 0; i < clips.length; i++) actions[clips[i].name] = mixer.clipAction(clips[i]);
   var R = { kind:'glb', inner:inner, mixer:mixer, actions:actions,
-            cur:null, curName:'', blend:0, swimBlend:0, phase:0 };
+            cur:null, curName:'', blend:0, swimBlend:0, phase:0,
+            bones:_bones, restQ:_restQ };
   player.rig = R;
   setHeroAction(R, actions.Idle ? 'Idle' : (actions.Walk ? 'Walk' : ''), 0);
   try { if (window.ClothingSystem && ClothingSystem.refresh) ClothingSystem.refresh(); } catch(e){}
   try { Report.setSys('character', {model:'hero-glb-v2.0', meshInScene:true, clips:Object.keys(actions)}); } catch(e){}
+}
+/* ---- PICKUP KNEEL (2026-11-08, Joshua: the old bend-down "just
+   drops down — unhuman"; the hero must KNEEL to pick a rose/item
+   up). Trigger: doPickup() sets player.kneelT/kneelDur for EVERY
+   pickup — rose or ordinary item. The kneel is code-driven (no
+   authored 'Pickup' clip exists in hero.glb): an envelope over the
+   solved one-knee pose below. Total 1.6 real seconds — descend
+   ~0.61 s, grasp hold ~0.35 s, rise ~0.64 s, smooth ease in/out.
+   POSE (solved joint-by-joint in fixes-2026-11-08-kneel/rig, hero
+   faces +Z, ground y=0 in the GLB's own units — the inner scale is
+   uniform, so contact in this space IS contact in the world).
+   Measured at the bottom: left knee y 0.042 (on the ground), left
+   toe y 0.015 behind the ankle, right ankle y 0.119, right toe
+   y 0.017 flat in front, hips y 0.47 (standing 0.96). Left knee
+   down, right foot planted forward, right arm reaching down.
+   Deltas are local-axis rotations applied AFTER the bone's rest
+   quaternion (rest * delta), blended by slerp from the animated
+   pose — at envelope 0 the clip is untouched, at 1 the pose is
+   exactly the solved one. The Hips bone carries the drop itself
+   (so the planted foot stays planted); the wrapper carries NO pitch
+   during the kneel — a wrapper pitch would drop the planted toe
+   below the ground (measured in the first K1 trace). ---- */
+var _KNEEL_DUR = 1.6;
+var _KNEEL_POSE = {
+  hipY: 0.47,
+  deltas: {
+    LeftUpLeg:   { x:  0.10 },
+    LeftLeg:     { x:  1.55 },
+    LeftFoot:    { x:  0.90 },
+    RightUpLeg:  { x: -1.45 },
+    RightLeg:    { x:  0.69 },
+    RightFoot:   { x:  1.30 },
+    Spine:       { x:  0.10 },
+    Spine1:      { x:  0.06 },
+    Neck:        { x:  0.05 },
+    RightArm:    { x: -0.40, z: 0.15 },
+    RightForeArm:{ x: -0.05 },
+    LeftArm:     { x: -0.35, z: -0.15 },
+    LeftForeArm: { x: -0.55 }
+  }
+};
+function kneelEnv(){
+  var T = player.kneelT||0, D = player.kneelDur||_KNEEL_DUR;
+  if (T<=0 || D<=0) return 0;
+  var p = 1 - T/D; if (p<0) p=0; if (p>1) p=1;
+  var ss = function(u){ u=Math.max(0,Math.min(1,u)); return u*u*(3-2*u); };
+  if (p<0.38) return ss(p/0.38);        /* descend */
+  if (p<0.60) return 1;                 /* grasp beat */
+  return 1 - ss((p-0.60)/0.40);         /* rise */
+}
+var _kqK = new THREE.Quaternion(), _ktK = new THREE.Quaternion(), _keK = new THREE.Euler();
+function applyKneelGLB(R, e){
+  var B = R.bones, Q = R.restQ; if (!B || !Q) return;
+  for (var name in _KNEEL_POSE.deltas){
+    var b = B[name]; if (!b || !Q[name]) continue;
+    var d = _KNEEL_POSE.deltas[name];
+    _keK.set(d.x||0, d.y||0, d.z||0); _kqK.setFromEuler(_keK);
+    _ktK.copy(Q[name]).multiply(_kqK);
+    b.quaternion.slerp(_ktK, e);
+  }
+  var hb = B.Hips;
+  if (hb){
+    var curY = hb.position.y;
+    hb.position.y = curY + (_KNEEL_POSE.hipY - curY) * e;
+  }
 }
 /* ---- GLB locomotion: crossfade Idle/Walk/Run by speed; the clip
    cadence scales with speed so feet stay planted (the v1.47
@@ -13120,18 +13188,22 @@ function animateHeroGLB(dt){
   if (!R.actions[want]) want = R.actions.Walk ? 'Walk' : 'Idle';
   if (R.actions[want]) setHeroAction(R, want, 0.22);
   if (R.cur) R.cur.setEffectiveTimeScale(ts);
-  /* GOLDEN ROSE BEND-DOWN (2026-11-08): while player.bendT runs, the
-     posture targets become a deep, brief stoop — pitch 1.02 (deeper
-     than the 0.62 exhaustion slump) with a 0.30 hip drop — and ease
-     back out as the timer ends. The code-driven twin of the slump
-     above: no authored 'Pickup' clip exists in hero.glb. Not while
-     swimming (the dive owns the axis there). */
-  var _bendT = (player.bendT>0 && !player.swimming) ? 1 : 0;
-  var pitchT = _bendT ? 1.02 : (_exh ? 0.62 : (player.swimming ? 0.65 * R.swimBlend : 0));
+  /* PICKUP KNEEL (2026-11-08, Joshua — replaces the old bend-down
+     stoop): while player.kneelT runs, the posture is a one-knee
+     kneel — hips drop on the Hips bone and the solved pose lands
+     via applyKneelGLB after the mixer (below). The wrapper keeps
+     NO pitch during the kneel: the torso lean rides on the Spine
+     bones, and a wrapper pitch would swing the planted foot's toe
+     below the ground by sin(pitch) x reach (~0.06u at 0.10 rad —
+     measured in the first K1 trace). Not while swimming (the dive
+     owns the axis there). */
+  var _kneel = (player.kneelT>0 && !player.swimming) ? kneelEnv() : 0;
+  var pitchT = _kneel>0 ? 0 : (_exh ? 0.62 : (player.swimming ? 0.65 * R.swimBlend : 0));
   R.inner.rotation.x += (pitchT - R.inner.rotation.x) * Math.min(1, 6 * dt);
-  var dropT = _bendT ? -0.30 : (_exh ? -0.22 : 0);
+  var dropT = _exh ? -0.22 : 0;
   R.inner.position.y += (dropT - R.inner.position.y) * Math.min(1, 6 * dt);
   R.mixer.update(dt);
+  if (_kneel>0) applyKneelGLB(R, _kneel);
 }
 /* ---- HERO LOAD DIAGNOSTICS (2026-10-28, ui .12) ----
    WHY: ui .11 gave the classic engine a vendored GLTFLoader so the
@@ -13324,10 +13396,18 @@ function animateHero(dt){
      paths alike, and lapses by itself when he drives (animateHero
      is only called on foot). */
   try{ if (typeof setPersonBlocker==='function') setPersonBlocker('player', player.x, player.z, 0.9); }catch(e){}
-  /* GOLDEN ROSE BEND-DOWN (2026-11-08): player.bendT counts down the
-     seconds of the pickup bend here, once, so both rig paths below
-     simply read it. Set by the rose module's pickup hook. */
-  if (player.bendT>0) player.bendT-=dt;
+  /* PICKUP KNEEL (2026-11-08): player.kneelT counts down the seconds
+     of the pickup kneel here, once, so both rig paths below simply
+     read it (kneelEnv). Set by doPickup() for EVERY pickup — rose or
+     ordinary item. MOVE-OFF ABORT: if he actually runs off mid-kneel
+     the tail fast-forwards (0.18 s) so the pose blends out instead
+     of sliding along kneeling; walking slowly lets the short kneel
+     finish. The kneel never blocks input and never moves the root. */
+  if (player.kneelT>0){
+    player.kneelT -= dt;
+    if ((player.speed||0) > 1.5) player.kneelT = Math.min(player.kneelT, 0.18);
+    if (player.kneelT<0) player.kneelT = 0;
+  }
   var R=player.rig; if(!R) return;
   if (R.kind==='glb'){ heroT+=dt; animateHeroGLB(dt); return; }  /* v2.0: GLB path — the math below drives the primitive fallback rig */
   heroT+=dt;
@@ -13411,14 +13491,27 @@ function animateHero(dt){
     }
     b=1; ib=0;
   }
-  /* GOLDEN ROSE BEND-DOWN (2026-11-08, primitive-rig twin of the GLB
-     posture in animateHeroGLB): a deep stoop forced over the cycle
-     while bendT runs — hips dropped, torso leaned far forward, arms
-     reaching down toward the plant, knees soft, head down. */
-  if (player.bendT>0 && !player.swimming){
-    T={ll:0.05,lr:-0.05,kl:0.46,kr:0.46,al:-0.95,ar:-0.95,el:-0.18,er:-0.18,
-       bob:-0.17,lean:1.02,sway:0,head:0.30};
-    b=1; ib=0;
+  /* PICKUP KNEEL (2026-11-08, primitive-rig twin of the GLB kneel
+     in animateHeroGLB): a one-knee kneel blended over the cycle
+     while kneelT runs — left knee down (thigh near-vertical, shin
+     flat back on the ground), right leg planted forward (thigh
+     forward, shin near-vertical, foot flat), hips dropped to 0.49,
+     torso near-upright with a slight lean, head down at the item,
+     right arm reaching down-forward, left hand resting toward the
+     down knee. The blend rides b so the pose eases in and out with
+     the envelope and returns to the normal cycle when it ends. */
+  var _keN = (!player.swimming) ? kneelEnv() : 0;
+  if (_keN>0){
+    /* SIGN LAW (primitive rig): rotation.x positive swings a hanging
+       segment BACKWARD (hero faces +Z) — thigh forward is NEGATIVE,
+       knee flexion (shin back off the thigh) is POSITIVE, arm
+       forward is NEGATIVE, elbow flexion is NEGATIVE. The first
+       draft had ll/lr and al/ar backwards and the planted leg
+       kicked up in the air — fixed here, proven by the K4 side shot. */
+    var K={ll:0.15,lr:-1.35,kl:1.32,kr:1.35,al:-0.25,ar:-0.70,el:-0.60,er:-0.35,
+           bob:-0.43,lean:0.25,sway:0,head:0.35};
+    for (var _kk in K) T[_kk]=T[_kk]*(1-_keN)+K[_kk]*_keN;
+    b=Math.max(b,_keN); ib=1-b;
   }
   var br=Math.sin(heroT*1.7);
   var I={ll:0,lr:0,kl:0.06,kr:0.06,al:br*0.02,ar:-br*0.02,el:-0.12,er:-0.12,
@@ -17156,8 +17249,13 @@ function doPickup(){
   if (_stk){ _stk.n=(_stk.n||1)+1; }
   else { inventory.push({id:p.id, name:p.name, kind:p.kind, n:1}); }
   invSave(); renderInv();
-  /* per-kind pickup hook: the golden-rose module runs its bend-down +
-     quest popups off this (published handle, never a bare name). */
+  /* PICKUP KNEEL (2026-11-08, Joshua): every pickup — rose or
+     ordinary item — plays the one-knee kneel (animateHero reads
+     kneelT on both rig paths). The item itself transfers at the tap,
+     as always; the kneel is the motion only. */
+  player.kneelDur = 1.6; player.kneelT = 1.6;
+  /* per-kind pickup hook: the golden-rose module runs its quest
+     popups off this (published handle, never a bare name). */
   try{ if (p.kind==='rose' && window.__ROSES && __ROSES.onPicked) __ROSES.onPicked(p); }catch(e){}
   pendingPickup=null;
 }
@@ -18753,7 +18851,7 @@ function __tryStartGame(){
 <script data-dsrc="wildlife_system.js" data-dkey=""></script> <!-- WILDLIFE (Joshua 2026-11-07) — Georgia birds/mammals/deer/butterflies on the fish streaming pattern; positional song through the ambient master. Defensive: no-op if package data is missing. -->
 <script data-dsrc="body_systems.js" data-dkey=""></script> <!-- BODY SYSTEMS (Joshua 2026-11-07) — the player's own damage meter (tree/boulder bumps + vehicle crashes: staged green/yellow/red bar, slow at 50, at 100 energy spent + slow-walk cap with standing-still healing — 16:00 rule) + the fatigue reserve (land run + swim arms, one shared reserve). Feeds on crashlog's accepted bumps and crash_model's impact feed; updatePlayer consults it for the speed caps. Defensive: no-op if game globals are missing. -->
 <script data-dsrc="dive_system.js" data-dkey=""></script> <!-- DIVE SYSTEM (Joshua 2026-11-07, ui 2026.11.07.24) — the full dive: inverted swim axis (push up = dive down, no dive button), depth gated by the game's own depth data, camera pitch + sink hooks in updatePlayer/updateCamera, the breath meter (2 game-minutes, forced resurface + float rest through __BODY), the breath bar (a .23-law HUD control), and the underwater fog/colour grade. Defensive: no-op if game globals are missing. -->
-<script data-dsrc="golden_roses.js" data-dkey=""></script> <!-- GOLDEN ROSES — THE QUEST (Joshua 2026-11-08) — ten golden roses steer beta testers to the places he wants tested: the v3 golden rose (whole plant gold, per-piece shades, bloom emission shine on the LIVING planted rose only) planted at SEVEN named sites (Dollar Mill first, Chattahoochee, Tatum Lake, Harper-Archer, Hamilton Homes, MLK x Fairburn, MLK x Fulton Industrial; sites 8-10 are Joshua's to name). Walking over a planted rose tramples it; it regrows in ONE GAME HOUR. Pickup = ACTION "Pick up" + a bend-down; first pickup explains the quest (popup closes by world-touch OR its X), later pickups show "N of 10". Builds only on the PUBLISHED world surface (spawnPickup/pickups/inventory). -->
+<script data-dsrc="golden_roses.js" data-dkey=""></script> <!-- GOLDEN ROSES — THE QUEST (Joshua 2026-11-08) — ten golden roses steer beta testers to the places he wants tested: the v3 golden rose (whole plant gold, per-piece shades, bloom emission shine on the LIVING planted rose only) planted at SEVEN named sites (Dollar Mill first, Chattahoochee, Tatum Lake, Harper-Archer, Hamilton Homes, MLK x Fairburn, MLK x Fulton Industrial; sites 8-10 are Joshua's to name). Walking over a planted rose tramples it; it regrows in ONE GAME HOUR. Pickup = ACTION "Pick up" + a one-knee kneel; first pickup explains the quest (popup closes by world-touch OR its X), later pickups show "N of 10". Builds only on the PUBLISHED world surface (spawnPickup/pickups/inventory). -->
 <script data-dsrc="crash_model.js" data-dkey=""></script> <!-- CRASH MODEL (Joshua 2026-11-07) — vehicle crashes damage the CAR and the PLAYER by impact speed x what was hit (identified by the game's own collision diagnostics): 35 mph into a building damages the car; 125 mph into a building totals it, maxes the player's HEALTH and leaves him stuck in the car for two game-minutes. Feeds the existing stores only (addDamage / __BODY.addCrashDamage). Defensive: no-op if game globals are missing. -->
 <!-- ===== INLINE SCRIPT BLOCK 3: final placement audit (v2.0 - Joshua's
      automatic check) ===== Runs ONCE, after EVERY building system has loaded
