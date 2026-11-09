@@ -2634,7 +2634,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    shipped a manifest whose index.html hash described bytes that never
    reached the repo (manifest .09.2, repo document still .09.1), and
    every fresh session paid one self-heal reload for it. */
-window.__DOC_UIVER = '2026.11.09.3';
+window.__DOC_UIVER = '2026.11.09.4';
 /* VER-TAG (ui 2026.11.07.25) >>>
    The on-screen version tag (#ver-tag) shows the version OF THE
    DEPLOYMENT ACTUALLY RUNNING, environment first (Joshua 2026-11-07
@@ -4815,7 +4815,9 @@ var ASSETVER=(function(){
 /* v1.11: combined mode readout — on mobile MPH merges into the mode tag ("DRIVING 35") */
 function modeText(driving){
   if(driving) return isMobileUI() ? ('DRIVING '+(car._lastMph||0)) : 'DRIVING';
-  return (player.swimming?'SWIMMING':(player.inside?('INSIDE '+(player.locIdx>=0&&typeof ENTERABLES!=='undefined'&&ENTERABLES[player.locIdx]?ENTERABLES[player.locIdx].name:'535')):'ON FOOT'));
+  /* TATUM QA (2026-11-09): WADING is a named state now — in the water
+     with the head above the surface reads WADING, not ON FOOT. */
+  return (player.swimming?'SWIMMING':(player.wading?'WADING':(player.inside?('INSIDE '+(player.locIdx>=0&&typeof ENTERABLES!=='undefined'&&ENTERABLES[player.locIdx]?ENTERABLES[player.locIdx].name:'535')):'ON FOOT')));
 }
 /* ---------- v0.6: LIVE health report (Voice Companion style) ----------
    A debugging instrument, not just a crash log. Captures window.onerror +
@@ -9874,6 +9876,28 @@ var WADE_LIMIT=SINK_DEPTH;  // legacy name — vehicles ford at/below this depth
    the swimming state in water deeper than ~4 ft. Below that (streams, lake
    shallows) he just wades on foot — no swim animation. */
 var SWIM_DEPTH=4*U_PER_FT;  // ≈1.22u
+/* TATUM QA — HEAD-UNDER RULE (2026-11-09, Joshua: "the player is under
+   the water but reading as wading"): the water state follows the
+   VISIBLE truth — the head against the ACTUAL surface — not the model
+   depth alone. headUnderWater(x,z) is true when the surveyed surface
+   sits above the top of the head (HEAD_TOP_U, the hero's height) of a
+   player standing on the bed at this spot — i.e. the real depth
+   (surface minus the ground that is actually drawn) is deeper than
+   the player is tall. The model depth and the real bed agree almost
+   everywhere since the Nov 8 bed carve, but wherever they still
+   differ — a shore feather, a bank's shadow — the head rule wins: a
+   head under water is swimming, never wading. The test reads the BED
+   (groundRefY), never the mesh Y: while swimming the mesh rides the
+   surface, so reading the mesh would flip the state every frame. */
+var HEAD_TOP_U=1.85;
+function headUnderWater(x,z){
+  try{
+    if (!inWater(x,z)) return false;
+    var wl=waterLevelAt(x,z);
+    if (wl===null || wl===undefined) return false;
+    return wl > groundRefY(x,z)+HEAD_TOP_U;
+  }catch(e){ return false; }
+}
 function waterDepthAt(x,z){
   var best=0;
   for (var i=0;i<WATER.length;i++){
@@ -12894,7 +12918,7 @@ try{ __wbStage('trees'); }catch(e){}
 /* ================= PLAYER (full-body, 6'1" = 1.85u) ================= */
 var player = {
   x: HOME.x-14, z: HOME.z+8, yaw: Math.PI/2, speed: 0,
-  inside: false, swimming: false, mesh: null,
+  inside: false, swimming: false, wading: false, mesh: null,
   /* ui .20 (locomotion): the PRE-governor speed updatePlayer computed
      this frame — body_systems reads it as the exertion demand */
   demandSpeed: 0
@@ -13076,7 +13100,12 @@ function installGLBHERO(gltf){
   for (var i = 0; i < clips.length; i++) actions[clips[i].name] = mixer.clipAction(clips[i]);
   var R = { kind:'glb', inner:inner, mixer:mixer, actions:actions,
             cur:null, curName:'', blend:0, swimBlend:0, phase:0,
-            bones:_bones, restQ:_restQ };
+            bones:_bones, restQ:_restQ,
+            /* TATUM QA (2026-11-09): swim/wade overlay state — the
+               breast-stroke phase + envelope, the tread phase, and
+               the wading phase's last position (distance-driven). */
+            swimPhase:0, swimEnv:0, treadPhase:0,
+            wadeEnv:0, wadePx:undefined, wadePz:undefined };
   player.rig = R;
   setHeroAction(R, actions.Idle ? 'Idle' : (actions.Walk ? 'Walk' : ''), 0);
   try { if (window.ClothingSystem && ClothingSystem.refresh) ClothingSystem.refresh(); } catch(e){}
@@ -13147,6 +13176,206 @@ function applyKneelGLB(R, e){
     hb.position.y = curY + (_KNEEL_POSE.hipY - curY) * e;
   }
 }
+/* ---- TATUM QA SWIM + WADE (2026-11-09, Joshua: "the underwater
+   swimming animation is the same as walking instead of a breast
+   stroke" + "the wading animation is the same as walking instead of
+   a proper wading animation").
+   WHY PROCEDURAL, NOT A BAKED CLIP: the research verdict for this
+   stack was "SWIM = bake a clip into hero.glb" — but there is NO
+   Blender on this VM to author with (the hero.blend pipeline needs
+   blender -b; no blender binary exists here), and hand-editing the
+   GLB's animation accessors risks the hero outright. The kneel
+   (ui 2026.11.09.3) proved the procedural route on this exact rig:
+   post-mixer bone overrides, solved pose-by-pose, verified in a
+   real headless boot. The breast stroke and the wading gait follow
+   that proven pattern — phase-driven deltas slerped over the clip,
+   exactly like applyKneelGLB. If a baked Swim clip ever ships, the
+   overlay yields to it (see the want-selection note in
+   animateHeroGLB); until then this IS the stroke.
+   SIGN LAW (animate_export.py, proven by the signtest renders):
+   limb rotation.x NEGATIVE = swing forward; knee flexion POSITIVE
+   x; elbow flexion NEGATIVE x; foot rotation.x POSITIVE = toe down;
+   spine rotation.x POSITIVE = lean forward; head rotation.x
+   NEGATIVE = look up (breathe), POSITIVE = look down.
+   BREAST STROKE (symmetric — both arms together, both legs
+   together, unlike the Walk clip's alternating limbs):
+     GLIDE   — arms extended forward together, legs extended back,
+               body streamlined, face down.
+     SWEEP   — arms sweep out wide, legs start recovery (knees bend,
+               heels draw up toward the seat).
+     PULL    — arms pull in toward the chest, elbows bent, chest
+               lifts and the head comes up to breathe.
+     KICK    — legs snap out-and-back (frog kick), arms shoot forward
+               into the next glide.
+   TREADING (still in the water, swimBlend -> 0): upright, arms
+   sculling out to the sides, legs in a gentle alternating kick —
+   the primitive rig's tread pose, ported to the GLB bones.
+   The stroke/tread mix rides R.swimBlend (1 = stroking, 0 =
+   treading), the same meaning the swim-trim caller already uses.
+   ARM Z-SIGN LAW (measured 2026-11-09, fixes-2026-11-09-tatum-qa/
+   rig/probe-axes.mjs — do NOT "fix" by symmetry): each arm bone's
+   local Z points BACKWARD (dotFwd -1.0 for both arms), so a
+   positive z rotation moves BOTH hands toward -X in the player's
+   frame. A lateral swing therefore needs MIRRORED signs — left
+   arm NEGATIVE z, right arm POSITIVE z — to move both hands OUT.
+   The first version had them the other way round and the proof
+   caught it: at SWEEP the hands met at the midline (spread 0.027)
+   instead of sweeping wide, and the wade hands sat at the natural
+   hang (+/-0.14) instead of held out. The signs below are the
+   corrected ones, verified by joint-position measurement.
+   WADING (applyWadeGLB): high-stepping gait for water below swim
+   depth — thigh lifts high to clear the water, knee bends deep,
+   arms held out to the sides for balance, slight forward lean, hips
+   a touch lower. Phase advances by DISTANCE (one full left+right
+   cycle per 1.1u), so the feet plant per step at the 2.2 u/s wading
+   pace — the v1.47 foot-plant spirit. ---- */
+var _SWIM_KEYS=[
+  /* GLIDE */
+  { p:0.00, la:{x:-1.25,z:-0.05}, ra:{x:-1.25,z:0.05}, lfa:{x:-0.10}, rfa:{x:-0.10},
+    lul:{x:0.15}, rul:{x:0.15}, ll:{x:0.08}, rl:{x:0.08}, lf:{x:0.45}, rf:{x:0.45},
+    sp:{x:0.08}, sp1:{x:0.04}, ne:{x:0.03}, he:{x:-0.10}, hip:0.96 },
+  /* SWEEP */
+  { p:0.30, la:{x:-0.55,z:-0.55}, ra:{x:-0.55,z:0.55}, lfa:{x:-0.55}, rfa:{x:-0.55},
+    lul:{x:-0.15}, rul:{x:-0.15}, ll:{x:0.55}, rl:{x:0.55}, lf:{x:0.30}, rf:{x:0.30},
+    sp:{x:0.12}, sp1:{x:0.06}, ne:{x:0.06}, he:{x:-0.28}, hip:0.97 },
+  /* PULL + BREATHE */
+  { p:0.50, la:{x:0.15,z:-0.25}, ra:{x:0.15,z:0.25}, lfa:{x:-1.15}, rfa:{x:-1.15},
+    lul:{x:-0.35}, rul:{x:-0.35}, ll:{x:1.25}, rl:{x:1.25}, lf:{x:0.20}, rf:{x:0.20},
+    sp:{x:0.18}, sp1:{x:0.08}, ne:{x:0.08}, he:{x:-0.45}, hip:0.98 },
+  /* KICK + SHOOT */
+  { p:0.70, la:{x:-1.15,z:-0.05}, ra:{x:-1.15,z:0.05}, lfa:{x:-0.15}, rfa:{x:-0.15},
+    lul:{x:0.35}, rul:{x:0.35}, ll:{x:0.15}, rl:{x:0.15}, lf:{x:0.55}, rf:{x:0.55},
+    sp:{x:0.05}, sp1:{x:0.03}, ne:{x:0.02}, he:{x:-0.15}, hip:0.96 }
+];
+/* Cosine-interpolate one bone's delta between the stroke keys at
+   phase p (0..1, wraps: the last key eases back to the first over
+   the 0.70 -> 1.00 span, so the glide returns smoothly). */
+function _swimKeyAt(p, field, sub){
+  var ks=_SWIM_KEYS, n=ks.length;
+  var pp=((p%1)+1)%1;
+  var i=0;
+  while (i<n-1 && pp>ks[i+1].p) i++;
+  /* segment ks[i] -> ks[i+1], or ks[n-1] -> ks[0] (wrapped to p=1) */
+  var a=ks[i], b, span;
+  if (i<n-1){ b=ks[i+1]; span=b.p-a.p; }
+  else { b=ks[0]; span=1-a.p; }
+  var t=(pp-a.p)/span; if (t<0) t=0; if (t>1) t=1;
+  var u=(1-Math.cos(t*Math.PI))/2;   /* smoothstep between keys */
+  var av=a[field], bv=b[field];
+  if (sub){ av=av[sub]||0; bv=bv[sub]||0; }
+  else { av=(typeof av==='number')?av:0; bv=(typeof bv==='number')?bv:0; }
+  return av+(bv-av)*u;
+}
+var _swK = new THREE.Quaternion(), _swT = new THREE.Quaternion(), _swE = new THREE.Euler();
+function _swimApplyBone(R, name, dx, dy, dz, env){
+  var B=R.bones, Q=R.restQ; if (!B || !Q) return;
+  var b=B[name]; if (!b || !Q[name]) return;
+  _swE.set(dx||0, dy||0, dz||0); _swK.setFromEuler(_swE);
+  _swT.copy(Q[name]).multiply(_swK);
+  b.quaternion.slerp(_swT, env);
+}
+function applySwimGLB(R, dt){
+  var B=R.bones, Q=R.restQ; if (!B || !Q) return;
+  /* Envelope: eases in on entering the water, out on leaving, so
+     the stroke never pops — the kneel's envelope idea, as a state. */
+  if (typeof R.swimEnv!=='number') R.swimEnv=0;
+  var tgt=player.swimming?1:0;
+  R.swimEnv+=(tgt-R.swimEnv)*Math.min(1,5*dt);
+  if (R.swimEnv<=0.01) return;
+  var env=R.swimEnv;
+  var spd=player.speed||0;
+  /* Stroke phase: ~0.5 cycles/s at rest, ~1.0 at full swim speed. */
+  if (typeof R.swimPhase!=='number') R.swimPhase=0;
+  if ((R.swimBlend||0)>0.05 && spd>0.1)
+    R.swimPhase=(R.swimPhase+dt*(0.5+0.5*Math.min(1,spd/6.75)))%1;
+  /* Tread phase: the primitive rig's scull rate (heroT*3.0). */
+  var tp=heroT*3.0;
+  var sb=(typeof R.swimBlend==='number')?R.swimBlend:1;
+  var tb=1-sb;
+  /* Stroke deltas at the stroke phase. */
+  var S={
+    la:{x:_swimKeyAt(R.swimPhase,'la','x'), z:_swimKeyAt(R.swimPhase,'la','z')},
+    ra:{x:_swimKeyAt(R.swimPhase,'ra','x'), z:_swimKeyAt(R.swimPhase,'ra','z')},
+    lfa:{x:_swimKeyAt(R.swimPhase,'lfa','x')}, rfa:{x:_swimKeyAt(R.swimPhase,'rfa','x')},
+    lul:{x:_swimKeyAt(R.swimPhase,'lul','x')}, rul:{x:_swimKeyAt(R.swimPhase,'rul','x')},
+    ll:{x:_swimKeyAt(R.swimPhase,'ll','x')}, rl:{x:_swimKeyAt(R.swimPhase,'rl','x')},
+    lf:{x:_swimKeyAt(R.swimPhase,'lf','x')}, rf:{x:_swimKeyAt(R.swimPhase,'rf','x')},
+    sp:{x:_swimKeyAt(R.swimPhase,'sp','x')}, sp1:{x:_swimKeyAt(R.swimPhase,'sp1','x')},
+    ne:{x:_swimKeyAt(R.swimPhase,'ne','x')}, he:{x:_swimKeyAt(R.swimPhase,'he','x')},
+    hip:_swimKeyAt(R.swimPhase,'hip')
+  };
+  /* Tread deltas: upright scull + gentle alternating kick. */
+  var kick=Math.sin(tp), scull=Math.sin(tp);
+  var T={
+    la:{x:-0.15+scull*0.12, z:-0.55}, ra:{x:-0.15-scull*0.12, z:0.55},
+    lfa:{x:-0.85}, rfa:{x:-0.85},
+    lul:{x:kick*0.12}, rul:{x:-kick*0.12},
+    ll:{x:0.35+Math.max(0,kick)*0.15}, rl:{x:0.35+Math.max(0,-kick)*0.15},
+    lf:{x:0.30}, rf:{x:0.30},
+    sp:{x:0.02}, sp1:{x:0.02}, ne:{x:0.02}, he:{x:-0.30},
+    hip:0.96+Math.sin(heroT*2.0)*0.02
+  };
+  /* Mix stroke <-> tread by swimBlend, then apply over the clip. */
+  function mx(a, b){ return a*sb+b*tb; }
+  _swimApplyBone(R,'LeftArm',  mx(S.la.x,T.la.x), 0, mx(S.la.z,T.la.z), env);
+  _swimApplyBone(R,'RightArm', mx(S.ra.x,T.ra.x), 0, mx(S.ra.z,T.ra.z), env);
+  _swimApplyBone(R,'LeftForeArm',  mx(S.lfa.x,T.lfa.x), 0, 0, env);
+  _swimApplyBone(R,'RightForeArm', mx(S.rfa.x,T.rfa.x), 0, 0, env);
+  _swimApplyBone(R,'LeftUpLeg',  mx(S.lul.x,T.lul.x), 0, 0, env);
+  _swimApplyBone(R,'RightUpLeg', mx(S.rul.x,T.rul.x), 0, 0, env);
+  _swimApplyBone(R,'LeftLeg',  mx(S.ll.x,T.ll.x), 0, 0, env);
+  _swimApplyBone(R,'RightLeg', mx(S.rl.x,T.rl.x), 0, 0, env);
+  _swimApplyBone(R,'LeftFoot',  mx(S.lf.x,T.lf.x), 0, 0, env);
+  _swimApplyBone(R,'RightFoot', mx(S.rf.x,T.rf.x), 0, 0, env);
+  _swimApplyBone(R,'Spine',  mx(S.sp.x,T.sp.x), 0, 0, env);
+  _swimApplyBone(R,'Spine1', mx(S.sp1.x,T.sp1.x), 0, 0, env);
+  _swimApplyBone(R,'Neck', mx(S.ne.x,T.ne.x), 0, 0, env);
+  _swimApplyBone(R,'Head', mx(S.he.x,T.he.x), 0, 0, env);
+  var hb=B.Hips;
+  if (hb){
+    var hipT=mx(S.hip,T.hip);
+    hb.position.y=hb.position.y+(hipT-hb.position.y)*env;
+  }
+}
+/* Wading gait: one full left+right cycle per 1.1u travelled (see the
+   header note above _SWIM_KEYS). High thigh lift, deep knee bend,
+   arms held out to the sides for balance, slight forward lean, hips
+   a touch lower — the push-through-water walk. Phase is distance
+   driven, capped per frame so a teleport only costs one frame. */
+var _WADE_CYCLE_U=1.1;
+function applyWadeGLB(R, dt){
+  var B=R.bones, Q=R.restQ; if (!B || !Q) return;
+  if (typeof R.wadeEnv!=='number') R.wadeEnv=0;
+  var tgt=(player.wading && (player.speed||0)>0.4)?1:0;
+  R.wadeEnv+=(tgt-R.wadeEnv)*Math.min(1,5*dt);
+  if (R.wadeEnv<=0.01) return;
+  var env=R.wadeEnv;
+  if (R.wadePx===undefined){ R.wadePx=player.x; R.wadePz=player.z; }
+  var dist=Math.hypot(player.x-R.wadePx, player.z-R.wadePz);
+  if (dist>0.5) dist=0.5;   /* teleport cap — one frame, no spin */
+  R.phase=(R.phase||0)+dist/_WADE_CYCLE_U;
+  R.wadePx=player.x; R.wadePz=player.z;
+  var ph=((R.phase%1)+1)%1, s1=Math.sin(ph*Math.PI*2), s2=Math.sin(ph*Math.PI*2+Math.PI);
+  var f1=Math.max(0,s1), b1=Math.max(0,-s1), f2=Math.max(0,s2), b2=Math.max(0,-s2);
+  _swimApplyBone(R,'LeftUpLeg',  -0.95*f1+0.25*b1, 0, 0, env);
+  _swimApplyBone(R,'RightUpLeg', -0.95*f2+0.25*b2, 0, 0, env);
+  _swimApplyBone(R,'LeftLeg',  0.15+1.00*f1, 0, 0, env);
+  _swimApplyBone(R,'RightLeg', 0.15+1.00*f2, 0, 0, env);
+  _swimApplyBone(R,'LeftFoot',  0.30*f1-0.05, 0, 0, env);
+  _swimApplyBone(R,'RightFoot', 0.30*f2-0.05, 0, 0, env);
+  _swimApplyBone(R,'LeftArm',  -0.12, 0, -0.55, env);
+  _swimApplyBone(R,'RightArm', 0.12, 0, 0.55, env);
+  _swimApplyBone(R,'LeftForeArm',  -0.35, 0, 0, env);
+  _swimApplyBone(R,'RightForeArm', -0.35, 0, 0, env);
+  _swimApplyBone(R,'Spine',  0.12, 0, 0, env);
+  _swimApplyBone(R,'Spine1', 0.06, 0, 0, env);
+  _swimApplyBone(R,'Neck', 0.05, 0, 0, env);
+  var hb=B.Hips;
+  if (hb){
+    var hipT=0.96-0.03-0.02*Math.abs(Math.cos(ph*Math.PI*2));
+    hb.position.y=hb.position.y+(hipT-hb.position.y)*env;
+  }
+}
 /* ---- GLB locomotion: crossfade Idle/Walk/Run by speed; the clip
    cadence scales with speed so feet stay planted (the v1.47
    distance-driven spirit, expressed as timeScale). Swimming reuses
@@ -13210,6 +13439,16 @@ function animateHeroGLB(dt){
   R.inner.position.y += (dropT - R.inner.position.y) * Math.min(1, 6 * dt);
   R.mixer.update(dt);
   if (_kneel>0) applyKneelGLB(R, _kneel);
+  /* TATUM QA (2026-11-09): the swim stroke and the wading gait ride
+     on top of the clip, post-mixer, exactly like the kneel — never
+     while kneeling (the kneel owns the body for its 1.6 s). The
+     overlays ease themselves in/out via their own envelopes, so a
+     call with env at zero is a no-op and leaving the water never
+     pops. */
+  if (_kneel<=0){
+    if (player.swimming || R.swimEnv>0.01) applySwimGLB(R, dt);
+    if (player.wading || R.wadeEnv>0.01) applyWadeGLB(R, dt);
+  }
 }
 /* ---- HERO LOAD DIAGNOSTICS (2026-10-28, ui .12) ----
    WHY: ui .11 gave the classic engine a vendored GLTFLoader so the
@@ -13470,6 +13709,28 @@ function animateHero(dt){
        bob:-Math.abs(Math.cos(p))*0.045*amp, lean:0.07*amp,
        sway:s1*0.035*amp, head:Math.sin(p*2)*0.03*amp};
   }
+  /* TATUM QA (2026-11-09, Joshua: wading must not walk): the wading
+     gait on the primitive rig — the same high-stepping pose as the
+     GLB overlay (applyWadeGLB), in this rig's sign law (rotation.x
+     positive swings a hanging segment BACKWARD — thigh forward is
+     NEGATIVE, knee flexion POSITIVE, arm forward NEGATIVE, elbow
+     flexion NEGATIVE). Blended over the walk cycle by R.wadeEnv, so
+     entering/leaving the water never pops; the phase p is the same
+     distance-driven cycle the walk uses, so the feet plant per step
+     at the 2.2 u/s wading pace. The arms-out term rides _armZ below
+     (the tread scull's channel). Never while swimming — this branch
+     only runs on foot. */
+  if (typeof R.wadeEnv!=='number') R.wadeEnv=0;
+  R.wadeEnv+=(((player.wading && spd>0.4)?1:0)-R.wadeEnv)*Math.min(1,5*dt);
+  if (R.wadeEnv>0.01 && !player.swimming){
+    var _wf1=Math.max(0,s1), _wb1=Math.max(0,-s1),
+        _wf2=Math.max(0,s2), _wb2=Math.max(0,-s2);
+    var W={ll:-0.95*_wf1+0.25*_wb1, lr:-0.95*_wf2+0.25*_wb2,
+           kl:0.15+1.00*_wf1, kr:0.15+1.00*_wf2,
+           al:-0.12, ar:0.12, el:-0.35, er:-0.35,
+           bob:-0.03-0.02*Math.abs(Math.cos(p)), lean:0.12, sway:0, head:0.05};
+    for (var _wk in W) T[_wk]=T[_wk]*(1-R.wadeEnv)+W[_wk]*R.wadeEnv;
+  }
   /* BODY SYSTEMS (Joshua 2026-11-07): the damage-100 MAXED-OUT state on
      the primitive rig — a hands-on-knees bent-over pose (deep torso lean,
      hips dropped, knees bent, head hung, arms reaching down to the
@@ -13523,8 +13784,11 @@ function animateHero(dt){
   var I={ll:0,lr:0,kl:0.06,kr:0.06,al:br*0.02,ar:-br*0.02,el:-0.12,er:-0.12,
          bob:br*0.012,lean:0,sway:0,head:0};
   /* treading arms open sideways for the scull — fades as swimming takes over,
-     zero when not swimming (keeps the walk cycle clean) */
-  var _armZ=(player.swimming&&typeof R.swimBlend==='number')?0.55*(1-R.swimBlend):0;
+     zero when not swimming (keeps the walk cycle clean). TATUM QA
+     (2026-11-09): wading holds the arms out to the sides for balance
+     too, by the same channel, scaled by the wade envelope. */
+  var _armZ=((player.swimming&&typeof R.swimBlend==='number')?0.55*(1-R.swimBlend):0)+
+            ((typeof R.wadeEnv==='number' && R.wadeEnv>0.01)?0.38*R.wadeEnv:0);
   R.armL.sh.rotation.z=_armZ; R.armR.sh.rotation.z=-_armZ;
   R.legL.hp.rotation.x=I.ll*ib+T.ll*b;
   R.legR.hp.rotation.x=I.lr*ib+T.lr*b;
@@ -14137,7 +14401,7 @@ function exitCar(fromWater){
   }
   player.yaw=car.yaw; player.mesh.rotation.y=player.yaw;  // face the car's heading
   player.mesh.visible=true;                               // v0.3: he was invisible after exit
-  player.swimming=!!fromWater || (inWater(player.x,player.z) && waterDepthAt(player.x,player.z)>=SWIM_DEPTH); // shallow water: wade, don't swim (Joshua 2026-10-10)
+  player.swimming=!!fromWater || (inWater(player.x,player.z) && waterDepthAt(player.x,player.z)>=SWIM_DEPTH) || headUnderWater(player.x,player.z); // shallow water: wade, don't swim (Joshua 2026-10-10); TATUM QA 2026-11-09: a head under the real surface is swimming, never wading
   setDrivingUI(false); updateDamageHUD();
   // snap the camera behind him immediately (no lerp-only drift)
   var gy=player.swimming ? (waterLevelAt(player.x,player.z)||heightAt(player.x,player.z)) : heightAt(player.x,player.z);
@@ -16359,7 +16623,9 @@ function updatePlayer(dt){
     touchHeld: !!(joy.active && mag >= 0.6),
     shiftFwd: !!(_ik['shift'] && _ik['w'])
   };
-  if (player.swimming || player.inside){
+  /* TATUM QA (2026-11-09): no sprint gear in the water — wading is a
+     slow push through the water, like swimming and indoors. */
+  if (player.swimming || player.wading || player.inside){
     _sprDemand.touchFwd = false; _sprDemand.touchHeld = false;
     _sprDemand.shiftFwd = false;
   }
@@ -16401,7 +16667,10 @@ function updatePlayer(dt){
     // passes through the body governor: damage >= 50 slows him, a spent
     // energy pool caps him at walk pace (gentle-swim pace in water),
     // and health <= 0 caps him at the slow shuffle (16:00 rule).
-    var spd=(player.swimming?6.75:(player.inside?5.0:(sprintOn?13.8:5.0)))*curve;
+    /* TATUM QA (2026-11-09): wading pace is 2.2 u/s — pushing through
+       the water is slow by nature; the wading gait below is drawn
+       for this pace, so the feet plant instead of skating. */
+    var spd=(player.swimming?6.75:(player.wading?2.2:(player.inside?5.0:(sprintOn?13.8:5.0))))*curve;
     /* the PRE-governor demand, recorded for body_systems: its exertion
        drain reads what he is ASKING for, so pushing against a spent
        pool's cap still digs the pool deeper (ui .20, ruling C) */
@@ -16461,12 +16730,24 @@ function updatePlayer(dt){
   // water: deep water triggers swimming; shallow water (streams, puddles, lake
   // shallows below SWIM_DEPTH) is just waded through on foot (Joshua 2026-10-10)
   var inW=!player.inside && inWater(player.x, player.z) && waterDepthAt(player.x, player.z)>=SWIM_DEPTH;
+  /* TATUM QA (2026-11-09, Joshua: "the player is under the water but
+     reading as wading"): the head rule — wherever the model depth says
+     "wading" but the real surface sits above the player's head, he is
+     swimming, never wading (see headUnderWater, by SWIM_DEPTH). */
+  if (!inW && headUnderWater(player.x, player.z)) inW=true;
   if (inW && !player.swimming) player.swimming=true;
   if (!inW && player.swimming) player.swimming=false;  // climbed out at the shore
+  /* TATUM QA (2026-11-09): WADING is a real state now, not "ON FOOT".
+     Wading = in the water, head above the surface, below swim depth
+     (deeper than a puddle). Never while driving — the car fords, the
+     player does not wade in it. The tag names it (see modeText) and
+     the animation below draws the gait. */
+  player.wading=!player.swimming && !player.inside && !(car && car.driving) &&
+    inWater(player.x, player.z) && waterDepthAt(player.x, player.z)>0.05;
   // v0.8: mode tag tracks the live state — swimming shows SWIMMING, not ON FOOT
   /* v1.58: null-car guard (see simTick) — car may not have spawned yet. */
   if (!car || !car.driving){
-    var wantMode=player.swimming?'SWIMMING':(player.inside?'INSIDE 535':'ON FOOT');
+    var wantMode=player.swimming?'SWIMMING':(player.wading?'WADING':(player.inside?'INSIDE 535':'ON FOOT'));
     if (modeTag.textContent!==wantMode) modeTag.textContent=wantMode;
   }
   var gy;
@@ -16574,7 +16855,7 @@ function updateCar(dt){
       try{ resolveCollision(player, 0.5); }catch(e){}
       player.yaw=car.yaw; player.mesh.rotation.y=player.yaw;
       player.mesh.visible=true;
-      player.swimming = inWater(player.x,player.z) && waterDepthAt(player.x,player.z)>=SWIM_DEPTH;
+      player.swimming = inWater(player.x,player.z) && waterDepthAt(player.x,player.z)>=SWIM_DEPTH || headUnderWater(player.x,player.z); /* TATUM QA 2026-11-09: a head under the real surface is swimming, never wading */
       try{ setDrivingUI(false); }catch(e){}
       try{ updateDamageHUD(); }catch(e){}
       /* snap the camera behind him at the sink spot (same framing as exitCar) */

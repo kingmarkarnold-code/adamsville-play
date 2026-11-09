@@ -680,10 +680,19 @@ function maybeRestore(){
        position (playerPos() reads the just-placed player/car), so
        guidance resumes from where he stands, never from a stale
        route. If he is already at the destination, GPS's own
-       arrival behaviour handles it from here. */
+       arrival behaviour handles it from here.
+       TATUM QA (2026-11-09, Joshua: "tap to clear GPS while no GPS
+       running"): do NOT re-engage a destination he is already
+       standing on — within the 25u arrival radius there is nothing
+       to navigate to, and re-engaging would put the arrow +
+       "tap to clear" on screen for a trip that is already over. */
     if (s.nav && typeof s.nav.x==='number' && typeof s.nav.z==='number'){
       try{
-        if (typeof window!=='undefined' && window.GPS && typeof window.GPS.setDestination==='function'){
+        var _rdx=s.nav.x-(s.player?s.player.x:0), _rdz=s.nav.z-(s.player?s.player.z:0);
+        if (_rdx*_rdx+_rdz*_rdz<=25*25){
+          logLine('Navigation NOT resumed — already at destination '+(s.nav.name ? ('"'+s.nav.name+'" ') : '')+
+                  '('+Math.round(s.nav.x)+', '+Math.round(s.nav.z)+'); nothing to navigate to.');
+        } else if (typeof window!=='undefined' && window.GPS && typeof window.GPS.setDestination==='function'){
           window.GPS.setDestination(s.nav.x, s.nav.z, s.nav.name || '');
           logLine('Navigation resumed — destination '+(s.nav.name ? ('"'+s.nav.name+'" ') : '')+
                   '('+Math.round(s.nav.x)+', '+Math.round(s.nav.z)+') re-engaged from the restored spot.');

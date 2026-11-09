@@ -2298,6 +2298,35 @@ function clearDestination(){
 }
 
 function hasDestination(){ return !!route; }
+/* TATUM QA (2026-11-09, Joshua: "the tap to clear GPS while no GPS
+   running"): the arrow + "tap to clear" must show ONLY while a
+   destination is ACTUALLY set — a live route to a real point. A route
+   object alone is not enough: a resumed or half-built route can sit
+   there with no usable destination (no finite coords, no path), and
+   the strip would show an arrow pointing nowhere with an empty
+   distance band. routeIsLive() is the one gate: finite destination
+   coords AND a path of at least two points. Anything else is not
+   navigation — clearRouteSilent() drops it without a toast (it was
+   never a destination the player set, so there is nothing to
+   announce). ARRIVE_U is the arrival radius gpsTick already uses
+   (25u): inside it the player IS there, so the strip hides — the
+   arrival toast + clear follow from gpsTick within ~500 ms. */
+var ARRIVE_U=25;
+function routeIsLive(){
+  if (!route) return false;
+  if (typeof route.destX!=='number' || typeof route.destZ!=='number') return false;
+  if (!isFinite(route.destX) || !isFinite(route.destZ)) return false;
+  if (!route.pts || !route.pts.length || route.pts.length<2) return false;
+  return true;
+}
+function clearRouteSilent(){
+  route=null;
+  rebuildRouteMesh();
+  try{
+    var cb=document.getElementById('gps-clear-btn');
+    if (cb) cb.style.display='none';
+  }catch(e){}
+}
 /* getDestination() — NAVIGATION RESUME (2026-11-07, Joshua): the
    resume stash (ui_update_flow.js snapshot()) reads the ACTIVE
    destination through here so a restart can re-engage it. Returns
@@ -2837,14 +2866,35 @@ function hudArrowTick(){
   // the first tick instead of staying silent forever.
   if (!hudArrowEl){ try{ buildHudArrow(); }catch(e){} }
   if (!hudArrowEl) return;
-  var show=!!route;
+  /* TATUM QA (2026-11-09, Joshua: "the tap to clear GPS while no GPS
+     running"): the strip shows ONLY for a live destination — finite
+     coords + a path (routeIsLive). A route object that fails the gate
+     is not navigation: drop it silently and hide. */
+  if (route && !routeIsLive()){ try{ clearRouteSilent(); }catch(e){} }
+  var show=routeIsLive();
   // hide while the full map or satellite view is open (route shown there)
   try{ if (typeof fullMapOpen!=='undefined' && fullMapOpen) show=false; }catch(e){}
   try{ if (window.__satViewActive) show=false; }catch(e){}
   if (!show){ if (hudArrowVisible){ hudArrowEl.style.display='none'; hudArrowVisible=false; } return; }
-  if (!hudArrowVisible){ hudArrowEl.style.display='block'; hudArrowVisible=true; }
   var p;
   try{ p=playerPos(); }catch(e){ return; }
+  /* Already there: inside the arrival radius (25u) the player IS at
+     the destination — hide the strip; gpsTick's arrival clear follows
+     within ~500 ms. */
+  try{
+    var _adx=route.destX-p.x, _adz=route.destZ-p.z;
+    if (_adx*_adx+_adz*_adz<=ARRIVE_U*ARRIVE_U){
+      if (hudArrowVisible){ hudArrowEl.style.display='none'; hudArrowVisible=false; }
+      return;
+    }
+  }catch(e){}
+  /* FAIL-CLOSED PAINT (Tatum QA 2026-11-09): the strip is one unit —
+     arrow + distance band + "tap to clear". The element is only
+     flipped visible AFTER the paint below succeeds; if anything in
+     the guidance/paint throws, the strip hides instead of sitting on
+     screen as a visible arrow with an empty band (the exact frame
+     Joshua caught). The next tick retries from hidden. */
+  try{
   /* v1.64 ROUTE GUIDANCE: the arrow aims at the guidance lookahead
      point ON THE ROUTE (down the street, swinging toward the next turn
      as it nears) — pre-1.64 it pointed in a straight line at the
@@ -2945,6 +2995,20 @@ function hudArrowTick(){
     fitStripBand(hudArrowTurn, 20, 11);
     fitStripBand(hudArrowDist, 13, 9);
   }catch(e){}
+  /* FAIL-CLOSED (Tatum QA 2026-11-09): the band must never render
+     empty — if the distance text somehow came out blank, the strip
+     is not navigation, so hide it instead of showing a blank band. */
+  if (!hudArrowDist || !hudArrowDist.textContent){
+    if (hudArrowVisible){ hudArrowEl.style.display='none'; hudArrowVisible=false; }
+    return;
+  }
+  if (!hudArrowVisible){ hudArrowEl.style.display='block'; hudArrowVisible=true; }
+  }catch(e){
+    /* Guidance or paint threw mid-strip: hide the whole strip rather
+       than leave a visible arrow with an empty band (Joshua's
+       2026-11-09 frame). The next tick retries from hidden. */
+    if (hudArrowVisible){ hudArrowEl.style.display='none'; hudArrowVisible=false; }
+  }
 }
 
 })();
