@@ -2627,8 +2627,14 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    with this release's scripts), so the boot forces ONE clean reload
    toward the live version. A sessionStorage guard keyed to the target
    version makes a loop impossible: if the reload lands on the same
-   stale document (CDN still catching up), the boot proceeds as-is. */
-window.__DOC_UIVER = '2026.11.09.1';
+   stale document (CDN still catching up), the boot proceeds as-is.
+   RELEASE INVARIANT (2026-11-09): the stamp alone changes this file,
+   so release.py must carry index.html in the push set on EVERY ui
+   release, even when nothing else in it changed — the .09.2 push
+   shipped a manifest whose index.html hash described bytes that never
+   reached the repo (manifest .09.2, repo document still .09.1), and
+   every fresh session paid one self-heal reload for it. */
+window.__DOC_UIVER = '2026.11.09.3';
 /* VER-TAG (ui 2026.11.07.25) >>>
    The on-screen version tag (#ver-tag) shows the version OF THE
    DEPLOYMENT ACTUALLY RUNNING, environment first (Joshua 2026-11-07
