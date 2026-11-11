@@ -48,8 +48,8 @@
      "heights_near_2m.bin.part04",
      "heights_near_2m.bin.part05"
     ],
-    "bytes": 45579724,
-    "sha256": "6f8210ad2318f521af82ac8cf04f3b5962d2dc8057cc15a3497bab19b38e3d37"
+    "bytes": 45580924,
+    "sha256": "17c2a3f781441b4984aa6f0bf9615f8696ab6740540da4caca55bad777257991"
    },
    "mask": "nearpost_mask.bin",
    "rows": "nearpost_rows.bin"
