@@ -105,6 +105,43 @@ var FISH_ANIM_R    = 80;    // = NPC ANIM_R: tail wiggle only near camera
 var FISH_REFRESH_T = 0.5;   // = NPC refreshSlots cadence, seconds
 var FISH_DART_DIST = 16;    // player this close (in water): fish dart away
 var FISH_DART_TIME = 1.5;   // seconds of burst speed after a dart
+/* FISH MINIMUM DEPTH (ui 2026.11.09.5, Joshua's Nov 11 screenshot: a
+   white crappie "lying on the grass" at Tatum's east shore, px 2130,6038).
+   PROVEN by a faithful offline simulation of this file's own logic
+   against the shipped Tatum rings + terrain (harness/fish-sim.js, 3
+   seeds x 620 s): the drawn-ring test HOLDS — no meshed fish ever left
+   the ring (0 dry-land frames in 55,800) — but fish spent 56k-66k frames
+   in water under 0.8 u deep, down to 0.20 u. At the screenshot spot the
+   bed is 25.11 against a 25.70 surface: 0.59 of water. A fish there rides
+   at bed+0.22 — grass height, under a transparent sheet over a grass
+   bed — so it reads as beached although it never left the water. The
+   ring alone cannot keep a fish in water deep enough to read as water.
+   This rule is the missing half: a fish may only be where the water is
+   deep enough to cover it (0.8 u — every species' riding depth plus its
+   body, so even a sunfish at 0.5 sits fully under). Applied at stock,
+   anchor drift, wander/dart, stream-in and placement (hide + recover,
+   same as the null-water path). */
+var FISH_MIN_DEPTH = 0.8;
+/* _waterDepthAt(x,z) — depth of water over the bed (surface minus bed),
+   or null when there is no water there at all. The fish's own depth
+   test: ring membership is not enough, the water has to be deep enough
+   to hold the fish. */
+function _waterDepthAt(x, z){
+  try {
+    var wl = waterLevelAt(x, z);
+    if (wl === null || wl === undefined) return null;
+    var bed = heightAt(x, z);
+    if (typeof bed !== 'number') return null;
+    return wl - bed;
+  } catch(e){ return null; }
+}
+/* _deepEnough(x,z) — true when a fish may be at (x,z): inside water
+   AND at least FISH_MIN_DEPTH deep. One call, used by every movement
+   and placement guard below. */
+function _deepEnough(x, z){
+  var d = _waterDepthAt(x, z);
+  return (d !== null && d >= FISH_MIN_DEPTH);
+}
 var MAX_FISH_PER_BODY = 16;
 var MIN_FISH_PER_BODY = 6;
 
@@ -224,6 +261,32 @@ function _ringSafePoint(ring, cx, cz){
   return { x: ring[0][0], z: ring[0][1] };
 }
 
+/* _ringDeepPoint(ring, cx, cz) — the recovery point for the minimum-depth
+   rule (ui 2026.11.09.5): a point that is not just inside the ring but in
+   water deep enough to hold a fish. The centroid when it qualifies, else
+   the deepest point of the same coarse grid scan _ringSafePoint uses
+   (the deepest in-ring point found, even if it is under the threshold —
+   the placement guard re-checks and keeps the fish hidden rather than
+   parking it in the shallows). */
+function _ringDeepPoint(ring, cx, cz){
+  if (_pointInRing(cx, cz, ring) && _deepEnough(cx, cz)) return { x: cx, z: cz };
+  var mnx = 1e18, mxx = -1e18, mnz = 1e18, mxz = -1e18, i;
+  for (i = 0; i < ring.length; i++){
+    if (ring[i][0] < mnx) mnx = ring[i][0]; if (ring[i][0] > mxx) mxx = ring[i][0];
+    if (ring[i][1] < mnz) mnz = ring[i][1]; if (ring[i][1] > mxz) mxz = ring[i][1];
+  }
+  var best = null, bestD = -1e18, gx, gz, STEPS = 24;
+  for (gx = 0; gx <= STEPS; gx++) for (gz = 0; gz <= STEPS; gz++){
+    var px = mnx + (mxx - mnx) * gx / STEPS, pz = mnz + (mxz - mnz) * gz / STEPS;
+    if (!_pointInRing(px, pz, ring)) continue;
+    var d = _waterDepthAt(px, pz);
+    if (d === null) continue;
+    if (d > bestD){ bestD = d; best = { x: px, z: pz }; }
+  }
+  if (best) return best;
+  return _ringSafePoint(ring, cx, cz);
+}
+
 /* _pickRingPoint(ring, cx, cz, rx, rz, safe) — sample the old ellipse
    area until a point lands inside the drawn ring (bounded tries);
    fall back to the proven safe point. Stock-time only. */
@@ -249,7 +312,10 @@ function _stockWater(w){
   var cx = w.x, cz = w.z, rx = w.rx || 30, rz = w.rz || 30;
   var ring = (w.ring && w.ring.length > 2) ? w.ring
            : ((w.polygon && w.polygon.length > 2) ? w.polygon : null);
-  var safe = ring ? _ringSafePoint(ring, cx, cz) : { x: cx, z: cz };
+  /* ui 2026.11.09.5: the recovery point is a DEEP point now (see
+     _ringDeepPoint) — a fish recovered to the shallows would read as
+     beached the moment it showed again. */
+  var safe = ring ? _ringDeepPoint(ring, cx, cz) : { x: cx, z: cz };
   // Headcount scales with water size (stylized — real lakes hold thousands).
   var n = Math.round(Math.sqrt(rx * rz) / 4);
   n = Math.max(MIN_FISH_PER_BODY, Math.min(MAX_FISH_PER_BODY, n));
@@ -258,12 +324,18 @@ function _stockWater(w){
   for (var s = 0; s < schoolCount; s++){
     /* School anchor: a random spot inside the ellipse — and, when a
        ring governs, VALIDATED inside the drawn water (re-picked
-       until inside; the safe point is the bounded fallback). */
+       until inside; the safe point is the bounded fallback). ui
+       2026.11.09.5: inside the ring is not enough — the anchor must
+       also sit in water deep enough to hold its fish (FISH_MIN_DEPTH),
+       or the whole school starts life in the shallows that read as
+       beached. A re-picked anchor that is still shallow falls back to
+       the deep safe point. */
     var aa = Math.random()*Math.PI*2, ar = Math.random()*0.5;
     var ax = cx + Math.cos(aa)*ar*rx, az = cz + Math.sin(aa)*ar*rz;
-    if (ring && !_pointInRing(ax, az, ring)){
+    if (ring && (!_pointInRing(ax, az, ring) || !_deepEnough(ax, az))){
       var ap = _pickRingPoint(ring, cx, cz, rx, rz, safe);
       ax = ap.x; az = ap.z;
+      if (!_deepEnough(ax, az)){ ax = safe.x; az = safe.z; }
     }
     var school = {
       kind: 'lake',
@@ -282,15 +354,19 @@ function _stockWater(w){
       else       sp = _lakeSpecies();
       /* Personal offset: validated the same way — an offset that
          would put the fish on land is re-picked (bounded), else the
-         fish rides at the anchor itself. */
+         fish rides at the anchor itself. ui 2026.11.09.5: the offset
+         must also keep the fish in deep enough water — an offset into
+         the shallows reads as beached just as surely as one onto land. */
       var fa = Math.random()*Math.PI*2, fr = 2 + Math.random()*6;
       var ox = Math.cos(fa)*fr, oz = Math.sin(fa)*fr;
-      if (ring && !_pointInRing(school.ax + ox, school.az + oz, ring)){
+      if (ring && (!_pointInRing(school.ax + ox, school.az + oz, ring) ||
+                   !_deepEnough(school.ax + ox, school.az + oz))){
         ox = 0; oz = 0;
         for (var ot2 = 0; ot2 < 12; ot2++){
           var fa2 = Math.random()*Math.PI*2, fr2 = 2 + Math.random()*6;
           var ox2 = Math.cos(fa2)*fr2, oz2 = Math.sin(fa2)*fr2;
-          if (_pointInRing(school.ax + ox2, school.az + oz2, ring)){ ox = ox2; oz = oz2; break; }
+          if (_pointInRing(school.ax + ox2, school.az + oz2, ring) &&
+              _deepEnough(school.ax + ox2, school.az + oz2)){ ox = ox2; oz = oz2; break; }
         }
       }
       fishes.push({
@@ -506,8 +582,12 @@ function _refreshMeshes(px, pz){
             /* ui .26: the stream-in snap obeys the ring too — an
                anchor that drifted while data-only plus a personal
                offset can land outside the drawn water; fall back to
-               the school's validated safe point. */
-            if (sc.ring && !_pointInRing(f.x, f.z, sc.ring)){
+               the school's validated safe point. ui 2026.11.09.5:
+               the snap must also land in deep enough water — a snap
+               into the shallows would show a fish beached on its
+               first visible frame. */
+            if (sc.ring && (!_pointInRing(f.x, f.z, sc.ring) ||
+                             !_deepEnough(f.x, f.z))){
               f.x = sc.safeX; f.z = sc.safeZ;
             }
           }
@@ -556,14 +636,17 @@ function _updateFish(dt){
       // Lake: slow wander of the anchor inside 70% of the ellipse —
       // and, when a drawn ring governs (ui .26), the candidate must
       // also be inside the ring: an anchor may never drift onto land
-      // the ellipse happens to cover.
+      // the ellipse happens to cover. ui 2026.11.09.5: the anchor must
+      // also stay in water deep enough to hold its fish — an anchor
+      // drifted into the shallows would drag the whole school to the
+      // edge where they read as beached.
       sc.heading += (Math.random()-0.5) * 1.6 * dt;
       var sp = 0.8;  // slow drift u/s
       var nx = sc.ax + Math.cos(sc.heading)*sp*dt;
       var nz = sc.az + Math.sin(sc.heading)*sp*dt;
       var ex = (nx-sc.cx)/(sc.rx*0.7), ez = (nz-sc.cz)/(sc.rz*0.7);
       var anchorOk = (ex*ex + ez*ez < 1) &&
-                     (!sc.ring || _pointInRing(nx, nz, sc.ring));
+                     (!sc.ring || (_pointInRing(nx, nz, sc.ring) && _deepEnough(nx, nz)));
       if (anchorOk){ sc.ax = nx; sc.az = nz; }
       else sc.heading += Math.PI * dt * 2;  // turn back toward center
     }
@@ -589,10 +672,13 @@ function _updateFish(dt){
       f.dartT -= dt; spd = f.speed * 3.2;
       var dcx = f.x + Math.sin(f.heading) * spd * dt;
       var dcz = f.z + Math.cos(f.heading) * spd * dt;
-      if (sc2.kind === 'lake' && sc2.ring && !_pointInRing(dcx, dcz, sc2.ring)){
+      if (sc2.kind === 'lake' && sc2.ring && (!_pointInRing(dcx, dcz, sc2.ring) ||
+                                               !_deepEnough(dcx, dcz))){
         /* ui .26: a dart may not carry a lake fish onto land — the
            step is refused and the fish turns back toward its anchor
-           (turn, don't teleport). */
+           (turn, don't teleport). ui 2026.11.09.5: the same refusal
+           covers the shallows — a dart into water under FISH_MIN_DEPTH
+           would beach the fish in front of the player. */
         f.heading = Math.atan2(sc2.ax - f.x, sc2.az - f.z);
       } else {
         f.x = dcx; f.z = dcz;
@@ -632,10 +718,14 @@ function _updateFish(dt){
       spd = f.speed * (0.75 + 0.25*Math.sin(_t*1.3 + f.phase));
       var wcx = f.x + Math.sin(f.heading) * spd * dt;
       var wcz = f.z + Math.cos(f.heading) * spd * dt;
-      if (sc2.ring && !_pointInRing(wcx, wcz, sc2.ring)){
+      if (sc2.ring && (!_pointInRing(wcx, wcz, sc2.ring) ||
+                        !_deepEnough(wcx, wcz))){
         /* ui .26: THE DRAWN RING IS THE LAW — a wander step that
            would leave the water is not taken; steer back toward the
-           school anchor instead. (Turn, don't teleport.) */
+           school anchor instead. (Turn, don't teleport.) ui
+           2026.11.09.5: the shallows are refused the same way — a
+           step into water under FISH_MIN_DEPTH is a step toward
+           reading as beached, even inside the ring. */
         f.heading = Math.atan2(sc2.ax - f.x, sc2.az - f.z);
       } else {
         f.x = wcx; f.z = wcz;
@@ -672,6 +762,26 @@ function _updateFish(dt){
     }
     /* Back in water: a fish hidden by the recovery above shows again. */
     if (f.mesh.visible === false){ try { f.mesh.visible = true; } catch(e){} }
+    /* ui 2026.11.09.5 — MINIMUM DEPTH, THE SAFETY NET: even a fish
+       inside the ring must not be SHOWN in water too shallow to cover
+       it — at Tatum's east shore the bed sits 0.59 under the surface
+       and a fish there reads as beached. If the depth here is under
+       FISH_MIN_DEPTH, hide the mesh and recover to the school's deep
+       safe point, exactly like the null-water path above; if even that
+       reads shallow, stay hidden this frame and retry next frame. */
+    if (sc2.kind === 'lake'){
+      var _dep = _waterDepthAt(f.x, f.z);
+      if (_dep === null || _dep < FISH_MIN_DEPTH){
+        try { f.mesh.visible = false; } catch(e){}
+        f.x = (typeof sc2.safeX === 'number') ? sc2.safeX : sc2.ax;
+        f.z = (typeof sc2.safeZ === 'number') ? sc2.safeZ : sc2.az;
+        try { wl = waterLevelAt(f.x, f.z); } catch(e){}
+        if (wl === null || wl === undefined) continue;
+        _dep = _waterDepthAt(f.x, f.z);
+        if (_dep === null || _dep < FISH_MIN_DEPTH) continue;
+        try { f.mesh.visible = true; } catch(e){}
+      }
+    }
     /* FISH VARIETY (ui 2026.11.07.24): each species rides at its OWN
        depth (catfish low over the bed, sunfish near the surface) plus
        a per-fish jitter — the old code pinned every fish at wl-0.55,

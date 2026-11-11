@@ -171,9 +171,9 @@
     },
     {
       "name": "index.html",
-      "size": 1335497,
-      "sha256": "24c11a25237feed535e17b9edd5f8af7b4a86984cb44115dafcdfdf31bf10835",
-      "hash": "24c11a25237feed535e17b9edd5f8af7b4a86984cb44115dafcdfdf31bf10835"
+      "size": 1348491,
+      "sha256": "35936940e5f497eb26cf54e1ab6bc6927573c570c0a780494573d894d0239a1f",
+      "hash": "35936940e5f497eb26cf54e1ab6bc6927573c570c0a780494573d894d0239a1f"
     },
     {
       "name": "input_diag.js",
@@ -452,9 +452,9 @@
     },
     {
       "name": "water_interaction.js",
-      "size": 34960,
-      "sha256": "e059e6479cf30d443b7a6f9db5c1a6396179992ff8c46bb0daa46c919e13619d",
-      "hash": "e059e6479cf30d443b7a6f9db5c1a6396179992ff8c46bb0daa46c919e13619d"
+      "size": 41129,
+      "sha256": "8b8017dd1dfc3356c043b91c9503d12a7329a39cd3b4fdee18b144769517addd",
+      "hash": "8b8017dd1dfc3356c043b91c9503d12a7329a39cd3b4fdee18b144769517addd"
     },
     {
       "name": "water_render.js",
@@ -708,6 +708,6 @@
       "hash": "5bd3ab4ab2c4fe2671d7c7b755c98518de645f5390c3df530be6c0fbaea92a35"
     }
   ],
-  "ui_version": "2026.11.09.4",
+  "ui_version": "2026.11.09.5",
   "version": "2026.10.17.9"
 }
