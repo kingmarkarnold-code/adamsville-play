@@ -2634,7 +2634,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    shipped a manifest whose index.html hash described bytes that never
    reached the repo (manifest .09.2, repo document still .09.1), and
    every fresh session paid one self-heal reload for it. */
-window.__DOC_UIVER = '2026.11.11.1';
+window.__DOC_UIVER = '2026.11.11.2';
 /* VER-TAG (ui 2026.11.07.25) >>>
    The on-screen version tag (#ver-tag) shows the version OF THE
    DEPLOYMENT ACTUALLY RUNNING, environment first (Joshua 2026-11-07
@@ -13737,6 +13737,22 @@ function animateHeroGLB(dt){
      owns the axis there). */
   var _kneel = (player.kneelT>0 && !player.swimming) ? kneelEnv() : 0;
   var pitchT = _kneel>0 ? 0 : (_exh ? 0.62 : (player.swimming ? (0.65 + 0.22 * (R.freeBlend||0)) * R.swimBlend : 0));
+  /* DIVE ATTITUDE (ui 2026.11.11.2, Joshua): while swimming, the
+     LOOK-steered body pitch shows on the body itself — the dive
+     module's attitude (feet up / head down at +1) steepens the
+     prone angle in the same direction the base swim pitch already
+     leans (head end down past level), and feet down / head up (-1)
+     flattens it back toward upright. The angle that steers him IS
+     the angle he sees: the module owns the state and the shared
+     constant (read through window.__DIVE, the same pattern as the
+     swimY/view calls); this line only draws it. */
+  if (player.swimming && _kneel<=0){
+    try{
+      var _datt = (window.__DIVE && window.__DIVE.core && window.__DIVE.core.state)
+        ? (window.__DIVE.core.state.att || 0) : 0;
+      if (_datt) pitchT += _datt * ((window.__DIVE.C && window.__DIVE.C.ATT_PITCH_RAD) || 0.5) * R.swimBlend;
+    }catch(e){}
+  }
   R.inner.rotation.x += (pitchT - R.inner.rotation.x) * Math.min(1, 6 * dt);
   /* Freestyle body roll (ui 2026.11.11): rolls with the windmill
      cycle (applySwimGLB advances R.freePhase) at the freestyle
@@ -17128,8 +17144,15 @@ function updatePlayer(dt){
        and returns the mesh Y with the dive depth taken out of it. The
        surface-trim formula above is untouched — with no dive the
        module hands gy straight back. See dive_system.js for the
-       inverted axis, the depth gate, breath and the forced resurface. */
-    if (window.__DIVE && window.__DIVE.swimY) gy=window.__DIVE.swimY(dt, gy, wl, _sub, mvz, _ik);
+       natural motion axis, the look-steered body attitude, the depth
+       gate, breath and the forced resurface. ui 2026.11.11.2: the
+       frame's LOOK demand rides along as the last argument — this
+       frame's footPitch normalised by its own clamps (+1 = looking
+       fully up), the same pass-it-in pattern as mvz (the .26 law:
+       the dive never re-samples input behind updatePlayer's back). */
+    var _lookN = footPitch >= 0 ? footPitch / FOOT_PITCH_UP : footPitch / (-FOOT_PITCH_DOWN);
+    if (_lookN > 1) _lookN = 1; else if (_lookN < -1) _lookN = -1;
+    if (window.__DIVE && window.__DIVE.swimY) gy=window.__DIVE.swimY(dt, gy, wl, _sub, mvz, _ik, _lookN);
     player.mesh.position.set(player.x, gy, player.z);
   } else {
     // v3.0 535 PORCH: outside on the raised front porch/entry stairs, use the
@@ -17737,6 +17760,23 @@ function updateCamera(dt){
   var _dvw=null;
   try{ _dvw=(window.__DIVE && window.__DIVE.view)?window.__DIVE.view():null; }catch(e){ _dvw=null; }
   if (_dvw){ camY-=_dvw.sink; ly+=_dvw.lookY; }
+  /* WATER-EXIT ORDER (ui 2026.11.11.2, Joshua: "I exit the water
+     and where the camera is causes for me to see the water and I
+     can't see the character"): through the EXIT BAND — the dive
+     depth at which his head is at/above the surface (the dive's
+     own head-under line, HEAD_UNDER_U 0.35) — the eye must not
+     linger UNDER the water: a sunk camera there fills the frame
+     with the surface sheet/murk while the character is already
+     out. Hold the eye just above the water level AT THE CAMERA
+     until the dive ends. Only the band: a real dive deeper than
+     the band keeps its underwater camera untouched (the murk is
+     the design), and view()'s exit fade handles the aim. */
+  if (_dvw && typeof _dvw.depth === 'number' && _dvw.depth <= 0.36){
+    try{
+      var _wlx=(typeof waterLevelAt==='function')?waterLevelAt(camX, camZ):null;
+      if (typeof _wlx==='number' && isFinite(_wlx) && camY < _wlx+0.25) camY=_wlx+0.25;
+    }catch(e){}
+  }
   camera.position.set(camX, camY, camZ);
   /* LOOK UP/DOWN (2026-11-08, Joshua — ui 2026.11.08.8): on foot and
      OUTDOORS, footPitch rotates the view direction around the

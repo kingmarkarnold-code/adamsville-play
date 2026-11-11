@@ -68,13 +68,46 @@
       post-processing — just fog + colour, which the A17 affords. The
       water surface itself is an unlit double-sided shader, so from
       below it stays BRIGHT against the murk: the bright ceiling.
-   3. DIVE LOCOMOTION — NO dive button exists and none is added. While
-      swimming, the vertical axis is INVERTED on both inputs: pushing
-      UP (touch stick up / swipe up / W / up-arrow) swims DOWN, pushing
-      DOWN rises. Pushing up at the surface STARTS a dive; pushing down
-      until the depth reads zero returns to surface swimming. The camera
-      pitches with the swim (updateCamera reads __DIVE.view()) and sinks
-      toward the water so the underwater look engages during a dive.
+   3. DIVE LOCOMOTION — NO dive button exists and none is added.
+      (ui 2026.11.11.2 REDESIGN, Joshua 2026-11-11 ~14:01 — SUPERSEDES
+      the inverted axis this piece originally shipped with: pushing UP
+      used to swim DOWN, which he called "a little bit different from
+      what I was expecting.") TWO controls now steer the vertical:
+      a. THE MOTION CONTROLLER is NATURAL: floating on the surface and
+         pushing DOWN (stick down / S) STARTS a dive; underwater,
+         pushing UP (stick up / W) SURFACES. The motion demand is the
+         same mvz that propels him (the .26 law) read at face value:
+         mvz positive (push down/back) descends, negative rises.
+      b. THE LOOK CONTROLLER steers the BODY through the FEET while
+         swimming — an analog body-pitch (attitude) control: LOOK DOWN
+         angles his FEET down, which lifts his head, so swimming
+         carries him UP; LOOK UP angles his FEET up, his head drops,
+         and he dives DEEPER. How hard he pushes the look input sets
+         how strongly the feet angle ("kind of a speed control" —
+         his words): the look demand is the game's own camera-pitch
+         state (footPitch, which every look input already writes —
+         touch drag, gamepad stick, arrow keys), normalised to -1..1
+         and passed in by updatePlayer like every other demand. The
+         attitude eases toward the demand; a pitched body gains a
+         vertical rate of its own — a gentle drift while treading,
+         growing with his forward swim speed, because a swimmer's
+         angled body is what carries him up or down. Returning the
+         look to level levels the body. The arrow keys are LOOK keys
+         in this model (they feed footPitch via LookInput) — they no
+         longer add a direct dive demand of their own.
+      The camera pitches with the swim (updateCamera reads
+      __DIVE.view()) and sinks toward the water so the underwater
+      look engages during a dive — with one exit repair (also
+      2026.11.11.2, Joshua's same report: "I exit the water and where
+      the camera is causes for me to see the water and I can't see
+      the character"): view()'s look pitch now FADES OUT over the
+      last 1.2u of an ascent — it used to follow the rise velocity
+      at full strength all the way up, pinning the aim at the sky
+      and pushing the character out of the bottom of the frame for
+      the whole exit (measured on the .11.1 bytes: lookY +2.57,
+      character centre at NDC y -0.93, at depth 0.43) — and
+      updateCamera holds the eye above the surface through the
+      exit band (see the clamp there).
 
    DEPTH GATE — the dive envelope at the player's position comes from
    the game's own depth truth, evaluated per position (NO per-name
@@ -186,7 +219,29 @@ var DIVE_C = {
   CAM_SINK_PER_U: 0.9,
   CAM_SINK_MAX: 2.4,
   /* camera: look-target Y offset at full pitch, u */
-  CAM_PITCH_Y: 2.6
+  CAM_PITCH_Y: 2.6,
+  /* camera: the look pitch fades out over this much remaining dive
+     depth on the way up, so the exit crosses with a level camera
+     and the character framed (ui 2026.11.11.2 — see the header) */
+  CAM_EXIT_FADE_U: 1.2,
+  /* ATTITUDE (ui 2026.11.11.2 — the look-steered body pitch):
+     how fast the body angle eases toward the look demand, 1/s */
+  ATT_RATE: 3.2,
+  /* a fully pitched body's own vertical drift while treading
+     water, u/s — an angled swimmer's kick moves him even at a
+     standstill, gently */
+  ATT_BASE_U: 0.5,
+  /* extra vertical rate per u/s of forward swim speed at full
+     attitude — swimming forward along a pitched body is what
+     really carries him shallower or deeper */
+  ATT_GAIN: 0.35,
+  /* the attitude's total vertical rate never exceeds this, u/s
+     (an empty breath's forced resurface runs at the same 2.4) */
+  ATT_RATE_MAX: 2.4,
+  /* the visible body pitch per unit of attitude, radians — read
+     by index.html's animateHero through __DIVE.C so the feet/head
+     angle he sees IS the angle that steers him */
+  ATT_PITCH_RAD: 0.5
 };
 
 /* This module's build stamp (ui 2026.11.08.3): carried on window.__DIVE
@@ -194,7 +249,7 @@ var DIVE_C = {
    dive module actually ran on the device — a stale or missing module
    (the deferred loader skips this file silently: its script tag has
    an empty data-dkey) can never again masquerade as a wiring bug. */
-var DIVE_MODULE_VERSION = '2026.11.08.7';
+var DIVE_MODULE_VERSION = '2026.11.11.2';
 
 /* Breath bar colour staging (Joshua's progression): BLUE = oxygen,
    full and healthy; YELLOW = warning; RED = nearly out. */
@@ -208,9 +263,16 @@ function breathColor(b){
    createDiveCore() — the pure state machine.
    tick(gMin, dtSec, env) -> events { bottomStart, breathOut,
    forcedSurfaced } (edge-triggered, this tick only).
-   env: { swimming, fwd, maxDepthU, restLocked }
-     fwd: the INVERTED dive axis demand, -1..1: +1 = the player is
-       pushing UP (stick up / W) = descend; -1 = pushing DOWN = rise.
+   env: { swimming, fwd, look, fwdSpd, maxDepthU, restLocked }
+     fwd: the MOTION dive demand, -1..1, NATURAL (ui 2026.11.11.2):
+       +1 = pushing DOWN (stick down / S) = descend; -1 = pushing
+       UP (stick up / W) = rise.
+     look: the LOOK attitude demand, -1..1 (ui 2026.11.11.2): +1 =
+       looking fully UP (feet angle up, head drops, he deepens);
+       -1 = looking fully DOWN (feet angle down, head rises, he
+       climbs). The core eases `att` toward it.
+     fwdSpd: his forward swim speed along his facing, u/s (>= 0) —
+       the attitude's vertical rate grows with it.
      maxDepthU: the envelope at this position (wiring computes it from
        the game's depth truth minus the swim trim and the bed
        clearance; the core only clamps).
@@ -224,6 +286,9 @@ function createDiveCore(){
     submerged: false,  /* head under (breath draining) */
     bottom: false,     /* resting on the envelope floor (the bed) */
     pitch: 0,          /* smoothed vertical pitch, -1 (rising) .. 1 (diving) */
+    att: 0,            /* the look-steered body attitude, -1 (feet down /
+                          head up, climbing) .. 1 (feet up / head down,
+                          deepening) — eased toward the look demand */
     prevDepth: 0
   };
   function clamp(v, a, b){ return v < a ? a : (v > b ? b : v); }
@@ -234,7 +299,7 @@ function createDiveCore(){
       /* out of the water: the dive is over — depth snaps home, breath
          tops back up, no latches survive */
       S.depth = 0; S.prevDepth = 0; S.forced = false;
-      S.submerged = false; S.bottom = false; S.pitch = 0;
+      S.submerged = false; S.bottom = false; S.pitch = 0; S.att = 0;
       S.breath = Math.min(100, S.breath + DIVE_C.BREATH_REFILL_PER_SEC * (dtSec || 0));
       return ev;
     }
@@ -243,15 +308,34 @@ function createDiveCore(){
 
     if (S.forced){
       /* FORCED RESURFACE: input does not matter — an empty breath
-         carries him up at RESURFACE_SPEED until the trim is home. */
+         carries him up at RESURFACE_SPEED until the trim is home.
+         The body levels out too: no attitude survives an empty
+         breath. */
       S.depth -= DIVE_C.RESURFACE_SPEED * dtSec;
+      S.att += (0 - S.att) * Math.min(1, dtSec * DIVE_C.ATT_RATE);
       if (S.depth <= 0){
         S.depth = 0; S.forced = false;
         ev.forcedSurfaced = true;   /* wiring starts the float rest */
       }
-    } else if (!env.restLocked && dtSec > 0){
-      /* THE INVERTED AXIS: fwd +1 (pushing UP) descends. */
+    } else if (env.restLocked){
+      /* a forced rest is a forced stop: the whole vertical is
+         locked (as it always was) and the body eases level. */
+      S.att += (0 - S.att) * Math.min(1, dtSec * DIVE_C.ATT_RATE);
+    } else if (dtSec > 0){
+      /* THE NATURAL MOTION AXIS (ui 2026.11.11.2): fwd +1 (pushing
+         DOWN) descends, fwd -1 (pushing UP) rises. */
       S.depth += (env.fwd || 0) * DIVE_C.DIVE_SPEED * dtSec;
+      /* THE LOOK ATTITUDE (ui 2026.11.11.2): the body angle eases
+         toward the look demand — how hard he pushes the look sets
+         how far the feet angle — and a pitched body carries him:
+         a gentle drift while treading, growing with his forward
+         swim speed, capped at the resurface rate. att +1 (feet up,
+         head down) deepens; att -1 (feet down, head up) climbs. */
+      var attTgt = clamp(env.look || 0, -1, 1);
+      S.att += (attTgt - S.att) * Math.min(1, dtSec * DIVE_C.ATT_RATE);
+      var attRate = S.att * Math.min(DIVE_C.ATT_RATE_MAX,
+        DIVE_C.ATT_BASE_U + DIVE_C.ATT_GAIN * Math.max(0, env.fwdSpd || 0));
+      S.depth += attRate * dtSec;
     }
     if (S.depth < 0) S.depth = 0;
     if (S.depth > maxD) S.depth = maxD;
@@ -309,7 +393,7 @@ var diveCore = createDiveCore();
    so a Player Report from a failing device shows exactly where the
    chain stood — demand (fwd), envelope (maxD), lock (restLocked),
    and whether the water level read null (wlNull). */
-var diveTele = { fwd: 0, maxD: 0, restLocked: false, wlNull: false };
+var diveTele = { fwd: 0, look: 0, att: 0, maxD: 0, restLocked: false, wlNull: false };
 
 /* --- game-minute clock (the bodyTick pattern: WorldClock deltas with
    a sane-frame guard, documented fallback rate) ---------------------- */
@@ -330,27 +414,50 @@ function diveGMin(dtSec){
   return gMin;
 }
 
-/* --- the dive axis demand: +1 = pushing UP/forward (descend), -1 =
-   pushing DOWN/back (rise). ui .26: the demand ARRIVES from
-   updatePlayer (swimY's mvzIn/ikIn arguments — the very values that
-   propel surface swimming this frame); this sampler remains ONLY as
-   a fallback for a caller that passes no demand. Its touch read was
-   the .24 live failure: `joy` never escapes index.html's eval scope,
-   so from this file it is always undefined. ------------------------- */
+/* --- the dive axis demand: +1 = pushing DOWN (descend), -1 =
+   pushing UP (rise) — the NATURAL axis of ui 2026.11.11.2. ui .26:
+   the demand ARRIVES from updatePlayer (swimY's mvzIn argument —
+   the very value that propels surface swimming this frame); this
+   sampler remains ONLY as a fallback for a caller that passes no
+   demand. Its touch read was the .24 live failure: `joy` never
+   escapes index.html's eval scope, so from this file it is always
+   undefined. The arrow keys are NOT read here any more: in the
+   2026.11.11.2 model they are look input (they write footPitch
+   through LookInput) and reach the dive through the look channel
+   (diveSampleLook below), never as a direct axis. -------------- */
 function diveSampleFwd(){
   var raw = 0;
   try{
     var ik = (window.Input && Input.sampled) ? Input.keys : window.keys;
     if (ik){
-      if (ik['w'] || ik['arrowup']) raw -= 1;
-      if (ik['s'] || ik['arrowdown']) raw += 1;
+      if (ik['s']) raw += 1;   /* pushing DOWN descends */
+      if (ik['w']) raw -= 1;   /* pushing UP rises */
     }
+    /* every analog source reads push-down as positive, which IS
+       the descend demand under the natural axis — no flip */
     if (window.Input && Input.sampled && typeof Input.sampled.analogY === 'number')
       raw += Input.sampled.analogY;
     if (typeof joy !== 'undefined' && joy && joy.active) raw += (joy.dy || 0);
   }catch(e){}
-  raw = Math.max(-1, Math.min(1, raw));
-  return -raw;   /* forward reads negative in every source above */
+  return Math.max(-1, Math.min(1, raw));
+}
+
+/* --- the LOOK demand fallback: the normalised camera-pitch state,
+   +1 = looking fully UP (feet up / deepen), -1 = fully DOWN (feet
+   down / climb). swimY's caller passes this in (updatePlayer owns
+   footPitch); this fallback serves a caller that passes nothing,
+   reading index.html's PUBLISHED getter — never the raw variable,
+   which lives in its eval scope (the .24/.26 lesson). The clamp
+   constants mirror index.html's FOOT_PITCH_UP / FOOT_PITCH_DOWN;
+   if those ever change, change this pair with them. ------------ */
+function diveSampleLook(){
+  try{
+    if (typeof window.__footPitchState !== 'function') return 0;
+    var fp = window.__footPitchState();
+    if (typeof fp !== 'number' || !isFinite(fp)) return 0;
+    var n = fp >= 0 ? fp / 1.45 : fp / 1.30;
+    return Math.max(-1, Math.min(1, n));
+  }catch(e){ return 0; }
 }
 
 /* --- stream geometry helpers (ui 2026.11.08.3): faithful local
@@ -458,24 +565,25 @@ function diveDepthUAt(x, z){
 }
 
 /* --- the facade index.html calls --------------------------------------
-   swimY(dt, gy, wl, sub, mvzIn, ikIn): updatePlayer's swim branch
-     computes the surface-trim mesh Y (gy) exactly as before, then
-     hands it here ALONG WITH THIS FRAME'S OWN INPUT (ui .26):
+   swimY(dt, gy, wl, sub, mvzIn, ikIn, lookIn): updatePlayer's swim
+     branch computes the surface-trim mesh Y (gy) exactly as before,
+     then hands it here ALONG WITH THIS FRAME'S OWN INPUT (ui .26):
      mvzIn is the movement vector updatePlayer just computed from the
-     joystick + keys (negative = pushing UP/forward), and ikIn is the
-     same frame's key snapshot (the arrow keys ride it — they are
-     look keys for movement but dive keys per Joshua's ruling). The
-     dive ticks on that call (perfect frame order with the input and
-     the mesh) and returns the Y to actually use — gy minus the dive
-     depth. Any failure returns gy untouched: surface swimming is
-     never at risk from this module.
+     joystick + keys (negative = pushing UP/forward, positive =
+     pushing DOWN/back), ikIn is the same frame's key snapshot, and
+     lookIn (ui 2026.11.11.2) is the normalised look demand from the
+     same frame's footPitch (-1..1, + = looking up). The dive ticks
+     on that call (perfect frame order with the input and the mesh)
+     and returns the Y to actually use — gy minus the dive depth.
+     Any failure returns gy untouched: surface swimming is never at
+     risk from this module.
    view(): updateCamera's on-foot branch asks for the dive's camera
      adjustments; null unless a dive is live. -------------------------- */
 window.__DIVE = {
   core: diveCore,
   C: DIVE_C,
   version: DIVE_MODULE_VERSION,
-  swimY: function(dtSec, gy, wl, sub, mvzIn, ikIn){
+  swimY: function(dtSec, gy, wl, sub, mvzIn, ikIn, lookIn){
     try{
       if (typeof player === 'undefined' || !player || !player.swimming) return gy;
       var depthU = (wl === null || wl === undefined) ? 0 : diveDepthUAt(player.x, player.z);
@@ -509,29 +617,50 @@ window.__DIVE = {
       }catch(e){}
       /* THE DEMAND (ui .26 — see the header): derived from the
          caller's own live input values, never re-sampled here.
-         mvzIn negative (stick up / W) -> fwd +1 = descend; the
-         arrows add their own demand from the same snapshot. Only a
-         caller that passes NO demand falls back to the old sampler. */
+         ui 2026.11.11.2 — THE NATURAL AXIS: mvzIn IS the descend
+         demand (positive = pushing DOWN/back = descend; negative =
+         pushing UP/forward = rise), read at face value, no flip.
+         The arrow keys no longer add demand (they are look keys
+         now — see the LOOK DEMAND below). Only a caller that passes
+         NO demand falls back to the sampler. */
       var fwd;
       if (typeof mvzIn === 'number' && isFinite(mvzIn)){
-        fwd = -mvzIn;
-        if (ikIn){
-          if (ikIn['arrowup']) fwd += 1;
-          if (ikIn['arrowdown']) fwd -= 1;
-        }
+        fwd = mvzIn;
         if (fwd > 1) fwd = 1; else if (fwd < -1) fwd = -1;
       } else {
         fwd = diveSampleFwd();
       }
+      /* THE LOOK DEMAND (ui 2026.11.11.2): the normalised look
+         pitch from the caller (+1 = looking up = feet up = deepen;
+         -1 = looking down = feet down = climb), with the published
+         -getter fallback for a caller that passes none. */
+      var look;
+      if (typeof lookIn === 'number' && isFinite(lookIn)){
+        look = lookIn;
+        if (look > 1) look = 1; else if (look < -1) look = -1;
+      } else {
+        look = diveSampleLook();
+      }
+      /* his forward swim speed along his facing, for the attitude
+         rate: his governed speed times the forward share of this
+         frame's own stick (pushing back or sideways gives the
+         attitude nothing to work with). */
+      var fwdSpd = 0;
+      try{
+        if (typeof player.speed === 'number' && isFinite(player.speed) &&
+            typeof mvzIn === 'number' && isFinite(mvzIn))
+          fwdSpd = player.speed * Math.max(0, Math.min(1, -mvzIn));
+      }catch(e){}
       /* telemetry stash (ui 2026.11.08.3): the readout below
          republishes these so a report carries the live chain */
-      diveTele.fwd = fwd; diveTele.maxD = maxD;
+      diveTele.fwd = fwd; diveTele.look = look; diveTele.maxD = maxD;
       diveTele.restLocked = restLocked;
       diveTele.wlNull = (wl === null || wl === undefined);
       var ev = diveCore.tick(diveGMin(dtSec), dtSec, {
-        swimming: true, fwd: fwd,
+        swimming: true, fwd: fwd, look: look, fwdSpd: fwdSpd,
         maxDepthU: maxD, restLocked: restLocked
       });
+      diveTele.att = diveCore.state.att;
       /* bed contact while diving = the .20 touch-bottom reset */
       if (ev.bottomStart){
         try{ if (window.__BODY && window.__BODY.touchBottom) window.__BODY.touchBottom(); }catch(e){}
@@ -549,9 +678,23 @@ window.__DIVE = {
       if (typeof player === 'undefined' || !player || !player.swimming) return null;
       var d = diveCore.state.depth;
       if (d <= 0.02) return null;
+      /* THE EXIT FADE (ui 2026.11.11.2): the look pitch eases out
+         over the last CAM_EXIT_FADE_U of depth, so an ascent crosses
+         the surface with the camera level and the character framed
+         — before this, the pitch followed the rise velocity at full
+         strength to the very top (measured lookY +2.57 with the
+         character at the frame's bottom edge at depth 0.43, the
+         exact "I see the water and I can't see the character"
+         stretch of Joshua's report). The sink already fades with
+         depth by construction (it is proportional to d). depth and
+         att ride along so updateCamera can run its exit-band clamp
+         and a report can see the live attitude. */
+      var fade = Math.max(0, Math.min(1, d / DIVE_C.CAM_EXIT_FADE_U));
       return {
         sink: Math.min(d * DIVE_C.CAM_SINK_PER_U, DIVE_C.CAM_SINK_MAX),
-        lookY: -diveCore.state.pitch * DIVE_C.CAM_PITCH_Y
+        lookY: -diveCore.state.pitch * DIVE_C.CAM_PITCH_Y * fade,
+        att: diveCore.state.att,
+        depth: d
       };
     }catch(e){ return null; }
   }
@@ -575,6 +718,8 @@ function divePublishReport(){
       divePresent: true,
       swimming: swimming,
       fwd: +diveTele.fwd.toFixed(3),
+      look: +diveTele.look.toFixed(3),
+      att: +diveCore.state.att.toFixed(3),
       maxD: +diveTele.maxD.toFixed(3),
       depth: +diveCore.state.depth.toFixed(3),
       breath: +diveCore.state.breath.toFixed(1),

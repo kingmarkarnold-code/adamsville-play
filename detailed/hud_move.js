@@ -70,6 +70,26 @@
         the spot it was covering can then be placed like any
         other. (The move bar already yielded via its tab.)
 
+   v2.3 (ui 2026.11.11.2, Joshua 2026-11-11, live play on
+   2026.11.11.1): "the box at the top of the screen when you're
+   moving the controls was supposed to be movable so that if I
+   wanted to [place] something at the top of the screen I could,
+   or minimize — and it's that feature is still not in there."
+   The BAR at the top could collapse to its tab but could never
+   be DRAGGED, and the panel had no minimise — so the top strip
+   of the screen stayed covered by chrome exactly when he was
+   trying to place controls there. Now:
+     1. THE BAR DRAGS — by its body (label/padding, never its
+        buttons) to any spot on screen, touch or mouse, clamped
+        on-screen; session-only, and entering/leaving move mode
+        resets it to its designed top-centre park.
+     2. THE TAB FOLLOWS THE BAR — collapsing a dragged bar leaves
+        its restore tab at the parked spot, not back on the top
+        edge he just cleared.
+     3. THE PANEL MINIMISES — a – button in its header collapses
+        it to the header strip (rows leave the layout); the same
+        strip's ▾ restores it, parked spot and all.
+
    v2.1 (Joshua 2026-10-24, hands-on): three changes.
      1. THE LIST DERIVES ITSELF — v2's allow-list was typed by hand,
         so when the Go To button was added to the game it never
@@ -295,8 +315,9 @@ var FIXED = {
   'gp-remap-fab': 'gamepad remap tool', 'gp-remap-overlay': 'the gamepad remap screen',
   'kb-remap-fab': 'keyboard remap tool', 'kb-remap-overlay': 'the keyboard remap screen',
   /* this module's own chrome — the tool, not a control */
-  'hud-move-bar': 'the Move controls bar itself', 'hud-move-tag': 'the drag name tag',
-  'hud-move-panel': 'the Select panel — it has its own header drag (v2.2)',
+  'hud-move-bar': 'the Move controls bar itself — tool chrome: it drags by its body and collapses to its tab (v2.3), but it is not a game control',
+  'hud-move-tag': 'the drag name tag',
+  'hud-move-panel': 'the Select panel — it has its own header drag (v2.2) and minimise (v2.3)',
   'hud-move-tab': 'the collapsed Move controls tab',
   'hud-move-resize': 'the resize grip itself'
 };
@@ -974,6 +995,21 @@ var rdrag = null;         /* the live resize drag, or null */
 var panelRows = [];      /* [{id, pick, centre}] for the open panel */
 var panelOpen = false;
 var barCollapsed = false;
+/* v2.3 (ui 2026.11.11.2, Joshua: the box at the top of the screen in
+   move mode "was supposed to be movable ... or minimize, and it's
+   that feature is still not in there"): the move BAR itself now
+   drags by its body (the label / padding — anywhere that is not a
+   button) to any spot on screen, and the Select PANEL gains a real
+   minimise (collapse to its header strip, restore from the same
+   strip). barPos is the bar's session spot ({left, top} px) or
+   null for its designed top-centre park; the collapse TAB inherits
+   the spot, so minimising a dragged bar never sends a handle back
+   to the top edge he just cleared. Both are tool chrome: session
+   only, nothing saved, and entering/leaving move mode resets the
+   chrome to its designed state so nothing can strand. */
+var bdrag = null;         /* the live bar drag, or null */
+var barPos = null;        /* {left, top} or null (designed park) */
+var panelMin = false;     /* the Select panel collapsed to its header */
 
 var MOVE_CSS =
   '#hud-move-tab{position:fixed;top:0;left:50%;transform:translateX(-50%);z-index:200;' +
@@ -1004,6 +1040,17 @@ var MOVE_CSS =
   'border:none;background:#333a4e;color:#fff;cursor:pointer;}' +
   '#hud-move-select{background:#232b3d;color:#fff;}' +
   '#hud-move-hide{background:#333a4e;color:#fff;}' +
+  /* v2.3: the BAR drags by its body — grab cursor + no touch
+     scrolling on the bar itself (its buttons keep their own
+     behaviour; the drag starts only off-button). The panel's
+     minimise button sits beside its close button, and a minimised
+     panel shows ONLY its header strip: the rows leave the layout
+     entirely, so the spot it covered is truly reachable. */
+  '#hud-move-bar{cursor:grab;touch-action:none;}' +
+  '#hud-move-bar:active{cursor:grabbing;}' +
+  '#hud-move-panel .hm-min{padding:4px 10px;font-size:14px;border-radius:8px;' +
+  'border:none;background:#333a4e;color:#fff;cursor:pointer;margin-right:6px;}' +
+  '#hud-move-panel.min .hm-row{display:none;}' +
   /* The resize grip (v2.1): a yellow corner square that rides the
      selected RESIZABLE control's bottom-right corner in move mode.
      Dragging it resizes the control; the size saves with the
@@ -1036,6 +1083,11 @@ function buildMoveUI(){
       hideBtnEl.textContent = 'Hide ▾';
       hideBtnEl.addEventListener('click', function(){ collapseBar(); });
       bar.appendChild(hideBtnEl);
+      /* v2.3: the bar drags by its body. The listener lives on the
+         bar itself; startBarDrag ignores presses that land on a
+         button (those are clicks — Done/Reset/Select/Hide keep
+         working exactly as before). */
+      bar.addEventListener('pointerdown', function(e){ startBarDrag(e); });
     }
   } catch (e) { selectBtnEl = null; hideBtnEl = null; }
   try {
@@ -1122,22 +1174,105 @@ function applyMenuLayoutEntries(){
   } catch (e) { /* menu entries are decoration; the bar stands */ }
 }
 
+/* ---------------------------------------------------------------------------
+   Bar drag + parked spot (v2.3) — the move bar is a box the player
+   can pick up by its body and put anywhere (Joshua: so the top of
+   the screen is reachable while arranging). Plain left/top like
+   the panel drag; the designed centring transform drops on the
+   first move. barPos is shared by the bar and its collapse tab:
+   wherever the bar was parked is where its restore handle waits.
+   --------------------------------------------------------------------------- */
+function applyBarPos(){
+  var bar = document.getElementById('hud-move-bar');
+  if (!bar) return;
+  if (barPos){
+    bar.style.transform = 'none';
+    bar.style.left = barPos.left + 'px';
+    bar.style.top = barPos.top + 'px';
+  } else {
+    bar.style.transform = '';
+    bar.style.left = '';
+    bar.style.top = '';
+  }
+}
+function applyTabPos(){
+  if (!tabEl) return;
+  if (barPos){
+    var vw = visW(), vh = visH();
+    var r = null;
+    try { r = tabEl.getBoundingClientRect(); } catch (e) {}
+    var p = clampPos(barPos.left, barPos.top, r ? r.width : 120, r ? r.height : 30, vw, vh);
+    tabEl.style.transform = 'none';
+    tabEl.style.left = p.left + 'px';
+    tabEl.style.top = p.top + 'px';
+  } else {
+    tabEl.style.transform = '';
+    tabEl.style.left = '';
+    tabEl.style.top = '';
+  }
+}
+/* Reset the bar chrome to its designed state (top-centre park, no
+   parked spot, no inline left/top/transform left behind). Called
+   on entering AND leaving move mode, so a dragged or minimised
+   bar can never strand the next session — the bar's own show/hide
+   is the .show class (a stylesheet state), never an inline
+   display, so clearing OUR inline position props cannot eat a
+   hidden state the way the old removeProperty('display') did to
+   game controls (the ui 2026.11.11 lesson, honoured here). */
+function resetBarChrome(){
+  bdrag = null;
+  barPos = null;
+  var bar = document.getElementById('hud-move-bar');
+  if (bar){ bar.style.transform = ''; bar.style.left = ''; bar.style.top = ''; }
+  if (tabEl){ tabEl.style.transform = ''; tabEl.style.left = ''; tabEl.style.top = ''; }
+}
+function startBarDrag(e){
+  if (!inMove || !e) return;
+  /* a press on any button is a click, not a drag */
+  try {
+    if (e.target && e.target.closest && e.target.closest('button')) return;
+  } catch (err) {}
+  var bar = document.getElementById('hud-move-bar');
+  if (!bar) return;
+  var r = bar.getBoundingClientRect();
+  if (!r) return;
+  bdrag = { pid: e.pointerId, sx: e.clientX, sy: e.clientY,
+            left: r.left, top: r.top, w: r.width, h: r.height };
+  try { if (bar.setPointerCapture) bar.setPointerCapture(e.pointerId); } catch (err) {}
+  if (e.preventDefault) e.preventDefault();
+}
+function onBarPointerMove(e){
+  if (!bdrag || e.pointerId !== bdrag.pid) return;
+  var vw = visW(), vh = visH();
+  var p = clampPos(bdrag.left + (e.clientX - bdrag.sx),
+                   bdrag.top + (e.clientY - bdrag.sy), bdrag.w, bdrag.h, vw, vh);
+  barPos = { left: p.left, top: p.top };
+  applyBarPos();
+  if (e.preventDefault) e.preventDefault();
+}
+function onBarPointerUp(e){
+  if (bdrag && (!e || e.pointerId === bdrag.pid)) bdrag = null;
+}
+
 /* The bar collapses to the slim tab (v2 yield rule): the drag
    field is the whole viewport, and the chrome gets out of it.
-   One tap on the tab brings the bar back for Done/Reset/Select. */
+   One tap on the tab brings the bar back for Done/Reset/Select.
+   v2.3: the tab waits at the bar's parked spot (applyTabPos) —
+   minimising a bar he dragged to the bottom does not put a
+   handle back on the top edge he cleared. */
 function collapseBar(){
   if (!inMove || barCollapsed) return;
   barCollapsed = true;
   closePanel();
   var bar = document.getElementById('hud-move-bar');
   if (bar) bar.classList.remove('show');
-  if (tabEl) tabEl.classList.add('show');
+  if (tabEl){ tabEl.classList.add('show'); applyTabPos(); }
 }
 function expandBar(){
   if (!inMove || !barCollapsed) return;
   barCollapsed = false;
   var bar = document.getElementById('hud-move-bar');
-  if (bar) bar.classList.add('show');
+  if (bar){ bar.classList.add('show'); applyBarPos(); }
   if (tabEl) tabEl.classList.remove('show');
 }
 
@@ -1161,11 +1296,26 @@ function buildPanel(){
   var title = document.createElement('span');
   title.textContent = '⠿ Select a control to move';
   head.appendChild(title);
+  /* v2.3: a MINIMISE button beside the close — collapse the panel
+     to just its header strip (its rows leave the layout, CSS
+     above) so the screen it covered is reachable, and restore it
+     from the same strip. Distinct from ✕ (which closes it back to
+     the bar's Select button): a minimised panel stays where he
+     parked it, one tap from open. The head span wraps both
+     buttons so the header's flex row keeps them together. */
+  var headBtns = document.createElement('span');
+  var minBtn = document.createElement('button');
+  minBtn.className = 'hm-min';
+  minBtn.textContent = panelMin ? '▾' : '–';
+  minBtn.title = panelMin ? 'Restore the list' : 'Minimise — collapse to this strip';
+  minBtn.addEventListener('click', function(){ togglePanelMin(); });
+  headBtns.appendChild(minBtn);
   var close = document.createElement('button');
   close.className = 'hm-close';
   close.textContent = '✕';
   close.addEventListener('click', function(){ closePanel(); });
-  head.appendChild(close);
+  headBtns.appendChild(close);
+  head.appendChild(headBtns);
   head.addEventListener('pointerdown', function(e){ startPanelDrag(e); });
   panelEl.appendChild(head);
   var items = selectList();
@@ -1206,6 +1356,16 @@ function buildPanel(){
       panelRows.push({ id: item.id, row: row, pick: pick, centre: centre, vis: vis });
     })(items[i]);
   }
+  /* v2.3: a rebuild (open, or a Hide/Show toggle) preserves the
+     minimised state — the strip stays a strip until he restores it */
+  if (panelEl) panelEl.classList.toggle('min', !!panelMin);
+}
+
+/* v2.3: minimise / restore the Select panel. Rebuilding flips the
+   minimise button's glyph and title to match the new state. */
+function togglePanelMin(){
+  panelMin = !panelMin;
+  buildPanel();
 }
 
 /* ---------------------------------------------------------------------------
@@ -1221,7 +1381,12 @@ function buildPanel(){
 var pdrag = null;
 function startPanelDrag(e){
   if (!panelEl || !e) return;
+  /* never drag from a header BUTTON (✕, and v2.3's minimise) —
+     those presses are clicks */
   if (e.target && e.target.classList && e.target.classList.contains('hm-close')) return;
+  try {
+    if (e.target && e.target.closest && e.target.closest('button')) return;
+  } catch (err) {}
   var r = panelEl.getBoundingClientRect();
   if (!r) return;
   pdrag = { pid: e.pointerId, sx: e.clientX, sy: e.clientY, left: r.left, top: r.top };
@@ -1339,7 +1504,13 @@ function enterMoveMode(){
     }
   }
   /* The bar starts expanded, parked at the top edge; the player
-     can collapse it (or it collapses itself on a list pick). */
+     can collapse it (or it collapses itself on a list pick).
+     v2.3: every entry starts from the DESIGNED chrome state — no
+     parked bar spot, no minimised panel survives from a previous
+     session of arranging. */
+  resetBarChrome();
+  panelMin = false;
+  if (panelEl) panelEl.classList.remove('min');
   barCollapsed = false;
   var bar = document.getElementById('hud-move-bar');
   if (bar) bar.classList.add('show');
@@ -1393,6 +1564,14 @@ function exitMoveMode(){
   ovPrevVisibility = '';
   var bar = document.getElementById('hud-move-bar');
   if (bar) bar.classList.remove('show');
+  /* v2.3: the chrome resets on the way out too — a bar he dragged
+     to the bottom (or minimised to its tab) leaves no inline
+     position behind, and the panel forgets its minimised strip,
+     so the next entry — and the game HUD itself — starts exactly
+     as designed. */
+  resetBarChrome();
+  panelMin = false;
+  if (panelEl) panelEl.classList.remove('min');
   /* Restore the pause state the player came from. */
   try {
     if (window.GamePause && GamePause.setPaused) GamePause.setPaused(wasPausedOnEntry);
@@ -1654,6 +1833,11 @@ try {
   document.addEventListener('pointermove', onPanelPointerMove, false);
   document.addEventListener('pointerup', onPanelPointerUp, false);
   document.addEventListener('pointercancel', onPanelPointerUp, false);
+  /* The bar's own drag (v2.3) — same pattern; bdrag is null
+     whenever the bar is not being dragged. */
+  document.addEventListener('pointermove', onBarPointerMove, false);
+  document.addEventListener('pointerup', onBarPointerUp, false);
+  document.addEventListener('pointercancel', onBarPointerUp, false);
 } catch (e) { /* extremely old engine — move mode simply stays off */ }
 
 /* ---------------------------------------------------------------------------
@@ -1695,8 +1879,8 @@ function init(){
   } catch (e) {}
   try {
     if (typeof Report !== 'undefined' && Report.setSys){
-      Report.setSys('hudmove', { status: 'ok', version: '2.2',
-        note: 'Player-movable HUD controls: drag, select-by-list with bring-back, edge law, menus yield; per-face overrides in localStorage (Joshua 2026-10-17). v2.1 (2026-10-24): the movable list DERIVES from the designed layout + registrations (Go To joins automatically), the minimap resizes (size saves with position), and all measuring uses the visualViewport-visible area via SAView. v2.2 (UI CHECK PASS, 2026-11-07): registration is AUTOMATIC — DOM discovery brings in every positioned body-level control not named in the FIXED opt-out table (the body bars, clock and nav arrow join); EVERY control resizes (font scales with the box); every control can be HIDDEN per face from the Select panel; the Select panel itself drags by its header.' });
+      Report.setSys('hudmove', { status: 'ok', version: '2.3',
+        note: 'Player-movable HUD controls: drag, select-by-list with bring-back, edge law, menus yield; per-face overrides in localStorage (Joshua 2026-10-17). v2.1 (2026-10-24): the movable list DERIVES from the designed layout + registrations (Go To joins automatically), the minimap resizes (size saves with position), and all measuring uses the visualViewport-visible area via SAView. v2.2 (UI CHECK PASS, 2026-11-07): registration is AUTOMATIC — DOM discovery brings in every positioned body-level control not named in the FIXED opt-out table (the body bars, clock and nav arrow join); EVERY control resizes (font scales with the box); every control can be HIDDEN per face from the Select panel; the Select panel itself drags by its header. v2.3 (ui 2026.11.11.2, Joshua 2026-11-11): the move BAR itself drags by its body to any spot (buttons stay buttons), its collapse tab waits at the parked spot instead of the top edge, and the Select panel minimises to its header strip and restores from it; entering/leaving move mode resets the chrome to its designed state.' });
     }
   } catch (e) {}
 }
@@ -1756,7 +1940,12 @@ window.HudMove = {
       return { id: id, reason: FIXED[id] };
     });
   },
-  panelDragState: function(){ return pdrag ? { left: pdrag.left, top: pdrag.top } : null; }
+  panelDragState: function(){ return pdrag ? { left: pdrag.left, top: pdrag.top } : null; },
+  /* v2.3 — the bar drag + panel minimise surface */
+  barPos: function(){ return barPos ? { left: barPos.left, top: barPos.top } : null; },
+  barDragState: function(){ return bdrag ? { left: bdrag.left, top: bdrag.top } : null; },
+  togglePanelMin: togglePanelMin,
+  isPanelMin: function(){ return panelMin; }
 };
 
 })();

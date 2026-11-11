@@ -49,9 +49,9 @@
     },
     {
       "name": "dive_system.js",
-      "size": 35934,
-      "sha256": "c6b65811470e705632284d826b0e70a71e9cd33557e0755b6e07e5fbb36abaf8",
-      "hash": "c6b65811470e705632284d826b0e70a71e9cd33557e0755b6e07e5fbb36abaf8"
+      "size": 44261,
+      "sha256": "281b087215226cf8cb96177a9472dacf16c2e4fc3825875f5936702ea85e223e",
+      "hash": "281b087215226cf8cb96177a9472dacf16c2e4fc3825875f5936702ea85e223e"
     },
     {
       "name": "clothing_system.js",
@@ -159,9 +159,9 @@
     },
     {
       "name": "hud_move.js",
-      "size": 78323,
-      "sha256": "2c47363a20fe0d8b6a8f2877188fa92d168946dc23b364395c1dcfbf69da57a1",
-      "hash": "2c47363a20fe0d8b6a8f2877188fa92d168946dc23b364395c1dcfbf69da57a1"
+      "size": 88031,
+      "sha256": "3cd10305d962b6768e0b6223b23a88a852f23b3ea0fe2b81cd8589a52a602bb5",
+      "hash": "3cd10305d962b6768e0b6223b23a88a852f23b3ea0fe2b81cd8589a52a602bb5"
     },
     {
       "name": "icon.png",
@@ -171,9 +171,9 @@
     },
     {
       "name": "index.html",
-      "size": 1367322,
-      "sha256": "75a95b60729bdcf7f4f6dd26d4171b9cf322aa565482aa3f6d4439732133517e",
-      "hash": "75a95b60729bdcf7f4f6dd26d4171b9cf322aa565482aa3f6d4439732133517e"
+      "size": 1369704,
+      "sha256": "b4e5705c0daea67332d26e1264b697cf73eab9bb47a7a8a4805e27b990e44b4e",
+      "hash": "b4e5705c0daea67332d26e1264b697cf73eab9bb47a7a8a4805e27b990e44b4e"
     },
     {
       "name": "input_diag.js",
@@ -708,6 +708,6 @@
       "hash": "5bd3ab4ab2c4fe2671d7c7b755c98518de645f5390c3df530be6c0fbaea92a35"
     }
   ],
-  "ui_version": "2026.11.11.1",
+  "ui_version": "2026.11.11.2",
   "version": "2026.10.17.9"
 }
