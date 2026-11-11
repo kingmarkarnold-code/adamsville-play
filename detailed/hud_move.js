@@ -1322,6 +1322,18 @@ function enterMoveMode(){
       hidden = !!cs && cs.display === 'none';
     } catch (e) {}
     if (hidden){
+      /* ui 2026.11.11: capture the element's OWN inline display
+         (value + priority) BEFORE force-showing, so exitMoveMode
+         can restore it exactly. The old exit path called
+         removeProperty('display'), which deleted not just the
+         force-show but the element's own hidden state with it —
+         proven on the GPS navigation strip (#gps-hud-arrow, whose
+         display:none lives in its build cssText): one move-mode
+         visit left it visible for the rest of the session with no
+         route set (Joshua's Nov 11 screenshot). Same capture
+         pattern applyHidden already uses for the Hide toggle. */
+      el.__hudPrevDisplay = { value: el.style.getPropertyValue('display'),
+                              priority: el.style.getPropertyPriority('display') };
       forcedShown.push(el);
       el.style.setProperty('display', naturalDisplay(el), 'important');
     }
@@ -1358,10 +1370,20 @@ function exitMoveMode(){
     delete el.__hudPrevTouchAction;
     delete el.__hudPrevPointerEvents;
   }
-  /* Un-show exactly the elements move mode force-showed; the game
-     re-shows them itself when they're next needed. */
+  /* Un-show exactly the elements move mode force-showed — by
+     RESTORING the inline display each one carried in (captured in
+     enterMoveMode), never by removeProperty: stripping the whole
+     declaration ate the element's own hidden state (the GPS strip
+     defect, ui 2026.11.11 — see the capture note). An element that
+     had NO inline display of its own (hidden by a stylesheet)
+     goes back to having none. */
   for (var j = 0; j < forcedShown.length; j++){
-    try { forcedShown[j].style.removeProperty('display'); } catch (e) {}
+    try {
+      var fel = forcedShown[j], fprev = fel.__hudPrevDisplay;
+      if (fprev && fprev.value) fel.style.setProperty('display', fprev.value, fprev.priority || '');
+      else fel.style.removeProperty('display');
+      delete fel.__hudPrevDisplay;
+    } catch (e) {}
   }
   forcedShown = [];
   try {

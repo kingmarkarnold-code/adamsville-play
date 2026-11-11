@@ -2634,7 +2634,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    shipped a manifest whose index.html hash described bytes that never
    reached the repo (manifest .09.2, repo document still .09.1), and
    every fresh session paid one self-heal reload for it. */
-window.__DOC_UIVER = '2026.11.09.5';
+window.__DOC_UIVER = '2026.11.11.1';
 /* VER-TAG (ui 2026.11.07.25) >>>
    The on-screen version tag (#ver-tag) shows the version OF THE
    DEPLOYMENT ACTUALLY RUNNING, environment first (Joshua 2026-11-07
@@ -9236,7 +9236,22 @@ try{ __wbStage('water'); }catch(e){}
        build; the only per-frame CPU cost is one shared time uniform,
        driven by a single Sim tick — no textures, one pass, cheap. */
     var pwWaterMats = [];
-    function pwWaterMat(kind){
+    /* WATER VOLUMES (ui 2026.11.11): pwWaterMat also builds the
+       SKIRT variant (second arg) for the tub sides — the same
+       shader with uSkirt set. Two side-specific changes, both
+       measured against the first skirt boot's side view, where
+       the creek read as a bold checkered WALL instead of water:
+       (1) the stream EDGE-FOAM hash is a shoreline effect — on a
+       vertical side every vertex sits at an "edge" (across 0/1),
+       so the hash tiled the whole wall in white blocks; uSkirt
+       turns that term off on sides (the drop-foam term stays —
+       falls whitewater belongs on the side at a falls). (2) A
+       side is usually seen doubled (near wall through far wall),
+       so the skirt opacity sits below the surface's (streams
+       0.55, bodies 0.45) and the flow banding is softened — the
+       side keeps the surface's watery slight translucency and
+       reads as water with depth, never as a fence. */
+    function pwWaterMat(kind, skirt){
       var m = new THREE.ShaderMaterial({
         /* uLight (2026-11-07): day/night multiplier for this UNLIT
            shader — fed from daycycle's published light level by the
@@ -9255,7 +9270,9 @@ try{ __wbStage('water'); }catch(e){}
            is off so the bed and fish blend through cleanly instead of
            z-fighting the surface. */
         uniforms: { uTime: { value: 0 }, uKind: { value: kind }, uLight: { value: 1 },
-                    uOpacity: { value: kind > 0.5 ? 0.78 : 0.60 } },
+                    uSkirt: { value: skirt ? 1 : 0 },
+                    uOpacity: { value: skirt ? (kind > 0.5 ? 0.55 : 0.45)
+                                             : (kind > 0.5 ? 0.78 : 0.60) } },
         transparent: true, depthWrite: false, side: THREE.DoubleSide,
         vertexShader: [
           'attribute vec3 aData;',
@@ -9265,7 +9282,7 @@ try{ __wbStage('water'); }catch(e){}
           ' gl_Position = projectionMatrix * viewMatrix * wp; }'
         ].join('\n'),
         fragmentShader: [
-          'uniform float uTime; uniform float uKind; uniform float uLight; uniform float uOpacity;',
+          'uniform float uTime; uniform float uKind; uniform float uLight; uniform float uOpacity; uniform float uSkirt;',
           'varying vec3 vW; varying vec3 vD;',
           'float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }',
           'void main(){',
@@ -9287,12 +9304,17 @@ try{ __wbStage('water'); }catch(e){}
              reads as ONE waterway; the motion stays (his Oct 30
              flow ruling), the banding goes. */
           '   float flow = sin(vD.y * 1.4 - t * 3.2 + sin(vD.x * 6.2831) * 1.2);',
-          '   col = mix(col, shal * 1.15, 0.14 + 0.11 * flow);',
+          '   col = mix(col, shal * 1.15, (0.14 + 0.11 * flow) * (1.0 - 0.35 * uSkirt));',
           '   float streak = smoothstep(0.75, 1.0, sin(vD.y * 2.6 - t * 5.0 + vD.x * 9.0));',
-          '   col = mix(col, vec3(0.92, 0.97, 1.0), streak * 0.15);',
+          '   col = mix(col, vec3(0.92, 0.97, 1.0), streak * 0.15 * (1.0 - 0.5 * uSkirt));',
           '   col = mix(col, vec3(0.95, 0.98, 1.0), clamp(vD.z, 0.0, 1.0) * (0.42 + 0.16 * sin(t * 7.0 + vD.y * 8.0)));',
           '   float ef = min(vD.x, 1.0 - vD.x);',
           '   foam = (1.0 - smoothstep(0.0, 0.18, ef)) * step(0.72, hash(floor(vW.xz * 1.5) + floor(t * 2.0)));',
+          /* WATER VOLUMES (ui 2026.11.11): the edge-foam hash is a
+             SHORELINE effect; on a tub side every vertex is at an
+             edge, so it tiled whole walls in white blocks — off on
+             skirts (drop foam above still paints falls sides). */
+          '   if (uSkirt > 0.5) foam = 0.0;',
           ' } else {',
           /* ui 2026.11.09.5 — BODY FOAM REMOVED (Joshua's Nov 11
              screenshot: the lake reads as sharp angular polygons /
@@ -9328,6 +9350,9 @@ try{ __wbStage('water'); }catch(e){}
       return m;
     }
     var pwBodyMat = pwWaterMat(0), pwStreamMat = pwWaterMat(1);
+    /* WATER VOLUMES (ui 2026.11.11): the tub sides' materials —
+       same shader family, uSkirt set (see pwWaterMat). */
+    var pwBodySkirtMat = pwWaterMat(0, true), pwStreamSkirtMat = pwWaterMat(1, true);
     try {
       if (!window.__pkgWaterTick && window.Sim && typeof Sim.onTick === 'function'){
         window.__pkgWaterTick = true;
@@ -9436,6 +9461,46 @@ try{ __wbStage('water'); }catch(e){}
       geo.setAttribute('aData', new THREE.BufferAttribute(adata, 3));
       return geo;
     }
+    /* WATER VOLUMES (ui 2026.11.11, Joshua's design — corrected by
+       him twice; this is the corrected version). A water body is a
+       CLOSED MULTI-SIDED VOLUME, not a zero-thickness sheet: the
+       top surface the builders here already draw, plus SIDES
+       running from the body's edge down below the bed — a tub.
+       The defect it cures is at the SIDE/EDGE, not the top: at the
+       beginning of the Tatum Outlet creek (the rocks/falls reach)
+       you could see clean UNDER the sheet — rocks and ground
+       beneath its edge with no water in front of them. The skirt
+       below is built in the SAME local space as its top (shape
+       coords (x, -z), height carried in local Z) and hung on the
+       SAME mesh as a child with the SAME shader material — part of
+       the water body's own geometry, never a second plane laid
+       over terrain or water (the no-layering rule), and with the
+       same slight translucency as the surface: the top-down read
+       is unchanged and Tatum's fish still show dimly through it.
+       From the side, the water now has depth. Each loop point's
+       bottom is the lower of its surface and the terrain there,
+       minus 1.5u, so the side always ends buried below the bed.
+       loop: [{x, y (shape coords), top, bot (local Z), d (aData)}],
+       in outline order; the loop closes on itself. */
+    function pwSkirtGeom(loop){
+      var n = loop.length;
+      if (n < 2) return null;
+      var pos = new Float32Array(n * 2 * 3), dat = new Float32Array(n * 2 * 3), idx = [];
+      for (var i = 0; i < n; i++){
+        var P = loop[i];
+        pos[i*6]   = P.x; pos[i*6+1] = P.y; pos[i*6+2] = P.top;
+        pos[i*6+3] = P.x; pos[i*6+4] = P.y; pos[i*6+5] = P.bot;
+        dat[i*6]   = P.d[0]; dat[i*6+1] = P.d[1]; dat[i*6+2] = P.d[2];
+        dat[i*6+3] = P.d[0]; dat[i*6+4] = P.d[1]; dat[i*6+5] = P.d[2];
+        var va = i * 2, vb = ((i + 1) % n) * 2;
+        idx.push(va, vb, va + 1, vb, vb + 1, va + 1);
+      }
+      var g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      g.setAttribute('aData', new THREE.BufferAttribute(dat, 3));
+      g.setIndex(idx);
+      return g;
+    }
     /* ui 2026.11.09.5 — ONE LABEL PER WATER NAME (Joshua's Nov 11
        screenshot: "Tatum" twice — once in the minimap, once just below
        it above the DAY 1 bar). A lake in the package is stored as one
@@ -9456,6 +9521,21 @@ try{ __wbStage('water'); }catch(e){}
         mesh.rotation.x = -Math.PI / 2;
         mesh.position.y = surfY;
         scene.add(mesh);
+        /* WATER VOLUMES (ui 2026.11.11): this body's tub side —
+           the ring outline from the surface (local Z 0; the mesh
+           offset carries it to surfY) down below the bed. See
+           pwSkirtGeom. */
+        try {
+          var bloop = [];
+          for (var bi = 0; bi < b.ring.length; bi++){
+            var bp = b.ring[bi];
+            bloop.push({ x: bp[0], y: -bp[1], top: 0,
+              bot: Math.min(surfY, heightAt(bp[0], bp[1])) - 1.5 - surfY,
+              d: [0, 0, 0] });
+          }
+          var bsk = pwSkirtGeom(bloop);
+          if (bsk) mesh.add(new THREE.Mesh(bsk, pwBodySkirtMat));
+        } catch(e){}
         WATER.push({ x: b.x, z: b.z, rx: b.rx, rz: b.rz, name: b.name || '',
                      depthFt: b.depthFt, surfY: surfY,
                      /* the true outline, kept for tests that must match
@@ -9487,10 +9567,61 @@ try{ __wbStage('water'); }catch(e){}
             var sm = new THREE.Mesh(pwSurfGeom(s.surfRings[ri]), pwStreamMat);
             sm.rotation.x = -Math.PI / 2;
             scene.add(sm);
+            /* WATER VOLUMES (ui 2026.11.11): skirt the ring's
+               outline the same way — the Tatum outlet head/falls
+               reach is the proof case (see pwSkirtGeom). Local Z
+               on a surf-ring sheet is the ABSOLUTE surface Y (the
+               mesh is unoffset), so top/bottom are absolute too.
+               The outline's own aData rides down the side, so the
+               edge foam/flow shading continues off the surface. */
+            try {
+              var sring = s.surfRings[ri];
+              if (sring.ys && sring.ys.length === sring.pts.length){
+                var sloop = [];
+                for (var si2 = 0; si2 < sring.pts.length; si2++){
+                  var sp2 = sring.pts[si2], sy2 = sring.ys[si2];
+                  sloop.push({ x: sp2[0], y: -sp2[1], top: sy2,
+                    bot: Math.min(sy2, heightAt(sp2[0], sp2[1])) - 1.5,
+                    d: [sring.across ? (sring.across[si2] || 0) : 0,
+                        sring.arc ? (sring.arc[si2] || 0) : 0,
+                        sring.foam ? (sring.foam[si2] || 0) : 0] });
+                }
+                var ssk = pwSkirtGeom(sloop);
+                if (ssk) sm.add(new THREE.Mesh(ssk, pwStreamSkirtMat));
+              }
+            } catch(e){}
           }
         }
-        else if (s.ys && s.ys.length === s.pts.length)
-          scene.add(new THREE.Mesh(pwStreamData(ribbonGeomY(s.pts, s.width || 7, s.ys), s), pwStreamMat));
+        else if (s.ys && s.ys.length === s.pts.length){
+          var rm = new THREE.Mesh(pwStreamData(ribbonGeomY(s.pts, s.width || 7, s.ys), s), pwStreamMat);
+          scene.add(rm);
+          /* WATER VOLUMES (ui 2026.11.11): the profiled-ribbon
+             fallback gets the same tub — its outline (left rail
+             forward, right rail back, read off the built ribbon's
+             own vertex pairs) skirted on a rotated twin of the
+             ribbon's frame, so the side hangs in the same shape
+             space as every other skirt. */
+          try {
+            var rp = rm.geometry.getAttribute('position'), rloop = [], rarc = 0, rst = rp.count / 2;
+            for (var rj = 0; rj < rst; rj++){
+              var rx2 = rp.getX(rj * 2), ry2 = rp.getY(rj * 2), rz2 = rp.getZ(rj * 2);
+              if (rj > 0) rarc += Math.hypot(rx2 - rloop[rloop.length - 1].wx, rz2 - rloop[rloop.length - 1].wz);
+              rloop.push({ x: rx2, y: -rz2, top: ry2, bot: Math.min(ry2, heightAt(rx2, rz2)) - 1.5,
+                d: [0, rarc, 0], wx: rx2, wz: rz2 });
+            }
+            for (var rk = rst - 1; rk >= 0; rk--){
+              var qx2 = rp.getX(rk * 2 + 1), qy2 = rp.getY(rk * 2 + 1), qz2 = rp.getZ(rk * 2 + 1);
+              rloop.push({ x: qx2, y: -qz2, top: qy2, bot: Math.min(qy2, heightAt(qx2, qz2)) - 1.5,
+                d: [1, rarc, 0], wx: qx2, wz: qz2 });
+            }
+            var rsk = pwSkirtGeom(rloop);
+            if (rsk){
+              var rsm = new THREE.Mesh(rsk, pwStreamSkirtMat);
+              rsm.rotation.x = -Math.PI / 2;
+              scene.add(rsm);
+            }
+          } catch(e){}
+        }
         else
           scene.add(new THREE.Mesh(ribbonGeom(s.pts, s.width || 7, 0.18), pwBodyMat));
         /* INTEGRATION (2026-10-30): streams register as RIVERS with
@@ -9905,6 +10036,14 @@ var WADE_LIMIT=SINK_DEPTH;  // legacy name — vehicles ford at/below this depth
    the swimming state in water deeper than ~4 ft. Below that (streams, lake
    shallows) he just wades on foot — no swim animation. */
 var SWIM_DEPTH=4*U_PER_FT;  // ≈1.22u
+/* SWIM_SURFACE_MIN (ui 2026.11.11, Joshua's speed-driven water
+   scheme): below SWIM_DEPTH he normally wades — but a FULL push
+   (see updatePlayer) puts him on the surface in a freestyle
+   anywhere the water is at least this deep (~0.55u: enough column
+   to float the body prone with the adapted trim + ground clamp).
+   Depth gates DIVING only (the dive module's bed maths); it never
+   gates the surface stroke. Shallower than this stays wading. */
+var SWIM_SURFACE_MIN=0.55;
 /* TATUM QA — HEAD-UNDER RULE (2026-11-09, Joshua: "the player is under
    the water but reading as wading"): the water state follows the
    VISIBLE truth — the head against the ACTUAL surface — not the model
@@ -13196,34 +13335,53 @@ function kneelEnv(){
 var _kqK = new THREE.Quaternion(), _ktK = new THREE.Quaternion(), _keK = new THREE.Euler();
 function applyKneelGLB(R, e){
   var B = R.bones, Q = R.restQ; if (!B || !Q) return;
+  /* GROUND CLAMP — THE KNEEL IS ONE POSE FUNCTION (ui 2026.11.11,
+     Joshua's frame: on the rise the planted foot dipped THROUGH
+     the ground). Every earlier form of this overlay CHASED its
+     target a fraction per frame, and a chase always disagrees
+     with itself somewhere in the cycle: the original slerp-by-e
+     never carried the bones back on the rise at all (the .09.5
+     latch — the mixer's apply() skips the Idle clip's constant
+     leg values, so nothing else rewrote them); the .09.5 fix
+     slerped toward rest by (1 - e) per frame on the rise, which
+     compounds exponentially and straightens the legs within a
+     few frames while the hips were still creeping toward the
+     kneel depth by an e-weighted step that never returns at all
+     — straight legs under a lowered root, the foot pushed under
+     (measured in the first ground-clamp proof: 0.30u under at
+     mid-rise, hips and legs on different clocks entirely).
+     The kneel is now a PURE FUNCTION of the envelope: on the
+     kneel's first frame the clip's own pose is captured
+     (R._kneelClipQ per bone + R._kneelBaseY for the hips — the
+     values the mixer put there, before any kneel write), and
+     every frame sets each bone to slerp(captured, solved, e) and
+     the hips to base + (0.47 - base) * e. At e = 1 that is the
+     solved pose exactly (foot planted, knee down — the K1
+     measurements); at e = 0 it is the clip pose exactly; and
+     the rise retraces the descend step for step, so hips and
+     legs agree at every envelope value and the planted foot
+     stays planted ON the ground. The universal floor clamp in
+     updatePlayer stands behind this as the guarantee for every
+     other pose system. */
+  if (!R._kneelActive){
+    R._kneelActive = true;
+    R._kneelClipQ = {};
+    for (var n0 in _KNEEL_POSE.deltas){
+      var b0 = B[n0]; if (b0) R._kneelClipQ[n0] = b0.quaternion.clone();
+    }
+    var hb0 = B.Hips; if (hb0) R._kneelBaseY = hb0.position.y;
+  }
   for (var name in _KNEEL_POSE.deltas){
     var b = B[name]; if (!b || !Q[name]) continue;
     var d = _KNEEL_POSE.deltas[name];
     _keK.set(d.x||0, d.y||0, d.z||0); _kqK.setFromEuler(_keK);
     _ktK.copy(Q[name]).multiply(_kqK);
-    /* KNEEL LATCH FIX (ui 2026.11.09.5, proven in the headless boot):
-       the old code slerped toward the KNEEL pose by e on EVERY phase
-       — but once the bone is fully kneeled, slerping toward the kneel
-       pose again moves nothing, so the RISE phase (e falling 1 to 0)
-       never carried the bone back. And nothing else does: the mixer's
-       apply() only writes a bone when the clip value CHANGED, and the
-       Idle clip's leg/hip rotations are CONSTANT (2 keyframes, 1
-       distinct value each — read from hero.glb), so after the kneel
-       the mixer skips the legs forever and the hero stayed kneeled
-       while standing still (proven: leg quats frozen at the full
-       kneel — LeftLeg 89.5 deg — for 50 real seconds, kneelT 0,
-       Idle playing) until a Walk clip rewrote them. The fix: on the
-       RISE (p >= 0.60) slerp toward REST instead, by (1 - e) — at
-       rise start the pull is 0 (continuity with the grasp), at rise
-       end it is 1 (bone exactly at rest). Descend/grasp unchanged. */
-    if (_kneelP >= 0.60) b.quaternion.slerp(Q[name], 1 - e);
-    else b.quaternion.slerp(_ktK, e);
+    var base = (R._kneelClipQ && R._kneelClipQ[name]) || Q[name];
+    b.quaternion.copy(base).slerp(_ktK, e);
   }
   var hb = B.Hips;
-  if (hb){
-    var curY = hb.position.y;
-    hb.position.y = curY + (_KNEEL_POSE.hipY - curY) * e;
-  }
+  if (hb && typeof R._kneelBaseY === 'number')
+    hb.position.y = R._kneelBaseY + (_KNEEL_POSE.hipY - R._kneelBaseY) * e;
 }
 /* ---- TATUM QA SWIM + WADE (2026-11-09, Joshua: "the underwater
    swimming animation is the same as walking instead of a breast
@@ -13315,6 +13473,41 @@ function _swimKeyAt(p, field, sub){
   else { av=(typeof av==='number')?av:0; bv=(typeof bv==='number')?bv:0; }
   return av+(bv-av)*u;
 }
+/* FREESTYLE KEYS (ui 2026.11.11, Joshua's speed-driven water
+   scheme: push harder and the breast stroke becomes freestyle).
+   ONE arm cycle — the windmill: recovery over the top with the
+   elbow high, the hand spears in, pulls down past the hip, exits,
+   and comes over again. applySwimGLB evaluates the RIGHT arm half
+   a cycle behind the left, so the arms alternate. Same sign law
+   as the breast keys (arm forward = negative x, elbow flexion
+   negative x); az stays small — a windmill lives in the sagittal
+   plane, and the ARM Z-SIGN LAW above means a shared az reads as
+   a slight alternating bias, which the body roll covers. The legs
+   and head are computed from the phase directly in applySwimGLB
+   (flutter kick + breathing roll), so the table carries arms
+   only: ax = upper-arm x, az = upper-arm z, fa = forearm x. */
+var _FREE_KEYS=[
+  /* RECOVERY — arm arriving over the top, elbow bent high */
+  { p:0.00, ax:-1.90, az:-0.15, fa:-0.55 },
+  /* CATCH + PULL — hand speared in, pulling through */
+  { p:0.35, ax:-0.55, az:-0.10, fa:-0.25 },
+  /* EXIT — hand leaves the water at the hip, elbow folds */
+  { p:0.55, ax: 0.55, az: 0.10, fa:-1.15 },
+  /* OVER THE TOP — elbow at its highest, hand swinging forward */
+  { p:0.80, ax:-0.90, az:-0.30, fa:-1.35 }
+];
+function _freeKeyAt(p, field){
+  var ks=_FREE_KEYS, n=ks.length;
+  var pp=((p%1)+1)%1;
+  var i=0;
+  while (i<n-1 && pp>ks[i+1].p) i++;
+  var a=ks[i], b, span;
+  if (i<n-1){ b=ks[i+1]; span=b.p-a.p; }
+  else { b=ks[0]; span=1-a.p; }
+  var t=(pp-a.p)/span; if (t<0) t=0; if (t>1) t=1;
+  var u=(1-Math.cos(t*Math.PI))/2;
+  return a[field]+(b[field]-a[field])*u;
+}
 var _swK = new THREE.Quaternion(), _swT = new THREE.Quaternion(), _swE = new THREE.Euler();
 function _swimApplyBone(R, name, dx, dy, dz, env){
   var B=R.bones, Q=R.restQ; if (!B || !Q) return;
@@ -13337,6 +13530,12 @@ function applySwimGLB(R, dt){
   if (typeof R.swimPhase!=='number') R.swimPhase=0;
   if ((R.swimBlend||0)>0.05 && spd>0.1)
     R.swimPhase=(R.swimPhase+dt*(0.5+0.5*Math.min(1,spd/6.75)))%1;
+  /* Freestyle phase (ui 2026.11.11): the windmill runs faster than
+     the breast stroke — ~0.9 cycles/s up to ~1.6 at full speed —
+     and only advances while the freestyle blend is engaged. */
+  if (typeof R.freePhase!=='number') R.freePhase=0;
+  if ((R.freeBlend||0)>0.05 && spd>0.1)
+    R.freePhase=(R.freePhase+dt*(0.9+0.7*Math.min(1,spd/6.75)))%1;
   /* Tread phase: the primitive rig's scull rate (heroT*3.0). */
   var tp=heroT*3.0;
   var sb=(typeof R.swimBlend==='number')?R.swimBlend:1;
@@ -13364,26 +13563,69 @@ function applySwimGLB(R, dt){
     sp:{x:0.02}, sp1:{x:0.02}, ne:{x:0.02}, he:{x:-0.30},
     hip:0.96+Math.sin(heroT*2.0)*0.02
   };
-  /* Mix stroke <-> tread by swimBlend, then apply over the clip. */
+  /* Mix stroke <-> tread by swimBlend into one pose P. */
   function mx(a, b){ return a*sb+b*tb; }
-  _swimApplyBone(R,'LeftArm',  mx(S.la.x,T.la.x), 0, mx(S.la.z,T.la.z), env);
-  _swimApplyBone(R,'RightArm', mx(S.ra.x,T.ra.x), 0, mx(S.ra.z,T.ra.z), env);
-  _swimApplyBone(R,'LeftForeArm',  mx(S.lfa.x,T.lfa.x), 0, 0, env);
-  _swimApplyBone(R,'RightForeArm', mx(S.rfa.x,T.rfa.x), 0, 0, env);
-  _swimApplyBone(R,'LeftUpLeg',  mx(S.lul.x,T.lul.x), 0, 0, env);
-  _swimApplyBone(R,'RightUpLeg', mx(S.rul.x,T.rul.x), 0, 0, env);
-  _swimApplyBone(R,'LeftLeg',  mx(S.ll.x,T.ll.x), 0, 0, env);
-  _swimApplyBone(R,'RightLeg', mx(S.rl.x,T.rl.x), 0, 0, env);
-  _swimApplyBone(R,'LeftFoot',  mx(S.lf.x,T.lf.x), 0, 0, env);
-  _swimApplyBone(R,'RightFoot', mx(S.rf.x,T.rf.x), 0, 0, env);
-  _swimApplyBone(R,'Spine',  mx(S.sp.x,T.sp.x), 0, 0, env);
-  _swimApplyBone(R,'Spine1', mx(S.sp1.x,T.sp1.x), 0, 0, env);
-  _swimApplyBone(R,'Neck', mx(S.ne.x,T.ne.x), 0, 0, env);
-  _swimApplyBone(R,'Head', mx(S.he.x,T.he.x), 0, 0, env);
+  var P={
+    la:{x:mx(S.la.x,T.la.x), z:mx(S.la.z,T.la.z)}, ra:{x:mx(S.ra.x,T.ra.x), z:mx(S.ra.z,T.ra.z)},
+    lfa:{x:mx(S.lfa.x,T.lfa.x)}, rfa:{x:mx(S.rfa.x,T.rfa.x)},
+    lul:{x:mx(S.lul.x,T.lul.x)}, rul:{x:mx(S.rul.x,T.rul.x)},
+    ll:{x:mx(S.ll.x,T.ll.x)}, rl:{x:mx(S.rl.x,T.rl.x)},
+    lf:{x:mx(S.lf.x,T.lf.x)}, rf:{x:mx(S.rf.x,T.rf.x)},
+    sp:{x:mx(S.sp.x,T.sp.x)}, sp1:{x:mx(S.sp1.x,T.sp1.x)},
+    ne:{x:mx(S.ne.x,T.ne.x)}, he:{x:mx(S.he.x,T.he.x), y:0},
+    hip:mx(S.hip,T.hip)
+  };
+  /* FREESTYLE (ui 2026.11.11): while R.freeBlend runs (a full push
+     — player.swimFast, eased in animateHeroGLB), the pose cross-
+     fades from the breast/tread mix above to the windmill: arms
+     alternating off ONE cycle (right arm half a cycle behind),
+     a flutter kick, and the head rolling toward the pulling side
+     to breathe. freeBlend 0 = pure breaststroke — which stays the
+     underwater default and the gentle surface stroke; 1 = full
+     freestyle. The wrapper pitch + roll that sell the lean live
+     in animateHeroGLB. */
+  var fb=(typeof R.freeBlend==='number')?R.freeBlend:0;
+  if (fb>0.01){
+    var fp=R.freePhase||0, fl=Math.sin(fp*Math.PI*2);
+    var F={
+      la:{x:_freeKeyAt(fp,'ax'), z:_freeKeyAt(fp,'az')},
+      ra:{x:_freeKeyAt(fp+0.5,'ax'), z:_freeKeyAt(fp+0.5,'az')},
+      lfa:{x:_freeKeyAt(fp,'fa')}, rfa:{x:_freeKeyAt(fp+0.5,'fa')},
+      lul:{x:fl*0.30}, rul:{x:-fl*0.30},
+      ll:{x:0.22+Math.max(0,-fl)*0.22}, rl:{x:0.22+Math.max(0,fl)*0.22},
+      lf:{x:0.35-fl*0.25}, rf:{x:0.35+fl*0.25},
+      sp:{x:0.10}, sp1:{x:0.05}, ne:{x:0.02},
+      he:{x:-0.18, y:fl*0.35}, hip:0.97
+    };
+    function mxf(a, b){ return a*(1-fb)+b*fb; }
+    P.la.x=mxf(P.la.x,F.la.x); P.la.z=mxf(P.la.z,F.la.z);
+    P.ra.x=mxf(P.ra.x,F.ra.x); P.ra.z=mxf(P.ra.z,F.ra.z);
+    P.lfa.x=mxf(P.lfa.x,F.lfa.x); P.rfa.x=mxf(P.rfa.x,F.rfa.x);
+    P.lul.x=mxf(P.lul.x,F.lul.x); P.rul.x=mxf(P.rul.x,F.rul.x);
+    P.ll.x=mxf(P.ll.x,F.ll.x); P.rl.x=mxf(P.rl.x,F.rl.x);
+    P.lf.x=mxf(P.lf.x,F.lf.x); P.rf.x=mxf(P.rf.x,F.rf.x);
+    P.sp.x=mxf(P.sp.x,F.sp.x); P.sp1.x=mxf(P.sp1.x,F.sp1.x);
+    P.ne.x=mxf(P.ne.x,F.ne.x);
+    P.he.x=mxf(P.he.x,F.he.x); P.he.y=mxf(P.he.y,F.he.y);
+    P.hip=mxf(P.hip,F.hip);
+  }
+  _swimApplyBone(R,'LeftArm',  P.la.x, 0, P.la.z, env);
+  _swimApplyBone(R,'RightArm', P.ra.x, 0, P.ra.z, env);
+  _swimApplyBone(R,'LeftForeArm',  P.lfa.x, 0, 0, env);
+  _swimApplyBone(R,'RightForeArm', P.rfa.x, 0, 0, env);
+  _swimApplyBone(R,'LeftUpLeg',  P.lul.x, 0, 0, env);
+  _swimApplyBone(R,'RightUpLeg', P.rul.x, 0, 0, env);
+  _swimApplyBone(R,'LeftLeg',  P.ll.x, 0, 0, env);
+  _swimApplyBone(R,'RightLeg', P.rl.x, 0, 0, env);
+  _swimApplyBone(R,'LeftFoot',  P.lf.x, 0, 0, env);
+  _swimApplyBone(R,'RightFoot', P.rf.x, 0, 0, env);
+  _swimApplyBone(R,'Spine',  P.sp.x, 0, 0, env);
+  _swimApplyBone(R,'Spine1', P.sp1.x, 0, 0, env);
+  _swimApplyBone(R,'Neck', P.ne.x, 0, 0, env);
+  _swimApplyBone(R,'Head', P.he.x, P.he.y, 0, env);
   var hb=B.Hips;
   if (hb){
-    var hipT=mx(S.hip,T.hip);
-    hb.position.y=hb.position.y+(hipT-hb.position.y)*env;
+    hb.position.y=hb.position.y+(P.hip-hb.position.y)*env;
   }
 }
 /* Wading gait: one full left+right cycle per 1.1u travelled (see the
@@ -13439,6 +13681,18 @@ function animateHeroGLB(dt){
     var mv = (spd > 0.5) ? 1 : 0;
     R.swimBlend += (mv - R.swimBlend) * Math.min(1, 5 * dt);
   }
+  /* SPEED-DRIVEN WATER MOVEMENT (ui 2026.11.11): the freestyle
+     blend — eases toward 1 while a full push drives him
+     (player.swimFast, set in updatePlayer from the input
+     magnitude) and back to 0 as he eases off, returning him to
+     the breaststroke. The LEAN lives here and in applySwimGLB:
+     the wrapper pitch below flattens toward prone and rolls with
+     the stroke cycle as this blend rises, so pushing harder
+     visibly tips him forward into the freestyle instead of just
+     speeding up the breaststroke. */
+  if (typeof R.freeBlend!=='number') R.freeBlend=0;
+  var _freeTgt=(player.swimming && player.swimFast && spd>0.5)?1:0;
+  R.freeBlend+=(_freeTgt-R.freeBlend)*Math.min(1,4*dt);
   var want, ts = 1;
   /* BODY SYSTEMS (Joshua 2026-11-07): the damage-100 MAXED-OUT state
      (16:00: spent energy + slow shuffle) shows the exhaustion posture. An authored 'Exhausted' clip is NOT in
@@ -13482,12 +13736,19 @@ function animateHeroGLB(dt){
      measured in the first K1 trace). Not while swimming (the dive
      owns the axis there). */
   var _kneel = (player.kneelT>0 && !player.swimming) ? kneelEnv() : 0;
-  var pitchT = _kneel>0 ? 0 : (_exh ? 0.62 : (player.swimming ? 0.65 * R.swimBlend : 0));
+  var pitchT = _kneel>0 ? 0 : (_exh ? 0.62 : (player.swimming ? (0.65 + 0.22 * (R.freeBlend||0)) * R.swimBlend : 0));
   R.inner.rotation.x += (pitchT - R.inner.rotation.x) * Math.min(1, 6 * dt);
+  /* Freestyle body roll (ui 2026.11.11): rolls with the windmill
+     cycle (applySwimGLB advances R.freePhase) at the freestyle
+     blend's strength; eases back to level everywhere else. */
+  var _rollT = (player.swimming && (R.freeBlend||0) > 0.01 && _kneel<=0)
+    ? Math.sin((R.freePhase||0) * Math.PI * 2) * 0.10 * R.freeBlend : 0;
+  R.inner.rotation.z += (_rollT - R.inner.rotation.z) * Math.min(1, 6 * dt);
   var dropT = _exh ? -0.22 : 0;
   R.inner.position.y += (dropT - R.inner.position.y) * Math.min(1, 6 * dt);
   R.mixer.update(dt);
   if (_kneel>0) applyKneelGLB(R, _kneel);
+  else if (R._kneelActive) R._kneelActive = false;   /* ui 2026.11.11: next kneel re-captures its base (see applyKneelGLB) */
   /* TATUM QA (2026-11-09): the swim stroke and the wading gait ride
      on top of the clip, post-mixer, exactly like the kneel — never
      while kneeling (the kneel owns the body for its 1.6 s). The
@@ -16728,7 +16989,15 @@ function updatePlayer(dt){
     /* TATUM QA (2026-11-09): wading pace is 2.2 u/s — pushing through
        the water is slow by nature; the wading gait below is drawn
        for this pace, so the feet plant instead of skating. */
-    var spd=(player.swimming?6.75:(player.wading?2.2:(player.inside?5.0:(sprintOn?13.8:5.0))))*curve;
+    /* ui 2026.11.11 (speed-driven water movement): the swimming
+       tier splits by the same push that chose the stroke — a
+       gentle push is the BREASTSTROKE tier (4.4 u/s, under
+       body_systems' 5.4 gentle/hard line, so a gentle swim still
+       recovers the swim pool); a full push is FREESTYLE at the
+       shipped top swim speed (6.75 u/s, the hard tier). The
+       wading tier is untouched: Joshua rated the slow
+       splash-through wade accurate/perfect as the default. */
+    var spd=(player.swimming?(player.swimFast?6.75:4.4):(player.wading?2.2:(player.inside?5.0:(sprintOn?13.8:5.0))))*curve;
     /* the PRE-governor demand, recorded for body_systems: its exertion
        drain reads what he is ASKING for, so pushing against a spent
        pool's cap still digs the pool deeper (ui .20, ruling C) */
@@ -16793,6 +17062,32 @@ function updatePlayer(dt){
      "wading" but the real surface sits above the player's head, he is
      swimming, never wading (see headUnderWater, by SWIM_DEPTH). */
   if (!inW && headUnderWater(player.x, player.z)) inW=true;
+  /* SPEED-DRIVEN WATER MOVEMENT (ui 2026.11.11, Joshua's scheme —
+     one rule everywhere: SPEED — input magnitude — decides; no
+     swim button, no mode picker). _driveMag is the push: on touch
+     the stick's own magnitude; on keys, plain WASD is the walk
+     tier (0.55) and SHIFT+forward the full push (1.0) — the same
+     split as land (walk vs sprint). NOTE: the shift signal is read
+     from the keys DIRECTLY, not from _sprDemand — the movement
+     block above zeroes _sprDemand in the water on purpose (no
+     LAND sprint gear there), which would otherwise strangle this
+     signal before it is read (the first swim proof caught exactly
+     that: swimFast never engaged). A full push is FREESTYLE
+     demand; anything gentler is the wade / breaststroke. In water
+     too shallow for the depth rule alone (>= SWIM_SURFACE_MIN but
+     < SWIM_DEPTH) a full push still puts him ON THE SURFACE in
+     the freestyle — depth gates DIVING only, never the surface
+     stroke; ease back and he settles to the wade again. Shallower
+     than SWIM_SURFACE_MIN stays wading. */
+  var _shiftFwd = !!(_ik['shift'] && _ik['w']);
+  var _driveMag = 0;
+  if (joy.active) _driveMag = Math.min(1, mag);
+  else if (mvx !== 0 || mvz !== 0) _driveMag = _shiftFwd ? 1 : 0.55;
+  var _fullPush = _driveMag >= 0.85 || _shiftFwd;
+  player.swimFast = _fullPush;
+  if (!inW && _fullPush && !player.inside && !(car && car.driving) &&
+      inWater(player.x, player.z) && waterDepthAt(player.x, player.z) >= SWIM_SURFACE_MIN)
+    inW = true;
   if (inW && !player.swimming) player.swimming=true;
   if (!inW && player.swimming) player.swimming=false;  // climbed out at the shore
   /* TATUM QA (2026-11-09): WADING is a real state now, not "ON FOOT".
@@ -16818,6 +17113,16 @@ function updatePlayer(dt){
        water (blended via the animation's swimBlend). */
     var _sb=(player.rig&&typeof player.rig.swimBlend==='number')?player.rig.swimBlend:1;
     var _sub=1.25-0.15*_sb;
+    /* ui 2026.11.11: shallow-water surface swim (freestyle in a
+       creek) — the trim cannot exceed the water column there: cap
+       the submersion so the body rides IN the shallows instead of
+       being pressed under the bed (the ground clamp below is the
+       hard guarantee; this keeps the read natural). Deep water is
+       untouched. */
+    if (wl!==null){
+      var _wdp=wl-heightAt(player.x, player.z);
+      if (_wdp>0 && _wdp<_sub+0.30) _sub=Math.max(0.30, _wdp-0.18);
+    }
     gy=(wl===null?heightAt(player.x,player.z):wl)-_sub+Math.sin(swimT*2.4)*0.1; // bob
     /* FULL DIVE (ui 2026.11.07.24): the dive system ticks on this call
        and returns the mesh Y with the dive depth taken out of it. The
@@ -16835,6 +17140,48 @@ function updatePlayer(dt){
   }
   player.mesh.rotation.y=player.yaw;
   animateHero(dt);  // v1.7: 3D rig walk/idle/swim
+  /* GROUND CLAMP (ui 2026.11.11, Joshua's one hard rule: the
+     player must NEVER pass through ground material, in any mode).
+     The mesh root is already pinned every frame (feet to
+     groundRefY on foot; the dive module's real-bed clamp while
+     swimming) — but a POSE can still sink a body part below the
+     ground the root stands on: the kneel-rise foot dip was exactly
+     that (root legal, planted foot under). The kneel's root cause
+     is fixed in applyKneelGLB; this clamp is the universal
+     guarantee behind every pose system, present and future: after
+     the pose is final, measure the lowest of the feet / toes /
+     knees in world space and lift until it rests ON the floor —
+     the root's own ground on foot (raised via the inner wrapper,
+     so the clip's root bookkeeping is untouched), the real bed
+     while swimming (raised via the mesh, over the dive trim).
+     The exhaustion slump keeps its pitch — only the below-ground
+     part of any pose is floored. GLB rig only: the primitive
+     fallback builds its poses around the pinned root by
+     construction. Tolerance 2 mm so a planted foot resting
+     exactly on the ground never jitters. */
+  if (player.rig && player.rig.kind==='glb' && player.rig.bones && player.mesh){
+    try{
+      var _gcB=player.rig.bones;
+      var _gcNames=['LeftFoot','RightFoot','LeftToeBase','RightToeBase','LeftLeg','RightLeg'];
+      var _gcV=player._gcV||(player._gcV=new THREE.Vector3());
+      player.mesh.updateMatrixWorld(true);
+      var _gcLow=Infinity;
+      for (var _gci=0; _gci<_gcNames.length; _gci++){
+        var _gcBone=_gcB[_gcNames[_gci]]; if (!_gcBone) continue;
+        _gcBone.getWorldPosition(_gcV);
+        if (_gcV.y<_gcLow) _gcLow=_gcV.y;
+      }
+      if (_gcLow<Infinity){
+        if (player.swimming){
+          var _gcBed=heightAt(player.x, player.z);
+          if (_gcLow<_gcBed) player.mesh.position.y+=(_gcBed-_gcLow);
+        } else if (player.rig.inner){
+          var _gcFloor=player.mesh.position.y;
+          if (_gcLow<_gcFloor-0.002) player.rig.inner.position.y+=(_gcFloor-_gcLow);
+        }
+      }
+    }catch(e){}
+  }
   // v0.5 SAFETY NET: never fall through the world — snap back to the surface
   // (and log it, so real holes get found instead of silently papered over)
   if (!player.swimming && !player.inside){

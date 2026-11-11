@@ -141,9 +141,9 @@
     },
     {
       "name": "gps_system.js",
-      "size": 139101,
-      "sha256": "e74ca0804e6ac9b34cc7c732148e2701f58503c2b68fb6af15ddf0f0dc7807fa",
-      "hash": "e74ca0804e6ac9b34cc7c732148e2701f58503c2b68fb6af15ddf0f0dc7807fa"
+      "size": 140677,
+      "sha256": "2b018e13b532d4c88b4aaab2e4c098285952e4e285232f3629413e0999e94ff6",
+      "hash": "2b018e13b532d4c88b4aaab2e4c098285952e4e285232f3629413e0999e94ff6"
     },
     {
       "name": "helicopter_system.js",
@@ -159,9 +159,9 @@
     },
     {
       "name": "hud_move.js",
-      "size": 77008,
-      "sha256": "8077be8d9e75ed117a8dfc10f2a01985d9b7a52ede43ace02eee9652b3b86c06",
-      "hash": "8077be8d9e75ed117a8dfc10f2a01985d9b7a52ede43ace02eee9652b3b86c06"
+      "size": 78323,
+      "sha256": "2c47363a20fe0d8b6a8f2877188fa92d168946dc23b364395c1dcfbf69da57a1",
+      "hash": "2c47363a20fe0d8b6a8f2877188fa92d168946dc23b364395c1dcfbf69da57a1"
     },
     {
       "name": "icon.png",
@@ -171,9 +171,9 @@
     },
     {
       "name": "index.html",
-      "size": 1348491,
-      "sha256": "35936940e5f497eb26cf54e1ab6bc6927573c570c0a780494573d894d0239a1f",
-      "hash": "35936940e5f497eb26cf54e1ab6bc6927573c570c0a780494573d894d0239a1f"
+      "size": 1367322,
+      "sha256": "75a95b60729bdcf7f4f6dd26d4171b9cf322aa565482aa3f6d4439732133517e",
+      "hash": "75a95b60729bdcf7f4f6dd26d4171b9cf322aa565482aa3f6d4439732133517e"
     },
     {
       "name": "input_diag.js",
@@ -708,6 +708,6 @@
       "hash": "5bd3ab4ab2c4fe2671d7c7b755c98518de645f5390c3df530be6c0fbaea92a35"
     }
   ],
-  "ui_version": "2026.11.09.5",
+  "ui_version": "2026.11.11.1",
   "version": "2026.10.17.9"
 }

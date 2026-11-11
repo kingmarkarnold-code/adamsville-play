@@ -2875,7 +2875,29 @@ function hudArrowTick(){
   // hide while the full map or satellite view is open (route shown there)
   try{ if (typeof fullMapOpen!=='undefined' && fullMapOpen) show=false; }catch(e){}
   try{ if (window.__satViewActive) show=false; }catch(e){}
-  if (!show){ if (hudArrowVisible){ hudArrowEl.style.display='none'; hudArrowVisible=false; } return; }
+  /* ui 2026.11.11 — THE HIDE IS WRITTEN EVERY TICK, NOT ONLY ON THE
+     FLAG'S TRANSITION (Joshua's Nov 11 screenshot, ui 2026.11.09.5:
+     the arrow + "tap to clear" on screen at Tatum with no route
+     set, three days after the routeIsLive gate shipped). The gate
+     was never the hole — the FLAG was. Every hide/show in this tick
+     used to be guarded by hudArrowVisible, so the DOM was written
+     only when the module's own bookkeeping changed state. HUD move
+     mode (hud_move.js) force-shows hidden controls so they can be
+     dragged, and its exit stripped the element's inline display
+     wholesale — taking the strip's OWN display:none (set in
+     buildHudArrow's cssText) with it. The strip then carried NO
+     inline display and defaulted to visible for the rest of the
+     session, while this tick — flag already false — never wrote
+     anything again: the strip showed its static parts (the arrow
+     glyph and "tap to clear") over an EMPTY distance band, the
+     paint below never having run — exactly Joshua's frame.
+     hud_move now restores the display value it captured before
+     force-showing (the root fix); here the tick writes the strip's
+     display from the route state UNCONDITIONALLY, the same
+     DOM-enforcing pattern gpsTickShowHide uses for the clear
+     button, so no outside writer can hold the strip open against
+     a dead route for longer than one tick. */
+  if (!show){ hudArrowEl.style.display='none'; hudArrowVisible=false; return; }
   var p;
   try{ p=playerPos(); }catch(e){ return; }
   /* Already there: inside the arrival radius (25u) the player IS at
@@ -2884,7 +2906,7 @@ function hudArrowTick(){
   try{
     var _adx=route.destX-p.x, _adz=route.destZ-p.z;
     if (_adx*_adx+_adz*_adz<=ARRIVE_U*ARRIVE_U){
-      if (hudArrowVisible){ hudArrowEl.style.display='none'; hudArrowVisible=false; }
+      hudArrowEl.style.display='none'; hudArrowVisible=false;   /* ui 2026.11.11: unconditional — see the gate note above */
       return;
     }
   }catch(e){}
@@ -2999,15 +3021,15 @@ function hudArrowTick(){
      empty — if the distance text somehow came out blank, the strip
      is not navigation, so hide it instead of showing a blank band. */
   if (!hudArrowDist || !hudArrowDist.textContent){
-    if (hudArrowVisible){ hudArrowEl.style.display='none'; hudArrowVisible=false; }
+    hudArrowEl.style.display='none'; hudArrowVisible=false;   /* ui 2026.11.11: unconditional — see the gate note above */
     return;
   }
-  if (!hudArrowVisible){ hudArrowEl.style.display='block'; hudArrowVisible=true; }
+  hudArrowEl.style.display='block'; hudArrowVisible=true;   /* ui 2026.11.11: written every tick, self-healing like the hides */
   }catch(e){
     /* Guidance or paint threw mid-strip: hide the whole strip rather
        than leave a visible arrow with an empty band (Joshua's
        2026-11-09 frame). The next tick retries from hidden. */
-    if (hudArrowVisible){ hudArrowEl.style.display='none'; hudArrowVisible=false; }
+    hudArrowEl.style.display='none'; hudArrowVisible=false;   /* ui 2026.11.11: unconditional — see the gate note above */
   }
 }
 
