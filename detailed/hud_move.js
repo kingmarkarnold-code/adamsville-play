@@ -308,6 +308,10 @@ var FIXED = {
   'heli-btn': 'collected into the Agent Reports dock, which owns its placement',
   'heli-panel': 'the helicopter survey panel screen',
   'uiflow-chip': 'update-flow progress narration — pointer-events:none by design, never a control',
+  'place-name': 'the place-name pill — daycycle.js positions it under the clock every tick; it is the clock\'s follower, not a free control (ui 2026.11.11.3)',
+  'mm-north': 'the minimap compass N — poi_map.js rides it on the minimap rim at true north every draw (ui 2026.11.11.3)',
+  'rose-pop': 'the golden-rose pickup card — a transient popup, shown by golden_roses.js only on a pickup; move mode must not force-show it (ui 2026.11.11.3)',
+  'rose-toast': 'the golden-rose count toast — a transient popup on a 4-second timer, never a control (ui 2026.11.11.3)',
   /* diagnostics and tooling surfaces */
   'stayawake-badge': 'wake-lock helper badge',
   'perf-budget-ind': 'performance diagnostics indicator',
@@ -1717,8 +1721,17 @@ function onPointerMove(e){
   if (inMove && rdrag && e.pointerId === rdrag.pid){
     e.preventDefault();
     var rvw = visW(), rvh = visH();
-    var nw = Math.min(Math.max(60, rdrag.w + (e.clientX - rdrag.sx)), rvw || 60);
-    var nh = Math.min(Math.max(60, rdrag.h + (e.clientY - rdrag.sy)), rvh || 60);
+    /* SHRINK FIX (ui 2026.11.11.3, Joshua's item 28d): the old 60px
+       floor on BOTH axes sat ABOVE several controls' designed size
+       (the street-name pill is 24px tall; the version tag 22) — any
+       resize drag forced those boxes to 60px and they could never be
+       dragged back below it: "we can only make it grow but we can't
+       make it shrink back down smaller." The floor is now 24px —
+       below every designed control — so the grip travels both ways
+       on every control. (Buttons keep their real tap floors in the
+       layout pass; this grip is a sizing tool, not a tap target.) */
+    var nw = Math.min(Math.max(24, rdrag.w + (e.clientX - rdrag.sx)), rvw || 24);
+    var nh = Math.min(Math.max(24, rdrag.h + (e.clientY - rdrag.sy)), rvh || 24);
     rdrag.curW = nw; rdrag.curH = nh;
     rdrag.el.style.setProperty('width', Math.round(nw) + 'px', 'important');
     rdrag.el.style.setProperty('height', Math.round(nh) + 'px', 'important');

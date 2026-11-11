@@ -43,15 +43,15 @@
     },
     {
       "name": "body_systems.js",
-      "size": 37094,
-      "sha256": "3b10006d3588f31aab41b24415758f2ab870953db7bf7062f79f1b9c239ae5bd",
-      "hash": "3b10006d3588f31aab41b24415758f2ab870953db7bf7062f79f1b9c239ae5bd"
+      "size": 37837,
+      "sha256": "b0f1f89f8d89ae6d0b767b2188c79c7654f8a0f79ace2f4bf28f0be0fe4068ef",
+      "hash": "b0f1f89f8d89ae6d0b767b2188c79c7654f8a0f79ace2f4bf28f0be0fe4068ef"
     },
     {
       "name": "dive_system.js",
-      "size": 44261,
-      "sha256": "281b087215226cf8cb96177a9472dacf16c2e4fc3825875f5936702ea85e223e",
-      "hash": "281b087215226cf8cb96177a9472dacf16c2e4fc3825875f5936702ea85e223e"
+      "size": 44833,
+      "sha256": "1b07c03143819f6b3b32724f6ee1172fceb2d3bae8458d32ae2fd1a9c8edcf32",
+      "hash": "1b07c03143819f6b3b32724f6ee1172fceb2d3bae8458d32ae2fd1a9c8edcf32"
     },
     {
       "name": "clothing_system.js",
@@ -86,9 +86,9 @@
     },
     {
       "name": "daycycle.js",
-      "sha256": "406a4d78037cb3beb64b3de8edf277c8ee9238c20be3ad0f86b57685836ef110",
-      "size": 28435,
-      "hash": "406a4d78037cb3beb64b3de8edf277c8ee9238c20be3ad0f86b57685836ef110"
+      "sha256": "657979db9f250824d28b43686439dc2d29dceaf331c74a05e418c511d715b9b6",
+      "size": 31605,
+      "hash": "657979db9f250824d28b43686439dc2d29dceaf331c74a05e418c511d715b9b6"
     },
     {
       "name": "dialogue_director_npc.js",
@@ -129,9 +129,9 @@
     },
     {
       "name": "golden_roses.js",
-      "size": 46868,
-      "sha256": "6815e5d95f428c83ebca86738fc428f00ba08e3f32d462272a881f51a10fb1ef",
-      "hash": "6815e5d95f428c83ebca86738fc428f00ba08e3f32d462272a881f51a10fb1ef"
+      "size": 47067,
+      "sha256": "7ee187d73a3ba2d8bd28205b34ac655e2826520193deb97af2e2a22769c94687",
+      "hash": "7ee187d73a3ba2d8bd28205b34ac655e2826520193deb97af2e2a22769c94687"
     },
     {
       "name": "goto.js",
@@ -159,9 +159,9 @@
     },
     {
       "name": "hud_move.js",
-      "size": 88031,
-      "sha256": "3cd10305d962b6768e0b6223b23a88a852f23b3ea0fe2b81cd8589a52a602bb5",
-      "hash": "3cd10305d962b6768e0b6223b23a88a852f23b3ea0fe2b81cd8589a52a602bb5"
+      "size": 89227,
+      "sha256": "44745d3d41665167cf00eec6a98a5fe25b920bfaf7e7fa8d8858daf9ea5b74d7",
+      "hash": "44745d3d41665167cf00eec6a98a5fe25b920bfaf7e7fa8d8858daf9ea5b74d7"
     },
     {
       "name": "icon.png",
@@ -171,9 +171,9 @@
     },
     {
       "name": "index.html",
-      "size": 1369704,
-      "sha256": "b4e5705c0daea67332d26e1264b697cf73eab9bb47a7a8a4805e27b990e44b4e",
-      "hash": "b4e5705c0daea67332d26e1264b697cf73eab9bb47a7a8a4805e27b990e44b4e"
+      "size": 1374792,
+      "sha256": "4ffe90ffb392cd8d3bdc0f404f229fb328817403af2d2a8826b1c14bf6297bf4",
+      "hash": "4ffe90ffb392cd8d3bdc0f404f229fb328817403af2d2a8826b1c14bf6297bf4"
     },
     {
       "name": "input_diag.js",
@@ -256,8 +256,8 @@
     },
     {
       "name": "pause_system.js",
-      "size": 15565,
-      "sha256": "b05f86abba74aadabbad54e94eb9954f1840428ed4b76f05a43b24e530e17e07"
+      "size": 16733,
+      "sha256": "056e4bee7a874a1cfc88c65d13360381c265dad9312746028e3354ce9658d294"
     },
     {
       "name": "perf_budget.js",
@@ -273,9 +273,9 @@
     },
     {
       "name": "poi_map.js",
-      "size": 12273,
-      "sha256": "84316622331a730a5ce94499d0dc728cb96d4f8ef291ea2a031ec8c4fac6c970",
-      "hash": "84316622331a730a5ce94499d0dc728cb96d4f8ef291ea2a031ec8c4fac6c970"
+      "size": 13284,
+      "sha256": "df2edadc08a94c1177edaded5914c777868f50237f7dd83dbece0ad1c960d8bb",
+      "hash": "df2edadc08a94c1177edaded5914c777868f50237f7dd83dbece0ad1c960d8bb"
     },
     {
       "name": "police_system.js",
@@ -418,9 +418,9 @@
     },
     {
       "name": "ui_layout.json",
-      "size": 181410,
-      "sha256": "ea464df64003b54a08c4038836468492cef9c7bd14f2c7a323ed0bb1ea313314",
-      "hash": "ea464df64003b54a08c4038836468492cef9c7bd14f2c7a323ed0bb1ea313314"
+      "size": 165570,
+      "sha256": "48092149d8a34e4eda05258d9da658e37c59820b14240c234c98de076d14e11f",
+      "hash": "48092149d8a34e4eda05258d9da658e37c59820b14240c234c98de076d14e11f"
     },
     {
       "name": "ui_layout_apply.js",
@@ -708,6 +708,6 @@
       "hash": "5bd3ab4ab2c4fe2671d7c7b755c98518de645f5390c3df530be6c0fbaea92a35"
     }
   ],
-  "ui_version": "2026.11.11.2",
+  "ui_version": "2026.11.11.3",
   "version": "2026.10.17.9"
 }

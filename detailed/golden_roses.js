@@ -575,7 +575,10 @@ function buildUI(){
     '#rose-pop p{margin:0;color:#e8e4d8;font-size:16px;line-height:1.45;}' +
     '#rose-pop-x{position:absolute;top:6px;right:10px;background:none;border:none;color:#ffd75e;' +
     'font-size:24px;font-weight:bold;cursor:pointer;padding:4px 8px;}' +
-    '#rose-toast{position:fixed;left:50%;bottom:12%;transform:translateX(-50%);z-index:64;display:none;' +
+    /* HUD LAYOUT (ui 2026.11.11.3, Joshua's item 18c ruling): the count
+       toast pops at the CENTER of the screen, not next to the
+       inventory button where it used to sit (bottom:12%). */
+    '#rose-toast{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:64;display:none;' +
     'align-items:center;gap:10px;background:#161b26;border:2px solid #c9a227;border-radius:999px;' +
     'padding:10px 20px 10px 14px;box-shadow:0 6px 24px rgba(0,0,0,.5);cursor:pointer;}' +
     '#rose-toast.show{display:flex;}' +

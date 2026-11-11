@@ -450,14 +450,20 @@ if (location.protocol === 'file:'){ setTimeout(function(){ if (!window.__threeMo
   /* SOUND PASS (2026-11-07): #music-btn is the SPEAKER now — the
      master sound ON/OFF (full off or full on; it never skips a
      song). #radio-btn under it opens the mini radio. */
-  #radio-btn { position:fixed; top:212px; left:12px; z-index:30; width:44px; height:44px;
+  /* HUD LAYOUT (ui 2026.11.11.3): the radio button sits BESIDE the
+     speaker on the first row under the minimised map (ui_layout.json
+     owns its spot — same size as the speaker, centres on one line);
+     this CSS is only the pre-layout fallback. */
+  #radio-btn { position:fixed; top:170px; left:70px; z-index:30; width:52px; height:52px;
     border-radius:22px; border:2px solid #fff; background:rgba(0,0,0,.5); color:#fff; font-size:20px; }
   /* MINI RADIO (2026-11-07, Joshua's spec): opened by #radio-btn.
      Shows the CURRENT song name; the left button goes to the
      BEGINNING of the current song, the right button skips to the
      next song. Distinct from the driving-only #radio panel above,
      which keeps its own prev/next-track behaviour. */
-  #mini-radio { position:fixed; z-index:30; top:264px; left:12px;
+  /* HUD LAYOUT (ui 2026.11.11.3): the mini radio opens under the
+     speaker/radio + inventory/go-to rows on the left edge. */
+  #mini-radio { position:fixed; z-index:30; top:292px; left:12px;
     display:none; align-items:center; gap:8px; background:rgba(0,0,0,.55); color:#fff;
     border:2px solid #ffd75e; border-radius:12px; padding:6px 10px;
     font-size:14px; font-weight:bold; }
@@ -582,8 +588,12 @@ if (location.protocol === 'file:'){ setTimeout(function(){ if (!window.__threeMo
     pointer-events:none; display:none; text-align:right; font-variant-numeric:tabular-nums; line-height:1.1; }
   #speedo small { display:block; font-size:10px; font-weight:normal; color:#ffd75e; letter-spacing:1px; }
   /* minimap */
-  #minimap { position:fixed; z-index:10; left:14px; bottom:14px; width:148px; height:148px;
-    border-radius:74px; border:3px solid rgba(255,255,255,.75); background:rgba(10,14,20,.85); }
+  /* HUD LAYOUT (ui 2026.11.11.3): the minimised map lives TOP-LEFT now
+     (ui_layout.json owns the spot; this is the pre-layout fallback) and
+     its CSS border is the OUTER BLACK ring of Joshua's two-ring rim —
+     the inner white ring is painted on the canvas (drawMinimap). */
+  #minimap { position:fixed; z-index:10; left:10px; top:10px; width:148px; height:148px;
+    border-radius:74px; border:3px solid #000; background:rgba(10,14,20,.85); }
   #fullmap { position:fixed; inset:0; z-index:35; display:none; background:rgba(5,8,14,.94); }
   #fullmap.show { display:block; }
   #fullmap-canvas { position:absolute; inset:0; width:100%; height:100%; cursor:grab; }
@@ -1197,7 +1207,7 @@ window.SAView = (function(){
   <b>On desktop:</b> W/S or &#8593;/&#8595; = gas / brake, A/D or &#8592;/&#8594; = steer, SPACE = handbrake, E = enter/exit van.<br>
   <b>Action button</b> (teal): ENTER/EXIT the Safari van, ENTER/EXIT house at the doors, PICK UP items.<br>
   <b>Inventory:</b> backpack button (top-left, under the title) or press I — tap DROP to put an item back down.<br>
-  <b>Minimap</b> (bottom-left): tap to open the full map (opens on you, zoomed in) — pinch to zoom, drag to pan, tap to close. On desktop: drag with the mouse to pan, scroll wheel to zoom, click to close.<br>
+  <b>Minimap</b> (top-left): tap to open the full mini map (opens on you, zoomed in) — pinch to zoom, drag to pan, tap to close. On desktop: drag with the mouse to pan, scroll wheel to zoom, click to close.<br>
   <b>Goal:</b> check the world, streets, controls and the van.<br>
   <button id="help-close">Got it</button>
 </div></div>
@@ -2634,7 +2644,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    shipped a manifest whose index.html hash described bytes that never
    reached the repo (manifest .09.2, repo document still .09.1), and
    every fresh session paid one self-heal reload for it. */
-window.__DOC_UIVER = '2026.11.11.2';
+window.__DOC_UIVER = '2026.11.11.3';
 /* VER-TAG (ui 2026.11.07.25) >>>
    The on-screen version tag (#ver-tag) shows the version OF THE
    DEPLOYMENT ACTUALLY RUNNING, environment first (Joshua 2026-11-07
@@ -5328,7 +5338,18 @@ window.__diagFrames = 0;
 window.__diagLastT = 0;
 window.__diagFPS = 0;
 window.__diagLastKey = 'none';
-if (window.__weakHardware) {
+/* HUD LAYOUT (ui 2026.11.11.3, Joshua's item 6): the FPS / key / pixel
+   readout is HIDDEN from players — it stays in the game as a developer
+   resource, shown only when the dev flag is set (localStorage
+   saDevDiag=1, or ?diag=1 in the address). The instrumentation above
+   (frame counter, last key) keeps running either way; only the
+   on-screen element is gated. */
+var __saDevDiag = false;
+try {
+  __saDevDiag = (window.localStorage && localStorage.getItem('saDevDiag') === '1') ||
+    /[?&]diag=1(&|$)/.test(String(window.location && location.search || ''));
+} catch(e){}
+if (window.__weakHardware && __saDevDiag) {
   try {
     var _de = document.createElement('div');
     _de.id = 'perf-diag';
@@ -16739,12 +16760,59 @@ function drawMinimap(dt){
     mm.restore();
   }
   // player arrow (center, pointing up — map rotates under it, GTA SA style)
+  /* HUD LAYOUT (ui 2026.11.11.3, Joshua's item 1e): the arrow is
+     48 tall x 35 wide (was 19x14) — big enough to read at a glance. */
   mm.fillStyle='#ffffff';
-  mm.beginPath(); mm.moveTo(R,R-11); mm.lineTo(R-7,R+8); mm.lineTo(R+7,R+8); mm.closePath(); mm.fill();
+  mm.beginPath(); mm.moveTo(R,R-28); mm.lineTo(R-17.5,R+20); mm.lineTo(R+17.5,R+20); mm.closePath(); mm.fill();
   mm.restore();
-  // ring
-  mm.strokeStyle='rgba(255,255,255,.8)'; mm.lineWidth=3;
+  /* HUD LAYOUT (ui 2026.11.11.3, item 1a): the rim is TWO rings — an
+     inner WHITE ring and an outer BLACK outline. The outermost black
+     is the canvas element's own CSS border (see #minimap); here the
+     white ring rides just inside it, closed by a thin black line so
+     the map edge reads against light ground. */
+  mm.strokeStyle='#000000'; mm.lineWidth=3;
   mm.beginPath(); mm.arc(R,R,R-2,0,Math.PI*2); mm.stroke();
+  mm.strokeStyle='rgba(255,255,255,.9)'; mm.lineWidth=3;
+  mm.beginPath(); mm.arc(R,R,R-6,0,Math.PI*2); mm.stroke();
+  mm.strokeStyle='rgba(0,0,0,.85)'; mm.lineWidth=2;
+  mm.beginPath(); mm.arc(R,R,R-10,0,Math.PI*2); mm.stroke();
+  /* HUD LAYOUT (ui 2026.11.11.3, items 1b/1c): the compass N rides the
+     rim of the minimised map — a DOM overlay whose MIDDLE sits on the
+     OUTSIDE ring at the true-north point, travelling around the rim
+     as the map rotates (the centre arrow is the facing marker). It is
+     drawn HERE, in drawMinimap, because poi_map.js — which drew the
+     old compass disc — sits on the Phase G partial-map disable list
+     and never loads in the current world; the minimised map must
+     carry its compass regardless. (When poi_map returns with the
+     full package, its drawMinimapCompass positions this same element
+     with the same math.) A DOM overlay, not canvas paint: centred on
+     the ring, half the letter hangs outside the disc, where the
+     circular canvas would clip it. Size ~24% of the map's width —
+     Joshua's "80" at the mock's scale. */
+  try {
+    var _nEl = document.getElementById('mm-north');
+    if (!_nEl) {
+      _nEl = document.createElement('div');
+      _nEl.id = 'mm-north';
+      _nEl.textContent = 'N';
+      _nEl.style.cssText = 'position:fixed;z-index:12;pointer-events:none;' +
+        'font-family:Arial,sans-serif;font-weight:900;color:#000;line-height:1;' +
+        'text-align:center;transform:translate(-50%,-50%);' +
+        'text-shadow:-2px 0 0 #fff,2px 0 0 #fff,0 -2px 0 #fff,0 2px 0 #fff,' +
+        '-2px -2px 0 #fff,2px -2px 0 #fff,-2px 2px 0 #fff,2px 2px 0 #fff;';
+      document.body.appendChild(_nEl);
+    }
+    var _mmRect = mmCanvas.getBoundingClientRect();
+    if (_mmRect && _mmRect.width) {
+      var _nnx = -Math.sin(yaw), _nny = Math.cos(yaw);
+      _nEl.style.display = 'block';
+      _nEl.style.left = Math.round(_mmRect.left + _mmRect.width / 2 + _nnx * _mmRect.width / 2) + 'px';
+      _nEl.style.top = Math.round(_mmRect.top + _mmRect.height / 2 + _nny * _mmRect.height / 2) + 'px';
+      _nEl.style.fontSize = Math.round(_mmRect.width * 0.24) + 'px';
+    } else {
+      _nEl.style.display = 'none';
+    }
+  } catch (e) { /* the compass is decoration; never break the map */ }
 }
 function drawFullMap(){
   fmCanvas.width=window.innerWidth; fmCanvas.height=window.innerHeight;
@@ -18802,6 +18870,28 @@ document.getElementById('inv-btn').addEventListener('click', function(){ toggleI
   document.addEventListener('fullscreenchange', fsSync);
   document.addEventListener('webkitfullscreenchange', fsSync);
   fsSync();
+  /* FULLSCREEN AS PLAY STARTS (ui 2026.11.11.3, Joshua's items 20/20b):
+     a phone's edge swipe otherwise drags the browser's own bars in
+     over the game. Browsers only grant fullscreen from a user
+     gesture, so the first tap on the world after play has started
+     enters fullscreen through the same honest path as the button —
+     one less browser-chrome interruption, and every later edge swipe
+     stays in the game until the player chooses to leave (button or
+     browser gesture). Retries on later world taps if a browser
+     refuses once; never hijacks taps on controls or menus. */
+  document.addEventListener('pointerdown', function(e){
+    try{
+      if (!window.__gameStarted || fsOn()) return;
+      var t = e.target;
+      if (!t || (t.tagName || '').toUpperCase() !== 'CANVAS') return;
+      var el = document.documentElement;
+      var req = el.requestFullscreen || el.webkitRequestFullscreen;
+      if (!req) return;
+      var pr = req.call(el);
+      if (pr && pr.catch) pr.catch(function(){});
+      setTimeout(fsSync, 60);
+    }catch(err){}
+  }, true);
 })();
 document.getElementById('inv-close').addEventListener('click', function(){ toggleInv(false); });
 /* ============================================================================

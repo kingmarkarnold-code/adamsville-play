@@ -526,7 +526,11 @@ function buildHud(){
   if (hud || !document.body) return;
   var st = document.createElement('style');
   st.textContent =
-    '#body-wrap{position:fixed;z-index:11;left:14px;bottom:174px;display:none;' +
+    /* HUD LAYOUT (ui 2026.11.11.3): the bars moved to the RIGHT-side
+       stack (HEALTH, ENERGY, BREATH, mode tag) per Joshua's approved
+       picture. ui_layout.json owns the exact spot; this CSS is only
+       the pre-layout fallback, so it names the same corner. */
+    '#body-wrap{position:fixed;z-index:11;right:14px;top:72px;display:none;' +
     'background:rgba(0,0,0,.5);padding:7px 10px;border-radius:10px;color:#fff;' +
     'font-size:11px;font-weight:bold;pointer-events:none;}' +
     '#body-wrap .brow{display:flex;align-items:center;gap:7px;}' +
@@ -563,6 +567,14 @@ function buildHud(){
     if (window.HudMove && HudMove.register)
       HudMove.register('body-wrap', { name: 'Health + energy bars', resizable: true });
   } catch (e) { /* the layout system is an enhancement, never a dependency */ }
+  /* HUD LAYOUT (ui 2026.11.11.3): body-wrap is a designed-layout
+     element now (ui_layout.json, right-side stack) but it is created
+     late, after the layout pass has run — re-run the pass so the new
+     element takes its designed spot at once (the workerhousing.js
+     pattern). Guarded like everything layout: an enhancement only. */
+  try {
+    if (window.UILayoutApply && UILayoutApply.apply) UILayoutApply.apply();
+  } catch (e) { /* never a dependency */ }
   hud = {
     wrap: el,
     dTag: document.getElementById('bd-tag'),

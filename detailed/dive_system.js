@@ -746,7 +746,10 @@ function buildBreathHud(){
   if (breathHud || !document.body) return;
   var st = document.createElement('style');
   st.textContent =
-    '#breath-wrap{position:fixed;z-index:11;left:14px;bottom:232px;display:none;' +
+    /* HUD LAYOUT (ui 2026.11.11.3): BREATH joins the RIGHT-side stack
+       under HEALTH/ENERGY (Joshua's approved picture). ui_layout.json
+       owns the exact spot; this CSS is the pre-layout fallback. */
+    '#breath-wrap{position:fixed;z-index:11;right:14px;top:140px;display:none;' +
     'background:rgba(0,0,0,.5);padding:7px 10px;border-radius:10px;color:#fff;' +
     'font-size:11px;font-weight:bold;pointer-events:none;}' +
     '#breath-wrap .brow{display:flex;align-items:center;gap:7px;}' +
@@ -767,6 +770,13 @@ function buildBreathHud(){
   try{
     if (window.HudMove && HudMove.register)
       HudMove.register('breath-wrap', { name: 'Breath bar', resizable: true });
+  }catch(e){}
+  /* HUD LAYOUT (ui 2026.11.11.3): breath-wrap joined ui_layout.json
+     (right-side stack, under the health/energy bars) but is created
+     after the layout pass — re-run it so the wrap takes its designed
+     spot immediately (the workerhousing.js pattern). */
+  try{
+    if (window.UILayoutApply && UILayoutApply.apply) UILayoutApply.apply();
   }catch(e){}
   breathHud = { wrap: el,
                 fill: el.querySelector('#br-fill'),

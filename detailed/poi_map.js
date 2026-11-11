@@ -208,33 +208,48 @@ function drawPOIsMinimap(){
   }
   mm.restore();
 }
+/* HUD LAYOUT (ui 2026.11.11.3, Joshua's items 1a/1b/1c): the compass
+   is no longer a little disc floating on the map. A single capital N
+   rides the rim of the minimised map: the MIDDLE of the N sits on the
+   OUTSIDE ring, at the point where TRUE NORTH lies (the map rotates
+   under the player; the N travels around the rim to stay with north;
+   the player arrow at the centre is the facing marker). The letter is
+   a DOM overlay, not canvas paint: centred on the ring, half of it
+   hangs OUTSIDE the disc over the world, and the circular canvas
+   would clip exactly that half. Size: Joshua's "80" against the
+   ~296-unit mock map = ~24% of the map's width, scaled live to the
+   rendered minimap. BLACK letter with a WHITE outline, as drawn in
+   Joshua's approved mock (minimized-map-with-north-N-80-on-ring). */
+var mmNorthEl = null;
 function drawMinimapCompass(){
-  var S = 296, R = S / 2;
+  var mapEl = document.getElementById('minimap');
+  if (!mapEl) return;
+  if (!mmNorthEl){
+    mmNorthEl = document.createElement('div');
+    mmNorthEl.id = 'mm-north';
+    mmNorthEl.textContent = 'N';
+    mmNorthEl.style.cssText = 'position:fixed;z-index:12;pointer-events:none;' +
+      'font-family:Arial,sans-serif;font-weight:900;color:#000;line-height:1;' +
+      'text-align:center;transform:translate(-50%,-50%);' +
+      'text-shadow:-2px 0 0 #fff,2px 0 0 #fff,0 -2px 0 #fff,0 2px 0 #fff,' +
+      '-2px -2px 0 #fff,2px -2px 0 #fff,-2px 2px 0 #fff,2px 2px 0 #fff;';
+    document.body.appendChild(mmNorthEl);
+  }
+  var r = mapEl.getBoundingClientRect();
+  if (!r.width || mapEl.style.display === 'none' ||
+      (window.getComputedStyle && getComputedStyle(mapEl).display === 'none')){
+    mmNorthEl.style.display = 'none';
+    return;
+  }
   var yaw = (car && car.driving) ? car.yaw : player.yaw;  // null-car guard (2026-11-01, see drawPOIsMinimap)
   // world north (0,-1) through the minimap's rotation -> screen direction
   var nx = -Math.sin(yaw), ny = Math.cos(yaw);
-  var ccx = R, ccy = 36, rr = 18;
-  mm.save();
-  mm.beginPath(); mm.arc(R, R, R - 2, 0, Math.PI * 2); mm.clip();
-  mm.fillStyle = 'rgba(0,0,0,.55)';
-  mm.beginPath(); mm.arc(ccx, ccy, rr, 0, Math.PI * 2); mm.fill();
-  mm.strokeStyle = 'rgba(255,255,255,.8)'; mm.lineWidth = 2;
-  mm.beginPath(); mm.arc(ccx, ccy, rr, 0, Math.PI * 2); mm.stroke();
-  mm.fillStyle = '#ff5b5b';                       // red needle half -> north
-  mm.beginPath();
-  mm.moveTo(ccx + nx * 14, ccy + ny * 14);
-  mm.lineTo(ccx - ny * 5, ccy + nx * 5);
-  mm.lineTo(ccx + ny * 5, ccy - nx * 5);
-  mm.closePath(); mm.fill();
-  mm.fillStyle = '#dddddd';                       // white tail half -> south
-  mm.beginPath();
-  mm.moveTo(ccx - nx * 14, ccy - ny * 14);
-  mm.lineTo(ccx - ny * 5, ccy + nx * 5);
-  mm.lineTo(ccx + ny * 5, ccy - nx * 5);
-  mm.closePath(); mm.fill();
-  mm.fillStyle = '#ffffff'; mm.font = 'bold 12px Arial'; mm.textAlign = 'center';
-  mm.fillText('N', ccx + nx * (rr + 10), ccy + ny * (rr + 10));
-  mm.restore();
+  var cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  var rad = r.width / 2;  // the outside ring = the element's own edge
+  mmNorthEl.style.display = 'block';
+  mmNorthEl.style.left = Math.round(cx + nx * rad) + 'px';
+  mmNorthEl.style.top = Math.round(cy + ny * rad) + 'px';
+  mmNorthEl.style.fontSize = Math.round(r.width * 0.24) + 'px';
 }
 
 /* ---------- hook into the existing map draws ---------- */

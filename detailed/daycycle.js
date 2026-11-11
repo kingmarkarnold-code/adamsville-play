@@ -324,6 +324,78 @@ function init(){
   document.body.appendChild(hud);
   DC.hud=hud;
 
+  /* PLACE NAME PILL (ui 2026.11.11.3, Joshua's items 8/9): the name of
+     the place you are at, directly UNDER the clock, in a pill a little
+     WIDER than the clock's. Not a free HUD control — it is the clock's
+     follower (hud_move FIXED table): wherever the clock sits, the pill
+     centres under it. The name comes from the named water bodies (the
+     named places the data carries): standing in one, or on its shore,
+     names it; anywhere else the pill simply isn't there. */
+  var placePill=document.createElement('div');
+  placePill.id='place-name';
+  placePill.style.cssText='position:fixed;left:50%;top:44px;transform:translateX(-50%);'+
+    'background:rgba(20,24,32,0.72);color:#fff;font:600 15px system-ui,sans-serif;'+
+    'padding:6px 22px;border-radius:14px;z-index:50;pointer-events:none;'+
+    'letter-spacing:1px;white-space:nowrap;min-width:320px;text-align:center;display:none;';
+  document.body.appendChild(placePill);
+  DC.placePill=placePill;
+  function placeNameHere(){
+    try{
+      var W=(typeof WATER!=='undefined')?WATER:null;
+      var P=(typeof player!=='undefined')?player:null;
+      if(!W||!P) return '';
+      var px=P.x, pz=P.z, best='', bestD=170;
+      for(var i=0;i<W.length;i++){
+        var w=W[i];
+        if(!w||!w.name) continue;
+        if(w.ring&&w.ring.length>2){
+          /* point-in-ring (ray cast) = standing in the place itself */
+          var inside=false, ring=w.ring;
+          for(var a=0,b=ring.length-1;a<ring.length;b=a++){
+            var xa=ring[a][0],za=ring[a][1],xb=ring[b][0],zb=ring[b][1];
+            if(((za>pz)!==(zb>pz))&&(px<(xb-xa)*(pz-za)/(zb-za)+xa)) inside=!inside;
+          }
+          if(inside) return w.name;
+          for(var s=0;s<ring.length;s++){
+            var dx=px-ring[s][0], dz=pz-ring[s][1], d=Math.sqrt(dx*dx+dz*dz);
+            if(d<bestD){ bestD=d; best=w.name; }
+          }
+        } else if(typeof w.x==='number'&&typeof w.rx==='number'){
+          var ex=(px-w.x)/w.rx, ez=(pz-w.z)/w.rz;
+          if(ex*ex+ez*ez<=1.15) return w.name;
+          var dc=Math.sqrt((px-w.x)*(px-w.x)+(pz-w.z)*(pz-w.z))-Math.max(w.rx,w.rz);
+          if(dc<bestD){ bestD=dc; best=w.name; }
+        } else if(w.river||w.creek){
+          var pts=w.river||w.creek;
+          for(var t=0;t<pts.length;t++){
+            var dx2=px-pts[t][0], dz2=pz-pts[t][1], d2=Math.sqrt(dx2*dx2+dz2*dz2);
+            if(d2<70) return w.name;
+            if(d2<bestD){ bestD=d2; best=w.name; }
+          }
+        }
+      }
+      return bestD<=70?best:'';  /* shore distance only — never a far-off name */
+    }catch(e){ return ''; }
+  }
+  var placeLast='~';
+  function placePillTick(){
+    try{
+      var nm=placeNameHere();
+      if(nm!==placeLast){
+        placeLast=nm;
+        placePill.textContent=nm;
+        placePill.style.display=nm?'block':'none';
+      }
+      if(nm){
+        var r=hud.getBoundingClientRect();
+        placePill.style.top=Math.round(r.bottom+6)+'px';
+        placePill.style.left=Math.round(r.left+r.width/2)+'px';
+      }
+    }catch(e){ /* the pill is decoration; never break the clock */ }
+  }
+  try{ setInterval(placePillTick,500); }catch(e){}
+  placePillTick();
+
   // apply the starting EFFECTIVE season to the trees (a persisted
   // Time Control override wins over the calendar season)
   applySeason();

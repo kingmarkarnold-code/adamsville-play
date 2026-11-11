@@ -217,6 +217,29 @@ function wireUI(){
       rs.__pauseWired = true;
       rs.addEventListener('click', function(){ setPaused(false); });
     }
+    /* TAP-BEHIND DISMISS (ui 2026.11.11.3, Joshua's item 27): tapping
+       the space BEHIND the pause panel closes pause, exactly like
+       tapping the pause control. The overlay itself is
+       pointer-events:none by design (menus keep working over a paused
+       game), so a "behind" tap lands on the 3D world canvas — that is
+       the tap we take. Taps on any HUD control keep their own job
+       (the pause button toggles anyway); taps while a menu panel is
+       open are the menu's, and taps in HUD move mode belong to the
+       move system. Capture phase so the resume lands even if the
+       canvas handler also fires (resuming unfreezes the frame the
+       tap would otherwise feed). */
+    if (!document.__pauseBehindWired){
+      document.__pauseBehindWired = true;
+      document.addEventListener('pointerdown', function(e){
+        try {
+          if (!paused) return;
+          if (menuOpen()) return;
+          if (window.HudMove && HudMove.isActive && HudMove.isActive()) return;
+          var t = e.target;
+          if (t && (t.tagName || '').toUpperCase() === 'CANVAS') setPaused(false);
+        } catch(err){}
+      }, true);
+    }
   } catch(e){}
   syncUI();
 }
