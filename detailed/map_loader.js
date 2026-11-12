@@ -1313,7 +1313,16 @@ function createTileManager(pkg, manifest){
     if (tile.state !== 'idle') return;
     tile.state = 'loading';
     if (window.__FUNNEL && window.__FUNNEL.submit)
-      window.__FUNNEL.submit({ step: function(){ kick(tile); return true; } });
+      /* PRIORITY (2026-11-12, tree-streaming fix): the kick carries
+         its distance to the streamer's current centre, so the tree
+         tick's nearest-first resort interleaves ground kicks among
+         the tree jobs by distance instead of pinning every kick
+         behind the whole tree queue (dist-less jobs sort last —
+         measured: five wanted ground tiles still unstarted after a
+         full tree ring's queue, 240 s into a fresh-area test). The
+         step itself is unchanged: it only starts the async load. */
+      window.__FUNNEL.submit({ dist: distToTile(centre.x, centre.z, tile),
+        step: function(){ kick(tile); return true; } });
     else kick(tile);
   }
   function dispose(tile){

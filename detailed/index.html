@@ -2644,7 +2644,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    shipped a manifest whose index.html hash described bytes that never
    reached the repo (manifest .09.2, repo document still .09.1), and
    every fresh session paid one self-heal reload for it. */
-window.__DOC_UIVER = '2026.11.12.2';
+window.__DOC_UIVER = '2026.11.12.3';
 /* VER-TAG (ui 2026.11.07.25) >>>
    The on-screen version tag (#ver-tag) shows the version OF THE
    DEPLOYMENT ACTUALLY RUNNING, environment first (Joshua 2026-11-07
@@ -6240,6 +6240,47 @@ try{ __wbStage('terrain'); }catch(e){}
                spentMs: Math.round(stats.spentMs), pending: queue.length };
     }
   };
+  /* CATCH-UP DRIVE (2026-11-12, Joshua's hands-on report: "trees are
+     building slowly" in ui 2026.11.12.2). SIZED BY EVIDENCE, per his
+     funnel rule: a fresh tree ring (42 tiles, ~3,300 trees) measures
+     ~2,100-3,300 ms of funnel work, and the frame pump alone meters
+     it at FUNNEL_BUDGET_MS per FRAME — so the wall-clock build time
+     is set by the frame rate, not by the work: at a phone's 30 fps
+     the ring needs ~20-30 s to finish, while the player crosses the
+     235u build radius in ~17 s at sprint. He watches the trees build
+     because the funnel's throughput is frame-coupled. The pump's
+     4.0 ms frame budget STANDS as ruled (it is the no-stutter law);
+     what changes is that the queue no longer waits for frames alone:
+     while the game is running and work is queued, a 50 ms timer tops
+     the funnel up in small slices (<= 6 ms each, <= 150 ms of
+     catch-up work per rolling second — the same timer-drive pattern
+     the Get Ready settle already uses at bucket width, at flask
+     width). Slices stay the jobs' own units, order and verdicts are
+     untouched, and no single task the catch-up runs is longer than
+     the slices the game already produces. Hidden tabs are skipped
+     (the game is auto-paused there anyway). Measured on the
+     tree-streaming-fix rig: the fresh ring's funnel work drains in
+     ~20 s of wall time at compositor-starved frame rates where the
+     frame pump alone had not finished in 240 s. */
+  var CATCHUP_TICK_MS = 50, CATCHUP_SLICE_MS = 6, CATCHUP_RATE_MS = 150;
+  var catchupWindowStart = 0, catchupWorkedMs = 0;
+  setInterval(function(){
+    try {
+      if (!queue.length) return;
+      if (!window.__gameStarted) return;   /* the settle has its own drive */
+      if (typeof document !== 'undefined' && document.hidden) return;
+      var now = nowMs();
+      if (now - catchupWindowStart >= 1000){
+        catchupWindowStart = now; catchupWorkedMs = 0;
+      }
+      var allowance = CATCHUP_RATE_MS - catchupWorkedMs;
+      if (allowance <= 0) return;
+      var before = stats.spentMs;
+      runSlices(Math.min(CATCHUP_SLICE_MS, allowance));
+      catchupWorkedMs += (stats.spentMs - before);
+      if (queue.length) arm();   /* keep the frame pump warm behind it */
+    } catch(e){}
+  }, CATCHUP_TICK_MS);
 })();
 
 /* ================= PHASE G TREES — the near field reads as TREES
@@ -6701,7 +6742,20 @@ window.__saLandingSpot = function(){
     var P = job.P;
     while (true){
       if (job.cancelled){ delete tileWork[job.key]; return true; }
-      if (job.rr > job.rr1){ finishTileJob(job); return true; }
+      if (job.rr > job.rr1){
+        /* FINISH DEFERRAL (2026-11-12, tree-streaming fix): finishing
+           a tile (geometry assembly + computeVertexNormals over the
+           whole tile) is one indivisible unit, and it used to ride on
+           top of whatever slice reached the tile's end — measured
+           slices of 53-64 ms against the 4 ms budget on the rig, a
+           hitch by the game's own no-hitch law, and every hitch is a
+           lost frame the funnel itself needed. If this slice's budget
+           is already spent, yield once and let the finish open the
+           next slice instead: the worst slice becomes the finish
+           alone, never anchors-plus-finish. */
+        if (!job._finDeferred && yieldNow()){ job._finDeferred = true; return false; }
+        finishTileJob(job); return true;
+      }
       if (job.k < 0){
         /* enter cell (rr, cc): cover decides how many anchors it holds.
            YIELD CHECK (2026-11-08): a tile crossing many anchorless
