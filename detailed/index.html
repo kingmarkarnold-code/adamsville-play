@@ -2644,7 +2644,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    shipped a manifest whose index.html hash described bytes that never
    reached the repo (manifest .09.2, repo document still .09.1), and
    every fresh session paid one self-heal reload for it. */
-window.__DOC_UIVER = '2026.11.11.3';
+window.__DOC_UIVER = '2026.11.11.4';
 /* VER-TAG (ui 2026.11.07.25) >>>
    The on-screen version tag (#ver-tag) shows the version OF THE
    DEPLOYMENT ACTUALLY RUNNING, environment first (Joshua 2026-11-07
@@ -5743,6 +5743,54 @@ try{ __wbStage('terrain'); }catch(e){}
     _PW=SEGX*TERR_CX; _PH=SEGZ*TERR_CZ;
     TERR_SEGX=SEGX; TERR_SEGZ=SEGZ; TERR_OX=_OX; TERR_OZ=_OZ;
   }
+  /* Sheet colours, hoisted (Phase B): the aprons below use them in
+     BOTH terrain modes, so they are built before the branch. */
+  var c1 = new THREE.Color(0x5d8f4a), c2 = new THREE.Color(0x74a854), c3 = new THREE.Color(0x8aa653);
+  var tmp = new THREE.Color();
+  /* GLB TERRAIN TILES (Phase B, ui 2026.11.11.4) — the rewire: when
+     the loader's tile manager is ready (window.__PKG_TILES, built by
+     map_loader.js from zone.json's terrain.tiles descriptor), the
+     DRAWN ground is the bench master's GLB tile meshes and this plane
+     is never built. TERR_H is still filled on the identical lattice
+     from the identical bake (__TERR_H_PRE), so terrainMeshY() and
+     every consumer — the aprons below, the canopy, road seating, the
+     ground clamp — read the same numbers as the sheet build: the
+     Phase A converter derives the tiles and this grid from one mesh
+     (round-trip proof 0.0). heightAt and all its consumers are
+     untouched. If the precompute missed, TERR_H falls back to
+     heightAt() on the lattice — the sheet path's own fallback. Any
+     doubt about the manager and the else below runs the shipped
+     .11.3 sheet path, byte for byte. */
+  var _tiles=(window.__PKG_TILES && window.__PKG_TILES.ready)?window.__PKG_TILES:null;
+  if (_tiles){
+    var _nvx=SEGX+1;
+    TERR_H=new Float32Array(_nvx*(SEGZ+1));
+    var _preT=(window.__TERR_H_PRE && window.__TERR_H_PRE.length===TERR_H.length)?window.__TERR_H_PRE:null;
+    if (!_preT){
+      try{ __wbStage('terrain-sync-fallback'); }catch(e){}
+      try{ if (typeof Report!=='undefined') Report.note('terrain',{precompute:'missing — synchronous heightAt fallback engaged'}); }catch(e){}
+      try{ console.warn('[terrain] precompute missing — synchronous fallback (slow on weak hardware)'); }catch(e){}
+    }
+    for (var _iz=0;_iz<=SEGZ;_iz++){
+      var _rb=_iz*_nvx;
+      for (var _ix=0;_ix<=SEGX;_ix++){
+        TERR_H[_rb+_ix]=_preT?_preT[_rb+_ix]:heightAt(_OX+_ix*TERR_CX,_OZ+_iz*TERR_CZ);
+      }
+    }
+    _tiles.attach(scene);
+    /* Telemetry, same shape as the sheet's (the sample loop reads
+       heightAt, which is the package sampler in this mode). */
+    try{
+      var _mn2=1e9,_mx2=-1e9,_sum2=0,_n2=0;
+      for(var _sx2=0;_sx2<=20;_sx2++)for(var _sz2=0;_sz2<=20;_sz2++){
+        var _h2=heightAt(_sx2/20*WX,_sz2/20*WZ);
+        if(_h2<_mn2)_mn2=_h2; if(_h2>_mx2)_mx2=_h2; _sum2+=_h2; _n2++;
+      }
+      Report.setSys('terrain',{minH:+_mn2.toFixed(1),maxH:+_mx2.toFixed(1),meanH:+(_sum2/_n2).toFixed(1),
+        meshVerts:TERR_H.length,expectedVerts:TERR_H.length,
+        meshAtOrigin:true, status:'ok', source:'glb-tiles', tiles:_tiles.state()});
+    }catch(e){}
+  } else {
   var geo = new THREE.PlaneGeometry(_PW, _PH, SEGX, SEGZ);
   geo.rotateX(-Math.PI/2);
   geo.translate(_OX+_PW/2, 0, _OZ+_PH/2);  // v0.3 FIX: plane is centered at origin by default;
@@ -5798,6 +5846,7 @@ try{ __wbStage('terrain'); }catch(e){}
       meshAtOrigin:(terrMesh.position.x===0&&terrMesh.position.z===0),
       status:(pos.count===_expVerts)?'ok':'BROKEN'});
   }catch(e){}
+  } /* end sheet path (Phase B: the tile path above rejoins here) */
   /* CUTOVER §6.2 STAGE APRON (approved by Joshua 2026-10-16): four strip
      meshes covering STAGE minus the core rect, so the converted zones have
      drawn ground under them. Every apron vertex height is sampled from

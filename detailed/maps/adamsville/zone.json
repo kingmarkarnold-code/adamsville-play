@@ -27,6 +27,17 @@
  },
  "terrain": {
   "format": "dgrid",
+  "tiles": {
+   "manifest": "tiles/tiles-manifest.json",
+   "flavour": "todays-look",
+   "tileSizeM": 1000,
+   "grid": [
+    10,
+    14
+   ],
+   "frame": "runtime",
+   "note": "GLB terrain tiles (Phase B rewire, ui 2026.11.11.4): the DRAWN ground. Cut by the Phase A converter from the bench master (adamsville-map-2026-11-11.glb) — the same master the D-grid sampler + terrain_heights_pkg.bin lookup grids above were derived from (mesh + isolated-posts sidecar; round-trip proof 0.0 difference). Positions are runtime-frame (x, elev-225 true scale, z). Flavour todays-look = the current sheet's own tessellation; the bench keeps the full-detail flavour for later. Loader: map_loader.js tile manager; buildTerrain draws tiles when the manager is ready and falls back to the plane sheet when it is not."
+  },
   "layout": "TWO-LEVEL: heights_base_10m.bin = Float32 posts every 10 m (912 x 1302, row 0 = north edge); heights_near_2m.bin = Float32 values for the stored 2 m posts only (4556 x 6506 lattice), indexed by nearpost_mask.bin (1 bit per post, MSB-first) + nearpost_rows.bin (Uint64 LE row starts). Base posts are every 5th near post. Shipping form: the near file travels chunked as files.nearParts (ordered parts, each <= 8 MB — GitHub blob-API size limit); the loader fetches every part, concatenates them in order and verifies length + sha256 against the descriptor, reproducing the identical heights_near_2m.bin byte stream before sampling. Nothing else about the layout changes.",
   "nx": 912,
   "nz": 1302,

@@ -1179,6 +1179,211 @@ function buildLegacyGlobals(pkg){
   return { roadData: roadData, buildings: buildings, water: water };
 }
 
+/* ================= GLB terrain tiles (Phase B, ui 2026.11.11.4) ======
+   The rewire (Joshua's ruling 2026-11-11: the current state of the map
+   IS the Adamsville map and the bench GLB is its master): the DRAWN
+   ground becomes GLB tile meshes cut from the bench master, while
+   every height LOOKUP keeps reading the D-grid sampler + the
+   terrain_heights_pkg.bin bake — both derived from that same master
+   mesh by the Phase A converter (mesh + isolated-posts sidecar;
+   round-trip proof 0.0 difference at every post). Roles flipped, one
+   truth: tiles and lookups are two faces of one mesh.
+
+   The manager is deliberately conservative:
+     * it exists only when zone.json's terrain.tiles descriptor AND
+       the tiles manifest both load — any failure leaves
+       window.__PKG_TILES unset and buildTerrain draws the plane
+       sheet exactly as before (the fallback is the shipped .11.3
+       behaviour, not an error state);
+     * tiles stream around the player through the game's funnel (the
+       funnel changes WHEN work runs, never WHAT): a tile is wanted
+       within TILE_LOAD_R of the player, kept within TILE_KEEP_R, and
+       disposed beyond it — the completeness law the tree streamer
+       lives by, applied to ground (a tile must be whole long before
+       the player can reach it);
+     * a failed tile load returns the tile to idle and the streamer
+       retries it on a later tick — a hole in the ground must never
+       become permanent through one network hiccup;
+     * each tile mesh carries the sheet's own surface treatment —
+       normals computed at install, vertex colours by buildTerrain's
+       exact formula (three-green lerp + sine shade; the lerp factor
+       is per-vertex noise in both builds), world-planar grass UVs
+       and the shared SAtex grass material. SAtex lives in index.html's
+       eval scope and is published on window just before buildTerrain
+       runs, so installs that parse earlier wait as 'parsed' and
+       flush at attach()/tick — never a silently different material. */
+var TILE_LOAD_R = 2600;   /* runtime units: start loading inside this */
+var TILE_KEEP_R = 3400;   /* runtime units: dispose beyond this */
+var TILE_TICK_MS = 2000;  /* streamer poll */
+
+function createTileManager(pkg, manifest){
+  var desc = (pkg.zone && pkg.zone.terrain && pkg.zone.terrain.tiles) || {};
+  var flavour = desc.flavour || 'todays-look';
+  var fl = manifest && manifest.flavours && manifest.flavours[flavour];
+  if (!fl || !fl.tiles || !fl.tiles.length) return null;
+  var tiles = [];
+  for (var i = 0; i < fl.tiles.length; i++){
+    var t = fl.tiles[i], b = t.runtime_bounds;
+    if (!t.file || !b || b.length !== 4) return null;
+    tiles.push({ file: t.file, tx: t.tile[0], ty: t.tile[1],
+                 x0: b[0], z0: b[1], x1: b[2], z1: b[3],
+                 state: 'idle', mesh: null, geo: null });
+  }
+  var group = null, timer = null;
+  var centre = { x: pkg.spawn.x, z: pkg.spawn.z };
+  var stats = { loads: 0, installs: 0, failures: 0, disposals: 0 };
+  var _mat = null, _matFallback = null;
+  var C1 = null, C2 = null, C3 = null, TMP = null;
+
+  function distToTile(px, pz, t){
+    var dx = Math.max(t.x0 - px, 0, px - t.x1);
+    var dz = Math.max(t.z0 - pz, 0, pz - t.z1);
+    return Math.sqrt(dx * dx + dz * dz);
+  }
+  /* The player's world position, read exactly the way gps_system.js
+     reads it (the published window surface). Null until the world
+     exists — the streamer keeps the spawn neighbourhood meanwhile. */
+  function playerPos(){
+    try {
+      if (typeof car !== 'undefined' && car && car.driving)
+        return { x: car.x, z: car.z };
+      if (typeof player !== 'undefined' && player)
+        return { x: player.x, z: player.z };
+    } catch(e){}
+    return null;
+  }
+  function tileMaterial(){
+    if (_mat) return _mat;
+    if (window.SAtex && window.SAtex.mat)
+      _mat = window.SAtex.mat('grass', { vertexColors: true });
+    return _mat;
+  }
+  function install(tile){
+    var geo = tile.geo;
+    geo.computeVertexNormals();
+    if (!C1){
+      C1 = new THREE.Color(0x5d8f4a); C2 = new THREE.Color(0x74a854);
+      C3 = new THREE.Color(0x8aa653); TMP = new THREE.Color();
+    }
+    var pos = geo.attributes.position, n = pos.count;
+    var cols = new Float32Array(n * 3);
+    for (var i = 0; i < n; i++){
+      var x = pos.getX(i), z = pos.getZ(i);
+      var t = Math.random();
+      TMP.copy(C1).lerp(t < 0.5 ? C2 : C3, t < 0.5 ? t * 2 : (t - 0.5) * 2);
+      var shade = 0.92 + 0.08 * Math.sin(x * 0.01 + z * 0.013);
+      cols[i * 3] = TMP.r * shade; cols[i * 3 + 1] = TMP.g * shade;
+      cols[i * 3 + 2] = TMP.b * shade;
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(cols, 3));
+    if (window.SAtex && window.SAtex.worldUV)
+      window.SAtex.worldUV(geo, 'grass');
+    var mat = tileMaterial();
+    if (!mat){
+      if (!_matFallback)
+        _matFallback = new THREE.MeshLambertMaterial({ vertexColors: true });
+      mat = _matFallback;
+    }
+    var mesh = new THREE.Mesh(geo, mat);
+    mesh.matrixAutoUpdate = false;  /* positions are world coords; node at origin */
+    group.add(mesh);
+    tile.mesh = mesh; tile.state = 'loaded'; stats.installs++;
+  }
+  function tryInstall(tile){
+    if (!group || !tile.geo) return;      /* parsed tiles wait for attach() */
+    if (!window.SAtex) return;            /* and for SAtex's publication */
+    if (tile.state === 'parsed') install(tile);
+  }
+  function kick(tile){
+    try {
+      new THREE.GLTFLoader().load(pkg.base + 'tiles/' + tile.file,
+        function(gltf){
+          var geo = null;
+          try {
+            gltf.scene.traverse(function(o){ if (!geo && o.isMesh) geo = o.geometry; });
+          } catch(e){}
+          if (!geo){ tile.state = 'idle'; stats.failures++; return; }
+          tile.geo = geo; tile.state = 'parsed'; stats.loads++;
+          tryInstall(tile);
+        }, undefined,
+        function(err){ tile.state = 'idle'; stats.failures++; });
+    } catch(e){ tile.state = 'idle'; stats.failures++; }
+  }
+  function loadTile(tile){
+    if (tile.state !== 'idle') return;
+    tile.state = 'loading';
+    if (window.__FUNNEL && window.__FUNNEL.submit)
+      window.__FUNNEL.submit({ step: function(){ kick(tile); return true; } });
+    else kick(tile);
+  }
+  function dispose(tile){
+    if (tile.mesh){ group.remove(tile.mesh); tile.mesh = null; }
+    if (tile.geo){ try { tile.geo.dispose(); } catch(e){} tile.geo = null; }
+    tile.state = 'idle'; stats.disposals++;
+  }
+  function refresh(px, pz){
+    centre = { x: px, z: pz };
+    for (var i = 0; i < tiles.length; i++){
+      var t = tiles[i], d = distToTile(px, pz, t);
+      if (d <= TILE_LOAD_R) loadTile(t);
+      else if (d > TILE_KEEP_R && (t.state === 'loaded' || t.state === 'parsed'))
+        dispose(t);
+    }
+  }
+  function tick(){
+    var p = playerPos();
+    if (p) refresh(p.x, p.z);
+    for (var i = 0; i < tiles.length; i++) tryInstall(tiles[i]);
+  }
+  function attach(scene){
+    if (group || !scene) return;
+    group = new THREE.Group();
+    scene.add(group);
+    for (var i = 0; i < tiles.length; i++) tryInstall(tiles[i]);
+    refresh(centre.x, centre.z);
+    timer = setInterval(function(){ try { tick(); } catch(e){} }, TILE_TICK_MS);
+  }
+  function state(){
+    var loaded = 0, inflight = 0, i;
+    for (i = 0; i < tiles.length; i++){
+      if (tiles[i].state === 'loaded') loaded++;
+      else if (tiles[i].state === 'loading' || tiles[i].state === 'parsed')
+        inflight++;
+    }
+    return { ready: true, flavour: flavour, total: tiles.length,
+             loaded: loaded, inflight: inflight, attached: !!group,
+             loads: stats.loads, installs: stats.installs,
+             failures: stats.failures, disposals: stats.disposals };
+  }
+  return { ready: true, flavour: flavour, attach: attach, state: state,
+           tiles: tiles, refresh: refresh };
+}
+
+/* startTiles(pkg) — fetch the tiles manifest and build the manager.
+   ALWAYS resolves (tile absence is a fallback, never a boot failure):
+   bootWorld chains it after the bake fetch so the seam's promise
+   covers the manager's existence before buildTerrain picks its path. */
+function startTiles(pkg){
+  var desc = pkg.zone && pkg.zone.terrain && pkg.zone.terrain.tiles;
+  if (!desc || !desc.manifest) return Promise.resolve(false);
+  return fetchJSON(pkg.base + desc.manifest).then(function(man){
+    var mgr = null;
+    try { mgr = createTileManager(pkg, man); } catch(e){}
+    if (!mgr){
+      note('terrain tiles: manifest carries no usable flavour — sheet fallback');
+      return false;
+    }
+    window.__PKG_TILES = mgr;
+    note('terrain tiles ready: ' + mgr.flavour + ' — ' + mgr.state().total +
+         ' tiles (drawn ground is the bench GLB; lookups unchanged)');
+    return true;
+  }).catch(function(err){
+    note('terrain tiles unavailable (' + ((err && err.message) || err) +
+         ') — sheet fallback');
+    return false;
+  });
+}
+
 /* bootWorld() — the Phase D seam entry, called by index.html's zone
    seam BEFORE the deferred queue continues to the world build. Loads
    the package, re-expresses it as the legacy-shaped globals (stashed
@@ -1276,7 +1481,13 @@ function bootWorld(){
             window.__TERR_H_PRE = arr.length ? arr : null;
             return true;
           })
-          .catch(function(){ window.__TERR_H_PRE = null; return true; });
+          .catch(function(){ window.__TERR_H_PRE = null; return true; })
+          /* Phase B (ui 2026.11.11.4): after the bake, build the GLB
+             tile manager (startTiles always resolves — a tiles miss
+             leaves __PKG_TILES unset and buildTerrain keeps the
+             sheet). Chained here so the seam's await covers the
+             manager before the core block evaluates. */
+          .then(function(){ return startTiles(pkg); });
       }
       return fetchBin(pkg.base + 'terrain_heights_600x800.bin')
         .then(function(buf){
