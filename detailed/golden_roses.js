@@ -51,11 +51,25 @@
    -> __ROSES.onDropSpawn(x, z). Nothing here typeof-guards a
    load-bearing path: if the published surface is missing the module
    stays unbooted and says so in its Report readout.
+
+   THE AREA GLOW (Joshua, 2026-11-11 — "That's the one"): roses get
+   NO pillar and NO pinpoint — "We don't want to give away the dead
+   spot of the roses." Instead the AREA around each uncollected,
+   standing rose carries a broad GOLDEN GLOW: a soft pool of golden
+   light on the ground with a low golden haze above it, fog-immune
+   like the destination beacon so it can be spotted from across the
+   map. From far off the patch is CONDENSED (one bounded pool, not
+   horizon-wide); as the player gets closer the glow SHRINKS,
+   guiding them in — but it never collapses to the exact spot: at
+   the floor size it is still an area, and the last stretch is
+   hunted by the rose's own shine. The glow lives and dies with the
+   standing plant: picked = gone, trampled = gone, regrown = back.
+   A dropped (loose) rose has no glow — it was already found once.
    ============================================================================ */
 (function goldenRoses(){
 'use strict';
 
-var VERSION = '2026.11.09.1';
+var VERSION = '2026.11.11.1';
 var LS_KEY = 'sa_roses_v1';
 var KIND = 'rose', RNAME = 'Golden Rose';
 var TOTAL = 10;                 /* the quest is TEN roses (Joshua) */
@@ -69,6 +83,19 @@ var TRAMPLE_R = 0.45;           /* "walking over the top of it" */
    shows the right stage. The loose petals do NOT fade: they stay
    lying on the restored grass. */
 var PICK_FADE_MS = 150000;
+
+/* AREA GLOW sizing (Joshua's design, 2026-11-11): the glow's radius
+   follows the player's distance to the rose. Far away it is the full
+   condensed patch (GLOW_R_FAR); it shrinks smoothly on approach and
+   stops at the floor (GLOW_R_NEAR) inside GLOW_D_NEAR — an AREA to
+   the very end, never the exact spot. The 0.65 power keeps the wide
+   patch up while the player is still travelling, then narrows it
+   steadily through the mid-range. World units throughout. */
+var GLOW_R_FAR = 120;      /* radius of the far condensed patch */
+var GLOW_R_NEAR = 15;      /* the floor — a modest pool, not a point */
+var GLOW_D_FAR = 500;      /* at/past this distance: full patch */
+var GLOW_D_NEAR = 40;      /* at/inside this distance: the floor */
+var GLOW_CURVE = 0.65;
 
 /* THE SEVEN NAMED SITES (runtime coords, each one verified against the
    shipped terrain in this build's recon boots: dry grass, not in
@@ -555,6 +582,111 @@ function buildPickedMark(THREE, G, matsDull, seed){
   return plant;
 }
 
+/* ========================== area glow =============================== */
+/* Joshua's golden AREA glow (2026-11-11): two shared, cheap pieces
+   per standing rose — a flat POOL of golden light on the ground
+   (radial-gradient disc, additive) and a low HAZE standing over it
+   (open cylinder, vertex-colour falloff so the gold is strong at the
+   ground line and melts away with height — with additive blending
+   black adds nothing, so the falloff IS the soft edge). Both
+   materials are fog:false, the destination beacon's own trick, so
+   the glow pushes through the scene fog and can be spotted from
+   across the map. depthTest stays ON: a hill between you and the
+   rose hides the glow, same as the beacon. All geometry, textures
+   and materials are built ONCE and shared by every rose; the only
+   per-rose state is a Group and two scale values. */
+var GLOWA = null;
+function buildGlowAssets(THREE){
+  if (GLOWA) return GLOWA;
+  var cv = document.createElement('canvas'); cv.width = cv.height = 256;
+  var cx = cv.getContext('2d');
+  var gr = cx.createRadialGradient(128, 128, 0, 128, 128, 128);
+  gr.addColorStop(0.00, 'rgba(255,199,92,0.90)');
+  gr.addColorStop(0.35, 'rgba(255,180,70,0.48)');
+  gr.addColorStop(0.70, 'rgba(255,160,46,0.17)');
+  gr.addColorStop(1.00, 'rgba(255,150,40,0)');
+  cx.fillStyle = gr; cx.fillRect(0, 0, 256, 256);
+  var poolMat = new THREE.MeshBasicMaterial({
+    map: new THREE.CanvasTexture(cv), transparent: true,
+    depthWrite: false, blending: THREE.AdditiveBlending, fog: false });
+  var hazeGeo = new THREE.CylinderGeometry(1, 1, 1, 40, 4, true);
+  hazeGeo.translate(0, 0.5, 0);           /* base sits at y=0 */
+  var hp = hazeGeo.attributes.position, hcol = [];
+  for (var i = 0; i < hp.count; i++){
+    var t = Math.min(1, Math.max(0, hp.getY(i)));   /* 0 base, 1 top */
+    var b = Math.pow(1 - t, 1.4);
+    /* brighter than 1.0 on purpose: additive light has to hold its
+       own against a lit sky at cross-map range (the far mockup is a
+       dawn scene; at noon this is the difference between a shimmer
+       and nothing). */
+    hcol.push(1.35 * b, 0.88 * b, 0.26 * b);
+  }
+  hazeGeo.setAttribute('color', new THREE.Float32BufferAttribute(hcol, 3));
+  var hazeMat = new THREE.MeshBasicMaterial({
+    vertexColors: true, transparent: true, opacity: 1.0,
+    /* FrontSide ONLY, on purpose: from OUTSIDE you see the haze
+       wall; from INSIDE the glow (standing in the pool, hunting the
+       rose by its shine) the walls are back faces and culled, so the
+       world never takes a gold bath through the camera — the pool
+       underfoot is the close-range face of the glow. */
+    side: THREE.FrontSide, depthWrite: false,
+    blending: THREE.AdditiveBlending, fog: false });
+  GLOWA = {
+    poolGeo: new THREE.CircleGeometry(1, 40), poolMat: poolMat,
+    hazeGeo: hazeGeo, hazeMat: hazeMat
+  };
+  return GLOWA;
+}
+/* the glow's radius for a player `d` world units from the rose:
+   full condensed patch far off, shrinking on approach, floored at
+   GLOW_R_NEAR — an area to the very end, never the exact spot. */
+function glowRadius(d){
+  var t = Math.min(1, Math.max(0, (d - GLOW_D_NEAR) / (GLOW_D_FAR - GLOW_D_NEAR)));
+  t = Math.pow(t, GLOW_CURVE);
+  return GLOW_R_NEAR + (GLOW_R_FAR - GLOW_R_NEAR) * t;
+}
+function attachGlow(site){
+  var rt = runtime[site.id];
+  if (!rt || rt.glow) return;
+  var A = buildGlowAssets(W.THREE);
+  var grp = new THREE.Group();
+  grp.position.set(site.x, W.heightAt(site.x, site.z), site.z);
+  var pool = new THREE.Mesh(A.poolGeo, A.poolMat);
+  pool.rotation.x = -Math.PI / 2; pool.position.y = 0.25;
+  pool.renderOrder = 5; pool.frustumCulled = false;
+  var haze = new THREE.Mesh(A.hazeGeo, A.hazeMat);
+  haze.renderOrder = 6; haze.frustumCulled = false;
+  grp.add(pool); grp.add(haze);
+  W.scene.add(grp);
+  rt.glow = { grp: grp, pool: pool, haze: haze, r: GLOW_R_FAR, d: -1 };
+  sizeGlow(site);
+}
+function detachGlow(site){
+  var rt = runtime[site.id];
+  if (!rt || !rt.glow) return;
+  W.scene.remove(rt.glow.grp);
+  rt.glow = null;
+}
+function sizeGlow(site){
+  var rt = runtime[site.id];
+  if (!rt || !rt.glow || !W.player) return;
+  var dx = W.player.x - site.x, dz = W.player.z - site.z;
+  var d = Math.sqrt(dx * dx + dz * dz);
+  var R = glowRadius(d);
+  rt.glow.r = R; rt.glow.d = d;
+  rt.glow.pool.scale.set(R, R, 1);
+  rt.glow.haze.scale.set(R, 4 + R * 0.22, R);
+}
+/* every render frame (called from roseTick before its 0.15 s
+   throttle, so the shrink tracks the player smoothly): two scale
+   writes per standing rose, no allocation. */
+function glowTick(){
+  for (var i = 0; i < SITES.length; i++){
+    var rt = runtime[SITES[i].id];
+    if (rt && rt.glow) sizeGlow(SITES[i]);
+  }
+}
+
 /* ============================ popups ================================ */
 /* First-pickup + completion share the big card; later pickups get the
    small count toast. Styled to the game's HUD family (dark card, gold
@@ -674,6 +806,7 @@ function plantSite(site){
   p.roseSite = site.id;
   runtime[site.id] = { pickup: p, wreck: null, mark: null };
   state.sites[site.id].s = 'planted';
+  attachGlow(site);   /* a standing, uncollected rose wears its glow */
 }
 function wreckSite(site){
   var g = buildDestroyed(W.THREE, W.G, W.matsDull, 20261108 + site.id * 131);
@@ -711,6 +844,7 @@ function applyMarkFade(site){
 function clearSiteObjects(site){
   var rt = runtime[site.id];
   if (!rt) return;
+  detachGlow(site);   /* picked or trampled: the glow dies with the plant */
   if (rt.pickup){
     var ix = W.pickups.indexOf(rt.pickup);
     if (ix >= 0) W.pickups.splice(ix, 1);
@@ -807,8 +941,10 @@ function reportSys(){
         var st = state.sites[s.id].s;
         if (st === 'planted') planted++; else if (st === 'crushed') crushed++; else gone++;
       });
+      var glows = 0;
+      SITES.forEach(function(s){ var r2 = runtime[s.id]; if (r2 && r2.glow) glows++; });
       W.Report.setSys('roses', { version: VERSION, count: roseCount(),
-        planted: planted, crushed: crushed, gone: gone,
+        planted: planted, crushed: crushed, gone: gone, glows: glows,
         sitesNamed: SITES.length, total: TOTAL });
     }
   } catch (e) {}
@@ -818,6 +954,7 @@ function reportSys(){
 var tickAcc = 0;
 function roseTick(dt){
   if (!state || !W) return;
+  glowTick();   /* the area glow tracks the player every frame */
   tickAcc += (typeof dt === 'number' && dt > 0 && dt < 1) ? dt : 0.016;
   if (tickAcc < 0.15) return;
   tickAcc = 0;
@@ -931,7 +1068,9 @@ window.__ROSES = {
         hasPickup: !!(rt && rt.pickup), hasWreck: !!(rt && rt.wreck),
         hasMark: !!(rt && rt.mark),
         dirtF: (rt && rt.mark && typeof rt.mark.userData.dirtF === 'number') ? Math.round(rt.mark.userData.dirtF * 100) / 100 : null,
-        shine: !!(rt && rt.pickup && rt.pickup.mesh && rt.pickup.mesh.userData.shine) };
+        shine: !!(rt && rt.pickup && rt.pickup.mesh && rt.pickup.mesh.userData.shine),
+        glow: (rt && rt.glow) ? { on: true, r: Math.round(rt.glow.r * 10) / 10,
+          d: Math.round((rt.glow.d || 0) * 10) / 10 } : { on: false, r: 0, d: null } };
     });
   },
   ui: function(){ var u = buildUI(); return { big: u.bigShown(), count: u.countShown(), countText: u.countText() }; },
