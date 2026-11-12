@@ -233,6 +233,28 @@
    runs updateGuidance every frame — the HUD arrow and the turn
    band read the same guidance state the chevron used to.
 
+   v1.71 BEACON REDESIGN (Joshua 2026-11-11, from the real-game
+   pictures: at 500u across open ground the old 6-across pillar read
+   as a thin green sliver on the horizon — "make it a cylinder from
+   the sky to the ground, five times as wide, that shrinks as you
+   get closer"):
+     1. SKY TO GROUND — the pillar is 400u tall now (BEACON_H),
+        based ON the destination's ground instead of hovering over
+        it: at any normal vantage the top runs out of the sky, no
+        visible rim. The v1.68 fog immunity, the v1.69 neon green,
+        the slow rotation, the pulse and the depth behaviour (a
+        hill still hides what is behind it) are all unchanged.
+     2. IT SHRINKS AS YOU APPROACH — the diameter is a function of
+        the player's distance (beaconDiameter): 30 across — five
+        times the old pillar — at 500u and beyond, easing down to
+        the old pillar's 6 across inside 25u, the floor reached
+        only on final approach, so the narrowing itself is the
+        homing cue. The geometry is a unit cylinder scaled per
+        frame by gpsTick (sizeBeacon) — same single mesh, scale
+        writes only, nothing allocated per frame.
+   The top HUD arrow, the nav bar and the minimap/full-map route
+   lines are NOT touched by this pass.
+
    Documentation comments are required on all game code — Joshua's rule.
    ============================================================================ */
 (function(){
@@ -2358,6 +2380,42 @@ function groundY(x,z){
   try{ return (typeof heightAt==='function'?heightAt(x,z):0)+2.5; }
   catch(e){ return 2.5; }
 }
+/* ---------------------------------------------------------------------------
+   v1.71 BEACON SIZE + HEIGHT (Joshua 2026-11-11 — see the header note).
+   BEACON_H: 400u. From the 500u far vantage the top stands ~38
+   degrees above the horizon — above the top of a level 62-degree
+   view, so the pillar runs out of the sky instead of ending in a
+   visible rim; closer in it is further out of frame still. And the
+   whole pillar stays well inside even the shortest camera far
+   plane (1500u) at every range where its base is in view, so the
+   top is never clipped off mid-air either.
+   beaconDiameter(d): the pillar's DIAMETER in world units at
+   player distance d. 30 across (five times the old pillar) at
+   500u and beyond, easing down to the old pillar's 6 across inside
+   25u — the floor is reached only on final approach, so the pillar
+   keeps narrowing as a homing cue instead of snapping small early.
+   The pow() ease holds the wide end longer: at 150u it is still
+   ~15 across, about two and a half times the old pillar.
+   --------------------------------------------------------------------------- */
+var BEACON_H=400;
+function beaconDiameter(d){
+  var t=(d-25)/475;
+  if (t<0) t=0; else if (t>1) t=1;
+  return 6+24*Math.pow(t,0.7);
+}
+/* Size the beacon for this frame: distance diameter x the standing
+   pulse (the pre-v1.71 pulse, +-18% at the same rate). Called once
+   at build so the first frame is already correct, then every
+   gpsTick. Writes scale only — no allocation. */
+function sizeBeacon(){
+  if (!beacon || !route) return;
+  var p;
+  try{ p=playerPos(); }catch(e){ return; }
+  var dx=route.destX-p.x, dz=route.destZ-p.z;
+  var d=Math.sqrt(dx*dx+dz*dz);
+  var r=(beaconDiameter(d)/2)*(1+Math.sin(pulseT*2.4)*0.18);
+  beacon.scale.set(r,1,r);
+}
 function rebuildRouteMesh(){
   /* v1.67: this used to also build the neon route ribbon (THREE.Line)
      through the world. Joshua's standing rule is arrow-only navigation
@@ -2367,9 +2425,10 @@ function rebuildRouteMesh(){
      rebuild "the route's 3D visuals" on every (re)route and clear. */
   try{
     if (beacon && beacon.parent) beacon.parent.remove(beacon);
+    if (beacon){ try{ beacon.geometry.dispose(); beacon.material.dispose(); }catch(e){} }
     beacon=null;
     if (!route) return;
-    // destination beacon: pulsing cylinder
+    // destination beacon: sky-to-ground shrinking pillar (v1.71)
     /* v1.68 BEACON PUSHES THROUGH THE FOG (Joshua 2026-11-07 15:05:
        "Let the beacon push through the fog"). Scene fog (900u on the
        laptop tier, 1500u medium) used to swallow the pillar whole at
@@ -2381,12 +2440,23 @@ function rebuildRouteMesh(){
        v1.69 (Joshua 2026-11-07 15:28): the colour below is NEON
        GREEN 0x39FF14, replacing the shipped blue — colour only;
        size, pulse, opacity and the fog immunity above are exactly
-       as v1.68 left them. */
-    var bgeo=new THREE.CylinderGeometry(3,3,30,12,1,true);
+       as v1.68 left them.
+       v1.71 (Joshua 2026-11-11): the GEOMETRY is what changed —
+       a unit cylinder BEACON_H tall, its origin translated to the
+       base so position.y is the ground line and scale.x/z is the
+       radius gpsTick drives (see beaconDiameter/sizeBeacon above).
+       The base is buried 3u under the destination's ground line so
+       the pillar meets the ground even on a slope (groundY() is
+       heightAt+2.5, hence -5.5); the old pillar hovered, its base
+       at heightAt+2.5. Material is byte-for-byte the v1.69 one. */
+    var bgeo=new THREE.CylinderGeometry(1,1,BEACON_H,24,1,true);
+    bgeo.translate(0,BEACON_H/2,0);
     var bmat=new THREE.MeshBasicMaterial({color:0x39FF14, transparent:true,
       opacity:0.55, side:THREE.DoubleSide, depthWrite:false, fog:false});
     beacon=new THREE.Mesh(bgeo, bmat);
-    beacon.position.set(route.destX, groundY(route.destX,route.destZ)+15, route.destZ);
+    beacon.name='gps-destination-beacon';
+    beacon.position.set(route.destX, groundY(route.destX,route.destZ)-5.5, route.destZ);
+    sizeBeacon();
     beacon.renderOrder=6;
     scene.add(beacon);
   }catch(e){}
@@ -2409,10 +2479,10 @@ function gpsTick(){
        is unchanged.) */
     updateGuidance(p);
     pulseT+=0.06;
-    // beacon pulse
+    // beacon pulse + v1.71 distance sizing (sizeBeacon folds the
+    // standing +-18% pulse into the distance diameter)
     if (beacon){
-      var bs=1+Math.sin(pulseT*2.4)*0.18;
-      beacon.scale.set(bs,1,bs);
+      sizeBeacon();
       beacon.rotation.y+=0.02;
     }
     // arrival check (throttled to ~2Hz)
