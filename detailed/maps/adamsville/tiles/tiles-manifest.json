@@ -10,8 +10,8 @@
  "frame": "runtime (x, elev-225 true scale, z)",
  "flavours": {
   "todays-look": {
-   "total_bytes": 21211644,
-   "gzip9_total_bytes": 8020934,
+   "total_bytes": 21211780,
+   "gzip9_total_bytes": 8020924,
    "n_tiles": 140,
    "tiles": [
     {
@@ -2380,8 +2380,8 @@
      ],
      "verts": 5080,
      "tris": 9728,
-     "bytes": 178368,
-     "sha256": "b75064590e776591f9c95a8ce29a6ee1c8e7fef3554b8f30650af07a6eee963b"
+     "bytes": 178436,
+     "sha256": "47a64f948bf2712cfd9656e8ba2f0a1a782296aeb2133206c9a9fafe0e252f15"
     },
     {
      "file": "todays-look/tile_10_03.glb",
@@ -2403,8 +2403,8 @@
      ],
      "verts": 5080,
      "tris": 9728,
-     "bytes": 178368,
-     "sha256": "67f1a538f0943c3dcf693194ef7f891d1e400edbbc1c3f378b863cd1792dfc5c"
+     "bytes": 178436,
+     "sha256": "8d3a954e3b94736dde9ffd8910b617ad0d80058811e36b95e82f362500e86830"
     },
     {
      "file": "todays-look/tile_10_04.glb",

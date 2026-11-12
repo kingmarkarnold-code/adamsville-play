@@ -1,11 +1,11 @@
 {
   "version": "2.0.0",
-  "map_version": "2026.11.11.2",
+  "map_version": "2026.11.12.1",
   "files": [
     {
       "name": "maps/adamsville/zone.json",
-      "size": 14290,
-      "sha256": "82afc75f0481defa37c0f775503b9f940c87f4967ee60b3259d51d0c0a8cec42",
+      "size": 14395,
+      "sha256": "0e8300fa031c8122b0b27b04af19e389968f856c3f18652b1fe60068724f24fe",
       "hash": ""
     },
     {
@@ -59,7 +59,7 @@
     {
       "name": "maps/adamsville/heights_base_10m.bin",
       "size": 4749696,
-      "sha256": "a4ec76a0cb5fed463aa32262db587ad62b4cfb041dd0ecfc02349921269d4d15",
+      "sha256": "ada367cf9e8b21f6cbea02fe9d0c2876e7b056e25e1153c9673567e562980b46",
       "hash": ""
     },
     {
@@ -89,7 +89,7 @@
     {
       "name": "maps/adamsville/heights_near_2m.bin.part04",
       "size": 8000000,
-      "sha256": "59627107ad17ae4d44eed2a5333aab563f97f9b7bad87b4d061e11eb68ce36fd",
+      "sha256": "822a710e321836293d7e8fb94bc9bccce488545cb60296cd8ac03da940515745",
       "hash": ""
     },
     {
@@ -113,7 +113,7 @@
     {
       "name": "maps/adamsville/terrain_heights_pkg.bin",
       "size": 2320164,
-      "sha256": "d8910c09bb92e8a919b820b806b9f919f509e46b32758b94feb256adf75fda2f",
+      "sha256": "4568ffc22ed69b5c942c4437c198d387504efc628c96111ec900203d9f959057",
       "hash": ""
     },
     {
@@ -124,8 +124,8 @@
     },
     {
       "name": "maps/adamsville/tiles/tiles-manifest.json",
-      "size": 59280,
-      "sha256": "83c6c0161dcdf0d9a6811f1a2e98c5b103ac5ebd782c2f54a4753356a77a1d46",
+      "size": 59279,
+      "sha256": "53d678299279e6bc6d4cd256cc4ec296176487e0bde4fadf4a321a79ba95de09",
       "hash": ""
     },
     {
@@ -742,14 +742,14 @@
     },
     {
       "name": "maps/adamsville/tiles/todays-look/tile_10_02.glb",
-      "size": 178368,
-      "sha256": "b75064590e776591f9c95a8ce29a6ee1c8e7fef3554b8f30650af07a6eee963b",
+      "size": 178436,
+      "sha256": "47a64f948bf2712cfd9656e8ba2f0a1a782296aeb2133206c9a9fafe0e252f15",
       "hash": ""
     },
     {
       "name": "maps/adamsville/tiles/todays-look/tile_10_03.glb",
-      "size": 178368,
-      "sha256": "67f1a538f0943c3dcf693194ef7f891d1e400edbbc1c3f378b863cd1792dfc5c",
+      "size": 178436,
+      "sha256": "8d3a954e3b94736dde9ffd8910b617ad0d80058811e36b95e82f362500e86830",
       "hash": ""
     },
     {
