@@ -58,7 +58,8 @@
      "verts": 5081,
      "tris": 9815,
      "bytes": 179440,
-     "sha256": "e084226deaa5ad358808167303e63688900d34a343fb13bb9b6e359f387275d3"
+     "sha256": "e752f90ca9ada215192727cd870b55f1069cc456662fcd67ca8a45eb4a7ca04a",
+     "size": 291616
     },
     {
      "file": "todays-look/tile_00_02.glb",
@@ -81,7 +82,8 @@
      "verts": 5082,
      "tris": 9880,
      "bytes": 180288,
-     "sha256": "b7ad2b27b43c2fee518a9994a40937a8517a10bc55db38941100315fc743022b"
+     "sha256": "129a71754f2a705f8e8628b219671b666e97a01ce7937c2181526b4c212fc7e1",
+     "size": 211612
     },
     {
      "file": "todays-look/tile_00_03.glb",
@@ -357,7 +359,8 @@
      "verts": 5005,
      "tris": 9728,
      "bytes": 177548,
-     "sha256": "c559b99a8660eab4930ded74f6947199437d7886b939184b8f14d22574483e94"
+     "sha256": "5061c20f10c149deb59a909b1b527480c95925df109b68eb9fff68110b6e624f",
+     "size": 216108
     },
     {
      "file": "todays-look/tile_01_05.glb",
@@ -426,7 +429,8 @@
      "verts": 5068,
      "tris": 9728,
      "bytes": 178224,
-     "sha256": "02833e5ff1db2587f8da78a458682226deb6c1e389c32284ea425926c3da9d6f"
+     "sha256": "eb6aad7843ed40c842bbdbbf4fe7af5be0f13cab302c373931ddfc5d79b52de0",
+     "size": 230976
     },
     {
      "file": "todays-look/tile_01_08.glb",
@@ -587,7 +591,8 @@
      "verts": 5005,
      "tris": 9728,
      "bytes": 177548,
-     "sha256": "5e726b042fb503e04af646768778933c3d35a8fad4a9219b2af189f9c11c620f"
+     "sha256": "5afa3aa5341b9eb32f69fc4cec0ee2a3c2fb0e7eacb60b6be23aa799062d506b",
+     "size": 264924
     },
     {
      "file": "todays-look/tile_02_05.glb",
@@ -656,7 +661,8 @@
      "verts": 5068,
      "tris": 9728,
      "bytes": 178228,
-     "sha256": "3eaf1a70dd52f42e815bd4095f733bd1fd7bf36f4e1d8b8f8af04f12db584ab5"
+     "sha256": "f64d7506cb1de594077ee96737b1beb9cb6edc0dbab3b008552c450596a06c1b",
+     "size": 309256
     },
     {
      "file": "todays-look/tile_02_08.glb",
@@ -748,7 +754,8 @@
      "verts": 5079,
      "tris": 9739,
      "bytes": 178504,
-     "sha256": "385fdcc51c257738c659c9feda1ac1aab3600cca9db68f471be1f039a70889f1"
+     "sha256": "f3229ae20c08acc0b931039b9a591c612ab236bdff8b632cd7d66ca784496fd1",
+     "size": 275748
     },
     {
      "file": "todays-look/tile_03_02.glb",
@@ -771,7 +778,8 @@
      "verts": 5081,
      "tris": 9804,
      "bytes": 179296,
-     "sha256": "b7fd166031547d3b32081c082ad47d1d5575540b241601ece43a686c7401f147"
+     "sha256": "3c12aa28a3b341e92364618e5543f868b0043b8b2ca7c43ca8497b34a958c565",
+     "size": 195528
     },
     {
      "file": "todays-look/tile_03_03.glb",
@@ -955,7 +963,8 @@
      "verts": 5145,
      "tris": 9792,
      "bytes": 179916,
-     "sha256": "fc39732fd20f2cf84e1ea2ce1a1453d7843829c08d1a0be437e4553394b8c332"
+     "sha256": "5e61ecb8ecbf7aeea7a6a1f27c9331a07293d519c4c9bbd0611ed30368bafc25",
+     "size": 202052
     },
     {
      "file": "todays-look/tile_04_01.glb",
@@ -978,7 +987,8 @@
      "verts": 5079,
      "tris": 9664,
      "bytes": 177600,
-     "sha256": "7926bd0f1416a2940e3443a8d842634bcceed8a8c20255fd3bfe09d80cda0ace"
+     "sha256": "89268ffa79db20dc6e64ec91f4ae369cf712e082ad3a059d8de2b0f1ad5f9361",
+     "size": 222444
     },
     {
      "file": "todays-look/tile_04_02.glb",
@@ -1047,7 +1057,8 @@
      "verts": 5080,
      "tris": 9728,
      "bytes": 178444,
-     "sha256": "7f3d0f202da85681630450f33063e35a2f5e3dfe368e8174e1f840ae01789628"
+     "sha256": "f0cdb607699f4061db0d46f3ff24e8ef3c2d6ea70195235faff2ae97647ba9d6",
+     "size": 227720
     },
     {
      "file": "todays-look/tile_04_05.glb",
@@ -1070,7 +1081,8 @@
      "verts": 5079,
      "tris": 9664,
      "bytes": 177588,
-     "sha256": "36ae8daf17183f6d7f4299b292cd54c1cb5e9c9fdf8fa2b485b92c6d005c3e18"
+     "sha256": "e3c73422e5b9d3f0de124fbab758cb353cf0051532703577fef9702d63f4bbfe",
+     "size": 185192
     },
     {
      "file": "todays-look/tile_04_06.glb",
@@ -1185,7 +1197,8 @@
      "verts": 5145,
      "tris": 9868,
      "bytes": 180828,
-     "sha256": "1971505069d2f5ce0e25faaecb0f25e6a4a6128490c3abda415168caefe2bb2f"
+     "sha256": "117b76c5bc65394c89dfaaa3ecbc34bacdfd67ab57a16efa22d6c51437fe551c",
+     "size": 247892
     },
     {
      "file": "todays-look/tile_05_01.glb",
@@ -1254,7 +1267,8 @@
      "verts": 5081,
      "tris": 9804,
      "bytes": 179356,
-     "sha256": "fe9b62736feccbffa7754109e3f1ea200138c54aa4d556c8cdd2d9e95f43f78b"
+     "sha256": "f4a082f8b247b506a25f442d07d72066747b7ede838f21ad190db8a9a79f3202",
+     "size": 206820
     },
     {
      "file": "todays-look/tile_05_04.glb",
@@ -1277,7 +1291,8 @@
      "verts": 5081,
      "tris": 9804,
      "bytes": 179304,
-     "sha256": "1d60a18b0b80f5fe47c221fba3a0d6fdd4bc7bf9ae84a94968a3336a95b4559d"
+     "sha256": "aa7b18af23327961ae398c7daca7a2482d999d850c2511a7efcd3d48c19ef6b9",
+     "size": 202292
     },
     {
      "file": "todays-look/tile_05_05.glb",
@@ -1415,7 +1430,8 @@
      "verts": 5069,
      "tris": 9792,
      "bytes": 179004,
-     "sha256": "b01db18b076e2314847646c0aef36aef62c8d36ac0efbd433d7b0c2ae2b8c049"
+     "sha256": "074436f9fbf02efcadc68fe383528766204c4f22187f6464eec59a37ad36e8f3",
+     "size": 222216
     },
     {
      "file": "todays-look/tile_06_01.glb",
@@ -1438,7 +1454,8 @@
      "verts": 5004,
      "tris": 9664,
      "bytes": 176768,
-     "sha256": "d0add02c852aac9649aa6485ed657b487059c6f5d0cda69c795ac94cd439d13f"
+     "sha256": "35e14824acbc3b5ab01b218c9e35458f09f99d663926f6b4a1206dbd16824408",
+     "size": 201108
     },
     {
      "file": "todays-look/tile_06_02.glb",
@@ -1484,7 +1501,8 @@
      "verts": 5005,
      "tris": 9728,
      "bytes": 177540,
-     "sha256": "a26438f61ab39292a6e53d6b68d71133dbe628413504496df95ef71147e04ece"
+     "sha256": "85ebb173303c22766c255f20276a9725ae1cb363067bc178b2fea44cfcc8a543",
+     "size": 264052
     },
     {
      "file": "todays-look/tile_06_04.glb",
@@ -1507,7 +1525,8 @@
      "verts": 5005,
      "tris": 9728,
      "bytes": 177480,
-     "sha256": "6b13ad912aa7db91300deab63ea6becf42144231b6c2a1963f1e236db4101275"
+     "sha256": "1f9a6491a397edd3e68eb9fd3764bf3e66ec95a5098813b14b8e366cc4fccf6e",
+     "size": 292668
     },
     {
      "file": "todays-look/tile_06_05.glb",
@@ -1875,7 +1894,8 @@
      "verts": 5069,
      "tris": 9792,
      "bytes": 179072,
-     "sha256": "bfd49e7a06aaeb06c36656361383c3e0ed16c5ef6b6ca4a03b95e7527077a732"
+     "sha256": "588d6cfcbb5bf0813445b2475d5c78c00988d5581333031d8270107f09f1a7d0",
+     "size": 225900
     },
     {
      "file": "todays-look/tile_08_01.glb",
@@ -2381,7 +2401,8 @@
      "verts": 5080,
      "tris": 9728,
      "bytes": 178436,
-     "sha256": "47a64f948bf2712cfd9656e8ba2f0a1a782296aeb2133206c9a9fafe0e252f15"
+     "sha256": "0e6e0558dc103e4624302c2216ac676ac05d5ce0fe52929664ffd6cda047665c",
+     "size": 208092
     },
     {
      "file": "todays-look/tile_10_03.glb",
@@ -2404,7 +2425,8 @@
      "verts": 5080,
      "tris": 9728,
      "bytes": 178436,
-     "sha256": "8d3a954e3b94736dde9ffd8910b617ad0d80058811e36b95e82f362500e86830"
+     "sha256": "1a6ba089fc534813f7652c9d7e4c44560fc04ba4e7647faeb26f7ecfd94e5148",
+     "size": 205776
     },
     {
      "file": "todays-look/tile_10_04.glb",
@@ -2565,7 +2587,8 @@
      "verts": 5145,
      "tris": 9868,
      "bytes": 180828,
-     "sha256": "95d2bd38939a6942f64c29170b020f6ca154d3f03b31bb1529365a523775e279"
+     "sha256": "8631f7dd4a077cc33128ad2ff0f4eca86d119fc22778fbfc98ea8d053f19f166",
+     "size": 441052
     },
     {
      "file": "todays-look/tile_11_01.glb",
@@ -2588,7 +2611,8 @@
      "verts": 5081,
      "tris": 9740,
      "bytes": 178536,
-     "sha256": "7cc56ec268450ebf4360c93530b4a7be770ed3e04e0b6d2eca0f0962492295be"
+     "sha256": "08f65a33c830d34bb42065f8b164fa6736be637db1ec4e10dff68aa4545e8fee",
+     "size": 668940
     },
     {
      "file": "todays-look/tile_11_02.glb",
@@ -2611,7 +2635,8 @@
      "verts": 5081,
      "tris": 9804,
      "bytes": 179292,
-     "sha256": "4a59c4d65b575c591c5c26cc9c4c4c7e3002e05d04bd8232a1a9936626259039"
+     "sha256": "28dbcfa662c6594983fee14fee8e56e46396a2bd049241f97a2642136eb4adf5",
+     "size": 614272
     },
     {
      "file": "todays-look/tile_11_03.glb",
@@ -2634,7 +2659,8 @@
      "verts": 5081,
      "tris": 9804,
      "bytes": 179292,
-     "sha256": "c141bb0a16ab19d8e4111dabc53a40cca2df52a21077a005e260c33bd201a9c3"
+     "sha256": "c9f33fdd9d5c8aca04401f12864e2d1addc1d58b01535b72f4b0aad55eebce00",
+     "size": 589528
     },
     {
      "file": "todays-look/tile_11_04.glb",
@@ -2749,7 +2775,8 @@
      "verts": 5081,
      "tris": 9740,
      "bytes": 178532,
-     "sha256": "2ea718dffbc1c4a50975e6d04692771fdd4dfe645019856fba5d709f75ebbe4a"
+     "sha256": "895842e9f40b69512ce2fd442eaa4add650c317be2e8ea405f09ef29c99a615b",
+     "size": 204992
     },
     {
      "file": "todays-look/tile_11_09.glb",
@@ -2795,7 +2822,8 @@
      "verts": 5069,
      "tris": 9792,
      "bytes": 179004,
-     "sha256": "2c005ca7fd5174dde9a15372c03edd0940fa7afb617f307c54c596de16d179fe"
+     "sha256": "e79286e4f1ac43b6a719323332f4d360ce2411726596921d43e77c093e610d91",
+     "size": 185508
     },
     {
      "file": "todays-look/tile_12_01.glb",
@@ -2818,7 +2846,8 @@
      "verts": 5004,
      "tris": 9664,
      "bytes": 176700,
-     "sha256": "c02bb8f6025bc618d5d191085e2eb2d89a7154f36350a4fc49b3bba5dde2d584"
+     "sha256": "ab8641748eddba21fdfbfc0849c3ef862f74f50e932633c70d31245b1d29aca4",
+     "size": 184908
     },
     {
      "file": "todays-look/tile_12_02.glb",
