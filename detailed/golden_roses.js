@@ -121,12 +121,23 @@ function glowCloseFade(d){
    constant — and as the player closes in it FADES OUT and is gone,
    leaving the ambient glow as the only guide for the last stretch.
    Fade band: full strength at CYL_FADE_FAR and beyond, easing to
-   zero at CYL_FADE_NEAR, invisible inside it. */
+   zero at CYL_FADE_NEAR, invisible inside it.
+   FADE DISTANCE SET BY JOSHUA (2026-11-13, later the same call):
+   the band is anchored to the tree line in his 535 screenshot —
+   the distance from the player to the visible tree line there,
+   measured in the Defect A pass at 50 units (about 164 feet;
+   1 unit = 1 m). His ruling: by the time he is THAT close to a
+   rose, the cylinder must be fully gone and the ambient glow is
+   the only guide; the fade may begin farther out, in the
+   several-hundred-feet band his picture shows. So: fade begins
+   at 120u (about 394 ft) and is complete at 50u (about 164 ft).
+   (First shipped band, .13.3, was 170 -> 70; he tightened it to
+   the measured tree line.) */
 var CYL_R = 6;             /* constant radius — never shrinks */
 var CYL_H = 400;           /* sky-to-ground, the beacon's height */
 var CYL_OPACITY = 0.50;    /* full-strength opacity, beacon family */
-var CYL_FADE_FAR = 170;    /* at/past this distance: full strength */
-var CYL_FADE_NEAR = 70;    /* at/inside this distance: gone */
+var CYL_FADE_FAR = 120;    /* at/past this distance: full strength */
+var CYL_FADE_NEAR = 50;    /* at/inside this distance: gone */
 function cylFade(d){
   if (d >= CYL_FADE_FAR) return 1;
   if (d <= CYL_FADE_NEAR) return 0;
