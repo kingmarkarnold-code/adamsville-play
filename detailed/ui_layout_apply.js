@@ -51,6 +51,36 @@
   var CANON_W = 1280;
   var CANON_H = 800;
 
+  /* PORTRAIT CANON (2026-11-13, Defect B — Joshua on his A17 in
+     portrait: "the UI is not correct"): the layout is authored on
+     the 1280x800 landscape frame. On a portrait phone the old code
+     scaled that frame by min(vw/1280, vh/800) — about 0.32 on a
+     412-wide phone — so every element shrank to a third of its
+     design, the touch-size floors then blew the buttons back up to
+     44-52 px INSIDE slots a third their designed size, and the fit
+     pass had to invent a new arrangement to separate the pile: the
+     minimap ended up top-centre, the speaker/radio buttons above
+     it, pause shoved under the gear, the bars scattered. The design
+     itself was never wrong — it was being scaled against the wrong
+     frame. The layout file already declares the portrait frame
+     (views.web_mobile_portrait, 390x844), and the per-size tables
+     declare each phone's own frame (the A17's is 360x780): on a
+     PORTRAIT mobile viewport the scale is now taken from that
+     portrait frame — the picked size table's frame when a size was
+     picked, else 390x844 — so elements land at their designed
+     relative positions at near-design size and the fit pass has
+     nothing to scramble. Landscape and desktop are untouched. */
+  var CANON_P_W = 390;
+  var CANON_P_H = 844;
+  var _pickedFrame = null;   /* {w, h} of the picked size table, set per apply pass */
+  function canonFor(vw, vh) {
+    if (vh > vw && isMobileViewport()) {
+      if (_pickedFrame && _pickedFrame.w > 0 && _pickedFrame.h > 0) return _pickedFrame;
+      return { w: CANON_P_W, h: CANON_P_H };
+    }
+    return { w: CANON_W, h: CANON_H };
+  }
+
   /**
    * Convert (anchor, x, y, width, height) to concrete CSS
    * left/top for the current viewport size.
@@ -62,9 +92,11 @@
     var x = +el.x || 0;
     var y = +el.y || 0;
     // Scale from the canonical frame to the real viewport so layouts
-    // authored at 1280x800 adapt to any screen size.
-    var sx = vw / CANON_W;
-    var sy = vh / CANON_H;
+    // authored at 1280x800 adapt to any screen size. PORTRAIT phones
+    // scale from the portrait frame instead (see CANON_P_W above).
+    var _cf = canonFor(vw, vh);
+    var sx = vw / _cf.w;
+    var sy = vh / _cf.h;
     // Use uniform scale (min) so elements keep their proportions.
     var s = Math.min(sx, sy);
     var sw = w * s;
@@ -254,7 +286,8 @@
     // The fit pass in applyUILayout works on placed boxes — every
     // placed element, buttons and panels/labels alike, hidden or
     // not (a hidden element's written box is the box it appears at).
-    var canonBox = anchorToLeftTop(def, CANON_W, CANON_H);
+    var _cfb = canonFor(vw, vh);
+    var canonBox = anchorToLeftTop(def, _cfb.w, _cfb.h);
     return {
       el: el, def: def,
       parentKey: el.parentElement
@@ -624,7 +657,8 @@
     // Per-size layouts first (exact match, then nearest size).
     var sized = pickSizeElements(doc, vw, vh);
     if (sized) {
-      return { list: sized.elements, source: "size", key: sized.key };
+      return { list: sized.elements, source: "size", key: sized.key,
+               width: sized.width, height: sized.height };
     }
     if (doc.faces && typeof doc.faces === "object") {
       // The face that matches this screen comes first.
@@ -695,6 +729,11 @@
         var picked = pickLayout(doc, mobile, vw, vh);
         var list = picked ? picked.list : null;
         if (!list) return;
+        /* PORTRAIT CANON (2026-11-13): remember the picked size
+           table's own frame so canonFor() can scale portrait phones
+           against it (see the CANON_P_W note at the top). */
+        _pickedFrame = (picked.source === "size" && picked.width > 0 && picked.height > 0)
+          ? { w: picked.width, h: picked.height } : null;
         // LAYOUT PICK TELEMETRY (2026-10-26): publish the measured
         // visible size and the layout this screen actually picked.
         // The session Stats report (github_reports.js) reads this so

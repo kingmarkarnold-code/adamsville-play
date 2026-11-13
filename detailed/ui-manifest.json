@@ -86,9 +86,9 @@
     },
     {
       "name": "daycycle.js",
-      "sha256": "657979db9f250824d28b43686439dc2d29dceaf331c74a05e418c511d715b9b6",
-      "size": 31605,
-      "hash": "657979db9f250824d28b43686439dc2d29dceaf331c74a05e418c511d715b9b6"
+      "sha256": "f26db26d2604c94b598086a88c8cad77951654ddc54cc8f6dec4488220e79713",
+      "size": 32187,
+      "hash": "f26db26d2604c94b598086a88c8cad77951654ddc54cc8f6dec4488220e79713"
     },
     {
       "name": "dialogue_director_npc.js",
@@ -171,9 +171,9 @@
     },
     {
       "name": "index.html",
-      "size": 1381965,
-      "sha256": "98dc32e6a62a0d190b8c42b494acd811ee728af3182786be2ba4d902c64c6d90",
-      "hash": "98dc32e6a62a0d190b8c42b494acd811ee728af3182786be2ba4d902c64c6d90"
+      "size": 1393716,
+      "sha256": "1e1dbb431ba0d67bf7d791e11693be48b3d274b813d03f0366069f3df81cba5c",
+      "hash": "1e1dbb431ba0d67bf7d791e11693be48b3d274b813d03f0366069f3df81cba5c"
     },
     {
       "name": "input_diag.js",
@@ -419,14 +419,14 @@
     {
       "name": "ui_layout.json",
       "size": 165570,
-      "sha256": "48092149d8a34e4eda05258d9da658e37c59820b14240c234c98de076d14e11f",
-      "hash": "48092149d8a34e4eda05258d9da658e37c59820b14240c234c98de076d14e11f"
+      "sha256": "5b1f2de60ad8e1a6f3b1cf50efda63ea015c3125ce879187de43ae89365aa161",
+      "hash": "5b1f2de60ad8e1a6f3b1cf50efda63ea015c3125ce879187de43ae89365aa161"
     },
     {
       "name": "ui_layout_apply.js",
-      "size": 38724,
-      "sha256": "fa94f2c83af411ad15a81067b9d99df3846ec4cc995448d16fd283efcd7c74a0",
-      "hash": "fa94f2c83af411ad15a81067b9d99df3846ec4cc995448d16fd283efcd7c74a0"
+      "size": 40926,
+      "sha256": "2cd971cf0ee0308a403dd9f5d36a5e3c17fae5294af3b091dd386dfc6a45e25a",
+      "hash": "2cd971cf0ee0308a403dd9f5d36a5e3c17fae5294af3b091dd386dfc6a45e25a"
     },
     {
       "name": "ui_sounds.js",
@@ -708,6 +708,6 @@
       "hash": "5bd3ab4ab2c4fe2671d7c7b755c98518de645f5390c3df530be6c0fbaea92a35"
     }
   ],
-  "ui_version": "2026.11.13.3",
+  "ui_version": "2026.11.13.4",
   "version": "2026.10.17.9"
 }

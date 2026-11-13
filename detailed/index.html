@@ -2667,7 +2667,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    shipped a manifest whose index.html hash described bytes that never
    reached the repo (manifest .09.2, repo document still .09.1), and
    every fresh session paid one self-heal reload for it. */
-window.__DOC_UIVER = '2026.11.13.3';
+window.__DOC_UIVER = '2026.11.13.4';
 /* VER-TAG (ui 2026.11.07.25) >>>
    The on-screen version tag (#ver-tag) shows the version OF THE
    DEPLOYMENT ACTUALLY RUNNING, environment first (Joshua 2026-11-07
@@ -6462,6 +6462,183 @@ window.__saLandingSpot = function(){
       } catch(e){}
     }, 50);
   }
+  /* ================================================================
+     SNAP-TO-GROUND (2026-11-13, Joshua's standing rule): a tree seats
+     on the ground that is actually DRAWN at its own position, and it
+     keeps adjusting — if the ground under a built tree ever changes,
+     the tree re-seats itself automatically. His report: after the
+     terrain moved / the world became GLB tiles, some trees hovered.
+     Measured in the rig (raycasts against the drawn tile meshes at
+     spawn): 70 of 388 trunks floated above the drawn surface, worst
+     1.88 units — the analytic grid (heightAt / terrainMeshY, which
+     the builder used alone) chords across detail the dense drawn
+     tiles carry, so grid-seated trees can hang over the real ground.
+
+     THE MECHANISM, in three parts:
+     (1) DRAWN-GROUND RASTERS: as the tile manager streams the bench
+         GLB tiles in (__PKG_TILES), each loaded tile's geometry is
+         rasterised once into a 4-unit height grid (triangle
+         rasterisation, max-Y per cell — the top surface). The
+         geometry is already in world coordinates (mesh at origin).
+     (2) treeSeatY(x, z): the height EVERY tree is seated with —
+         max(heightAt, terrainMeshY) as before, then corrected to
+         the drawn surface wherever a raster covers the point and
+         the drawn height is within 3 units of the grid height (the
+         sanity band keeps a stray artefact — a water surface, a
+         panel top — from ever hijacking a seat; all measured drift
+         is under 2). Outside raster coverage the grid rules, exactly
+         as it did before this change.
+     (3) RE-SEAT SWEEP: on the tree tick, built tiles are sampled in
+         rotation; any tile whose sampled trunks no longer sit on
+         treeSeatY (off by more than 0.35) is rebuilt in place
+         through the funnel — so a tree built before its ground tile
+         arrived, or under an older ground, corrects itself within
+         seconds of play. One rebuild per sweep, 60 s per-tile
+         cooldown, funnel-sliced: no frame bursts, no pop-in of
+         partial trees (a rebuilt tile appears whole, like any tile).
+     ================================================================ */
+  var drawnRasters = {};   /* "tx,ty" -> {x0, z0, cell, nx, nz, data, filled, uuid} */
+  var RASTER_CELL = 4;
+  function rasteriseTile(entry){
+    var geo = entry.geo, pos = geo && geo.attributes && geo.attributes.position;
+    if (!pos) return null;
+    var idx = geo.index ? geo.index.array : null;
+    var arr = pos.array;
+    var ox = (entry.mesh && entry.mesh.position) ? entry.mesh.position.x : 0;
+    var oz = (entry.mesh && entry.mesh.position) ? entry.mesh.position.z : 0;
+    var x0 = entry.x0, z0 = entry.z0, x1 = entry.x1, z1 = entry.z1;
+    var nx = Math.max(1, Math.ceil((x1 - x0) / RASTER_CELL));
+    var nz = Math.max(1, Math.ceil((z1 - z0) / RASTER_CELL));
+    var data = new Float32Array(nx * nz);
+    var filled = new Uint8Array(nx * nz);
+    var nTri = idx ? idx.length / 3 : pos.count / 3;
+    for (var t = 0; t < nTri; t++){
+      var ia = idx ? idx[t * 3] : t * 3, ib = idx ? idx[t * 3 + 1] : t * 3 + 1, ic = idx ? idx[t * 3 + 2] : t * 3 + 2;
+      var ax = arr[ia * 3] + ox, ay = arr[ia * 3 + 1], az = arr[ia * 3 + 2] + oz;
+      var bx = arr[ib * 3] + ox, by = arr[ib * 3 + 1], bz = arr[ib * 3 + 2] + oz;
+      var cx2 = arr[ic * 3] + ox, cy2 = arr[ic * 3 + 1], cz2 = arr[ic * 3 + 2] + oz;
+      var den = (bz - cz2) * (ax - cx2) + (cx2 - bx) * (az - cz2);
+      if (Math.abs(den) < 1e-9) continue;   /* vertical / degenerate — no top surface */
+      var gx0 = Math.max(0, Math.floor((Math.min(ax, bx, cx2) - x0) / RASTER_CELL));
+      var gx1 = Math.min(nx - 1, Math.floor((Math.max(ax, bx, cx2) - x0) / RASTER_CELL));
+      var gz0 = Math.max(0, Math.floor((Math.min(az, bz, cz2) - z0) / RASTER_CELL));
+      var gz1 = Math.min(nz - 1, Math.floor((Math.max(az, bz, cz2) - z0) / RASTER_CELL));
+      for (var gz = gz0; gz <= gz1; gz++){
+        for (var gx = gx0; gx <= gx1; gx++){
+          var px = x0 + (gx + 0.5) * RASTER_CELL, pz = z0 + (gz + 0.5) * RASTER_CELL;
+          var w0 = ((bz - cz2) * (px - cx2) + (cx2 - bx) * (pz - cz2)) / den;
+          var w1 = ((cz2 - az) * (px - cx2) + (ax - cx2) * (pz - cz2)) / den;
+          var w2 = 1 - w0 - w1;
+          if (w0 < -0.001 || w1 < -0.001 || w2 < -0.001) continue;
+          var y = w0 * ay + w1 * by + w2 * cy2;
+          var cell = gz * nx + gx;
+          if (!filled[cell] || y > data[cell]){ data[cell] = y; filled[cell] = 1; }
+        }
+      }
+    }
+    return { x0: x0, z0: z0, cell: RASTER_CELL, nx: nx, nz: nz, data: data, filled: filled,
+             uuid: entry.mesh ? entry.mesh.uuid : '' };
+  }
+  function drawnY(x, z){
+    for (var k in drawnRasters){
+      var r = drawnRasters[k];
+      if (x < r.x0 || z < r.z0 || x >= r.x0 + r.nx * r.cell || z >= r.z0 + r.nz * r.cell) continue;
+      var fx = (x - r.x0) / r.cell - 0.5, fz = (z - r.z0) / r.cell - 0.5;
+      var ix = Math.floor(fx), iz = Math.floor(fz), u = fx - ix, v = fz - iz;
+      var vals = [], ok = true;
+      for (var dz = 0; dz <= 1 && ok; dz++) for (var dx = 0; dx <= 1; dx++){
+        var cx = ix + dx, cz = iz + dz;
+        if (cx < 0 || cz < 0 || cx >= r.nx || cz >= r.nz || !r.filled[cz * r.nx + cx]){ ok = false; break; }
+        vals.push(r.data[cz * r.nx + cx]);
+      }
+      if (!ok) return null;
+      var a = vals[0], b = vals[1], c = vals[2], d = vals[3];
+      if (u + v <= 1) return a + (b - a) * u + (c - a) * v;
+      return d + (c - d) * (1 - u) + (b - d) * (1 - v);
+    }
+    return null;
+  }
+  function ensureDrawnRasters(){
+    var TM = window.__PKG_TILES;
+    if (!TM || !TM.tiles) return;
+    var cx = null, cz = null;
+    if (typeof player !== 'undefined' && player && isFinite(player.x)){ cx = player.x; cz = player.z; }
+    else { try { var sp = window.__saLandingSpot ? window.__saLandingSpot() : null; if (sp){ cx = sp.x; cz = sp.z; } } catch(e){} }
+    if (cx === null) return;
+    var made = 0;
+    for (var i = 0; i < TM.tiles.length && made < 2; i++){
+      var e = TM.tiles[i];
+      if (!e || !e.mesh || !e.geo) continue;
+      var tcx = (e.x0 + e.x1) / 2, tcz = (e.z0 + e.z1) / 2;
+      if (Math.hypot(tcx - cx, tcz - cz) > BUILD_R + 700) continue;
+      var key = e.tx + ',' + e.ty;
+      var cur = drawnRasters[key];
+      if (cur && cur.uuid === (e.mesh.uuid || '')) continue;
+      var r = null;
+      try { r = rasteriseTile(e); } catch(err){}
+      if (r){ drawnRasters[key] = r; made++; }
+    }
+    /* evict rasters the player has left far behind */
+    for (var k2 in drawnRasters){
+      var r2 = drawnRasters[k2];
+      if (Math.hypot(r2.x0 + r2.nx * r2.cell / 2 - cx, r2.z0 + r2.nz * r2.cell / 2 - cz) > 1400) delete drawnRasters[k2];
+    }
+  }
+  /* THE seat height — one formula for building and for re-seating:
+     the analytic grid first (the ground the game's physics walks
+     on), corrected to the drawn bench surface wherever the bench
+     tiles have arrived (see the header above). Throws only if
+     heightAt itself throws — callers keep their existing guards. */
+  function treeSeatY(x, z){
+    var gy = heightAt(x, z);
+    try { var my = terrainMeshY(x, z); if (my > gy) gy = my; } catch(e){}
+    try {
+      var dy = drawnY(x, z);
+      if (dy !== null && Math.abs(dy - gy) <= 3) gy = dy;
+    } catch(e){}
+    return gy;
+  }
+  var reseatState = { cursor: 0, last: {}, checked: 0, rebuilt: 0 };
+  function reseatSweep(){
+    if (!window.__gameStarted || typeof player === 'undefined' || !player) return;
+    var keys = Object.keys(tiles);
+    if (!keys.length) return;
+    var now = Date.now(), examined = 0;
+    while (examined < 3){
+      var key = keys[reseatState.cursor % keys.length];
+      reseatState.cursor++; examined++;
+      var rec = tiles[key];
+      if (!rec || !rec.trunks || !rec.trunks.length) continue;
+      if (tileWork[key]) continue;
+      if (reseatState.last[key] && now - reseatState.last[key] < 60000) continue;
+      var pr = key.split(','), ix = +pr[0], iz = +pr[1];
+      var tcx = TERR_OX + (ix + 0.5) * TILE, tcz = TERR_OZ + (iz + 0.5) * TILE;
+      if (Math.hypot(tcx - player.x, tcz - player.z) > KILL_R) continue;
+      var bad = false, step = Math.max(1, Math.floor(rec.trunks.length / 8));
+      for (var ti = 0; ti < rec.trunks.length; ti += step){
+        var t = rec.trunks[ti];
+        reseatState.checked++;
+        var gyNow;
+        try { gyNow = treeSeatY(t.x, t.z); } catch(e){ gyNow = t.y0 + 0.5; }
+        if (Math.abs(gyNow - (t.y0 + 0.5)) > 0.35){ bad = true; break; }
+      }
+      if (!bad) continue;
+      /* re-seat the whole tile on the current ground (the builder
+         re-derives every trunk from treeSeatY — same anchors, same
+         gates, fresh heights) */
+      reseatState.last[key] = now; reseatState.rebuilt++;
+      if (rec.mesh){ try { scene.remove(rec.mesh); rec.mesh.geometry.dispose(); } catch(e){} }
+      trunksLive -= rec.trunks.length; treesTotal -= rec.trunks.length; tilesBuilt--;
+      delete tiles[key];
+      var job = beginTileJob(ix, iz);
+      job.dist = Math.hypot(tcx - player.x, tcz - player.z);
+      tileWork[job.key] = job;
+      if (window.__FUNNEL) window.__FUNNEL.submit(job);
+      else { try { while (job.step(function(){ return false; }) !== true){} } catch(e){} }
+      break;   /* at most one rebuild per sweep — the funnel meters it */
+    }
+  }
+
   /* emit one tree at world anchor (ax, az), ground Y gy, cover
      fraction f, per-tree hashes hs[0..3] into the tile arrays P */
   function emitTree(P, ax, az, gy, f, hs){
@@ -6812,9 +6989,11 @@ window.__saLandingSpot = function(){
       if (Math.floor((rt.x - TERR_OX) / TILE) === job.ix &&
           Math.floor((rt.z - TERR_OZ) / TILE) === job.iz){
         var gy, hok = true;
-        try { gy = heightAt(rt.x, rt.z); } catch(e){ hok = false; }
+        /* SNAP-TO-GROUND (2026-11-13): seat on treeSeatY — the grid
+           corrected to the drawn bench surface (see the system
+           header above emitTree). */
+        try { gy = treeSeatY(rt.x, rt.z); } catch(e){ hok = false; }
         if (hok){
-          try { var my = terrainMeshY(rt.x, rt.z); if (my > gy) gy = my; } catch(e){}
           /* the two placement gates (drawn-water exclusion + grass
              bonding), verdict-cached per anchor — anchorGate above */
           if (anchorGate(rt.x, rt.z)){
@@ -6952,7 +7131,13 @@ window.__saLandingSpot = function(){
     } catch(e){}
   }
 
-  setInterval(function(){ tick(); }, 400);
+  setInterval(function(){
+    tick();
+    /* SNAP-TO-GROUND upkeep (2026-11-13): rasterise newly arrived
+       bench tiles, then re-seat any built tile whose ground moved. */
+    try { ensureDrawnRasters(); } catch(e){}
+    try { reseatSweep(); } catch(e){}
+  }, 400);
   /* SETTLE PRE-GROW entry point (2026-11-08): the loader's Get Ready
      loop calls this ~3x a second during the ten-second settle. Each
      call runs ONE frontier tick centred on the landing spot (the
@@ -6984,6 +7169,8 @@ window.__saLandingSpot = function(){
   window.__PKG_TREES = { tiles: tiles,
     stats: function(){ return { tiles: tilesBuilt, trees: treesTotal, trunks: trunksLive,
       tilesInFlight: Object.keys(tileWork).length, anchorVerdicts: anchorVerdictsN,
+      reseat: { checked: reseatState.checked, rebuilt: reseatState.rebuilt,
+                rasters: Object.keys(drawnRasters).length },
       funnel: (window.__FUNNEL ? window.__FUNNEL.stats() : null) }; },
     auditRegistry: auditRegistry };
   /* NAMED BUMPS (2026-11-07, Joshua: "instead of me running into
@@ -19800,6 +19987,41 @@ function __tryStartGame(){
         }, _waitMs);
       }
       return false;
+    }
+    /* TREE-RING ENTRY GATE (2026-11-13, Defect A — Joshua at 535:
+       "I'm standing right there by 535 and there's no trees. They
+       are in the distance."): the ten-second settle pre-grows the
+       tree ring around the landing spot, but on a slow phone the
+       funnel cannot finish the ring inside ten seconds — the census
+       the pre-grow returns was computed and then ignored, so the
+       player entered a field whose near trees did not exist yet
+       (the canopy hole is carved around the player from the first
+       tick, so an unfinished ring reads exactly as his screenshot:
+       bare ground all around, trees only in the distance). Entry
+       now waits until the pre-grow census says the ring is COMPLETE
+       — the Get Ready face and its bucket-width funnel drive stay
+       up meanwhile (the face's own 90-second backstop is also this
+       gate's waiver, so a pathological boot can never hang here:
+       after it, entry proceeds with whatever has grown). Boots the
+       failsafes force-completed never stamped __loadCompletedAt and
+       pass straight through, like the settle gate above. */
+    if (window.__loadCompletedAt && !window.__treeGateWaived){
+      if (Date.now() - window.__loadCompletedAt > window.__ENTRY_DELAY_MS + 90000){
+        window.__treeGateWaived = true;
+      } else {
+        var _tc = null;
+        try { _tc = (typeof window.__saPregrowSettle === 'function') ? window.__saPregrowSettle() : null; } catch(e){}
+        if (_tc && _tc.ringTiles > 0 && _tc.ringDone < _tc.ringTiles){
+          if (!window.__treeGateRetryArmed){
+            window.__treeGateRetryArmed = true;
+            setTimeout(function(){
+              window.__treeGateRetryArmed = false;
+              try{ __tryStartGame(); }catch(e){}
+            }, 600);
+          }
+          return false;
+        }
+      }
     }
     /* LAPTOP-HANG FIX (2026-10-25): building placement is sliced on slow
        machines and may still be running when every load step completes.

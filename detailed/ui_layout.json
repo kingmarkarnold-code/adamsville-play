@@ -1643,7 +1643,7 @@
      "mobile_only": false,
      "type": "label",
      "visible": true,
-     "width": 300,
+     "width": 240,
      "x": 12,
      "y": 196,
      "description": "Shows the name of the street the player is currently on"
@@ -2649,7 +2649,7 @@
      "mobile_only": false,
      "type": "label",
      "visible": true,
-     "width": 300,
+     "width": 240,
      "x": 12,
      "y": 196,
      "description": "Shows the name of the street the player is currently on"
@@ -3655,7 +3655,7 @@
      "mobile_only": false,
      "type": "label",
      "visible": true,
-     "width": 300,
+     "width": 240,
      "x": 12,
      "y": 196,
      "description": "Shows the name of the street the player is currently on"
@@ -4661,7 +4661,7 @@
      "mobile_only": false,
      "type": "label",
      "visible": true,
-     "width": 300,
+     "width": 240,
      "x": 12,
      "y": 196,
      "description": "Shows the name of the street the player is currently on"

@@ -297,7 +297,15 @@ function init(){
   /* v1.50 EXPERT #29: position function so rotation/resize re-evaluates. */
   function placeDayHud(){
     var _narrow=(typeof window!=='undefined'&&window.innerWidth<600);
-    hud.style.cssText='position:fixed;'+(_narrow?'top:144px;':'top:8px;')+
+    /* PORTRAIT PHONES (2026-11-13, Defect B): at top:144px the pill
+       lay across the minimap and the HEALTH bar — in portrait the
+       left column (minimap + button grid) runs ~290px down the left
+       and the bars stack ~230px down the right, so the centred
+       clock's first clear band is below both, at 300px. Narrow
+       LANDSCAPE keeps Expert #29's 144px; desktop keeps 8px. The
+       place-name pill follows this pill's rect, so it moves too. */
+    var _portrait=(typeof window!=='undefined'&&window.innerHeight>window.innerWidth);
+    hud.style.cssText='position:fixed;'+(_narrow?(_portrait?'top:300px;':'top:144px;'):'top:8px;')+
       'left:50%;transform:translateX(-50%);'+
       'background:rgba(20,24,32,0.72);color:#fff;font:600 15px system-ui,sans-serif;'+
       'padding:6px 16px;border-radius:14px;z-index:50;pointer-events:none;'+
