@@ -1,11 +1,11 @@
 {
   "version": "2.0.0",
-  "map_version": "2026.11.13.1",
+  "map_version": "2026.11.13.2",
   "files": [
     {
       "name": "maps/adamsville/zone.json",
       "size": 14395,
-      "sha256": "cfb1301bce20f1dfd0118b9aa71a4a36b99705dade583ba9d85e4f2d2eee2bb9",
+      "sha256": "7f63da56597a606f1b3ae8daea7b13fe8c67738600a59bd8868145ca683e481a",
       "hash": ""
     },
     {
@@ -59,61 +59,61 @@
     {
       "name": "maps/adamsville/heights_base_10m.bin",
       "size": 4749696,
-      "sha256": "a165361b7f6186f0403911498e4705d950d9f706d08411a921e5fd11ddf6cf19",
+      "sha256": "52b6b47496fc8211e1559b80b17b64a07f9f6ff8c0dcc1db93950a13e5681dea",
       "hash": ""
     },
     {
       "name": "maps/adamsville/heights_near_2m.bin.part00",
       "size": 8000000,
-      "sha256": "ac9a478c531eb72a3dad920ec45f64a6b365297f9e808936d5bd2f8cdc6c4707",
+      "sha256": "6ce3c6b3b12760d6a95df20fd52c3ddf9727095334534d402d75be92ddd756a0",
       "hash": ""
     },
     {
       "name": "maps/adamsville/heights_near_2m.bin.part01",
       "size": 8000000,
-      "sha256": "73ebca12a0a83371266ec52b0303f06e1aa65b3b3ca166ebbb29be66a2d01f25",
+      "sha256": "350a4423f25fd6def8c1eb0a205affeb321fda3c695276dfe1457b869108bae1",
       "hash": ""
     },
     {
       "name": "maps/adamsville/heights_near_2m.bin.part02",
       "size": 8000000,
-      "sha256": "0d6ee1a8c70dc8aa845cad4c41e1d52b467485f57d8b2c13b82440d7f8a0baa8",
+      "sha256": "7b3ced959701e5c46d5738331b8fdd0a1a6c28612a98760c1f2b1eeeecee288c",
       "hash": ""
     },
     {
       "name": "maps/adamsville/heights_near_2m.bin.part03",
       "size": 8000000,
-      "sha256": "37202711d7541b0430c8a5592321aa8a7e055c944e6d50100250cbc48908048a",
+      "sha256": "82e77ca1521a7cc46830a4a101fa36e051ae7dc76fd542ceaa5cb7fc6b7f4d03",
       "hash": ""
     },
     {
       "name": "maps/adamsville/heights_near_2m.bin.part04",
       "size": 8000000,
-      "sha256": "1a8eab61e8ce006b89fb32be9dacca89311c7d846e77d39e26ed9293045ee668",
+      "sha256": "822a710e321836293d7e8fb94bc9bccce488545cb60296cd8ac03da940515745",
       "hash": ""
     },
     {
       "name": "maps/adamsville/heights_near_2m.bin.part05",
-      "size": 5670456,
-      "sha256": "b25cb7213a9d6b4d35467d1bb72f780a03224ec34d510ba748328a7a4d507aaf",
+      "size": 5580924,
+      "sha256": "fc315f9858b42f64b46a636c17dc64221038200c92c57fa2ef02fb58de84fb30",
       "hash": ""
     },
     {
       "name": "maps/adamsville/nearpost_mask.bin",
       "size": 3705167,
-      "sha256": "69ce4edcaad41a65add59bcba1211aa797f4b51dd5785d109fb8f181f82078c5",
+      "sha256": "3228f9f1d3a9797a39b82a3cff78c9d8e2f2d9a7b2d98625ee69bdcfc126ef7c",
       "hash": ""
     },
     {
       "name": "maps/adamsville/nearpost_rows.bin",
       "size": 52056,
-      "sha256": "979c54f9e3b7af51bdd630887317f7d6549a25271a28ed5f4b81e5d2dab31809",
+      "sha256": "656cfc04bc7fbf2b4967d36115d3195f6e43c0db2de79499dbaeeb2a03656854",
       "hash": ""
     },
     {
       "name": "maps/adamsville/terrain_heights_pkg.bin",
       "size": 2320164,
-      "sha256": "692457270d4b4c7a43c4bf07f79b621a3af992e48bdd1903b54bb301e8e24717",
+      "sha256": "ec60ed0616e17b5b36550b2152ced630de0d31360b3214ef69c7b0d8c3af4c7f",
       "hash": ""
     },
     {
@@ -124,8 +124,8 @@
     },
     {
       "name": "maps/adamsville/tiles/tiles-manifest.json",
-      "size": 59888,
-      "sha256": "8d9f83a53156a0c5e9fe6355db8f821b6645f63e0033891e9a2f66dfcc65894a",
+      "size": 59279,
+      "sha256": "8fc85eb812b7ada4d3c8a99a26fdee4a4b4f63c6d69c8cfb487f3dc89b42c58a",
       "hash": ""
     },
     {
@@ -136,14 +136,14 @@
     },
     {
       "name": "maps/adamsville/tiles/todays-look/tile_00_01.glb",
-      "size": 291616,
-      "sha256": "e752f90ca9ada215192727cd870b55f1069cc456662fcd67ca8a45eb4a7ca04a",
+      "size": 179440,
+      "sha256": "e084226deaa5ad358808167303e63688900d34a343fb13bb9b6e359f387275d3",
       "hash": ""
     },
     {
       "name": "maps/adamsville/tiles/todays-look/tile_00_02.glb",
-      "size": 211612,
-      "sha256": "129a71754f2a705f8e8628b219671b666e97a01ce7937c2181526b4c212fc7e1",
+      "size": 180288,
+      "sha256": "b7ad2b27b43c2fee518a9994a40937a8517a10bc55db38941100315fc743022b",
       "hash": ""
     },
     {
@@ -214,8 +214,8 @@
     },
     {
       "name": "maps/adamsville/tiles/todays-look/tile_01_04.glb",
-      "size": 216108,
-      "sha256": "5061c20f10c149deb59a909b1b527480c95925df109b68eb9fff68110b6e624f",
+      "size": 177548,
+      "sha256": "c559b99a8660eab4930ded74f6947199437d7886b939184b8f14d22574483e94",
       "hash": ""
     },
     {
@@ -232,8 +232,8 @@
     },
     {
       "name": "maps/adamsville/tiles/todays-look/tile_01_07.glb",
-      "size": 230976,
-      "sha256": "eb6aad7843ed40c842bbdbbf4fe7af5be0f13cab302c373931ddfc5d79b52de0",
+      "size": 178224,
+      "sha256": "02833e5ff1db2587f8da78a458682226deb6c1e389c32284ea425926c3da9d6f",
       "hash": ""
     },
     {
@@ -274,8 +274,8 @@
     },
     {
       "name": "maps/adamsville/tiles/todays-look/tile_02_04.glb",
-      "size": 264924,
-      "sha256": "5afa3aa5341b9eb32f69fc4cec0ee2a3c2fb0e7eacb60b6be23aa799062d506b",
+      "size": 177548,
+      "sha256": "5e726b042fb503e04af646768778933c3d35a8fad4a9219b2af189f9c11c620f",
       "hash": ""
     },
     {
@@ -292,8 +292,8 @@
     },
     {
       "name": "maps/adamsville/tiles/todays-look/tile_02_07.glb",
-      "size": 309256,
-      "sha256": "f64d7506cb1de594077ee96737b1beb9cb6edc0dbab3b008552c450596a06c1b",
+      "size": 178228,
+      "sha256": "3eaf1a70dd52f42e815bd4095f733bd1fd7bf36f4e1d8b8f8af04f12db584ab5",
       "hash": ""
     },
     {
@@ -316,14 +316,14 @@
     },
     {
       "name": "maps/adamsville/tiles/todays-look/tile_03_01.glb",
-      "size": 275748,
-      "sha256": "f3229ae20c08acc0b931039b9a591c612ab236bdff8b632cd7d66ca784496fd1",
+      "size": 178504,
+      "sha256": "385fdcc51c257738c659c9feda1ac1aab3600cca9db68f471be1f039a70889f1",
       "hash": ""
     },
     {
       "name": "maps/adamsville/tiles/todays-look/tile_03_02.glb",
-      "size": 195528,
-      "sha256": "3c12aa28a3b341e92364618e5543f868b0043b8b2ca7c43ca8497b34a958c565",
+      "size": 179296,
+      "sha256": "b7fd166031547d3b32081c082ad47d1d5575540b241601ece43a686c7401f147",
       "hash": ""
     },
     {
@@ -370,14 +370,14 @@
     },
     {
       "name": "maps/adamsville/tiles/todays-look/tile_04_00.glb",
-      "size": 202052,
-      "sha256": "5e61ecb8ecbf7aeea7a6a1f27c9331a07293d519c4c9bbd0611ed30368bafc25",
+      "size": 179916,
+      "sha256": "fc39732fd20f2cf84e1ea2ce1a1453d7843829c08d1a0be437e4553394b8c332",
       "hash": ""
     },
     {
       "name": "maps/adamsville/tiles/todays-look/tile_04_01.glb",
-      "size": 222444,
-      "sha256": "89268ffa79db20dc6e64ec91f4ae369cf712e082ad3a059d8de2b0f1ad5f9361",
+      "size": 177600,
+      "sha256": "7926bd0f1416a2940e3443a8d842634bcceed8a8c20255fd3bfe09d80cda0ace",
       "hash": ""
     },
     {
@@ -394,14 +394,14 @@
     },
     {
       "name": "maps/adamsville/tiles/todays-look/tile_04_04.glb",
-      "size": 227720,
-      "sha256": "f0cdb607699f4061db0d46f3ff24e8ef3c2d6ea70195235faff2ae97647ba9d6",
+      "size": 178444,
+      "sha256": "7f3d0f202da85681630450f33063e35a2f5e3dfe368e8174e1f840ae01789628",
       "hash": ""
     },
     {
       "name": "maps/adamsville/tiles/todays-look/tile_04_05.glb",
-      "size": 185192,
-      "sha256": "e3c73422e5b9d3f0de124fbab758cb353cf0051532703577fef9702d63f4bbfe",
+      "size": 177588,
+      "sha256": "36ae8daf17183f6d7f4299b292cd54c1cb5e9c9fdf8fa2b485b92c6d005c3e18",
       "hash": ""
     },
     {
@@ -430,8 +430,8 @@
     },
     {
       "name": "maps/adamsville/tiles/todays-look/tile_05_00.glb",
-      "size": 247892,
-      "sha256": "117b76c5bc65394c89dfaaa3ecbc34bacdfd67ab57a16efa22d6c51437fe551c",
+      "size": 180828,
+      "sha256": "1971505069d2f5ce0e25faaecb0f25e6a4a6128490c3abda415168caefe2bb2f",
       "hash": ""
     },
     {
@@ -448,14 +448,14 @@
     },
     {
       "name": "maps/adamsville/tiles/todays-look/tile_05_03.glb",
-      "size": 206820,
-      "sha256": "f4a082f8b247b506a25f442d07d72066747b7ede838f21ad190db8a9a79f3202",
+      "size": 179356,
+      "sha256": "fe9b62736feccbffa7754109e3f1ea200138c54aa4d556c8cdd2d9e95f43f78b",
       "hash": ""
     },
     {
       "name": "maps/adamsville/tiles/todays-look/tile_05_04.glb",
-      "size": 202292,
-      "sha256": "aa7b18af23327961ae398c7daca7a2482d999d850c2511a7efcd3d48c19ef6b9",
+      "size": 179304,
+      "sha256": "1d60a18b0b80f5fe47c221fba3a0d6fdd4bc7bf9ae84a94968a3336a95b4559d",
       "hash": ""
     },
     {
@@ -490,14 +490,14 @@
     },
     {
       "name": "maps/adamsville/tiles/todays-look/tile_06_00.glb",
-      "size": 222216,
-      "sha256": "074436f9fbf02efcadc68fe383528766204c4f22187f6464eec59a37ad36e8f3",
+      "size": 179004,
+      "sha256": "b01db18b076e2314847646c0aef36aef62c8d36ac0efbd433d7b0c2ae2b8c049",
       "hash": ""
     },
     {
       "name": "maps/adamsville/tiles/todays-look/tile_06_01.glb",
-      "size": 201108,
-      "sha256": "35e14824acbc3b5ab01b218c9e35458f09f99d663926f6b4a1206dbd16824408",
+      "size": 176768,
+      "sha256": "d0add02c852aac9649aa6485ed657b487059c6f5d0cda69c795ac94cd439d13f",
       "hash": ""
     },
     {
@@ -508,14 +508,14 @@
     },
     {
       "name": "maps/adamsville/tiles/todays-look/tile_06_03.glb",
-      "size": 264052,
-      "sha256": "85ebb173303c22766c255f20276a9725ae1cb363067bc178b2fea44cfcc8a543",
+      "size": 177540,
+      "sha256": "a26438f61ab39292a6e53d6b68d71133dbe628413504496df95ef71147e04ece",
       "hash": ""
     },
     {
       "name": "maps/adamsville/tiles/todays-look/tile_06_04.glb",
-      "size": 292668,
-      "sha256": "1f9a6491a397edd3e68eb9fd3764bf3e66ec95a5098813b14b8e366cc4fccf6e",
+      "size": 177480,
+      "sha256": "6b13ad912aa7db91300deab63ea6becf42144231b6c2a1963f1e236db4101275",
       "hash": ""
     },
     {
@@ -610,8 +610,8 @@
     },
     {
       "name": "maps/adamsville/tiles/todays-look/tile_08_00.glb",
-      "size": 225900,
-      "sha256": "588d6cfcbb5bf0813445b2475d5c78c00988d5581333031d8270107f09f1a7d0",
+      "size": 179072,
+      "sha256": "bfd49e7a06aaeb06c36656361383c3e0ed16c5ef6b6ca4a03b95e7527077a732",
       "hash": ""
     },
     {
@@ -742,14 +742,14 @@
     },
     {
       "name": "maps/adamsville/tiles/todays-look/tile_10_02.glb",
-      "size": 208092,
-      "sha256": "0e6e0558dc103e4624302c2216ac676ac05d5ce0fe52929664ffd6cda047665c",
+      "size": 178436,
+      "sha256": "47a64f948bf2712cfd9656e8ba2f0a1a782296aeb2133206c9a9fafe0e252f15",
       "hash": ""
     },
     {
       "name": "maps/adamsville/tiles/todays-look/tile_10_03.glb",
-      "size": 205776,
-      "sha256": "1a6ba089fc534813f7652c9d7e4c44560fc04ba4e7647faeb26f7ecfd94e5148",
+      "size": 178436,
+      "sha256": "8d3a954e3b94736dde9ffd8910b617ad0d80058811e36b95e82f362500e86830",
       "hash": ""
     },
     {
@@ -790,26 +790,26 @@
     },
     {
       "name": "maps/adamsville/tiles/todays-look/tile_11_00.glb",
-      "size": 441052,
-      "sha256": "8631f7dd4a077cc33128ad2ff0f4eca86d119fc22778fbfc98ea8d053f19f166",
+      "size": 180828,
+      "sha256": "95d2bd38939a6942f64c29170b020f6ca154d3f03b31bb1529365a523775e279",
       "hash": ""
     },
     {
       "name": "maps/adamsville/tiles/todays-look/tile_11_01.glb",
-      "size": 668940,
-      "sha256": "08f65a33c830d34bb42065f8b164fa6736be637db1ec4e10dff68aa4545e8fee",
+      "size": 178536,
+      "sha256": "7cc56ec268450ebf4360c93530b4a7be770ed3e04e0b6d2eca0f0962492295be",
       "hash": ""
     },
     {
       "name": "maps/adamsville/tiles/todays-look/tile_11_02.glb",
-      "size": 614272,
-      "sha256": "28dbcfa662c6594983fee14fee8e56e46396a2bd049241f97a2642136eb4adf5",
+      "size": 179292,
+      "sha256": "4a59c4d65b575c591c5c26cc9c4c4c7e3002e05d04bd8232a1a9936626259039",
       "hash": ""
     },
     {
       "name": "maps/adamsville/tiles/todays-look/tile_11_03.glb",
-      "size": 589528,
-      "sha256": "c9f33fdd9d5c8aca04401f12864e2d1addc1d58b01535b72f4b0aad55eebce00",
+      "size": 179292,
+      "sha256": "c141bb0a16ab19d8e4111dabc53a40cca2df52a21077a005e260c33bd201a9c3",
       "hash": ""
     },
     {
@@ -838,8 +838,8 @@
     },
     {
       "name": "maps/adamsville/tiles/todays-look/tile_11_08.glb",
-      "size": 204992,
-      "sha256": "895842e9f40b69512ce2fd442eaa4add650c317be2e8ea405f09ef29c99a615b",
+      "size": 178532,
+      "sha256": "2ea718dffbc1c4a50975e6d04692771fdd4dfe645019856fba5d709f75ebbe4a",
       "hash": ""
     },
     {
@@ -850,14 +850,14 @@
     },
     {
       "name": "maps/adamsville/tiles/todays-look/tile_12_00.glb",
-      "size": 185508,
-      "sha256": "e79286e4f1ac43b6a719323332f4d360ce2411726596921d43e77c093e610d91",
+      "size": 179004,
+      "sha256": "2c005ca7fd5174dde9a15372c03edd0940fa7afb617f307c54c596de16d179fe",
       "hash": ""
     },
     {
       "name": "maps/adamsville/tiles/todays-look/tile_12_01.glb",
-      "size": 184908,
-      "sha256": "ab8641748eddba21fdfbfc0849c3ef862f74f50e932633c70d31245b1d29aca4",
+      "size": 176700,
+      "sha256": "c02bb8f6025bc618d5d191085e2eb2d89a7154f36350a4fc49b3bba5dde2d584",
       "hash": ""
     },
     {
