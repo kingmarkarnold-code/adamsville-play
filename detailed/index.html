@@ -1221,7 +1221,7 @@ window.SAView = (function(){
 </div></div>
 <!-- v1.12.10: report-view panel removed per Joshua — reporting still runs headless to GitHub. -->
 <!-- HUD readouts: current street name (GTA-style), version tag, how-to-play card. -->
-<div id="street-name"></div>
+<div id="street-name" style="display:none"></div>
 <div id="ver-tag">v1.4</div>
 <div id="help"><div class="card">
   <h3 id="help-ver">How to play (demo v1.4)</h3>
@@ -2667,7 +2667,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    shipped a manifest whose index.html hash described bytes that never
    reached the repo (manifest .09.2, repo document still .09.1), and
    every fresh session paid one self-heal reload for it. */
-window.__DOC_UIVER = '2026.11.13.4';
+window.__DOC_UIVER = '2026.11.13.5';
 /* VER-TAG (ui 2026.11.07.25) >>>
    The on-screen version tag (#ver-tag) shows the version OF THE
    DEPLOYMENT ACTUALLY RUNNING, environment first (Joshua 2026-11-07
@@ -9684,9 +9684,10 @@ try{ __wbStage('water'); }catch(e){}
       return m;
     }
     var pwBodyMat = pwWaterMat(0), pwStreamMat = pwWaterMat(1);
-    /* WATER VOLUMES (ui 2026.11.11): the tub sides' materials —
-       same shader family, uSkirt set (see pwWaterMat). */
-    var pwBodySkirtMat = pwWaterMat(0, true), pwStreamSkirtMat = pwWaterMat(1, true);
+    /* The tub-side (skirt) materials that used to stand here were
+       removed with the vertical panels themselves (2026-11-13,
+       Joshua — see the bodies loop below). pwWaterMat's uSkirt
+       uniform remains in the shader, always 0 now. */
     try {
       if (!window.__pkgWaterTick && window.Sim && typeof Sim.onTick === 'function'){
         window.__pkgWaterTick = true;
@@ -9795,46 +9796,14 @@ try{ __wbStage('water'); }catch(e){}
       geo.setAttribute('aData', new THREE.BufferAttribute(adata, 3));
       return geo;
     }
-    /* WATER VOLUMES (ui 2026.11.11, Joshua's design — corrected by
-       him twice; this is the corrected version). A water body is a
-       CLOSED MULTI-SIDED VOLUME, not a zero-thickness sheet: the
-       top surface the builders here already draw, plus SIDES
-       running from the body's edge down below the bed — a tub.
-       The defect it cures is at the SIDE/EDGE, not the top: at the
-       beginning of the Tatum Outlet creek (the rocks/falls reach)
-       you could see clean UNDER the sheet — rocks and ground
-       beneath its edge with no water in front of them. The skirt
-       below is built in the SAME local space as its top (shape
-       coords (x, -z), height carried in local Z) and hung on the
-       SAME mesh as a child with the SAME shader material — part of
-       the water body's own geometry, never a second plane laid
-       over terrain or water (the no-layering rule), and with the
-       same slight translucency as the surface: the top-down read
-       is unchanged and Tatum's fish still show dimly through it.
-       From the side, the water now has depth. Each loop point's
-       bottom is the lower of its surface and the terrain there,
-       minus 1.5u, so the side always ends buried below the bed.
-       loop: [{x, y (shape coords), top, bot (local Z), d (aData)}],
-       in outline order; the loop closes on itself. */
-    function pwSkirtGeom(loop){
-      var n = loop.length;
-      if (n < 2) return null;
-      var pos = new Float32Array(n * 2 * 3), dat = new Float32Array(n * 2 * 3), idx = [];
-      for (var i = 0; i < n; i++){
-        var P = loop[i];
-        pos[i*6]   = P.x; pos[i*6+1] = P.y; pos[i*6+2] = P.top;
-        pos[i*6+3] = P.x; pos[i*6+4] = P.y; pos[i*6+5] = P.bot;
-        dat[i*6]   = P.d[0]; dat[i*6+1] = P.d[1]; dat[i*6+2] = P.d[2];
-        dat[i*6+3] = P.d[0]; dat[i*6+4] = P.d[1]; dat[i*6+5] = P.d[2];
-        var va = i * 2, vb = ((i + 1) % n) * 2;
-        idx.push(va, vb, va + 1, vb, vb + 1, va + 1);
-      }
-      var g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-      g.setAttribute('aData', new THREE.BufferAttribute(dat, 3));
-      g.setIndex(idx);
-      return g;
-    }
+    /* WATER VOLUMES — REMOVED (2026-11-13, Joshua): the ui
+       2026.11.11 closed-volume tub sides (pwSkirtGeom and its three
+       attachment sites) are deleted at his ruling: the vertical
+       panels covered the edge where ground should meet water, so
+       the shoreline never formed against them. Water bodies and
+       streams are surface sheets only; the ground forms the shore
+       (Nov 12 water-edge rule). The see-under concern the tubs were
+       built for is answered by the ground snap, not by panels. */
     /* ui 2026.11.09.5 — ONE LABEL PER WATER NAME (Joshua's Nov 11
        screenshot: "Tatum" twice — once in the minimap, once just below
        it above the DAY 1 bar). A lake in the package is stored as one
@@ -9855,21 +9824,16 @@ try{ __wbStage('water'); }catch(e){}
         mesh.rotation.x = -Math.PI / 2;
         mesh.position.y = surfY;
         scene.add(mesh);
-        /* WATER VOLUMES (ui 2026.11.11): this body's tub side —
-           the ring outline from the surface (local Z 0; the mesh
-           offset carries it to surfY) down below the bed. See
-           pwSkirtGeom. */
-        try {
-          var bloop = [];
-          for (var bi = 0; bi < b.ring.length; bi++){
-            var bp = b.ring[bi];
-            bloop.push({ x: bp[0], y: -bp[1], top: 0,
-              bot: Math.min(surfY, heightAt(bp[0], bp[1])) - 1.5 - surfY,
-              d: [0, 0, 0] });
-          }
-          var bsk = pwSkirtGeom(bloop);
-          if (bsk) mesh.add(new THREE.Mesh(bsk, pwBodySkirtMat));
-        } catch(e){}
+        /* VERTICAL PANELS REMOVED (2026-11-13, Joshua): the ui
+           2026.11.11 water-volume tub side that used to hang from
+           this ring is GONE — his play-test finding was that the
+           panels cover the river's/lake's edge where the ground
+           should meet the water, so parts of the shore never read
+           as formed. Water bodies are their surface sheet only now;
+           the shoreline is the ground's job (the Nov 12 water-edge
+           rule: the ground edge snaps to the water's plane and
+           covers the water's edge). Same removal at the two stream
+           skirt sites below. */
         WATER.push({ x: b.x, z: b.z, rx: b.rx, rz: b.rz, name: b.name || '',
                      depthFt: b.depthFt, surfY: surfY,
                      /* the true outline, kept for tests that must match
@@ -9901,60 +9865,19 @@ try{ __wbStage('water'); }catch(e){}
             var sm = new THREE.Mesh(pwSurfGeom(s.surfRings[ri]), pwStreamMat);
             sm.rotation.x = -Math.PI / 2;
             scene.add(sm);
-            /* WATER VOLUMES (ui 2026.11.11): skirt the ring's
-               outline the same way — the Tatum outlet head/falls
-               reach is the proof case (see pwSkirtGeom). Local Z
-               on a surf-ring sheet is the ABSOLUTE surface Y (the
-               mesh is unoffset), so top/bottom are absolute too.
-               The outline's own aData rides down the side, so the
-               edge foam/flow shading continues off the surface. */
-            try {
-              var sring = s.surfRings[ri];
-              if (sring.ys && sring.ys.length === sring.pts.length){
-                var sloop = [];
-                for (var si2 = 0; si2 < sring.pts.length; si2++){
-                  var sp2 = sring.pts[si2], sy2 = sring.ys[si2];
-                  sloop.push({ x: sp2[0], y: -sp2[1], top: sy2,
-                    bot: Math.min(sy2, heightAt(sp2[0], sp2[1])) - 1.5,
-                    d: [sring.across ? (sring.across[si2] || 0) : 0,
-                        sring.arc ? (sring.arc[si2] || 0) : 0,
-                        sring.foam ? (sring.foam[si2] || 0) : 0] });
-                }
-                var ssk = pwSkirtGeom(sloop);
-                if (ssk) sm.add(new THREE.Mesh(ssk, pwStreamSkirtMat));
-              }
-            } catch(e){}
+            /* VERTICAL PANELS REMOVED (2026-11-13, Joshua): the
+               tub side that used to hang from this ring's outline
+               is gone — same removal as the bodies above. The
+               stream is its surface sheet only; the ground at its
+               banks is what forms the shore. */
           }
         }
         else if (s.ys && s.ys.length === s.pts.length){
           var rm = new THREE.Mesh(pwStreamData(ribbonGeomY(s.pts, s.width || 7, s.ys), s), pwStreamMat);
           scene.add(rm);
-          /* WATER VOLUMES (ui 2026.11.11): the profiled-ribbon
-             fallback gets the same tub — its outline (left rail
-             forward, right rail back, read off the built ribbon's
-             own vertex pairs) skirted on a rotated twin of the
-             ribbon's frame, so the side hangs in the same shape
-             space as every other skirt. */
-          try {
-            var rp = rm.geometry.getAttribute('position'), rloop = [], rarc = 0, rst = rp.count / 2;
-            for (var rj = 0; rj < rst; rj++){
-              var rx2 = rp.getX(rj * 2), ry2 = rp.getY(rj * 2), rz2 = rp.getZ(rj * 2);
-              if (rj > 0) rarc += Math.hypot(rx2 - rloop[rloop.length - 1].wx, rz2 - rloop[rloop.length - 1].wz);
-              rloop.push({ x: rx2, y: -rz2, top: ry2, bot: Math.min(ry2, heightAt(rx2, rz2)) - 1.5,
-                d: [0, rarc, 0], wx: rx2, wz: rz2 });
-            }
-            for (var rk = rst - 1; rk >= 0; rk--){
-              var qx2 = rp.getX(rk * 2 + 1), qy2 = rp.getY(rk * 2 + 1), qz2 = rp.getZ(rk * 2 + 1);
-              rloop.push({ x: qx2, y: -qz2, top: qy2, bot: Math.min(qy2, heightAt(qx2, qz2)) - 1.5,
-                d: [1, rarc, 0], wx: qx2, wz: qz2 });
-            }
-            var rsk = pwSkirtGeom(rloop);
-            if (rsk){
-              var rsm = new THREE.Mesh(rsk, pwStreamSkirtMat);
-              rsm.rotation.x = -Math.PI / 2;
-              scene.add(rsm);
-            }
-          } catch(e){}
+          /* VERTICAL PANELS REMOVED (2026-11-13, Joshua): this
+             fallback ribbon used to get the same tub side — gone,
+             like the other two sites. Surface sheet only. */
         }
         else
           scene.add(new THREE.Mesh(ribbonGeom(s.pts, s.width || 7, 0.18), pwBodyMat));
@@ -15152,6 +15075,11 @@ function runActionBtn(){
        the flashlight is selected in the inventory — tapping it puts
        the light in his hand and switches it on. */
     try{ flashlightEquip(); }catch(e){}
+  } else if (a==='use-energydrink'){
+    /* ENERGY DRINK (2026-11-13, Joshua): ACTION reads USE while an
+       energy drink is selected in the inventory — tapping it drinks
+       the can: ENERGY back to 100, one can consumed. */
+    try{ useEnergyDrink(); }catch(e){}
   } else if (a==='unequip-flashlight'){
     /* Same tap while it is in hand puts it away: light off, hand
        empty. The F key does the same job on a laptop. */
@@ -18255,6 +18183,19 @@ function updateStreetName(dt){
     if (poi) label=poi+(label?' — '+label:'');
   }catch(e){}
   if (label!==lastStreet){ lastStreet=label; document.getElementById('street-name').textContent=label; }
+  /* STREET-NAME PILL (2026-11-13, Joshua): an EMPTY label must draw
+     NOTHING. The pill's dark background plus the layout system's
+     fixed width on it made a big empty dark panel hang across the
+     upper screen wherever no street was named — his screenshot,
+     standing in the woods at 535. Hidden while nameless; the first
+     real name brings it back. A layout-hidden state still wins. */
+  try{
+    var _snEl=document.getElementById('street-name');
+    var _snHide=!label;
+    if (window.HudMove && HudMove.isHidden && HudMove.isHidden('street-name')) _snHide=true;
+    var _snWant=_snHide?'none':'';
+    if (_snEl.style.display!==_snWant) _snEl.style.display=_snWant;
+  }catch(e){}
 }
 
 var enterDist=4.5;
@@ -18284,6 +18225,19 @@ function makePickupMesh(kind){
     body.position.y=0.16; g.add(body);
     var top=new THREE.Mesh(new THREE.CylinderGeometry(0.11,0.11,0.03,12), mat(0xcccccc));
     top.position.y=0.33; g.add(top);
+  } else if (kind==='energydrink'){
+    /* ENERGY DRINK (2026-11-13, Joshua): the can at 535 is an energy
+       drink now — a tall slim can, near-black with a volt-green band,
+       silver top. Picked up like any item; in the inventory its
+       ACTION reads USE and drinking it restores ENERGY to 100
+       (useEnergyDrink below). */
+    var edBody=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,0.4,12), mat(0x14161c));
+    edBody.position.y=0.2; g.add(edBody);
+    var edBand=new THREE.Mesh(new THREE.CylinderGeometry(0.092,0.092,0.14,12),
+      new THREE.MeshLambertMaterial({color:0x53ff4d, emissive:0x1d6619}));
+    edBand.position.y=0.22; g.add(edBand);
+    var edTop=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,0.03,12), mat(0xcccccc));
+    edTop.position.y=0.41; g.add(edTop);
   } else if (kind==='wrench'){
     var handle=new THREE.Mesh(new THREE.BoxGeometry(0.09,0.09,0.55), mat(0x9999a0));
     handle.position.y=0.1; g.add(handle);
@@ -18412,6 +18366,37 @@ function dropItem(idx){
   if (it.kind==='rose'){ try{ _handled=!!(window.__ROSES && __ROSES.onDropSpawn && __ROSES.onDropSpawn(_wx,_wz)); }catch(e){} }
   if (!_handled) spawnPickup(it.name, it.kind||'box', _wx, _wz);
 }
+/* ENERGY DRINK (2026-11-13, Joshua): USE on a selected energy drink
+   restores ENERGY to 100 — both pools, so the bar he is looking at
+   reads full on land and in the water — and consumes ONE can from
+   the stack. Legacy 'soda' cans from older saves count as the same
+   drink (the 535 can was a soda can before tonight). */
+function useEnergyDrink(){
+  var idx=(typeof window.__invSel==='number')?window.__invSel:-1;
+  var it=(idx>=0)?inventory[idx]:null;
+  if (!it || (it.kind!=='energydrink' && it.kind!=='soda')){
+    idx=-1; it=null;
+    for (var i=0;i<inventory.length;i++){
+      if (inventory[i].kind==='energydrink' || inventory[i].kind==='soda'){ idx=i; it=inventory[i]; break; }
+    }
+  }
+  if (!it) return false;
+  try{
+    if (window.__BODY && __BODY.core && __BODY.core.state){
+      __BODY.core.state.energy=100;
+      __BODY.core.state.swimEnergy=100;
+    }
+  }catch(e){}
+  if ((it.n||1)>1){ it.n-=1; }
+  else {
+    inventory.splice(idx,1);
+    if (window.__invSel===idx) window.__invSel=-1;
+    else if (window.__invSel>idx) window.__invSel-=1;
+  }
+  invSave(); renderInv();
+  try{ showToast('Energy drink — ENERGY back to 100', 2200); }catch(e){}
+  return true;
+}
 function renderInv(){
   var list=document.getElementById('inv-list'); if(!list) return;
   /* FLASHLIGHT (ui 2026.11.09.5): the selection a row tap leaves
@@ -18487,7 +18472,7 @@ function updatePickups(dt){
 // starter items near home base (535 Dollar Mill Rd)
 function spawnStarterPickups(){
   if (pickups.length) return;
-  spawnPickup('Soda Can','soda', HOME.x-10, HOME.z+5);
+  spawnPickup('Energy Drink','energydrink', HOME.x-10, HOME.z+5);   /* was the soda can — Joshua 2026-11-13: it is an energy drink now */
   spawnPickup('Wrench','wrench', HOME.x-16, HOME.z+10);
   spawnPickup('Basketball','ball', HOME.x-12, HOME.z+13);
   /* FLASHLIGHT (ui 2026.11.09.5, Joshua): a flashlight waits in front
@@ -18552,8 +18537,41 @@ function flashlightHandMesh(){
   lens.rotation.x = Math.PI / 2 + 0.3;
   lens.position.set(0, -0.05, 0.17);
   g.add(lens);
-  g.position.set(0.35, 1.2, 0.3);
+  /* HOLD (2026-11-13, Joshua): the light sits IN his hand, held
+     steady at about a 15-degree angle off straight-ahead — not
+     floating directly in front of him. On the GLB rig the group is
+     re-parented into the RightHand bone (flashlightTryBoneAttach),
+     where this local transform is reset; on the primitive fallback
+     rig this player-space transform IS the hold: anchored at the
+     right hand, yawed FLASH_HOLD_RAD toward that side. */
+  g.position.set(0.43, 1.2, 0.29);
+  g.rotation.y = FLASH_HOLD_RAD;
   return g;
+}
+/* The ~15-degree hold angle (Joshua 2026-11-13), shared by the hand
+   mesh and the beam aim below so the light he holds and the pool it
+   throws always agree. */
+var FLASH_HOLD_RAD = 15 * Math.PI / 180;
+var __flashBone = null;
+function flashlightTryBoneAttach(){
+  /* Put the hand mesh in the hero's actual RightHand bone when the
+     GLB rig is present, so the light rides his hand (walk/idle/kneel
+     alike) instead of hovering in front of the body. The rig loads
+     async, so this is retried from the aim tick until it lands; the
+     primitive fallback rig has no bones and keeps the mesh-parented
+     hold above. */
+  if (!__flashHand || __flashBone) return;
+  try {
+    var bone = (player && player.rig && player.rig.bones) ? player.rig.bones.RightHand : null;
+    if (!bone && player && player.mesh && player.mesh.getObjectByName)
+      bone = player.mesh.getObjectByName('RightHand');
+    if (!bone) return;
+    bone.add(__flashHand);
+    __flashHand.position.set(0, 0.01, 0.03);
+    __flashHand.rotation.set(0, 0, 0);
+    __flashBone = bone;
+    window.__flashBone = bone;
+  } catch(e){}
 }
 function flashlightEnsure(){
   /* Build the spotlight + hand mesh once, on first need. The spot is
@@ -18562,7 +18580,9 @@ function flashlightEnsure(){
      pool on the ground a few metres out at night, subtle by day). */
   try {
     if (!__flashSpot){
-      __flashSpot = new THREE.SpotLight(0xfff3cf, 60, 35, 0.5, 0.45, 2);
+      /* BRIGHTER (2026-11-13, Joshua): intensity 60 -> 150 and throw
+         35 -> 50 — the old beam read dim against the night ground. */
+      __flashSpot = new THREE.SpotLight(0xfff3cf, 150, 50, 0.5, 0.45, 2);
       __flashSpot.visible = false;
       scene.add(__flashSpot);
       scene.add(__flashSpot.target);
@@ -18571,6 +18591,7 @@ function flashlightEnsure(){
       __flashHand = flashlightHandMesh();
       __flashHand.visible = false;
       player.mesh.add(__flashHand);
+      flashlightTryBoneAttach();
     }
   } catch(e){}
 }
@@ -18616,15 +18637,30 @@ try {
           return;
         }
         flashlightEnsure();
+        flashlightTryBoneAttach();
         if (!player || !player.mesh) return;
         var fx = Math.sin(player.yaw), fz = Math.cos(player.yaw);
         var rx = Math.cos(player.yaw), rz = -Math.sin(player.yaw);
-        var hx = player.x + rx * 0.35 + fx * 0.3, hz = player.z + rz * 0.35 + fz * 0.3;
+        /* BEAM (2026-11-13, Joshua): the light leaves from the HAND
+           (the RightHand bone's real world position when the GLB rig
+           carries it) and throws along the 15-degree hold — facing
+           swung FLASH_HOLD_RAD toward the holding side — so the pool
+           lands where the held light points, not dead ahead. */
+        var _ca = Math.cos(FLASH_HOLD_RAD), _sa = Math.sin(FLASH_HOLD_RAD);
+        var dx = fx * _ca + rx * _sa, dz = fz * _ca + rz * _sa;
+        var hx = player.x + rx * 0.43 + dx * 0.29, hz = player.z + rz * 0.43 + dz * 0.29;
         var hy = player.mesh.position.y + 1.2;
+        if (__flashBone && __flashHand){
+          try {
+            var _wp = new THREE.Vector3();
+            __flashHand.getWorldPosition(_wp);
+            if (isFinite(_wp.x) && isFinite(_wp.y) && isFinite(_wp.z)){ hx = _wp.x; hy = _wp.y; hz = _wp.z; }
+          } catch(e){}
+        }
         if (__flashSpot){
           __flashSpot.visible = true;
           __flashSpot.position.set(hx, hy, hz);
-          var tx = player.x + fx * 6, tz = player.z + fz * 6, ty = hy;
+          var tx = hx + dx * 6, tz = hz + dz * 6, ty = hy;
           try { ty = heightAt(tx, tz) + 0.15; } catch(e){}
           __flashSpot.target.position.set(tx, ty, tz);
         }
@@ -19118,7 +19154,10 @@ function updateActionButton(){
      EQUIP until he equips it or taps another row. */
   if (!act){
     var _fs = (typeof window.__invSel === 'number' && window.__invSel >= 0) ? inventory[window.__invSel] : null;
-    if (_fs && _fs.kind === 'flashlight'){
+    if (_fs && (_fs.kind === 'energydrink' || _fs.kind === 'soda')){
+      act='use-energydrink'; label='USE';
+    }
+    else if (_fs && _fs.kind === 'flashlight'){
       if (window.__flashlightOn){ act='unequip-flashlight'; label='UNEQUIP'; }
       else { act='equip-flashlight'; label='EQUIP'; }
     }
