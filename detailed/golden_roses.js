@@ -112,6 +112,28 @@ function glowCloseFade(d){
   return GLOW_CLOSE_MIN + (1 - GLOW_CLOSE_MIN) * Math.pow(t, 0.8);
 }
 
+/* ROSE CYLINDERS (2026-11-13, Joshua — the destination cylinder got
+   his "looks perfect" verdict the same call; that one STAYS neon
+   green and untouched): every standing rose ALSO carries a GOLD
+   cylinder, sky-to-ground like the destination marker, so its place
+   on the map can be spotted from far away. The difference he ruled:
+   the rose cylinder NEVER shrinks toward a pinpoint — its width is
+   constant — and as the player closes in it FADES OUT and is gone,
+   leaving the ambient glow as the only guide for the last stretch.
+   Fade band: full strength at CYL_FADE_FAR and beyond, easing to
+   zero at CYL_FADE_NEAR, invisible inside it. */
+var CYL_R = 6;             /* constant radius — never shrinks */
+var CYL_H = 400;           /* sky-to-ground, the beacon's height */
+var CYL_OPACITY = 0.50;    /* full-strength opacity, beacon family */
+var CYL_FADE_FAR = 170;    /* at/past this distance: full strength */
+var CYL_FADE_NEAR = 70;    /* at/inside this distance: gone */
+function cylFade(d){
+  if (d >= CYL_FADE_FAR) return 1;
+  if (d <= CYL_FADE_NEAR) return 0;
+  var t = (d - CYL_FADE_NEAR) / (CYL_FADE_FAR - CYL_FADE_NEAR);
+  return t * t * (3 - 2 * t);   /* smoothstep */
+}
+
 /* THE SEVEN NAMED SITES (runtime coords, each one verified against the
    shipped terrain in this build's recon boots: dry grass, not in
    water, not inside a road, visible on approach):
@@ -665,9 +687,16 @@ function buildGlowAssets(THREE){
        underfoot is the close-range face of the glow. */
     side: THREE.FrontSide, depthWrite: false,
     blending: THREE.AdditiveBlending, fog: false });
+  /* ROSE CYLINDER geometry (2026-11-13): the destination beacon's
+     own construction — unit-radius open cylinder CYL_H tall, origin
+     translated to its base so position.y is the ground line and
+     scale.x/z is the radius. Shared by every rose; the MATERIAL is
+     per-rose (its opacity carries the approach fade). */
+  var cylGeo = new THREE.CylinderGeometry(1, 1, CYL_H, 24, 1, true);
+  cylGeo.translate(0, CYL_H / 2, 0);
   GLOWA = {
     poolGeo: new THREE.CircleGeometry(1, 40), poolMat: poolMat,
-    hazeGeo: hazeGeo, hazeMat: hazeMat
+    hazeGeo: hazeGeo, hazeMat: hazeMat, cylGeo: cylGeo
   };
   return GLOWA;
 }
@@ -694,14 +723,33 @@ function attachGlow(site){
   var haze = new THREE.Mesh(A.hazeGeo, A.hazeMat.clone());
   haze.renderOrder = 6; haze.frustumCulled = false;
   grp.add(pool); grp.add(haze);
+  /* ROSE CYLINDER (2026-11-13): gold, sky-to-ground, fog-immune like
+     the destination beacon (whose neon green stays untouched, in
+     gps_system.js). Base buried 3u so it meets the ground on a
+     slope. Lives and dies with the glow group: picked or trampled,
+     detachGlow takes the whole group — cylinder included — out of
+     the scene; regrow brings it back with the glow. */
+  var cylMat = new THREE.MeshBasicMaterial({ color: 0xffc95e,
+    transparent: true, opacity: CYL_OPACITY, side: THREE.DoubleSide,
+    depthWrite: false, fog: false });
+  var cyl = new THREE.Mesh(A.cylGeo, cylMat);
+  cyl.position.y = -3; cyl.renderOrder = 6; cyl.frustumCulled = false;
+  cyl.name = 'rose-cylinder-' + site.id;
+  grp.add(cyl);
   W.scene.add(grp);
-  rt.glow = { grp: grp, pool: pool, haze: haze, r: GLOW_R_FAR, d: -1 };
+  rt.glow = { grp: grp, pool: pool, haze: haze, cyl: cyl, cylMat: cylMat,
+    r: GLOW_R_FAR, d: -1 };
   sizeGlow(site);
 }
 function detachGlow(site){
   var rt = runtime[site.id];
   if (!rt || !rt.glow) return;
   W.scene.remove(rt.glow.grp);
+  /* the per-rose cloned materials go with the group (geometry and
+     the pool texture stay shared in GLOWA and are NOT disposed). */
+  try{ rt.glow.pool.material.dispose(); }catch(e){}
+  try{ rt.glow.haze.material.dispose(); }catch(e){}
+  try{ rt.glow.cylMat.dispose(); }catch(e){}
   rt.glow = null;
 }
 function sizeGlow(site){
@@ -718,6 +766,21 @@ function sizeGlow(site){
   var f = glowCloseFade(d);
   rt.glow.pool.material.opacity = f;
   rt.glow.haze.material.opacity = f;
+  /* ROSE CYLINDER (2026-11-13): constant width (the gentle pulse is
+     the beacon family's breathing, NOT a distance shrink — the
+     radius never tracks the player), fading out across
+     CYL_FADE_FAR -> CYL_FADE_NEAR and invisible inside it, so the
+     last stretch is hunted by the ambient glow alone and the rose
+     is never pinpointed. */
+  if (rt.glow.cyl){
+    var cf = cylFade(d);
+    rt.glow.cyl.visible = cf > 0;
+    if (cf > 0){
+      rt.glow.cylMat.opacity = CYL_OPACITY * cf;
+      var pr = CYL_R * (1 + Math.sin(Date.now() * 0.001 * 2.4) * 0.10);
+      rt.glow.cyl.scale.set(pr, 1, pr);
+    }
+  }
 }
 /* every render frame (called from roseTick before its 0.15 s
    throttle, so the shrink tracks the player smoothly): two scale
