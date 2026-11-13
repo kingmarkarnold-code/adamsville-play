@@ -78,6 +78,29 @@
 <link rel="manifest" href="app.webmanifest">
 <meta name="theme-color" content="#0b0f16">
 <script>
+/* UIV ADDRESS-BAR CLEANUP (2026-11-13, Joshua's order: "delete that").
+   The mixed-version self-heal (__checkDocVersionHeal, later in this
+   document) reloads toward the live version by putting ?uiv=<version>
+   on the URL — the param hop is the cache-buster that forces a fresh
+   document, and it must stay. But nothing ever took the param back
+   off, so it sat in the player's address bar for the whole session
+   and the play URL stopped being the plain detailed/ link (PLAY URL
+   LAW). This runs in the FIRST script of the document, before any
+   game code: if a uiv param is present — the heal just landed us
+   here, or the player arrived from an old link that carried one —
+   it is removed from the address bar in place via history.replaceState
+   (no reload, no navigation, every other param untouched). Nothing in
+   the game reads ?uiv= (the heal only WRITES it), so stripping it the
+   moment the healed page starts parsing cannot break the heal: the
+   sessionStorage loop guard ('sa_uiver_heal') is untouched and the
+   fresh document the hop bought is already the one being parsed. */
+try{
+  if (/[?&]uiv=/.test(location.search || '')){
+    var __uivClean = new URL(location.href);
+    __uivClean.searchParams.delete('uiv');
+    history.replaceState(null, '', __uivClean.toString());
+  }
+}catch(e){}
 try{
   if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)){
     navigator.serviceWorker.register('sw.js').catch(function(){});
@@ -2644,7 +2667,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    shipped a manifest whose index.html hash described bytes that never
    reached the repo (manifest .09.2, repo document still .09.1), and
    every fresh session paid one self-heal reload for it. */
-window.__DOC_UIVER = '2026.11.12.3';
+window.__DOC_UIVER = '2026.11.13.1';
 /* VER-TAG (ui 2026.11.07.25) >>>
    The on-screen version tag (#ver-tag) shows the version OF THE
    DEPLOYMENT ACTUALLY RUNNING, environment first (Joshua 2026-11-07
