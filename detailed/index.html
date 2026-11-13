@@ -2757,7 +2757,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    shipped a manifest whose index.html hash described bytes that never
    reached the repo (manifest .09.2, repo document still .09.1), and
    every fresh session paid one self-heal reload for it. */
-window.__DOC_UIVER = '2026.11.13.11';
+window.__DOC_UIVER = '2026.11.13.12';
 /* VER-TAG (ui 2026.11.07.25) >>>
    The on-screen version tag (#ver-tag) shows the version OF THE
    DEPLOYMENT ACTUALLY RUNNING, environment first (Joshua 2026-11-07
@@ -6688,6 +6688,12 @@ window.__saLandingSpot = function(){
     } catch(e){}
     return gy;
   }
+  /* GOLDEN ROSES (2026-11-13): the rose glow seats on this same
+     drawn ground. treeSeatY is private to this closure — the
+     world-surface publisher in the outer block cannot see it —
+     so it is exposed here, the way this pass exposes its other
+     hooks (__saPregrowSettle, __PKG_TREES). */
+  window.treeSeatY = treeSeatY;
   var reseatState = { cursor: 0, last: {}, checked: 0, rebuilt: 0 };
   function reseatSweep(){
     if (!window.__gameStarted || typeof player === 'undefined' || !player) return;

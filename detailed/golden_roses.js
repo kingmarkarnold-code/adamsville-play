@@ -122,22 +122,20 @@ function glowCloseFade(d){
    leaving the ambient glow as the only guide for the last stretch.
    Fade band: full strength at CYL_FADE_FAR and beyond, easing to
    zero at CYL_FADE_NEAR, invisible inside it.
-   FADE DISTANCE SET BY JOSHUA (2026-11-13, later the same call):
-   the band is anchored to the tree line in his 535 screenshot —
-   the distance from the player to the visible tree line there,
-   measured in the Defect A pass at 50 units (about 164 feet;
-   1 unit = 1 m). His ruling: by the time he is THAT close to a
-   rose, the cylinder must be fully gone and the ambient glow is
-   the only guide; the fade may begin farther out, in the
-   several-hundred-feet band his picture shows. So: fade begins
-   at 120u (about 394 ft) and is complete at 50u (about 164 ft).
-   (First shipped band, .13.3, was 170 -> 70; he tightened it to
-   the measured tree line.) */
+   FADE DISTANCE SET BY JOSHUA (2026-11-13, latest ruling — this
+   supersedes the 120 -> 50 tree-line band set earlier the same
+   day, which itself tightened the first shipped 170 -> 70): the
+   band keeps the same 70u width, shifted OUT. Playing at 535 he
+   could already SEE the rose while its cylinder was still up —
+   his rule: when he can already see the rose, the cylinder must
+   be gone. So the cylinder is FULLY GONE by 150u (about 492 ft)
+   and at full strength beyond 220u; inside 150u the ambient glow
+   is the only guide. */
 var CYL_R = 6;             /* constant radius — never shrinks */
 var CYL_H = 400;           /* sky-to-ground, the beacon's height */
 var CYL_OPACITY = 0.50;    /* full-strength opacity, beacon family */
-var CYL_FADE_FAR = 120;    /* at/past this distance: full strength */
-var CYL_FADE_NEAR = 50;    /* at/inside this distance: gone */
+var CYL_FADE_FAR = 220;    /* at/past this distance: full strength */
+var CYL_FADE_NEAR = 150;   /* at/inside this distance: gone */
 function cylFade(d){
   if (d >= CYL_FADE_FAR) return 1;
   if (d <= CYL_FADE_NEAR) return 0;
@@ -719,12 +717,27 @@ function glowRadius(d){
   t = Math.pow(t, GLOW_CURVE);
   return GLOW_R_NEAR + (GLOW_R_FAR - GLOW_R_NEAR) * t;
 }
+/* SEAT ON THE DRAWN GROUND (2026-11-13): the world's visible
+   surface is the bench GLB tiles, and the analytic heightAt can
+   sit units above or below it (measured this build: +2.31u float
+   at Chattahoochee, -1.79u BURIED at Tatum Lake). index.html
+   publishes treeSeatY — the exact seat the tree pass proved
+   against the drawn tiles' rasters — so the glow rides the same
+   ground the trees stand on and the player sees. The fallback is
+   the analytic heightAt, the pre-fix behaviour, and applies only
+   if the seat is somehow unpublished. */
+function seatY(x, z){
+  if (W && W.treeSeatY){
+    try { return W.treeSeatY(x, z); } catch (e) {}
+  }
+  return W.heightAt(x, z);
+}
 function attachGlow(site){
   var rt = runtime[site.id];
   if (!rt || rt.glow) return;
   var A = buildGlowAssets(W.THREE);
   var grp = new THREE.Group();
-  grp.position.set(site.x, W.heightAt(site.x, site.z), site.z);
+  grp.position.set(site.x, seatY(site.x, site.z), site.z);
   /* AMBIENT (2026-11-13): materials CLONED per rose (the shared
      geometry and pool texture are reused as-is) so sizeGlow can run
      the close-range fade on this rose's glow alone. */
@@ -800,6 +813,26 @@ function glowTick(){
   for (var i = 0; i < SITES.length; i++){
     var rt = runtime[SITES[i].id];
     if (rt && rt.glow) sizeGlow(SITES[i]);
+  }
+}
+/* SEATING KEEP-UP (2026-11-13): a glow attached before its bench
+   tile (and the tile's drawn-ground raster) streamed in sits on
+   the analytic height until the drawn surface exists under it.
+   Same law as the trees' re-seat sweep: while the player is near
+   a site (600u — the rasters live within reach of the player),
+   pull the glow group onto seatY whenever it has drifted more
+   than 0.05. Far sites keep their last seat; their rasters are
+   evicted at range anyway and the seat corrects on approach.
+   Runs on roseTick's 0.15 s cadence, never per-frame. */
+function reseatGlows(){
+  if (!W || !W.player) return;
+  for (var i = 0; i < SITES.length; i++){
+    var site = SITES[i], rt = runtime[site.id];
+    if (!rt || !rt.glow) continue;
+    var dx = W.player.x - site.x, dz = W.player.z - site.z;
+    if (dx * dx + dz * dz > 600 * 600) continue;
+    var y = seatY(site.x, site.z);
+    if (Math.abs(y - rt.glow.grp.position.y) > 0.05) rt.glow.grp.position.y = y;
   }
 }
 
@@ -1074,6 +1107,7 @@ function roseTick(dt){
   tickAcc += (typeof dt === 'number' && dt > 0 && dt < 1) ? dt : 0.016;
   if (tickAcc < 0.15) return;
   tickAcc = 0;
+  reseatGlows();   /* keep every near glow seated on the drawn ground */
   var pl = W.player;
   /* regrow first (cheap, runs regardless of player state) */
   var now = absGameMin();
@@ -1127,12 +1161,20 @@ function boot(){
   booted = true;
   var G = buildGeos(THREE);
   var envTex = buildEnv(THREE, window.renderer, window.scene, window.sun);
+  /* the drawn-ground seat is captured DEFENSIVELY, on its own: a
+     surface that throws on read must degrade the glow to the
+     analytic seat, never take the whole quest module down at
+     boot (the failure this guard exists for happened in this
+     build's first verification boot). */
+  var seatFn = null;
+  try { seatFn = window.treeSeatY || null; } catch (e) {}
   W = {
     THREE: THREE, G: G,
     matsShine: buildMats(THREE, envTex, false),
     matsDull: buildMats(THREE, envTex, true),
     scene: window.scene, player: window.player,
     heightAt: window.heightAt, spawnPickup: window.spawnPickup,
+    treeSeatY: seatFn,
     pickups: window.pickups, inventory: window.inventory,
     Report: window.Report || null,
     get car(){ try { return window.car; } catch (e) { return null; } }
