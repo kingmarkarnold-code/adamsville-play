@@ -73,7 +73,9 @@ var CAPS = { bird: 10, squirrel: 6, chipmunk: 6, deer: 4, butterfly: 8 };
 var CAP_BIRDS = CAPS.bird, CAP_SQUIRRELS = CAPS.squirrel,
     CAP_CHIPMUNKS = CAPS.chipmunk, CAP_BFLY = CAPS.butterfly;
 var SONG_R = 40;            /* bird song is a near phenomenon (design) */
-var SONG_GAIN = 0.32;       /* v1.2 (Joshua 2026-11-07, live play:
+var SONG_GAIN = 0.24;       /* v1.3 (Joshua 2026-11-13, live play:
+   birds still too loud — 0.32 -> 0.24, his number outright).
+   v1.2 (Joshua 2026-11-07, live play:
    v1.1's 0.6 was not enough — "they're pretty loud because of their
    pitch", so he first asked another 20% off, then ruled the value
    outright: "instead of the birds being at point 48, let's put them

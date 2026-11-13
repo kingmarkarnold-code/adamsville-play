@@ -14,9 +14,9 @@
     },
     {
       "name": "ambient_audio.js",
-      "size": 50470,
-      "sha256": "50f796a6b073e3b1285ade075cb13838a97879ef01958d72d7ca8605d7c71e73",
-      "hash": "50f796a6b073e3b1285ade075cb13838a97879ef01958d72d7ca8605d7c71e73"
+      "size": 50690,
+      "sha256": "de5901d03c571cc86e0228e0f4e08ff54146a1cb7d4e8a85cea473e39653838c",
+      "hash": "de5901d03c571cc86e0228e0f4e08ff54146a1cb7d4e8a85cea473e39653838c"
     },
     {
       "name": "basketball.html",
@@ -172,8 +172,8 @@
     {
       "name": "index.html",
       "size": 1396981,
-      "sha256": "10bb1c469ead5aa7552bc0a43904790bfc0bad6f2b639c30e1666e1f8fda9706",
-      "hash": "10bb1c469ead5aa7552bc0a43904790bfc0bad6f2b639c30e1666e1f8fda9706"
+      "sha256": "3b57fee08ad96a5776bbc80ded52db791f0a04b7f40180c63d70920762db112e",
+      "hash": "3b57fee08ad96a5776bbc80ded52db791f0a04b7f40180c63d70920762db112e"
     },
     {
       "name": "input_diag.js",
@@ -673,9 +673,9 @@
     },
     {
       "name": "wildlife_system.js",
-      "size": 118965,
-      "sha256": "9278e31dba2bcd6c8f57af2b0a3a44913226fd21285e7e5036495ec1b0106ad9",
-      "hash": "9278e31dba2bcd6c8f57af2b0a3a44913226fd21285e7e5036495ec1b0106ad9"
+      "size": 119068,
+      "sha256": "e4dd8e822fcb3fadf9a2c5936129c4944d5548f75638f2cc79a04fe0bf9fc1ea",
+      "hash": "e4dd8e822fcb3fadf9a2c5936129c4944d5548f75638f2cc79a04fe0bf9fc1ea"
     },
     {
       "name": "wildlife/Deer.glb",
@@ -708,6 +708,6 @@
       "hash": "5bd3ab4ab2c4fe2671d7c7b755c98518de645f5390c3df530be6c0fbaea92a35"
     }
   ],
-  "ui_version": "2026.11.13.7",
+  "ui_version": "2026.11.13.8",
   "version": "2026.10.17.9"
 }

@@ -558,10 +558,13 @@ function retarget(){
      insects actually are. */
   window.__musicDuck = L.duck;
 
-  /* Crickets: night only. */
+  /* Crickets: night only. Level 0.0055 (Joshua 2026-11-13: 0.0075 ->
+     0.0055, his number); LFO pulse depth scaled by the same ratio
+     (0.0035 * 0.0055/0.0075 = 0.002567) so the pulse character is
+     unchanged — only the level drops. */
   var nightF = day ? 0 : 1;
-  gCrickets.gain.setTargetAtTime(running ? 0.0075 * nightF : 0, t, 2.0);
-  crLFOdepth.gain.setTargetAtTime(running ? 0.0035 * nightF : 0, t, 2.0);
+  gCrickets.gain.setTargetAtTime(running ? 0.0055 * nightF : 0, t, 2.0);
+  crLFOdepth.gain.setTargetAtTime(running ? 0.002567 * nightF : 0, t, 2.0);
 }
 
 /* ------------------------------------------------------------------ */
