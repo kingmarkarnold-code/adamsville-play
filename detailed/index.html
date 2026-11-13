@@ -54,7 +54,9 @@
        - "Clean slate": re-downloads wipe the old files of that type FIRST,
          then download fresh. (forceRedownload - map + assets)
        - No-skip loader, fully automatic (2026-11-07): NOW LOADING
-         alone → progress bar → a ten-second settle at 100% → straight
+         alone → progress bar → a GET READY settle at 100% that lasts
+         until the world around the landing spot measures fully built
+         (2026-11-13: the fixed ten-second settle is retired) → straight
          into the game. There is no click-to-start anywhere and no
          manual gate of any kind; failure paths offer RETRY (reload)
          only, never a start.
@@ -723,11 +725,14 @@ if (location.protocol === 'file:'){ setTimeout(function(){ if (!window.__threeMo
   #load-bottom{width:100%;display:flex;flex-direction:column;align-items:center;padding:0 8px;
     box-sizing:border-box;}
   #load-bar{width:min(88%,420px);height:14px;border:2px solid #39ff6a;border-radius:8px;overflow:hidden;position:relative;}
-  /* GET READY SWEEP (2026-11-08, Joshua): during the ten-second entry
-     settle, neon green sweeps left-to-right COVERING the full blue
-     bar; entry happens when the cover completes. The sweep is an
-     overlay inside the bar (the bar clips it); the blue fill stays
-     at 100% underneath the whole time. */
+  /* GET READY SWEEP (2026-11-08, Joshua; REAL LOADING BAR 2026-11-13):
+     during the entry settle, neon green sweeps left-to-right COVERING
+     the full blue bar. Since 2026-11-13 the sweep is not a timer: its
+     width is the measured readiness of the world around the landing
+     spot (window.__READINESS — the tree ring and the ground tiles
+     under it), and entry happens when the cover genuinely completes.
+     The sweep is an overlay inside the bar (the bar clips it); the
+     blue fill stays at 100% underneath the whole time. */
   #load-sweep{position:absolute;left:0;top:0;height:100%;width:0%;background:#39ff14;
     box-shadow:0 0 12px #39ff14;pointer-events:none;}
   #load-fill{height:100%;width:0%;background:#39ff6a;box-shadow:0 0 12px #39ff6a;transition:width .2s;}
@@ -1398,7 +1403,8 @@ window.SAView = (function(){
        __loadStep(key, failed) - marks one step done, advances #load-fill and
          rewrites #load-status ("Loading roads..."); when every step is
          done it stamps the boot COMPLETE (__beginEntryDelay), which
-         starts the ten-second settle before entry.
+         opens the GET READY settle; entry follows the world's
+         measured readiness (2026-11-13), not a fixed delay.
        v1.15 REAL PROGRESS (Joshua 2026-10-10): the bar is now weighted by
          ACTUAL file sizes (roads.js=2.8MB counts 600x more than elev.js=4.4K),
          not just file count. The old 20s fake-complete watchdog is GONE —
@@ -1561,44 +1567,115 @@ function __parseSet(label, detail, pct){
   var fill=document.getElementById('load-fill');
   if(fill) fill.style.width=pct+'%';
 }
-/* ===== TEN-SECOND ENTRY SETTLE (2026-11-07, Joshua) =====
-   When every load step has genuinely reported in, the boot is
-   COMPLETE — but the player does not enter the game yet. The
-   completed progress face (bar full, "Ready") stays on screen for
-   a full TEN SECONDS of wall clock, then the game starts by itself.
-   This is a boot-sequence beat, not a body timer: real seconds,
-   measured with Date.now(). __beginEntryDelay() is idempotent —
-   the first genuine completion stamps __loadCompletedAt and arms
-   the entry timer; later calls change nothing. __tryStartGame
-   enforces the same gate for every other start trigger (the
-   queue-end attempt, the buildings-gate retry, the failsafes), so
-   nothing can enter early. FAILSAFE force-completions deliberately
-   never call this: a stalled boot the watchdog rescues has already
-   waited minutes and is not held for ten more seconds. */
-window.__ENTRY_DELAY_MS = 10000;
+/* ===== WORLD READINESS REGISTRY (2026-11-13, Joshua) =====
+   His ruling: the neon green GET READY bar must show the progression
+   of the world ACTUALLY getting ready — not a timer. The fixed
+   ten-second entry delay (__ENTRY_DELAY_MS, 2026-11-07) is RETIRED
+   as the entry mechanism: when every load step has genuinely
+   reported in, the boot is COMPLETE, the GET READY face opens, and
+   entry happens the moment the measured readiness of the world
+   around the player's landing spot reaches a genuine 100% — the
+   area right in front of the player completely built and visible.
+
+   Readiness is a REGISTRY, so it adapts as the scene grows. The
+   census is the sum over every registered unit: fraction =
+   SUM(done) / SUM(total). __tryStartGame's readiness gate and the
+   GET READY sweep both read this one census, so the bar and the
+   gate can never disagree.
+
+   HOW A WORLD SYSTEM JOINS (the whole contract):
+     window.__READINESS.register('my-system', function(){
+       return { done: <units finished>, total: <units the start
+                area needs> };
+     });
+   - Register once, any time before entry. The probe is polled live
+     (a few times a second during the settle), so it must read
+     CURRENT counts on each call — cheap counters, never work.
+   - done counts only FINISHED, VISIBLE work (a claimed tree tile,
+     an installed ground tile) — never queued or in-flight work.
+   - Return null (or total 0) while your system has nothing to build
+     at the start position: your unit simply doesn't count, and a
+     boot with no applicable units reads 100% (legacy boots are
+     never held by a registry they don't use).
+   - Keep the probe O(1)-ish and total-safe: it runs on the loader's
+     thread mid-boot. (The registry guards throws anyway.)
+   Joining needs NO bar code and NO gate code changes — that is the
+   point: when building/street loaders land, they register their
+   pre-entry units and the bar accounts for them automatically.
+   Today's units: 'trees' (the pre-grow ring around the landing
+   spot, registered by buildPkgTrees) and 'ground-tiles' (the bench
+   GLB tiles covering that same area, registered by the tile
+   manager in map_loader.js). */
+window.__READINESS = (function(){
+  var units = {};   /* name -> probe fn: () -> {done, total} | null */
+  function read(name){
+    try{
+      var r = units[name]();
+      if (!r) return null;
+      var d = Math.floor(+r.done || 0), t = Math.floor(+r.total || 0);
+      if (t <= 0) return null;
+      if (d < 0) d = 0; if (d > t) d = t;
+      return { done: d, total: t };
+    }catch(e){ return null; }
+  }
+  return {
+    register: function(name, probe){
+      if (typeof name === 'string' && name && typeof probe === 'function')
+        units[name] = probe;
+    },
+    has: function(name){ return !!units[name]; },
+    names: function(){ var out=[]; for (var n in units) out.push(n); return out; },
+    census: function(){
+      var done = 0, total = 0, per = {};
+      for (var n in units){
+        var r = read(n);
+        if (r){ per[n] = r; done += r.done; total += r.total; }
+      }
+      return { done: done, total: total, units: per,
+               fraction: (total > 0 ? done / total : 1) };
+    },
+    fraction: function(){ return this.census().fraction; }
+  };
+})();
+/* ANTI-HANG BACKSTOP (2026-11-13): the readiness gate's waiver, in
+   the spirit of the old settle's 90-second one. If readiness is
+   still short this long after the load completed — a tile that will
+   not fetch, a pathological device — entry proceeds with whatever
+   has built (it keeps streaming in during play, as always) rather
+   than hanging the boot forever. The NORMAL path reaches a genuine
+   100% and never comes near this. Measured from __loadCompletedAt. */
+window.__READY_BACKSTOP_MS = 90000;
 window.__loadCompletedAt = 0;
-window.__entryReadyAt = 0;
+window.__readyWaived = false;
 window.__beginEntryDelay = function(){
   try{
     if (window.__loadCompletedAt) return;
     window.__loadCompletedAt = Date.now();
-    window.__entryReadyAt = window.__loadCompletedAt + window.__ENTRY_DELAY_MS;
+    /* First start attempt is prompt: on a fast device with a warm
+       world the census may already read 100% and entry is immediate;
+       otherwise __tryStartGame's readiness gate arms its own poll
+       and entry lands the moment the world is genuinely ready. */
     setTimeout(function(){
       try{ if (typeof __tryStartGame === 'function') __tryStartGame(); }catch(e){}
-    }, window.__ENTRY_DELAY_MS);
+    }, 50);
     /* GET READY FACE (2026-11-08, Joshua): the settle gets its own
        face — see __startGetReadyFace below. */
     try{ __startGetReadyFace(); }catch(e){}
   }catch(e){}
 };
-/* ===== GET READY FACE + SETTLE PRE-GROW (2026-11-08, Joshua) =====
+/* ===== GET READY FACE + SETTLE PRE-GROW (2026-11-08, Joshua;
+   REAL LOADING BAR 2026-11-13) =====
    His design: the moment the real (blue) bar reaches 100%, the
    information text under the bar DISAPPEARS, the words "Get Ready"
-   appear in its place, the blue bar STAYS at 100%, and neon green
-   sweeps left-to-right covering the blue across exactly the
-   ten-second settle (__ENTRY_DELAY_MS, unchanged); when the green
-   covers the bar, the player enters (the settle timer above does
-   the entering — this face only paints). SUCCESS PATH ONLY: when a
+   appear in its place, and the blue bar STAYS at 100% while neon
+   green sweeps left-to-right covering it. Since 2026-11-13 the
+   sweep is the world's REAL readiness (window.__READINESS: the
+   tree ring around the landing spot + the ground tiles under it),
+   not the ten-second timer it used to trace — it may ease TOWARD
+   the measured fraction but never past it, and the % under the bar
+   reads the same measured number. When the census reaches a
+   genuine 100%, the readiness gate in __tryStartGame does the
+   entering — this face only paints. SUCCESS PATH ONLY: when a
    critical load failure is on record, the face is left exactly as
    it was (the critical panel + RETRY own that path, untouched).
    The same rAF loop is the settle's workhorse for the PRE-GROW
@@ -1606,9 +1683,9 @@ window.__beginEntryDelay = function(){
    funnel's frontier build centred on the landing spot, so the
    start area is fully built at entry. The loop re-asserts the face
    every frame because two late writers (the 'Ready' flip in
-   __loadStep, __tryStartGame's settle branch) would otherwise
-   overwrite it during the settle. It stops when the game starts,
-   and in any case 90 s after the settle began. */
+   __loadStep, a refused __tryStartGame) would otherwise overwrite
+   it during the settle. It stops when the game starts, and in any
+   case just past the readiness backstop (90 s). */
 window.__getReady = { active:false };
 function __startGetReadyFace(){
   try{ if (window.__criticalFailed && window.__criticalFailed.length) return; }catch(e){}
@@ -1638,15 +1715,26 @@ function __startGetReadyFace(){
       try{ if (window.__FUNNEL && window.__FUNNEL.drive) window.__FUNNEL.drive(30); }catch(e){}
     }, 50);
   }
-  var t0=window.__loadCompletedAt, lastPre=0;
+  var t0=window.__loadCompletedAt, lastPre=0, disp=0;
   var step=function(){
     if (!window.__getReady.active) return;
     var now=Date.now();
-    if (window.__gameStarted || now-t0 > window.__ENTRY_DELAY_MS + 90000){
+    if (window.__gameStarted || now-t0 > window.__READY_BACKSTOP_MS + 2000){
       window.__getReady.active=false; return;
     }
-    var frac=Math.min(1, Math.max(0, (now-t0)/window.__ENTRY_DELAY_MS));
-    sweep.style.width=(frac*100)+'%';
+    /* REAL LOADING BAR (2026-11-13, Joshua): the sweep width is the
+       measured readiness census, full stop. The display eases toward
+       the measured fraction but is hard-clamped to never exceed it
+       (and snaps down instantly if the census itself drops, e.g. a
+       new unit registers) — the bar can lag the world, never lead
+       it. At a measured 100% the display is exactly 100%. */
+    var meas=1;
+    try{ meas=window.__READINESS.census().fraction; }catch(e){}
+    if (meas >= 1) disp=1;
+    else if (meas < disp) disp=meas;
+    else { disp += (meas-disp)*0.3; if (disp > meas) disp=meas; }
+    sweep.style.width=(disp*100)+'%';
+    if (pc){ var _pt=Math.round(disp*100)+'%'; if (pc.textContent!==_pt) pc.textContent=_pt; }
     if (dt && dt.textContent) dt.textContent='';
     if (st && st.textContent!=='Get Ready'){ st.textContent='Get Ready'; st.style.opacity='1'; }
     if (fill.style.width!=='100%') fill.style.width='100%';
@@ -1702,11 +1790,12 @@ function __loadStep(key,failed){
   }
   if(!next){
     /* Every step has genuinely reported in (v1.15: the bar only
-       reaches 100% here). Stamp the completion and start the
-       ten-second entry settle — the completed face stays up, no
-       prompt appears, and entry is automatic when the settle ends
-       (see __beginEntryDelay above). There is no START control to
-       reveal: the old #load-start button was removed 2026-11-07. */
+       reaches 100% here). Stamp the completion and open the GET
+       READY settle — the face stays up, no prompt appears, and
+       entry is automatic the moment the world's measured readiness
+       reaches 100% (see __beginEntryDelay above). There is no START
+       control to reveal: the old #load-start button was removed
+       2026-11-07. */
     var pct=__paintProgress();
     try{ window.__beginEntryDelay(); }catch(e){}
   }
@@ -2004,7 +2093,7 @@ function __loaderEscapeAbsolute(){
      deliberate "TAP TO START" on the old #load-start button — that
      button is gone; starting is automatic on this path too. A
      failsafe completion never stamps __loadCompletedAt, so the
-     ten-second entry settle does not hold this start.) */
+     readiness gate does not hold this start.) */
   try{ console.warn('[loader] ABSOLUTE FAILSAFE: no progress for 180s, force-completing OPTIONAL pending steps'); }catch(e){}
   window.__forceCompletePendingSteps();
   var blocked=__criticalBlockedList();
@@ -2080,7 +2169,7 @@ setInterval(function(){
          escape ITSELF: skip stuck OPTIONAL steps; critical steps go
          to the loud panel; otherwise start with what loaded. A
          failsafe completion never stamps __loadCompletedAt, so the
-         ten-second entry settle does not hold this start. */
+         readiness gate does not hold this start. */
       if(pending.length){
         try{
           window.__forceCompletePendingSteps();
@@ -2114,8 +2203,9 @@ setInterval(function(){
    capture-phase start-intent handler (__earlyStartRequest +
    window.__startRequested + three document listeners) is gone.
    Clicks and taps no longer start the game — nothing does, by hand:
-   the boot is fully automatic (queue end → ten-second settle →
-   entry; the failsafes cover the failure paths). Clicking during
+   the boot is fully automatic (queue end → GET READY settle →
+   entry at measured readiness; the failsafes cover the failure
+   paths). Clicking during
    the boot is simply ignored, which is safe because audio unlock
    rides the game's own first-gesture handling once it is running. */
 window.__gameStarted=false;
@@ -2667,7 +2757,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    shipped a manifest whose index.html hash described bytes that never
    reached the repo (manifest .09.2, repo document still .09.1), and
    every fresh session paid one self-heal reload for it. */
-window.__DOC_UIVER = '2026.11.13.10';
+window.__DOC_UIVER = '2026.11.13.11';
 /* VER-TAG (ui 2026.11.07.25) >>>
    The on-screen version tag (#ver-tag) shows the version OF THE
    DEPLOYMENT ACTUALLY RUNNING, environment first (Joshua 2026-11-07
@@ -6241,7 +6331,7 @@ try{ __wbStage('terrain'); }catch(e){}
     /* SETTLE DRIVE (2026-11-08): run the same slice loop NOW, with a
        caller-chosen budget, outside the frame pump. The loader's
        Get Ready loop drives the funnel on a timer during the
-       ten-second settle — the one stretch of the game's life where
+       entry settle — the one stretch of the game's life where
        no gameplay frame exists to protect, so for those seconds the
        funnel runs at bucket width instead of flask width (Joshua's
        funnel image, 2026-11-08). Identical queue, identical jobs,
@@ -7139,18 +7229,25 @@ window.__saLandingSpot = function(){
     try { reseatSweep(); } catch(e){}
   }, 400);
   /* SETTLE PRE-GROW entry point (2026-11-08): the loader's Get Ready
-     loop calls this ~3x a second during the ten-second settle. Each
-     call runs ONE frontier tick centred on the landing spot (the
-     funnel meters the actual building across frames, as always, so
-     the loading screen stays smooth); the post-entry tick then
-     continues from the same state — in-flight jobs keep their
-     cursors, claimed tiles stay claimed. Returns the ring census so
-     reports can state the start area's completion honestly. */
+     loop calls this ~3x a second during the entry settle, and the
+     readiness gate calls it before every census read. Each call
+     runs ONE frontier tick centred on the landing spot (the funnel
+     meters the actual building across frames, as always, so the
+     loading screen stays smooth) and re-centres the bench ground
+     tiles on the same spot, so the ground under the ring streams
+     toward the same readiness; the post-entry tick then continues
+     from the same state — in-flight jobs keep their cursors,
+     claimed tiles stay claimed. Returns the ring census so reports
+     can state the start area's completion honestly, and publishes
+     it to lastRingCensus for the readiness registry (below). */
+  var lastRingCensus = null;
   window.__saPregrowSettle = function(){
     var spot = null;
     try{ spot = window.__saLandingSpot ? window.__saLandingSpot() : null; }catch(e){}
     if (!spot) return null;
     tick(spot.x, spot.z);
+    try{ if (window.__PKG_TILES && window.__PKG_TILES.refresh)
+      window.__PKG_TILES.refresh(spot.x, spot.z); }catch(e){}
     var cix = Math.floor((spot.x - TERR_OX) / TILE), ciz = Math.floor((spot.z - TERR_OZ) / TILE);
     var span = Math.ceil(BUILD_R / TILE) + 1, tot = 0, done = 0, ix2, iz2;
     for (iz2 = ciz - span; iz2 <= ciz + span; iz2++)
@@ -7160,8 +7257,21 @@ window.__saLandingSpot = function(){
           tot++; if ((ix2 + ',' + iz2) in tiles) done++;
         }
       }
-    return { x: spot.x, z: spot.z, src: spot.src, ringTiles: tot, ringDone: done };
+    lastRingCensus = { x: spot.x, z: spot.z, src: spot.src, ringTiles: tot, ringDone: done };
+    return lastRingCensus;
   };
+  /* WORLD READINESS — this system's unit (2026-11-13): the tree ring
+     joins the entry readiness registry (see block 1 for the join
+     contract). The probe reads the last census the settle published;
+     before the first settle it returns null and doesn't count. The
+     bar and the entry gate read this same census, so what the
+     player watches IS what the gate waits for. */
+  try{
+    if (window.__READINESS) window.__READINESS.register('trees', function(){
+      return lastRingCensus ? { done: lastRingCensus.ringDone,
+                                total: lastRingCensus.ringTiles } : null;
+    });
+  }catch(e){}
   /* The solver's door to the bark: CollisionMaterial.pushOut calls
      this every iteration (inert when absent — legacy mode never
      registers it, and no registry fallback replaces it). */
@@ -19975,8 +20085,8 @@ __loadStep('world');
 __loadStep('music');
 /* __tryStartGame() - dismisses the loader and STARTS the game (first call to
    animate()). It is invoked ONLY by automatic triggers: the queue-end
-   attempt when the deferred downloads finish, the ten-second entry
-   settle's timer (__beginEntryDelay), the buildings gate's resolution,
+   attempt when the deferred downloads finish, the readiness gate's
+   poll (armed from __beginEntryDelay), the buildings gate's resolution,
    the block-1 failsafes, and the refused-start re-invoke. There is NO
    click/tap trigger anywhere (2026-11-07: click-to-start removed
    entirely — the v1.13 document handlers and the #load-start button
@@ -20029,54 +20139,51 @@ function __tryStartGame(){
       if(_cfSt){ _cfSt.textContent='⚠ Loading finished with failures — see the warning below'; _cfSt.style.opacity='1'; }
       return false;
     }
-    /* TEN-SECOND ENTRY SETTLE GATE (2026-11-07, Joshua): a genuine
-       load completion starts a 10 s wall-clock settle before entry
-       (__beginEntryDelay, block 1). Attempts inside the window say
-       "Ready" and arm ONE retry timer for the moment it ends, so
-       entry lands on time without polling. Boots the failsafes
-       force-completed never stamped __loadCompletedAt and pass
-       straight through — they have already waited long enough. */
-    if (window.__loadCompletedAt && Date.now() < window.__entryReadyAt){
-      var _edSt=document.getElementById('load-status');
-      if(_edSt){ _edSt.textContent='Ready'; _edSt.style.opacity='1'; }
-      if (!window.__entryRetryArmed){
-        window.__entryRetryArmed = true;
-        var _waitMs = Math.max(50, window.__entryReadyAt - Date.now());
-        setTimeout(function(){
-          window.__entryRetryArmed = false;
-          try{ __tryStartGame(); }catch(e){}
-        }, _waitMs);
-      }
-      return false;
-    }
-    /* TREE-RING ENTRY GATE (2026-11-13, Defect A — Joshua at 535:
-       "I'm standing right there by 535 and there's no trees. They
-       are in the distance."): the ten-second settle pre-grows the
-       tree ring around the landing spot, but on a slow phone the
-       funnel cannot finish the ring inside ten seconds — the census
-       the pre-grow returns was computed and then ignored, so the
-       player entered a field whose near trees did not exist yet
-       (the canopy hole is carved around the player from the first
-       tick, so an unfinished ring reads exactly as his screenshot:
-       bare ground all around, trees only in the distance). Entry
-       now waits until the pre-grow census says the ring is COMPLETE
-       — the Get Ready face and its bucket-width funnel drive stay
-       up meanwhile (the face's own 90-second backstop is also this
-       gate's waiver, so a pathological boot can never hang here:
-       after it, entry proceeds with whatever has grown). Boots the
-       failsafes force-completed never stamped __loadCompletedAt and
-       pass straight through, like the settle gate above. */
-    if (window.__loadCompletedAt && !window.__treeGateWaived){
-      if (Date.now() - window.__loadCompletedAt > window.__ENTRY_DELAY_MS + 90000){
-        window.__treeGateWaived = true;
-      } else {
-        var _tc = null;
-        try { _tc = (typeof window.__saPregrowSettle === 'function') ? window.__saPregrowSettle() : null; } catch(e){}
-        if (_tc && _tc.ringTiles > 0 && _tc.ringDone < _tc.ringTiles){
-          if (!window.__treeGateRetryArmed){
-            window.__treeGateRetryArmed = true;
+    /* WORLD READINESS GATE (2026-11-13, Joshua — this gate REPLACES
+       both the ten-second entry settle gate (2026-11-07) and the
+       tree-ring entry gate (2026-11-13, Defect A: "I'm standing
+       right there by 535 and there's no trees. They are in the
+       distance."), which it generalises): entry waits for the WORLD,
+       not a clock and not one system. The census is the readiness
+       registry's (window.__READINESS, block 1): today the pre-grow
+       tree ring around the landing spot AND the bench ground tiles
+       covering it; tomorrow whatever building/street loaders have
+       registered — this gate never changes again. Each attempt
+       first runs the settle (which drives the pre-grow and refreshes
+       every census), then reads the fraction: short of a genuine
+       100%, the GET READY face and its bucket-width funnel drive
+       stay up and the attempt re-arms on a 600 ms poll. The
+       anti-hang backstop (__READY_BACKSTOP_MS, 90 s from load
+       completion, the old waiver's spirit) waives the gate ONCE if
+       readiness is still short — a pathological boot can never hang
+       here; entry proceeds with whatever has built and it keeps
+       streaming in during play. Boots the failsafes force-completed
+       never stamped __loadCompletedAt and pass straight through —
+       they have already waited long enough. A boot whose world
+       registers no units (legacy) reads 100% and passes at once. */
+    if (window.__loadCompletedAt && !window.__readyWaived){
+      try { if (typeof window.__saPregrowSettle === 'function') window.__saPregrowSettle(); } catch(e){}
+      var _rc = null;
+      try { _rc = window.__READINESS ? window.__READINESS.census() : null; } catch(e){}
+      var _rfrac = _rc ? _rc.fraction : 1;
+      if (_rfrac < 1){
+        if (Date.now() - window.__loadCompletedAt > window.__READY_BACKSTOP_MS){
+          window.__readyWaived = true;
+          try{ console.warn('[loader] readiness backstop waived at ' +
+            Math.round(_rfrac * 100) + '% — entering with the world still building'); }catch(e){}
+        } else {
+          /* the face owns the status line while it is up; only speak
+             here if it is somehow not (a silent refusal reads as a
+             freeze — the v1.27 lesson) */
+          if (!window.__getReady || !window.__getReady.active){
+            var _rgSt=document.getElementById('load-status');
+            if(_rgSt){ _rgSt.textContent='Get Ready — building the world… ' +
+              Math.round(_rfrac * 100) + '%'; _rgSt.style.opacity='1'; }
+          }
+          if (!window.__readyRetryArmed){
+            window.__readyRetryArmed = true;
             setTimeout(function(){
-              window.__treeGateRetryArmed = false;
+              window.__readyRetryArmed = false;
               try{ __tryStartGame(); }catch(e){}
             }, 600);
           }
@@ -20169,12 +20276,13 @@ function __tryStartGame(){
    #load-start button wiring, and the document touchend handler.
    There is no launcher, no choice, and no click-to-start anywhere:
    the automatic boot confirms in block 1, the downloads run, the
-   queue-end attempt fires __tryStartGame, the ten-second entry
-   settle (__beginEntryDelay) holds it, and entry is automatic when
-   the settle ends. The remaining start triggers are all automatic
-   too: the buildings gate's resolution, the block-1 failsafes, and
-   the refused-start re-invoke — each racing the same gates (pending
-   steps, critical failures, the settle, buildings). */
+   queue-end attempt fires __tryStartGame, the readiness gate
+   (__beginEntryDelay's world census) holds it, and entry is
+   automatic when the world measures fully built. The remaining
+   start triggers are all automatic too: the buildings gate's
+   resolution, the block-1 failsafes, and the refused-start
+   re-invoke — each racing the same gates (pending steps, critical
+   failures, readiness, buildings). */
 </script>
 <!-- ===== LATE SYSTEMS (loaded AFTER script block 2, so they see the full
      world) ===== NPCs, face platform, reference NPCs, gas stations, traffic,

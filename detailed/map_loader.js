@@ -1364,8 +1364,23 @@ function createTileManager(pkg, manifest){
              loads: stats.loads, installs: stats.installs,
              failures: stats.failures, disposals: stats.disposals };
   }
+  /* WORLD READINESS census (2026-11-13): of the bench tiles whose
+     bounds come within r of (x, z) — the start area the readiness
+     registry asks about — how many are fully installed ('loaded' =
+     mesh in the scene, visible). 'parsed' geometry is NOT counted:
+     fetched is not visible. */
+  function census(x, z, r){
+    var total = 0, done = 0;
+    for (var i = 0; i < tiles.length; i++){
+      if (distToTile(x, z, tiles[i]) <= r){
+        total++;
+        if (tiles[i].state === 'loaded') done++;
+      }
+    }
+    return { done: done, total: total };
+  }
   return { ready: true, flavour: flavour, attach: attach, state: state,
-           tiles: tiles, refresh: refresh };
+           tiles: tiles, refresh: refresh, census: census };
 }
 
 /* startTiles(pkg) — fetch the tiles manifest and build the manager.
@@ -1383,6 +1398,20 @@ function startTiles(pkg){
       return false;
     }
     window.__PKG_TILES = mgr;
+    /* WORLD READINESS (2026-11-13): the drawn ground joins the entry
+       readiness registry — the GET READY bar and the entry gate count
+       the bench tiles covering the landing area (radius = the tree
+       ring's BUILD_R, 235u) alongside the trees. Joins per the
+       contract in index.html block 1; no bar or gate code knows this
+       system exists, which is the design. */
+    try {
+      if (window.__READINESS) window.__READINESS.register('ground-tiles', function(){
+        var s = null;
+        try { s = window.__saLandingSpot ? window.__saLandingSpot() : null; } catch(e){}
+        if (!s) return null;
+        return mgr.census(s.x, s.z, 235);
+      });
+    } catch(e){}
     note('terrain tiles ready: ' + mgr.flavour + ' — ' + mgr.state().total +
          ' tiles (drawn ground is the bench GLB; lookups unchanged)');
     return true;
