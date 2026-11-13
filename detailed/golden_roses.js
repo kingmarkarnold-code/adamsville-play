@@ -65,6 +65,10 @@
    hunted by the rose's own shine. The glow lives and dies with the
    standing plant: picked = gone, trampled = gone, regrown = back.
    A dropped (loose) rose has no glow — it was already found once.
+   AMBIENT REWORK (2026-11-13): up close the first cut's bright pool
+   core blew the screen out like a sun; Joshua picked AMBIENT GLOW
+   (soft, even, no core) with a hard close-range fade cap. The sizing
+   law above is unchanged — see buildGlowAssets / glowCloseFade.
    ============================================================================ */
 (function goldenRoses(){
 'use strict';
@@ -96,6 +100,17 @@ var GLOW_R_NEAR = 15;      /* the floor — a modest pool, not a point */
 var GLOW_D_FAR = 500;      /* at/past this distance: full patch */
 var GLOW_D_NEAR = 40;      /* at/inside this distance: the floor */
 var GLOW_CURVE = 0.65;
+/* CLOSE-RANGE CAP (2026-11-13, Joshua's pick: AMBIENT GLOW): inside
+   GLOW_D_NEAR the whole glow also FADES toward GLOW_CLOSE_MIN as the
+   player closes the last stretch, so standing in the pool hunting
+   the rose can never white the screen out. At and beyond GLOW_D_NEAR
+   the fade is 1 — the far and mid-range look is untouched. */
+var GLOW_CLOSE_MIN = 0.35; /* opacity floor at distance zero */
+function glowCloseFade(d){
+  if (d >= GLOW_D_NEAR) return 1;
+  var t = Math.max(0, d / GLOW_D_NEAR);
+  return GLOW_CLOSE_MIN + (1 - GLOW_CLOSE_MIN) * Math.pow(t, 0.8);
+}
 
 /* THE SEVEN NAMED SITES (runtime coords, each one verified against the
    shipped terrain in this build's recon boots: dry grass, not in
@@ -594,17 +609,37 @@ function buildPickedMark(THREE, G, matsDull, seed){
    across the map. depthTest stays ON: a hill between you and the
    rose hides the glow, same as the beacon. All geometry, textures
    and materials are built ONCE and shared by every rose; the only
-   per-rose state is a Group and two scale values. */
+   per-rose state is a Group and two scale values.
+
+   AMBIENT REWORK (2026-11-13, Joshua's pick from the side-by-side):
+   the first cut's pool gradient peaked at the centre (alpha 0.90 of
+   bright gold, additive), and the haze wall peaked at 1.35× — from
+   across the map that read as a soft patch, but UP CLOSE the pool
+   filled the view with its bright core and blew the whole screen
+   out like a sun ("washed out the screen itself, like I wasn't able
+   to see where I was"). His ruling: AMBIENT GLOW — the light spreads
+   soft and EVEN over the rose and its ground: no ring, no bright
+   core. So the pool gradient is now nearly flat (a gentle, even wash
+   that only melts away at the rim), the haze peak is cut to 0.60×,
+   and inside GLOW_D_NEAR a close-range fade (glowCloseFade) caps
+   both pieces so the near view can never white out. The .12.1
+   distance law (glowRadius) is untouched: same coverage, same
+   shrink, same never-a-pinpoint floor. Materials are now cloned per
+   rose (geometry + texture still shared) so the fade can be
+   per-rose; seven roses = fourteen tiny materials. */
 var GLOWA = null;
 function buildGlowAssets(THREE){
   if (GLOWA) return GLOWA;
   var cv = document.createElement('canvas'); cv.width = cv.height = 256;
   var cx = cv.getContext('2d');
   var gr = cx.createRadialGradient(128, 128, 0, 128, 128, 128);
-  gr.addColorStop(0.00, 'rgba(255,199,92,0.90)');
-  gr.addColorStop(0.35, 'rgba(255,180,70,0.48)');
-  gr.addColorStop(0.70, 'rgba(255,160,46,0.17)');
-  gr.addColorStop(1.00, 'rgba(255,150,40,0)');
+  /* AMBIENT (2026-11-13): near-flat alpha — an even wash of gold
+     across the whole pool, melting only at the rim. No bright core:
+     the centre is the same strength as the rest of the pool. */
+  gr.addColorStop(0.00, 'rgba(255,198,96,0.34)');
+  gr.addColorStop(0.55, 'rgba(255,190,86,0.32)');
+  gr.addColorStop(0.82, 'rgba(255,178,68,0.19)');
+  gr.addColorStop(1.00, 'rgba(255,168,56,0)');
   cx.fillStyle = gr; cx.fillRect(0, 0, 256, 256);
   var poolMat = new THREE.MeshBasicMaterial({
     map: new THREE.CanvasTexture(cv), transparent: true,
@@ -615,11 +650,10 @@ function buildGlowAssets(THREE){
   for (var i = 0; i < hp.count; i++){
     var t = Math.min(1, Math.max(0, hp.getY(i)));   /* 0 base, 1 top */
     var b = Math.pow(1 - t, 1.4);
-    /* brighter than 1.0 on purpose: additive light has to hold its
-       own against a lit sky at cross-map range (the far mockup is a
-       dawn scene; at noon this is the difference between a shimmer
-       and nothing). */
-    hcol.push(1.35 * b, 0.88 * b, 0.26 * b);
+    /* AMBIENT (2026-11-13): peak cut from 1.35× to 0.60× — the haze
+       is a gentle veil of the same gold, not a wall of light; the
+       height falloff shape is unchanged. */
+    hcol.push(0.60 * b, 0.39 * b, 0.115 * b);
   }
   hazeGeo.setAttribute('color', new THREE.Float32BufferAttribute(hcol, 3));
   var hazeMat = new THREE.MeshBasicMaterial({
@@ -651,10 +685,13 @@ function attachGlow(site){
   var A = buildGlowAssets(W.THREE);
   var grp = new THREE.Group();
   grp.position.set(site.x, W.heightAt(site.x, site.z), site.z);
-  var pool = new THREE.Mesh(A.poolGeo, A.poolMat);
+  /* AMBIENT (2026-11-13): materials CLONED per rose (the shared
+     geometry and pool texture are reused as-is) so sizeGlow can run
+     the close-range fade on this rose's glow alone. */
+  var pool = new THREE.Mesh(A.poolGeo, A.poolMat.clone());
   pool.rotation.x = -Math.PI / 2; pool.position.y = 0.25;
   pool.renderOrder = 5; pool.frustumCulled = false;
-  var haze = new THREE.Mesh(A.hazeGeo, A.hazeMat);
+  var haze = new THREE.Mesh(A.hazeGeo, A.hazeMat.clone());
   haze.renderOrder = 6; haze.frustumCulled = false;
   grp.add(pool); grp.add(haze);
   W.scene.add(grp);
@@ -676,6 +713,11 @@ function sizeGlow(site){
   rt.glow.r = R; rt.glow.d = d;
   rt.glow.pool.scale.set(R, R, 1);
   rt.glow.haze.scale.set(R, 4 + R * 0.22, R);
+  /* AMBIENT close-range cap (2026-11-13): fade both pieces as the
+     player closes inside GLOW_D_NEAR — see glowCloseFade. */
+  var f = glowCloseFade(d);
+  rt.glow.pool.material.opacity = f;
+  rt.glow.haze.material.opacity = f;
 }
 /* every render frame (called from roseTick before its 0.15 s
    throttle, so the shrink tracks the player smoothly): two scale
