@@ -2667,7 +2667,7 @@ function __fetchTextWithProgress(url, opts, onProgress, idleMs, capMs){
    shipped a manifest whose index.html hash described bytes that never
    reached the repo (manifest .09.2, repo document still .09.1), and
    every fresh session paid one self-heal reload for it. */
-window.__DOC_UIVER = '2026.11.13.6';
+window.__DOC_UIVER = '2026.11.13.7';
 /* VER-TAG (ui 2026.11.07.25) >>>
    The on-screen version tag (#ver-tag) shows the version OF THE
    DEPLOYMENT ACTUALLY RUNNING, environment first (Joshua 2026-11-07
@@ -18480,8 +18480,9 @@ function spawnStarterPickups(){
      the house, closest of the starters to the spawn so it is the first
      thing he sees. ONE flashlight only: unlike the soda/wrench/ball,
      which respawn every boot by design, the flashlight does not spawn
-     again once it is already in his inventory or in his hand (the
-     equipped flag is restored by flashlightRestore below). */
+     again once it is already in his inventory (it is never in his
+     hand at start — a save never restores equipped; see
+     flashlightRestore below). */
   var _hasLight=false;
   try {
     for (var _fi=0; _fi<inventory.length; _fi++){ if (inventory[_fi].kind==='flashlight'){ _hasLight=true; break; } }
@@ -18495,13 +18496,14 @@ invLoad();
    (535 — see spawnStarterPickups); on mobile, selecting it in the
    inventory turns ACTION into EQUIP; on a laptop, the F key equips
    it; equipped = held in hand, light on, lighting the ground ahead.
-   STATE: window.__flashlightOn (in hand + lit), saved in localStorage
-   beside the inventory so a reload keeps the light in his hand. The
-   spotlight + hand mesh are built lazily on first equip and driven by
-   one render-phase tick, so nothing exists (and nothing costs a frame)
-   until he owns the light. The tick is the single place that keeps the
-   visuals true to the flag — it builds them on its first run if the
-   flag was restored from a save. */
+   STATE: window.__flashlightOn (in hand + lit). The flag is written
+   to localStorage on equip/unequip, but a reload NEVER restores it —
+   every start is unequipped by his ruling (flashlightRestore below).
+   The spotlight + hand mesh are built lazily on first equip and
+   driven by one render-phase tick, so nothing exists (and nothing
+   costs a frame) until he owns the light. The tick is the single
+   place that keeps the visuals true to the flag — it builds them on
+   its first run after an equip. */
 var FLASHLIGHT_KEY = 'sa_flashlight_v1';
 window.__flashlightOn = false;
 window.__invSel = -1;
@@ -18517,9 +18519,17 @@ function flashlightSave(){
   try{ localStorage.setItem(FLASHLIGHT_KEY, window.__flashlightOn ? '1' : '0'); }catch(e){}
 }
 function flashlightRestore(){
-  try {
-    if (localStorage.getItem(FLASHLIGHT_KEY) === '1' && flashlightHas()) window.__flashlightOn = true;
-  } catch(e){}
+  /* START ON THE GROUND (2026-11-13, Joshua — this supersedes the
+     Nov 11 'persists equipped' behaviour): the game NEVER starts
+     with the flashlight in his hand, whatever a save says. It waits
+     on the ground at the 535 yard (spawnStarterPickups) until he
+     picks it up, and it reaches his hand only through the equip
+     path — selecting it in the inventory (ACTION = EQUIP) or the
+     F key. A returning save therefore starts with the light in his
+     inventory, unequipped. The persisted flag is cleared here so
+     the start state is unambiguous. */
+  window.__flashlightOn = false;
+  try { localStorage.setItem(FLASHLIGHT_KEY, '0'); } catch(e){}
 }
 function flashlightHandMesh(){
   /* The light in his hand: the same dark tube + pale lens as the
@@ -18568,21 +18578,34 @@ function flashlightTryBoneAttach(){
     if (!bone) return;
     bone.add(__flashHand);
     __flashHand.position.set(0, 0.01, 0.03);
-    __flashHand.rotation.set(0, 0, 0);
+    /* FACING FIX (2026-11-13, Joshua): in the bone's own axes the
+       mesh sat backwards in his hand — lens toward him, tail
+       forward. Yaw the group 180 degrees in the hand mount so the
+       lens leads and the held light points where he faces. The
+       ~15-degree hold itself is unchanged (it lives in the bone
+       pose and in the beam aim below, not in this yaw). */
+    __flashHand.rotation.set(0, Math.PI, 0);
     __flashBone = bone;
     window.__flashBone = bone;
   } catch(e){}
 }
 function flashlightEnsure(){
   /* Build the spotlight + hand mesh once, on first need. The spot is
-     warm white, a ~57-degree cone, decay 2 like the game's other
-     lights (three r186 physical units — intensity 60 reads as a clear
-     pool on the ground a few metres out at night, subtle by day). */
+     warm white, an ~86-degree cone, decay 2 like the game's other
+     lights (three r186 physical units — intensity 150 reads as a
+     clear pool on the ground a few metres out at night, subtle by
+     day). */
   try {
     if (!__flashSpot){
       /* BRIGHTER (2026-11-13, Joshua): intensity 60 -> 150 and throw
-         35 -> 50 — the old beam read dim against the night ground. */
-      __flashSpot = new THREE.SpotLight(0xfff3cf, 150, 50, 0.5, 0.45, 2);
+         35 -> 50 — the old beam read dim against the night ground.
+         WIDER FUNNEL (2026-11-13, Joshua, same day): cone half-angle
+         0.50 -> 0.75 rad (~57 -> ~86 degrees full cone) — the lit
+         area read too small for the flashlight he has in mind, at
+         the base where the light leaves the lens as much as at the
+         pool. Brightness is FINE by his verdict: intensity stays
+         150, throw stays 50. */
+      __flashSpot = new THREE.SpotLight(0xfff3cf, 150, 50, 0.75, 0.45, 2);
       __flashSpot.visible = false;
       scene.add(__flashSpot);
       scene.add(__flashSpot.target);
@@ -18624,8 +18647,7 @@ flashlightRestore();
    at the hand and its target sits ~6u ahead on the ground, so the
    beam lands on the ground ahead of him wherever he faces. When the
    light is off, both stay hidden (and stay built, so re-equipping is
-   instant). If the flag was restored from a save, the first tick
-   builds the visuals. */
+   instant). The first tick after an equip builds the visuals. */
 try {
   if (window.Sim && typeof Sim.onTick === 'function' && !window.__flashTickReg){
     window.__flashTickReg = true;
