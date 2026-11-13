@@ -102,22 +102,27 @@ var TC_LS_KEY = 'sa_timecontrol_v1';   // persisted season/weather overrides
    so lit surfaces kept roughly half their daytime brightness under a
    black sky. Now the hemisphere colours ride the SAME keyframe curve
    as the sky — deep blue over near-black at night, the original day
-   colours restored by morning — and the deep-night floor is 0.10, so
+   colours restored by morning — and the deep-night floor is 0.255, so
    world illumination follows the sky down between 18:00 and 06:00.
+   (Floor history: 0.22 -> 0.10 on 2026-11-07; 0.10 -> 0.255 on
+   2026-11-13 — Joshua's ruling: deep night gets 5.5% of noon's light,
+   up from the 2.2% measured at 0.10. The 345 pre-dawn and 1230 dusk
+   rows were re-stepped (0.38/0.38 and 0.37/0.40) so the curve stays
+   monotonic into and out of the raised plateau.)
    Day rows keep their exact pre-fix values: the daytime look is
    unchanged. */
 var KEYS=[
- [0,    0x0a0f1e, 0x0a0f1e, 0x2a3a5a, 0.10, 0.10, 0x16233f, 0x05070c],
- [300,  0x0a0f1e, 0x0a0f1e, 0x2a3a5a, 0.10, 0.10, 0x16233f, 0x05070c],
- [345,  0x3a3a5a, 0x3a3a5a, 0x6a4a6a, 0.18, 0.26, 0x3a4666, 0x11131c],
+ [0,    0x0a0f1e, 0x0a0f1e, 0x2a3a5a, 0.255, 0.255, 0x16233f, 0x05070c],
+ [300,  0x0a0f1e, 0x0a0f1e, 0x2a3a5a, 0.255, 0.255, 0x16233f, 0x05070c],
+ [345,  0x3a3a5a, 0x3a3a5a, 0x6a4a6a, 0.38, 0.38, 0x3a4666, 0x11131c],
  [390,  0xff9a5a, 0xff9a5a, 0xff8844, 0.50, 0.50, 0x9a7f8a, 0x2c2118],  // sunrise
  [480,  0x9fc7e8, 0x9fc7e8, 0xfff2d8, 0.75, 0.85, 0xcfe8ff, 0x4a7c3a],  // morning
  [720,  0x9fc7e8, 0x9fc7e8, 0xfff2d8, 0.85, 0.95, 0xcfe8ff, 0x4a7c3a],  // noon
  [1020, 0x9fc7e8, 0x9fc7e8, 0xfff2d8, 0.80, 0.90, 0xcfe8ff, 0x4a7c3a],  // afternoon
  [1170, 0xff8a4a, 0xff8a4a, 0xff7744, 0.45, 0.50, 0x9a6f7a, 0x2c2118],  // sunset
- [1230, 0x2a2a4a, 0x2a2a4a, 0x334466, 0.15, 0.16, 0x2c3a5e, 0x0a0d14],  // dusk
- [1320, 0x0a0f1e, 0x0a0f1e, 0x2a3a5a, 0.10, 0.10, 0x16233f, 0x05070c],
- [1440, 0x0a0f1e, 0x0a0f1e, 0x2a3a5a, 0.10, 0.10, 0x16233f, 0x05070c]
+ [1230, 0x2a2a4a, 0x2a2a4a, 0x334466, 0.37, 0.40, 0x2c3a5e, 0x0a0d14],  // dusk
+ [1320, 0x0a0f1e, 0x0a0f1e, 0x2a3a5a, 0.255, 0.255, 0x16233f, 0x05070c],
+ [1440, 0x0a0f1e, 0x0a0f1e, 0x2a3a5a, 0.255, 0.255, 0x16233f, 0x05070c]
 ];
 // Weather dimming of the sun + sky gray factor.
 var WX_DIM={sunny:1.0, cloudy:0.65, rainy:0.38};

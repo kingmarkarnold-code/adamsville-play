@@ -86,9 +86,9 @@
     },
     {
       "name": "daycycle.js",
-      "sha256": "f26db26d2604c94b598086a88c8cad77951654ddc54cc8f6dec4488220e79713",
-      "size": 32187,
-      "hash": "f26db26d2604c94b598086a88c8cad77951654ddc54cc8f6dec4488220e79713"
+      "sha256": "8571db96b5afc08c59c640c7f302cf35c1fe6b2f7045d98ed3a43a92faa2d5bd",
+      "size": 32521,
+      "hash": "8571db96b5afc08c59c640c7f302cf35c1fe6b2f7045d98ed3a43a92faa2d5bd"
     },
     {
       "name": "dialogue_director_npc.js",
@@ -171,9 +171,9 @@
     },
     {
       "name": "index.html",
-      "size": 1397027,
-      "sha256": "324e4acb5fedf43da8ded0d95a8e725864c0cd509ca9aae24ec67d727f8bb890",
-      "hash": "324e4acb5fedf43da8ded0d95a8e725864c0cd509ca9aae24ec67d727f8bb890"
+      "size": 1397028,
+      "sha256": "e7b0f4b9efc9ee69eabbb6d67eb942e0101ec87be17f6c6064e77ba93990e691",
+      "hash": "e7b0f4b9efc9ee69eabbb6d67eb942e0101ec87be17f6c6064e77ba93990e691"
     },
     {
       "name": "input_diag.js",
@@ -708,6 +708,6 @@
       "hash": "5bd3ab4ab2c4fe2671d7c7b755c98518de645f5390c3df530be6c0fbaea92a35"
     }
   ],
-  "ui_version": "2026.11.13.9",
+  "ui_version": "2026.11.13.10",
   "version": "2026.10.17.9"
 }
